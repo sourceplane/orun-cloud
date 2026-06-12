@@ -173,3 +173,10 @@ service bindings; supabase/hyperdrive/kv/domain/bootstrap applied.
   transitive without in-range patches; revisit periodically
 - [ ] Upstream the deploy-profile wire-fixture fix (PR #10) to
   multi-tenant-saas — its api-edge deploy lane has the same latent gap
+- [ ] Real email provider for prod login codes: the baseline V1
+  notifications-worker ships only a `local-debug` provider (no actual
+  email is sent). Stage works end-to-end because `DEBUG_DELIVERY=true`
+  returns the code inline in the login response; prod login-start
+  succeeds but the code email is never delivered. Needs a provider
+  integration (e.g. Resend/SES) + API key secret, or the bearer-token
+  tab for prod access in the interim
