@@ -143,8 +143,14 @@ migrations run.
   production-deploy per env), Secrets Manager write scope
   `sourceplane/orun-cloud/*`
 - [ ] Supabase projects `orun-cloud-stage` / `orun-cloud-prod`
-- [ ] `orun.dev` Cloudflare zone + DNS for `stage.orun.dev` /
-  `prod.orun.dev`
+- [x] `orun.dev` zone live: apex = marketing site (wrangler custom
+  domain on the `website` worker), `app.orun.dev` = prod console,
+  `stage.orun.dev` = stage console. Console domains are managed by the
+  re-enabled v4 `cloudflare_workers_domain` resource in
+  `infra/terraform/cloudflare-domain` — the baseline had fenced it
+  mid-0085a/b provider migration; this fork has clean state so the v4
+  resource is active (rename to `cloudflare_workers_custom_domain` on
+  the eventual v5 provider upgrade)
 - [ ] Register GitHub Apps for the integrations cluster (baseline gate
   D1: per-env App registration + worker secrets)
 - [x] Cloudflare Workers Paid plan (cron trigger limit; upgraded
