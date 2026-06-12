@@ -220,14 +220,14 @@ Last updated: 2026-05-26
   blocker should be solved through a narrow public API CORS seam, not by calling
   internal Workers directly.
 - Task 0040 CORS policy: `api-edge` allows only the Pages production origin
-  (`https://sourceplane-web-console.pages.dev`), Pages preview subdomains
-  (`*.sourceplane-web-console.pages.dev`), and localhost/127.0.0.1 for dev.
+  (`https://orun-web-console.pages.dev`), Pages preview subdomains
+  (`*.orun-web-console.pages.dev`), and localhost/127.0.0.1 for dev.
   No wildcard origins. `Vary: Origin` on all responses. Preflight handled before
   route dispatch; CORS headers applied to all responses including errors.
 - Web-console hosting should be environment-specific after Task 0040: stage and
   prod must have separate Pages deployments and distinct URLs. Canonical target
-  names for Task 0041 are `sourceplane-web-console-stage` and
-  `sourceplane-web-console-prod`; each deployed console should be locked to its
+  names for Task 0041 are `orun-web-console-stage` and
+  `orun-web-console-prod`; each deployed console should be locked to its
   matching `api-edge` environment, and CORS should allow matching console/API
   pairs rather than a cross-environment console origin.
 

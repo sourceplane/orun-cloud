@@ -4,7 +4,7 @@
 // as anything but a short-lived JWT.
 
 const API_BASE = "https://api.github.com";
-const USER_AGENT = "sourceplane-integrations-worker";
+const USER_AGENT = "orun-integrations-worker";
 /** App JWTs are short-lived: iat 60s in the past (clock drift), exp +9 min. */
 const JWT_BACKDATE_SECONDS = 60;
 const JWT_TTL_SECONDS = 540;

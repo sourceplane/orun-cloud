@@ -134,7 +134,7 @@ variable "zoneMode" {
 
 variable "workerNamePrefix" {
   type        = string
-  default     = "sourceplane-web-console-next"
+  default     = "orun-web-console-next"
   description = "Worker name prefix for the new console; full Worker service name is {prefix}-{environment}"
 }
 

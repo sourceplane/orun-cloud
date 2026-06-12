@@ -104,7 +104,7 @@ describe("GitHub provider adapter", () => {
     expect(facts!.accountLogin).toBe("acme");
     expect(calls[0]!.url).toBe("https://api.github.com/app/installations/9912345");
     expect(calls[0]!.headers.authorization).toMatch(/^Bearer eyJ/);
-    expect(calls[0]!.headers["user-agent"]).toBe("sourceplane-integrations-worker");
+    expect(calls[0]!.headers["user-agent"]).toBe("orun-integrations-worker");
   }, 30_000);
 
   it("completeConnect fails closed on a malformed private key", async () => {

@@ -84,7 +84,7 @@ spec:
           workersDevSubdomain:
             type: string
             description: >-
-              The account's workers.dev subdomain (e.g. "rahulvarghesepullely").
+              The account's workers.dev subdomain (e.g. "your-workers-subdomain").
               Used to derive the deployed hostname for the smoke step:
               `${EFFECTIVE_WORKER_NAME}.${workersDevSubdomain}.workers.dev`.
 

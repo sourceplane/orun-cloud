@@ -129,11 +129,11 @@ The web console is a client of the platform, not part of the platform core. It m
 The web console is deployed as environment-specific Cloudflare Workers using
 the Workers + Static Assets model (composition `cloudflare-workers-assets-turbo`):
 
-- **Stage**: Worker `sourceplane-web-console-next-stage` (shadow hostname
-  `https://sourceplane-web-console-next-stage.<workers-subdomain>.workers.dev/`)
+- **Stage**: Worker `orun-web-console-next-stage` (shadow hostname
+  `https://orun-web-console-next-stage.<workers-subdomain>.workers.dev/`)
   - Custom domain: `https://stage.orun.dev/` (from `CONSOLE_CUSTOM_DOMAIN` env var)
-- **Prod**: Worker `sourceplane-web-console-next-prod` (shadow hostname
-  `https://sourceplane-web-console-next-prod.<workers-subdomain>.workers.dev/`)
+- **Prod**: Worker `orun-web-console-next-prod` (shadow hostname
+  `https://orun-web-console-next-prod.<workers-subdomain>.workers.dev/`)
   - Custom domain: `https://prod.orun.dev/` (from `CONSOLE_CUSTOM_DOMAIN` env var)
 
 Each deployed console is locked to a single API edge environment at build time

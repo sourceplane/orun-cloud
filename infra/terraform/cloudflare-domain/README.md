@@ -47,7 +47,7 @@ vars) for runtime CORS decisions.
 |-----------|----------|-------------|
 | `baseDomain` | yes | Root domain (e.g. `orun.dev`) |
 | `zoneMode` | yes | `existing` or `managed` |
-| `workerNamePrefix` | yes | Worker name prefix (e.g. `sourceplane-web-console-next`); fully-qualified service name is `{workerNamePrefix}-{environment}` |
+| `workerNamePrefix` | yes | Worker name prefix (e.g. `orun-web-console-next`); fully-qualified service name is `{workerNamePrefix}-{environment}` |
 | `stackName` | yes | Terraform stack identifier |
 | `terraformDir` | yes | Path to Terraform root |
 | `terraformVersion` | yes | Terraform CLI version |
@@ -83,7 +83,7 @@ After merge to main, verify:
 
 1. `terraform apply` succeeds in CI (`github-push-main` trigger).
 2. Workers custom domains show `active` status in Cloudflare (Workers → the
-   `sourceplane-web-console-next-{env}` Worker → Triggers → Custom Domains).
+   `orun-web-console-next-{env}` Worker → Triggers → Custom Domains).
 3. `https://stage.orun.dev/` serves the stage console (web-console-next).
 4. `https://prod.orun.dev/` serves the prod console (web-console-next).
 5. SSL certificates are provisioned (automatic via Cloudflare).

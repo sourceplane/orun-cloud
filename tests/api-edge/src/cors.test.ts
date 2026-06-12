@@ -34,10 +34,10 @@ describe("api-edge cors", () => {
     });
 
     it("rejects the legacy Pages console origins", () => {
-      expect(isAllowedOrigin("https://sourceplane-web-console.pages.dev", stageEnv)).toBe(false);
-      expect(isAllowedOrigin("https://sourceplane-web-console-stage.pages.dev", stageEnv)).toBe(false);
-      expect(isAllowedOrigin("https://sourceplane-web-console-prod.pages.dev", stageEnv)).toBe(false);
-      expect(isAllowedOrigin("https://abc123.sourceplane-web-console-stage.pages.dev", stageEnv)).toBe(false);
+      expect(isAllowedOrigin("https://orun-web-console.pages.dev", stageEnv)).toBe(false);
+      expect(isAllowedOrigin("https://orun-web-console-stage.pages.dev", stageEnv)).toBe(false);
+      expect(isAllowedOrigin("https://orun-web-console-prod.pages.dev", stageEnv)).toBe(false);
+      expect(isAllowedOrigin("https://abc123.orun-web-console-stage.pages.dev", stageEnv)).toBe(false);
     });
 
     it("allows localhost origins", () => {
@@ -69,9 +69,9 @@ describe("api-edge cors", () => {
     });
 
     it("rejects the legacy Pages console origins", () => {
-      expect(isAllowedOrigin("https://sourceplane-web-console.pages.dev", prodEnv)).toBe(false);
-      expect(isAllowedOrigin("https://sourceplane-web-console-prod.pages.dev", prodEnv)).toBe(false);
-      expect(isAllowedOrigin("https://feat-branch-42.sourceplane-web-console-stage.pages.dev", prodEnv)).toBe(false);
+      expect(isAllowedOrigin("https://orun-web-console.pages.dev", prodEnv)).toBe(false);
+      expect(isAllowedOrigin("https://orun-web-console-prod.pages.dev", prodEnv)).toBe(false);
+      expect(isAllowedOrigin("https://feat-branch-42.orun-web-console-stage.pages.dev", prodEnv)).toBe(false);
     });
 
     it("allows localhost origins", () => {
@@ -101,8 +101,8 @@ describe("api-edge cors", () => {
     });
 
     it("rejects legacy Pages console origins in fallback env", () => {
-      expect(isAllowedOrigin("https://sourceplane-web-console-stage.pages.dev", testEnv)).toBe(false);
-      expect(isAllowedOrigin("https://sourceplane-web-console-prod.pages.dev", testEnv)).toBe(false);
+      expect(isAllowedOrigin("https://orun-web-console-stage.pages.dev", testEnv)).toBe(false);
+      expect(isAllowedOrigin("https://orun-web-console-prod.pages.dev", testEnv)).toBe(false);
     });
 
     it("allows localhost origins", () => {

@@ -3,4 +3,4 @@
 // Do not add behavior — values only.
 
 /** User-Agent presented on outgoing webhook deliveries. */
-export const WEBHOOK_USER_AGENT = "Sourceplane-Webhooks/1.0";
+export const WEBHOOK_USER_AGENT = "Orun-Webhooks/1.0";

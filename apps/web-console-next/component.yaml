@@ -40,15 +40,15 @@ spec:
     workerEntrypoint: .open-next/worker.js
     assetsDir: .open-next/assets
 
-    # Worker is named per-env (sourceplane-web-console-next-{dev,stage,prod}),
+    # Worker is named per-env (orun-web-console-next-{dev,stage,prod}),
     # matching the prior Pages-project naming convention so the cutover in
     # Task 0083 only needs to repoint the custom domain.
-    workerName: sourceplane-web-console-next
+    workerName: orun-web-console-next
     environmentAwareWorkerName: true
 
     # The account's workers.dev subdomain; exposed to the smoke step as
     # ${WORKERS_DEV_SUBDOMAIN} and used to build ${DEPLOYED_URL}.
-    workersDevSubdomain: rahulvarghesepullely
+    workersDevSubdomain: your-workers-subdomain
 
     environmentBuildVar: NEXT_PUBLIC_DEPLOY_ENV
 
@@ -64,7 +64,7 @@ spec:
     # `${WORKERS_DEV_SUBDOMAIN}` is exported by the composition's deploy/smoke
     # step from the `workersDevSubdomain` parameter above (BF3: no duplicated
     # subdomain literal here).
-    smokeCommand: "html=$(curl -sfL \"${DEPLOYED_URL}/\") && echo \"${html}\" | grep -q 'Sourceplane Console' && health=$(curl -sf \"https://api-edge-${ORUN_ENVIRONMENT}.${WORKERS_DEV_SUBDOMAIN}.workers.dev/health\") && echo \"${health}\" | grep -q ok"
+    smokeCommand: "html=$(curl -sfL \"${DEPLOYED_URL}/\") && echo \"${html}\" | grep -q 'Orun Console' && health=$(curl -sf \"https://api-edge-${ORUN_ENVIRONMENT}.${WORKERS_DEV_SUBDOMAIN}.workers.dev/health\") && echo \"${health}\" | grep -q ok"
   labels:
     team: platform
     layer: delivery

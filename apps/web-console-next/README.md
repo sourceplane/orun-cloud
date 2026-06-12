@@ -91,7 +91,7 @@ Identical orun composition pattern to `apps/web-console`:
 - `spec.type: cloudflare-pages-turbo`
 - `outputDir: .open-next/assets` (opennextjs/cloudflare output)
 - `environmentBuildVar: NEXT_PUBLIC_DEPLOY_ENV` (was `VITE_DEPLOY_ENV`)
-- Per-env Cloudflare Pages projects: `sourceplane-web-console-next-{dev,stage,prod}`
+- Per-env Cloudflare Pages projects: `orun-web-console-next-{dev,stage,prod}`
 - Smoke probe identical to the existing console.
 
 Verification is via the same `verify`/`deploy` profile split, so this app

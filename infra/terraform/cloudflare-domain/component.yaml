@@ -21,7 +21,7 @@ spec:
     terraformVersion: "1.15.3"
     baseDomain: orun.dev
     zoneMode: existing
-    workerNamePrefix: sourceplane-web-console-next
+    workerNamePrefix: orun-web-console-next
     # NOTE: `CONSOLE_CUSTOM_DOMAIN` is intentionally NOT declared here.
     # It is supplied per-environment via
     # `environments.{dev,stage,prod}.parameterDefaults.terraform.CONSOLE_CUSTOM_DOMAIN`

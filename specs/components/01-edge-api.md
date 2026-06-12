@@ -127,14 +127,14 @@ The API edge enforces an environment-aware CORS allowlist. Each deployed
 
 | API Environment | Allowed Console Origins |
 |----------------|-------------------------|
-| stage | `https://${CONSOLE_CUSTOM_DOMAIN}` (`https://stage.orun.dev`), `https://sourceplane-web-console-next-stage.<workers-dev-subdomain>.workers.dev`, localhost |
-| prod | `https://${CONSOLE_CUSTOM_DOMAIN}` (`https://prod.orun.dev`), `https://sourceplane-web-console-next-prod.<workers-dev-subdomain>.workers.dev`, localhost |
+| stage | `https://${CONSOLE_CUSTOM_DOMAIN}` (`https://stage.orun.dev`), `https://orun-web-console-next-stage.<workers-dev-subdomain>.workers.dev`, localhost |
+| prod | `https://${CONSOLE_CUSTOM_DOMAIN}` (`https://prod.orun.dev`), `https://orun-web-console-next-prod.<workers-dev-subdomain>.workers.dev`, localhost |
 
 The console runs as a Workers + Static Assets deployment (Next.js +
 `@opennextjs/cloudflare`); the `*.workers.dev` shadow hostname is the deploy
 host emitted by the `cloudflare-workers-assets-turbo` composition and is kept
 in the allowlist alongside the custom domain so SSR previews work without DNS.
-Legacy `sourceplane-web-console-{env}.pages.dev` Pages origins were removed
+Legacy `orun-web-console-{env}.pages.dev` Pages origins were removed
 from the allowlist in Task 0083 when `apps/web-console` was decommissioned.
 
 The custom domain origin is read from the `CONSOLE_CUSTOM_DOMAIN` environment
