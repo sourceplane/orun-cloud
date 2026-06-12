@@ -3,7 +3,7 @@ import { consoleWorkersDevOrigin } from "@api-edge/app-config";
 import type { Env } from "@api-edge/env";
 
 const stageEnv: Env = { ENVIRONMENT: "stage", CONSOLE_CUSTOM_DOMAIN: "stage.orun.dev" };
-const prodEnv: Env = { ENVIRONMENT: "prod", CONSOLE_CUSTOM_DOMAIN: "prod.orun.dev" };
+const prodEnv: Env = { ENVIRONMENT: "prod", CONSOLE_CUSTOM_DOMAIN: "app.orun.dev" };
 const testEnv: Env = { ENVIRONMENT: "test" };
 
 // Post Task 0083: legacy `apps/web-console` (Pages) was decommissioned. The CORS
@@ -26,7 +26,7 @@ describe("api-edge cors", () => {
     });
 
     it("rejects the prod custom domain origin", () => {
-      expect(isAllowedOrigin("https://prod.orun.dev", stageEnv)).toBe(false);
+      expect(isAllowedOrigin("https://app.orun.dev", stageEnv)).toBe(false);
     });
 
     it("rejects the prod workers.dev origin", () => {
@@ -53,7 +53,7 @@ describe("api-edge cors", () => {
 
   describe("isAllowedOrigin — prod environment", () => {
     it("allows the prod custom domain origin", () => {
-      expect(isAllowedOrigin("https://prod.orun.dev", prodEnv)).toBe(true);
+      expect(isAllowedOrigin("https://app.orun.dev", prodEnv)).toBe(true);
     });
 
     it("allows the prod workers.dev origin", () => {
@@ -86,7 +86,7 @@ describe("api-edge cors", () => {
   describe("isAllowedOrigin — fallback (test/unknown environment)", () => {
     it("rejects custom domain origins when CONSOLE_CUSTOM_DOMAIN is not set", () => {
       expect(isAllowedOrigin("https://stage.orun.dev", testEnv)).toBe(false);
-      expect(isAllowedOrigin("https://prod.orun.dev", testEnv)).toBe(false);
+      expect(isAllowedOrigin("https://app.orun.dev", testEnv)).toBe(false);
     });
 
     it("allows custom domain origin when CONSOLE_CUSTOM_DOMAIN is set", () => {
@@ -176,7 +176,7 @@ describe("api-edge cors", () => {
     it("returns 204 without CORS headers when prod custom domain hits stage API", () => {
       const req = new Request("https://api.test/v1/auth/session", {
         method: "OPTIONS",
-        headers: { origin: "https://prod.orun.dev" },
+        headers: { origin: "https://app.orun.dev" },
       });
       const res = handlePreflight(req, stageEnv);
       expect(res).not.toBeNull();
@@ -248,7 +248,7 @@ describe("api-edge cors", () => {
 
     it("does not add CORS headers for prod custom domain on stage env", () => {
       const req = new Request("https://api.test/v1/auth/session", {
-        headers: { origin: "https://prod.orun.dev" },
+        headers: { origin: "https://app.orun.dev" },
       });
       const original = Response.json({ data: {} }, { status: 200 });
       const res = applyCorsHeaders(original, req, stageEnv);

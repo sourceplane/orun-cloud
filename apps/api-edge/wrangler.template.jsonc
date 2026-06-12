@@ -106,7 +106,7 @@
     "prod": {
       "vars": {
         "ENVIRONMENT": "prod",
-        "CONSOLE_CUSTOM_DOMAIN": "prod.orun.dev"
+        "CONSOLE_CUSTOM_DOMAIN": "app.orun.dev"
       },
       "hyperdrive": [
         {

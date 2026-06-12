@@ -134,7 +134,7 @@ the Workers + Static Assets model (composition `cloudflare-workers-assets-turbo`
   - Custom domain: `https://stage.orun.dev/` (from `CONSOLE_CUSTOM_DOMAIN` env var)
 - **Prod**: Worker `orun-web-console-next-prod` (shadow hostname
   `https://orun-web-console-next-prod.<workers-subdomain>.workers.dev/`)
-  - Custom domain: `https://prod.orun.dev/` (from `CONSOLE_CUSTOM_DOMAIN` env var)
+  - Custom domain: `https://app.orun.dev/` (from `CONSOLE_CUSTOM_DOMAIN` env var)
 
 Each deployed console is locked to a single API edge environment at build time
 via the deploy-env variable. The stage console calls only the stage

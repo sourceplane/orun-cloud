@@ -74,7 +74,7 @@
         "GITHUB_OAUTH_CLIENT_ID": "Ov23lilp2aoyeBDVU8Vc",
         "GOOGLE_OAUTH_CLIENT_ID": "441163126775-7fabhvpbl9tsga921rklpdlde7mduq34.apps.googleusercontent.com",
         "OAUTH_REDIRECT_BASE_URL": "https://api-edge-prod.oruncloud.workers.dev",
-        "OAUTH_ALLOWED_CONSOLE_ORIGINS": "https://prod.orun.dev,https://orun-web-console-next-prod.oruncloud.workers.dev"
+        "OAUTH_ALLOWED_CONSOLE_ORIGINS": "https://app.orun.dev,https://orun-web-console-next-prod.oruncloud.workers.dev"
       },
       "hyperdrive": [
         {

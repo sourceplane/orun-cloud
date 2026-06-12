@@ -123,7 +123,7 @@ environments:
         namespacePrefix: prod-
         owner: sourceplane
         repo: orun-cloud
-        CONSOLE_CUSTOM_DOMAIN: prod.orun.dev
+        CONSOLE_CUSTOM_DOMAIN: app.orun.dev
     policies:
       requireApproval: "true"
     env:
