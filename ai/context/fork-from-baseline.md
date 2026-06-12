@@ -109,6 +109,16 @@ First-boot notes (observed while converging CI):
   (one PR), restoring them immediately after (next PR), then re-running
   the dependents' deploy runs. A future BF7-9 preflight should automate
   this two-phase bootstrap.
+- Cloudflare free plan caps the account at 5 cron triggers (10072);
+  integrations-worker's cron pushed past it. Resolved by upgrading to
+  Workers Paid (same as the baseline — its #333 notes "Workers Paid
+  lifted the trigger limit").
+
+**Converged 2026-06-12 ~08:50 UTC**: all 12 workers + api-edge +
+web-console deployed green across dev/stage/prod with deploy-time
+wiring (live Hyperdrive IDs from the Secrets Manager manifest) and full
+service bindings; supabase/hyperdrive/kv/domain/bootstrap applied;
+migrations run.
 
 ## Intentionally NOT changed
 
@@ -141,5 +151,9 @@ First-boot notes (observed while converging CI):
   `prod.orun.dev`
 - [ ] Register GitHub Apps for the integrations cluster (baseline gate
   D1: per-env App registration + worker secrets)
+- [x] Cloudflare Workers Paid plan (cron trigger limit; upgraded
+  2026-06-12)
 - [ ] Triage the inherited Dependabot alerts (75 reported on first push
   — baseline lockfile, visible because this repo is public)
+- [ ] Upstream the deploy-profile wire-fixture fix (PR #10) to
+  multi-tenant-saas — its api-edge deploy lane has the same latent gap
