@@ -117,8 +117,19 @@ First-boot notes (observed while converging CI):
 **Converged 2026-06-12 ~08:50 UTC**: all 12 workers + api-edge +
 web-console deployed green across dev/stage/prod with deploy-time
 wiring (live Hyperdrive IDs from the Secrets Manager manifest) and full
-service bindings; supabase/hyperdrive/kv/domain/bootstrap applied;
-migrations run.
+service bindings; supabase/hyperdrive/kv/domain/bootstrap applied.
+
+- **First-boot gap found post-convergence (console login "Failed to
+  resolve user")**: db-migrate had in fact NEVER run on this fork — the
+  initial-import push produced an empty orun job matrix (no diff vs
+  prior state) and no later PR touched `infra/db-migrate` or
+  `packages/db`, so the fresh Supabase databases had zero tables. The
+  identity-worker `/health` ping (`SELECT 1`) passes without tables,
+  which is why convergence looked complete. Fixed with a scope-bump PR
+  on the db-migrate component (the same `# ci:` mechanism the baseline
+  used when its migrations 180/190 were missed). A future first-boot
+  checklist should treat db-migrate as mandatory scope, not
+  diff-derived.
 
 ## Intentionally NOT changed
 

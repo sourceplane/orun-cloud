@@ -48,3 +48,4 @@ spec:
               triggerRef: github-push-main
 # ci: trigger full-component verification (orun v2.12.0 upgrade — PR #183)
 # ci: trigger db-migrate apply — integrations migrations 180+190 were never applied (--changed planning keys off this directory, not spec.path)
+# ci: first-boot db-migrate (orun-cloud fork) — fresh Supabase databases have zero tables; no commit had ever scoped this component, so login failed with "Failed to resolve user" while the SELECT-1 health ping passed
