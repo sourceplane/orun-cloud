@@ -63,3 +63,4 @@ spec:
     layer: runtime
     surface: integrations
     runtime: cloudflare
+# ci: redeploy with live Hyperdrive wiring (BF6b convergence)
