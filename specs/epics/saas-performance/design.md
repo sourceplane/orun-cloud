@@ -31,7 +31,7 @@ instant on navigation, and every hot-path phase measurable in prod.
 Black-box TTFB against the live workers, no privileged access:
 
 - Edge: `https://api-edge-{stage,prod}.rahulvarghesepullely.workers.dev`
-- Console: `https://{stage,prod}.sourceplane.ai`
+- Console: `https://{stage,prod}.orun.dev`
 - `curl -w '%{time_starttransfer}'`, 12 warm samples per probe (first discarded as
   cold), p50 reported. Network/TLS to the nearest colo is ~40–50ms and is included
   in every number below.

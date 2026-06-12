@@ -83,7 +83,7 @@ environments:
       requireApproval: "false"
     env:
       AWS_REGION: us-east-1
-      BASE_DOMAIN: sourceplane.ai
+      BASE_DOMAIN: orun.dev
 
   stage:
     activation:
@@ -99,12 +99,12 @@ environments:
         namespacePrefix: stg-
         owner: sourceplane
         repo: orun-cloud
-        CONSOLE_CUSTOM_DOMAIN: stage.sourceplane.ai
+        CONSOLE_CUSTOM_DOMAIN: stage.orun.dev
     policies:
       requireApproval: "true"
     env:
       AWS_REGION: us-east-1
-      BASE_DOMAIN: sourceplane.ai
+      BASE_DOMAIN: orun.dev
 
   prod:
     activation:
@@ -123,9 +123,9 @@ environments:
         namespacePrefix: prod-
         owner: sourceplane
         repo: orun-cloud
-        CONSOLE_CUSTOM_DOMAIN: prod.sourceplane.ai
+        CONSOLE_CUSTOM_DOMAIN: prod.orun.dev
     policies:
       requireApproval: "true"
     env:
       AWS_REGION: us-east-1
-      BASE_DOMAIN: sourceplane.ai
+      BASE_DOMAIN: orun.dev

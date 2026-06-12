@@ -14,7 +14,7 @@ projects via Terraform.
 | `stackName` | yes | Terraform stack identifier |
 | `terraformDir` | yes | Path to Terraform root relative to component |
 | `terraformVersion` | yes | Terraform CLI version |
-| `baseDomain` | yes | Root domain (e.g. `sourceplane.ai`) |
+| `baseDomain` | yes | Root domain (e.g. `orun.dev`) |
 | `zoneMode` | yes | `existing` to adopt a zone already in Cloudflare; `managed` to create/manage the zone lifecycle |
 | `pagesCustomDomains` | no | Map of hostname → Pages project name |
 | `workerCustomDomains` | no | Map of hostname → Worker script name |

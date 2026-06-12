@@ -51,7 +51,7 @@ spec:
             type: string
           baseDomain:
             type: string
-            description: The root domain managed by this component (e.g. sourceplane.ai)
+            description: The root domain managed by this component (e.g. orun.dev)
           zoneMode:
             type: string
             enum:

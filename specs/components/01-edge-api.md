@@ -127,8 +127,8 @@ The API edge enforces an environment-aware CORS allowlist. Each deployed
 
 | API Environment | Allowed Console Origins |
 |----------------|-------------------------|
-| stage | `https://${CONSOLE_CUSTOM_DOMAIN}` (`https://stage.sourceplane.ai`), `https://sourceplane-web-console-next-stage.<workers-dev-subdomain>.workers.dev`, localhost |
-| prod | `https://${CONSOLE_CUSTOM_DOMAIN}` (`https://prod.sourceplane.ai`), `https://sourceplane-web-console-next-prod.<workers-dev-subdomain>.workers.dev`, localhost |
+| stage | `https://${CONSOLE_CUSTOM_DOMAIN}` (`https://stage.orun.dev`), `https://sourceplane-web-console-next-stage.<workers-dev-subdomain>.workers.dev`, localhost |
+| prod | `https://${CONSOLE_CUSTOM_DOMAIN}` (`https://prod.orun.dev`), `https://sourceplane-web-console-next-prod.<workers-dev-subdomain>.workers.dev`, localhost |
 
 The console runs as a Workers + Static Assets deployment (Next.js +
 `@opennextjs/cloudflare`); the `*.workers.dev` shadow hostname is the deploy
@@ -143,7 +143,7 @@ environment-level `env` declarations). This ensures domain names are never
 hardcoded in application code and can be changed by updating `intent.yaml`.
 
 Cross-environment requests (e.g. stage console calling prod API, or
-`prod.sourceplane.ai` calling stage API) are rejected. Custom domain origins
+`prod.orun.dev` calling stage API) are rejected. Custom domain origins
 follow the same environment isolation.
 
 Localhost and 127.0.0.1 are allowed in all environments for local development.

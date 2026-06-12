@@ -29,7 +29,7 @@ unblocking the secrets surface.
 
 ## Audit record (2026-06-11)
 
-Method: authenticated Playwright walkthrough of `stage.sourceplane.ai`
+Method: authenticated Playwright walkthrough of `stage.orun.dev`
 (fresh user via the stage `DEBUG_DELIVERY` email-code flow → new org
 `claude-audit-co` → project `demo-app` → every org surface, plus light-mode and
 390px-mobile passes) and direct edge-API probes with the same session.

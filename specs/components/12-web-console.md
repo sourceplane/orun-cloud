@@ -131,10 +131,10 @@ the Workers + Static Assets model (composition `cloudflare-workers-assets-turbo`
 
 - **Stage**: Worker `sourceplane-web-console-next-stage` (shadow hostname
   `https://sourceplane-web-console-next-stage.<workers-subdomain>.workers.dev/`)
-  - Custom domain: `https://stage.sourceplane.ai/` (from `CONSOLE_CUSTOM_DOMAIN` env var)
+  - Custom domain: `https://stage.orun.dev/` (from `CONSOLE_CUSTOM_DOMAIN` env var)
 - **Prod**: Worker `sourceplane-web-console-next-prod` (shadow hostname
   `https://sourceplane-web-console-next-prod.<workers-subdomain>.workers.dev/`)
-  - Custom domain: `https://prod.sourceplane.ai/` (from `CONSOLE_CUSTOM_DOMAIN` env var)
+  - Custom domain: `https://prod.orun.dev/` (from `CONSOLE_CUSTOM_DOMAIN` env var)
 
 Each deployed console is locked to a single API edge environment at build time
 via the deploy-env variable. The stage console calls only the stage

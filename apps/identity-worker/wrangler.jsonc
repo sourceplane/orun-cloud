@@ -40,7 +40,7 @@
         "GITHUB_OAUTH_CLIENT_ID": "Ov23liKBsjAqJJsmBavV",
         "GOOGLE_OAUTH_CLIENT_ID": "441163126775-7fabhvpbl9tsga921rklpdlde7mduq34.apps.googleusercontent.com",
         "OAUTH_REDIRECT_BASE_URL": "https://api-edge-stage.rahulvarghesepullely.workers.dev",
-        "OAUTH_ALLOWED_CONSOLE_ORIGINS": "https://stage.sourceplane.ai,https://sourceplane-web-console-next-stage.rahulvarghesepullely.workers.dev"
+        "OAUTH_ALLOWED_CONSOLE_ORIGINS": "https://stage.orun.dev,https://sourceplane-web-console-next-stage.rahulvarghesepullely.workers.dev"
       },
       "hyperdrive": [
         {
@@ -70,7 +70,7 @@
         "GITHUB_OAUTH_CLIENT_ID": "Ov23lilp2aoyeBDVU8Vc",
         "GOOGLE_OAUTH_CLIENT_ID": "441163126775-7fabhvpbl9tsga921rklpdlde7mduq34.apps.googleusercontent.com",
         "OAUTH_REDIRECT_BASE_URL": "https://api-edge-prod.rahulvarghesepullely.workers.dev",
-        "OAUTH_ALLOWED_CONSOLE_ORIGINS": "https://prod.sourceplane.ai,https://sourceplane-web-console-next-prod.rahulvarghesepullely.workers.dev"
+        "OAUTH_ALLOWED_CONSOLE_ORIGINS": "https://prod.orun.dev,https://sourceplane-web-console-next-prod.rahulvarghesepullely.workers.dev"
       },
       "hyperdrive": [
         {
