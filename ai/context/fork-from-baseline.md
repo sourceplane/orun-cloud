@@ -53,7 +53,7 @@ Applied as the Phase 3 rebrand PR (#4), in order:
   `Orun`, smoke-test grep `'Orun Console'`, localStorage namespace
   `orun.next`.
 - Personal workers.dev subdomain (`rahulvarghesepullely`) removed
-  everywhere, replaced by the placeholder `your-workers-subdomain`.
+  everywhere, replaced by the placeholder `oruncloud`.
 
 ### 4. Code identifiers: SDK class + CLI bin (`1647158`)
 - SDK: `Sourceplane` → `OrunCloud`, `SourceplaneError` →
@@ -136,12 +136,8 @@ migrations run.
 
 - [x] GitHub Actions secrets: `CLOUDFLARE_ACCOUNT_ID`,
   `CLOUDFLARE_API_TOKEN`, `SUPABASE_API_KEY` (set 2026-06-12)
-- [ ] Real workers.dev subdomain: replace `your-workers-subdomain` in
-  `apps/api-edge/src/app-config.ts`,
-  `apps/web-console-next/src/lib/app-config.ts`,
-  `apps/web-console-next/component.yaml`, and
-  `apps/identity-worker/wrangler.jsonc` once the Cloudflare account's
-  subdomain is known
+- [x] Real workers.dev subdomain: `oruncloud` (discovered from the
+  api-edge prod deploy log; set 2026-06-12)
 - [ ] AWS-side provisioning under the new names (via `aws-admin`):
   GitHub OIDC roles for `sourceplane/orun-cloud` (plan +
   production-deploy per env), Secrets Manager write scope
