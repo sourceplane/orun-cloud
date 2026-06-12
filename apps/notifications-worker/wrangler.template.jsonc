@@ -23,11 +23,23 @@
     },
     "stage": {
       "workers_dev": false,
+      // cloudflare-email sends through the Email Service `send_email` binding.
+      // One-time account prerequisites before real delivery works: Workers
+      // Paid plan, sending domain verified in Email Service (DKIM/SPF), and
+      // EMAIL_FROM_ADDRESS on that verified domain. Until then the worker
+      // still deploys; failed sends surface as notification.failed events.
       "vars": {
         "ENVIRONMENT": "stage",
-        "NOTIFICATIONS_PROVIDER": "local-debug",
-        "DEBUG_DELIVERY": "true"
+        "NOTIFICATIONS_PROVIDER": "cloudflare-email",
+        "DEBUG_DELIVERY": "true",
+        "EMAIL_FROM_ADDRESS": "no-reply@mail.orun.dev",
+        "EMAIL_FROM_NAME": "Orun"
       },
+      "send_email": [
+        {
+          "name": "EMAIL"
+        }
+      ],
       "hyperdrive": [
         {
           "binding": "PLATFORM_DB",
@@ -45,9 +57,16 @@
       "workers_dev": false,
       "vars": {
         "ENVIRONMENT": "prod",
-        "NOTIFICATIONS_PROVIDER": "local-debug",
-        "DEBUG_DELIVERY": "false"
+        "NOTIFICATIONS_PROVIDER": "cloudflare-email",
+        "DEBUG_DELIVERY": "false",
+        "EMAIL_FROM_ADDRESS": "no-reply@mail.orun.dev",
+        "EMAIL_FROM_NAME": "Orun"
       },
+      "send_email": [
+        {
+          "name": "EMAIL"
+        }
+      ],
       "hyperdrive": [
         {
           "binding": "PLATFORM_DB",
