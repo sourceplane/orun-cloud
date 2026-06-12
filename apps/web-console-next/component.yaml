@@ -48,7 +48,7 @@ spec:
 
     # The account's workers.dev subdomain; exposed to the smoke step as
     # ${WORKERS_DEV_SUBDOMAIN} and used to build ${DEPLOYED_URL}.
-    workersDevSubdomain: your-workers-subdomain
+    workersDevSubdomain: oruncloud
 
     environmentBuildVar: NEXT_PUBLIC_DEPLOY_ENV
 

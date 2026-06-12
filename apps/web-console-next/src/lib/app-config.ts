@@ -15,7 +15,7 @@ export const PRODUCT_DESCRIPTION =
   "Next-gen control plane for your projects, environments, and entitlements.";
 
 /** The Cloudflare account's workers.dev subdomain serving this instance. */
-export const WORKERS_DEV_SUBDOMAIN = "your-workers-subdomain";
+export const WORKERS_DEV_SUBDOMAIN = "oruncloud";
 
 /** api-edge workers.dev URL for a given environment name. */
 export function apiEdgeWorkersDevUrl(environment: string): string {
