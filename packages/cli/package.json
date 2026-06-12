@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "bin": {
-    "sourceplane": "./dist/cli.js"
+    "orun-cloud": "./dist/cli.js"
   },
   "exports": {
     ".": "./src/index.ts"

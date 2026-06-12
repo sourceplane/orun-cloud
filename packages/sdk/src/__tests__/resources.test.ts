@@ -7,7 +7,7 @@
 
 import { describe, expect, it, vi } from "vitest";
 
-import { Sourceplane } from "../index.js";
+import { OrunCloud } from "../index.js";
 import {
   ConflictError,
   ForbiddenError,
@@ -62,8 +62,8 @@ function errorResponse(code: string, status: number): Response {
 
 type FetchImpl = typeof fetch;
 
-function client(fetchImpl: FetchImpl): Sourceplane {
-  return new Sourceplane({ baseUrl: "https://api.test", fetch: fetchImpl });
+function client(fetchImpl: FetchImpl): OrunCloud {
+  return new OrunCloud({ baseUrl: "https://api.test", fetch: fetchImpl });
 }
 
 // ---------------------------------------------------------------------------

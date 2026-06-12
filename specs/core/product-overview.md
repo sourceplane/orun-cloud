@@ -4,7 +4,7 @@ Status: Normative
 
 ## Goal
 
-Build Sourceplane as a reusable multi-tenant SaaS starter bootstrap. The starter must let a team launch a product surface with organizations, projects, membership, billing, auditability, usage, API access, notifications, webhooks, and an admin/support back office without redesigning the platform foundation.
+Build Orun Cloud as a reusable multi-tenant SaaS starter bootstrap. The starter must let a team launch a product surface with organizations, projects, membership, billing, auditability, usage, API access, notifications, webhooks, and an admin/support back office without redesigning the platform foundation.
 
 ## Product Shape
 

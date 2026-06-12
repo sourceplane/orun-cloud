@@ -34,7 +34,7 @@ describe("cli — argv routing", () => {
     });
     expect(result.exitCode).toBe(0);
     expect(out.stdout.join("\n")).toContain("USAGE:");
-    expect(out.stdout.join("\n")).toContain("sourceplane org list");
+    expect(out.stdout.join("\n")).toContain("orun-cloud org list");
   });
 
   it("no argv prints help and exits 0", async () => {
@@ -46,7 +46,7 @@ describe("cli — argv routing", () => {
       contextStore: new ContextStore({ configDir: "/tmp/cli-test-noargs" }),
     });
     expect(result.exitCode).toBe(0);
-    expect(out.stdout.join("\n")).toContain("sourceplane v");
+    expect(out.stdout.join("\n")).toContain("orun-cloud v");
   });
 
   it("`--version` (human) prints the version", async () => {

@@ -2,7 +2,7 @@ apiVersion: sourceplane.io/v1
 kind: Component
 metadata:
   name: sdk
-  description: Runtime-agnostic TypeScript SDK for the Sourceplane control plane API
+  description: Runtime-agnostic TypeScript SDK for the Orun Cloud control plane API
 spec:
   type: turbo-package
   lifecycle: production

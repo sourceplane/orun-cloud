@@ -4,7 +4,7 @@ Status: Normative direction. Sequencing is the Orchestrator's call.
 
 ## Purpose
 
-This is the **cross-epic index** for the Sourceplane SaaS starter. It groups the
+This is the **cross-epic index** for the Orun Cloud SaaS starter. It groups the
 forward direction into clusters — **Baseline SaaS (B)**, **UI / Design (U)**,
 **Product Areas (P)**, and **Performance (PERF)** — and points at the epic folders
 that own the per-milestone detail. Read this to understand which leg a candidate

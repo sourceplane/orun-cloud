@@ -2,7 +2,7 @@ apiVersion: sourceplane.io/v1
 kind: Component
 metadata:
   name: web-console-next
-  description: Next.js 15 + opennextjs/cloudflare delivery of the Sourceplane web console (per-environment, Workers + Static Assets)
+  description: Next.js 15 + opennextjs/cloudflare delivery of the Orun Cloud web console (per-environment, Workers + Static Assets)
 spec:
   type: cloudflare-workers-assets-turbo
   lifecycle: production

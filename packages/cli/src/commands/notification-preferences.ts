@@ -1,5 +1,5 @@
-// `sourceplane notifications preferences [--org=ORG_ID]`
-// `sourceplane notifications preferences set --category=CAT --enabled=true|false [--org=ORG_ID]`
+// `orun-cloud notifications preferences [--org=ORG_ID]`
+// `orun-cloud notifications preferences set --category=CAT --enabled=true|false [--org=ORG_ID]`
 //
 // CLI leg of the PX3 notification-preferences surface (parity with the
 // console settings page and a pure SDK consumer of

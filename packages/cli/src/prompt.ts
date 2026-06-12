@@ -2,7 +2,7 @@
 //
 // Reads a single line from stdin without echoing it. On TTYs we toggle
 // raw + opaque mode so the pasted token doesn't appear; on non-TTYs (CI,
-// `echo … | sourceplane login`) we read line-by-line.
+// `echo … | orun-cloud login`) we read line-by-line.
 //
 // Kept tiny — no readline dep — to avoid a transitive `node:readline`
 // surface that could trip the package-loadability constraint. The

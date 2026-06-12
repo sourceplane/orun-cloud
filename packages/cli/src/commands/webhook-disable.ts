@@ -1,4 +1,4 @@
-// `sourceplane webhook disable <endpointId> [--reason=TEXT]` — Task 0115.
+// `orun-cloud webhook disable <endpointId> [--reason=TEXT]` — Task 0115.
 //
 // Symmetric CLI surface to the Task 0113-era console disable-endpoint
 // dialog. Closes the final B5 endpoint-CRUD CLI gap (disable), making
@@ -83,7 +83,7 @@ export async function webhookDisableCommand(
   const endpointId = ctx.args[0];
   if (endpointId === undefined || endpointId.length === 0) {
     throw new UsageError(
-      "usage: sourceplane webhook disable <endpointId> [--reason=TEXT] [--idempotency-key=KEY] [--output=human|json]",
+      "usage: orun-cloud webhook disable <endpointId> [--reason=TEXT] [--idempotency-key=KEY] [--output=human|json]",
     );
   }
 

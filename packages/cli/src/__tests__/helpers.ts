@@ -1,6 +1,6 @@
 // Test helpers: in-memory token store + context store + fake SDK.
 
-import type { Sourceplane } from "@saas/sdk";
+import type { OrunCloud } from "@saas/sdk";
 
 import type { StoredCredential, TokenStore } from "../token-store/types.js";
 
@@ -54,4 +54,4 @@ export function envelope<T>(data: T, requestId = "req_test"): {
   return { data, meta: { requestId, cursor: null } };
 }
 
-export type SourceplaneFactory = (baseUrl: string, token: string) => Sourceplane;
+export type OrunCloudFactory = (baseUrl: string, token: string) => OrunCloud;

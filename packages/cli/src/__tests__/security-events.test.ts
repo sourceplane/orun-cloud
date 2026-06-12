@@ -1,7 +1,7 @@
-// Tests for Task 0122 — `sourceplane security events` CLI subcommand.
+// Tests for Task 0122 — `orun-cloud security events` CLI subcommand.
 //
 // The harness injects a *fake SDK* via `sdkFactory` rather than going through
-// the real `Sourceplane` client + a captured-fetch — the command is a thin
+// the real `OrunCloud` client + a captured-fetch — the command is a thin
 // adapter over `sdk.securityEvents.listPage`, so direct SDK-layer injection
 // lets us assert the call shape (query) and the cursor-following loop without
 // modelling the request envelope. The fake mirrors only the subset of the SDK
@@ -24,7 +24,7 @@ import * as path from "node:path";
 import { describe, expect, it, vi } from "vitest";
 
 import type {
-  Sourceplane,
+  OrunCloud,
   PublicSecurityEvent,
   SecurityEventsPage,
 } from "@saas/sdk";
@@ -113,7 +113,7 @@ async function withHarness(
 
     const fakeSdk = {
       securityEvents: { listPage },
-    } as unknown as Sourceplane;
+    } as unknown as OrunCloud;
 
     const runArgv = (argv: string[]): Promise<{ exitCode: number }> =>
       runCli(argv, {
@@ -311,7 +311,7 @@ describe("commands — security events", () => {
       const r = await runArgv(["--help"]);
       expect(r.exitCode).toBe(0);
       expect(cap.stdout.join("\n")).toContain(
-        "sourceplane security events [--limit=N] [--cursor=CURSOR] [--all] [--output=human|json]",
+        "orun-cloud security events [--limit=N] [--cursor=CURSOR] [--all] [--output=human|json]",
       );
     });
   });

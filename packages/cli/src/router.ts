@@ -10,7 +10,7 @@
 //   - Boolean flags pass `true`. The first positional that does NOT match a
 //     registered subcommand starts the positional list for that command.
 
-import type { Sourceplane } from "@saas/sdk";
+import type { OrunCloud } from "@saas/sdk";
 
 import type { OutputMode } from "./output/index.js";
 import type { TokenStore } from "./token-store/types.js";
@@ -26,11 +26,11 @@ export interface CommandContext {
   readonly contextStore: ContextStore;
   /**
    * Lazy SDK factory. Commands that need an authenticated client call this
-   * to read the token from the token store and instantiate `Sourceplane`.
+   * to read the token from the token store and instantiate `OrunCloud`.
    * Throws `MissingAuthError` (translated to a friendly message by `errors.ts`)
    * when no token is stored.
    */
-  readonly sdk: () => Promise<Sourceplane>;
+  readonly sdk: () => Promise<OrunCloud>;
 }
 
 export interface CommandResult {

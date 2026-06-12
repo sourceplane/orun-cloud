@@ -1,6 +1,6 @@
 // Public package index for `@saas/cli`.
 //
-// The package's primary deliverable is the `sourceplane` binary
+// The package's primary deliverable is the `orun-cloud` binary
 // (`./dist/cli.js`). This index is exported only so tests can load the
 // package via `import` without going through the binary entrypoint, and so
 // that downstream tooling can re-use the command-handler types if it needs

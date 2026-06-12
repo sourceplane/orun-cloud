@@ -2,7 +2,7 @@ apiVersion: sourceplane.io/v1
 kind: Component
 metadata:
   name: cli
-  description: First-class TypeScript CLI for the Sourceplane control plane API
+  description: First-class TypeScript CLI for the Orun Cloud control plane API
 spec:
   type: turbo-package
   lifecycle: production

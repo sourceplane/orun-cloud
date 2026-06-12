@@ -1,6 +1,6 @@
 # `@saas/cli`
 
-`sourceplane` — first-class TypeScript CLI for the Sourceplane control
+`orun-cloud` — first-class TypeScript CLI for the Orun Cloud control
 plane. Wraps `@saas/sdk` (the only transport allowed) and surfaces a
 small set of read-only commands today; write commands land in Task 0101.
 
@@ -19,36 +19,36 @@ node packages/cli/dist/cli.js --help
 Auth (Task 0100):
 
 ```
-sourceplane login    [--api-url=URL] [--token=BEARER]
-sourceplane logout
-sourceplane whoami
+orun-cloud login    [--api-url=URL] [--token=BEARER]
+orun-cloud logout
+orun-cloud whoami
 ```
 
 Reads (Task 0100):
 
 ```
-sourceplane org list
-sourceplane org use <org-id>
-sourceplane org members
-sourceplane project list
+orun-cloud org list
+orun-cloud org use <org-id>
+orun-cloud org members
+orun-cloud project list
 ```
 
 Writes (Task 0101):
 
 ```
-sourceplane org invite <email> [--role=ROLE] [--idempotency-key=KEY] [--org=ORG_ID]
-sourceplane project create <name> [--idempotency-key=KEY]
-sourceplane env create <project-id> <name> [--idempotency-key=KEY]
-sourceplane api-key create <name> [--scope=SCOPE] [--idempotency-key=KEY]
-sourceplane webhook create <url> [--event=EVENT[,EVENT2,...]] [--idempotency-key=KEY]
+orun-cloud org invite <email> [--role=ROLE] [--idempotency-key=KEY] [--org=ORG_ID]
+orun-cloud project create <name> [--idempotency-key=KEY]
+orun-cloud env create <project-id> <name> [--idempotency-key=KEY]
+orun-cloud api-key create <name> [--scope=SCOPE] [--idempotency-key=KEY]
+orun-cloud webhook create <url> [--event=EVENT[,EVENT2,...]] [--idempotency-key=KEY]
 ```
 
 Cross-resource reads (Task 0101):
 
 ```
-sourceplane usage summary    [--metric=METRIC] [--from=ISO] [--to=ISO]
-sourceplane billing summary
-sourceplane audit list       [--limit=N] [--cursor=CURSOR] [--category=CAT] [--all]
+orun-cloud usage summary    [--metric=METRIC] [--from=ISO] [--to=ISO]
+orun-cloud billing summary
+orun-cloud audit list       [--limit=N] [--cursor=CURSOR] [--category=CAT] [--all]
 ```
 
 All commands accept `--output=human|json`. JSON mode emits one document
@@ -81,7 +81,7 @@ command remains retry-safe under partial failure.
 ### Active organization
 
 Most write/cross-read commands resolve the org from the persisted
-context (`sourceplane org use <org-id>`). Only `org invite` accepts an
+context (`orun-cloud org use <org-id>`). Only `org invite` accepts an
 explicit `--org=ORG_ID` override; the others throw "no active
 organization" (exit 5) when context is unset.
 
@@ -94,7 +94,7 @@ downstream pipeline can stream without buffering.
 
 ## Auth
 
-The shipped V1 is **token-paste**: `sourceplane login` prompts for a
+The shipped V1 is **token-paste**: `orun-cloud login` prompts for a
 Bearer token, validates it via `client.organizations.list()`, and stores
 it. Switching to a device-flow grant once api-edge ships
 `/v1/auth/device/{start,poll}` is a one-line dispatch in
@@ -104,12 +104,12 @@ Token storage:
 - `KeychainTokenStore` (preferred): macOS Keychain / Windows Credential
   Vault / Secret Service via `keytar` (lazy import; in
   `optionalDependencies`).
-- `FileTokenStore` fallback: `~/.config/sourceplane/credentials.json`,
+- `FileTokenStore` fallback: `~/.config/orun-cloud/credentials.json`,
   mode **0600**, parent directory mode **0700**.
 
 Active organization context lives at
-`~/.config/sourceplane/config.json` (mode 0644, not a secret). Override
-both via `SOURCEPLANE_CONFIG_DIR` (used by tests).
+`~/.config/orun-cloud/config.json` (mode 0644, not a secret). Override
+both via `ORUN_CLOUD_CONFIG_DIR` (used by tests).
 
 ## Output stability
 

@@ -1,4 +1,4 @@
-# Sourceplane Constitution
+# Orun Cloud Constitution
 
 Status: Normative
 
@@ -6,7 +6,7 @@ Applies to: every package, app, migration, API, event, UI surface, CLI command, 
 
 ## Purpose
 
-Sourceplane is a reusable multi-tenant SaaS starter bootstrap. It must provide the durable foundation for products with organization-scoped tenancy, project separation, membership, billing, audit, metering, API access, notifications, webhooks, and support workflows. Product-specific resource orchestration may be layered on top, but it must not obscure the starter baseline or force every SaaS consumer into a runtime-orchestration product model.
+Orun Cloud is a reusable multi-tenant SaaS starter bootstrap. It must provide the durable foundation for products with organization-scoped tenancy, project separation, membership, billing, audit, metering, API access, notifications, webhooks, and support workflows. Product-specific resource orchestration may be layered on top, but it must not obscure the starter baseline or force every SaaS consumer into a runtime-orchestration product model.
 
 ## Constitutional Rules
 

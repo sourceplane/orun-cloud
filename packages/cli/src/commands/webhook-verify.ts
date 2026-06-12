@@ -1,12 +1,12 @@
-// `sourceplane webhook verify` — local cryptographic verification of a
-// Sourceplane outbound webhook delivery (Task 0106).
+// `orun-cloud webhook verify` — local cryptographic verification of a
+// OrunCloud outbound webhook delivery (Task 0106).
 //
 // This command is a thin shell around `@saas/webhook-verifier` (Task 0105).
 // It deliberately:
 //   - does NOT call the api-edge, the SDK, or any network. It is pure
 //     local crypto.
 //   - does NOT require auth, an active org, or a context store. The
-//     command is usable on a fresh install with no `sourceplane login`.
+//     command is usable on a fresh install with no `orun-cloud login`.
 //   - does NOT JSON-parse or `.trim()` the body. The verifier hashes the
 //     bytes verbatim; any reshape would break valid signatures.
 //

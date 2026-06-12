@@ -1,7 +1,7 @@
-// Tests for Task 0115 — `sourceplane webhook disable` CLI subcommand.
+// Tests for Task 0115 — `orun-cloud webhook disable` CLI subcommand.
 //
 // The harness injects a *fake SDK* via `sdkFactory` rather than going
-// through the real `Sourceplane` client + a captured-fetch — the
+// through the real `OrunCloud` client + a captured-fetch — the
 // command is a thin one-call adapter over `sdk.webhooks.disableEndpoint`,
 // so direct SDK-layer injection lets us assert the call shape (orgId,
 // endpointId, body, options) without modelling the request envelope.
@@ -18,7 +18,7 @@ import * as path from "node:path";
 import { describe, expect, it, vi } from "vitest";
 
 import type {
-  Sourceplane,
+  OrunCloud,
   PublicWebhookEndpoint,
   DisableWebhookEndpointResponse,
 } from "@saas/sdk";
@@ -115,7 +115,7 @@ async function withHarness(
 
     const fakeSdk = {
       webhooks: { disableEndpoint },
-    } as unknown as Sourceplane;
+    } as unknown as OrunCloud;
 
     const runArgv = (argv: string[]): Promise<{ exitCode: number }> =>
       runCli(argv, {
@@ -244,7 +244,7 @@ describe("commands — webhook disable", () => {
       const r = await runArgv(["webhook", "disable"]);
       expect(r.exitCode).toBe(2);
       expect(cap.stderr.join("\n")).toMatch(
-        /usage: sourceplane webhook disable/,
+        /usage: orun-cloud webhook disable/,
       );
       expect(cap.disableCalls).toHaveLength(0);
     });
@@ -309,7 +309,7 @@ describe("commands — webhook disable", () => {
       const r = await runArgv(["--help"]);
       expect(r.exitCode).toBe(0);
       expect(cap.stdout.join("\n")).toContain(
-        "sourceplane webhook disable <endpointId> [--reason=TEXT] [--idempotency-key=KEY] [--output=human|json]",
+        "orun-cloud webhook disable <endpointId> [--reason=TEXT] [--idempotency-key=KEY] [--output=human|json]",
       );
     });
   });

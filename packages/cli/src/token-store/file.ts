@@ -1,10 +1,10 @@
-// `~/.config/sourceplane/credentials.json` token store fallback.
+// `~/.config/orun-cloud/credentials.json` token store fallback.
 //
 // Behaviour:
 //   - Parent dir is created with mode 0700 if missing.
 //   - File is written with mode 0600 atomically (write to tmp, rename) so
 //     a partial failure doesn't leave a half-written credential file.
-//   - Path is overrideable via `SOURCEPLANE_CONFIG_DIR` for tests.
+//   - Path is overrideable via `ORUN_CLOUD_CONFIG_DIR` for tests.
 //   - On Windows, mode bits are advisory; the chmod calls succeed silently
 //     against ACL-backed FS but the test asserts mode only on POSIX.
 

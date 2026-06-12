@@ -66,7 +66,7 @@ packages/contracts        Shared API, tenancy, event, and error types + validato
 packages/policy-engine    RBAC evaluation logic
 packages/db               Migration harness, manifest, and runner
 packages/sdk              TypeScript SDK (contract-driven)
-packages/cli              `sourceplane` CLI
+packages/cli              `orun-cloud` CLI
 packages/notifications-client  Notifications client
 packages/shared           Generic helpers (IDs, errors) — no domain logic
 packages/testing          Test fixtures and utilities

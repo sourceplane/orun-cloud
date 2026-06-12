@@ -35,7 +35,7 @@ heavy lifting a control plane should absorb.
 
 The mechanism: one **GitHub App per control-plane instance** (per environment),
 installed by customers onto their GitHub orgs. The installation binds to a
-Sourceplane organization; repos link to projects; every inbound delivery is
+Orun Cloud organization; repos link to projects; every inbound delivery is
 verified, deduped, persisted, and re-emitted as a normalized `scm.*` event on
 the canonical event_log — which means outbound delivery to the tenant product's
 own infrastructure, replay, audit, and failure budgets all come **free** from

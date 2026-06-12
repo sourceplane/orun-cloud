@@ -1,6 +1,6 @@
 # @saas/web-console-next
 
-Next.js 15 + [opennextjs/cloudflare](https://github.com/opennextjs/opennextjs-cloudflare) delivery of the Sourceplane web console.
+Next.js 15 + [opennextjs/cloudflare](https://github.com/opennextjs/opennextjs-cloudflare) delivery of the Orun Cloud web console.
 
 Wired against the same `@saas/contracts` typed envelope as `apps/web-console`,
 deployed via the same `cloudflare-pages-turbo` orun composition (with

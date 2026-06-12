@@ -12,7 +12,7 @@ const TOKEN_URL = "https://github.com/login/oauth/access_token";
 const API_USER_URL = "https://api.github.com/user";
 const API_EMAILS_URL = "https://api.github.com/user/emails";
 const SCOPE = "read:user user:email";
-const USER_AGENT = "sourceplane-identity-worker";
+const USER_AGENT = "orun-identity-worker";
 
 interface GitHubUser {
   id?: number;

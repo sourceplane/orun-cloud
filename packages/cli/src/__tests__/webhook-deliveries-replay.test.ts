@@ -1,4 +1,4 @@
-// Tests for Task 0126 — `sourceplane webhook deliveries replay` CLI subcommand.
+// Tests for Task 0126 — `orun-cloud webhook deliveries replay` CLI subcommand.
 //
 // Mirrors the Task 0120 `webhook deliveries` harness: a *fake SDK* is injected
 // via `sdkFactory` so we assert the call shape (orgId, attemptId) and the
@@ -17,7 +17,7 @@ import * as path from "node:path";
 import { describe, expect, it, vi } from "vitest";
 
 import type {
-  Sourceplane,
+  OrunCloud,
   PublicWebhookDeliveryAttempt,
   ReplayWebhookDeliveryResponse,
 } from "@saas/sdk";
@@ -109,7 +109,7 @@ async function withHarness(
 
     const fakeSdk = {
       webhooks: { replayDelivery },
-    } as unknown as Sourceplane;
+    } as unknown as OrunCloud;
 
     const runArgv = (argv: string[]): Promise<{ exitCode: number }> =>
       runCli(argv, {
@@ -165,7 +165,7 @@ describe("commands — webhook deliveries replay", () => {
       expect(r.exitCode).toBe(2);
       expect(cap.replayCalls).toHaveLength(0);
       expect(cap.stderr.join("\n")).toMatch(
-        /usage: sourceplane webhook deliveries replay/,
+        /usage: orun-cloud webhook deliveries replay/,
       );
     });
   });
@@ -222,7 +222,7 @@ describe("commands — webhook deliveries replay", () => {
     await withHarness(async ({ cap, runArgv }) => {
       await runArgv(["--help"]);
       expect(cap.stdout.join("\n")).toContain(
-        "sourceplane webhook deliveries replay <attemptId> [--idempotency-key=KEY] [--output=human|json]",
+        "orun-cloud webhook deliveries replay <attemptId> [--idempotency-key=KEY] [--output=human|json]",
       );
     });
   });
