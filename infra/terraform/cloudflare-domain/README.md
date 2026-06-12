@@ -85,7 +85,7 @@ After merge to main, verify:
 2. Workers custom domains show `active` status in Cloudflare (Workers → the
    `orun-web-console-next-{env}` Worker → Triggers → Custom Domains).
 3. `https://stage.orun.dev/` serves the stage console (web-console-next).
-4. `https://prod.orun.dev/` serves the prod console (web-console-next).
+4. `https://app.orun.dev/` serves the prod console (web-console-next).
 5. SSL certificates are provisioned (automatic via Cloudflare).
 
 ## Outputs
