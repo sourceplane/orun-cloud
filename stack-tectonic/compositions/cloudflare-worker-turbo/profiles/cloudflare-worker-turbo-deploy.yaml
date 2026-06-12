@@ -16,6 +16,10 @@ spec:
         - cloudflare-worker-turbo.setup-pnpm
         - cloudflare-worker-turbo.install
         - cloudflare-worker-turbo.verify-structure
+        # BF6: templated workers have no committed wrangler.jsonc — render from
+        # the fixture so build/typecheck have a config; wire-live re-renders
+        # with real IDs before deploy (no-op for non-templated workers).
+        - cloudflare-worker-turbo.wire-fixture
         - cloudflare-worker-turbo.build
         - cloudflare-worker-turbo.typecheck
         # BF6: resolve binding IDs from the Secrets Manager wiring manifest at
