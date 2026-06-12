@@ -1,0 +1,82 @@
+apiVersion: sourceplane.io/v1alpha1
+kind: ComponentSchema
+metadata:
+  name: cloudflare-pages-terraform-component
+spec:
+  type: cloudflare-pages-terraform
+  schema:
+    $schema: http://json-schema.org/draft-07/schema#
+    title: Cloudflare Pages Terraform Component
+    type: object
+    required:
+      - name
+      - type
+      - parameters
+    properties:
+      name:
+        type: string
+      type:
+        type: string
+        const: cloudflare-pages-terraform
+      parameters:
+        type: object
+        required:
+          - nodeVersion
+          - appDir
+          - installCommand
+          - buildCommand
+          - outputDir
+          - terraformDir
+          - terraformVersion
+          - projectName
+          - repoOwner
+          - repoName
+          - cloudflareBuildCommand
+          - rootDir
+        properties:
+          nodeVersion:
+            type: string
+
+          appDir:
+            type: string
+            description: Path from the component job path to the site directory
+
+          installCommand:
+            type: string
+          buildCommand:
+            type: string
+
+          cloudflareBuildCommand:
+            type: string
+            description: Build command configured in the Cloudflare Pages project
+
+          outputDir:
+            type: string
+            description: Build output directory relative to appDir
+
+          rootDir:
+            type: string
+            description: Root directory for Pages project
+
+          terraformDir:
+            type: string
+            description: Path to the Terraform module directory
+
+          terraformVersion:
+            type: string
+
+          projectName:
+            type: string
+            description: Cloudflare Pages project name
+
+          deployBranch:
+            type: string
+            description: Production branch for the Pages project
+            default: main
+
+          repoOwner:
+            type: string
+          repoName:
+            type: string
+        additionalProperties: false
+    additionalProperties: true

@@ -1,0 +1,104 @@
+apiVersion: sourceplane.io/v1alpha1
+kind: ComponentSchema
+metadata:
+  name: cloudflare-worker-turbo-component
+spec:
+  type: cloudflare-worker-turbo
+  schema:
+    $schema: http://json-schema.org/draft-07/schema#
+    title: Cloudflare Worker Turbo Component
+    type: object
+    required:
+      - name
+      - type
+      - parameters
+    properties:
+      name:
+        type: string
+      type:
+        type: string
+        const: cloudflare-worker-turbo
+      parameters:
+        type: object
+        required:
+          - nodeVersion
+          - pnpmVersion
+          - workspaceDir
+          - appDir
+          - turboFilter
+          - wranglerConfig
+        properties:
+          nodeVersion:
+            type: string
+          pnpmVersion:
+            type: string
+
+          workspaceDir:
+            type: string
+            description: Path from the component job path to the monorepo root
+
+          appDir:
+            type: string
+            description: Path from the component job path to the Worker app directory
+
+          turboFilter:
+            type: string
+            description: Turborepo filter for this Worker package
+
+          wranglerConfig:
+            type: string
+            default: wrangler.jsonc
+
+          # --- BF6 deploy-time wiring (all optional; empty wranglerTemplate = legacy committed config) ---
+          wranglerTemplate:
+            type: string
+            default: ""
+            description: Committed wrangler template with @@wiring(...)@@ tokens; when set, wranglerConfig is rendered, never committed
+          wiringComponents:
+            type: string
+            default: ""
+            description: Comma-separated infra components whose Secrets Manager wiring documents resolve the template tokens
+          wiringEnvs:
+            type: string
+            default: "stage,prod"
+            description: Comma-separated environments fetched by wire-live (template may reference several env sections)
+          wiringFixture:
+            type: string
+            default: wiring.fixture.json
+            description: Committed placeholder wiring map used for offline verify/dry-run rendering
+          awsAccountId:
+            type: string
+            description: AWS account ID hosting the GitHub-OIDC role wire-live assumes to read wiring secrets
+          awsRegion:
+            type: string
+            default: us-east-1
+          orgName:
+            type: string
+          owner:
+            type: string
+          repo:
+            type: string
+
+          installCommand:
+            type: string
+            default: pnpm install --frozen-lockfile
+
+          buildCommand:
+            type: string
+          typecheckCommand:
+            type: string
+          dryRunCommand:
+            type: string
+          preDeployCommand:
+            type: string
+            default: "echo 'No pre-deploy step configured.'"
+          migrationCommand:
+            type: string
+            default: "echo 'No migrations configured.'"
+          deployCommand:
+            type: string
+          smokeCommand:
+            type: string
+            default: "echo 'No smoke test configured.'"
+        additionalProperties: false
+    additionalProperties: true

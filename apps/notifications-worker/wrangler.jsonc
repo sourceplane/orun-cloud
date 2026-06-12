@@ -1,0 +1,61 @@
+{
+  "name": "notifications-worker",
+  "compatibility_date": "2025-05-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "main": "src/index.ts",
+  "minify": false,
+  "vars": {
+    "ENVIRONMENT": "local",
+    "NOTIFICATIONS_PROVIDER": "local-debug",
+    "DEBUG_DELIVERY": "true"
+  },
+  "env": {
+    "dev": {
+      "vars": {
+        "ENVIRONMENT": "dev",
+        "NOTIFICATIONS_PROVIDER": "local-debug",
+        "DEBUG_DELIVERY": "true"
+      }
+    },
+    "stage": {
+      "workers_dev": false,
+      "vars": {
+        "ENVIRONMENT": "stage",
+        "NOTIFICATIONS_PROVIDER": "local-debug",
+        "DEBUG_DELIVERY": "true"
+      },
+      "hyperdrive": [
+        {
+          "binding": "PLATFORM_DB",
+          "id": "08f7c6055f544a3890a585d88fd92348"
+        }
+      ],
+      "services": [
+        {
+          "binding": "EVENTS_WORKER",
+          "service": "events-worker-stage"
+        }
+      ]
+    },
+    "prod": {
+      "workers_dev": false,
+      "vars": {
+        "ENVIRONMENT": "prod",
+        "NOTIFICATIONS_PROVIDER": "local-debug",
+        "DEBUG_DELIVERY": "false"
+      },
+      "hyperdrive": [
+        {
+          "binding": "PLATFORM_DB",
+          "id": "ab2c21c2db6245a59c91588fcac7107a"
+        }
+      ],
+      "services": [
+        {
+          "binding": "EVENTS_WORKER",
+          "service": "events-worker-prod"
+        }
+      ]
+    }
+  }
+}

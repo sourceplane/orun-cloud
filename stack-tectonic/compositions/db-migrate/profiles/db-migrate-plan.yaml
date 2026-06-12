@@ -1,0 +1,16 @@
+apiVersion: sourceplane.io/v1alpha1
+kind: ExecutionProfile
+metadata:
+  name: db-migrate-plan
+spec:
+  description: PR migration plan — authenticates and reports pending migrations without mutating the database
+
+  jobs:
+    migrate:
+      includeCapabilities:
+        - db-migrate.setup-node
+        - db-migrate.setup-pnpm
+        - db-migrate.install
+        - db-migrate.build
+        - db-migrate.aws-credentials
+        - db-migrate.plan

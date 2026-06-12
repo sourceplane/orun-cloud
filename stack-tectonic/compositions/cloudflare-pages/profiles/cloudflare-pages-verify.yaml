@@ -1,0 +1,14 @@
+apiVersion: sourceplane.io/v1alpha1
+kind: ExecutionProfile
+metadata:
+  name: cloudflare-pages-verify
+spec:
+  description: Full non-mutating verification of Pages site build
+
+  jobs:
+    verify-deploy:
+      includeCapabilities:
+        - cloudflare-pages.setup-node
+        - cloudflare-pages.install
+        - cloudflare-pages.build
+        - cloudflare-pages.verify-output

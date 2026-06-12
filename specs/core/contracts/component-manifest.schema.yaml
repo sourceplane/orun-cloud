@@ -1,0 +1,243 @@
+$schema: "https://json-schema.org/draft/2020-12/schema"
+title: SourceplaneComponentManifest
+type: object
+additionalProperties: false
+required:
+  - apiVersion
+  - kind
+  - metadata
+  - spec
+properties:
+  apiVersion:
+    type: string
+    const: sourceplane.io/v1alpha1
+  kind:
+    type: string
+    const: ComponentDefinition
+  metadata:
+    type: object
+    additionalProperties: false
+    required:
+      - name
+      - version
+      - displayName
+      - summary
+    properties:
+      name:
+        type: string
+        pattern: "^[a-z0-9-]+$"
+      version:
+        type: string
+      displayName:
+        type: string
+      summary:
+        type: string
+      owner:
+        type:
+          - string
+          - "null"
+      category:
+        type:
+          - string
+          - "null"
+      tags:
+        type: array
+        items:
+          type: string
+  spec:
+    type: object
+    additionalProperties: false
+    required:
+      - resourceType
+      - inputs
+      - outputs
+      - runtime
+    properties:
+      resourceType:
+        type: string
+      inputs:
+        type: array
+        items:
+          type: object
+          additionalProperties: false
+          required:
+            - name
+            - type
+            - required
+          properties:
+            name:
+              type: string
+            type:
+              type: string
+              enum:
+                - string
+                - number
+                - boolean
+                - enum
+                - object
+                - array
+                - secret
+            required:
+              type: boolean
+            default:
+              description: Optional default value.
+            description:
+              type:
+                - string
+                - "null"
+            enumValues:
+              type:
+                - array
+                - "null"
+              items:
+                type: string
+            ui:
+              type:
+                - object
+                - "null"
+              additionalProperties: false
+              properties:
+                control:
+                  type: string
+                group:
+                  type:
+                    - string
+                    - "null"
+                secret:
+                  type:
+                    - boolean
+                    - "null"
+      outputs:
+        type: array
+        items:
+          type: object
+          additionalProperties: false
+          required:
+            - name
+            - type
+          properties:
+            name:
+              type: string
+            type:
+              type: string
+            description:
+              type:
+                - string
+                - "null"
+      dependencies:
+        type: array
+        items:
+          type: object
+          additionalProperties: false
+          required:
+            - resourceType
+          properties:
+            resourceType:
+              type: string
+            required:
+              type: boolean
+      permissions:
+        type: object
+        additionalProperties:
+          type: object
+          additionalProperties:
+            type: array
+            items:
+              type: string
+      runtime:
+        type: object
+        additionalProperties: false
+        required:
+          - mode
+          - handler
+        properties:
+          mode:
+            type: string
+            enum:
+              - sync
+              - workflow
+          handler:
+            type: string
+            description: Logical handler or workflow name used by runtime-worker.
+          statusMapping:
+            type:
+              - object
+              - "null"
+            additionalProperties:
+              type: string
+      examples:
+        type: array
+        items:
+          type: object
+example:
+  apiVersion: sourceplane.io/v1alpha1
+  kind: ComponentDefinition
+  metadata:
+    name: supabase-postgres
+    version: 1.0.0
+    displayName: Supabase Postgres Database
+    summary: Creates and manages a Supabase Postgres database resource or schema.
+    owner: sourceplane
+    category: data
+    tags:
+      - database
+      - supabase
+      - postgres
+  spec:
+    resourceType: database.instance
+    inputs:
+      - name: name
+        type: string
+        required: true
+        description: Human-readable database name.
+        ui:
+          control: text
+          group: basics
+          secret: false
+      - name: tier
+        type: enum
+        required: true
+        default: starter
+        enumValues:
+          - starter
+          - growth
+        description: Sizing hint for plan, quota, and connection-pool checks.
+        ui:
+          control: select
+          group: basics
+          secret: false
+      - name: schemaName
+        type: string
+        required: false
+        description: Optional logical schema name when this resource is provisioned inside an existing Supabase database.
+        ui:
+          control: text
+          group: basics
+          secret: false
+    outputs:
+      - name: hyperdriveBindingName
+        type: string
+        description: Hyperdrive binding name used by dependent Workers.
+    dependencies: []
+    permissions:
+      cloudflare:
+        hyperdrive:
+          - bind
+      supabase:
+        postgres:
+          - create_schema
+          - migrate
+          - rotate_credentials
+    runtime:
+      mode: workflow
+      handler: provision-supabase-postgres
+      statusMapping:
+        success: ready
+        pending: provisioning
+        failed: failed
+    examples:
+      - name: starter-db
+        spec:
+          name: main-db
+          tier: starter
+          schemaName: app_main

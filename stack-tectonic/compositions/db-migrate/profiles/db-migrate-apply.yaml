@@ -1,0 +1,16 @@
+apiVersion: sourceplane.io/v1alpha1
+kind: ExecutionProfile
+metadata:
+  name: db-migrate-apply
+spec:
+  description: Post-merge migration apply — applies pending migrations to the live database
+
+  jobs:
+    migrate:
+      includeCapabilities:
+        - db-migrate.setup-node
+        - db-migrate.setup-pnpm
+        - db-migrate.install
+        - db-migrate.build
+        - db-migrate.aws-credentials
+        - db-migrate.apply

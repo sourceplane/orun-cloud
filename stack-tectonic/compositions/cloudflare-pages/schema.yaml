@@ -1,0 +1,59 @@
+apiVersion: sourceplane.io/v1alpha1
+kind: ComponentSchema
+metadata:
+  name: cloudflare-pages-component
+spec:
+  type: cloudflare-pages
+  schema:
+    $schema: http://json-schema.org/draft-07/schema#
+    title: Cloudflare Pages Component
+    type: object
+    required:
+      - name
+      - type
+      - parameters
+    properties:
+      name:
+        type: string
+      type:
+        type: string
+        const: cloudflare-pages
+      parameters:
+        type: object
+        required:
+          - nodeVersion
+          - appDir
+          - installCommand
+          - buildCommand
+          - outputDir
+          - projectName
+        properties:
+          nodeVersion:
+            type: string
+
+          appDir:
+            type: string
+            description: Path from the component job path to the Pages app directory
+
+          outputDir:
+            type: string
+            description: Build output directory relative to appDir
+
+          projectName:
+            type: string
+            description: Cloudflare Pages project name
+
+          deployBranch:
+            type: string
+            description: Branch name passed to wrangler pages deploy
+            default: main
+
+          installCommand:
+            type: string
+          buildCommand:
+            type: string
+          smokeCommand:
+            type: string
+            default: "echo 'No smoke test configured.'"
+        additionalProperties: false
+    additionalProperties: true

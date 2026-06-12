@@ -1,0 +1,65 @@
+apiVersion: sourceplane.io/v1alpha1
+kind: ComponentSchema
+metadata:
+  name: cloudflare-worker-component
+spec:
+  type: cloudflare-worker
+  schema:
+    $schema: http://json-schema.org/draft-07/schema#
+    title: Cloudflare Worker Component
+    type: object
+    required:
+      - name
+      - type
+      - parameters
+    properties:
+      name:
+        type: string
+      type:
+        type: string
+        const: cloudflare-worker
+      parameters:
+        type: object
+        required:
+          - nodeVersion
+          - installCommand
+          - buildCommand
+          - deployCommand
+          - wranglerConfig
+        properties:
+          nodeVersion:
+            type: string
+          pnpmVersion:
+            type: string
+
+          appDir:
+            type: string
+            description: Path from the component job path to the Worker app directory
+            default: "."
+
+          wranglerConfig:
+            type: string
+            default: wrangler.jsonc
+
+          installCommand:
+            type: string
+          buildCommand:
+            type: string
+          typecheckCommand:
+            type: string
+            default: "echo 'No typecheck configured.'"
+          dryRunCommand:
+            type: string
+          preDeployCommand:
+            type: string
+            default: "echo 'No pre-deploy step configured.'"
+          migrationCommand:
+            type: string
+            default: "echo 'No migrations configured.'"
+          deployCommand:
+            type: string
+          smokeCommand:
+            type: string
+            default: "echo 'No smoke test configured.'"
+        additionalProperties: false
+    additionalProperties: true

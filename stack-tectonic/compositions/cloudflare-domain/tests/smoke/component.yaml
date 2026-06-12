@@ -1,0 +1,31 @@
+apiVersion: sourceplane.io/v1
+kind: Component
+
+metadata:
+  name: cloudflare-domain-smoke
+  description: Smoke test fixture for cloudflare-domain composition validation
+  labels:
+    domain: infra
+    scope: composition-test
+
+spec:
+  type: cloudflare-domain
+  lifecycle: production
+  owner: platform
+  domain: infra
+
+  parameters:
+    orgName: sourceplane
+    stackName: cloudflare-domain-smoke
+    terraformDir: terraform
+    terraformVersion: "1.15.3"
+    baseDomain: example.com
+    zoneMode: existing
+    pagesProjectPrefix: example-pages
+
+  subscribe:
+    environments:
+      - name: stage
+        profile: plan-only
+      - name: prod
+        profile: plan-only

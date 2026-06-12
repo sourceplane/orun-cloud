@@ -1,0 +1,100 @@
+apiVersion: sourceplane.io/v1alpha1
+kind: ComponentSchema
+metadata:
+  name: cloudflare-pages-turbo-terraform-component
+spec:
+  type: cloudflare-pages-turbo-terraform
+  schema:
+    $schema: http://json-schema.org/draft-07/schema#
+    title: Cloudflare Pages Turbo Terraform Component
+    type: object
+    required:
+      - name
+      - type
+      - parameters
+    properties:
+      name:
+        type: string
+      type:
+        type: string
+        const: cloudflare-pages-turbo-terraform
+      parameters:
+        type: object
+        required:
+          - nodeVersion
+          - pnpmVersion
+          - workspaceDir
+          - appDir
+          - turboFilter
+          - outputDir
+          - terraformDir
+          - terraformVersion
+          - projectName
+          - repoOwner
+          - repoName
+          - cloudflareBuildCommand
+          - destinationDir
+          - rootDir
+        properties:
+          nodeVersion:
+            type: string
+          pnpmVersion:
+            type: string
+
+          workspaceDir:
+            type: string
+            description: Path from the component job path to the monorepo root
+
+          appDir:
+            type: string
+            description: Path from the component job path to the Pages app directory
+
+          turboFilter:
+            type: string
+            description: Turborepo filter for this Pages package
+
+          outputDir:
+            type: string
+            description: Build output directory relative to appDir
+
+          destinationDir:
+            type: string
+            description: Cloudflare Pages destination directory
+
+          rootDir:
+            type: string
+            description: Root directory for Pages project
+
+          terraformDir:
+            type: string
+            description: Path to the Terraform module directory
+
+          terraformVersion:
+            type: string
+
+          projectName:
+            type: string
+            description: Cloudflare Pages project name
+
+          deployBranch:
+            type: string
+            description: Production branch for the Pages project
+            default: main
+
+          repoOwner:
+            type: string
+          repoName:
+            type: string
+
+          cloudflareBuildCommand:
+            type: string
+            description: Build command configured in the Cloudflare Pages project
+
+          installCommand:
+            type: string
+            default: pnpm install --frozen-lockfile
+
+          buildCommand:
+            type: string
+        additionalProperties: false
+    additionalProperties: true

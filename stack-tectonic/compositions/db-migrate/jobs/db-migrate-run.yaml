@@ -1,0 +1,76 @@
+apiVersion: sourceplane.io/v1alpha1
+kind: JobTemplate
+metadata:
+  name: db-migrate-run
+spec:
+  description: Run database migrations in plan or apply mode
+  runsOn: ubuntu-22.04
+  timeout: 10m
+  retries: 0
+
+  labels:
+    scope: database
+
+  capabilities:
+    - db-migrate.setup-node
+    - db-migrate.setup-pnpm
+    - db-migrate.install
+    - db-migrate.build
+    - db-migrate.aws-credentials
+    - db-migrate.plan
+    - db-migrate.apply
+
+  steps:
+    - id: setup-node
+      name: setup-node
+      capability: db-migrate.setup-node
+      use: actions/setup-node@v6
+      with:
+        node-version: "{{.parameters.nodeVersion}}"
+
+    - id: setup-pnpm
+      name: setup-pnpm
+      capability: db-migrate.setup-pnpm
+      use: pnpm/action-setup@v4
+      with:
+        version: "{{.parameters.pnpmVersion}}"
+
+    - id: install-dependencies
+      name: install-dependencies
+      capability: db-migrate.install
+      run: pnpm install --no-frozen-lockfile
+      onFailure: stop
+
+    - id: build-db-package
+      name: build-db-package
+      capability: db-migrate.build
+      run: pnpm exec turbo run build --filter=@saas/db
+      onFailure: stop
+
+    - id: aws-credentials
+      name: Configure AWS Credentials
+      capability: db-migrate.aws-credentials
+      use: aws-actions/configure-aws-credentials@v4
+      with:
+        role-to-assume: "arn:aws:iam::{{.parameters.awsAccountId}}:role/{{.orun.environment.name}}-github-{{.parameters.owner}}-{{.parameters.repo}}-plan"
+        aws-region: "{{.parameters.awsRegion}}"
+        audience: sts.amazonaws.com
+      onFailure: stop
+
+    - id: migrate-plan
+      name: Migration Plan
+      capability: db-migrate.plan
+      shell: bash
+      run: |
+        set -euo pipefail
+        MIGRATION_ENV="{{ .orun.environment.name }}" node ../../dist/runner/cli.js plan --env "{{ .orun.environment.name }}"
+      onFailure: stop
+
+    - id: migrate-apply
+      name: Migration Apply
+      capability: db-migrate.apply
+      shell: bash
+      run: |
+        set -euo pipefail
+        MIGRATION_ENV="{{ .orun.environment.name }}" node ../../dist/runner/cli.js apply --env "{{ .orun.environment.name }}"
+      onFailure: stop

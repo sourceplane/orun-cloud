@@ -1,0 +1,17 @@
+apiVersion: sourceplane.io/v1alpha1
+kind: ExecutionProfile
+metadata:
+  name: cloudflare-workers-assets-turbo-verify
+spec:
+  description: Full non-mutating verification including wrangler deploy --dry-run
+
+  jobs:
+    verify-deploy:
+      includeCapabilities:
+        - cloudflare-workers-assets-turbo.setup-node
+        - cloudflare-workers-assets-turbo.setup-pnpm
+        - cloudflare-workers-assets-turbo.install
+        - cloudflare-workers-assets-turbo.verify-structure
+        - cloudflare-workers-assets-turbo.build
+        - cloudflare-workers-assets-turbo.verify-output
+        - cloudflare-workers-assets-turbo.deploy-dry-run

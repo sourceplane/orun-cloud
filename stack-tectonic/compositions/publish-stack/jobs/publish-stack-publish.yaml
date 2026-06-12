@@ -1,0 +1,39 @@
+apiVersion: sourceplane.io/v1alpha1
+kind: JobTemplate
+metadata:
+  name: publish-stack-publish
+spec:
+  description: Publish an Orun stack to an OCI registry, with an always-on dry-run validation step
+  runsOn: ubuntu-22.04
+  timeout: 20m
+  retries: 0
+
+  labels:
+    scope: delivery
+
+  capabilities:
+    - publish-stack.setup
+    - publish-stack.dry-run
+    - publish-stack.publish
+
+  steps:
+    - id: setup-orun
+      name: setup-orun
+      capability: publish-stack.setup
+      use: sourceplane/orun-action@v1.1.0
+
+    - id: publish-dry-run
+      name: publish-dry-run
+      capability: publish-stack.dry-run
+      shell: bash
+      run: |
+        orun publish --dry-run
+      onFailure: stop
+
+    - id: publish
+      name: publish
+      capability: publish-stack.publish
+      shell: bash
+      run: |
+        orun publish
+      onFailure: stop

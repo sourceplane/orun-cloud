@@ -1,0 +1,51 @@
+apiVersion: sourceplane.io/v1
+kind: Component
+
+metadata:
+  name: bootstrap
+  description: Proves S3 backend and Secrets Manager access for multi-tenant-saas Terraform components
+  labels:
+    domain: infra
+    scope: bootstrap
+
+spec:
+  type: terraform
+  lifecycle: production
+  owner: platform
+  domain: infra
+
+  parameters:
+    orgName: sourceplane
+    stackName: bootstrap
+    terraformDir: terraform
+    terraformVersion: "1.15.3"
+
+  env:
+    AWS_EC2_METADATA_DISABLED: "true"
+
+  subscribe:
+    environments:
+      - name: dev
+        profile: plan-only
+        profileRules:
+          - profile: apply
+            when:
+              triggerRef: github-push-main
+          - profile: local
+            when:
+              triggerRef: local-development
+
+      - name: stage
+        profile: plan-only
+        profileRules:
+          - profile: apply
+            when:
+              triggerRef: github-push-main
+
+      - name: prod
+        profile: plan-only
+        profileRules:
+          - profile: apply
+            when:
+              triggerRef: github-push-main
+# ci: trigger full-component verification (orun v2.12.0 upgrade — PR #183)

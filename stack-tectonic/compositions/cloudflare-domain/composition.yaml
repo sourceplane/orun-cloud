@@ -1,0 +1,26 @@
+apiVersion: sourceplane.io/v1alpha1
+kind: Composition
+metadata:
+  name: cloudflare-domain
+spec:
+  type: cloudflare-domain
+  description: Manages Cloudflare zones and Pages/Worker custom domain attachments via Terraform
+
+  schemaRef:
+    name: cloudflare-domain-component
+
+  defaultJob: cloudflare-domain
+  defaultProfile: apply
+
+  jobs:
+    - name: cloudflare-domain
+      templateRef:
+        name: cloudflare-domain-validate
+
+  profiles:
+    - name: plan-only
+      profileRef:
+        name: cloudflare-domain-plan-only
+    - name: apply
+      profileRef:
+        name: cloudflare-domain-apply

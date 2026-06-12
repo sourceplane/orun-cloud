@@ -1,0 +1,16 @@
+apiVersion: sourceplane.io/v1alpha1
+kind: ExecutionProfile
+metadata:
+  name: publish-stack-release
+spec:
+  description: Production release — validates with dry-run then publishes to OCI registry
+
+  policies:
+    requireCleanGitTree: true
+
+  jobs:
+    publish:
+      includeCapabilities:
+        - publish-stack.setup
+        - publish-stack.dry-run
+        - publish-stack.publish

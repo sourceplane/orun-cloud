@@ -1,0 +1,12 @@
+apiVersion: sourceplane.io/v1alpha1
+kind: ExecutionProfile
+metadata:
+  name: publish-stack-dry-run
+spec:
+  description: PR validation — runs orun publish with --dry-run only
+
+  jobs:
+    publish:
+      includeCapabilities:
+        - publish-stack.setup
+        - publish-stack.dry-run

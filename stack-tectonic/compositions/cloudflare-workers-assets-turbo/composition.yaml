@@ -1,0 +1,35 @@
+apiVersion: sourceplane.io/v1alpha1
+kind: Composition
+metadata:
+  name: cloudflare-workers-assets-turbo
+spec:
+  type: cloudflare-workers-assets-turbo
+  description: >-
+    Cloudflare Worker + Static Assets (single-bundle) build, verify, and deploy
+    pipeline. Targets apps that emit a Worker entrypoint plus an assets
+    directory consumed via the `ASSETS` binding — e.g. Next.js apps built with
+    `@opennextjs/cloudflare`. Per-environment isolation is done via worker
+    naming (mirrors `cloudflare-pages-turbo`'s `environmentAwareProjectName`),
+    not wrangler envs.
+
+  schemaRef:
+    name: cloudflare-workers-assets-turbo-component
+
+  defaultJob: verify-deploy
+  defaultProfile: verify
+
+  jobs:
+    - name: verify-deploy
+      templateRef:
+        name: cloudflare-workers-assets-turbo-verify-deploy
+
+  profiles:
+    - name: pull-request
+      profileRef:
+        name: cloudflare-workers-assets-turbo-pull-request
+    - name: verify
+      profileRef:
+        name: cloudflare-workers-assets-turbo-verify
+    - name: deploy
+      profileRef:
+        name: cloudflare-workers-assets-turbo-deploy

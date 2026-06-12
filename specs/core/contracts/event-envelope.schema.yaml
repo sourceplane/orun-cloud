@@ -1,0 +1,151 @@
+$schema: "https://json-schema.org/draft/2020-12/schema"
+title: SourceplaneEventEnvelope
+description: >
+  Shared domain and audit event envelope. This contract is organization-scoped:
+  tenant.orgId is required. Pre-organization identity security history is stored
+  as identity-owned user-scoped records and is not represented as an org-less
+  shared event envelope.
+type: object
+additionalProperties: false
+required:
+  - id
+  - type
+  - version
+  - source
+  - occurredAt
+  - actor
+  - tenant
+  - subject
+  - trace
+  - payload
+properties:
+  id:
+    type: string
+    description: Stable event identifier. Must be globally unique.
+  type:
+    type: string
+    pattern: "^[a-z0-9_]+(\\.[a-z0-9_]+)+$"
+    description: Dot-separated event name such as project.created or deployment.failed.
+  version:
+    type: integer
+    minimum: 1
+  source:
+    type: string
+    description: Producing component name, for example identity-worker or runtime-worker.
+  occurredAt:
+    type: string
+    format: date-time
+  actor:
+    type: object
+    additionalProperties: false
+    required:
+      - type
+      - id
+    properties:
+      type:
+        type: string
+        enum:
+          - user
+          - service_principal
+          - workflow
+          - system
+      id:
+        type: string
+      sessionId:
+        type:
+          - string
+          - "null"
+      ip:
+        type:
+          - string
+          - "null"
+  tenant:
+    type: object
+    additionalProperties: false
+    required:
+      - orgId
+    properties:
+      orgId:
+        type: string
+      projectId:
+        type:
+          - string
+          - "null"
+      environmentId:
+        type:
+          - string
+          - "null"
+  subject:
+    type: object
+    additionalProperties: false
+    required:
+      - kind
+      - id
+    properties:
+      kind:
+        type: string
+      id:
+        type: string
+      name:
+        type:
+          - string
+          - "null"
+  trace:
+    type: object
+    additionalProperties: false
+    required:
+      - requestId
+    properties:
+      requestId:
+        type: string
+      correlationId:
+        type:
+          - string
+          - "null"
+      causationId:
+        type:
+          - string
+          - "null"
+      idempotencyKey:
+        type:
+          - string
+          - "null"
+  payload:
+    type: object
+    description: Domain-specific event payload.
+  audit:
+    type: object
+    additionalProperties: false
+    properties:
+      redact:
+        type: array
+        items:
+          type: string
+        description: JSON pointer paths that must be redacted in audit views.
+example:
+  id: evt_01hxyz
+  type: project.created
+  version: 1
+  source: projects-worker
+  occurredAt: "2026-04-22T12:00:00Z"
+  actor:
+    type: user
+    id: usr_123
+    sessionId: ses_123
+    ip: "203.0.113.10"
+  tenant:
+    orgId: org_123
+    projectId: prj_123
+    environmentId: null
+  subject:
+    kind: project
+    id: prj_123
+    name: "Acme API"
+  trace:
+    requestId: req_123
+    correlationId: cor_123
+    causationId: null
+    idempotencyKey: idem_123
+  payload:
+    projectId: prj_123
+    name: "Acme API"

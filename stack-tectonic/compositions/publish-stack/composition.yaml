@@ -1,0 +1,29 @@
+apiVersion: sourceplane.io/v1alpha1
+kind: Composition
+metadata:
+  name: publish-stack
+spec:
+  type: publish-stack
+  description: Publish an Orun stack to an OCI registry with dry-run validation
+
+  schemaRef:
+    name: publish-stack-component
+
+  defaultJob: publish
+  defaultProfile: dry-run
+
+  jobs:
+    - name: publish
+      templateRef:
+        name: publish-stack-publish
+
+  profiles:
+    - name: dry-run
+      profileRef:
+        name: publish-stack-dry-run
+    - name: verify
+      profileRef:
+        name: publish-stack-verify
+    - name: release
+      profileRef:
+        name: publish-stack-release

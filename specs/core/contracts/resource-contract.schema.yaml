@@ -1,0 +1,201 @@
+$schema: "https://json-schema.org/draft/2020-12/schema"
+title: SourceplaneResource
+type: object
+additionalProperties: false
+required:
+  - apiVersion
+  - kind
+  - metadata
+  - spec
+  - status
+properties:
+  apiVersion:
+    type: string
+    const: sourceplane.io/v1alpha1
+  kind:
+    type: string
+    const: Resource
+  metadata:
+    type: object
+    additionalProperties: false
+    required:
+      - id
+      - resourceType
+      - orgId
+      - projectId
+      - environmentId
+      - name
+      - generation
+      - createdAt
+      - updatedAt
+    properties:
+      id:
+        type: string
+      resourceType:
+        type: string
+        description: Canonical type such as database.instance or api.service.
+      orgId:
+        type: string
+      projectId:
+        type: string
+      environmentId:
+        type: string
+      name:
+        type: string
+      labels:
+        type: object
+        additionalProperties:
+          type: string
+      annotations:
+        type: object
+        additionalProperties:
+          type: string
+      componentRef:
+        type:
+          - object
+          - "null"
+        additionalProperties: false
+        properties:
+          name:
+            type: string
+          version:
+            type: string
+      generation:
+        type: integer
+        minimum: 1
+      createdAt:
+        type: string
+        format: date-time
+      updatedAt:
+        type: string
+        format: date-time
+      deletedAt:
+        type:
+          - string
+          - "null"
+        format: date-time
+  spec:
+    type: object
+    description: Desired state validated against the owning component definition.
+  status:
+    type: object
+    additionalProperties: false
+    required:
+      - phase
+      - observedGeneration
+      - conditions
+    properties:
+      phase:
+        type: string
+        enum:
+          - draft
+          - pending
+          - provisioning
+          - ready
+          - degraded
+          - failed
+          - deleting
+          - deleted
+      observedGeneration:
+        type: integer
+        minimum: 0
+      conditions:
+        type: array
+        items:
+          type: object
+          additionalProperties: false
+          required:
+            - type
+            - status
+            - updatedAt
+          properties:
+            type:
+              type: string
+            status:
+              type: string
+              enum:
+                - "true"
+                - "false"
+                - unknown
+            reason:
+              type:
+                - string
+                - "null"
+            message:
+              type:
+                - string
+                - "null"
+            updatedAt:
+              type: string
+              format: date-time
+      outputs:
+        type: object
+        additionalProperties: true
+      lastDeploymentId:
+        type:
+          - string
+          - "null"
+      failure:
+        type:
+          - object
+          - "null"
+        additionalProperties: false
+        properties:
+          code:
+            type: string
+          message:
+            type: string
+          retriable:
+            type: boolean
+  relationships:
+    type: array
+    items:
+      type: object
+      additionalProperties: false
+      required:
+        - type
+        - targetId
+      properties:
+        type:
+          type: string
+        targetId:
+          type: string
+        required:
+          type: boolean
+example:
+  apiVersion: sourceplane.io/v1alpha1
+  kind: Resource
+  metadata:
+    id: res_123
+    resourceType: database.instance
+    orgId: org_123
+    projectId: prj_123
+    environmentId: env_prod
+    name: main-db
+    labels:
+      tier: core
+    annotations: {}
+    componentRef:
+      name: supabase-postgres
+      version: 1.0.0
+    generation: 2
+    createdAt: "2026-04-22T12:00:00Z"
+    updatedAt: "2026-04-22T12:05:00Z"
+    deletedAt: null
+  spec:
+    tier: starter
+    schemaName: app_main
+  status:
+    phase: ready
+    observedGeneration: 2
+    conditions:
+      - type: Ready
+        status: "true"
+        reason: Provisioned
+        message: Supabase Postgres database connected through Hyperdrive.
+        updatedAt: "2026-04-22T12:05:00Z"
+    outputs:
+      hyperdriveBindingName: MAIN_DB
+    lastDeploymentId: dep_123
+    failure: null
+  relationships: []

@@ -1,0 +1,37 @@
+apiVersion: sourceplane.io/v1alpha1
+kind: ComponentSchema
+metadata:
+  name: publish-stack-component
+spec:
+  type: publish-stack
+  schema:
+    $schema: http://json-schema.org/draft-07/schema#
+    title: Publish Stack Component
+    type: object
+    required:
+      - name
+      - type
+      - parameters
+    properties:
+      name:
+        type: string
+      type:
+        type: string
+        const: publish-stack
+      parameters:
+        type: object
+        required:
+          - registry
+          - version
+        properties:
+          registry:
+            type: string
+            description: OCI registry base URL without tag (e.g. ghcr.io/sourceplane/stack-tectonic)
+          version:
+            type: string
+            description: Stack version to publish; overridden at runtime by STACK_VERSION env var if set
+          root:
+            type: string
+            description: Root directory of the stack (default ".")
+        additionalProperties: false
+    additionalProperties: true

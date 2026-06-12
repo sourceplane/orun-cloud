@@ -1,0 +1,44 @@
+apiVersion: sourceplane.io/v1alpha1
+kind: ComponentSchema
+metadata:
+  name: db-migrate-component
+spec:
+  type: db-migrate
+  schema:
+    $schema: http://json-schema.org/draft-07/schema#
+    title: Database Migration Component
+    type: object
+    required:
+      - name
+      - type
+      - parameters
+    properties:
+      name:
+        type: string
+      type:
+        type: string
+        const: db-migrate
+      parameters:
+        type: object
+        required:
+          - nodeVersion
+          - pnpmVersion
+          - secretName
+        properties:
+          nodeVersion:
+            type: string
+          pnpmVersion:
+            type: string
+          awsAccountId:
+            type: string
+            description: AWS account ID hosting the GitHub-OIDC role this component assumes
+          awsRegion:
+            type: string
+          secretName:
+            type: string
+          owner:
+            type: string
+          repo:
+            type: string
+        additionalProperties: false
+    additionalProperties: true

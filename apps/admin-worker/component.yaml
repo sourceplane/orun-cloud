@@ -1,0 +1,56 @@
+apiVersion: sourceplane.io/v1
+kind: Component
+metadata:
+  name: admin-worker
+  description: Internal Cloudflare Worker for audited support/administration diagnostics
+spec:
+  type: cloudflare-worker-turbo
+  lifecycle: production
+  owner: platform
+  domain: starter-runtime
+  path: apps/admin-worker
+  subscribe:
+    environments:
+      - name: dev
+        profile: verify
+      - name: stage
+        profile: verify
+        profileRules:
+          - profile: deploy
+            when:
+              triggerRef: github-push-main
+      - name: prod
+        profile: verify
+        profileRules:
+          - profile: deploy
+            when:
+              triggerRef: github-push-main
+  parameters:
+    nodeVersion: "22"
+    pnpmVersion: "10.12.1"
+    workspaceDir: ../..
+    appDir: .
+    # BF6: identity/role inputs for the deploy lane's wire-credentials step.
+    # Inert until this worker gets a wrangler template (fleet rollout, BF6b).
+    awsAccountId: "306024784101"
+    awsRegion: us-east-1
+    orgName: sourceplane
+    owner: sourceplane
+    repo: multi-tenant-saas
+
+    turboFilter: "@saas/admin-worker"
+    wranglerConfig: wrangler.jsonc
+    installCommand: pnpm install --frozen-lockfile
+    buildCommand: pnpm exec turbo run build --filter=@saas/admin-worker
+    typecheckCommand: pnpm exec turbo run typecheck --filter=@saas/admin-worker
+    dryRunCommand: pnpm exec wrangler deploy --dry-run --config wrangler.jsonc --env prod
+    deployCommand: pnpm exec wrangler deploy --config wrangler.jsonc --env prod
+    preDeployCommand: "echo 'No pre-deploy step configured.'"
+    migrationCommand: "echo 'No migrations configured.'"
+    smokeCommand: "echo 'No smoke test configured.'"
+  labels:
+    team: platform
+    layer: runtime
+    surface: admin-support
+    runtime: cloudflare
+# ci: trigger full-component verification (orun v2.12.0 upgrade — PR #183)

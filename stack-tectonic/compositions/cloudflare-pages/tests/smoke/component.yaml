@@ -1,0 +1,29 @@
+apiVersion: sourceplane.io/v1
+kind: Component
+
+metadata:
+  name: docs-site-direct-upload
+
+spec:
+  type: cloudflare-pages
+  lifecycle: production
+  owner: platform
+  domain: platform-docs
+  path: website
+  subscribe:
+    environments:
+      - name: production
+        profile: deploy
+  parameters:
+    nodeVersion: "20"
+    appDir: .
+    installCommand: npm ci
+    buildCommand: npm run docs:build
+    outputDir: docs-build
+    projectName: example-platform-docs-wrangler
+    deployBranch: main
+  labels:
+    team: platform
+    layer: delivery
+    surface: docs
+    runtime: cloudflare

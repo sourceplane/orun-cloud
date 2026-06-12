@@ -1,0 +1,21 @@
+apiVersion: sourceplane.io/v1alpha1
+kind: ExecutionProfile
+metadata:
+  name: cloudflare-pages-deploy
+spec:
+  description: Full pipeline including provisioning, deployment, and smoke test
+
+  policies:
+    requireApproval: true
+    requireCleanGitTree: true
+
+  jobs:
+    verify-deploy:
+      includeCapabilities:
+        - cloudflare-pages.setup-node
+        - cloudflare-pages.install
+        - cloudflare-pages.build
+        - cloudflare-pages.verify-output
+        - cloudflare-pages.provision
+        - cloudflare-pages.deploy
+        - cloudflare-pages.smoke

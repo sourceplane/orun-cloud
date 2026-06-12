@@ -1,0 +1,19 @@
+apiVersion: sourceplane.io/v1alpha1
+kind: ExecutionProfile
+metadata:
+  name: cloudflare-domain-plan-only
+spec:
+  description: PR Terraform plan with no apply for Cloudflare domain management
+
+  jobs:
+    cloudflare-domain:
+      includeCapabilities:
+        - cloudflare-domain.setup
+        - cloudflare-domain.aws-credentials
+        - cloudflare-domain.env
+        - cloudflare-domain.context
+        - cloudflare-domain.fmt
+        - cloudflare-domain.init
+        - cloudflare-domain.workspace
+        - cloudflare-domain.validate
+        - cloudflare-domain.plan

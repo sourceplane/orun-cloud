@@ -1,0 +1,89 @@
+apiVersion: sourceplane.io/v1alpha1
+kind: ComponentSchema
+metadata:
+  name: cloudflare-pages-turbo-component
+spec:
+  type: cloudflare-pages-turbo
+  schema:
+    $schema: http://json-schema.org/draft-07/schema#
+    title: Cloudflare Pages Turbo Component
+    type: object
+    required:
+      - name
+      - type
+      - parameters
+    properties:
+      name:
+        type: string
+      type:
+        type: string
+        const: cloudflare-pages-turbo
+      parameters:
+        type: object
+        required:
+          - nodeVersion
+          - pnpmVersion
+          - workspaceDir
+          - appDir
+          - turboFilter
+          - outputDir
+          - projectName
+        properties:
+          nodeVersion:
+            type: string
+          pnpmVersion:
+            type: string
+
+          workspaceDir:
+            type: string
+            description: Path from the component job path to the monorepo root
+
+          appDir:
+            type: string
+            description: Path from the component job path to the Pages app directory
+
+          turboFilter:
+            type: string
+            description: Turborepo filter for this Pages package
+
+          outputDir:
+            type: string
+            description: Build output directory relative to appDir
+
+          projectName:
+            type: string
+            description: Cloudflare Pages project name
+
+          deployBranch:
+            type: string
+            description: Branch name passed to wrangler pages deploy
+            default: main
+
+          installCommand:
+            type: string
+            default: pnpm install --frozen-lockfile
+
+          buildCommand:
+            type: string
+          smokeCommand:
+            type: string
+            default: "echo 'No smoke test configured.'"
+
+          environmentAwareProjectName:
+            type: boolean
+            description: >-
+              When true, appends the Orun environment name as a suffix to
+              projectName (e.g. "my-app" becomes "my-app-stage" in the stage
+              environment). Useful for deploying per-environment Pages projects
+              from a single component definition.
+            default: false
+
+          environmentBuildVar:
+            type: string
+            description: >-
+              Optional Vite-compatible environment variable name (e.g.
+              VITE_DEPLOY_ENV) that will be exported with the Orun environment
+              name during the build step, allowing the app to lock its
+              configuration to the target environment at build time.
+        additionalProperties: false
+    additionalProperties: true

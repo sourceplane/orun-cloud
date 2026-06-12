@@ -1,0 +1,28 @@
+apiVersion: sourceplane.io/v1alpha1
+kind: ExecutionProfile
+metadata:
+  name: cloudflare-worker-turbo-deploy
+spec:
+  description: Build, validate, migrate, deploy, and smoke test a Cloudflare Worker
+
+  policies:
+    requireApproval: true
+    requireCleanGitTree: true
+
+  jobs:
+    verify-deploy:
+      includeCapabilities:
+        - cloudflare-worker-turbo.setup-node
+        - cloudflare-worker-turbo.setup-pnpm
+        - cloudflare-worker-turbo.install
+        - cloudflare-worker-turbo.verify-structure
+        - cloudflare-worker-turbo.build
+        - cloudflare-worker-turbo.typecheck
+        # BF6: resolve binding IDs from the Secrets Manager wiring manifest at
+        # deploy time (no-op for workers without a wrangler template).
+        - cloudflare-worker-turbo.wire-credentials
+        - cloudflare-worker-turbo.wire-live
+        - cloudflare-worker-turbo.pre-deploy
+        - cloudflare-worker-turbo.migrate
+        - cloudflare-worker-turbo.deploy
+        - cloudflare-worker-turbo.smoke

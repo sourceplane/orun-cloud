@@ -1,0 +1,26 @@
+apiVersion: sourceplane.io/v1alpha1
+kind: Composition
+metadata:
+  name: db-migrate
+spec:
+  type: db-migrate
+  description: Database migration runner — plan on PRs, apply on merge
+
+  schemaRef:
+    name: db-migrate-component
+
+  defaultJob: migrate
+  defaultProfile: apply
+
+  jobs:
+    - name: migrate
+      templateRef:
+        name: db-migrate-run
+
+  profiles:
+    - name: plan
+      profileRef:
+        name: db-migrate-plan
+    - name: apply
+      profileRef:
+        name: db-migrate-apply

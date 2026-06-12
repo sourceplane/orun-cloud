@@ -1,0 +1,20 @@
+apiVersion: sourceplane.io/v1alpha1
+kind: ExecutionProfile
+metadata:
+  name: cloudflare-worker-turbo-verify
+spec:
+  description: Full non-mutating verification, including Wrangler dry-run
+
+  jobs:
+    verify-deploy:
+      includeCapabilities:
+        - cloudflare-worker-turbo.setup-node
+        - cloudflare-worker-turbo.setup-pnpm
+        - cloudflare-worker-turbo.install
+        - cloudflare-worker-turbo.verify-structure
+        # Offline fixture render only — verify lanes must never need cloud
+        # credentials (BF6 D5 guard); wire-credentials/wire-live are deploy-only.
+        - cloudflare-worker-turbo.wire-fixture
+        - cloudflare-worker-turbo.build
+        - cloudflare-worker-turbo.typecheck
+        - cloudflare-worker-turbo.deploy-dry-run

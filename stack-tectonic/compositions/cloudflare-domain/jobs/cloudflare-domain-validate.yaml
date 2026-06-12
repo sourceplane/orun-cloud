@@ -1,0 +1,125 @@
+apiVersion: sourceplane.io/v1alpha1
+kind: JobTemplate
+metadata:
+  name: cloudflare-domain-validate
+spec:
+  description: Terraform fmt, init, validate, plan, and apply for Cloudflare domain management
+  runsOn: ubuntu-22.04
+  timeout: 20m
+  retries: 0
+
+  labels:
+    scope: infra
+
+  capabilities:
+    - cloudflare-domain.setup
+    - cloudflare-domain.aws-credentials
+    - cloudflare-domain.env
+    - cloudflare-domain.context
+    - cloudflare-domain.fmt
+    - cloudflare-domain.init
+    - cloudflare-domain.workspace
+    - cloudflare-domain.validate
+    - cloudflare-domain.plan
+    - cloudflare-domain.apply
+
+  steps:
+    - id: setup-terraform
+      name: setup-terraform
+      capability: cloudflare-domain.setup
+      use: hashicorp/setup-terraform@v4
+      with:
+        terraform_version: "{{.parameters.terraformVersion}}"
+        terraform_wrapper: "false"
+
+    - id: aws-credentials
+      name: Configure AWS Credentials
+      capability: cloudflare-domain.aws-credentials
+      use: aws-actions/configure-aws-credentials@v4
+      with:
+        role-to-assume: "arn:aws:iam::{{.parameters.awsAccountId}}:role/{{.orun.environment.name}}-github-{{.parameters.owner}}-{{.parameters.repo}}-plan"
+        aws-region: "{{.parameters.awsRegion}}"
+        audience: sts.amazonaws.com
+      onFailure: stop
+
+    - id: terraform-env
+      name: Export Terraform Env
+      capability: cloudflare-domain.env
+      shell: bash
+      run: |
+        {
+          {{- range $key, $value := .env }}
+          printf '%s=%s\n' '{{ $key }}' '{{ $value }}'
+          {{- end }}
+
+          {{- range $key, $value := .parameters }}
+          printf 'TF_VAR_{{ $key }}=%s\n' '{{ $value }}'
+          {{- end }}
+
+          printf 'TF_VAR_environment=%s\n' "{{ .orun.environment.name }}"
+          printf 'TF_VAR_component=%s\n' "{{ .orun.component.name }}"
+        } >> "$ORUN_ENV"
+      onFailure: stop
+
+    - id: terraform-context
+      name: Terraform Context
+      capability: cloudflare-domain.context
+      shell: bash
+      run: |
+        terraform version
+        echo "Component: {{ .orun.component.name }}"
+        echo "Environment: {{ .orun.environment.name }}"
+        echo "Terraform directory: {{ .parameters.terraformDir }}"
+        echo "Base domain: {{ .parameters.baseDomain }}"
+        echo "Zone mode: {{ .parameters.zoneMode }}"
+      onFailure: stop
+
+    - id: terraform-fmt-check
+      name: fmt Check
+      capability: cloudflare-domain.fmt
+      run: "terraform -chdir={{ .parameters.terraformDir }} fmt -check"
+      onFailure: stop
+
+    - id: terraform-init
+      name: Init
+      capability: cloudflare-domain.init
+      shell: bash
+      run: |
+        set -euo pipefail
+
+        terraform -chdir={{ .parameters.terraformDir }} init \
+          -input=false \
+          -reconfigure \
+          -backend-config="bucket={{.parameters.orgName}}-{{.orun.environment.name}}" \
+          -backend-config="key={{.parameters.repo}}/{{.orun.component.name}}/terraform.tfstate" \
+          -backend-config="region=${AWS_REGION:-{{.parameters.awsRegion}}}"
+      onFailure: stop
+
+    - id: terraform-workspace
+      name: Workspace
+      capability: cloudflare-domain.workspace
+      shell: bash
+      run: |
+        set -euo pipefail
+
+        terraform -chdir={{ .parameters.terraformDir }} workspace select -or-create {{ .orun.environment.name }}
+        echo "TF_WORKSPACE={{ .orun.environment.name }}" >> "$ORUN_ENV"
+      onFailure: stop
+
+    - id: terraform-validate
+      name: Validate
+      capability: cloudflare-domain.validate
+      run: "terraform -chdir={{ .parameters.terraformDir }} validate -no-color"
+      onFailure: stop
+
+    - id: terraform-plan
+      name: Plan
+      capability: cloudflare-domain.plan
+      run: "terraform -chdir={{ .parameters.terraformDir }} plan -no-color"
+      onFailure: stop
+
+    - id: terraform-apply
+      name: Apply
+      capability: cloudflare-domain.apply
+      run: "terraform -chdir={{ .parameters.terraformDir }} apply -no-color -auto-approve"
+      onFailure: stop

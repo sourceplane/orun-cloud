@@ -1,0 +1,29 @@
+apiVersion: sourceplane.io/v1alpha1
+kind: Composition
+metadata:
+  name: terraform
+spec:
+  type: terraform
+  description: Terraform validation and planning for multi-tenant SaaS infrastructure components
+
+  schemaRef:
+    name: terraform-component
+
+  defaultJob: terraform
+  defaultProfile: apply
+
+  jobs:
+    - name: terraform
+      templateRef:
+        name: terraform-validate
+
+  profiles:
+    - name: plan-only
+      profileRef:
+        name: terraform-plan-only
+    - name: apply
+      profileRef:
+        name: terraform-apply
+    - name: local
+      profileRef:
+        name: terraform-local

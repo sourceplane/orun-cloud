@@ -1,0 +1,18 @@
+apiVersion: sourceplane.io/v1alpha1
+kind: ExecutionProfile
+metadata:
+  name: terraform-local
+spec:
+  description: Full Terraform plan and apply for live environments
+
+  jobs:
+    terraform:
+      includeCapabilities:
+        - terraform.setup
+        - terraform.env
+        - terraform.context
+        - terraform.fmt
+        - terraform.init
+        - terraform.workspace
+        - terraform.validate
+        - terraform.plan

@@ -1,0 +1,47 @@
+apiVersion: sourceplane.io/v1
+kind: Component
+
+metadata:
+  name: cloudflare-hyperdrive
+  description: Provisions Cloudflare Hyperdrive resources for stage and prod Supabase Postgres databases
+  labels:
+    domain: infra
+    scope: runtime-database-gateway
+
+spec:
+  type: terraform
+  lifecycle: production
+  owner: platform
+  domain: infra
+
+  # Hyperdrive's origin is the Supabase Postgres connection that `supabase`
+  # writes to AWS Secrets Manager; it must run after that secret exists.
+  dependsOn:
+    - component: supabase
+
+  parameters:
+    orgName: sourceplane
+    stackName: cloudflare-hyperdrive
+    terraformDir: terraform
+    terraformVersion: "1.15.3"
+
+  env:
+    AWS_EC2_METADATA_DISABLED: "true"
+
+
+  subscribe:
+    environments:
+      - name: stage
+        profile: plan-only
+        profileRules:
+          - profile: apply
+            when:
+              triggerRef: github-push-main
+
+      - name: prod
+        profile: plan-only
+        profileRules:
+          - profile: apply
+            when:
+              triggerRef: github-push-main
+# ci: trigger full-component verification (orun v2.12.0 upgrade — PR #183)

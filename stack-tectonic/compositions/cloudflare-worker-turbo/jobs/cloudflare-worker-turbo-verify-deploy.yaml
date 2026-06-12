@@ -1,0 +1,171 @@
+apiVersion: sourceplane.io/v1alpha1
+kind: JobTemplate
+metadata:
+  name: cloudflare-worker-turbo-verify-deploy
+spec:
+  description: Capability-tagged atomic steps for Cloudflare Worker with Turborepo
+  runsOn: ubuntu-22.04
+  timeout: 30m
+  retries: 0
+
+  labels:
+    scope: delivery
+
+  capabilities:
+    - cloudflare-worker-turbo.setup-node
+    - cloudflare-worker-turbo.setup-pnpm
+    - cloudflare-worker-turbo.install
+    - cloudflare-worker-turbo.verify-structure
+    - cloudflare-worker-turbo.wire-fixture
+    - cloudflare-worker-turbo.build
+    - cloudflare-worker-turbo.typecheck
+    - cloudflare-worker-turbo.deploy-dry-run
+    - cloudflare-worker-turbo.wire-credentials
+    - cloudflare-worker-turbo.wire-live
+    - cloudflare-worker-turbo.pre-deploy
+    - cloudflare-worker-turbo.migrate
+    - cloudflare-worker-turbo.deploy
+    - cloudflare-worker-turbo.smoke
+
+  steps:
+    - id: setup-node
+      name: setup-node
+      capability: cloudflare-worker-turbo.setup-node
+      use: actions/setup-node@v6
+      with:
+        node-version: "{{ .parameters.nodeVersion }}"
+
+    - id: setup-pnpm
+      name: setup-pnpm
+      capability: cloudflare-worker-turbo.setup-pnpm
+      use: pnpm/action-setup@v4
+      with:
+        version: "{{ .parameters.pnpmVersion }}"
+
+    - id: install-workspace-dependencies
+      name: install-workspace-dependencies
+      capability: cloudflare-worker-turbo.install
+      shell: bash
+      run: "{{ .parameters.installCommand }}"
+      onFailure: stop
+
+    - id: verify-worker-structure
+      name: verify-worker-structure
+      capability: cloudflare-worker-turbo.verify-structure
+      shell: bash
+      run: |
+        test -f package.json
+        {{- if .parameters.wranglerTemplate }}
+        # BF6: templated worker — the committed artifact is the template; the
+        # deployable config is rendered by wire-fixture/wire-live. Guard: a
+        # template must never carry committed 32-hex resource IDs.
+        test -f "{{ .parameters.wranglerTemplate }}"
+        if grep -nE '"id":[[:space:]]*"[0-9a-f]{32}"' "{{ .parameters.wranglerTemplate }}"; then
+          echo "verify-worker-structure: committed resource IDs found in {{ .parameters.wranglerTemplate }} — use @@wiring(...)@@ tokens" >&2
+          exit 1
+        fi
+        {{- else }}
+        test -f "{{ .parameters.wranglerConfig }}"
+        {{- end }}
+      onFailure: stop
+
+    - id: wire-fixture
+      name: wire-fixture
+      capability: cloudflare-worker-turbo.wire-fixture
+      shell: bash
+      run: |
+        {{- if .parameters.wranglerTemplate }}
+        node {{ .parameters.workspaceDir }}/tooling/wire/render.mjs \
+          --template "{{ .parameters.wranglerTemplate }}" \
+          --out "{{ .parameters.wranglerConfig }}" \
+          --map "{{ .parameters.wiringFixture }}"
+        {{- else }}
+        echo "wire-fixture: component is not wiring-templated; skipping."
+        {{- end }}
+      onFailure: stop
+
+    - id: build-worker
+      name: build-worker
+      capability: cloudflare-worker-turbo.build
+      shell: bash
+      run: "{{ .parameters.buildCommand }}"
+      onFailure: stop
+
+    - id: typecheck-worker
+      name: typecheck-worker
+      capability: cloudflare-worker-turbo.typecheck
+      shell: bash
+      run: "{{ .parameters.typecheckCommand }}"
+      onFailure: stop
+
+    - id: deploy-dry-run
+      name: deploy-dry-run
+      capability: cloudflare-worker-turbo.deploy-dry-run
+      shell: bash
+      run: "pnpm exec wrangler deploy --dry-run --config {{ .parameters.wranglerConfig }} --env {{ .orun.environment.name }}"
+      onFailure: stop
+
+    - id: wire-credentials
+      name: wire-credentials
+      capability: cloudflare-worker-turbo.wire-credentials
+      use: aws-actions/configure-aws-credentials@v4
+      with:
+        role-to-assume: "arn:aws:iam::{{.parameters.awsAccountId}}:role/{{.orun.environment.name}}-github-{{.parameters.owner}}-{{.parameters.repo}}-plan"
+        aws-region: "{{.parameters.awsRegion}}"
+        audience: sts.amazonaws.com
+      onFailure: stop
+
+    - id: wire-live
+      name: wire-live
+      capability: cloudflare-worker-turbo.wire-live
+      shell: bash
+      run: |
+        {{- if .parameters.wranglerTemplate }}
+        set -euo pipefail
+        wiring_dir=$(mktemp -d)
+        for comp in $(echo "{{ .parameters.wiringComponents }}" | tr ',' ' '); do
+          for wenv in $(echo "{{ .parameters.wiringEnvs }}" | tr ',' ' '); do
+            aws secretsmanager get-secret-value \
+              --secret-id "{{ .parameters.orgName }}/{{ .parameters.repo }}/${comp}/${wenv}" \
+              --query SecretString --output text > "${wiring_dir}/${comp}__${wenv}.json"
+          done
+        done
+        node {{ .parameters.workspaceDir }}/tooling/wire/render.mjs \
+          --template "{{ .parameters.wranglerTemplate }}" \
+          --out "{{ .parameters.wranglerConfig }}" \
+          --secrets-dir "${wiring_dir}"
+        {{- else }}
+        echo "wire-live: component is not wiring-templated; skipping."
+        {{- end }}
+      onFailure: stop
+
+    - id: pre-deploy
+      name: pre-deploy
+      capability: cloudflare-worker-turbo.pre-deploy
+      shell: bash
+      run: "{{ .parameters.preDeployCommand }}"
+      onFailure: stop
+
+    - id: migrate
+      name: migrate
+      capability: cloudflare-worker-turbo.migrate
+      shell: bash
+      run: "{{ .parameters.migrationCommand }}"
+      onFailure: stop
+
+    - id: deploy
+      name: deploy
+      capability: cloudflare-worker-turbo.deploy
+      shell: bash
+      run: |
+        : "${CLOUDFLARE_ACCOUNT_ID:?CLOUDFLARE_ACCOUNT_ID is required}"
+        : "${CLOUDFLARE_API_TOKEN:?CLOUDFLARE_API_TOKEN is required}"
+        pnpm exec wrangler deploy --config {{ .parameters.wranglerConfig }} --env {{ .orun.environment.name }}
+      onFailure: stop
+
+    - id: smoke
+      name: smoke
+      capability: cloudflare-worker-turbo.smoke
+      shell: bash
+      run: "{{ .parameters.smokeCommand }}"
+      onFailure: stop

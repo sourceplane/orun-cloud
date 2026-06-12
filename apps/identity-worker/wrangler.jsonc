@@ -1,0 +1,97 @@
+{
+  "name": "identity-worker",
+  "compatibility_date": "2025-05-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "main": "src/index.ts",
+  "minify": false,
+  // OAuth (B1) configuration:
+  //   - Non-secret vars are declared per-env below. Replace the empty
+  //     {GITHUB,GOOGLE}_OAUTH_CLIENT_ID placeholders with the client id of the
+  //     OAuth app registered for that provider + environment.
+  //   - Secrets are NEVER stored here. Set them with:
+  //       wrangler secret put GITHUB_OAUTH_CLIENT_SECRET --env <env>
+  //       wrangler secret put GOOGLE_OAUTH_CLIENT_SECRET --env <env>
+  //       wrangler secret put OAUTH_STATE_SECRET         --env <env>
+  //   - Each OAuth app's authorized redirect/callback URL must be:
+  //       {OAUTH_REDIRECT_BASE_URL}/v1/auth/oauth/{github|google}/callback
+  "vars": {
+    "ENVIRONMENT": "local",
+    "DEBUG_DELIVERY": "true",
+    "GITHUB_OAUTH_CLIENT_ID": "",
+    "GOOGLE_OAUTH_CLIENT_ID": "",
+    "OAUTH_REDIRECT_BASE_URL": "http://localhost:8787",
+    "OAUTH_ALLOWED_CONSOLE_ORIGINS": "http://localhost:3000"
+  },
+  "env": {
+    "dev": {
+      "vars": {
+        "ENVIRONMENT": "dev",
+        "DEBUG_DELIVERY": "true",
+        "GITHUB_OAUTH_CLIENT_ID": "",
+        "GOOGLE_OAUTH_CLIENT_ID": "",
+        "OAUTH_REDIRECT_BASE_URL": "",
+        "OAUTH_ALLOWED_CONSOLE_ORIGINS": "https://sourceplane-web-console-next-dev.rahulvarghesepullely.workers.dev"
+      }
+    },
+    "stage": {
+      "vars": {
+        "ENVIRONMENT": "stage",
+        "DEBUG_DELIVERY": "true",
+        "GITHUB_OAUTH_CLIENT_ID": "Ov23liKBsjAqJJsmBavV",
+        "GOOGLE_OAUTH_CLIENT_ID": "441163126775-7fabhvpbl9tsga921rklpdlde7mduq34.apps.googleusercontent.com",
+        "OAUTH_REDIRECT_BASE_URL": "https://api-edge-stage.rahulvarghesepullely.workers.dev",
+        "OAUTH_ALLOWED_CONSOLE_ORIGINS": "https://stage.sourceplane.ai,https://sourceplane-web-console-next-stage.rahulvarghesepullely.workers.dev"
+      },
+      "hyperdrive": [
+        {
+          "binding": "PLATFORM_DB",
+          "id": "08f7c6055f544a3890a585d88fd92348"
+        }
+      ],
+      "services": [
+        {
+          "binding": "MEMBERSHIP_WORKER",
+          "service": "membership-worker-stage"
+        },
+        {
+          "binding": "POLICY_WORKER",
+          "service": "policy-worker-stage"
+        },
+        {
+          "binding": "NOTIFICATIONS_WORKER",
+          "service": "notifications-worker-stage"
+        }
+      ]
+    },
+    "prod": {
+      "vars": {
+        "ENVIRONMENT": "prod",
+        "DEBUG_DELIVERY": "false",
+        "GITHUB_OAUTH_CLIENT_ID": "Ov23lilp2aoyeBDVU8Vc",
+        "GOOGLE_OAUTH_CLIENT_ID": "441163126775-7fabhvpbl9tsga921rklpdlde7mduq34.apps.googleusercontent.com",
+        "OAUTH_REDIRECT_BASE_URL": "https://api-edge-prod.rahulvarghesepullely.workers.dev",
+        "OAUTH_ALLOWED_CONSOLE_ORIGINS": "https://prod.sourceplane.ai,https://sourceplane-web-console-next-prod.rahulvarghesepullely.workers.dev"
+      },
+      "hyperdrive": [
+        {
+          "binding": "PLATFORM_DB",
+          "id": "ab2c21c2db6245a59c91588fcac7107a"
+        }
+      ],
+      "services": [
+        {
+          "binding": "MEMBERSHIP_WORKER",
+          "service": "membership-worker-prod"
+        },
+        {
+          "binding": "POLICY_WORKER",
+          "service": "policy-worker-prod"
+        },
+        {
+          "binding": "NOTIFICATIONS_WORKER",
+          "service": "notifications-worker-prod"
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,14 @@
+apiVersion: orun.io/v1
+kind: Stack
+metadata:
+  name: stack-tectonic
+  title: Multi-Tenant SaaS Terraform Stack
+  version: 0.2.0
+  description: Repo-local Terraform composition for component-native multi-tenant SaaS infrastructure.
+  owner: sourceplane
+  tags:
+    - terraform
+    - aws
+    - cloudflare
+    - supabase
+    - orun

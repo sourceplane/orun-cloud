@@ -1,0 +1,128 @@
+apiVersion: sourceplane.io/v1alpha1
+kind: JobTemplate
+metadata:
+  name: cloudflare-workers-assets-turbo-verify-deploy
+spec:
+  description: Capability-tagged atomic steps for Cloudflare Workers + Static Assets with Turborepo
+  runsOn: ubuntu-22.04
+  timeout: 30m
+  retries: 0
+
+  labels:
+    scope: delivery
+
+  capabilities:
+    - cloudflare-workers-assets-turbo.setup-node
+    - cloudflare-workers-assets-turbo.setup-pnpm
+    - cloudflare-workers-assets-turbo.install
+    - cloudflare-workers-assets-turbo.verify-structure
+    - cloudflare-workers-assets-turbo.build
+    - cloudflare-workers-assets-turbo.verify-output
+    - cloudflare-workers-assets-turbo.deploy-dry-run
+    - cloudflare-workers-assets-turbo.deploy
+    - cloudflare-workers-assets-turbo.smoke
+
+  steps:
+    - id: setup-node
+      name: setup-node
+      capability: cloudflare-workers-assets-turbo.setup-node
+      use: actions/setup-node@v6
+      with:
+        node-version: "{{ .parameters.nodeVersion }}"
+
+    - id: setup-pnpm
+      name: setup-pnpm
+      capability: cloudflare-workers-assets-turbo.setup-pnpm
+      use: pnpm/action-setup@v4
+      with:
+        version: "{{ .parameters.pnpmVersion }}"
+
+    - id: install-workspace-dependencies
+      name: install-workspace-dependencies
+      capability: cloudflare-workers-assets-turbo.install
+      shell: bash
+      run: "{{ .parameters.installCommand }}"
+      onFailure: stop
+
+    - id: verify-app-structure
+      name: verify-app-structure
+      capability: cloudflare-workers-assets-turbo.verify-structure
+      shell: bash
+      run: |
+        test -f package.json
+        test -f "{{ .parameters.wranglerConfig }}"
+      onFailure: stop
+
+    - id: build-app
+      name: build-app
+      capability: cloudflare-workers-assets-turbo.build
+      shell: bash
+      run: |
+        {{- if .parameters.environmentBuildVar }}
+        export {{ .parameters.environmentBuildVar }}="{{ .orun.environment.name }}"
+        {{- end }}
+        {{ .parameters.buildCommand }}
+      onFailure: stop
+
+    - id: verify-build-output
+      name: verify-build-output
+      capability: cloudflare-workers-assets-turbo.verify-output
+      shell: bash
+      run: |
+        test -f "{{ .parameters.workerEntrypoint }}"
+        test -d "{{ .parameters.assetsDir }}"
+        # Size sanity: Cloudflare Workers compressed size limit is 10 MB.
+        ls -lh "{{ .parameters.workerEntrypoint }}"
+      onFailure: stop
+
+    - id: deploy-dry-run
+      name: deploy-dry-run
+      capability: cloudflare-workers-assets-turbo.deploy-dry-run
+      shell: bash
+      run: |
+        {{- if .parameters.environmentAwareWorkerName }}
+        EFFECTIVE_WORKER_NAME="{{ .parameters.workerName }}-{{ .orun.environment.name }}"
+        {{- else }}
+        EFFECTIVE_WORKER_NAME="{{ .parameters.workerName }}"
+        {{- end }}
+        pnpm exec wrangler deploy --dry-run \
+          --config "{{ .parameters.wranglerConfig }}" \
+          --name "${EFFECTIVE_WORKER_NAME}"
+      onFailure: stop
+
+    - id: deploy
+      name: deploy
+      capability: cloudflare-workers-assets-turbo.deploy
+      shell: bash
+      run: |
+        : "${CLOUDFLARE_ACCOUNT_ID:?CLOUDFLARE_ACCOUNT_ID is required}"
+        : "${CLOUDFLARE_API_TOKEN:?CLOUDFLARE_API_TOKEN is required}"
+
+        {{- if .parameters.environmentAwareWorkerName }}
+        EFFECTIVE_WORKER_NAME="{{ .parameters.workerName }}-{{ .orun.environment.name }}"
+        {{- else }}
+        EFFECTIVE_WORKER_NAME="{{ .parameters.workerName }}"
+        {{- end }}
+
+        pnpm exec wrangler deploy \
+          --config "{{ .parameters.wranglerConfig }}" \
+          --name "${EFFECTIVE_WORKER_NAME}"
+      onFailure: stop
+
+    - id: smoke
+      name: smoke
+      capability: cloudflare-workers-assets-turbo.smoke
+      shell: bash
+      run: |
+        export ORUN_ENVIRONMENT="{{ .orun.environment.name }}"
+        {{- if .parameters.environmentAwareWorkerName }}
+        export EFFECTIVE_WORKER_NAME="{{ .parameters.workerName }}-{{ .orun.environment.name }}"
+        {{- else }}
+        export EFFECTIVE_WORKER_NAME="{{ .parameters.workerName }}"
+        {{- end }}
+        {{- if .parameters.workersDevSubdomain }}
+        export WORKERS_DEV_SUBDOMAIN="{{ .parameters.workersDevSubdomain }}"
+        export DEPLOYED_URL="https://${EFFECTIVE_WORKER_NAME}.${WORKERS_DEV_SUBDOMAIN}.workers.dev"
+        {{- end }}
+        {{ .parameters.smokeCommand }}
+      onFailure: stop

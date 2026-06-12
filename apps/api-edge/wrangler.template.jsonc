@@ -1,0 +1,175 @@
+// Rendered to wrangler.jsonc by tooling/wire/render.mjs (BF6 deploy-time wiring).
+// Resource IDs are NEVER committed: @@wiring(<component>/<env>:<key>)@@ tokens are
+// resolved from AWS Secrets Manager at deploy time (wire-live) or from the
+// committed wiring.fixture.json for offline dry-runs (wire-fixture).
+{
+  "name": "api-edge",
+  "compatibility_date": "2025-05-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "main": "src/index.ts",
+  "minify": false,
+  "vars": {
+    "ENVIRONMENT": "local",
+    "CONSOLE_CUSTOM_DOMAIN": ""
+  },
+  "durable_objects": {
+    "bindings": [
+      { "name": "RATE_LIMITER_DO", "class_name": "RateLimiterDO" }
+    ]
+  },
+  "migrations": [
+    { "tag": "v1", "new_sqlite_classes": ["RateLimiterDO"] }
+  ],
+  "env": {
+    "dev": {
+      "vars": {
+        "ENVIRONMENT": "dev",
+        "CONSOLE_CUSTOM_DOMAIN": ""
+      },
+      "durable_objects": {
+        "bindings": [
+          { "name": "RATE_LIMITER_DO", "class_name": "RateLimiterDO" }
+        ]
+      },
+      "migrations": [
+        { "tag": "v1", "new_sqlite_classes": ["RateLimiterDO"] }
+      ]
+    },
+    "stage": {
+      "vars": {
+        "ENVIRONMENT": "stage",
+        "CONSOLE_CUSTOM_DOMAIN": "stage.sourceplane.ai"
+      },
+      "hyperdrive": [
+        {
+          "binding": "PLATFORM_DB",
+          "id": "@@wiring(cloudflare-hyperdrive/stage:hyperdrive_id)@@"
+        }
+      ],
+      "kv_namespaces": [
+        {
+          "binding": "IDEMPOTENCY_KV",
+          "id": "@@wiring(cloudflare-kv/stage:api_edge_idempotency_kv_id)@@"
+        }
+      ],
+      "services": [
+        {
+          "binding": "IDENTITY_WORKER",
+          "service": "identity-worker-stage"
+        },
+        {
+          "binding": "MEMBERSHIP_WORKER",
+          "service": "membership-worker-stage"
+        },
+        {
+          "binding": "PROJECTS_WORKER",
+          "service": "projects-worker-stage"
+        },
+        {
+          "binding": "EVENTS_WORKER",
+          "service": "events-worker-stage"
+        },
+        {
+          "binding": "CONFIG_WORKER",
+          "service": "config-worker-stage"
+        },
+        {
+          "binding": "WEBHOOKS_WORKER",
+          "service": "webhooks-worker-stage"
+        },
+        {
+          "binding": "METERING_WORKER",
+          "service": "metering-worker-stage"
+        },
+        {
+          "binding": "BILLING_WORKER",
+          "service": "billing-worker-stage"
+        },
+        {
+          "binding": "NOTIFICATIONS_WORKER",
+          "service": "notifications-worker-stage"
+        },
+        {
+          "binding": "INTEGRATIONS_WORKER",
+          "service": "integrations-worker-stage"
+        }
+      ],
+      "durable_objects": {
+        "bindings": [
+          { "name": "RATE_LIMITER_DO", "class_name": "RateLimiterDO" }
+        ]
+      },
+      "migrations": [
+        { "tag": "v1", "new_sqlite_classes": ["RateLimiterDO"] }
+      ]
+    },
+    "prod": {
+      "vars": {
+        "ENVIRONMENT": "prod",
+        "CONSOLE_CUSTOM_DOMAIN": "prod.sourceplane.ai"
+      },
+      "hyperdrive": [
+        {
+          "binding": "PLATFORM_DB",
+          "id": "@@wiring(cloudflare-hyperdrive/prod:hyperdrive_id)@@"
+        }
+      ],
+      "kv_namespaces": [
+        {
+          "binding": "IDEMPOTENCY_KV",
+          "id": "@@wiring(cloudflare-kv/prod:api_edge_idempotency_kv_id)@@"
+        }
+      ],
+      "services": [
+        {
+          "binding": "IDENTITY_WORKER",
+          "service": "identity-worker-prod"
+        },
+        {
+          "binding": "MEMBERSHIP_WORKER",
+          "service": "membership-worker-prod"
+        },
+        {
+          "binding": "PROJECTS_WORKER",
+          "service": "projects-worker-prod"
+        },
+        {
+          "binding": "EVENTS_WORKER",
+          "service": "events-worker-prod"
+        },
+        {
+          "binding": "CONFIG_WORKER",
+          "service": "config-worker-prod"
+        },
+        {
+          "binding": "WEBHOOKS_WORKER",
+          "service": "webhooks-worker-prod"
+        },
+        {
+          "binding": "METERING_WORKER",
+          "service": "metering-worker-prod"
+        },
+        {
+          "binding": "BILLING_WORKER",
+          "service": "billing-worker-prod"
+        },
+        {
+          "binding": "NOTIFICATIONS_WORKER",
+          "service": "notifications-worker-prod"
+        },
+        {
+          "binding": "INTEGRATIONS_WORKER",
+          "service": "integrations-worker-prod"
+        }
+      ],
+      "durable_objects": {
+        "bindings": [
+          { "name": "RATE_LIMITER_DO", "class_name": "RateLimiterDO" }
+        ]
+      },
+      "migrations": [
+        { "tag": "v1", "new_sqlite_classes": ["RateLimiterDO"] }
+      ]
+    }
+  }
+}

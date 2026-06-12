@@ -1,0 +1,147 @@
+apiVersion: sourceplane.io/v1alpha1
+kind: JobTemplate
+metadata:
+  name: cloudflare-pages-turbo-terraform-verify-reconcile
+spec:
+  description: Capability-tagged atomic steps for Terraform-managed Cloudflare Pages with Turborepo
+  runsOn: ubuntu-22.04
+  timeout: 35m
+  retries: 0
+
+  labels:
+    scope: infra
+
+  capabilities:
+    - cloudflare-pages-turbo-terraform.setup-node
+    - cloudflare-pages-turbo-terraform.setup-pnpm
+    - cloudflare-pages-turbo-terraform.install
+    - cloudflare-pages-turbo-terraform.verify-structure
+    - cloudflare-pages-turbo-terraform.build
+    - cloudflare-pages-turbo-terraform.verify-output
+    - cloudflare-pages-turbo-terraform.setup-terraform
+    - cloudflare-pages-turbo-terraform.terraform-fmt
+    - cloudflare-pages-turbo-terraform.terraform-init
+    - cloudflare-pages-turbo-terraform.terraform-validate
+    - cloudflare-pages-turbo-terraform.terraform-plan
+    - cloudflare-pages-turbo-terraform.terraform-apply
+
+  steps:
+    - id: setup-node
+      name: setup-node
+      capability: cloudflare-pages-turbo-terraform.setup-node
+      use: actions/setup-node@v6
+      with:
+        node-version: "{{ .parameters.nodeVersion }}"
+
+    - id: setup-pnpm
+      name: setup-pnpm
+      capability: cloudflare-pages-turbo-terraform.setup-pnpm
+      use: pnpm/action-setup@v4
+      with:
+        version: "{{ .parameters.pnpmVersion }}"
+
+    - id: install-workspace-dependencies
+      name: install-workspace-dependencies
+      capability: cloudflare-pages-turbo-terraform.install
+      shell: bash
+      run: "{{ .parameters.installCommand }}"
+      onFailure: stop
+
+    - id: verify-pages-app-structure
+      name: verify-pages-app-structure
+      capability: cloudflare-pages-turbo-terraform.verify-structure
+      shell: bash
+      run: test -f package.json
+      onFailure: stop
+
+    - id: build-pages-app
+      name: build-pages-app
+      capability: cloudflare-pages-turbo-terraform.build
+      shell: bash
+      run: "{{ .parameters.buildCommand }}"
+      onFailure: stop
+
+    - id: verify-build-output
+      name: verify-build-output
+      capability: cloudflare-pages-turbo-terraform.verify-output
+      shell: bash
+      run: |
+        test -d "{{ .parameters.outputDir }}"
+        find "{{ .parameters.outputDir }}" -maxdepth 2 -type f | head -n 20
+      onFailure: stop
+
+    - id: setup-terraform
+      name: setup-terraform
+      capability: cloudflare-pages-turbo-terraform.setup-terraform
+      use: hashicorp/setup-terraform@v4
+      with:
+        terraform_version: "{{ .parameters.terraformVersion }}"
+        terraform_wrapper: "false"
+
+    - id: terraform-fmt-check
+      name: terraform-fmt-check
+      capability: cloudflare-pages-turbo-terraform.terraform-fmt
+      run: terraform -chdir={{ .parameters.terraformDir }} fmt -check
+      onFailure: stop
+
+    - id: terraform-init
+      name: terraform-init
+      capability: cloudflare-pages-turbo-terraform.terraform-init
+      run: terraform -chdir={{ .parameters.terraformDir }} init -input=false
+      onFailure: stop
+
+    - id: terraform-validate
+      name: terraform-validate
+      capability: cloudflare-pages-turbo-terraform.terraform-validate
+      run: terraform -chdir={{ .parameters.terraformDir }} validate -no-color
+      onFailure: stop
+
+    - id: terraform-plan
+      name: terraform-plan
+      capability: cloudflare-pages-turbo-terraform.terraform-plan
+      shell: bash
+      run: |
+        cloudflare_account_id="${CLOUDFLARE_ACCOUNT_ID:-00000000000000000000000000000000}"
+
+        terraform_args=(
+          "-input=false"
+          "-var=account_id=${cloudflare_account_id}"
+          "-var=project_name={{ .parameters.projectName }}"
+          "-var=production_branch={{ .parameters.deployBranch }}"
+          "-var=repo_owner={{ .parameters.repoOwner }}"
+          "-var=repo_name={{ .parameters.repoName }}"
+          "-var=build_command={{ .parameters.cloudflareBuildCommand }}"
+          "-var=destination_dir={{ .parameters.destinationDir }}"
+          "-var=root_dir={{ .parameters.rootDir }}"
+        )
+
+        if [ -z "${CLOUDFLARE_API_TOKEN:-}" ] || [ -z "${CLOUDFLARE_ACCOUNT_ID:-}" ]; then
+          echo "Skipping terraform plan — Cloudflare credentials not available."
+          exit 0
+        fi
+
+        terraform -chdir={{ .parameters.terraformDir }} plan -lock=false -no-color "${terraform_args[@]}"
+      onFailure: stop
+
+    - id: terraform-apply
+      name: terraform-apply
+      capability: cloudflare-pages-turbo-terraform.terraform-apply
+      shell: bash
+      run: |
+        : "${CLOUDFLARE_ACCOUNT_ID:?CLOUDFLARE_ACCOUNT_ID is required for apply}"
+        : "${CLOUDFLARE_API_TOKEN:?CLOUDFLARE_API_TOKEN is required for apply}"
+
+        terraform_args=(
+          "-input=false"
+          "-var=account_id=${CLOUDFLARE_ACCOUNT_ID}"
+          "-var=project_name={{ .parameters.projectName }}"
+          "-var=production_branch={{ .parameters.deployBranch }}"
+          "-var=repo_owner={{ .parameters.repoOwner }}"
+          "-var=repo_name={{ .parameters.repoName }}"
+          "-var=build_command={{ .parameters.cloudflareBuildCommand }}"
+          "-var=destination_dir={{ .parameters.destinationDir }}"
+          "-var=root_dir={{ .parameters.rootDir }}"
+        )
+
+        terraform -chdir={{ .parameters.terraformDir }} apply -auto-approve "${terraform_args[@]}"
+      onFailure: stop

@@ -1,0 +1,36 @@
+apiVersion: sourceplane.io/v1
+kind: Component
+
+metadata:
+  name: web-console-pages
+
+spec:
+  type: cloudflare-pages-turbo
+  lifecycle: production
+  owner: platform
+  domain: platform-ui
+  path: apps/web-console
+  subscribe:
+    environments:
+      - name: preview
+        profile: pull-request
+      - name: staging
+        profile: verify
+      - name: production
+        profile: deploy
+  parameters:
+    nodeVersion: "20"
+    pnpmVersion: "10.12.1"
+    workspaceDir: ../..
+    appDir: .
+    turboFilter: "@example/web-console"
+    outputDir: dist
+    projectName: example-platform-web-console
+    deployBranch: main
+    installCommand: pnpm install --frozen-lockfile
+    buildCommand: pnpm exec turbo run build --filter=@example/web-console
+  labels:
+    team: platform
+    layer: delivery
+    surface: web-console
+    runtime: cloudflare

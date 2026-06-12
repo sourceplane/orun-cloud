@@ -1,0 +1,60 @@
+apiVersion: sourceplane.io/v1
+kind: Component
+
+metadata:
+  name: cloudflare-domain
+  description: Manages the Cloudflare zone and attaches custom domains to environment-specific Worker services (web-console-next)
+  labels:
+    domain: infra
+    scope: dns-and-custom-domains
+
+spec:
+  type: terraform
+  lifecycle: production
+  owner: platform
+  domain: infra
+
+  parameters:
+    orgName: sourceplane
+    stackName: cloudflare-domain
+    terraformDir: terraform
+    terraformVersion: "1.15.3"
+    baseDomain: sourceplane.ai
+    zoneMode: existing
+    workerNamePrefix: sourceplane-web-console-next
+    # NOTE: `CONSOLE_CUSTOM_DOMAIN` is intentionally NOT declared here.
+    # It is supplied per-environment via
+    # `environments.{dev,stage,prod}.parameterDefaults.terraform.CONSOLE_CUSTOM_DOMAIN`
+    # in `intent.yaml` (dev: "", stage: stage.sourceplane.ai,
+    # prod: prod.sourceplane.ai) and surfaced to Terraform as
+    # `TF_VAR_CONSOLE_CUSTOM_DOMAIN` by the generic `.parameters` →
+    # `TF_VAR_<key>` loop in the cloudflare-domain-validate job template.
+    # Declaring a default here would shadow the parameterDefault override
+    # and cause the rendered TF_VAR to resolve to the local default ('')
+    # in every environment — exactly the silent-empty failure that
+    # broke Task 0083 (0 added, 0 changed, 0 destroyed). The Terraform
+    # variable itself already defaults to "" in
+    # `terraform/variables.tf`, so absence here is safe for dev.
+
+  env:
+    AWS_EC2_METADATA_DISABLED: "true"
+
+  dependsOn:
+    - component: web-console-next
+
+  subscribe:
+    environments:
+      - name: stage
+        profile: plan-only
+        profileRules:
+          - profile: apply
+            when:
+              triggerRef: github-push-main
+
+      - name: prod
+        profile: plan-only
+        profileRules:
+          - profile: apply
+            when:
+              triggerRef: github-push-main
+# ci: trigger full-component verification (orun v2.12.0 upgrade — PR #183)

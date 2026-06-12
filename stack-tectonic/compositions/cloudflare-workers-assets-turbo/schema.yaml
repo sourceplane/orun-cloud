@@ -1,0 +1,102 @@
+apiVersion: sourceplane.io/v1alpha1
+kind: ComponentSchema
+metadata:
+  name: cloudflare-workers-assets-turbo-component
+spec:
+  type: cloudflare-workers-assets-turbo
+  schema:
+    $schema: http://json-schema.org/draft-07/schema#
+    title: Cloudflare Workers + Static Assets Turbo Component
+    type: object
+    required:
+      - name
+      - type
+      - parameters
+    properties:
+      name:
+        type: string
+      type:
+        type: string
+        const: cloudflare-workers-assets-turbo
+      parameters:
+        type: object
+        required:
+          - nodeVersion
+          - pnpmVersion
+          - workspaceDir
+          - appDir
+          - turboFilter
+          - wranglerConfig
+          - workerName
+          - workerEntrypoint
+          - assetsDir
+        properties:
+          nodeVersion:
+            type: string
+          pnpmVersion:
+            type: string
+
+          workspaceDir:
+            type: string
+            description: Path from the component job path to the monorepo root
+
+          appDir:
+            type: string
+            description: Path from the component job path to the app directory
+
+          turboFilter:
+            type: string
+            description: Turborepo filter for this package
+
+          wranglerConfig:
+            type: string
+            default: wrangler.jsonc
+
+          workerName:
+            type: string
+            description: Base Cloudflare Worker name (per-env suffix applied when environmentAwareWorkerName is true)
+
+          workerEntrypoint:
+            type: string
+            description: Path to the built Worker entrypoint, relative to appDir (e.g. .open-next/worker.js)
+
+          assetsDir:
+            type: string
+            description: Path to the built static-assets directory, relative to appDir (e.g. .open-next/assets)
+
+          environmentAwareWorkerName:
+            type: boolean
+            description: >-
+              When true, appends the Orun environment name as a suffix to the
+              workerName (e.g. "my-worker" becomes "my-worker-stage" in the
+              stage environment). Mirrors cloudflare-pages-turbo's
+              environmentAwareProjectName for parity.
+            default: false
+
+          environmentBuildVar:
+            type: string
+            description: >-
+              Optional environment variable name (e.g. NEXT_PUBLIC_DEPLOY_ENV)
+              exported with the Orun environment name during the build step,
+              allowing the app to lock its configuration to the target
+              environment at build time.
+
+          workersDevSubdomain:
+            type: string
+            description: >-
+              The account's workers.dev subdomain (e.g. "rahulvarghesepullely").
+              Used to derive the deployed hostname for the smoke step:
+              `${EFFECTIVE_WORKER_NAME}.${workersDevSubdomain}.workers.dev`.
+
+          installCommand:
+            type: string
+            default: pnpm install --frozen-lockfile
+
+          buildCommand:
+            type: string
+
+          smokeCommand:
+            type: string
+            default: "echo 'No smoke test configured.'"
+        additionalProperties: false
+    additionalProperties: true

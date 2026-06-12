@@ -1,0 +1,18 @@
+apiVersion: sourceplane.io/v1alpha1
+kind: ExecutionProfile
+metadata:
+  name: cloudflare-pages-turbo-terraform-pull-request
+spec:
+  description: Fast PR validation with Turbo build and Terraform format check
+
+  jobs:
+    verify-reconcile:
+      includeCapabilities:
+        - cloudflare-pages-turbo-terraform.setup-node
+        - cloudflare-pages-turbo-terraform.setup-pnpm
+        - cloudflare-pages-turbo-terraform.install
+        - cloudflare-pages-turbo-terraform.verify-structure
+        - cloudflare-pages-turbo-terraform.build
+        - cloudflare-pages-turbo-terraform.verify-output
+        - cloudflare-pages-turbo-terraform.setup-terraform
+        - cloudflare-pages-turbo-terraform.terraform-fmt

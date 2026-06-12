@@ -1,0 +1,50 @@
+apiVersion: sourceplane.io/v1
+kind: Component
+
+metadata:
+  name: supabase
+  description: Provisions Supabase projects for stage and prod and stores credentials in AWS Secrets Manager
+  labels:
+    domain: infra
+    scope: database
+
+spec:
+  type: terraform
+  lifecycle: production
+  owner: platform
+  domain: infra
+
+  # Supabase provisioning writes credentials to AWS Secrets Manager and stores
+  # Terraform state in S3; both are proven by `bootstrap` first.
+  dependsOn:
+    - component: bootstrap
+
+  parameters:
+    orgName: sourceplane
+    stackName: supabase
+    terraformDir: terraform
+    terraformVersion: "1.15.3"
+    # Supabase target identity (surfaced to Terraform as TF_VAR_supabaseOrgId /
+    # TF_VAR_supabaseRegion by the terraform composition's parameter→TF_VAR loop).
+    supabaseOrgId: dwazxcrywsdbxpuouifa
+    supabaseRegion: ap-southeast-1
+
+  env:
+    AWS_EC2_METADATA_DISABLED: "true"
+
+  subscribe:
+    environments:
+      - name: stage
+        profile: plan-only
+        profileRules:
+          - profile: apply
+            when:
+              triggerRef: github-push-main
+
+      - name: prod
+        profile: plan-only
+        profileRules:
+          - profile: apply
+            when:
+              triggerRef: github-push-main
+# ci: trigger full-component verification (orun v2.12.0 upgrade — PR #183)

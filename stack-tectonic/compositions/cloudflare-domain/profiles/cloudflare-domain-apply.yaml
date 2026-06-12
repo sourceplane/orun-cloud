@@ -1,0 +1,20 @@
+apiVersion: sourceplane.io/v1alpha1
+kind: ExecutionProfile
+metadata:
+  name: cloudflare-domain-apply
+spec:
+  description: Full Terraform plan and apply for Cloudflare domain management
+
+  jobs:
+    cloudflare-domain:
+      includeCapabilities:
+        - cloudflare-domain.setup
+        - cloudflare-domain.aws-credentials
+        - cloudflare-domain.env
+        - cloudflare-domain.context
+        - cloudflare-domain.fmt
+        - cloudflare-domain.init
+        - cloudflare-domain.workspace
+        - cloudflare-domain.validate
+        - cloudflare-domain.plan
+        - cloudflare-domain.apply

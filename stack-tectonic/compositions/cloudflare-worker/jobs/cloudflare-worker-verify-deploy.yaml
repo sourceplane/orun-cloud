@@ -1,0 +1,109 @@
+apiVersion: sourceplane.io/v1alpha1
+kind: JobTemplate
+metadata:
+  name: cloudflare-worker-verify-deploy
+spec:
+  description: Capability-tagged atomic steps for a standalone Cloudflare Worker
+  runsOn: ubuntu-22.04
+  timeout: 30m
+  retries: 0
+
+  labels:
+    scope: delivery
+
+  capabilities:
+    - cloudflare-worker.setup-node
+    - cloudflare-worker.install
+    - cloudflare-worker.verify-structure
+    - cloudflare-worker.build
+    - cloudflare-worker.typecheck
+    - cloudflare-worker.deploy-dry-run
+    - cloudflare-worker.pre-deploy
+    - cloudflare-worker.migrate
+    - cloudflare-worker.deploy
+    - cloudflare-worker.smoke
+
+  steps:
+    - id: setup-node
+      name: setup-node
+      capability: cloudflare-worker.setup-node
+      use: actions/setup-node@v6
+      with:
+        node-version: "{{ .parameters.nodeVersion }}"
+
+    - id: install-dependencies
+      name: install-dependencies
+      capability: cloudflare-worker.install
+      shell: bash
+      working-directory: "{{ .parameters.appDir }}"
+      run: "{{ .parameters.installCommand }}"
+      onFailure: stop
+
+    - id: verify-worker-structure
+      name: verify-worker-structure
+      capability: cloudflare-worker.verify-structure
+      shell: bash
+      working-directory: "{{ .parameters.appDir }}"
+      run: |
+        test -f package.json
+        test -f "{{ .parameters.wranglerConfig }}"
+      onFailure: stop
+
+    - id: build-worker
+      name: build-worker
+      capability: cloudflare-worker.build
+      shell: bash
+      working-directory: "{{ .parameters.appDir }}"
+      run: "{{ .parameters.buildCommand }}"
+      onFailure: stop
+
+    - id: typecheck-worker
+      name: typecheck-worker
+      capability: cloudflare-worker.typecheck
+      shell: bash
+      working-directory: "{{ .parameters.appDir }}"
+      run: "{{ .parameters.typecheckCommand }}"
+      onFailure: stop
+
+    - id: deploy-dry-run
+      name: deploy-dry-run
+      capability: cloudflare-worker.deploy-dry-run
+      shell: bash
+      working-directory: "{{ .parameters.appDir }}"
+      run: "{{ .parameters.dryRunCommand }}"
+      onFailure: stop
+
+    - id: pre-deploy
+      name: pre-deploy
+      capability: cloudflare-worker.pre-deploy
+      shell: bash
+      working-directory: "{{ .parameters.appDir }}"
+      run: "{{ .parameters.preDeployCommand }}"
+      onFailure: stop
+
+    - id: migrate
+      name: migrate
+      capability: cloudflare-worker.migrate
+      shell: bash
+      working-directory: "{{ .parameters.appDir }}"
+      run: "{{ .parameters.migrationCommand }}"
+      onFailure: stop
+
+    - id: deploy
+      name: deploy
+      capability: cloudflare-worker.deploy
+      shell: bash
+      working-directory: "{{ .parameters.appDir }}"
+      run: |
+        : "${CLOUDFLARE_ACCOUNT_ID:?CLOUDFLARE_ACCOUNT_ID is required}"
+        : "${CLOUDFLARE_API_TOKEN:?CLOUDFLARE_API_TOKEN is required}"
+        {{ .parameters.deployCommand }}
+      onFailure: stop
+
+    - id: smoke
+      name: smoke
+      capability: cloudflare-worker.smoke
+      shell: bash
+      working-directory: "{{ .parameters.appDir }}"
+      run: "{{ .parameters.smokeCommand }}"
+      onFailure: stop

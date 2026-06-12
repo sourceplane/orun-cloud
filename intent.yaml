@@ -1,0 +1,131 @@
+apiVersion: sourceplane.io/v1
+kind: Intent
+
+metadata:
+  name: multi-tenant-saas
+  description: Reusable Cloudflare and Supabase multi-tenant SaaS starter
+  namespace: sourceplane
+
+execution:
+  state:
+    backendUrl: https://orun-api.sourceplane.ai
+
+compositions:
+  sources:
+    - name: stack-tectonic
+      kind: dir
+      path: stack-tectonic
+  resolution:
+    precedence:
+      - stack-tectonic
+    bindings:
+      terraform: stack-tectonic
+      cloudflare-domain: stack-tectonic
+      db-migrate: stack-tectonic
+
+discovery:
+  roots:
+    - apps/
+    - infra/
+    - packages/
+    - tests/
+
+automation:
+  triggerBindings:
+    github-pull-request:
+      description: Pull request validation
+      on:
+        provider: github
+        event: pull_request
+        actions:
+          - opened
+          - synchronize
+          - reopened
+          - ready_for_review
+        baseBranches:
+          - main
+      plan:
+        scope: changed
+        base: pull_request.base.sha
+        head: pull_request.head.sha
+
+    github-push-main:
+      description: Main branch stack convergence after merge
+      on:
+        provider: github
+        event: push
+        branches:
+          - main
+
+    local-development:
+      description: Local testing with full Terraform execution
+      on:
+        provider: local
+
+environments:
+  dev:
+    activation:
+      triggerRefs:
+        - github-pull-request
+        - github-push-main
+        - local-development
+    parameterDefaults:
+      terraform:
+        awsRegion: us-east-1
+        awsAccountId: "306024784101"
+        lane: verify
+        namespace: sourceplane
+        namespacePrefix: dev-
+        owner: sourceplane
+        repo: multi-tenant-saas
+        CONSOLE_CUSTOM_DOMAIN: ""
+    policies:
+      requireApproval: "false"
+    env:
+      AWS_REGION: us-east-1
+      BASE_DOMAIN: sourceplane.ai
+
+  stage:
+    activation:
+      triggerRefs:
+        - github-pull-request
+        - github-push-main
+    parameterDefaults:
+      terraform:
+        awsRegion: us-east-1
+        awsAccountId: "306024784101"
+        lane: verify
+        namespace: sourceplane
+        namespacePrefix: stg-
+        owner: sourceplane
+        repo: multi-tenant-saas
+        CONSOLE_CUSTOM_DOMAIN: stage.sourceplane.ai
+    policies:
+      requireApproval: "true"
+    env:
+      AWS_REGION: us-east-1
+      BASE_DOMAIN: sourceplane.ai
+
+  prod:
+    activation:
+      triggerRefs:
+        - github-pull-request
+        - github-push-main
+    promotion:
+      dependsOn:
+        - environment: stage
+    parameterDefaults:
+      terraform:
+        awsRegion: us-east-1
+        awsAccountId: "306024784101"
+        lane: verify
+        namespace: sourceplane
+        namespacePrefix: prod-
+        owner: sourceplane
+        repo: multi-tenant-saas
+        CONSOLE_CUSTOM_DOMAIN: prod.sourceplane.ai
+    policies:
+      requireApproval: "true"
+    env:
+      AWS_REGION: us-east-1
+      BASE_DOMAIN: sourceplane.ai

@@ -1,0 +1,60 @@
+apiVersion: sourceplane.io/v1
+kind: Component
+metadata:
+  name: notifications-worker
+  description: Cloudflare Worker for the Notifications bounded context
+spec:
+  type: cloudflare-worker-turbo
+  lifecycle: production
+  owner: platform
+  domain: starter-runtime
+  path: apps/notifications-worker
+  dependsOn:
+    - component: events-worker
+    - component: db-migrate
+  subscribe:
+    environments:
+      - name: dev
+        profile: verify
+      - name: stage
+        profile: verify
+        profileRules:
+          - profile: deploy
+            when:
+              triggerRef: github-push-main
+      - name: prod
+        profile: verify
+        profileRules:
+          - profile: deploy
+            when:
+              triggerRef: github-push-main
+  parameters:
+    nodeVersion: "22"
+    pnpmVersion: "10.12.1"
+    workspaceDir: ../..
+    appDir: .
+    # BF6: identity/role inputs for the deploy lane's wire-credentials step.
+    # Inert until this worker gets a wrangler template (fleet rollout, BF6b).
+    awsAccountId: "306024784101"
+    awsRegion: us-east-1
+    orgName: sourceplane
+    owner: sourceplane
+    repo: multi-tenant-saas
+
+    turboFilter: "@saas/notifications-worker"
+    wranglerConfig: wrangler.jsonc
+    installCommand: pnpm install --frozen-lockfile
+    buildCommand: pnpm exec turbo run build --filter=@saas/notifications-worker
+    typecheckCommand: pnpm exec turbo run typecheck --filter=@saas/notifications-worker
+    dryRunCommand: pnpm exec wrangler deploy --dry-run --config wrangler.jsonc --env prod
+    deployCommand: pnpm exec wrangler deploy --config wrangler.jsonc --env prod
+    preDeployCommand: "echo 'No pre-deploy step configured.'"
+    migrationCommand: "echo 'No migrations configured.'"
+    smokeCommand: "echo 'Internal-only worker; no public smoke endpoint.'"
+  labels:
+    team: platform
+    layer: runtime
+    surface: notifications
+    runtime: cloudflare
+# ci: trigger full-component verification (orun v2.12.0 upgrade — PR #183)
+# ci: rebuild marker — redeploy for PX3 preferences facade callers (stage/prod drift from the failed #280 convergence run)

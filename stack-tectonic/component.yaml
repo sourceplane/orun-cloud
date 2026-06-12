@@ -1,0 +1,28 @@
+apiVersion: sourceplane.io/v1
+kind: Component
+
+metadata:
+  name: stack-tectonic
+
+spec:
+  type: publish-stack
+  lifecycle: production
+  owner: platform
+  domain: platform-stack
+  subscribe:
+    environments:
+      - name: dev
+        profile: dry-run
+      - name: staging
+        profile: release
+      - name: production
+        profile: release
+  parameters:
+    registry: ghcr.io/sourceplane/stack-tectonic
+    root: .
+    version: "1.0.0"
+  labels:
+    layer: platform
+    provider: orun
+
+# Test trigger for GHCR auth fix

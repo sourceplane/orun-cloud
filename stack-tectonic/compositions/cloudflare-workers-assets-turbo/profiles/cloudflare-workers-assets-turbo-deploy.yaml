@@ -1,0 +1,22 @@
+apiVersion: sourceplane.io/v1alpha1
+kind: ExecutionProfile
+metadata:
+  name: cloudflare-workers-assets-turbo-deploy
+spec:
+  description: Full pipeline including build, deploy, and smoke test
+
+  policies:
+    requireApproval: true
+    requireCleanGitTree: true
+
+  jobs:
+    verify-deploy:
+      includeCapabilities:
+        - cloudflare-workers-assets-turbo.setup-node
+        - cloudflare-workers-assets-turbo.setup-pnpm
+        - cloudflare-workers-assets-turbo.install
+        - cloudflare-workers-assets-turbo.verify-structure
+        - cloudflare-workers-assets-turbo.build
+        - cloudflare-workers-assets-turbo.verify-output
+        - cloudflare-workers-assets-turbo.deploy
+        - cloudflare-workers-assets-turbo.smoke
