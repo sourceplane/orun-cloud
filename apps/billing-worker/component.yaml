@@ -63,3 +63,4 @@ spec:
 # ci: trigger full-component verification (orun v2.12.0 upgrade — PR #183)
 # ci: redeploy with live Hyperdrive wiring (BF6b convergence)
 # ci: bootstrap deploy without service bindings (binding-cycle seed)
+# ci: restore service bindings after binding-cycle seed

@@ -1,6 +1,3 @@
-// BOOTSTRAP (temporary): stage/prod service bindings emptied to break the
-// first-boot creation cycle (Cloudflare 10143: bindings to not-yet-created
-// workers). Restored immediately after the workers exist — see fork doc.
 // Rendered to wrangler.jsonc by tooling/wire/render.mjs (BF6 deploy-time wiring).
 // Resource IDs are NEVER committed: @@wiring(<component>/<env>:<key>)@@ tokens are
 // resolved from AWS Secrets Manager at deploy time (wire-live) or from the
@@ -37,7 +34,12 @@
           "id": "@@wiring(cloudflare-hyperdrive/stage:hyperdrive_id)@@"
         }
       ],
-      "services": []
+      "services": [
+        {
+          "binding": "EVENTS_WORKER",
+          "service": "events-worker-stage"
+        }
+      ]
     },
     "prod": {
       "workers_dev": false,
@@ -52,7 +54,12 @@
           "id": "@@wiring(cloudflare-hyperdrive/prod:hyperdrive_id)@@"
         }
       ],
-      "services": []
+      "services": [
+        {
+          "binding": "EVENTS_WORKER",
+          "service": "events-worker-prod"
+        }
+      ]
     }
   }
 }

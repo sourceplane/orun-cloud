@@ -65,3 +65,4 @@ spec:
 # ci: rebuild marker — redeploy for PX3 preferences facade callers (stage/prod drift from the failed #280 convergence run)
 # ci: redeploy with live Hyperdrive wiring (BF6b convergence)
 # ci: bootstrap deploy without service bindings (binding-cycle seed)
+# ci: restore service bindings after binding-cycle seed

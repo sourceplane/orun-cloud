@@ -102,6 +102,13 @@ First-boot notes (observed while converging CI):
   components at a time.** Large PRs fan out 30–70 CI jobs that saturate
   the runner pool and starve every other run (the original fleet-wide
   BF6b PR #5 was closed for this reason and split into #6–#9).
+- Worker service bindings (Cloudflare 10143) make first-boot creation
+  order-sensitive: billing/membership/notifications/events form a
+  binding cycle and policy-worker is bound by nearly everything. Seeded
+  by temporarily emptying stage/prod `services` in the cycle templates
+  (one PR), restoring them immediately after (next PR), then re-running
+  the dependents' deploy runs. A future BF7-9 preflight should automate
+  this two-phase bootstrap.
 
 ## Intentionally NOT changed
 
