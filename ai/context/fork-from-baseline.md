@@ -68,6 +68,41 @@ Applied as the Phase 3 rebrand PR (#4), in order:
 - Default API base: `api.sourceplane.dev` → `api.orun.dev`.
 - Remaining product UA: `orun-identity-worker`.
 
+### 5. BF6b — deploy-time wiring rollout to the worker fleet (PRs #6–#9)
+
+The first main apply failed deploying identity-worker: every worker except
+api-edge carried the baseline account's committed Hyperdrive config IDs
+(`08f7c605…` stage / `ab2c21c2…` prod), which do not exist in the new
+Cloudflare account. The baseline's BF6 ("pilot — api-edge only") already
+defined the fix; this fork completed the fleet rollout the baseline had
+staged as BF6b ("Inert until this worker gets a wrangler template"):
+
+- 11 workers (admin, billing, config, events, identity, integrations,
+  membership, metering, notifications, projects, webhooks):
+  `wrangler.jsonc` → committed `wrangler.template.jsonc` with
+  `@@wiring(cloudflare-hyperdrive/<env>:hyperdrive_id)@@` tokens; rendered
+  config is gitignored; `wiring.fixture.json` + `wire:fixture` script per
+  app; component.yaml gains `wranglerTemplate`/`wiringComponents`/
+  `wiringEnvs`/`wiringFixture` and `dependsOn: cloudflare-hyperdrive`.
+- `tests/config-worker/src/deployment-config.test.ts` re-anchored from
+  "IDs match the known account" to the BF6 invariants: rendered configs
+  carry valid, distinct 32-hex IDs; committed templates carry wiring
+  tokens and never literal IDs (mirrors the composition's
+  verify-worker-structure guard). Tolerant of partial rollout.
+
+First-boot notes (observed while converging CI):
+- PR (verify) lanes plan Terraform only; the supabase component's
+  Secrets Manager secret (`sourceplane/orun-cloud/supabase/<env>`) is
+  written on apply, so `cloudflare-hyperdrive` plans are red on a PR
+  until the first main apply has run. Expected; converges post-merge.
+- GitHub Actions `rerun_failed_jobs` deadlocks orun's remote state
+  (`--exec-id <run>-<attempt>` changes while dependency jobs are not
+  re-run). Always re-run the full workflow.
+- **PR sizing principle (recorded 2026-06-12): keep PRs to a few
+  components at a time.** Large PRs fan out 30–70 CI jobs that saturate
+  the runner pool and starve every other run (the original fleet-wide
+  BF6b PR #5 was closed for this reason and split into #6–#9).
+
 ## Intentionally NOT changed
 
 | What | Why |

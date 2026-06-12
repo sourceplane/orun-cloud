@@ -31,3 +31,5 @@ apps/membership-worker/wrangler.jsonc
 apps/metering-worker/wrangler.jsonc
 apps/notifications-worker/wrangler.jsonc
 apps/projects-worker/wrangler.jsonc
+apps/integrations-worker/wrangler.jsonc
+apps/webhooks-worker/wrangler.jsonc
