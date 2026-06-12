@@ -20,5 +20,8 @@ crash.log
 .orun/runs/
 .orun/*
 
-# BF6: rendered wrangler configs for wiring-templated workers (api-edge pilot)
+# BF6: rendered wrangler configs for wiring-templated workers (BF6b fleet)
 apps/api-edge/wrangler.jsonc
+apps/admin-worker/wrangler.jsonc
+apps/config-worker/wrangler.jsonc
+apps/identity-worker/wrangler.jsonc
