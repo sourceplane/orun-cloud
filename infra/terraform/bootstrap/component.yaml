@@ -3,7 +3,7 @@ kind: Component
 
 metadata:
   name: bootstrap
-  description: Proves S3 backend and Secrets Manager access for multi-tenant-saas Terraform components
+  description: Proves S3 backend and Secrets Manager access for orun-cloud Terraform components
   labels:
     domain: infra
     scope: bootstrap

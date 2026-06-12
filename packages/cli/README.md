@@ -6,7 +6,7 @@ small set of read-only commands today; write commands land in Task 0101.
 
 ## Install (workspace)
 
-This package is internal to the `multi-tenant-saas` monorepo and is not
+This package is internal to the `orun-cloud` monorepo and is not
 published. Build the binary with:
 
 ```sh

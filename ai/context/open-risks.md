@@ -32,7 +32,7 @@ Last updated: 2026-05-26
   deprecated and will move toward Node.js 24 defaults. This is not currently
   blocking, but it is a near-term CI maintenance item.
 - The deploy trust subject from Task 0004 is
-  `repo:sourceplane/multi-tenant-saas:environment:production`. This repo still
+  `repo:sourceplane/orun-cloud:environment:production`. This repo still
   has no GitHub environments configured, so the deploy-role trust path remains
   unexercised end-to-end.
 - The orphaned R2 bucket `sourceplane-tf-state` and historical Hyperdrive

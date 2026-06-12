@@ -9,7 +9,7 @@
 ## Found By
 
 Architecture/spec-management review requested 2026-06-08 (rahul.varghese@sourceplane.ai):
-"Re-arrange the multi-tenant-saas specs to match the Orun-style epics. Move
+"Re-arrange the orun-cloud specs to match the Orun-style epics. Move
 completed ones to archive and core architecture to a core section. Use spec-
 management best practices. Deep-understand the repo's current SaaS status first."
 
@@ -272,7 +272,7 @@ honest:
   from lifecycle-tracked epics, plus a mandatory `IMPLEMENTATION-STATUS.md`, makes
   drift visible instead of silent.
 - **Cross-repo consistency:** engineers and agents move between `orun` and
-  `multi-tenant-saas`; one spec idiom lowers friction and lets the same tooling/
+  `orun-cloud`; one spec idiom lowers friction and lets the same tooling/
   prompts target both.
 - **Epic legibility:** "what is the state of PERF / the moat / baseline auth?"
   becomes a single folder with a status table, not a cluster buried inside a

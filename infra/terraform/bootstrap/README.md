@@ -1,7 +1,7 @@
 # Bootstrap Terraform Component
 
 Minimal Terraform component that proves the AWS S3 backend and Secrets Manager
-access path for `multi-tenant-saas` Terraform components.
+access path for `orun-cloud` Terraform components.
 
 ## Purpose
 
@@ -16,13 +16,13 @@ access path for `multi-tenant-saas` Terraform components.
 | Setting              | Value                                                    |
 | -------------------- | -------------------------------------------------------- |
 | Bucket               | `sourceplane-<environment>`                              |
-| Key                  | `multi-tenant-saas/bootstrap/terraform.tfstate`          |
+| Key                  | `orun-cloud/bootstrap/terraform.tfstate`          |
 | workspace_key_prefix | `env`                                                    |
 | encrypt              | `true`                                                   |
 | use_lockfile         | `true`                                                   |
 | Region               | `us-east-1`                                              |
 
-Effective state path: `env/<environment>/multi-tenant-saas/bootstrap/terraform.tfstate`
+Effective state path: `env/<environment>/orun-cloud/bootstrap/terraform.tfstate`
 
 ## AWS Roles
 
@@ -46,6 +46,6 @@ for the migration runner) plus `{{.parameters.owner}}`/`{{.parameters.repo}}`.
 ## Secrets Manager
 
 The deploy role has write access to secrets under the prefix:
-`sourceplane/multi-tenant-saas/*`
+`sourceplane/orun-cloud/*`
 
 Smoke verification uses `dev` only to avoid production artifacts.

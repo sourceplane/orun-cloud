@@ -5,7 +5,7 @@ for the Sourceplane control plane API.
 
 ## Install (workspace)
 
-This package is internal to the `multi-tenant-saas` monorepo. Add it as a
+This package is internal to the `orun-cloud` monorepo. Add it as a
 workspace dependency:
 
 ```jsonc

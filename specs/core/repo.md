@@ -188,7 +188,7 @@ Agents may assume authenticated access to `gh`, to AWS through the
 task explicitly needs provider inspection.
 
 - AWS IAM roles and state buckets are owned by `aws-admin`.
-- This repo consumes the `sourceplane/multi-tenant-saas` GitHub OIDC roles and
+- This repo consumes the `sourceplane/orun-cloud` GitHub OIDC roles and
   must not create IAM roles directly.
 - Terraform state uses the shared `sourceplane-<env>` S3 buckets and native S3
   locking, following the `aws-admin` backend contract.

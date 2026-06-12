@@ -2,7 +2,7 @@ apiVersion: sourceplane.io/v1
 kind: Intent
 
 metadata:
-  name: multi-tenant-saas
+  name: orun-cloud
   description: Reusable Cloudflare and Supabase multi-tenant SaaS starter
   namespace: sourceplane
 
@@ -77,7 +77,7 @@ environments:
         namespace: sourceplane
         namespacePrefix: dev-
         owner: sourceplane
-        repo: multi-tenant-saas
+        repo: orun-cloud
         CONSOLE_CUSTOM_DOMAIN: ""
     policies:
       requireApproval: "false"
@@ -98,7 +98,7 @@ environments:
         namespace: sourceplane
         namespacePrefix: stg-
         owner: sourceplane
-        repo: multi-tenant-saas
+        repo: orun-cloud
         CONSOLE_CUSTOM_DOMAIN: stage.sourceplane.ai
     policies:
       requireApproval: "true"
@@ -122,7 +122,7 @@ environments:
         namespace: sourceplane
         namespacePrefix: prod-
         owner: sourceplane
-        repo: multi-tenant-saas
+        repo: orun-cloud
         CONSOLE_CUSTOM_DOMAIN: prod.sourceplane.ai
     policies:
       requireApproval: "true"

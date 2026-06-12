@@ -40,7 +40,7 @@ inventing account IDs, role ARNs, project refs, or secret names.
 not hand-create IAM users, roles, policies, or S3 state buckets.
 
 The required `aws-admin` component for this repo creates environment-scoped
-GitHub OIDC roles for `sourceplane/multi-tenant-saas`. Those roles must allow:
+GitHub OIDC roles for `sourceplane/orun-cloud`. Those roles must allow:
 
 - Terraform state read/write against the shared S3 state buckets named
   `sourceplane-<env>`.
@@ -80,7 +80,7 @@ connection strings must live in AWS Secrets Manager under:
 Example:
 
 ```text
-sourceplane/multi-tenant-saas/supabase/stage
+sourceplane/orun-cloud/supabase/stage
 ```
 
 Secret values must never be committed, echoed in logs, or copied into task
@@ -154,7 +154,7 @@ The current Supabase target decision is:
   separate primary Postgres database. Do not use branches or a shared
   project/database for these environments.
 - Project names should follow `<repo>-<env>`:
-  `multi-tenant-saas-stage` and `multi-tenant-saas-prod`.
+  `orun-cloud-stage` and `orun-cloud-prod`.
 - Project refs are assigned by Supabase during creation and must be recorded as
   non-secret outputs/report values after apply.
 
@@ -195,7 +195,7 @@ environment promotion or cross-component dependency behavior.
 
 ## Acceptance Criteria
 
-- `multi-tenant-saas` uses the Orun runtime pinned in `kiox.yaml`
+- `orun-cloud` uses the Orun runtime pinned in `kiox.yaml`
   (authoritative; `kiox.lock` records the resolved digest) while continuing to
   follow `aws-admin` for Terraform component and backend structure.
 - `intent.yaml` uses the `dev`, `stage`, `prod` environment shape and
