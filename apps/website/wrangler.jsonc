@@ -8,6 +8,18 @@
     "directory": "./public"
   },
   "env": {
+    // dev/stage exist so verify lanes can dry-run per environment; they
+    // serve the same static assets on workers.dev, no custom domain.
+    "dev": {
+      "assets": {
+        "directory": "./public"
+      }
+    },
+    "stage": {
+      "assets": {
+        "directory": "./public"
+      }
+    },
     "prod": {
       "assets": {
         "directory": "./public"
