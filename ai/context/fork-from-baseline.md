@@ -149,7 +149,10 @@ migrations run.
   D1: per-env App registration + worker secrets)
 - [x] Cloudflare Workers Paid plan (cron trigger limit; upgraded
   2026-06-12)
-- [ ] Triage the inherited Dependabot alerts (75 reported on first push
-  — baseline lockfile, visible because this repo is public)
+- [x] Dependabot triage round 1 (2026-06-12): 47 audit findings → 9
+  (0 critical/high). next 15.0.3→15.5.18, @opennextjs/cloudflare
+  1.0.4→1.17.1, vitest ^2→^3.2.6, fast-xml-parser override >=4.5.5,
+  in-range `pnpm update -r`. Remaining 2 low + 7 moderate are
+  transitive without in-range patches; revisit periodically
 - [ ] Upstream the deploy-profile wire-fixture fix (PR #10) to
   multi-tenant-saas — its api-edge deploy lane has the same latent gap

@@ -33,14 +33,14 @@
     "migrate:apply": "node --loader ts-node/esm src/runner/cli.ts apply"
   },
   "dependencies": {
-    "@aws-sdk/client-secrets-manager": "^3.700.0",
-    "pg": "^8.13.0",
-    "postgres": "^3.4.5"
+    "@aws-sdk/client-secrets-manager": "^3.1067.0",
+    "pg": "^8.21.0",
+    "postgres": "^3.4.9"
   },
   "devDependencies": {
     "@saas/eslint-config": "workspace:*",
     "@saas/tsconfig": "workspace:*",
-    "@types/pg": "^8.11.0",
-    "typescript": "^5.8.3"
+    "@types/pg": "^8.20.0",
+    "typescript": "^5.9.3"
   }
 }

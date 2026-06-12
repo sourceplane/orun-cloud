@@ -12,10 +12,10 @@
     "lint": "eslint src"
   },
   "devDependencies": {
-    "@cloudflare/workers-types": "^4.20250508.0",
+    "@cloudflare/workers-types": "^4.20260612.1",
     "@saas/eslint-config": "workspace:*",
     "@saas/tsconfig": "workspace:*",
-    "typescript": "^5.8.3"
+    "typescript": "^5.9.3"
   },
   "dependencies": {
     "@saas/contracts": "workspace:*"

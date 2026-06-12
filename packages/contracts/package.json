@@ -33,6 +33,6 @@
   "devDependencies": {
     "@saas/eslint-config": "workspace:*",
     "@saas/tsconfig": "workspace:*",
-    "typescript": "^5.8.3"
+    "typescript": "^5.9.3"
   }
 }
