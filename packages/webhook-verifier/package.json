@@ -16,6 +16,6 @@
     "@saas/eslint-config": "workspace:*",
     "@saas/tsconfig": "workspace:*",
     "typescript": "^5.8.3",
-    "vitest": "^2.1.9"
+    "vitest": "^3.2.6"
   }
 }
