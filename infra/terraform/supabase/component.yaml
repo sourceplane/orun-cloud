@@ -26,7 +26,7 @@ spec:
     terraformVersion: "1.15.3"
     # Supabase target identity (surfaced to Terraform as TF_VAR_supabaseOrgId /
     # TF_VAR_supabaseRegion by the terraform composition's parameter→TF_VAR loop).
-    supabaseOrgId: dwazxcrywsdbxpuouifa
+    supabaseOrgId: owdhthjxcagwnjakdnuo
     supabaseRegion: ap-southeast-1
 
   env:
@@ -48,4 +48,4 @@ spec:
             when:
               triggerRef: github-push-main
 # ci: trigger full-component verification (orun v2.12.0 upgrade — PR #183)
-# ci: trigger full-component verification (BF6b convergence — first supabase apply)
+# ci: trigger full-component verification (BF6b convergence — supabase org fix, take 2)

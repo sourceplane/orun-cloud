@@ -146,7 +146,7 @@ through Orun jobs after AWS access and S3 state are in place.
 The current Supabase target decision is:
 
 - Organization/account name: `sourceplane`
-- Supabase organization slug/id: `dwazxcrywsdbxpuouifa`
+- Supabase organization slug/id: `owdhthjxcagwnjakdnuo`
 - Task 0006 provisions only `stage` and `prod`.
 - `dev` is intentionally not provisioned for now and must not be added to the
   Supabase Terraform component without a later task.
@@ -205,7 +205,7 @@ environment promotion or cross-component dependency behavior.
 - AWS-admin-created roles allow the multi-tenant SaaS CI path to read/write its
   Secrets Manager namespace and Terraform state.
 - Supabase `stage` and `prod` projects are separate, Terraform-created projects
-  under organization `sourceplane` (`dwazxcrywsdbxpuouifa`), and their generated
+  under organization `sourceplane` (`owdhthjxcagwnjakdnuo`), and their generated
   database credentials are stored in AWS Secrets Manager.
 - CI and local `kiox -- orun ...` behavior are verified from rendered plans,
   not inferred from file names.
