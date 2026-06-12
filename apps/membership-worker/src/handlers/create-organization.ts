@@ -64,6 +64,21 @@ type GateOutcome =
   | { kind: "block"; response: Response };
 
 /**
+ * Thrown inside the bootstrap transaction when `bootstrapOrganization` fails
+ * (e.g. a duplicate slug → unique violation). It MUST be a throw, not a
+ * normal return: the failed INSERT leaves the postgres.js transaction in an
+ * aborted state, so returning lets the wrapper attempt a COMMIT that then
+ * throws and masks the real cause as a generic 500. Throwing forces a clean
+ * ROLLBACK and lets the caller translate the carried error (conflict → 409).
+ */
+class BootstrapFailed extends Error {
+  constructor(readonly bootstrapError: { kind: string }) {
+    super("bootstrap_failed");
+    this.name = "BootstrapFailed";
+  }
+}
+
+/**
  * MO2 gate: creating an *additional* org (the account already owns ≥1) requires
  * the billing parent to have `feature.multi_org` enabled and to be under
  * `limit.organizations`. The first/bootstrap org is always allowed. The billing
@@ -265,75 +280,88 @@ export async function handleCreateOrganization(
     if (parentOrgIdHex) bootstrapInput.org.parentOrgId = parentOrgIdHex;
 
     if (executor && "transaction" in executor) {
-      const result = await executor.transaction(async (txExec) => {
-        const txRepo = createMembershipRepository(txExec);
-        const txEventsRepo = createEventsRepository(txExec);
+      let result: { bootstrapResult: Awaited<ReturnType<MembershipRepository["bootstrapOrganization"]>> };
+      try {
+        result = await executor.transaction(async (txExec) => {
+          const txRepo = createMembershipRepository(txExec);
+          const txEventsRepo = createEventsRepository(txExec);
 
-        const bootstrapResult = await txRepo.bootstrapOrganization(bootstrapInput);
-        if (!bootstrapResult.ok) {
+          const bootstrapResult = await txRepo.bootstrapOrganization(bootstrapInput);
+          if (!bootstrapResult.ok) {
+            // Throw (not return) so the aborted transaction rolls back cleanly
+            // and the conflict survives as a 409 instead of a masked 500.
+            throw new BootstrapFailed(bootstrapResult.error);
+          }
+
+          const orgEventResult = await txEventsRepo.appendEventWithAudit({
+            event: {
+              id: genId(),
+              type: "organization.created",
+              version: 1,
+              source: "membership-worker",
+              occurredAt: now,
+              actorType: actor.subjectType,
+              actorId: actor.subjectId,
+              orgId,
+              subjectKind: "organization",
+              subjectId: orgId,
+              subjectName: orgName,
+              requestId,
+              payload: { orgId: orgPublicId(orgId), name: orgName, slug },
+            },
+            audit: {
+              id: genId(),
+              category: "membership",
+              description: `Organization ${orgPublicId(orgId)} created`,
+            },
+          });
+
+          if (!orgEventResult.ok) {
+            throw new Error("event_append_failed");
+          }
+
+          const memberEventResult = await txEventsRepo.appendEventWithAudit({
+            event: {
+              id: genId(),
+              type: "membership.added",
+              version: 1,
+              source: "membership-worker",
+              occurredAt: now,
+              actorType: actor.subjectType,
+              actorId: actor.subjectId,
+              orgId,
+              subjectKind: "member",
+              subjectId: memberId,
+              requestId,
+              payload: { orgId: orgPublicId(orgId), memberId: memberPublicId(memberId), subjectType: actor.subjectType, subjectId: actor.subjectId, role: "owner" },
+            },
+            audit: {
+              id: genId(),
+              category: "membership",
+              description: `Member ${memberPublicId(memberId)} added as owner`,
+            },
+          });
+
+          if (!memberEventResult.ok) {
+            throw new Error("event_append_failed");
+          }
+
           return { bootstrapResult };
-        }
-
-        const orgEventResult = await txEventsRepo.appendEventWithAudit({
-          event: {
-            id: genId(),
-            type: "organization.created",
-            version: 1,
-            source: "membership-worker",
-            occurredAt: now,
-            actorType: actor.subjectType,
-            actorId: actor.subjectId,
-            orgId,
-            subjectKind: "organization",
-            subjectId: orgId,
-            subjectName: orgName,
-            requestId,
-            payload: { orgId: orgPublicId(orgId), name: orgName, slug },
-          },
-          audit: {
-            id: genId(),
-            category: "membership",
-            description: `Organization ${orgPublicId(orgId)} created`,
-          },
         });
-
-        if (!orgEventResult.ok) {
-          throw new Error("event_append_failed");
+      } catch (err) {
+        if (err instanceof BootstrapFailed) {
+          if (err.bootstrapError.kind === "conflict") {
+            return errorResponse("conflict", "Organization already exists", 409, requestId);
+          }
+          return errorResponse("internal_error", "Failed to create organization", 500, requestId);
         }
-
-        const memberEventResult = await txEventsRepo.appendEventWithAudit({
-          event: {
-            id: genId(),
-            type: "membership.added",
-            version: 1,
-            source: "membership-worker",
-            occurredAt: now,
-            actorType: actor.subjectType,
-            actorId: actor.subjectId,
-            orgId,
-            subjectKind: "member",
-            subjectId: memberId,
-            requestId,
-            payload: { orgId: orgPublicId(orgId), memberId: memberPublicId(memberId), subjectType: actor.subjectType, subjectId: actor.subjectId, role: "owner" },
-          },
-          audit: {
-            id: genId(),
-            category: "membership",
-            description: `Member ${memberPublicId(memberId)} added as owner`,
-          },
-        });
-
-        if (!memberEventResult.ok) {
-          throw new Error("event_append_failed");
-        }
-
-        return { bootstrapResult };
-      });
+        // event_append_failed and any other in-transaction error: rolled back
+        // by the wrapper; surface through the outer catch as a 500.
+        throw err;
+      }
 
       if (!result.bootstrapResult.ok) {
-        if (result.bootstrapResult.error.kind === "conflict") {
-          return errorResponse("conflict", "Organization already exists", 409, requestId);
-        }
+        // Unreachable (failures throw above), but keeps the value access typed.
         return errorResponse("internal_error", "Failed to create organization", 500, requestId);
       }
 
