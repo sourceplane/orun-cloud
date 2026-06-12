@@ -26,7 +26,7 @@ Last updated: 2026-05-26
   `<org>/<repo>/<component>/<env>`.
 - Supabase target is fixed:
   - organization `sourceplane`
-  - slug/id `dwazxcrywsdbxpuouifa`
+  - slug/id `owdhthjxcagwnjakdnuo`
   - provision `stage` and `prod` only
   - leave `dev` unprovisioned
   - project/database names `orun-cloud-stage` and
@@ -263,7 +263,7 @@ Last updated: 2026-05-26
 - `orun-cloud` main CI run `26209010693` verified Supabase stage/prod
   Terraform apply through Orun on `main`.
 - Local `supabase projects list` confirmed stage/prod projects in organization
-  `dwazxcrywsdbxpuouifa`.
+  `owdhthjxcagwnjakdnuo`.
 - PR #34 and main CI run `26221338775` verified the database migration harness
   and verifier component on `main`.
 - Task 0024 established `TransactionalSqlExecutor` as the reusable transaction

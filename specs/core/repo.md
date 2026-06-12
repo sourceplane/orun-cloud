@@ -170,7 +170,7 @@ Supabase Postgres is the primary operational database for product-owned relation
   current approved Supabase live environments are `stage` and `prod`; `dev` is
   intentionally deferred.
 - The approved Supabase organization is `sourceplane` with slug/id
-  `dwazxcrywsdbxpuouifa`. `stage` and `prod` must use separate Supabase
+  `owdhthjxcagwnjakdnuo`. `stage` and `prod` must use separate Supabase
   projects/databases, not one shared project/database.
 - Generated database credentials and connection details must be stored in AWS Secrets Manager under `<org>/<repo>/<component>/<env>`.
 - Workers that need the primary database must use the configured Hyperdrive binding/resource for their environment instead of inventing ad hoc connection strings.
