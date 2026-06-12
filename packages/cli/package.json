@@ -18,10 +18,10 @@
   "devDependencies": {
     "@saas/eslint-config": "workspace:*",
     "@saas/tsconfig": "workspace:*",
-    "@types/node": "^20.14.0",
-    "esbuild": "^0.25.4",
-    "typescript": "^5.8.3",
-    "vitest": "^2.1.9"
+    "@types/node": "^20.19.43",
+    "esbuild": "^0.25.12",
+    "typescript": "^5.9.3",
+    "vitest": "^3.2.6"
   },
   "dependencies": {
     "@saas/sdk": "workspace:*",

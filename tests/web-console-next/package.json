@@ -19,13 +19,23 @@
     "jest": "^29.7.0",
     "react": "19.0.0-rc-66855b96-20241106",
     "react-dom": "19.0.0-rc-66855b96-20241106",
-    "ts-jest": "^29.3.4",
-    "typescript": "^5.8.3"
+    "ts-jest": "^29.4.11",
+    "typescript": "^5.9.3"
   },
   "jest": {
     "preset": "ts-jest/presets/default-esm",
-    "extensionsToTreatAsEsm": [".ts", ".tsx"],
-    "moduleFileExtensions": ["tsx", "ts", "js", "jsx", "json", "node"],
+    "extensionsToTreatAsEsm": [
+      ".ts",
+      ".tsx"
+    ],
+    "moduleFileExtensions": [
+      "tsx",
+      "ts",
+      "js",
+      "jsx",
+      "json",
+      "node"
+    ],
     "moduleNameMapper": {
       "^(\\.{1,2}/.*)\\.js$": "$1",
       "^@saas/contracts$": "<rootDir>/../../packages/contracts/src/index.ts",
@@ -34,8 +44,18 @@
       "^@web-console-next/(.*)$": "<rootDir>/../../apps/web-console-next/src/$1"
     },
     "transform": {
-      "^.+\\.tsx?$": ["ts-jest", { "useESM": true, "tsconfig": { "jsx": "react-jsx" } }]
+      "^.+\\.tsx?$": [
+        "ts-jest",
+        {
+          "useESM": true,
+          "tsconfig": {
+            "jsx": "react-jsx"
+          }
+        }
+      ]
     },
-    "testMatch": ["<rootDir>/src/**/*.test.ts"]
+    "testMatch": [
+      "<rootDir>/src/**/*.test.ts"
+    ]
   }
 }
