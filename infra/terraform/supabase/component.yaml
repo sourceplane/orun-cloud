@@ -48,3 +48,4 @@ spec:
             when:
               triggerRef: github-push-main
 # ci: trigger full-component verification (orun v2.12.0 upgrade — PR #183)
+# ci: trigger full-component verification (BF6b convergence — first supabase apply)
