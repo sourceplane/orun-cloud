@@ -93,10 +93,10 @@ export async function orgListCommand(ctx: CommandContext): Promise<CommandResult
 export async function orgUseCommand(ctx: CommandContext): Promise<CommandResult> {
   const orgId = ctx.args[0];
   if (orgId === undefined || orgId.length === 0) {
-    throw new UsageError("usage: sourceplane org use <org-id>");
+    throw new UsageError("usage: orun-cloud org use <org-id>");
   }
   // Validate the org exists by hitting the SDK; surface 404 as
-  // SourceplaneError → friendly CLI message.
+  // OrunCloudError → friendly CLI message.
   const sdk = await ctx.sdk();
   await sdk.organizations.get(orgId);
   await ctx.contextStore.setActiveOrg(orgId);

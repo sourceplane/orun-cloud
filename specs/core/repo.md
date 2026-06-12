@@ -179,7 +179,7 @@ Supabase Postgres is the primary operational database for product-owned relation
 - Each bounded context owns its schema or table namespace and migration history. Cross-context foreign keys are prohibited; use opaque IDs, service calls, and published events instead.
 - Every tenant-scoped table must include `org_id` directly or have an auditable path to `org_id` through a table owned by the same bounded context.
 - Domain mutations and outbox/event inserts that describe the same state change should commit atomically in the same Postgres transaction.
-- Supabase Auth, Realtime, Storage, and Edge Functions are not platform source-of-truth services unless a future spec explicitly adopts them. Sourceplane-owned identity remains in the identity component.
+- Supabase Auth, Realtime, Storage, and Edge Functions are not platform source-of-truth services unless a future spec explicitly adopts them. Orun Cloud-owned identity remains in the identity component.
 
 ## Operational Access And Resource Verification
 
@@ -188,7 +188,7 @@ Agents may assume authenticated access to `gh`, to AWS through the
 task explicitly needs provider inspection.
 
 - AWS IAM roles and state buckets are owned by `aws-admin`.
-- This repo consumes the `sourceplane/multi-tenant-saas` GitHub OIDC roles and
+- This repo consumes the `sourceplane/orun-cloud` GitHub OIDC roles and
   must not create IAM roles directly.
 - Terraform state uses the shared `sourceplane-<env>` S3 buckets and native S3
   locking, following the `aws-admin` backend contract.

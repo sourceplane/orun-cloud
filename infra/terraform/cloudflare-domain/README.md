@@ -17,8 +17,8 @@ declarations:
 
 | Variable | Description | Example |
 |----------|-------------|---------|
-| `BASE_DOMAIN` | Root domain for the zone | `sourceplane.ai` |
-| `CONSOLE_CUSTOM_DOMAIN` | Custom domain for the console Worker | `stage.sourceplane.ai` |
+| `BASE_DOMAIN` | Root domain for the zone | `orun.dev` |
+| `CONSOLE_CUSTOM_DOMAIN` | Custom domain for the console Worker | `stage.orun.dev` |
 
 These are exported as `TF_VAR_*` by the Orun job template and consumed by
 Terraform. The same variables are available to Workers (via `wrangler.jsonc`
@@ -45,9 +45,9 @@ vars) for runtime CORS decisions.
 
 | Parameter | Required | Description |
 |-----------|----------|-------------|
-| `baseDomain` | yes | Root domain (e.g. `sourceplane.ai`) |
+| `baseDomain` | yes | Root domain (e.g. `orun.dev`) |
 | `zoneMode` | yes | `existing` or `managed` |
-| `workerNamePrefix` | yes | Worker name prefix (e.g. `sourceplane-web-console-next`); fully-qualified service name is `{workerNamePrefix}-{environment}` |
+| `workerNamePrefix` | yes | Worker name prefix (e.g. `orun-web-console-next`); fully-qualified service name is `{workerNamePrefix}-{environment}` |
 | `stackName` | yes | Terraform stack identifier |
 | `terraformDir` | yes | Path to Terraform root |
 | `terraformVersion` | yes | Terraform CLI version |
@@ -83,9 +83,9 @@ After merge to main, verify:
 
 1. `terraform apply` succeeds in CI (`github-push-main` trigger).
 2. Workers custom domains show `active` status in Cloudflare (Workers → the
-   `sourceplane-web-console-next-{env}` Worker → Triggers → Custom Domains).
-3. `https://stage.sourceplane.ai/` serves the stage console (web-console-next).
-4. `https://prod.sourceplane.ai/` serves the prod console (web-console-next).
+   `orun-web-console-next-{env}` Worker → Triggers → Custom Domains).
+3. `https://stage.orun.dev/` serves the stage console (web-console-next).
+4. `https://prod.orun.dev/` serves the prod console (web-console-next).
 5. SSL certificates are provisioned (automatic via Cloudflare).
 
 ## Outputs

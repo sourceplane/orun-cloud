@@ -10,7 +10,7 @@ import type { MigrationAdapter, RunMode } from "./types.js";
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const MIGRATIONS_DIR = resolve(__dirname, "../migrations");
 
-const SECRET_PREFIX = "sourceplane/multi-tenant-saas/supabase";
+const SECRET_PREFIX = "sourceplane/orun-cloud/supabase";
 const AWS_REGION = process.env["AWS_REGION"] ?? "us-east-1";
 const SUPABASE_ACCESS_TOKEN = process.env["SUPABASE_ACCESS_TOKEN"];
 

@@ -1,4 +1,4 @@
-// `sourceplane integrations github token --repos=ID[,ID…] --permissions=key:level[,key:level…] [--org=ORG_ID]`
+// `orun-cloud integrations github token --repos=ID[,ID…] --permissions=key:level[,key:level…] [--org=ORG_ID]`
 //
 // CLI leg of the IG4 token broker: exchanges the caller's control-plane
 // credential for a short-lived, repo-scoped GitHub installation token.

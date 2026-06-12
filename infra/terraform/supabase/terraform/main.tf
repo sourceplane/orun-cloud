@@ -60,7 +60,7 @@ variable "owner" {
 
 variable "repo" {
   type    = string
-  default = "multi-tenant-saas"
+  default = "orun-cloud"
 }
 
 variable "namespace" {
@@ -120,8 +120,8 @@ variable "supabaseRegion" {
 locals {
   supabase_org_id = var.supabaseOrgId
   supabase_region = var.supabaseRegion
-  project_name    = "multi-tenant-saas-${var.environment}"
-  secret_name     = "${var.orgName}/multi-tenant-saas/supabase/${var.environment}"
+  project_name    = "orun-cloud-${var.environment}"
+  secret_name     = "${var.orgName}/orun-cloud/supabase/${var.environment}"
 
   supabase_secret_payload = {
     project_ref       = supabase_project.this.id

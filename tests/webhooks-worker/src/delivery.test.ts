@@ -842,7 +842,7 @@ describe("delivery payload structure", () => {
     });
 
     expect(lastHeaders["Content-Type"]).toBe("application/json");
-    expect(lastHeaders["User-Agent"]).toBe("Sourceplane-Webhooks/1.0");
+    expect(lastHeaders["User-Agent"]).toBe("Orun-Webhooks/1.0");
     expect(lastHeaders["X-Webhook-ID"]).toBeTruthy();
     expect(lastHeaders["X-Webhook-Timestamp"]).toBeTruthy();
   });

@@ -1,5 +1,5 @@
-// `sourceplane webhook sign` — local cryptographic signing of a
-// Sourceplane outbound webhook payload (Task 0107).
+// `orun-cloud webhook sign` — local cryptographic signing of a
+// OrunCloud outbound webhook payload (Task 0107).
 //
 // Symmetric counterpart to `webhook verify` (Task 0106). Wraps
 // `@saas/webhook-verifier`'s `signWebhookPayload` exactly; all crypto

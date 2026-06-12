@@ -8,8 +8,8 @@ Manager.
 
 | Environment | Project Name               | Status       |
 |-------------|----------------------------|--------------|
-| stage       | multi-tenant-saas-stage    | Provisioned  |
-| prod        | multi-tenant-saas-prod     | Provisioned  |
+| stage       | orun-cloud-stage    | Provisioned  |
+| prod        | orun-cloud-prod     | Provisioned  |
 | dev         | —                          | Not provisioned |
 
 ## Authentication
@@ -22,15 +22,15 @@ this variable.
 
 State is stored at:
 ```
-s3://sourceplane-<env>/env/<env>/multi-tenant-saas/supabase/terraform.tfstate
+s3://sourceplane-<env>/env/<env>/orun-cloud/supabase/terraform.tfstate
 ```
 
 ## AWS Secrets Manager
 
 Credentials are stored at:
 ```
-sourceplane/multi-tenant-saas/supabase/stage
-sourceplane/multi-tenant-saas/supabase/prod
+sourceplane/orun-cloud/supabase/stage
+sourceplane/orun-cloud/supabase/prod
 ```
 
 The named Secrets Manager secret is treated as a stable container. Terraform

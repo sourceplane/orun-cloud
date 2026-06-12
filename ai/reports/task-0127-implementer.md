@@ -6,7 +6,7 @@ PRs (per the task's suggested split). This report is updated per slice.
 ## Verification environment
 
 Browser verification runs against the **live stage** `api-edge`
-(`https://api-edge-stage.rahulvarghesepullely.workers.dev`) using a real
+(`https://api-edge-stage.your-workers-subdomain.workers.dev`) using a real
 magic-link token (stage returns `local_debug` codes) pasted via the console's
 bearer-token path. A throwaway org `U11 Verify Co` (`u11-verify`) was seeded for
 verification. Playwright (chromium) drives `next dev` on `:3001`.

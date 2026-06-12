@@ -1,6 +1,6 @@
 // TokenStore adapter interface. Two implementations:
 //   - KeychainTokenStore (lazy `keytar` import)
-//   - FileTokenStore (~/.config/sourceplane/credentials.json, mode 0600)
+//   - FileTokenStore (~/.config/orun-cloud/credentials.json, mode 0600)
 //
 // The CLI selects a store at runtime via `selectTokenStore()`, preferring
 // keychain when `keytar` loads. Both round-trip a `{ apiUrl, token }`

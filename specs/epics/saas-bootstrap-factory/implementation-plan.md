@@ -124,7 +124,7 @@ literal and committed; only config is generated.**
   (`${WORKERS_DEV_SUBDOMAIN}`, `${ORUN_ENVIRONMENT}`) instead of literals
   where the harness already exposes them.
 
-**Done when.** `grep -rn "rahulvarghesepullely\|sourceplane" apps/*/src
+**Done when.** `grep -rn "your-workers-subdomain\|sourceplane" apps/*/src
 packages/*/src` returns only the config seam files (and `@saas/` package
 names); stage smoke is green.
 

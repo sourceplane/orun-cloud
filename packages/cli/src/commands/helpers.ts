@@ -26,7 +26,7 @@ import { MissingOrgContextError } from "../errors.js";
  * Resolve the org id for a write/rotate command. Order:
  *   1. Explicit `--org=ORG_ID` flag (only honoured when `allowOverride`
  *      is true — currently `org invite` is the sole consumer).
- *   2. Persisted `activeOrgId` from `~/.config/sourceplane/config.json`.
+ *   2. Persisted `activeOrgId` from `~/.config/orun-cloud/config.json`.
  *
  * Throws `MissingOrgContextError` when neither is available. The CLI
  * never silently picks a "first" org from the listing — that would let

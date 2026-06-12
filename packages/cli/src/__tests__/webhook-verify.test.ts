@@ -1,11 +1,11 @@
-// Tests for Task 0106 — `sourceplane webhook verify` CLI subcommand.
+// Tests for Task 0106 — `orun-cloud webhook verify` CLI subcommand.
 //
 // The command is pure local crypto: no SDK, no network, no auth, no
 // active-org context. We exercise it through `runCli` with a synthetic
 // stdin (an async-iterable Uint8Array stream) and a fixed `now()` so
 // timestamp-tolerance behaviour is deterministic. The token store is a
 // `MemoryTokenStore` with NO credentials loaded — verifying the command
-// works without `sourceplane login` (Hard Rule §3 in task-0106.md).
+// works without `orun-cloud login` (Hard Rule §3 in task-0106.md).
 
 import { promises as fs } from "node:fs";
 import * as os from "node:os";

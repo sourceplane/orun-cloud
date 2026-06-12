@@ -1,4 +1,4 @@
-// `sourceplane webhook deliveries <endpointId> [--limit=N] [--cursor=CURSOR] [--all]`
+// `orun-cloud webhook deliveries <endpointId> [--limit=N] [--cursor=CURSOR] [--all]`
 //   [--output=human|json] — Task 0120, milestone B5-webhook-delivery-history.
 //
 // The CLI leg of the per-endpoint webhook delivery-history observability
@@ -112,7 +112,7 @@ export async function webhookDeliveriesCommand(
   const endpointId = ctx.args[0];
   if (endpointId === undefined || endpointId.length === 0) {
     throw new UsageError(
-      "usage: sourceplane webhook deliveries <endpointId> [--limit=N] [--cursor=CURSOR] [--all] [--output=human|json]",
+      "usage: orun-cloud webhook deliveries <endpointId> [--limit=N] [--cursor=CURSOR] [--all] [--output=human|json]",
     );
   }
 

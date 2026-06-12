@@ -1,4 +1,4 @@
-// `sourceplane webhook secrets rotate <endpointId>` — Task 0110.
+// `orun-cloud webhook secrets rotate <endpointId>` — Task 0110.
 //
 // Symmetric CLI surface to the Task 0109 console reveal-once rotate UX.
 // Closes the B5 secret-rotation arc:
@@ -77,7 +77,7 @@ export async function webhookSecretsRotateCommand(
   const endpointId = ctx.args[0];
   if (endpointId === undefined || endpointId.length === 0) {
     throw new UsageError(
-      "usage: sourceplane webhook secrets rotate <endpointId> [--idempotency-key=KEY] [--output=human|json]",
+      "usage: orun-cloud webhook secrets rotate <endpointId> [--idempotency-key=KEY] [--output=human|json]",
     );
   }
 

@@ -67,7 +67,7 @@ Own all facts about who a user is and how an actor proves identity to the platfo
 
 ### Minimum V1 Authentication Requirement
 
-V1 must ship with at least one first-party sign-in path that is Sourceplane-owned and served through the Worker runtime, such as email magic link or one-time code. Additional OAuth providers may be added through adapters, but hosted auth SaaS, including Supabase Auth, is not the starter source of truth unless a future spec explicitly changes that boundary.
+V1 must ship with at least one first-party sign-in path that is Orun Cloud-owned and served through the Worker runtime, such as email magic link or one-time code. Additional OAuth providers may be added through adapters, but hosted auth SaaS, including Supabase Auth, is not the starter source of truth unless a future spec explicitly changes that boundary.
 
 ### Recommended Public Route Surface
 

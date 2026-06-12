@@ -1,6 +1,6 @@
 /**
  * @saas/webhook-verifier — zero-dependency, WebCrypto-only HMAC-SHA256
- * signature verifier for Sourceplane outbound webhook deliveries.
+ * signature verifier for OrunCloud outbound webhook deliveries.
  *
  * Codifies the canonical signing scheme implemented in
  * `apps/webhooks-worker/src/delivery.ts` so external integrators
@@ -127,7 +127,7 @@ function constantTimeEqual(a: Uint8Array, b: Uint8Array): boolean {
 // ── Public API ────────────────────────────────────────────────────────
 
 /**
- * Compute the canonical Sourceplane webhook signature for a payload.
+ * Compute the canonical OrunCloud webhook signature for a payload.
  * Returns the full `sha256=<hex>` header value.
  */
 export async function signWebhookPayload(
@@ -138,7 +138,7 @@ export async function signWebhookPayload(
 }
 
 /**
- * Verify the HMAC-SHA256 signature of a Sourceplane webhook delivery.
+ * Verify the HMAC-SHA256 signature of a OrunCloud webhook delivery.
  *
  * Returns a tagged result. On `ok: false`, `reason` enumerates the
  * exact failure mode for caller observability. Comparison is

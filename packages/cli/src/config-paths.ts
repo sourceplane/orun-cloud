@@ -2,10 +2,10 @@
 // fallback and the context store.
 //
 // Layout (per task scope §Integration Notes):
-//   - `~/.config/sourceplane/credentials.json` (0600)
-//   - `~/.config/sourceplane/config.json`     (0644)
+//   - `~/.config/orun-cloud/credentials.json` (0600)
+//   - `~/.config/orun-cloud/config.json`     (0644)
 //
-// Override via `SOURCEPLANE_CONFIG_DIR` (used heavily by tests).
+// Override via `ORUN_CLOUD_CONFIG_DIR` (used heavily by tests).
 
 import * as os from "node:os";
 import * as path from "node:path";
@@ -17,7 +17,7 @@ export function resolveConfigDir(): string {
   const override = process.env[CONFIG_DIR_ENV_VAR];
   if (override && override.length > 0) return override;
   // Honour `XDG_CONFIG_HOME` when set (Linux convention) so XDG users get
-  // the dir they expect; fall back to `~/.config/sourceplane` everywhere
+  // the dir they expect; fall back to `~/.config/orun-cloud` everywhere
   // else (macOS, Windows w/o XDG, Linux w/o XDG).
   const xdg = process.env["XDG_CONFIG_HOME"];
   if (xdg && xdg.length > 0) return path.join(xdg, APP_DIR);

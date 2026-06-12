@@ -1,6 +1,6 @@
 {
-  "name": "Sourceplane Console",
-  "short_name": "Sourceplane",
+  "name": "Orun Console",
+  "short_name": "Orun",
   "description": "Control plane for your projects, environments, and entitlements.",
   "start_url": "/orgs",
   "scope": "/",

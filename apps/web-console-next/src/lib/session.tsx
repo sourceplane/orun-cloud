@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import type { Sourceplane } from "@saas/sdk";
+import type { OrunCloud } from "@saas/sdk";
 import {
   TARGETS,
   DEPLOY_ENV,
@@ -29,7 +29,7 @@ export function readStoredToken(): string | null {
 }
 
 interface SessionCtx {
-  client: Sourceplane;
+  client: OrunCloud;
   target: ApiTarget;
   token: string | null;
   setToken: (t: string | null) => void;

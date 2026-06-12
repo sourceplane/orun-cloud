@@ -62,7 +62,7 @@ describe("FileTokenStore", () => {
 
   it("creates the parent directory with mode 0700 on POSIX", async () => {
     if (process.platform === "win32") return;
-    const nested = path.join(dir, "sourceplane");
+    const nested = path.join(dir, "orun-cloud");
     const store = new FileTokenStore({ configDir: nested });
     await store.save({ apiUrl: "https://api.test", token: "tok" });
     const stat = await fs.stat(nested);
@@ -100,7 +100,7 @@ describe("KeychainTokenStore (DI shim)", () => {
 
   it("returns null for non-JSON keychain values", async () => {
     const shim = makeShim();
-    shim.store.set("sourceplane-cli::default", "garbage");
+    shim.store.set("orun-cloud-cli::default", "garbage");
     const store = new KeychainTokenStore({ keytar: shim });
     expect(await store.load()).toBeNull();
   });

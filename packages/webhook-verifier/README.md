@@ -1,7 +1,7 @@
 # @saas/webhook-verifier
 
 Zero-dependency, WebCrypto-only HMAC-SHA256 signature verifier for
-Sourceplane outbound webhook deliveries. Runs verbatim on Cloudflare
+Orun Cloud outbound webhook deliveries. Runs verbatim on Cloudflare
 Workers, Bun, modern Node, and browsers.
 
 ```ts
@@ -30,5 +30,5 @@ export async function handler(request: Request): Promise<Response> {
 your clocks are tightly synchronized, raise it if they aren't.
 
 The companion `signWebhookPayload({ secret, body, timestamp })` helper
-produces the exact `sha256=<hex>` header value Sourceplane emits — useful
+produces the exact `sha256=<hex>` header value Orun Cloud emits — useful
 for fixtures and symmetric debugging.

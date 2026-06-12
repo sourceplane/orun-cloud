@@ -72,7 +72,7 @@ variable "owner" {
 
 variable "repo" {
   type    = string
-  default = "multi-tenant-saas"
+  default = "orun-cloud"
 }
 
 variable "namespace" {

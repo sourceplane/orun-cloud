@@ -7,7 +7,7 @@
 
 import { describe, expect, it, vi } from "vitest";
 
-import { Sourceplane, AUDIT_ITERATOR_MAX_PAGES } from "../index.js";
+import { OrunCloud, AUDIT_ITERATOR_MAX_PAGES } from "../index.js";
 import type { PublicAuditEntry } from "@saas/contracts/events";
 
 interface PageMeta {
@@ -62,8 +62,8 @@ function entry(id: string, occurredAt: string): Partial<PublicAuditEntry> {
   };
 }
 
-function client(fetchImpl: typeof fetch): Sourceplane {
-  return new Sourceplane({ baseUrl: "https://api.test", fetch: fetchImpl });
+function client(fetchImpl: typeof fetch): OrunCloud {
+  return new OrunCloud({ baseUrl: "https://api.test", fetch: fetchImpl });
 }
 
 describe("EventsClient.iterAuditEntries", () => {

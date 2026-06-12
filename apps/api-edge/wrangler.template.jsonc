@@ -38,7 +38,7 @@
     "stage": {
       "vars": {
         "ENVIRONMENT": "stage",
-        "CONSOLE_CUSTOM_DOMAIN": "stage.sourceplane.ai"
+        "CONSOLE_CUSTOM_DOMAIN": "stage.orun.dev"
       },
       "hyperdrive": [
         {
@@ -106,7 +106,7 @@
     "prod": {
       "vars": {
         "ENVIRONMENT": "prod",
-        "CONSOLE_CUSTOM_DOMAIN": "prod.sourceplane.ai"
+        "CONSOLE_CUSTOM_DOMAIN": "prod.orun.dev"
       },
       "hyperdrive": [
         {

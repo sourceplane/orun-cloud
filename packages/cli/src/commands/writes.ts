@@ -21,7 +21,7 @@
 // All handlers accept `--output=human|json` through `ctx.outputMode`; tests
 // assert both modes for every new command.
 //
-// Errors propagate from the SDK as `SourceplaneError` subclasses and are
+// Errors propagate from the SDK as `OrunCloudError` subclasses and are
 // translated to exit codes by `formatCliError` in the runner.
 
 import type { CommandContext, CommandResult } from "../router.js";
@@ -50,7 +50,7 @@ function emitRecord(
 export async function orgInviteCommand(ctx: CommandContext): Promise<CommandResult> {
   const email = ctx.args[0];
   if (email === undefined || email.length === 0) {
-    throw new UsageError("usage: sourceplane org invite <email> [--role=ROLE] [--idempotency-key=KEY] [--org=ORG_ID]");
+    throw new UsageError("usage: orun-cloud org invite <email> [--role=ROLE] [--idempotency-key=KEY] [--org=ORG_ID]");
   }
   const roleFlag = ctx.flags["role"];
   const role = typeof roleFlag === "string" && roleFlag.length > 0 ? roleFlag : "viewer";
@@ -91,7 +91,7 @@ export async function orgInviteCommand(ctx: CommandContext): Promise<CommandResu
 export async function projectCreateCommand(ctx: CommandContext): Promise<CommandResult> {
   const name = ctx.args[0];
   if (name === undefined || name.length === 0) {
-    throw new UsageError("usage: sourceplane project create <name> [--idempotency-key=KEY]");
+    throw new UsageError("usage: orun-cloud project create <name> [--idempotency-key=KEY]");
   }
   const orgId = await resolveOrgId(ctx, /* allowOverride */ false);
   const idempotencyKey = readIdempotencyKey(ctx);
@@ -124,7 +124,7 @@ export async function envCreateCommand(ctx: CommandContext): Promise<CommandResu
   const projectId = ctx.args[0];
   const name = ctx.args[1];
   if (projectId === undefined || projectId.length === 0 || name === undefined || name.length === 0) {
-    throw new UsageError("usage: sourceplane env create <project-id> <name> [--idempotency-key=KEY]");
+    throw new UsageError("usage: orun-cloud env create <project-id> <name> [--idempotency-key=KEY]");
   }
   const orgId = await resolveOrgId(ctx, /* allowOverride */ false);
   const idempotencyKey = readIdempotencyKey(ctx);
@@ -167,7 +167,7 @@ export async function envCreateCommand(ctx: CommandContext): Promise<CommandResu
 export async function apiKeyCreateCommand(ctx: CommandContext): Promise<CommandResult> {
   const name = ctx.args[0];
   if (name === undefined || name.length === 0) {
-    throw new UsageError("usage: sourceplane api-key create <name> [--scope=SCOPE] [--idempotency-key=KEY]");
+    throw new UsageError("usage: orun-cloud api-key create <name> [--scope=SCOPE] [--idempotency-key=KEY]");
   }
   const scopeFlag = ctx.flags["scope"];
   const role = typeof scopeFlag === "string" && scopeFlag.length > 0 ? scopeFlag : "viewer";
@@ -224,7 +224,7 @@ function readEventFlags(flags: Readonly<Record<string, string | boolean>>): stri
 export async function webhookCreateCommand(ctx: CommandContext): Promise<CommandResult> {
   const url = ctx.args[0];
   if (url === undefined || url.length === 0) {
-    throw new UsageError("usage: sourceplane webhook create <url> [--event=EVENT[,EVENT2,...]] [--idempotency-key=KEY]");
+    throw new UsageError("usage: orun-cloud webhook create <url> [--event=EVENT[,EVENT2,...]] [--idempotency-key=KEY]");
   }
   const events = readEventFlags(ctx.flags);
   const orgId = await resolveOrgId(ctx, /* allowOverride */ false);

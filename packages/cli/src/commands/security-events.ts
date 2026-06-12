@@ -1,4 +1,4 @@
-// `sourceplane security events [--limit=N] [--cursor=CURSOR] [--all]`
+// `orun-cloud security events [--limit=N] [--cursor=CURSOR] [--all]`
 //   [--output=human|json] — Task 0122, milestone B7-security-events-surfaces.
 //
 // The CLI leg of the account security-events observability surface. Symmetric

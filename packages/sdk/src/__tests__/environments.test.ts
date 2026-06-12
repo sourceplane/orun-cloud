@@ -5,11 +5,11 @@
 //   - encodeURIComponent on dynamic segments (org / project / environment id)
 //   - Stripe parity: idempotency-key passthrough on create + archive
 //   - Stripe parity NOT auto-generated when caller omits the key
-//   - SourceplaneError hierarchy propagation with request-id passthrough
+//   - OrunCloudError hierarchy propagation with request-id passthrough
 
 import { describe, expect, it, vi } from "vitest";
 
-import { Sourceplane } from "../index.js";
+import { OrunCloud } from "../index.js";
 import { ConflictError, NotFoundError, ValidationError } from "../errors.js";
 
 interface CapturedCall {
@@ -56,8 +56,8 @@ function errorResponse(code: string, status: number): Response {
   );
 }
 
-function client(fetchImpl: typeof fetch): Sourceplane {
-  return new Sourceplane({ baseUrl: "https://api.test", fetch: fetchImpl });
+function client(fetchImpl: typeof fetch): OrunCloud {
+  return new OrunCloud({ baseUrl: "https://api.test", fetch: fetchImpl });
 }
 
 describe("EnvironmentsClient", () => {

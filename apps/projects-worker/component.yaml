@@ -40,7 +40,7 @@ spec:
     awsRegion: us-east-1
     orgName: sourceplane
     owner: sourceplane
-    repo: multi-tenant-saas
+    repo: orun-cloud
 
     turboFilter: "@saas/projects-worker"
     wranglerConfig: wrangler.jsonc

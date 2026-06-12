@@ -72,7 +72,7 @@ variable "owner" {
 
 variable "repo" {
   type    = string
-  default = "multi-tenant-saas"
+  default = "orun-cloud"
 }
 
 variable "namespace" {
@@ -131,7 +131,7 @@ locals {
   database_name = local.supabase_secret.database_name
   database_user = local.supabase_secret.database_user
 
-  hyperdrive_name = "${var.namespacePrefix}multi-tenant-saas-${var.environment}"
+  hyperdrive_name = "${var.namespacePrefix}orun-cloud-${var.environment}"
 }
 
 # --- Fetch Cloudflare account ID from env or variable ---

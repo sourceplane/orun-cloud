@@ -54,14 +54,14 @@ describe("ContextStore", () => {
 });
 
 describe("resolveConfigDir", () => {
-  it("respects SOURCEPLANE_CONFIG_DIR override", () => {
-    const prev = process.env["SOURCEPLANE_CONFIG_DIR"];
-    process.env["SOURCEPLANE_CONFIG_DIR"] = "/tmp/cli-override";
+  it("respects ORUN_CLOUD_CONFIG_DIR override", () => {
+    const prev = process.env["ORUN_CLOUD_CONFIG_DIR"];
+    process.env["ORUN_CLOUD_CONFIG_DIR"] = "/tmp/cli-override";
     try {
       expect(resolveConfigDir()).toBe("/tmp/cli-override");
     } finally {
-      if (prev === undefined) delete process.env["SOURCEPLANE_CONFIG_DIR"];
-      else process.env["SOURCEPLANE_CONFIG_DIR"] = prev;
+      if (prev === undefined) delete process.env["ORUN_CLOUD_CONFIG_DIR"];
+      else process.env["ORUN_CLOUD_CONFIG_DIR"] = prev;
     }
   });
 });

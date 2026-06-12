@@ -56,7 +56,7 @@ spec:
     awsRegion: us-east-1
     orgName: sourceplane
     owner: sourceplane
-    repo: multi-tenant-saas
+    repo: orun-cloud
 
     installCommand: pnpm install --frozen-lockfile
     buildCommand: pnpm exec turbo run build --filter=@saas/api-edge

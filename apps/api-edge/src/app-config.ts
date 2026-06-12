@@ -6,10 +6,10 @@
 // values and trivial derivations only.
 
 /** The Cloudflare account's workers.dev subdomain serving this instance. */
-export const WORKERS_DEV_SUBDOMAIN = "rahulvarghesepullely";
+export const WORKERS_DEV_SUBDOMAIN = "your-workers-subdomain";
 
 /** Worker name prefix of the console delivery (per-env: `${prefix}-${env}`). */
-export const CONSOLE_WORKER_PREFIX = "sourceplane-web-console-next";
+export const CONSOLE_WORKER_PREFIX = "orun-web-console-next";
 
 /** workers.dev origin of the console for a given environment name. */
 export function consoleWorkersDevOrigin(environment: string): string {

@@ -65,7 +65,7 @@ Standard Orun parameters (matching `cloudflare-hyperdrive`):
 | `cloudflare_account_id` | string (sensitive) | `""` | From `CLOUDFLARE_ACCOUNT_ID` env var |
 | `orgName` | string | `sourceplane` | Org identifier |
 | `owner` | string | `sourceplane` | GitHub owner |
-| `repo` | string | `multi-tenant-saas` | GitHub repo |
+| `repo` | string | `orun-cloud` | GitHub repo |
 | `namespace` | string | `sourceplane` | Logical namespace |
 | `namespacePrefix` | string | `""` | Stage/prod prefix (`stg-`, `prod-`) |
 | `lane` | string | `verify` | Orun lane |

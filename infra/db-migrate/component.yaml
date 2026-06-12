@@ -27,9 +27,9 @@ spec:
     pnpmVersion: "10.12.1"
     awsRegion: us-east-1
     awsAccountId: "306024784101"
-    secretName: sourceplane/multi-tenant-saas/supabase
+    secretName: sourceplane/orun-cloud/supabase
     owner: sourceplane
-    repo: multi-tenant-saas
+    repo: orun-cloud
 
   subscribe:
     environments:
