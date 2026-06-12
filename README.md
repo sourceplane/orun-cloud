@@ -19,8 +19,11 @@ public edge API, with a Next.js console on Workers + Static Assets.
 - **Billing** is live end-to-end via the Polar adapter (embedded checkout,
   plan changes, multi-org fan-out).
 - **Known credential-blocked tails** (see `specs/epics/saas-baseline/`): full
-  production OAuth/magic-link auth, Stripe, and the chosen notifications email
-  provider require human-supplied credentials.
+  production OAuth/magic-link auth and Stripe require human-supplied
+  credentials. The notifications email provider is Cloudflare Email Service
+  (`cloudflare-email`, no API key — the `send_email` binding is the
+  credential); it needs one-time account setup: Workers Paid plan and the
+  sending domain verified in Email Service (DKIM/SPF).
 - The `dev` environment is verify-only (no provisioned Supabase project by
   design).
 

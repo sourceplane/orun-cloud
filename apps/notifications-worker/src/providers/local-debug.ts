@@ -7,13 +7,13 @@ import type {
 /**
  * Local-debug provider.
  *
- * The only V1-shipped NotificationProvider. It does NOT contact any external
- * service. Each call returns a synthetic provider message id and reports
- * success; the worker is responsible for persisting that result through the
- * notifications repository.
+ * It does NOT contact any external service. Each call returns a synthetic
+ * provider message id and reports success; the worker is responsible for
+ * persisting that result through the notifications repository.
  *
- * Safe for stage and prod under the explicit V1 carve-out in spec 14: real
- * provider integration (Resend / Postmark / SES) is a deliberate follow-up.
+ * Real delivery ships via the cloudflare-email provider (Cloudflare Email
+ * Service); local-debug remains the default for local/dev and the fallback
+ * whenever a real provider is selected but misconfigured.
  *
  * The provider intentionally accepts no credential material via its
  * factory — there are no secrets to inject.
