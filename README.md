@@ -24,6 +24,14 @@ public edge API, with a Next.js console on Workers + Static Assets.
 - The `dev` environment is verify-only (no provisioned Supabase project by
   design).
 
+## Forking / rebranding
+
+This baseline is built to be instantiated as new products. The mechanical
+rename (repo slug, product name/domain, SDK class, CLI bin, worker prefixes,
+user agents, workers.dev subdomain) is one script —
+`node tooling/rebrand/rebrand.mjs --values my-brand.json` — and everything
+that needs human hands is a checklist. See **[FORKING.md](FORKING.md)**.
+
 ## Prerequisites
 
 - Node.js >= 20 (CI and components run on Node 22)
