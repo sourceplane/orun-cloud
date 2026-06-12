@@ -102,11 +102,13 @@ export default function OrgsPage() {
           </CardHeader>
         </Card>
       ) : !orgs.data || orgs.data.length === 0 ? (
+        // Transient: the shell's OnboardingGate redirects zero-org accounts to
+        // /onboarding; this renders only for the moment before it fires.
         <EmptyState
           icon={Building2}
           title="No organizations yet"
           description="Create your first organization to start provisioning projects and environments."
-          primaryAction={{ label: "New organization", href: "/orgs/new" }}
+          primaryAction={{ label: "Create your organization", href: "/onboarding" }}
         />
       ) : (
         <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">

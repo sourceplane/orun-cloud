@@ -35,9 +35,16 @@ import {
  * component owns the form state, the stepper chrome, and the submit hand-offs
  * (checkout for paid parent plans, GitHub App install for the GitHub starting
  * point).
+ *
+ * Two surfaces render it: the in-shell `/orgs/new` page ("page" variant, child
+ * orgs) and the mandatory first-run `/onboarding` page ("onboarding" variant).
+ * Onboarding has no org to go back to, so the picker back-link and the
+ * first-step Cancel are dropped there.
  */
 
 export type { CreateOrgMode };
+
+export type CreateOrgVariant = "page" | "onboarding";
 
 export interface BillingParentRef {
   id: string;
@@ -50,9 +57,11 @@ const SLUG_RE = /^[a-z0-9-]*$/;
 export function CreateOrgFlow({
   mode,
   billingParent,
+  variant = "page",
 }: {
   mode: CreateOrgMode;
   billingParent: BillingParentRef | null;
+  variant?: CreateOrgVariant;
 }) {
   const router = useRouter();
   const { client } = useSession();
@@ -162,13 +171,15 @@ export function CreateOrgFlow({
 
   return (
     <div className="mx-auto max-w-5xl">
-      <Link
-        href="/orgs"
-        className="inline-flex items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground"
-      >
-        <ArrowLeft className="h-4 w-4" />
-        Organizations
-      </Link>
+      {variant === "page" && (
+        <Link
+          href="/orgs"
+          className="inline-flex items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground"
+        >
+          <ArrowLeft className="h-4 w-4" />
+          Organizations
+        </Link>
+      )}
 
       <header className="mt-3">
         <h1 className="text-2xl font-semibold tracking-tight">
@@ -176,7 +187,7 @@ export function CreateOrgFlow({
         </h1>
         <p className="mt-1 text-sm text-muted-foreground">
           {mode === "parent"
-            ? "An organization is your tenant — it owns projects, members, and billing."
+            ? "An organization is your tenant — it owns projects, members, and billing. You need one to use the console."
             : "Another tenant under your account — its billing rolls up to your parent organization."}
         </p>
       </header>
@@ -263,16 +274,22 @@ export function CreateOrgFlow({
           )}
 
           <footer className="mt-8 flex items-center justify-between gap-3 border-t pt-5">
-            <Button variant="ghost" onClick={back} disabled={submitting}>
-              {stepIndex === 0 ? (
-                "Cancel"
-              ) : (
-                <>
-                  <ArrowLeft className="h-4 w-4" />
-                  Back
-                </>
-              )}
-            </Button>
+            {stepIndex === 0 && variant === "onboarding" ? (
+              // Onboarding is mandatory — there is no org-less view to cancel
+              // back to, so keep the slot for layout but render nothing.
+              <span />
+            ) : (
+              <Button variant="ghost" onClick={back} disabled={submitting}>
+                {stepIndex === 0 ? (
+                  "Cancel"
+                ) : (
+                  <>
+                    <ArrowLeft className="h-4 w-4" />
+                    Back
+                  </>
+                )}
+              </Button>
+            )}
             {isLast ? (
               <Button onClick={() => void onCreate()} loading={submitting}>
                 {createLabel}
