@@ -63,3 +63,4 @@ spec:
     runtime: cloudflare
 # ci: trigger full-component verification (orun v2.12.0 upgrade — PR #183)
 # ci: rebuild marker — redeploy for PX3 preferences facade callers (stage/prod drift from the failed #280 convergence run)
+# ci: redeploy with live Hyperdrive wiring (BF6b convergence)
