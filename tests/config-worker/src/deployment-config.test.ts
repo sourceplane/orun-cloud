@@ -34,19 +34,20 @@ function readYaml(relPath: string): string {
 const HYPERDRIVE_ID_RE = /^[0-9a-f]{32}$/;
 const PLACEHOLDER_RE = /PLACEHOLDER/i;
 
-// Known verified Hyperdrive IDs
-const STAGE_HYPERDRIVE_ID = "08f7c6055f544a3890a585d88fd92348";
-const PROD_HYPERDRIVE_ID = "ab2c21c2db6245a59c91588fcac7107a";
+// BF6b: Hyperdrive IDs are never committed. The committed artifact is
+// wrangler.template.jsonc carrying @@wiring(...)@@ tokens; wrangler.jsonc is
+// rendered by tooling/wire/render.mjs (fixture offline, Secrets Manager live).
+const WIRING_TOKEN_RE = /^@@wiring\(cloudflare-hyperdrive\/(stage|prod):hyperdrive_id\)@@$/;
 
 // ── Workers that use Hyperdrive ────────────────────────────────
 
-const HYPERDRIVE_WORKERS = [
-  "apps/api-edge/wrangler.jsonc",
-  "apps/config-worker/wrangler.jsonc",
-  "apps/projects-worker/wrangler.jsonc",
-  "apps/events-worker/wrangler.jsonc",
-  "apps/membership-worker/wrangler.jsonc",
-  "apps/identity-worker/wrangler.jsonc",
+const HYPERDRIVE_WORKER_TEMPLATES = [
+  "apps/api-edge/wrangler.template.jsonc",
+  "apps/config-worker/wrangler.template.jsonc",
+  "apps/projects-worker/wrangler.template.jsonc",
+  "apps/events-worker/wrangler.template.jsonc",
+  "apps/membership-worker/wrangler.template.jsonc",
+  "apps/identity-worker/wrangler.template.jsonc",
 ];
 
 // ── config-worker Hyperdrive tests ─────────────────────────────
@@ -56,18 +57,32 @@ describe("config-worker wrangler.jsonc Hyperdrive bindings", () => {
     env: Record<string, { hyperdrive?: Array<{ binding: string; id: string }> }>;
   };
 
-  test("stage PLATFORM_DB is the verified stage Hyperdrive ID", () => {
+  test("stage PLATFORM_DB is bound to a rendered Hyperdrive ID", () => {
     const hd = wrangler.env.stage?.hyperdrive ?? [];
     const db = hd.find((h) => h.binding === "PLATFORM_DB");
     expect(db).toBeDefined();
-    expect(db!.id).toBe(STAGE_HYPERDRIVE_ID);
+    expect(db!.id).toMatch(HYPERDRIVE_ID_RE);
   });
 
-  test("prod PLATFORM_DB is the verified prod Hyperdrive ID", () => {
-    const hd = wrangler.env.prod?.hyperdrive ?? [];
-    const db = hd.find((h) => h.binding === "PLATFORM_DB");
-    expect(db).toBeDefined();
-    expect(db!.id).toBe(PROD_HYPERDRIVE_ID);
+  test("prod PLATFORM_DB is bound to a rendered Hyperdrive ID distinct from stage", () => {
+    const stageDb = (wrangler.env.stage?.hyperdrive ?? []).find((h) => h.binding === "PLATFORM_DB");
+    const prodDb = (wrangler.env.prod?.hyperdrive ?? []).find((h) => h.binding === "PLATFORM_DB");
+    expect(prodDb).toBeDefined();
+    expect(prodDb!.id).toMatch(HYPERDRIVE_ID_RE);
+    expect(prodDb!.id).not.toBe(stageDb!.id);
+  });
+
+  test("committed template carries wiring tokens, not literal IDs", () => {
+    const template = readJsonc("apps/config-worker/wrangler.template.jsonc") as {
+      env: Record<string, { hyperdrive?: Array<{ binding: string; id: string }> }>;
+    };
+    for (const envName of ["stage", "prod"]) {
+      const hd = template.env[envName]?.hyperdrive ?? [];
+      const db = hd.find((h) => h.binding === "PLATFORM_DB");
+      expect(db).toBeDefined();
+      expect(db!.id).toMatch(WIRING_TOKEN_RE);
+      expect(db!.id).not.toMatch(HYPERDRIVE_ID_RE);
+    }
   });
 
   test("no placeholder Hyperdrive IDs in any environment", () => {
@@ -91,17 +106,19 @@ describe("config-worker wrangler.jsonc Hyperdrive bindings", () => {
 
 // ── Cross-worker placeholder scan ──────────────────────────────
 
-describe("no placeholder Hyperdrive IDs in any Worker config", () => {
-  for (const wranglerPath of HYPERDRIVE_WORKERS) {
-    const fullPath = path.join(ROOT, wranglerPath);
-    if (!fs.existsSync(fullPath)) continue;
+describe("no placeholder or committed Hyperdrive IDs in any Worker template", () => {
+  for (const templatePath of HYPERDRIVE_WORKER_TEMPLATES) {
+    const fullPath = path.join(ROOT, templatePath);
 
-    test(`${wranglerPath} has no PLACEHOLDER IDs`, () => {
+    test(`${templatePath} has no PLACEHOLDER or committed 32-hex IDs`, () => {
       // Scan config values only — strip `//` comments so benign prose (e.g. the
       // identity-worker OAuth setup notes that mention "placeholders") doesn't
       // false-positive. The intent is to catch placeholder Hyperdrive *IDs*.
       const stripped = fs.readFileSync(fullPath, "utf-8").replace(/\/\/.*$/gm, "");
       expect(stripped).not.toMatch(PLACEHOLDER_RE);
+      // BF6 guard (mirrors the composition's verify-worker-structure step):
+      // templates must never carry committed resource IDs.
+      expect(stripped).not.toMatch(/"id":\s*"[0-9a-f]{32}"/);
     });
   }
 });

@@ -32,8 +32,9 @@ spec:
     pnpmVersion: "10.12.1"
     workspaceDir: ../..
     appDir: .
-    # BF6: identity/role inputs for the deploy lane's wire-credentials step.
-    # Inert until this worker gets a wrangler template (fleet rollout, BF6b).
+    # BF6b: deploy-time wiring — wrangler.jsonc is rendered, never committed.
+    # Verify lanes render from wiring.fixture.json (offline); deploy lanes
+    # resolve real IDs from the Secrets Manager wiring manifest (BF5).
     awsAccountId: "306024784101"
     awsRegion: us-east-1
     orgName: sourceplane
@@ -42,6 +43,10 @@ spec:
 
     turboFilter: "@saas/billing-worker"
     wranglerConfig: wrangler.jsonc
+    wranglerTemplate: wrangler.template.jsonc
+    wiringComponents: "cloudflare-hyperdrive"
+    wiringEnvs: "stage,prod"
+    wiringFixture: wiring.fixture.json
     installCommand: pnpm install --frozen-lockfile
     buildCommand: pnpm exec turbo run build --filter=@saas/billing-worker
     typecheckCommand: pnpm exec turbo run typecheck --filter=@saas/billing-worker
