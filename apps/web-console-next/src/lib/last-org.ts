@@ -18,6 +18,7 @@
  */
 
 import { STORAGE_PREFIX } from "./app-config";
+import { pickAccountBillingOrg } from "@/components/billing/account-org";
 
 const LAST_ORG_KEY = `${STORAGE_PREFIX}.last-org`;
 
@@ -50,16 +51,22 @@ export function clearLastOrgSlug(): void {
 
 /**
  * Default destination after auth / at the app root: the last-used org's projects
- * if one is remembered, otherwise the org picker. Pure given a slug so it's
- * trivially testable; callers pass `readLastOrgSlug()`.
+ * if one is remembered, otherwise onboarding. There is deliberately no org-less
+ * landing view — an organization is the unit of work, so when we don't know one
+ * we send the user to `/onboarding`, which either creates the first org or
+ * forwards to an existing one. Pure given a slug so it's trivially testable;
+ * callers pass `readLastOrgSlug()`.
  */
 export function defaultOrgDestination(lastOrgSlug: string | null): string {
-  return lastOrgSlug ? `/orgs/${lastOrgSlug}/projects` : "/orgs";
+  return lastOrgSlug ? `/orgs/${lastOrgSlug}/projects` : "/onboarding";
 }
 
-/** Minimal shape of the auth client needed to read the server-side preference. */
-interface ProfileReader {
+/** Minimal shape of the API client needed to resolve the post-auth destination. */
+interface PostAuthClient {
   auth: { getProfile: () => Promise<{ user: { lastOrgSlug?: string | null } }> };
+  organizations: {
+    list: () => Promise<{ organizations: { id: string; slug: string; createdAt: string }[] }>;
+  };
 }
 
 /**
@@ -67,11 +74,14 @@ interface ProfileReader {
  *
  * The server preference is the cross-device source of truth: we read it with the
  * freshly-authenticated client, seed the local cache from it, and route there.
- * If the read fails (network, API-key token, no server value) we fall back to
- * the local cache so the redirect is never blocked. Pass a client built with the
- * NEW token — the session context's client may not have it yet on this tick.
+ * Without a preference the org list decides: no orgs at all means a first
+ * sign-in, which goes to mandatory onboarding (create the parent org + pick a
+ * plan); otherwise we land on the account's billing-parent org. If every read
+ * fails (network, API-key token) we fall back to the local cache so the
+ * redirect is never blocked. Pass a client built with the NEW token — the
+ * session context's client may not have it yet on this tick.
  */
-export async function resolvePostAuthDestination(client: ProfileReader): Promise<string> {
+export async function resolvePostAuthDestination(client: PostAuthClient): Promise<string> {
   try {
     const { user } = await client.auth.getProfile();
     const serverSlug = user.lastOrgSlug ?? null;
@@ -79,6 +89,15 @@ export async function resolvePostAuthDestination(client: ProfileReader): Promise
       writeLastOrgSlug(serverSlug);
       return defaultOrgDestination(serverSlug);
     }
+  } catch {
+    /* fall through to the org list */
+  }
+  try {
+    const { organizations } = await client.organizations.list();
+    if (organizations.length === 0) return "/onboarding";
+    const home = pickAccountBillingOrg(organizations)!;
+    writeLastOrgSlug(home.slug);
+    return defaultOrgDestination(home.slug);
   } catch {
     /* fall back to the local cache */
   }

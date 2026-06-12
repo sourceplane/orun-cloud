@@ -1,12 +1,16 @@
 "use client";
 
 import * as React from "react";
+import { useRouter } from "next/navigation";
 import { Sidebar } from "@/components/shell/sidebar";
 import { Topbar } from "@/components/shell/topbar";
 import { BottomTabs } from "@/components/shell/bottom-tabs";
 import { LastOrgRecorder } from "@/components/shell/last-org-recorder";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useRequireAuth } from "@/lib/use-async";
+import { useSession } from "@/lib/session";
+import { useApiQuery, qk } from "@/lib/query";
+import { wrap } from "@/lib/api";
 
 /**
  * App shell. The frame (sidebar + topbar rails) paints immediately so there's
@@ -46,8 +50,28 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         {ready && <BottomTabs />}
       </div>
       {ready && <LastOrgRecorder />}
+      {ready && <OnboardingGate />}
     </div>
   );
+}
+
+/**
+ * Invisible guard: the console has no working view without an organization, so
+ * an authenticated user with zero orgs is sent to the mandatory `/onboarding`
+ * flow (create the parent org + pick a plan) from anywhere in the shell. Backed
+ * by the shared `orgs` query the shell already fetches, so this adds no extra
+ * request; on fetch errors it stays put rather than guessing.
+ */
+function OnboardingGate() {
+  const router = useRouter();
+  const { client } = useSession();
+  const orgs = useApiQuery(qk.orgs(), () =>
+    wrap(async () => (await client.organizations.list()).organizations),
+  );
+  React.useEffect(() => {
+    if (orgs.data && orgs.data.length === 0) router.replace("/onboarding");
+  }, [orgs.data, router]);
+  return null;
 }
 
 function ShellSkeleton() {

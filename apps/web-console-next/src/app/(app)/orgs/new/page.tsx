@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { useRouter } from "next/navigation";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Card, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { pickAccountBillingOrg } from "@/components/billing/account-org";
@@ -10,17 +11,24 @@ import { useApiQuery, qk } from "@/lib/query";
 import { wrap } from "@/lib/api";
 
 /**
- * Guided create-organization flow. Whether this is the account's first
- * (parent) organization or an additional (child) one decides which steps the
- * wizard shows, so the page resolves the org list before mounting the flow.
+ * Guided create-organization flow for ADDITIONAL (child) organizations. The
+ * account's first (parent) organization is always created through the
+ * full-screen `/onboarding` flow, so an account with zero orgs is forwarded
+ * there; the page resolves the org list before mounting the flow to decide.
  */
 export default function NewOrgPage() {
+  const router = useRouter();
   const { client } = useSession();
   const orgs = useApiQuery(qk.orgs(), () =>
     wrap(async () => (await client.organizations.list()).organizations),
   );
 
-  if (orgs.loading) {
+  const needsOnboarding = orgs.data?.length === 0;
+  React.useEffect(() => {
+    if (needsOnboarding) router.replace("/onboarding");
+  }, [needsOnboarding, router]);
+
+  if (orgs.loading || needsOnboarding) {
     return (
       <div className="mx-auto max-w-5xl space-y-6">
         <Skeleton className="h-4 w-28" />
@@ -51,11 +59,5 @@ export default function NewOrgPage() {
     );
   }
 
-  const list = orgs.data ?? [];
-  return (
-    <CreateOrgFlow
-      mode={list.length === 0 ? "parent" : "child"}
-      billingParent={pickAccountBillingOrg(list)}
-    />
-  );
+  return <CreateOrgFlow mode="child" billingParent={pickAccountBillingOrg(orgs.data ?? [])} />;
 }
