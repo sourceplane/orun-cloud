@@ -1,0 +1,47 @@
+apiVersion: sourceplane.io/v1
+kind: Component
+metadata:
+  name: website
+  description: orun.dev marketing site (static assets Worker on the apex domain)
+spec:
+  type: cloudflare-worker-turbo
+  lifecycle: production
+  owner: platform
+  domain: starter-runtime
+  path: apps/website
+  subscribe:
+    environments:
+      - name: dev
+        profile: verify
+      - name: prod
+        profile: verify
+        profileRules:
+          - profile: deploy
+            when:
+              triggerRef: github-push-main
+  parameters:
+    nodeVersion: "22"
+    pnpmVersion: "10.12.1"
+    workspaceDir: ../..
+    appDir: .
+    awsAccountId: "306024784101"
+    awsRegion: us-east-1
+    orgName: sourceplane
+    owner: sourceplane
+    repo: orun-cloud
+
+    turboFilter: "@saas/website"
+    wranglerConfig: wrangler.jsonc
+    installCommand: pnpm install --frozen-lockfile
+    buildCommand: pnpm exec turbo run build --filter=@saas/website
+    typecheckCommand: pnpm exec turbo run typecheck --filter=@saas/website
+    dryRunCommand: pnpm exec wrangler deploy --dry-run --config wrangler.jsonc --env prod
+    deployCommand: pnpm exec wrangler deploy --config wrangler.jsonc --env prod
+    preDeployCommand: "echo 'No pre-deploy step configured.'"
+    migrationCommand: "echo 'No migrations configured.'"
+    smokeCommand: "html=$(curl -sfL \"https://orun.dev/\") && echo \"${html}\" | grep -q 'Converge infrastructure'"
+  labels:
+    team: platform
+    layer: marketing
+    surface: website
+    runtime: cloudflare

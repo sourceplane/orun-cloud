@@ -1,0 +1,20 @@
+// orun.dev marketing site — static assets served by a Cloudflare Worker.
+// No code bundle, no bindings, no wiring: assets only. The prod environment
+// claims the apex custom domain; wrangler manages the DNS record + cert.
+{
+  "name": "orun-website",
+  "compatibility_date": "2025-05-01",
+  "assets": {
+    "directory": "./public"
+  },
+  "env": {
+    "prod": {
+      "assets": {
+        "directory": "./public"
+      },
+      "routes": [
+        { "pattern": "orun.dev", "custom_domain": true }
+      ]
+    }
+  }
+}
