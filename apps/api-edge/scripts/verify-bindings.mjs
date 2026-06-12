@@ -8,16 +8,16 @@ function stripJsoncComments(text) {
   return text.replace(/\/\/.*$/gm, "").replace(/\/\*[\s\S]*?\*\//g, "");
 }
 
+// BF6: resource IDs are never committed — wrangler.jsonc is rendered from
+// wrangler.template.jsonc, so this checks the rendered shape (valid 32-hex,
+// stage and prod distinct), not literal account IDs.
 const EXPECTED_HYPERDRIVE = {
-  stage: {
-    binding: "PLATFORM_DB",
-    id: "08f7c6055f544a3890a585d88fd92348",
-  },
-  prod: {
-    binding: "PLATFORM_DB",
-    id: "ab2c21c2db6245a59c91588fcac7107a",
-  },
+  stage: { binding: "PLATFORM_DB" },
+  prod: { binding: "PLATFORM_DB" },
 };
+
+const HYPERDRIVE_ID_PATTERN = /^[0-9a-f]{32}$/;
+const seenHyperdriveIds = new Map();
 
 const EXPECTED_KV = {
   stage: {
@@ -88,13 +88,15 @@ for (const [envName, expected] of Object.entries(EXPECTED_HYPERDRIVE)) {
     continue;
   }
 
-  if (hd.id !== expected.id) {
+  if (typeof hd.id !== "string" || !HYPERDRIVE_ID_PATTERN.test(hd.id)) {
     console.error(
-      `FAIL: [${envName}] binding "${expected.binding}" id mismatch: got "${hd.id}", want "${expected.id}"`
+      `FAIL: [${envName}] binding "${expected.binding}" id "${hd.id}" does not match /^[0-9a-f]{32}$/`
     );
     failures++;
     continue;
   }
+
+  seenHyperdriveIds.set(envName, hd.id);
 
   const envVar = envBlock.vars?.ENVIRONMENT;
   if (envVar !== envName) {
@@ -106,6 +108,16 @@ for (const [envName, expected] of Object.entries(EXPECTED_HYPERDRIVE)) {
   }
 
   console.log(`OK: [${envName}] PLATFORM_DB → ${hd.id}`);
+}
+
+if (
+  seenHyperdriveIds.has("stage") &&
+  seenHyperdriveIds.get("stage") === seenHyperdriveIds.get("prod")
+) {
+  console.error(
+    `FAIL: stage and prod share the same Hyperdrive id "${seenHyperdriveIds.get("stage")}"`
+  );
+  failures++;
 }
 
 for (const [envName, expected] of Object.entries(EXPECTED_KV)) {

@@ -171,12 +171,26 @@ service bindings; supabase/hyperdrive/kv/domain/bootstrap applied.
   1.0.4→1.17.1, vitest ^2→^3.2.6, fast-xml-parser override >=4.5.5,
   in-range `pnpm update -r`. Remaining 2 low + 7 moderate are
   transitive without in-range patches; revisit periodically
-- [ ] Upstream the deploy-profile wire-fixture fix (PR #10) to
-  multi-tenant-saas — its api-edge deploy lane has the same latent gap
-- [ ] Real email provider for prod login codes: the baseline V1
-  notifications-worker ships only a `local-debug` provider (no actual
-  email is sent). Stage works end-to-end because `DEBUG_DELIVERY=true`
-  returns the code inline in the login response; prod login-start
-  succeeds but the code email is never delivered. Needs a provider
-  integration (e.g. Resend/SES) + API key secret, or the bearer-token
-  tab for prod access in the interim
+- [x] Upstream the deploy-profile wire-fixture fix (PR #10) to
+  multi-tenant-saas — upstream shipped the identical fix itself in its
+  #336 ("close three fork-friction gaps found by the first
+  instantiation"); nothing left to send
+- [x] Real email provider for prod login codes: synced from upstream
+  #341 — Cloudflare Email Service (`cloudflare-email` provider, the
+  `send_email` binding is the credential, no API key). Remaining
+  operator step: verify `mail.orun.dev` as a sending domain in
+  Cloudflare → Email Service (DKIM/SPF records). Until then sends fail
+  as `notification.failed` events and stage's inline debug code remains
+  the login path
+
+## Upstream syncs
+
+### Sync 1 — 2026-06-12, baseline `11a9f5d..7da9ec0` (7 commits)
+
+| Upstream commit | Disposition here |
+|---|---|
+| #335 `eca161f` console onboarding | Ported byte-identical (no rebrand-sensitive files) |
+| #336 `2851b4d` fork-friction fixes | Already present — this fork made the identical four changes independently (ci.yml ORUN_BACKEND_URL removal, brand.ts hyphen mapping, deploy-profile wire-fixture, schema.yaml placeholder) |
+| #337–#339 BF6b fleet wiring | Already present — this fork completed the fleet rollout first (PRs #6–#9); upstream's conversion mirrors it. Residue adopted: hermetic `tests/config-worker` deployment test (renders fixtures itself) and re-anchored `apps/api-edge/scripts/verify-bindings.mjs` (32-hex + distinct invariants instead of literal baseline-account IDs) |
+| #340 `39d0f57` FORKING.md + rebrand script | Ported verbatim (factory tooling; `tooling/` is outside component discovery) |
+| #341 `7da9ec0` Cloudflare Email Service provider | Ported with rebrand: sender `no-reply@mail.orun.dev`, display name `Orun` |
