@@ -13,6 +13,7 @@ import { useSession } from "@/lib/session";
 import { useToast } from "@/components/ui/toast";
 import { wrap, type ApiErrorBody } from "@/lib/api";
 import { qk } from "@/lib/query";
+import { writeLastOrgSlug } from "@/lib/last-org";
 import { slugify } from "@/lib/slug";
 import { cn } from "@/lib/cn";
 import { SALES_EMAIL } from "@/lib/app-config";
@@ -138,7 +139,18 @@ export function CreateOrgFlow({
       return;
     }
     const org = r.data;
+
+    // Seed the cache with the new org BEFORE navigating so no shell gate ever
+    // observes a (stale) empty org list and bounces the user back to
+    // /onboarding mid-transition — the flash this flow used to produce. The
+    // background invalidate then reconciles status/parent fields. Remember the
+    // new org as the landing target so the app root resolves straight to it.
+    qc.setQueryData<typeof org[]>(qk.orgs(), (prev) => {
+      const list = prev ?? [];
+      return list.some((o) => o.id === org.id) ? list : [...list, org];
+    });
     void qc.invalidateQueries({ queryKey: qk.orgs() });
+    writeLastOrgSlug(org.slug);
 
     if (mode === "parent" && plan.contact) {
       window.location.href = `mailto:${SALES_EMAIL}?subject=${encodeURIComponent(
@@ -164,7 +176,10 @@ export function CreateOrgFlow({
     }
 
     toast({ kind: "success", title: `${org.name} created` });
-    router.push(postCreatePath(mode, source, org.slug));
+    // `replace`, not `push`: the wizard is a one-shot transition, so the new
+    // dashboard should not leave the create form in history (a Back press must
+    // not return to a now-submitted form).
+    router.replace(postCreatePath(mode, source, org.slug));
   };
 
   const createLabel = createButtonLabel(mode, plan, source);
@@ -461,15 +476,12 @@ function ReviewStep({
   source: SourceChoice;
 }) {
   const nextSteps: string[] = [`We create ${name || "your organization"} and make you its owner.`];
-  if (mode === "parent") {
-    if (plan.contact) {
-      nextSteps.push("We open an email to our sales team about Enterprise pricing.");
-    } else if (plan.code !== "free") {
-      nextSteps.push(`You're taken to secure checkout to start your ${plan.name} subscription.`);
-    } else {
-      nextSteps.push("You land on your new dashboard, ready to create projects.");
-    }
-  } else if (source.kind === "git" && source.provider === "github") {
+  const isGithub = source.kind === "git" && source.provider === "github";
+  if (mode === "parent" && plan.contact) {
+    nextSteps.push("We open an email to our sales team about Enterprise pricing.");
+  } else if (mode === "parent" && plan.code !== "free") {
+    nextSteps.push(`You're taken to secure checkout to start your ${plan.name} subscription.`);
+  } else if (isGithub) {
     nextSteps.push("You're taken to Integrations to install the GitHub App.");
   } else {
     nextSteps.push("You land on your new dashboard, ready to create projects.");
@@ -504,7 +516,7 @@ function ReviewStep({
             </span>
           )}
         </ReviewRow>
-        {mode === "parent" ? (
+        {mode === "parent" && (
           <ReviewRow label="Plan">
             <span className="text-sm">
               {plan.name}{" "}
@@ -513,11 +525,10 @@ function ReviewStep({
               </span>
             </span>
           </ReviewRow>
-        ) : (
-          <ReviewRow label="Starting point">
-            <span className="text-sm">{sourceSummary(source)}</span>
-          </ReviewRow>
         )}
+        <ReviewRow label="Starting point">
+          <span className="text-sm">{sourceSummary(source)}</span>
+        </ReviewRow>
       </dl>
 
       <div className="rounded-lg border bg-muted/40 p-4">

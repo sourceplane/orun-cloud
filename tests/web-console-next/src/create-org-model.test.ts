@@ -15,12 +15,23 @@ const plan = (code: string): PlanOption => {
 };
 
 describe("flowSteps", () => {
-  it("gives a parent (first) org the plan step", () => {
-    expect(flowSteps("parent").map((s) => s.id)).toEqual(["details", "plan", "review"]);
+  it("gives a parent (first) org the full path: plan AND starting point", () => {
+    expect(flowSteps("parent").map((s) => s.id)).toEqual([
+      "details",
+      "plan",
+      "source",
+      "review",
+    ]);
   });
 
-  it("gives a child (additional) org the starting-point step instead", () => {
+  it("gives a child (additional) org the same path minus the plan step", () => {
     expect(flowSteps("child").map((s) => s.id)).toEqual(["details", "source", "review"]);
+  });
+
+  it("shares the details/starting-point/review spine across both modes", () => {
+    const child = flowSteps("child").map((s) => s.id);
+    const parent = flowSteps("parent").map((s) => s.id);
+    expect(child.every((id) => parent.includes(id))).toBe(true);
   });
 });
 
@@ -75,7 +86,13 @@ describe("createButtonLabel", () => {
     );
   });
 
-  it("ignores the source in parent mode and the plan in child mode", () => {
+  it("names the GitHub hand-off for a free parent org too (unified flow)", () => {
+    expect(createButtonLabel("parent", plan("free"), { kind: "git", provider: "github" })).toBe(
+      "Create & connect GitHub",
+    );
+  });
+
+  it("lets a paid/contact plan hand-off win over the source in parent mode", () => {
     expect(createButtonLabel("parent", plan("business"), { kind: "git", provider: "github" })).toBe(
       "Create & continue to checkout",
     );
@@ -86,8 +103,11 @@ describe("createButtonLabel", () => {
 });
 
 describe("postCreatePath", () => {
-  it("routes the GitHub starting point to the new org's integrations page", () => {
+  it("routes the GitHub starting point to the new org's integrations page (either mode)", () => {
     expect(postCreatePath("child", { kind: "git", provider: "github" }, "acme")).toBe(
+      "/orgs/acme/settings/integrations",
+    );
+    expect(postCreatePath("parent", { kind: "git", provider: "github" }, "acme")).toBe(
       "/orgs/acme/settings/integrations",
     );
   });

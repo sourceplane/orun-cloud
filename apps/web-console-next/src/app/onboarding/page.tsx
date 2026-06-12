@@ -13,15 +13,23 @@ import { useRequireAuth } from "@/lib/use-async";
 import { useApiQuery, qk } from "@/lib/query";
 import { wrap } from "@/lib/api";
 import { defaultOrgDestination, readLastOrgSlug } from "@/lib/last-org";
-import { CONSOLE_TITLE } from "@/lib/app-config";
+import { CONSOLE_TITLE, PRODUCT_INITIAL } from "@/lib/app-config";
 
 /**
  * Mandatory first-run onboarding (Supabase/Vercel-style): a focused, full-screen
  * surface — no app shell — where a freshly signed-up user names their parent
- * organization and picks a billing plan before anything else. The console has
- * no org-less working view, so this page is the only destination for an
- * authenticated user with zero organizations (the app shell's `OnboardingGate`
- * funnels here); once an org exists this page forwards to it instead.
+ * organization, picks a plan, and chooses a starting point before anything
+ * else. It renders the same `CreateOrgFlow` as the in-app "add organization"
+ * page, so the two are one product experience. The console has no org-less
+ * working view, so this is the only destination for an authenticated user with
+ * zero organizations (the shell's `OnboardingGate` funnels here).
+ *
+ * The forward-vs-create decision is made ONCE, on the first settled org list:
+ *  - already has orgs  → a deep link by an onboarded user → forward to an org;
+ *  - zero orgs         → show the create flow and stay put.
+ * It is deliberately not re-evaluated afterward, so the post-create cache
+ * update (which makes the list non-empty) does NOT trigger a second forward
+ * that would race `CreateOrgFlow`'s own navigation and flash the form.
  */
 export default function OnboardingPage() {
   const ready = useRequireAuth();
@@ -33,25 +41,32 @@ export default function OnboardingPage() {
     { enabled: ready },
   );
 
-  // Already onboarded — forward to the remembered org if it's still accessible,
-  // else the account's billing-parent org. Covers deep links to /onboarding and
-  // the post-create transition before the router leaves this page.
-  const onboarded = (orgs.data?.length ?? 0) > 0;
+  const [phase, setPhase] = React.useState<"deciding" | "create" | "forwarding">("deciding");
   React.useEffect(() => {
-    if (!orgs.data || orgs.data.length === 0) return;
+    if (phase !== "deciding") return;
+    if (orgs.error) {
+      setPhase("create");
+      return;
+    }
+    if (!orgs.data) return; // wait for the first settled list
+    if (orgs.data.length === 0) {
+      setPhase("create");
+      return;
+    }
     const last = readLastOrgSlug();
     const slug = orgs.data.some((o) => o.slug === last)
       ? last
       : pickAccountBillingOrg(orgs.data)!.slug;
+    setPhase("forwarding");
     router.replace(defaultOrgDestination(slug));
-  }, [orgs.data, router]);
+  }, [phase, orgs.data, orgs.error, router]);
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-background via-background to-primary/5">
       <header className="mx-auto flex h-14 w-full max-w-5xl items-center justify-between px-4 md:px-8">
         <div className="flex items-center gap-2.5">
           <div className="grid h-7 w-7 place-items-center rounded-lg bg-gradient-to-br from-primary to-primary/40 text-sm font-bold text-primary-foreground">
-            S
+            {PRODUCT_INITIAL}
           </div>
           <span className="text-sm font-semibold tracking-tight">{CONSOLE_TITLE}</span>
         </div>
@@ -69,9 +84,9 @@ export default function OnboardingPage() {
       </header>
 
       <main className="mx-auto w-full max-w-5xl px-4 pb-16 pt-8 md:px-8">
-        {!ready || orgs.loading || onboarded ? (
+        {phase !== "create" ? (
           <OnboardingSkeleton />
-        ) : orgs.error ? (
+        ) : orgs.error && (orgs.data?.length ?? 0) === 0 ? (
           <Card>
             <CardHeader>
               <CardTitle className="text-destructive">Failed to load your account</CardTitle>
