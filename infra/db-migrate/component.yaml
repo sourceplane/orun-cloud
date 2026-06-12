@@ -48,3 +48,9 @@ spec:
               triggerRef: github-push-main
 # ci: trigger full-component verification (orun v2.12.0 upgrade — PR #183)
 # ci: trigger db-migrate apply — integrations migrations 180+190 were never applied (--changed planning keys off this directory, not spec.path)
+# ci: trigger db-migrate apply (2026-06-12) — stage login fails with "Failed to resolve
+#     user": identity (and likely all) schema is missing from the stage Supabase DB, so
+#     every parameterized identity.* query throws while a bare `SELECT 1` health check
+#     still passes. Re-apply all pending migrations. As above, --changed planning keys
+#     off this directory, not packages/db/src/migrations, so a touch here is required to
+#     enrol db-migrate in the post-merge convergence that runs the apply profile.
