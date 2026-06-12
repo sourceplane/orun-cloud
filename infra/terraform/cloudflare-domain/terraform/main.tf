@@ -176,60 +176,23 @@ locals {
 
 # --- Worker custom domain attachment ---
 #
-# Phase 1 of 2 — state entry dropped here; v5 re-import lands in Task 0085b.
-#
-# Background: in the cloudflare TF provider v4.x line this resource is named
-# `cloudflare_workers_domain` (description: "Creates a Worker Custom Domain.").
-# It is renamed to `cloudflare_workers_custom_domain` in v5. The v5 provider
-# does not implement cross-resource-type `MoveState` for this rename, so a
-# single-PR migration is impossible (proven by failed PR-CI runs 26642692516
-# and 26642904336 — see ai/proposals/task-0085-spec-update.md).
-#
-# The v5 upgrade guide's sanctioned pattern (same shape `tf-migrate` produces
-# for `cloudflare_zone_settings_override`) is a two-phase migration gated on
-# a real v4 apply between the phases:
-#
-#   - Phase 1 (THIS PR, Task 0085a): stay on `cloudflare ~> 4.52`, drop the
-#     v4-typed state entry via `removed { lifecycle { destroy = false } }`.
-#     The live Cloudflare custom-domain resource is NOT touched — only the
-#     Terraform state file in S3 is mutated. Expected plan diff:
-#       Plan: 0 to add, 0 to change, 1 to forget.
-#     After post-merge apply, `stage.orun.dev` and `app.orun.dev`
-#     continue to serve from their existing Workers (immutable IDs
-#     052eaece5e989d5a7280b6c206e562c42950e3a6 and
-#     31e5f2ed1b1e4a5700e8ae0678846a0d753840e1) but are no longer tracked.
-#
-#   - Phase 2 (Task 0085b, separate PR after 0085a's apply lands on both
-#     envs): bump `required_providers.cloudflare.version` to `~> 5.0`,
-#     replace the fenced block below with a v5
-#     `resource "cloudflare_workers_custom_domain" "console"`, and use an
-#     `import {}` block keyed by env to re-adopt the live resources by their
-#     known immutable IDs.
+# Fork note (orun-cloud, 2026-06-12): the baseline fenced this resource
+# mid-migration (Task 0085a dropped the v4 state entry; the 0085b v5
+# re-import never landed here). This fork has CLEAN state and no live
+# custom-domain resource, so the v4 `cloudflare_workers_domain` resource is
+# simply active again under the ~> 4.52 pin. When this repo upgrades the
+# provider to v5, rename to `cloudflare_workers_custom_domain` with a state
+# move at that time (no live-resource migration needed beyond the rename).
 
-removed {
-  from = cloudflare_workers_domain.console
-  lifecycle {
-    destroy = false
-  }
+resource "cloudflare_workers_domain" "console" {
+  count = local.has_custom_domain ? 1 : 0
+
+  account_id  = var.cloudflare_account_id
+  zone_id     = local.zone_id
+  hostname    = local.console_custom_domain
+  service     = local.worker_name
+  environment = "production"
 }
-
-# REMOVED IN 0085a, REPLACED IN 0085b
-# The original v4 resource block is fenced (not deleted) so the diff is
-# obviously a state-only drop and the v5 replacement in 0085b is easy to
-# diff against the v4 shape. Do not uncomment this block — uncommenting it
-# under the ~> 4.52 pin would re-create the state entry on the next apply
-# and undo Phase 1. Phase 2 replaces it with the v5 resource type, not by
-# reviving this block.
-#
-# resource "cloudflare_workers_domain" "console" {
-#   count = local.has_custom_domain ? 1 : 0
-#
-#   account_id  = var.cloudflare_account_id
-#   zone_id     = local.zone_id
-#   hostname    = local.console_custom_domain
-#   service     = local.worker_name
-#   environment = "production"
-# }
 
 # --- Outputs (non-secret) ---
 
@@ -259,6 +222,6 @@ output "worker_name" {
 }
 
 output "worker_custom_domain_id" {
-  description = "Cloudflare Workers custom domain attachment ID (placeholder during 0085a — the resource is intentionally untracked between Phase 1 state drop and Phase 2 v5 re-import; downstream consumers should not read this value during the 0085a → 0085b window)."
-  value       = local.has_custom_domain ? "pending_v5_reimport_task_0085b" : "not_configured"
+  description = "ID of the console worker custom domain (if configured)"
+  value       = local.has_custom_domain ? cloudflare_workers_domain.console[0].id : "not_configured"
 }
