@@ -10,6 +10,9 @@ export const PRODUCT_NAME = "Orun";
 /** Browser/document title of the console. */
 export const CONSOLE_TITLE = `${PRODUCT_NAME} Console`;
 
+/** Single-letter brand mark used by the logo avatar (login, onboarding). */
+export const PRODUCT_INITIAL = PRODUCT_NAME.charAt(0).toUpperCase();
+
 /** Marketing-facing product description (document metadata). */
 export const PRODUCT_DESCRIPTION =
   "Next-gen control plane for your projects, environments, and entitlements.";

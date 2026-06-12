@@ -3,10 +3,13 @@
  * so step/labels/routing logic is unit-testable without a DOM — the same split
  * the billing UI uses (`plan-actions.ts`).
  *
- * "parent" mode is the account's first organization: it owns billing, so the
- * flow includes a plan step. "child" mode is any additional organization:
- * billing rolls up to the account's billing parent (MO2), so the plan step is
- * replaced by a starting-point step (connect Git / clone a template).
+ * The flow is one unified wizard for both surfaces; only the steps differ.
+ * "parent" mode is the account's first organization: it owns billing, so it
+ * gets the full experience — details, a plan step, AND the starting-point step.
+ * "child" mode is any additional organization: billing rolls up to the
+ * account's billing parent (MO2), so it drops the plan step but keeps the same
+ * details/starting-point/review path. Sharing the step set is what makes the
+ * first-run onboarding and the in-app "add organization" feel like one product.
  */
 
 export type CreateOrgMode = "parent" | "child";
@@ -19,15 +22,20 @@ export interface StepDef {
   description: string;
 }
 
-/** The wizard's steps for a given mode. */
+const STEP_DETAILS: StepDef = { id: "details", label: "Organization", description: "Name and URL" };
+const STEP_PLAN: StepDef = { id: "plan", label: "Plan", description: "Pick your pricing tier" };
+const STEP_SOURCE: StepDef = { id: "source", label: "Starting point", description: "Import or start fresh" };
+const STEP_REVIEW: StepDef = { id: "review", label: "Review", description: "Confirm and create" };
+
+/**
+ * The wizard's steps for a given mode. The parent (first) org adds a plan step
+ * before the shared starting-point step; a child org omits the plan step
+ * because its billing rolls up to the parent.
+ */
 export function flowSteps(mode: CreateOrgMode): StepDef[] {
-  return [
-    { id: "details", label: "Organization", description: "Name and URL" },
-    mode === "parent"
-      ? { id: "plan", label: "Plan", description: "Pick your pricing tier" }
-      : { id: "source", label: "Starting point", description: "Import or start fresh" },
-    { id: "review", label: "Review", description: "Confirm and create" },
-  ];
+  return mode === "parent"
+    ? [STEP_DETAILS, STEP_PLAN, STEP_SOURCE, STEP_REVIEW]
+    : [STEP_DETAILS, STEP_SOURCE, STEP_REVIEW];
 }
 
 // ---------------------------------------------------------------------------
@@ -180,9 +188,12 @@ export function createButtonLabel(
   plan: PlanOption,
   source: SourceChoice,
 ): string {
+  // A paid/contact plan hand-off (parent only) takes precedence over the
+  // starting-point hand-off: checkout/sales happens first, and the GitHub App
+  // can be installed afterward from the new org's Integrations page.
   if (mode === "parent" && plan.contact) return "Create & contact sales";
   if (mode === "parent" && plan.code !== "free") return "Create & continue to checkout";
-  if (mode === "child" && source.kind === "git" && source.provider === "github") {
+  if (source.kind === "git" && source.provider === "github") {
     return "Create & connect GitHub";
   }
   return "Create organization";
@@ -190,11 +201,12 @@ export function createButtonLabel(
 
 /**
  * Where the console routes after a successful create (when it does not leave
- * for hosted checkout): the new org's Integrations page when the buyer chose
- * the GitHub starting point, else the new org's projects dashboard.
+ * for hosted checkout): the new org's Integrations page when the operator chose
+ * the GitHub starting point — for either mode, since the parent flow now shares
+ * the starting-point step — else the new org's projects dashboard.
  */
-export function postCreatePath(mode: CreateOrgMode, source: SourceChoice, orgSlug: string): string {
-  if (mode === "child" && source.kind === "git" && source.provider === "github") {
+export function postCreatePath(_mode: CreateOrgMode, source: SourceChoice, orgSlug: string): string {
+  if (source.kind === "git" && source.provider === "github") {
     return `/orgs/${orgSlug}/settings/integrations`;
   }
   return `/orgs/${orgSlug}/projects`;

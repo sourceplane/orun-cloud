@@ -11,7 +11,7 @@ import { Label } from "@/components/ui/label";
 import { useSession } from "@/lib/session";
 import { resolvePostAuthDestination } from "@/lib/last-org";
 import { wrap, createClient } from "@/lib/api";
-import { CONSOLE_TITLE } from "@/lib/app-config";
+import { CONSOLE_TITLE, PRODUCT_INITIAL } from "@/lib/app-config";
 import { useToast } from "@/components/ui/toast";
 import { ZodForm } from "@/components/ui/zod-form";
 import type { OAuthProviderInfo } from "@saas/contracts/auth";
@@ -74,7 +74,7 @@ export default function LoginPage() {
       <div className="w-full max-w-md space-y-4">
         <div className="flex items-center gap-3">
           <div className="h-9 w-9 rounded-lg bg-gradient-to-br from-primary to-primary/40 grid place-items-center text-primary-foreground font-bold">
-            S
+            {PRODUCT_INITIAL}
           </div>
           <div>
             <div className="text-base font-semibold tracking-tight">{CONSOLE_TITLE}</div>
