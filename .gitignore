@@ -25,3 +25,6 @@ apps/api-edge/wrangler.jsonc
 apps/admin-worker/wrangler.jsonc
 apps/config-worker/wrangler.jsonc
 apps/identity-worker/wrangler.jsonc
+apps/billing-worker/wrangler.jsonc
+apps/events-worker/wrangler.jsonc
+apps/membership-worker/wrangler.jsonc
