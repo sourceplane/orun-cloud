@@ -60,6 +60,27 @@ export type {
 } from "./sync.js";
 export type { Subscriber } from "./sync-server.js";
 
+export {
+  AUTOLINK_ACTOR,
+  applyAutoLinkPlan,
+  computeAutoLinkPlan,
+  materializeAffects,
+  parseTaskKeys,
+} from "./autolink.js";
+
+export type {
+  AffectsLink,
+  AffectsResolution,
+  AppliedAutoLink,
+  AutoLink,
+  AutoLinkPlan,
+  AutoTransition,
+  LinkReason,
+  PullRequestContext,
+  PullRequestPhase,
+  TaskView,
+} from "./autolink.js";
+
 export { createWorkRepository } from "./repository.js";
 
 export type {
