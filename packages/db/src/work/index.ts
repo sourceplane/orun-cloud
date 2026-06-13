@@ -82,6 +82,25 @@ export type {
   TaskView,
 } from "./autolink.js";
 
+export {
+  DELIVERY_ACTOR,
+  RELEASE_ACTOR,
+  automationDoneAllowed,
+  decideDone,
+  decideReleased,
+  detectDrift,
+} from "./delivery.js";
+export type {
+  DeploymentObservation,
+  DoneDecision,
+  DoneReason,
+  DriftItem,
+  GateReport,
+  GateState,
+  ReleaseDecision,
+  TaskGates,
+} from "./delivery.js";
+
 export { ingestPullRequest } from "./ingest.js";
 export { parsePullRequestEvent } from "./webhook.js";
 export type { AffectedSet, IngestOutcome, IngestRepo } from "./ingest.js";
