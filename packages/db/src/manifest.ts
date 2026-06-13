@@ -192,5 +192,14 @@ export const manifest: MigrationManifest = {
       description:
         "Work-plane persistence foundation (orun-work W0) — event-sourced Initiatives/Epics/Tasks: items, the append-only events log, typed relation links, the rebuildable status projection, sync cursors, and the per-project sequence allocator (the Postgres equivalent of the spec's Durable Object)",
     },
+    {
+      id: "210_resources_runtime_foundation",
+      context: "resources",
+      path: "210_resources_runtime_foundation/up.sql",
+      checksum:
+        "ef116af683d67dee6f023f243b4bbb3805bf1be0c33933bddaa49925c148da78",
+      description:
+        "Resources + runtime persistence foundation (saas-resources-runtime P2) — manifested project resources (kind/spec/status with a reconciled phase) and the runtime deployments + steps that drive them, with a one-active-deployment-per-resource guard",
+    },
   ],
 };

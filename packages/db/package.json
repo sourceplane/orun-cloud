@@ -29,6 +29,9 @@
     "./work/sync": "./src/work/sync.ts",
     "./work/sync-client": "./src/work/sync-client.ts",
     "./work/sync-server": "./src/work/sync-server.ts",
+    "./resources": "./src/resources/index.ts",
+    "./resources/model": "./src/resources/model.ts",
+    "./bridge": "./src/bridge/index.ts",
     "./runner": "./src/runner/index.ts"
   },
   "bin": {
