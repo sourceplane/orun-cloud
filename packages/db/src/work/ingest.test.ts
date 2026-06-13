@@ -95,4 +95,21 @@ describe("PR auto-link ingestion (W2)", () => {
     expect(out).toMatchObject({ ingested: true, applied: 0 });
     expect(repo.links).toHaveLength(0);
   });
+
+  it("surfaces a listOpenTasks read failure as zero work, not a thrown webhook", async () => {
+    const repo: IngestRepo = {
+      async listOpenTasks() {
+        return { ok: false, error: { kind: "internal", message: "db unavailable" } };
+      },
+      async addLink() {
+        throw new Error("must not write when the read failed");
+      },
+      async setStatus() {
+        throw new Error("must not write when the read failed");
+      },
+    };
+    const out = await ingestPullRequest(repo, SCOPE, prEvent(), affected(["c/c/c"]), "ORN");
+    expect(out).toMatchObject({ ingested: true, pr: "sourceplane/orun#412", applied: 0 });
+    if (out.ingested) expect(out.rejected).toEqual([{ key: "*", reason: "db unavailable" }]);
+  });
 });

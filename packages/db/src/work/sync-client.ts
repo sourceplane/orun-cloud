@@ -10,7 +10,7 @@
 // is just "reduce(confirmed) then re-apply pending" — the W0 reducer is the one
 // source of truth for state, on both client and server.
 
-import { WorkProjection, type WorkEvent } from "./model.js";
+import { WorkError, WorkProjection, type WorkEvent } from "./model.js";
 import { dispatch, type Mutation, type ServerMessage, type Verdict } from "./sync.js";
 
 export class WorkSyncClient {
@@ -50,8 +50,13 @@ export class WorkSyncClient {
     for (const m of this.pending) {
       try {
         dispatch(v, m);
-      } catch {
-        // Optimistic op no longer applies against the rebased base; omit it.
+      } catch (err) {
+        // An optimistic op that no longer applies against the rebased base (its
+        // target was created with a different key, already gone, etc.) is a
+        // WorkError — omit it until its own verdict arrives. Anything else is a
+        // real bug that must surface, not hide as a missing card.
+        if (err instanceof WorkError) continue;
+        throw err;
       }
     }
     return v;
@@ -78,7 +83,7 @@ export class WorkSyncClient {
   receive(msg: ServerMessage): void {
     switch (msg.type) {
       case "replay":
-        for (const event of msg.events) this.ingest({ type: "event", event });
+        for (const e of msg.events) this.ingest(e);
         return;
       case "event":
         this.ingest(msg);

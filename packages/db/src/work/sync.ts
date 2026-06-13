@@ -61,7 +61,10 @@ export interface VerdictMessage {
 }
 export interface ReplayMessage {
   type: "replay";
-  events: WorkEvent[];
+  /** Each replayed event carries the `clientMutationId` that produced it, so a
+   *  reconnecting client retires its own still-pending optimistic mutations from
+   *  the gap fill — not just from the live broadcast it may have missed. */
+  events: EventMessage[];
 }
 export type ServerMessage = EventMessage | VerdictMessage | ReplayMessage;
 

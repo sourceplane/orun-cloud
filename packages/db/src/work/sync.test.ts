@@ -111,6 +111,31 @@ describe("work sync — cursor replay (W1)", () => {
     expect(JSON.stringify(b.snapshot())).toEqual(JSON.stringify(server.snapshot()));
   });
 
+  it("retires a client's own pending mutation on reconnect replay (no phantom double-apply)", () => {
+    const server = new WorkSyncServer("acme/platform", "ORN", minter("s"));
+    const a = new WorkSyncClient("acme/platform", "ORN", minter("a"));
+    const unsubA = connect(server, a);
+
+    // A optimistically creates a task, then its socket drops *before* the commit's
+    // broadcast + verdict can reach it.
+    const m = mut({ op: "createTask", title: "A's task" });
+    a.mutate(m);
+    expect(a.view().projectionSnapshot().items).toHaveLength(1); // optimistic ORN-1
+    expect(a.confirmedState().projectionSnapshot().items).toHaveLength(0); // nothing confirmed
+    unsubA();
+    server.submit(m); // committed as seq 1; A is unsubscribed so it misses both event + verdict
+    expect(a.lastSeq).toBe(0);
+
+    // A reconnects from its cursor; the replayed event carries A's clientMutationId,
+    // so A retires its pending copy instead of re-applying it as a phantom ORN-2.
+    connect(server, a);
+    expect(a.lastSeq).toBe(1);
+    const s = JSON.stringify(server.snapshot());
+    expect(JSON.stringify(a.snapshot())).toEqual(s);
+    expect(JSON.stringify(a.view().projectionSnapshot())).toEqual(s);
+    expect(a.view().projectionSnapshot().items).toHaveLength(1); // exactly one task, not two
+  });
+
   it("holds out-of-order events and drains them once the gap fills", () => {
     const server = new WorkSyncServer("acme/platform", "ORN", minter("s"));
     const a = new WorkSyncClient("acme/platform", "ORN", minter("a"));

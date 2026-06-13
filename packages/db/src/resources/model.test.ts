@@ -54,8 +54,25 @@ describe("runtime — deployment transitions (component 08)", () => {
   });
 
   it("rejects events on a terminal deployment (idempotency guard)", () => {
-    const done = deployment({ phase: "succeeded" });
-    expect(() => applyDeploymentEvent(done, { kind: "completed", at: AT })).toThrow(RuntimeError);
+    const succeeded = deployment({ phase: "succeeded" });
+    expect(() => applyDeploymentEvent(succeeded, { kind: "completed", at: AT })).toThrow(RuntimeError);
+    // A failed deployment is equally terminal — no failed → succeeded resurrection.
+    const failed = deployment({ phase: "failed" });
+    expect(() => applyDeploymentEvent(failed, { kind: "completed", at: AT })).toThrow(RuntimeError);
+  });
+
+  it("started is idempotent on an already-running deployment (keeps startedAt)", () => {
+    let d = applyDeploymentEvent(deployment(), { kind: "started", at: AT });
+    expect(d.startedAt).toBe(AT);
+    d = applyDeploymentEvent(d, { kind: "started", at: "2026-06-11T10:00:00Z" });
+    expect(d.phase).toBe("running");
+    expect(d.startedAt).toBe(AT); // first start wins
+  });
+
+  it("promotes queued → running on an out-of-order step_completed (step before started)", () => {
+    const d = applyDeploymentEvent(deployment(), { kind: "step_completed", step: "provision", at: AT });
+    expect(d.phase).toBe("running");
+    expect(d.startedAt).toBe(AT);
   });
 });
 
@@ -100,6 +117,31 @@ describe("runtime — resource phase mapping + reconcile", () => {
     const r = reconcile(resource(), deployment({ phase: "running" }), AT);
     expect(r.status.phase).toBe("provisioning");
     expect(r.status.observedGeneration).toBe(1);
+  });
+
+  it("does not regress a terminal resource on a stale, out-of-order reconcile (terminal-idempotent)", () => {
+    // Reconcile generation 2 to ready.
+    const ready = reconcile(resource(), deployment({ phase: "succeeded", revision: "rev-1" }), AT);
+    expect(ready.status.phase).toBe("ready");
+    expect(ready.status.observedGeneration).toBe(2);
+
+    // A late-arriving "running" event for the same generation must not drag it back.
+    const sameGen = reconcile(ready, deployment({ phase: "running" }), "2026-06-11T09:10:00Z");
+    expect(sameGen.status.phase).toBe("ready");
+    expect(sameGen).toBe(ready); // unchanged reference — no spurious churn
+
+    // A reconcile for an older generation is equally stale and ignored.
+    const olderGen = reconcile(ready, deployment({ generation: 1, phase: "running" }), "2026-06-11T09:11:00Z");
+    expect(olderGen.status.phase).toBe("ready");
+    expect(olderGen).toBe(ready);
+  });
+
+  it("re-applying the same terminal deployment is idempotent (same phase + generation)", () => {
+    const once = reconcile(resource(), deployment({ phase: "succeeded", revision: "rev-1" }), AT);
+    const twice = reconcile(once, deployment({ phase: "succeeded", revision: "rev-1" }), "2026-06-11T09:12:00Z");
+    expect(twice.status.phase).toBe("ready");
+    expect(twice.status.observedGeneration).toBe(2);
+    expect(twice.status.conditions.filter((c) => c.type === "Ready")).toHaveLength(1);
   });
 });
 
