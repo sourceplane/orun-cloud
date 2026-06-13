@@ -9,7 +9,7 @@ reach it until the baseline (`saas-baseline` B1–B4) is credible.
 
 | Field | Value |
 |-------|-------|
-| Status | **Draft — not started** (design stage; holding until B1–B4 credible + SDK-first) |
+| Status | **In progress** — model core (`@saas/db/resources`: resource kind/spec/status + the deployment reconciliation machine) and the **runtime→work Released bridge** (`@saas/db/bridge`) landed; SQL repository + api-edge `/v1` facade + workers pending |
 | Cluster | **P2** |
 | Owner(s) | new `apps/resources-worker` + `apps/runtime-worker` (do not yet exist) |
 | Target branch | `main` (multi-task program) |
@@ -24,6 +24,25 @@ drives create/update/status through provider adapters; status surfaces in the
 console. Baseline SaaS flows must continue to work when the resource/runtime
 modules are disabled (the constitution forbids forcing every consumer into a
 runtime-orchestration product model).
+
+## Landed so far (program now in progress)
+
+The pure cores + persistence foundation are on `main`:
+
+- **`@saas/db/resources`** — the `Resource` shape (kind/spec/status with the
+  contract phase set), the `Deployment` reconciliation machine
+  (`queued→running→succeeded/failed`, terminal-idempotent), `reconcile` (runtime
+  truth → resource status), and migration `210_resources_runtime_foundation`.
+- **`@saas/db/bridge`** — the **runtime → work seam**: a deployment reconciling
+  to live (`liveObservation`) drives orun-work's W3 Released automation
+  (`decideReleased`), so *deploy goes live → the tasks that shipped in that
+  revision auto-Release*. Released stays derived from the Deployment overlay,
+  never a deploy attempt (work invariant 5).
+
+**Still pending:** the resources/deployments SQL repository, the api-edge
+`/v1/{components,resources,deployments}` facade + `@saas/contracts` (the epic's
+stated first slice), the `resources-worker`/`runtime-worker`, and console
+surfaces. The note below predates this work.
 
 ## Why this is still Draft
 
