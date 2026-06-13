@@ -20,6 +20,7 @@
     "./notifications": "./src/notifications/index.ts",
     "./support": "./src/support/index.ts",
     "./integrations": "./src/integrations/index.ts",
+    "./work": "./src/work/index.ts",
     "./runner": "./src/runner/index.ts"
   },
   "bin": {
@@ -29,6 +30,7 @@
     "build": "tsc --project tsconfig.build.json && cp -r src/migrations dist/",
     "typecheck": "tsc --noEmit",
     "lint": "eslint src",
+    "test": "vitest run",
     "migrate:plan": "node --loader ts-node/esm src/runner/cli.ts plan",
     "migrate:apply": "node --loader ts-node/esm src/runner/cli.ts apply"
   },
@@ -41,6 +43,7 @@
     "@saas/eslint-config": "workspace:*",
     "@saas/tsconfig": "workspace:*",
     "@types/pg": "^8.20.0",
-    "typescript": "^5.9.3"
+    "typescript": "^5.9.3",
+    "vitest": "^3.2.6"
   }
 }

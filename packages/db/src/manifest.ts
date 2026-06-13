@@ -183,5 +183,14 @@ export const manifest: MigrationManifest = {
       description:
         "Connection pointer on the inbound-delivery inbox (nullable connection_id + partial index) — lets the per-connection delivery log scope precisely; attributed by the IG2 cron drain",
     },
+    {
+      id: "200_work_foundation",
+      context: "work",
+      path: "200_work_foundation/up.sql",
+      checksum:
+        "4dc27f6bea3b2fa04d6733e518d9602379839f44194b91c8595152ddb8491d97",
+      description:
+        "Work-plane persistence foundation (orun-work W0) — event-sourced Initiatives/Epics/Tasks: items, the append-only events log, typed relation links, the rebuildable status projection, sync cursors, and the per-project sequence allocator (the Postgres equivalent of the spec's Durable Object)",
+    },
   ],
 };
