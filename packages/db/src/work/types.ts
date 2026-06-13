@@ -130,6 +130,10 @@ export interface WorkRepository {
   getStatus(scope: ProjectScope, key: string): Promise<WorkResult<StatusRow | null>>;
   listEvents(scope: ProjectScope, fromSeq?: number): Promise<WorkResult<WorkEvent[]>>;
 
+  /** Open Tasks (status not done/released/canceled) with their contract.affects
+   *  — the candidate set the PR auto-linker matches against. */
+  listOpenTasks(scope: ProjectScope): Promise<WorkResult<Array<{ key: string; status: Status; affects: string[] }>>>;
+
   /**
    * Drop and rebuild the work_status projection from the event log — the
    * operational form of invariant 2. Returns the row count rebuilt.

@@ -14,6 +14,10 @@
 import type { Actor, Status } from "./model.js";
 import type { ProjectScope, WorkRepository, WorkRepositoryError } from "./types.js";
 
+/** The slice of the repository the auto-linker writes through — narrowed so the
+ *  ingestion path can be exercised with an in-memory fake. */
+export type AutoLinkRepo = Pick<WorkRepository, "addLink" | "setStatus">;
+
 /** The fixed automation principal the PR auto-linker writes as (design §6.1). */
 export const AUTOLINK_ACTOR: Actor = { type: "automation", id: "bridge/pr-linker", via: "github-webhook" };
 
@@ -183,7 +187,7 @@ function describeError(e: WorkRepositoryError): string {
  * pure and tested separately; this is the thin, idempotent commit step.
  */
 export async function applyAutoLinkPlan(
-  repo: WorkRepository,
+  repo: AutoLinkRepo,
   scope: ProjectScope,
   pr: PullRequestContext,
   plan: AutoLinkPlan,
