@@ -42,6 +42,24 @@ export type {
   WorkErrorKind,
 } from "./model.js";
 
+export { dispatch } from "./sync.js";
+export { WorkSyncServer } from "./sync-server.js";
+export { WorkSyncClient } from "./sync-client.js";
+
+export type {
+  ClientMessage,
+  EventMessage,
+  Mutation,
+  MutationOp,
+  MutateMessage,
+  ReplayMessage,
+  ServerMessage,
+  SubscribeMessage,
+  Verdict,
+  VerdictMessage,
+} from "./sync.js";
+export type { Subscriber } from "./sync-server.js";
+
 export { createWorkRepository } from "./repository.js";
 
 export type {
