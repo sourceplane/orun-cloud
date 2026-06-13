@@ -10,6 +10,7 @@ import {
   type Actor,
   type Contract,
   type Item,
+  type Status,
   type StatusRow,
   type WorkEvent,
 } from "./model.js";
@@ -565,6 +566,31 @@ export function createWorkRepository(sql: TransactionalSqlExecutor): WorkReposit
 
     async listEvents(scope: ProjectScope, fromSeq = 0): Promise<WorkResult<WorkEvent[]>> {
       return listEventsImpl(scope, fromSeq);
+    },
+
+    async listOpenTasks(scope: ProjectScope) {
+      try {
+        const res = await sql.execute(
+          `SELECT i.key AS key, s.status AS status, i.contract AS contract
+             FROM work.items i
+             JOIN work.status s
+               ON s.org_id = i.org_id AND s.project_id = i.project_id AND s.key = i.key
+            WHERE i.org_id = $1 AND i.project_id = $2 AND i.kind = 'Task'
+              AND s.status IN ('backlog', 'todo', 'in_progress', 'in_review')`,
+          [scope.orgId, scope.projectId],
+        );
+        const tasks = res.rows.map((row) => {
+          const contract = parseJson<Contract | null>(row.contract, null);
+          return {
+            key: row.key as string,
+            status: row.status as Status,
+            affects: contract?.affects ?? [],
+          };
+        });
+        return ok(tasks);
+      } catch (err) {
+        return { ok: false, error: toError(err) };
+      }
     },
 
     async rebuildProjection(scope: ProjectScope): Promise<WorkResult<number>> {

@@ -74,12 +74,18 @@ export type {
   AppliedAutoLink,
   AutoLink,
   AutoLinkPlan,
+  AutoLinkRepo,
   AutoTransition,
   LinkReason,
   PullRequestContext,
   PullRequestPhase,
   TaskView,
 } from "./autolink.js";
+
+export { ingestPullRequest } from "./ingest.js";
+export { parsePullRequestEvent } from "./webhook.js";
+export type { AffectedSet, IngestOutcome, IngestRepo } from "./ingest.js";
+export type { GithubPullRequestEvent } from "./webhook.js";
 
 export { createWorkRepository } from "./repository.js";
 
