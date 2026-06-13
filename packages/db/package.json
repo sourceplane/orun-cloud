@@ -22,6 +22,7 @@
     "./integrations": "./src/integrations/index.ts",
     "./work": "./src/work/index.ts",
     "./work/model": "./src/work/model.ts",
+    "./work/autolink": "./src/work/autolink.ts",
     "./work/sync": "./src/work/sync.ts",
     "./work/sync-client": "./src/work/sync-client.ts",
     "./work/sync-server": "./src/work/sync-server.ts",
