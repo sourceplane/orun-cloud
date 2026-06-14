@@ -63,6 +63,19 @@ describe("state facade — route matching", () => {
     expect(isStateRoute("/v1/organizations/org_x/projects/prj_y/cli/links")).toBe(true);
   });
 
+  it("matches the OP3 object plane, logs, and catalog routes", () => {
+    const base = "/v1/organizations/org_x/projects/prj_y/state";
+    const digest = `sha256:${"a".repeat(64)}`;
+    expect(isStateRoute(`${base}/objects/missing`)).toBe(true);
+    expect(isStateRoute(`${base}/objects/${digest}`)).toBe(true);
+    expect(isStateRoute(`${base}/objects/${digest}/uploads`)).toBe(true);
+    expect(isStateRoute(`${base}/objects/${digest}/uploads/up-1/parts/1`)).toBe(true);
+    expect(isStateRoute(`${base}/objects/${digest}/uploads/up-1/complete`)).toBe(true);
+    expect(isStateRoute(`${base}/runs/01J0/logs/build`)).toBe(true);
+    expect(isStateRoute(`${base}/catalog/head`)).toBe(true);
+    expect(isStateRoute(`${base}/catalog/heads/history`)).toBe(true);
+  });
+
   it("does not match unrelated project routes", () => {
     expect(isStateRoute("/v1/organizations/org_x/projects/prj_y/environments")).toBe(false);
     expect(isStateRoute("/v1/organizations/org_x/projects/prj_y")).toBe(false);
@@ -105,5 +118,30 @@ describe("state facade — forwarding", () => {
     expect(headers.get("orun-contract-version")).toBe("1");
     expect(calls[0]!.url).toContain("/state/runs");
     expect(calls[0]!.url).toContain("status=running");
+  });
+
+  it("allows PUT and forwards the Orun-Object-Kind header + body (object plane)", async () => {
+    const { fetcher, calls } = createDownstream(
+      Response.json({ data: { object: {}, created: true }, meta: { requestId: "req_inner", cursor: null } }, { status: 201 }),
+    );
+    const env = { IDENTITY_WORKER: sessionFetcher(), STATE_WORKER: fetcher, ENVIRONMENT: "test" };
+    const digest = `sha256:${"a".repeat(64)}`;
+    const objectPath = `/v1/organizations/org_x/projects/prj_y/state/objects/${digest}`;
+    const res = await handleStateRoute(
+      new Request(`https://edge.test${objectPath}`, {
+        method: "PUT",
+        headers: { authorization: "Bearer tok_123", "orun-object-kind": "plan", "content-type": "application/octet-stream" },
+        body: "blob-bytes",
+      }),
+      env as never,
+      "req_1",
+      objectPath,
+    );
+    expect(res.status).toBe(201);
+    expect(calls).toHaveLength(1);
+    expect(calls[0]!.init.method).toBe("PUT");
+    const headers = new Headers(calls[0]!.init.headers as HeadersInit);
+    expect(headers.get("orun-object-kind")).toBe("plan");
+    expect(headers.get("x-actor-subject-id")).toBe("usr_abc");
   });
 });

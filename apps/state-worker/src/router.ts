@@ -19,6 +19,21 @@ import {
 } from "./handlers/runs.js";
 import { handleAppendLog, handleReadLog } from "./handlers/logs.js";
 import {
+  handleObjectsMissing,
+  handlePutObject,
+  handleGetObject,
+  handleListObjects,
+  handleStartUpload,
+  handleUploadPart,
+  handleCompleteUpload,
+} from "./handlers/objects.js";
+import {
+  handleAdvanceCatalogHead,
+  handleGetCatalogHead,
+  handleCatalogHeadHistory,
+  handleListCatalogEntities,
+} from "./handlers/catalog.js";
+import {
   generateRequestId,
   isRunUlid,
   parseOrgPublicId,
@@ -71,6 +86,21 @@ const RUN_JOB_HEARTBEAT_RE = new RegExp(`^${STATE_BASE}/runs/([^/]+)/jobs/([^/]+
 const RUN_JOB_UPDATE_RE = new RegExp(`^${STATE_BASE}/runs/([^/]+)/jobs/([^/]+)/update$`);
 const RUN_LOGS_RE = new RegExp(`^${STATE_BASE}/runs/([^/]+)/logs/([^/]+)$`);
 
+// OP3 — Object & log plane (state-api-contract §3) + catalog heads (§3.1).
+const OBJECTS_RE = new RegExp(`^${STATE_BASE}/objects$`);
+const OBJECTS_MISSING_RE = new RegExp(`^${STATE_BASE}/objects/missing$`);
+const OBJECT_RE = new RegExp(`^${STATE_BASE}/objects/(sha256:[0-9a-f]{64})$`);
+const OBJECT_UPLOADS_RE = new RegExp(`^${STATE_BASE}/objects/(sha256:[0-9a-f]{64})/uploads$`);
+const OBJECT_UPLOAD_PART_RE = new RegExp(
+  `^${STATE_BASE}/objects/(sha256:[0-9a-f]{64})/uploads/([^/]+)/parts/([0-9]+)$`,
+);
+const OBJECT_UPLOAD_COMPLETE_RE = new RegExp(
+  `^${STATE_BASE}/objects/(sha256:[0-9a-f]{64})/uploads/([^/]+)/complete$`,
+);
+const CATALOG_HEAD_RE = new RegExp(`^${STATE_BASE}/catalog/head$`);
+const CATALOG_HEADS_HISTORY_RE = new RegExp(`^${STATE_BASE}/catalog/heads/history$`);
+const CATALOG_ENTITIES_RE = new RegExp(`^${STATE_BASE}/catalog/entities$`);
+
 export async function route(request: Request, env: Env): Promise<Response> {
   const requestId = resolveRequestId(request);
   const url = new URL(request.url);
@@ -81,9 +111,10 @@ export async function route(request: Request, env: Env): Promise<Response> {
     return handleHealth(env, requestId);
   }
 
-  // OP2/OP3 (run coordination §2, object/log plane §3, catalog heads §3.1) stay
-  // dormant — those routes land in later milestones. OP4 brings the workspace-
-  // link surface (§5) live behind the api-edge state-facade + actor headers.
+  // OP2 (run coordination §2), OP3 (object/log plane §3, catalog heads §3.1), and
+  // OP4 (workspace links §5) are all live behind the api-edge state-facade +
+  // actor headers. The catalog entity read-model (§3.1 entities) is the only
+  // deferred surface (OP7) — its route returns a clear 501.
 
   if (!env.PLATFORM_DB) {
     return errorResponse("internal_error", "Database not configured", 503, requestId);
@@ -155,6 +186,10 @@ async function routeRun(
   actor: ActorContext,
   pathname: string,
 ): Promise<Response | null> {
+  // ── OP3 — Object & log plane (§3) + catalog heads (§3.1). ──
+  const objectOrCatalog = await routeObjectAndCatalog(request, env, requestId, actor, pathname);
+  if (objectOrCatalog) return objectOrCatalog;
+
   // POST/GET …/state/runs
   let m = pathname.match(RUNS_RE);
   if (m) {
@@ -223,16 +258,16 @@ async function routeRun(
     return handleCancelRun(env, requestId, actor, scope.orgId, scope.projectId, m[3]!);
   }
 
-  // POST/GET …/runs/{runId}/logs/{jobId} — deferred to OP3 (clear 501).
+  // POST/GET …/runs/{runId}/logs/{jobId} (OP3 — §2.3).
   m = pathname.match(RUN_LOGS_RE);
   if (m) {
     const scope = parseScope(m[1]!, m[2]!);
     if (!scope || !isRunUlid(m[3]!)) return notFound(requestId, pathname);
     if (request.method === "POST") {
-      return handleAppendLog(env, requestId, actor, scope.orgId, scope.projectId);
+      return handleAppendLog(request, env, requestId, actor, scope.orgId, scope.projectId, m[3]!, m[4]!);
     }
     if (request.method === "GET") {
-      return handleReadLog(env, requestId, actor, scope.orgId, scope.projectId);
+      return handleReadLog(request, env, requestId, actor, scope.orgId, scope.projectId, m[3]!, m[4]!);
     }
     return methodNotAllowed(requestId);
   }
@@ -245,6 +280,124 @@ async function routeRun(
     if (!scope || !isRunUlid(m[3]!)) return notFound(requestId, pathname);
     if (request.method !== "GET") return methodNotAllowed(requestId);
     return handleGetRun(env, requestId, actor, scope.orgId, scope.projectId, m[3]!);
+  }
+
+  return null;
+}
+
+/**
+ * Dispatch the object plane (§3) and catalog heads (§3.1). Returns a Response on
+ * a match, or null so routeRun falls through to the run matchers. The `objects/`
+ * sub-routes are ordered most-specific first (missing, uploads, parts, complete)
+ * so the bare-digest GET/PUT matches last.
+ */
+async function routeObjectAndCatalog(
+  request: Request,
+  env: Env,
+  requestId: string,
+  actor: ActorContext,
+  pathname: string,
+): Promise<Response | null> {
+  // POST …/state/objects/missing — digest negotiation.
+  let m = pathname.match(OBJECTS_MISSING_RE);
+  if (m) {
+    const scope = parseScope(m[1]!, m[2]!);
+    if (!scope) return notFound(requestId, pathname);
+    if (request.method !== "POST") return methodNotAllowed(requestId);
+    return handleObjectsMissing(request, env, requestId, actor, scope.orgId, scope.projectId);
+  }
+
+  // POST …/objects/{digest}/uploads — start a chunked (multipart) upload.
+  m = pathname.match(OBJECT_UPLOADS_RE);
+  if (m) {
+    const scope = parseScope(m[1]!, m[2]!);
+    if (!scope) return notFound(requestId, pathname);
+    if (request.method !== "POST") return methodNotAllowed(requestId);
+    return handleStartUpload(env, requestId, actor, scope.orgId, scope.projectId, m[3]!);
+  }
+
+  // PUT …/objects/{digest}/uploads/{uploadId}/parts/{n} — upload one part.
+  m = pathname.match(OBJECT_UPLOAD_PART_RE);
+  if (m) {
+    const scope = parseScope(m[1]!, m[2]!);
+    if (!scope) return notFound(requestId, pathname);
+    if (request.method !== "PUT") return methodNotAllowed(requestId);
+    const partNumber = Number.parseInt(m[5]!, 10);
+    return handleUploadPart(
+      request,
+      env,
+      requestId,
+      actor,
+      scope.orgId,
+      scope.projectId,
+      m[3]!,
+      m[4]!,
+      partNumber,
+    );
+  }
+
+  // POST …/objects/{digest}/uploads/{uploadId}/complete — assemble + verify.
+  m = pathname.match(OBJECT_UPLOAD_COMPLETE_RE);
+  if (m) {
+    const scope = parseScope(m[1]!, m[2]!);
+    if (!scope) return notFound(requestId, pathname);
+    if (request.method !== "POST") return methodNotAllowed(requestId);
+    return handleCompleteUpload(request, env, requestId, actor, scope.orgId, scope.projectId, m[3]!, m[4]!);
+  }
+
+  // GET …/state/objects?kind=&cursor= — index listing.
+  m = pathname.match(OBJECTS_RE);
+  if (m) {
+    const scope = parseScope(m[1]!, m[2]!);
+    if (!scope) return notFound(requestId, pathname);
+    if (request.method !== "GET") return methodNotAllowed(requestId);
+    return handleListObjects(request, env, requestId, actor, scope.orgId, scope.projectId);
+  }
+
+  // PUT/GET …/state/objects/{digest} — digest-verified PUT / blob GET.
+  m = pathname.match(OBJECT_RE);
+  if (m) {
+    const scope = parseScope(m[1]!, m[2]!);
+    if (!scope) return notFound(requestId, pathname);
+    if (request.method === "PUT") {
+      return handlePutObject(request, env, requestId, actor, scope.orgId, scope.projectId, m[3]!);
+    }
+    if (request.method === "GET") {
+      return handleGetObject(env, requestId, actor, scope.orgId, scope.projectId, m[3]!);
+    }
+    return methodNotAllowed(requestId);
+  }
+
+  // PUT/GET …/state/catalog/head — advance / current head.
+  m = pathname.match(CATALOG_HEAD_RE);
+  if (m) {
+    const scope = parseScope(m[1]!, m[2]!);
+    if (!scope) return notFound(requestId, pathname);
+    if (request.method === "PUT") {
+      return handleAdvanceCatalogHead(request, env, requestId, actor, scope.orgId, scope.projectId);
+    }
+    if (request.method === "GET") {
+      return handleGetCatalogHead(request, env, requestId, actor, scope.orgId, scope.projectId);
+    }
+    return methodNotAllowed(requestId);
+  }
+
+  // GET …/state/catalog/heads/history?cursor= — advance history.
+  m = pathname.match(CATALOG_HEADS_HISTORY_RE);
+  if (m) {
+    const scope = parseScope(m[1]!, m[2]!);
+    if (!scope) return notFound(requestId, pathname);
+    if (request.method !== "GET") return methodNotAllowed(requestId);
+    return handleCatalogHeadHistory(request, env, requestId, actor, scope.orgId, scope.projectId);
+  }
+
+  // GET …/state/catalog/entities — DEFERRED to OP7 (clear 501).
+  m = pathname.match(CATALOG_ENTITIES_RE);
+  if (m) {
+    const scope = parseScope(m[1]!, m[2]!);
+    if (!scope) return notFound(requestId, pathname);
+    if (request.method !== "GET") return methodNotAllowed(requestId);
+    return handleListCatalogEntities(env, requestId, actor, scope.orgId, scope.projectId);
   }
 
   return null;

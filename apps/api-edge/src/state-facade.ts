@@ -20,13 +20,17 @@ const ORG_PROJECT_CLI_LINKS_RE = /^\/v1\/organizations\/[^/]+\/projects\/[^/]+\/
 const STATE_PLANE_RE = /^\/v1\/organizations\/[^/]+\/projects\/[^/]+\/state\//;
 
 // `orun-contract-version` is forwarded so state-worker enforces the major and
-// rejects unsupported skew with 409 contract_version_unsupported.
+// rejects unsupported skew with 409 contract_version_unsupported. `orun-object-
+// kind` + `content-length` are forwarded for the OP3 object plane's digest-
+// verified PUT (state-api-contract §3).
 const FORWARDED_HEADERS = [
   "content-type",
+  "content-length",
   "x-request-id",
   "traceparent",
   "idempotency-key",
   "orun-contract-version",
+  "orun-object-kind",
 ];
 
 export function isStateRoute(pathname: string): boolean {
@@ -44,7 +48,9 @@ export async function handleStateRoute(
   requestId: string,
   pathname: string,
 ): Promise<Response> {
-  const allowedMethods = ["GET", "POST", "DELETE"];
+  // OP3 adds PUT for the object plane (digest-verified blob PUT, multipart part
+  // upload) and catalog head advance.
+  const allowedMethods = ["GET", "POST", "PUT", "DELETE"];
   if (!allowedMethods.includes(request.method)) {
     return errorResponse("unsupported", "Method not allowed", 405, requestId);
   }
@@ -78,8 +84,10 @@ export async function handleStateRoute(
 
     try {
       const fetchInit: RequestInit = { method: request.method, headers };
-      if (request.method === "POST") {
+      if (request.method === "POST" || request.method === "PUT") {
         fetchInit.body = request.body;
+        // Streaming a request body through fetch requires duplex: 'half'.
+        (fetchInit as RequestInit & { duplex?: string }).duplex = "half";
       }
       const downstream = await env.STATE_WORKER.fetch(target.toString(), fetchInit);
       return new Response(downstream.body, {

@@ -24,3 +24,34 @@ export const DEFAULT_PAGE_LIMIT = 50;
 
 /** Max page size a client may request. */
 export const MAX_PAGE_LIMIT = 100;
+
+// ── Object & log plane budgets (OP3 — state-api-contract §2.3, §3) ──
+// Centralized so the wire contract, the chunked-upload sub-protocol, and the
+// client all agree on one set of numbers.
+
+const MIB = 1024 * 1024;
+
+/**
+ * Single-request object PUT budget (state-api-contract §3). Bodies up to this
+ * size go through the one-shot `PUT …/objects/{digest}`; larger blobs MUST use
+ * the chunked-upload sub-protocol (`…/objects/{digest}/uploads`). Default 25 MiB.
+ */
+export const OBJECT_SINGLE_REQUEST_MAX_BYTES = 25 * MIB;
+
+/**
+ * Multipart part size the server advertises on upload start. R2 requires every
+ * part except the last to be ≥ 5 MiB; 25 MiB keeps a 100 MiB blob to four parts.
+ */
+export const OBJECT_MULTIPART_PART_SIZE_BYTES = 25 * MIB;
+
+/** Upper bound on a single multipart part body (one part-size + slack guard). */
+export const OBJECT_MULTIPART_PART_MAX_BYTES = 50 * MIB;
+
+/** Max part number a client may upload (R2 caps multipart at 10,000 parts). */
+export const OBJECT_MULTIPART_MAX_PARTS = 10000;
+
+/** Per-chunk log append budget (state-api-contract §2.3): chunks ≤ 1 MiB. */
+export const LOG_CHUNK_MAX_BYTES = MIB;
+
+/** Max chunks an assembled log read returns in one page (bounds read cost). */
+export const LOG_READ_MAX_CHUNKS = 512;
