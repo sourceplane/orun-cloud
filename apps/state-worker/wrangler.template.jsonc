@@ -11,14 +11,17 @@
   "vars": {
     "ENVIRONMENT": "local"
   },
-  // Lease sweep cron (OP2): re-queue lapsed claims or time them out, derive run
-  // terminal status, emit state.run.* events (design §4.2). Commented out while
-  // OP0 is dormant — there is no run coordination to sweep yet, and the account
-  // is at its 5-cron limit (see the epic IMPLEMENTATION-STATUS). Reinstated at
-  // OP2 when the behavior it drives lands.
-  // "triggers": {
-  //   "crons": ["* * * * *"]
-  // },
+  // Lease sweep cron (OP2 — design §4.2): re-queue lapsed claims (attempt+1,
+  // bounded) or time them out, derive run terminal status, emit state.run.*
+  // events. ONE cron trigger / ONE scheduled handler (src/index.ts) — the only
+  // cron slot state-worker consumes (risk R9 — Cloudflare cron-slot budget;
+  // the account is on Workers Paid since 2026-06-11, so 3 existing live crons
+  // (metering, webhooks, integrations) + this one = 4, within budget). Future
+  // state maintenance (OP9 retention/GC) MUST coalesce into this handler rather
+  // than registering another slot. Runs every minute.
+  "triggers": {
+    "crons": ["* * * * *"]
+  },
   "env": {
     "dev": {
       "vars": {
