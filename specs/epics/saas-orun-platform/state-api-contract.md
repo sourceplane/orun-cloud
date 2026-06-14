@@ -21,8 +21,10 @@ every `Backend` method maps to exactly one endpoint.
 - Versioning: `Orun-Contract-Version: 1` request header; servers reject
   unknown majors with `409 contract_version_unsupported` + the supported range,
   so version skew fails loud and actionable at the CLI.
-- Errors: the platform envelope (`packages/contracts/src/errors.ts`) —
-  `{ error: { code, message, details?, requestId } }`. New codes:
+- Errors: the platform envelope emitted by api-edge (`apps/api-edge/src/http.ts`) —
+  `{ error: { code, message, details?, requestId } }`. (The flat
+  `packages/contracts/src/errors.ts` type is reconciled to this nested shape in
+  OP0.) New codes:
   `already_claimed`, `lease_lost`, `deps_not_ready`, `run_terminal`,
   `object_missing`, `contract_version_unsupported`.
 - Idempotency: run creation is keyed by client-supplied ULID `runId`; job

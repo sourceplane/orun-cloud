@@ -23,7 +23,7 @@ it unlocks the things a *team* needs that a laptop cannot provide:
 - **Governance for free** — every mutation lands in the existing audit log,
   event log, webhooks, metering, and billing pipelines.
 
-The graduation path is the moat: `orun` (local) → `orun backend deploy`
+The graduation path is the moat: `orun` (local) → `orun backend init`
 (self-host, single tenant, same contract) → Orun Cloud (multi-tenant SaaS,
 same contract). Adopting or leaving the SaaS is a URL change. We win on the
 surfaces, not on lock-in.
@@ -98,8 +98,9 @@ Owner: identity-worker (verify + exchange) + console (trust config).
   implements client-side.
 - Trust bindings are configured in the console (project → Settings → CI access)
   and auto-suggested when a `state.workspace_links` remote is a github.com URL.
-- `actorKind: "workflow"` joins `user | service_principal | system` in
-  `packages/contracts/src/tenancy.ts` and the policy engine's subject model.
+- `actorKind: "workflow"` is **already present** alongside
+  `user | service_principal | system` in `packages/contracts/src/tenancy.ts`
+  and the policy engine's subject model (no schema change needed).
 
 ### 3.3 Machines: API keys (already shipped)
 
