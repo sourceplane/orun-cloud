@@ -1,0 +1,41 @@
+apiVersion: sourceplane.io/v1
+kind: Component
+
+metadata:
+  name: cloudflare-r2
+  description: Provisions the Cloudflare R2 bucket backing the state-worker object/log store (orun-state, stage and prod)
+  labels:
+    domain: infra
+    scope: state-object-log-store
+
+spec:
+  type: terraform
+  lifecycle: production
+  owner: platform
+  domain: infra
+
+  parameters:
+    orgName: sourceplane
+    stackName: cloudflare-r2
+    terraformDir: terraform
+    terraformVersion: "1.15.3"
+
+  env:
+    AWS_EC2_METADATA_DISABLED: "true"
+
+
+  subscribe:
+    environments:
+      - name: stage
+        profile: plan-only
+        profileRules:
+          - profile: apply
+            when:
+              triggerRef: github-push-main
+
+      - name: prod
+        profile: plan-only
+        profileRules:
+          - profile: apply
+            when:
+              triggerRef: github-push-main

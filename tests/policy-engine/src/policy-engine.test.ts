@@ -686,7 +686,7 @@ describe("listEffectivePermissions", () => {
     expect(result.derivedScope.orgId).toBe("org_1");
 
     const allowed = result.permissions.filter((p) => p.allow);
-    expect(allowed.length).toBe(31);
+    expect(allowed.length).toBe(42);
   });
 
   it("returns limited permissions for viewer", () => {
@@ -698,6 +698,7 @@ describe("listEffectivePermissions", () => {
     const result = listEffectivePermissions(input);
     const allowed = result.permissions.filter((p) => p.allow);
     expect(allowed.map((p) => p.action).sort()).toEqual([
+      "catalog.read",
       "organization.config.read",
       "organization.integration.read",
       "organization.metering.read",
@@ -705,6 +706,9 @@ describe("listEffectivePermissions", () => {
       "organization.webhook.read",
       "project.list",
       "project.webhook.read",
+      "secret.read",
+      "state.object.read",
+      "state.run.read",
     ]);
   });
 
@@ -1013,6 +1017,59 @@ describe("project.repo_link.write (saas-integrations IG3)", () => {
       authorize(
         authReq("project.repo_link.write", ORG, [projectFact("project_builder", ORG, "p1")], "p1"),
       ).allow,
+    ).toBe(false);
+  });
+});
+
+describe("state-plane actions (saas-orun-platform OP0)", () => {
+  const ORG = "org-1";
+
+  const READ_ACTIONS = ["state.run.read", "state.object.read", "catalog.read", "secret.read"];
+  const WRITE_ACTIONS = [
+    "state.run.write",
+    "state.object.write",
+    "catalog.publish",
+    "secret.value.use",
+    "org.cli.link",
+  ];
+  const ADMIN_ONLY_ACTIONS = ["secret.write", "org.ci.trust.write"];
+
+  it("owner and admin can do everything in the state plane", () => {
+    for (const role of ["owner", "admin"]) {
+      for (const action of [...READ_ACTIONS, ...WRITE_ACTIONS, ...ADMIN_ONLY_ACTIONS]) {
+        expect(authorize(authReq(action, ORG, [orgFact(role, ORG)])).allow).toBe(true);
+      }
+    }
+  });
+
+  it("builder can read + write state but not the admin-only secret/trust actions", () => {
+    for (const action of [...READ_ACTIONS, ...WRITE_ACTIONS]) {
+      expect(authorize(authReq(action, ORG, [orgFact("builder", ORG)])).allow).toBe(true);
+    }
+    for (const action of ADMIN_ONLY_ACTIONS) {
+      expect(authorize(authReq(action, ORG, [orgFact("builder", ORG)])).allow).toBe(false);
+    }
+  });
+
+  it("viewer can only read in the state plane", () => {
+    for (const action of READ_ACTIONS) {
+      expect(authorize(authReq(action, ORG, [orgFact("viewer", ORG)])).allow).toBe(true);
+    }
+    for (const action of [...WRITE_ACTIONS, ...ADMIN_ONLY_ACTIONS]) {
+      expect(authorize(authReq(action, ORG, [orgFact("viewer", ORG)])).allow).toBe(false);
+    }
+  });
+
+  it("billing_admin gets no state-plane access", () => {
+    for (const action of [...READ_ACTIONS, ...WRITE_ACTIONS, ...ADMIN_ONLY_ACTIONS]) {
+      expect(authorize(authReq(action, ORG, [orgFact("billing_admin", ORG)])).allow).toBe(false);
+    }
+  });
+
+  it("denies state-plane actions across org boundaries and for bare project roles", () => {
+    expect(authorize(authReq("state.run.write", ORG, [orgFact("owner", "org-2")])).allow).toBe(false);
+    expect(
+      authorize(authReq("state.run.write", ORG, [projectFact("project_admin", ORG, "p1")], "p1")).allow,
     ).toBe(false);
   });
 });
