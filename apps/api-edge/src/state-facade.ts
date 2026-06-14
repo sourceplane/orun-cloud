@@ -14,14 +14,27 @@ const ORG_CLI_LINKS_RE = /^\/v1\/organizations\/[^/]+\/cli\/links$/;
 const CLI_LINKS_RESOLVE_PATH = "/v1/cli/links/resolve";
 // Console-management list + unlink (project Settings → CLI page).
 const ORG_PROJECT_CLI_LINKS_RE = /^\/v1\/organizations\/[^/]+\/projects\/[^/]+\/cli\/links(\/[^/]+)?$/;
+// OP2 — run coordination plane: everything under the path-scoped /state base
+// (runs, jobs, claim/heartbeat/update, runnable, cancel, logs). One prefix
+// covers all of §2; the owning worker re-checks policy + the contract version.
+const STATE_PLANE_RE = /^\/v1\/organizations\/[^/]+\/projects\/[^/]+\/state\//;
 
-const FORWARDED_HEADERS = ["content-type", "x-request-id", "traceparent", "idempotency-key"];
+// `orun-contract-version` is forwarded so state-worker enforces the major and
+// rejects unsupported skew with 409 contract_version_unsupported.
+const FORWARDED_HEADERS = [
+  "content-type",
+  "x-request-id",
+  "traceparent",
+  "idempotency-key",
+  "orun-contract-version",
+];
 
 export function isStateRoute(pathname: string): boolean {
   return (
     pathname === CLI_LINKS_RESOLVE_PATH ||
     ORG_CLI_LINKS_RE.test(pathname) ||
-    ORG_PROJECT_CLI_LINKS_RE.test(pathname)
+    ORG_PROJECT_CLI_LINKS_RE.test(pathname) ||
+    STATE_PLANE_RE.test(pathname)
   );
 }
 

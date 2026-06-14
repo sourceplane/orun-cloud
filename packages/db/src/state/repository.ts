@@ -7,11 +7,15 @@ import type {
   CatalogEntity,
   CatalogEntityRelation,
   CatalogHead,
+  ClaimRunJobInput,
+  ClaimRunJobOutcome,
   CreateRunInput,
   CreateRunJobInput,
   CreateRunOutcome,
   CreateWorkspaceLinkInput,
   CursorPosition,
+  HeartbeatOutcome,
+  HeartbeatRunJobInput,
   ListCatalogEntitiesQuery,
   ListRunsQuery,
   LogChunk,
@@ -19,10 +23,15 @@ import type {
   PageQueryParams,
   Run,
   RunJob,
+  RunJobCounts,
+  RunStatus,
   StateObject,
   StateObjectKind,
   StateRepository,
   StateResult,
+  SweptJob,
+  UpdateRunJobInput,
+  UpdateRunJobOutcome,
   UpsertCatalogEntityInput,
   UpsertObjectInput,
   UpsertObjectOutcome,
@@ -387,6 +396,370 @@ export function createStateRepository(executor: SqlExecutor): StateRepository {
         return { ok: true, value: result.rows.map(mapRunJob) };
       } catch {
         return safeError("Failed to list run jobs");
+      }
+    },
+
+    async listRunnableJobs(
+      orgId: Uuid,
+      projectId: Uuid,
+      runId: Uuid,
+    ): Promise<StateResult<RunJob[]>> {
+      try {
+        // The frontier: queued jobs whose every dependency is a succeeded job in
+        // the same run. A job with no deps is trivially runnable. Computed in a
+        // single statement so the CLI scheduler and the claim guard agree on
+        // the same readiness predicate.
+        const result = await executor.execute<Record<string, unknown>>(
+          `SELECT j.* FROM state.run_jobs j
+            WHERE j.org_id = $1 AND j.project_id = $2 AND j.run_id = $3
+              AND j.status = 'queued'
+              AND NOT EXISTS (
+                SELECT 1 FROM jsonb_array_elements_text(j.deps) AS dep(job_id)
+                WHERE NOT EXISTS (
+                  SELECT 1 FROM state.run_jobs d
+                  WHERE d.run_id = j.run_id
+                    AND d.job_id = dep.job_id
+                    AND d.status = 'succeeded'
+                )
+              )
+            ORDER BY j.job_id ASC`,
+          [orgId, projectId, runId],
+        );
+        return { ok: true, value: result.rows.map(mapRunJob) };
+      } catch {
+        return safeError("Failed to list runnable jobs");
+      }
+    },
+
+    async claimRunJob(input: ClaimRunJobInput): Promise<StateResult<ClaimRunJobOutcome>> {
+      try {
+        // ── The atomic conditional claim. ──
+        // A SINGLE UPDATE is the entire concurrency-safety mechanism: it
+        // transitions the row only if it is still `queued` AND every dependency
+        // is a succeeded job. Postgres takes a row lock for the duration of the
+        // UPDATE, so of N racing claims for one job exactly one observes
+        // rowCount = 1 (the winner); the rest observe rowCount = 0 and never
+        // mutate the row. No read-then-write window exists.
+        const claimed = await executor.execute<Record<string, unknown>>(
+          `UPDATE state.run_jobs j
+              SET status = 'claimed',
+                  runner_id = $5,
+                  lease_expires_at = now() + ($6 || ' seconds')::interval,
+                  started_at = COALESCE(j.started_at, now()),
+                  updated_at = now()
+            WHERE j.org_id = $1 AND j.project_id = $2 AND j.run_id = $3
+              AND j.job_id = $4
+              AND j.status = 'queued'
+              AND NOT EXISTS (
+                SELECT 1 FROM jsonb_array_elements_text(j.deps) AS dep(job_id)
+                WHERE NOT EXISTS (
+                  SELECT 1 FROM state.run_jobs d
+                  WHERE d.run_id = j.run_id
+                    AND d.job_id = dep.job_id
+                    AND d.status = 'succeeded'
+                )
+              )
+            RETURNING *`,
+          [input.orgId, input.projectId, input.runId, input.jobId, input.runnerId, String(input.leaseSeconds)],
+        );
+        if (claimed.rowCount > 0) {
+          return { ok: true, value: { claimed: true, job: mapRunJob(claimed.rows[0]!) } };
+        }
+
+        // Lost the claim (or could not claim). Read the row once to report WHY
+        // — this read does not race the win: the winner already committed.
+        const current = await executor.execute<Record<string, unknown>>(
+          `SELECT * FROM state.run_jobs
+            WHERE org_id = $1 AND project_id = $2 AND run_id = $3 AND job_id = $4`,
+          [input.orgId, input.projectId, input.runId, input.jobId],
+        );
+        if (current.rowCount === 0) return { ok: false, error: { kind: "not_found" } };
+        const job = mapRunJob(current.rows[0]!);
+        if (job.status === "queued") {
+          // Still queued but the guard refused → deps are not all succeeded.
+          return { ok: true, value: { claimed: false, reason: "deps_not_ready" } };
+        }
+        if (
+          job.status === "succeeded" ||
+          job.status === "failed" ||
+          job.status === "timed_out" ||
+          job.status === "canceled"
+        ) {
+          return { ok: true, value: { claimed: false, reason: "terminal" } };
+        }
+        // claimed / running → someone holds it.
+        return { ok: true, value: { claimed: false, reason: "already_claimed" } };
+      } catch {
+        return safeError("Failed to claim run job");
+      }
+    },
+
+    async heartbeatRunJob(input: HeartbeatRunJobInput): Promise<StateResult<HeartbeatOutcome>> {
+      try {
+        // Extend the lease only if THIS runner still holds a live, non-terminal
+        // lease. A lapsed or reassigned lease yields rowCount = 0 → lease_lost.
+        const result = await executor.execute<Record<string, unknown>>(
+          `UPDATE state.run_jobs
+              SET lease_expires_at = now() + ($6 || ' seconds')::interval,
+                  status = CASE WHEN status = 'claimed' THEN 'running' ELSE status END,
+                  updated_at = now()
+            WHERE org_id = $1 AND project_id = $2 AND run_id = $3 AND job_id = $4
+              AND runner_id = $5
+              AND status IN ('claimed', 'running')
+              AND lease_expires_at > now()
+            RETURNING *`,
+          [input.orgId, input.projectId, input.runId, input.jobId, input.runnerId, String(input.leaseSeconds)],
+        );
+        if (result.rowCount === 0) return { ok: true, value: { ok: false, reason: "lease_lost" } };
+        return { ok: true, value: { ok: true, job: mapRunJob(result.rows[0]!) } };
+      } catch {
+        return safeError("Failed to heartbeat run job");
+      }
+    },
+
+    async updateRunJob(input: UpdateRunJobInput): Promise<StateResult<UpdateRunJobOutcome>> {
+      try {
+        // Idempotent terminal transition guarded on the runner's live lease.
+        // The transition only fires from a non-terminal status held by THIS
+        // runner with an unexpired lease.
+        const updated = await executor.execute<Record<string, unknown>>(
+          `UPDATE state.run_jobs
+              SET status = $6,
+                  error_text = $7,
+                  finished_at = now(),
+                  lease_expires_at = NULL,
+                  updated_at = now()
+            WHERE org_id = $1 AND project_id = $2 AND run_id = $3 AND job_id = $4
+              AND runner_id = $5
+              AND status IN ('claimed', 'running')
+              AND lease_expires_at > now()
+            RETURNING *`,
+          [
+            input.orgId,
+            input.projectId,
+            input.runId,
+            input.jobId,
+            input.runnerId,
+            input.status,
+            input.errorText ?? null,
+          ],
+        );
+        if (updated.rowCount > 0) {
+          return { ok: true, value: { ok: true, job: mapRunJob(updated.rows[0]!), replayed: false } };
+        }
+
+        // No transition fired. Either it is an exact replay (same runner already
+        // landed this terminal status) — idempotent no-op — or the lease lapsed.
+        const current = await executor.execute<Record<string, unknown>>(
+          `SELECT * FROM state.run_jobs
+            WHERE org_id = $1 AND project_id = $2 AND run_id = $3 AND job_id = $4`,
+          [input.orgId, input.projectId, input.runId, input.jobId],
+        );
+        if (current.rowCount === 0) return { ok: false, error: { kind: "not_found" } };
+        const job = mapRunJob(current.rows[0]!);
+        if (job.runnerId === input.runnerId && job.status === input.status) {
+          // Replay of a transition this exact runner already applied.
+          return { ok: true, value: { ok: true, job, replayed: true } };
+        }
+        // The runner no longer owns a live lease (lapsed, reassigned, or the job
+        // moved to a different terminal/owner) → lease_lost (terminal sticky).
+        return { ok: true, value: { ok: false, reason: "lease_lost" } };
+      } catch {
+        return safeError("Failed to update run job");
+      }
+    },
+
+    async sweepLapsedLeases(
+      now: Date,
+      maxAttempts: number,
+      limit: number,
+    ): Promise<StateResult<SweptJob[]>> {
+      try {
+        // Re-queue lapsed claims (attempt+1) up to maxAttempts; past that, mark
+        // them timed_out. One guarded UPDATE per outcome; both scoped to the
+        // partial lease index (status in claimed/running AND lease lapsed).
+        const requeued = await executor.execute<Record<string, unknown>>(
+          `UPDATE state.run_jobs
+              SET status = 'queued',
+                  runner_id = NULL,
+                  lease_expires_at = NULL,
+                  attempt = attempt + 1,
+                  updated_at = now()
+            WHERE id IN (
+              SELECT id FROM state.run_jobs
+                WHERE status IN ('claimed', 'running')
+                  AND lease_expires_at IS NOT NULL
+                  AND lease_expires_at <= $1
+                  AND attempt < $2
+                ORDER BY lease_expires_at ASC
+                LIMIT $3
+            )
+            RETURNING *`,
+          [now.toISOString(), maxAttempts, limit],
+        );
+        const timedOut = await executor.execute<Record<string, unknown>>(
+          `UPDATE state.run_jobs
+              SET status = 'timed_out',
+                  lease_expires_at = NULL,
+                  finished_at = now(),
+                  error_text = COALESCE(error_text, 'Lease lapsed after maximum attempts'),
+                  updated_at = now()
+            WHERE id IN (
+              SELECT id FROM state.run_jobs
+                WHERE status IN ('claimed', 'running')
+                  AND lease_expires_at IS NOT NULL
+                  AND lease_expires_at <= $1
+                  AND attempt >= $2
+                ORDER BY lease_expires_at ASC
+                LIMIT $3
+            )
+            RETURNING *`,
+          [now.toISOString(), maxAttempts, limit],
+        );
+        const swept: SweptJob[] = [
+          ...requeued.rows.map((r) => ({ job: mapRunJob(r), outcome: "requeued" as const })),
+          ...timedOut.rows.map((r) => ({ job: mapRunJob(r), outcome: "timed_out" as const })),
+        ];
+        return { ok: true, value: swept };
+      } catch {
+        return safeError("Failed to sweep lapsed leases");
+      }
+    },
+
+    async cancelRun(orgId: Uuid, projectId: Uuid, runId: Uuid): Promise<StateResult<Run>> {
+      try {
+        // Cancel non-terminal jobs, then set the run terminal. Idempotent: a run
+        // already canceled/terminal just returns its current row.
+        await executor.execute<Record<string, unknown>>(
+          `UPDATE state.run_jobs
+              SET status = 'canceled',
+                  lease_expires_at = NULL,
+                  finished_at = COALESCE(finished_at, now()),
+                  updated_at = now()
+            WHERE org_id = $1 AND project_id = $2 AND run_id = $3
+              AND status NOT IN ('succeeded', 'failed', 'timed_out', 'canceled')`,
+          [orgId, projectId, runId],
+        );
+        const run = await executor.execute<Record<string, unknown>>(
+          `UPDATE state.runs
+              SET status = 'canceled',
+                  finished_at = COALESCE(finished_at, now()),
+                  updated_at = now()
+            WHERE org_id = $1 AND project_id = $2 AND id = $3
+              AND status NOT IN ('succeeded', 'failed', 'canceled')
+            RETURNING *`,
+          [orgId, projectId, runId],
+        );
+        if (run.rowCount > 0) return { ok: true, value: mapRun(run.rows[0]!) };
+        // Already terminal — return the existing row (idempotent).
+        const existing = await executor.execute<Record<string, unknown>>(
+          `SELECT * FROM state.runs WHERE org_id = $1 AND project_id = $2 AND id = $3`,
+          [orgId, projectId, runId],
+        );
+        if (existing.rowCount === 0) return { ok: false, error: { kind: "not_found" } };
+        return { ok: true, value: mapRun(existing.rows[0]!) };
+      } catch {
+        return safeError("Failed to cancel run");
+      }
+    },
+
+    async getRunJobCounts(
+      orgId: Uuid,
+      projectId: Uuid,
+      runId: Uuid,
+    ): Promise<StateResult<RunJobCounts>> {
+      try {
+        const result = await executor.execute<Record<string, unknown>>(
+          `SELECT
+             COUNT(*) FILTER (WHERE status = 'queued')                    AS queued,
+             COUNT(*) FILTER (WHERE status IN ('claimed', 'running'))     AS running,
+             COUNT(*) FILTER (WHERE status = 'succeeded')                 AS succeeded,
+             COUNT(*) FILTER (WHERE status IN ('failed', 'timed_out'))    AS failed
+           FROM state.run_jobs
+           WHERE org_id = $1 AND project_id = $2 AND run_id = $3`,
+          [orgId, projectId, runId],
+        );
+        const row = result.rows[0] ?? {};
+        return {
+          ok: true,
+          value: {
+            queued: Number(row.queued ?? 0),
+            running: Number(row.running ?? 0),
+            succeeded: Number(row.succeeded ?? 0),
+            failed: Number(row.failed ?? 0),
+          },
+        };
+      } catch {
+        return safeError("Failed to count run jobs");
+      }
+    },
+
+    async reconcileRunStatus(
+      orgId: Uuid,
+      projectId: Uuid,
+      runId: Uuid,
+    ): Promise<StateResult<{ run: Run; transitioned: RunStatus | null }>> {
+      try {
+        const runResult = await executor.execute<Record<string, unknown>>(
+          `SELECT * FROM state.runs WHERE org_id = $1 AND project_id = $2 AND id = $3`,
+          [orgId, projectId, runId],
+        );
+        if (runResult.rowCount === 0) return { ok: false, error: { kind: "not_found" } };
+        const run = mapRun(runResult.rows[0]!);
+
+        // Canceled is sticky and asserted directly by cancelRun; never override.
+        if (run.status === "canceled") return { ok: true, value: { run, transitioned: null } };
+
+        const tally = await executor.execute<Record<string, unknown>>(
+          `SELECT
+             COUNT(*) AS total,
+             COUNT(*) FILTER (WHERE status IN ('succeeded','failed','timed_out','canceled')) AS terminal,
+             COUNT(*) FILTER (WHERE status IN ('claimed','running')) AS active,
+             COUNT(*) FILTER (WHERE status IN ('failed','timed_out')) AS failed
+           FROM state.run_jobs
+           WHERE org_id = $1 AND project_id = $2 AND run_id = $3`,
+          [orgId, projectId, runId],
+        );
+        const t = tally.rows[0] ?? {};
+        const total = Number(t.total ?? 0);
+        const terminal = Number(t.terminal ?? 0);
+        const active = Number(t.active ?? 0);
+        const failed = Number(t.failed ?? 0);
+
+        let next: RunStatus = run.status;
+        if (total > 0 && terminal === total) {
+          next = failed > 0 ? "failed" : "succeeded";
+        } else if (active > 0 && run.status === "pending") {
+          next = "running";
+        }
+
+        if (next === run.status) return { ok: true, value: { run, transitioned: null } };
+
+        const isTerminal = next === "succeeded" || next === "failed";
+        const updated = await executor.execute<Record<string, unknown>>(
+          `UPDATE state.runs
+              SET status = $4,
+                  started_at = COALESCE(started_at, CASE WHEN $4 = 'running' THEN now() ELSE started_at END),
+                  finished_at = CASE WHEN $5 THEN now() ELSE finished_at END,
+                  updated_at = now()
+            WHERE org_id = $1 AND project_id = $2 AND id = $3
+              AND status NOT IN ('succeeded', 'failed', 'canceled')
+            RETURNING *`,
+          [orgId, projectId, runId, next, isTerminal],
+        );
+        if (updated.rowCount === 0) {
+          // Lost a race to another reconcile — re-read and report no transition.
+          return { ok: true, value: { run, transitioned: null } };
+        }
+        return {
+          ok: true,
+          value: {
+            run: mapRun(updated.rows[0]!),
+            transitioned: isTerminal ? next : null,
+          },
+        };
+      } catch {
+        return safeError("Failed to reconcile run status");
       }
     },
 

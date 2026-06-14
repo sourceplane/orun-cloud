@@ -164,6 +164,18 @@ export interface JobClaim {
   leaseExpiresAt?: string;
   /** Present when claimed: the attempt this claim belongs to. */
   attempt?: number;
+  /**
+   * Present when claimed: the lease window in seconds the server granted. The
+   * client uses this (never a hardcoded value) to schedule heartbeats and to
+   * know when its lease lapses.
+   */
+  leaseSeconds?: number;
+  /**
+   * Present when claimed: how often the client should heartbeat, in seconds
+   * (always < leaseSeconds). Returned so the client never hardcodes the
+   * interval (state-api-contract §2.2).
+   */
+  heartbeatIntervalSeconds?: number;
   /** Present when not claimed: why the claim was refused. */
   reason?: "already_claimed" | "deps_not_ready" | "terminal";
 }
@@ -320,6 +332,10 @@ export interface HeartbeatJobRequest {
 export interface HeartbeatJobResponse {
   /** Extended lease; the client never hardcodes the interval. */
   leaseExpiresAt: string;
+  /** The lease window in seconds the server granted on this heartbeat. */
+  leaseSeconds?: number;
+  /** How often the client should heartbeat, in seconds (< leaseSeconds). */
+  heartbeatIntervalSeconds?: number;
 }
 
 /** POST …/runs/{runId}/jobs/{jobId}/update — idempotent; terminal sticky. */

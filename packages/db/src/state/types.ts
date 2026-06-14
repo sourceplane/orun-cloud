@@ -98,6 +98,14 @@ export interface ListRunsQuery {
   status?: RunStatus;
 }
 
+/** Per-status job tallies for the run projection (jobCounts in the contract). */
+export interface RunJobCounts {
+  queued: number;
+  running: number;
+  succeeded: number;
+  failed: number;
+}
+
 // ── Run jobs ────────────────────────────────────────────────
 
 export type RunJobStatus =
@@ -136,6 +144,72 @@ export interface CreateRunJobInput {
   jobId: string;
   component?: string | null;
   deps?: string[];
+}
+
+// ── Claim / heartbeat / update / sweep ──────────────────────
+
+/** Why a claim attempt did not win (mirrors contract JobClaim.reason). */
+export type ClaimRefusedReason = "already_claimed" | "deps_not_ready" | "terminal";
+
+/**
+ * Outcome of the atomic conditional claim UPDATE. Exactly one concurrent caller
+ * for a given job can observe `claimed: true` (the row transition is a single
+ * SQL statement guarded on `status = 'queued'` and not-claimed). The loser is
+ * told why with the job's current state so the handler can map it to the wire
+ * reason without a second read race.
+ */
+export type ClaimRunJobOutcome =
+  | { claimed: true; job: RunJob }
+  | { claimed: false; reason: ClaimRefusedReason };
+
+export interface ClaimRunJobInput {
+  orgId: Uuid;
+  projectId: Uuid;
+  runId: Uuid;
+  jobId: string;
+  runnerId: string;
+  /** Lease window in seconds (default 60). */
+  leaseSeconds: number;
+}
+
+export interface HeartbeatRunJobInput {
+  orgId: Uuid;
+  projectId: Uuid;
+  runId: Uuid;
+  jobId: string;
+  runnerId: string;
+  leaseSeconds: number;
+}
+
+/** A heartbeat either extends the lease or finds it lost/reassigned. */
+export type HeartbeatOutcome =
+  | { ok: true; job: RunJob }
+  | { ok: false; reason: "lease_lost" };
+
+export interface UpdateRunJobInput {
+  orgId: Uuid;
+  projectId: Uuid;
+  runId: Uuid;
+  jobId: string;
+  runnerId: string;
+  status: "succeeded" | "failed";
+  errorText?: string | null;
+}
+
+/**
+ * Outcome of an idempotent terminal transition. `replayed: true` means the
+ * (run, job, runner, status) tuple was already applied — a no-op that returns
+ * the same result. `lease_lost` means the runner no longer holds the lease.
+ */
+export type UpdateRunJobOutcome =
+  | { ok: true; job: RunJob; replayed: boolean }
+  | { ok: false; reason: "lease_lost" };
+
+/** One lapsed-lease job acted on by the sweep. */
+export interface SweptJob {
+  job: RunJob;
+  /** `requeued` → put back to queued (attempt+1); `timed_out` → terminal. */
+  outcome: "requeued" | "timed_out";
 }
 
 // ── Objects (CAS index) ─────────────────────────────────────
@@ -302,6 +376,46 @@ export interface StateRepository {
   createRunJob(input: CreateRunJobInput): Promise<StateResult<RunJob>>;
   getRunJob(orgId: Uuid, projectId: Uuid, runId: Uuid, jobId: string): Promise<StateResult<RunJob>>;
   listRunJobs(orgId: Uuid, projectId: Uuid, runId: Uuid): Promise<StateResult<RunJob[]>>;
+  /** Frontier: queued jobs whose deps are all terminal-success. */
+  listRunnableJobs(orgId: Uuid, projectId: Uuid, runId: Uuid): Promise<StateResult<RunJob[]>>;
+  /**
+   * Atomic conditional claim — a single guarded UPDATE. At most one concurrent
+   * caller wins; the rest observe `claimed: false`. Deps readiness is enforced
+   * in the same statement so a job whose deps are not all succeeded is refused
+   * with `deps_not_ready` without ever transitioning.
+   */
+  claimRunJob(input: ClaimRunJobInput): Promise<StateResult<ClaimRunJobOutcome>>;
+  /** Extend the lease iff the runner still holds it; else `lease_lost`. */
+  heartbeatRunJob(input: HeartbeatRunJobInput): Promise<StateResult<HeartbeatOutcome>>;
+  /**
+   * Idempotent terminal transition. Replaying the same (run, job, runner,
+   * status) is a no-op returning the prior row; a different runner (lease lost)
+   * is refused with `lease_lost`.
+   */
+  updateRunJob(input: UpdateRunJobInput): Promise<StateResult<UpdateRunJobOutcome>>;
+  /**
+   * Sweep lapsed leases for a scope-less scan (cron). Re-queues jobs whose
+   * lease expired (attempt+1) up to `maxAttempts`, else marks them `timed_out`.
+   * Returns the rows it acted on so the caller can emit lifecycle events.
+   */
+  sweepLapsedLeases(now: Date, maxAttempts: number, limit: number): Promise<StateResult<SweptJob[]>>;
+  /**
+   * Cancel a run: terminal-cancel its non-terminal jobs and set the run to
+   * `canceled`. Idempotent on an already-terminal run. Returns the run row.
+   */
+  cancelRun(orgId: Uuid, projectId: Uuid, runId: Uuid): Promise<StateResult<Run>>;
+  /**
+   * Recompute and persist a run's derived terminal status from its jobs.
+   * Returns the (possibly unchanged) run and whether it transitioned to a new
+   * terminal state on this call (so the caller emits completed/failed once).
+   */
+  reconcileRunStatus(
+    orgId: Uuid,
+    projectId: Uuid,
+    runId: Uuid,
+  ): Promise<StateResult<{ run: Run; transitioned: RunStatus | null }>>;
+  /** Per-status job tallies for the run projection. */
+  getRunJobCounts(orgId: Uuid, projectId: Uuid, runId: Uuid): Promise<StateResult<RunJobCounts>>;
 
   // Objects (CAS index)
   upsertObject(input: UpsertObjectInput): Promise<StateResult<UpsertObjectOutcome>>;
