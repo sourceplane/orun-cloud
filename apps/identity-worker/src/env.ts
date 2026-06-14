@@ -27,4 +27,19 @@ export interface Env {
   OAUTH_REDIRECT_BASE_URL?: string;
   /** Comma-separated console origins allowed as post-login redirect targets. */
   OAUTH_ALLOWED_CONSOLE_ORIGINS?: string;
+
+  // --- CLI session auth (OP1) ---
+  /**
+   * HS256 signing key for the CLI access-token JWT (~15 min). Set with
+   * `wrangler secret put CLI_JWT_SIGNING_KEY --env <env>`. OPTIONAL at boot —
+   * the worker only fails when it actually mints/verifies a CLI token, so a
+   * missing secret never breaks the deploy verify. Provide ≥32 chars.
+   */
+  CLI_JWT_SIGNING_KEY?: string;
+  /**
+   * Public base URL of the web console, used to build the CLI approval page
+   * `authorizeUrl` (e.g. https://app.orun.dev). Falls back to the first
+   * OAUTH_ALLOWED_CONSOLE_ORIGINS entry when unset.
+   */
+  CLI_CONSOLE_BASE_URL?: string;
 }

@@ -42,6 +42,11 @@ export interface OrganizationMember {
   updatedAt: Date;
 }
 
+/** An organization plus the resolved org-level role for a given subject (OP1). */
+export interface OrganizationWithRole extends Organization {
+  role: string;
+}
+
 export interface OrganizationInvitation {
   id: string;
   orgId: string;
@@ -151,6 +156,13 @@ export interface MembershipRepository {
   setOrganizationStatus(orgId: string, status: string, updatedAt: Date): Promise<MembershipResult<Organization>>;
   listOrganizationsForSubject(subjectId: string): Promise<MembershipResult<Organization[]>>;
   listOrganizationsForSubjectPaged(subjectId: string, params: PageQueryParams): Promise<MembershipResult<PagedResult<Organization>>>;
+  /**
+   * Orgs a subject belongs to, joined with their highest org-level role. Backs
+   * the CLI session payload's `orgs:[{id,slug,name,role}]` (OP1) in one query
+   * instead of an N+1 over `listRoleAssignments`. Members with no org-scoped
+   * role assignment fall back to 'viewer'.
+   */
+  listOrganizationsWithRoleForSubject(subjectId: string): Promise<MembershipResult<OrganizationWithRole[]>>;
 
   bootstrapOrganization(input: BootstrapOrganizationInput): Promise<MembershipResult<{ org: Organization; member: OrganizationMember; roleAssignment: RoleAssignment }>>;
 

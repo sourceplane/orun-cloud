@@ -7,6 +7,8 @@ export interface ActorInfo {
   subjectType: string;
   email: string;
   orgId?: string;
+  /** Org ids carried by a CLI access JWT (OP1). Present only for CLI sessions. */
+  orgIds?: string[];
 }
 
 export interface ActorFailure {
@@ -77,6 +79,8 @@ export async function resolveActor(
           orgId?: string;
         };
         user?: { id?: string; email?: string };
+        // CLI access JWT (OP1): the org ids the token was minted with.
+        cliOrgIds?: string[];
       };
     };
 
@@ -89,12 +93,14 @@ export async function resolveActor(
 
     // For user actors, prefer user-level email; for service_principal, use actor email or empty
     const email = json?.data?.user?.email ?? actor.email ?? "";
+    const cliOrgIds = json?.data?.cliOrgIds;
 
     const info: ActorInfo = {
       subjectId: actor.actorId,
       subjectType: actor.actorType,
       email,
       ...(actor.orgId && { orgId: actor.orgId }),
+      ...(Array.isArray(cliOrgIds) && cliOrgIds.length > 0 && { orgIds: cliOrgIds }),
     };
     // Cache only successful resolutions (best-effort; never cache a denial).
     await cache.set(token, info);

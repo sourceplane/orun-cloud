@@ -20,6 +20,11 @@ import type {
   CreateApiKeyInput,
   ApiKeyPageQueryParams,
   ApiKeyPagedResult,
+  CliSessionByRefresh,
+  CreateCliSessionInput,
+  RotateCliSessionInput,
+  CliLoginGrant,
+  CreateCliLoginGrantInput,
 } from "@saas/db/identity";
 
 interface StoredChallenge extends LoginChallenge {
@@ -28,6 +33,13 @@ interface StoredChallenge extends LoginChallenge {
 
 interface StoredSession extends Session {
   tokenHash: string;
+  refreshTokenHash: string | null;
+}
+
+interface StoredGrant extends CliLoginGrant {
+  cliCodeHash: string | null;
+  deviceCodeHash: string | null;
+  userCodeHash: string | null;
 }
 
 export function createFakeRepository(): IdentityRepository & {
@@ -38,6 +50,7 @@ export function createFakeRepository(): IdentityRepository & {
   _securityEvents: SecurityEvent[];
   _apiKeys: Map<string, ApiKey & { keyHash: string }>;
   _servicePrincipals: Map<string, ServicePrincipal>;
+  _grants: Map<string, StoredGrant>;
 } {
   const users = new Map<string, User>();
   const authIdentities = new Map<string, AuthIdentity>();
@@ -46,6 +59,7 @@ export function createFakeRepository(): IdentityRepository & {
   const securityEvents: SecurityEvent[] = [];
   const apiKeys = new Map<string, ApiKey & { keyHash: string }>();
   const servicePrincipals = new Map<string, ServicePrincipal>();
+  const grants = new Map<string, StoredGrant>();
 
   const repo: IdentityRepository & {
     _users: Map<string, User>;
@@ -55,6 +69,7 @@ export function createFakeRepository(): IdentityRepository & {
     _securityEvents: SecurityEvent[];
     _apiKeys: Map<string, ApiKey & { keyHash: string }>;
     _servicePrincipals: Map<string, ServicePrincipal>;
+    _grants: Map<string, StoredGrant>;
   } = {
     _users: users,
     _authIdentities: authIdentities,
@@ -63,6 +78,7 @@ export function createFakeRepository(): IdentityRepository & {
     _securityEvents: securityEvents,
     _apiKeys: apiKeys,
     _servicePrincipals: servicePrincipals,
+    _grants: grants,
 
     async createUser(input: CreateUserInput): Promise<IdentityResult<User>> {
       if (users.has(input.id)) {
@@ -171,6 +187,14 @@ export function createFakeRepository(): IdentityRepository & {
         createdAt: input.createdAt,
         lastSeenAt: input.createdAt,
         tokenHash: input.tokenHash,
+        kind: "web",
+        refreshTokenHash: null,
+        refreshFamilyId: null,
+        refreshGeneration: 0,
+        replacedBy: null,
+        revokedReason: null,
+        clientHost: null,
+        refreshExpiresAt: null,
       };
       sessions.set(input.id, session);
       return { ok: true, value: session };
@@ -203,6 +227,194 @@ export function createFakeRepository(): IdentityRepository & {
       if (!s) return { ok: false, error: { kind: "not_found" } };
       s.revokedAt = revokedAt;
       return { ok: true, value: s };
+    },
+
+    // --- CLI sessions ---
+
+    async createCliSession(input: CreateCliSessionInput): Promise<IdentityResult<Session>> {
+      const session: StoredSession = {
+        id: input.id,
+        userId: input.userId,
+        expiresAt: input.expiresAt,
+        revokedAt: null,
+        createdAt: input.createdAt,
+        lastSeenAt: input.createdAt,
+        tokenHash: input.tokenHash,
+        kind: "cli",
+        refreshTokenHash: input.refreshTokenHash,
+        refreshFamilyId: input.refreshFamilyId,
+        refreshGeneration: input.refreshGeneration,
+        replacedBy: null,
+        revokedReason: null,
+        clientHost: input.clientHost ?? null,
+        refreshExpiresAt: input.refreshExpiresAt,
+      };
+      sessions.set(input.id, session);
+      return { ok: true, value: session };
+    },
+
+    async getCliSessionByRefreshHash(refreshTokenHash: string): Promise<IdentityResult<CliSessionByRefresh>> {
+      // Hash is kept across generations (mirrors the repo): a rotated/revoked
+      // token still resolves to its row so the service can detect reuse.
+      for (const s of sessions.values()) {
+        if (s.refreshTokenHash === refreshTokenHash) {
+          const user = users.get(s.userId);
+          if (!user) return { ok: false, error: { kind: "not_found" } };
+          return { ok: true, value: { session: s, user } };
+        }
+      }
+      return { ok: false, error: { kind: "not_found" } };
+    },
+
+    async getSessionById(id: string): Promise<IdentityResult<Session>> {
+      const s = sessions.get(id);
+      if (!s) return { ok: false, error: { kind: "not_found" } };
+      return { ok: true, value: s };
+    },
+
+    async rotateCliSession(input: RotateCliSessionInput): Promise<IdentityResult<Session>> {
+      const current = sessions.get(input.currentSessionId);
+      // Single-use: only the live row (not yet replaced/revoked) can rotate. The
+      // hash is KEPT so a later replay of this token is detectable as reuse.
+      if (!current || current.replacedBy !== null || current.revokedAt !== null) {
+        return { ok: false, error: { kind: "conflict", entity: "session" } };
+      }
+      current.replacedBy = input.newSessionId;
+      current.revokedAt = input.rotatedAt;
+      current.revokedReason = "superseded";
+      const next: StoredSession = {
+        id: input.newSessionId,
+        userId: input.userId,
+        expiresAt: input.expiresAt,
+        revokedAt: null,
+        createdAt: input.rotatedAt,
+        lastSeenAt: input.rotatedAt,
+        tokenHash: input.newTokenHash,
+        kind: "cli",
+        refreshTokenHash: input.newRefreshTokenHash,
+        refreshFamilyId: input.refreshFamilyId,
+        refreshGeneration: input.newRefreshGeneration,
+        replacedBy: null,
+        revokedReason: null,
+        clientHost: input.clientHost ?? null,
+        refreshExpiresAt: input.refreshExpiresAt,
+      };
+      sessions.set(next.id, next);
+      return { ok: true, value: next };
+    },
+
+    async revokeCliFamily(refreshFamilyId: string, reason: string, revokedAt: Date): Promise<IdentityResult<number>> {
+      let count = 0;
+      for (const s of sessions.values()) {
+        // Revoke still-live rows; keep hashes (reuse stays detectable; validity
+        // is gated on revoked_at).
+        if (s.refreshFamilyId === refreshFamilyId && s.revokedAt === null) {
+          s.revokedAt = revokedAt;
+          if (s.revokedReason === null) s.revokedReason = reason;
+          count++;
+        }
+      }
+      return { ok: true, value: count };
+    },
+
+    async revokeSessionWithReason(id: string, reason: string, revokedAt: Date): Promise<IdentityResult<Session>> {
+      const s = sessions.get(id);
+      if (!s || s.revokedAt !== null) return { ok: false, error: { kind: "not_found" } };
+      s.revokedAt = revokedAt;
+      s.revokedReason = reason;
+      return { ok: true, value: s };
+    },
+
+    async listCliSessionsByUser(userId: string): Promise<IdentityResult<Session[]>> {
+      const byFamily = new Map<string, StoredSession>();
+      for (const s of sessions.values()) {
+        if (s.userId !== userId || s.kind !== "cli") continue;
+        const key = s.refreshFamilyId ?? s.id;
+        const existing = byFamily.get(key);
+        if (!existing) {
+          byFamily.set(key, s);
+        } else {
+          const better = (s.refreshTokenHash !== null) || s.refreshGeneration > existing.refreshGeneration;
+          if (better) byFamily.set(key, s);
+        }
+      }
+      const out = [...byFamily.values()].sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+      return { ok: true, value: out };
+    },
+
+    // --- CLI login grants ---
+
+    async createCliLoginGrant(input: CreateCliLoginGrantInput): Promise<IdentityResult<CliLoginGrant>> {
+      const grant: StoredGrant = {
+        id: input.id,
+        flow: input.flow,
+        status: "pending",
+        clientHost: input.clientHost ?? null,
+        approvedBy: null,
+        approvedAt: null,
+        sessionId: null,
+        redeemedAt: null,
+        expiresAt: input.expiresAt,
+        createdAt: input.createdAt,
+        updatedAt: input.createdAt,
+        cliCodeHash: input.cliCodeHash ?? null,
+        deviceCodeHash: input.deviceCodeHash ?? null,
+        userCodeHash: input.userCodeHash ?? null,
+      };
+      grants.set(input.id, grant);
+      return { ok: true, value: grant };
+    },
+
+    async getCliLoginGrantById(id: string): Promise<IdentityResult<CliLoginGrant>> {
+      const g = grants.get(id);
+      return g ? { ok: true, value: g } : { ok: false, error: { kind: "not_found" } };
+    },
+
+    async getCliLoginGrantByCliCodeHash(h: string): Promise<IdentityResult<CliLoginGrant>> {
+      for (const g of grants.values()) if (g.cliCodeHash === h) return { ok: true, value: g };
+      return { ok: false, error: { kind: "not_found" } };
+    },
+
+    async getCliLoginGrantByDeviceCodeHash(h: string): Promise<IdentityResult<CliLoginGrant>> {
+      for (const g of grants.values()) if (g.deviceCodeHash === h) return { ok: true, value: g };
+      return { ok: false, error: { kind: "not_found" } };
+    },
+
+    async getCliLoginGrantByUserCodeHash(h: string): Promise<IdentityResult<CliLoginGrant>> {
+      for (const g of grants.values()) if (g.userCodeHash === h) return { ok: true, value: g };
+      return { ok: false, error: { kind: "not_found" } };
+    },
+
+    async approveCliLoginGrant(id: string, approvedBy: string, approvedAt: Date): Promise<IdentityResult<CliLoginGrant>> {
+      const g = grants.get(id);
+      if (!g || g.status !== "pending") return { ok: false, error: { kind: "conflict", entity: "cli_login_grant" } };
+      g.status = "approved";
+      g.approvedBy = approvedBy;
+      g.approvedAt = approvedAt;
+      g.updatedAt = approvedAt;
+      return { ok: true, value: g };
+    },
+
+    async denyCliLoginGrant(id: string, deniedAt: Date): Promise<IdentityResult<CliLoginGrant>> {
+      const g = grants.get(id);
+      if (!g || (g.status !== "pending" && g.status !== "approved")) {
+        return { ok: false, error: { kind: "conflict", entity: "cli_login_grant" } };
+      }
+      g.status = "denied";
+      g.updatedAt = deniedAt;
+      return { ok: true, value: g };
+    },
+
+    async redeemCliLoginGrant(id: string, sessionId: string, redeemedAt: Date): Promise<IdentityResult<CliLoginGrant>> {
+      const g = grants.get(id);
+      if (!g || g.status !== "approved" || g.expiresAt.getTime() <= redeemedAt.getTime()) {
+        return { ok: false, error: { kind: "conflict", entity: "cli_login_grant" } };
+      }
+      g.status = "redeemed";
+      g.sessionId = sessionId;
+      g.redeemedAt = redeemedAt;
+      g.updatedAt = redeemedAt;
+      return { ok: true, value: g };
     },
 
     async recordSecurityEvent(input: CreateSecurityEventInput): Promise<IdentityResult<SecurityEvent>> {

@@ -12,6 +12,7 @@ import type {
   Organization,
   OrganizationInvitation,
   OrganizationMember,
+  OrganizationWithRole,
   PagedResult,
   PageQueryParams,
   RoleAssignment,
@@ -193,6 +194,43 @@ export function createMembershipRepository(executor: SqlExecutor): MembershipRep
         return { ok: true, value: result.rows.map(mapOrganization) };
       } catch (err) {
         return safeError("Failed to list organizations for subject", err);
+      }
+    },
+
+    async listOrganizationsWithRoleForSubject(subjectId: string): Promise<MembershipResult<OrganizationWithRole[]>> {
+      try {
+        // LEFT JOIN the active org-scoped role assignment so a member without an
+        // explicit role still appears (falls back to 'viewer'). The ROLE_RANK
+        // ordering surfaces the strongest role first; DISTINCT ON keeps one row
+        // per org (a subject can hold at most a few org-scoped roles).
+        const result = await executor.execute<Record<string, unknown>>(
+          `SELECT DISTINCT ON (o.id) o.*, ra.role AS member_role
+           FROM membership.organizations o
+           INNER JOIN membership.organization_members m
+             ON m.org_id = o.id AND m.subject_id = $1 AND m.status = 'active'
+           LEFT JOIN membership.role_assignments ra
+             ON ra.org_id = o.id AND ra.subject_id = $1
+             AND ra.scope_kind = 'organization' AND ra.revoked_at IS NULL
+           ORDER BY o.id,
+             CASE ra.role
+               WHEN 'owner' THEN 0
+               WHEN 'admin' THEN 1
+               WHEN 'builder' THEN 2
+               WHEN 'billing_admin' THEN 3
+               WHEN 'viewer' THEN 4
+               ELSE 5
+             END`,
+          [subjectId],
+        );
+        const orgs = result.rows.map((row) => ({
+          ...mapOrganization(row),
+          role: (row.member_role as string) ?? "viewer",
+        }));
+        // Newest first, matching the console org listing convention.
+        orgs.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+        return { ok: true, value: orgs };
+      } catch (err) {
+        return safeError("Failed to list organizations with role for subject", err);
       }
     },
 

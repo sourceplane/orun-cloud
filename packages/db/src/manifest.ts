@@ -210,5 +210,14 @@ export const manifest: MigrationManifest = {
       description:
         "State persistence foundation (saas-orun-platform OP0, dormant) — run coordination (runs + run_jobs with leases), the content-addressed object index, append-only log chunks, catalog heads + the catalog read-model, and Orun workspace links; all org/project-denormalized with tenant-safe composite FKs",
     },
+    {
+      id: "230_identity_cli_sessions",
+      context: "identity",
+      path: "230_identity_cli_sessions/up.sql",
+      checksum:
+        "ddc3c1df7d7f1b61a3ba26e10d954deb64b9aaddaccaa44fcbbe03220d1d7e1d",
+      description:
+        "CLI session auth foundation (saas-orun-platform OP1) — extends identity.sessions with a 'cli' kind plus a rotating-refresh token family (reuse ⇒ family revoke) and adds identity.cli_login_grants, the short-lived single-use grant table backing the browser-loopback and RFC-8628 device flows; hashed secrets only",
+    },
   ],
 };

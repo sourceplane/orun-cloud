@@ -144,6 +144,18 @@ function createFakeRepository(): MembershipRepository & { _orgs: Map<string, Org
       return { ok: true, value: orgs };
     },
 
+    async listOrganizationsWithRoleForSubject(subjectId) {
+      const out: Array<Organization & { role: string }> = [];
+      for (const [key, roles] of _roles.entries()) {
+        if (!key.endsWith(`:${subjectId}`)) continue;
+        const live = roles.filter((r) => !r.revokedAt);
+        if (live.length === 0) continue;
+        const org = _orgs.get(key.split(":")[0]!);
+        if (org) out.push({ ...org, role: live[0]!.role });
+      }
+      return { ok: true, value: out };
+    },
+
     async listRoleAssignments(orgId, subjectId) {
       const key = `${orgId}:${subjectId}`;
       const roles = (_roles.get(key) ?? []).filter((r) => !r.revokedAt);

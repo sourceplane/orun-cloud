@@ -12,6 +12,7 @@
 
 import { ApiKeysClient } from "./apiKeys.js";
 import { AuthClient } from "./auth.js";
+import { CliSessionsClient } from "./cliSessions.js";
 import { IntegrationsClient } from "./integrations.js";
 import { BillingClient } from "./billing.js";
 import { ConfigClient } from "./config.js";
@@ -40,6 +41,7 @@ export class OrunCloud {
   readonly config: ConfigClient;
   readonly notifications: NotificationsClient;
   readonly auth: AuthClient;
+  readonly cliSessions: CliSessionsClient;
   readonly integrations: IntegrationsClient;
   /** Underlying HTTP transport. Exposed for advanced extension. */
   readonly transport: Transport;
@@ -59,6 +61,7 @@ export class OrunCloud {
     this.config = new ConfigClient(this.transport);
     this.notifications = new NotificationsClient(this.transport);
     this.auth = new AuthClient(this.transport);
+    this.cliSessions = new CliSessionsClient(this.transport);
     this.integrations = new IntegrationsClient(this.transport);
   }
 }
@@ -97,6 +100,7 @@ export {
 export { ConfigClient, type ConfigScope } from "./config.js";
 export { NotificationsClient } from "./notifications.js";
 export { AuthClient } from "./auth.js";
+export { CliSessionsClient } from "./cliSessions.js";
 export { IntegrationsClient } from "./integrations.js";
 
 // Transport surface.
@@ -312,4 +316,14 @@ export type {
   ProfileResponse,
   UpdateProfileRequest,
   AuthUser,
+  // CLI session auth (OP1)
+  CliSessionPayload,
+  CliSessionOrg,
+  CliSessionSummary,
+  ListCliSessionsResponse,
+  RevokeCliSessionResponse,
+  CliGrantView,
+  GetCliGrantResponse,
+  ApproveCliGrantResponse,
+  DenyCliGrantResponse,
 } from "@saas/contracts/auth";

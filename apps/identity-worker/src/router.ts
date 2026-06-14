@@ -11,12 +11,28 @@ import { handleOAuthProviders } from "./handlers/oauth-providers.js";
 import { handleOAuthStart } from "./handlers/oauth-start.js";
 import { handleOAuthCallback } from "./handlers/oauth-callback.js";
 import { handleCreateApiKey, handleListApiKeys, handleRevokeApiKey } from "./handlers/api-key-admin.js";
+import {
+  handleCliStart,
+  handleCliDeviceStart,
+  handleCliDevicePoll,
+  handleCliToken,
+  handleCliRevoke,
+  handleCliGetGrant,
+  handleCliApproveGrant,
+  handleCliDenyGrant,
+  handleCliListSessions,
+  handleCliRevokeSession,
+} from "./handlers/cli-auth.js";
 import { errorResponse, notFound, methodNotAllowed } from "./http.js";
 
 const ORG_API_KEYS_RE = /^\/v1\/organizations\/[^/]+\/api-keys$/;
 const ORG_API_KEY_ID_RE = /^\/v1\/organizations\/[^/]+\/api-keys\/[^/]+$/;
 const OAUTH_START_RE = /^\/v1\/auth\/oauth\/[^/]+\/start$/;
 const OAUTH_CALLBACK_RE = /^\/v1\/auth\/oauth\/[^/]+\/callback$/;
+const CLI_GRANT_APPROVE_RE = /^\/v1\/auth\/cli\/grants\/[^/]+\/approve$/;
+const CLI_GRANT_DENY_RE = /^\/v1\/auth\/cli\/grants\/[^/]+\/deny$/;
+const CLI_GRANT_ID_RE = /^\/v1\/auth\/cli\/grants\/[^/]+$/;
+const CLI_SESSION_ID_RE = /^\/v1\/auth\/cli\/sessions\/[^/]+$/;
 import { generateRequestId } from "./ids.js";
 
 const REQUEST_ID_RE = /^[\w-]{1,128}$/;
@@ -85,6 +101,53 @@ export async function route(request: Request, env: Env): Promise<Response> {
     if (OAUTH_CALLBACK_RE.test(url.pathname)) {
       if (request.method !== "GET") return methodNotAllowed(requestId);
       return handleOAuthCallback(request, env, requestId);
+    }
+
+    // --- CLI session auth (OP1) ---
+    // Unauthenticated CLI-facing endpoints (start/poll/token/revoke). Rate
+    // limiting is enforced at api-edge (the "auth" route family) before these.
+    if (url.pathname === "/v1/auth/cli/start") {
+      if (request.method !== "POST") return methodNotAllowed(requestId);
+      return handleCliStart(request, env, requestId);
+    }
+    if (url.pathname === "/v1/auth/cli/device/start") {
+      if (request.method !== "POST") return methodNotAllowed(requestId);
+      return handleCliDeviceStart(request, env, requestId);
+    }
+    if (url.pathname === "/v1/auth/cli/device/poll") {
+      if (request.method !== "POST") return methodNotAllowed(requestId);
+      return handleCliDevicePoll(request, env, requestId);
+    }
+    if (url.pathname === "/v1/auth/cli/token") {
+      if (request.method !== "POST") return methodNotAllowed(requestId);
+      return handleCliToken(request, env, requestId);
+    }
+    if (url.pathname === "/v1/auth/cli/revoke") {
+      if (request.method !== "POST") return methodNotAllowed(requestId);
+      return handleCliRevoke(request, env, requestId);
+    }
+
+    // Console-authenticated grant management + session listing (actor headers
+    // injected by api-edge after bearer resolution).
+    if (url.pathname === "/v1/auth/cli/sessions") {
+      if (request.method !== "GET") return methodNotAllowed(requestId);
+      return handleCliListSessions(request, env, requestId);
+    }
+    if (CLI_SESSION_ID_RE.test(url.pathname)) {
+      if (request.method !== "DELETE") return methodNotAllowed(requestId);
+      return handleCliRevokeSession(request, env, requestId);
+    }
+    if (CLI_GRANT_APPROVE_RE.test(url.pathname)) {
+      if (request.method !== "POST") return methodNotAllowed(requestId);
+      return handleCliApproveGrant(request, env, requestId);
+    }
+    if (CLI_GRANT_DENY_RE.test(url.pathname)) {
+      if (request.method !== "POST") return methodNotAllowed(requestId);
+      return handleCliDenyGrant(request, env, requestId);
+    }
+    if (CLI_GRANT_ID_RE.test(url.pathname)) {
+      if (request.method !== "GET") return methodNotAllowed(requestId);
+      return handleCliGetGrant(request, env, requestId);
     }
 
     // API-key admin routes (forwarded from api-edge)
