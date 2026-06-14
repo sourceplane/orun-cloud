@@ -4,11 +4,36 @@ import { createIdentityRepository } from "@saas/db/identity";
 import { createAuthService } from "../services/auth.js";
 import { successResponse, errorResponse, extractBearerToken, withTimings } from "../http.js";
 import { createTimings } from "@saas/contracts/timing";
+import { looksLikeCliAccessToken, verifyCliAccessToken } from "../cli/jwt.js";
 
 export async function handleResolveBearer(request: Request, env: Env, requestId: string): Promise<Response> {
   const token = extractBearerToken(request);
   if (!token) {
     return errorResponse("unauthenticated", "Missing or invalid Authorization header", 401, requestId);
+  }
+
+  // CLI access JWT (OP1): verified locally against the Worker signing key — no DB
+  // hop. A valid token resolves straight to a user ActorContext. (Revocation is
+  // bounded by the short ~15m exp; refresh re-checks the session row.) If the
+  // token looks like ours but fails verification, fall through to a 401 below.
+  if (looksLikeCliAccessToken(token)) {
+    const claims = await verifyCliAccessToken(env, token, new Date());
+    if (!claims) {
+      return errorResponse("unauthenticated", "Invalid or expired CLI token", 401, requestId);
+    }
+    return successResponse(
+      {
+        actor: {
+          actorType: "user",
+          actorId: claims.sub,
+          ...(claims.orgIds.length > 0 && { orgId: claims.orgIds[0] }),
+        },
+        session: { id: claims.sessionId },
+        cliOrgIds: claims.orgIds,
+      },
+      requestId,
+      200,
+    );
   }
 
   if (!env.PLATFORM_DB) {

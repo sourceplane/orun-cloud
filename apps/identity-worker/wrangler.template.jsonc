@@ -18,13 +18,25 @@
   //       wrangler secret put OAUTH_STATE_SECRET         --env <env>
   //   - Each OAuth app's authorized redirect/callback URL must be:
   //       {OAUTH_REDIRECT_BASE_URL}/v1/auth/oauth/{github|google}/callback
+  //
+  // CLI session auth (OP1):
+  //   - CLI_JWT_SIGNING_KEY is the HS256 key for the ~15min CLI access JWT. It is
+  //     a SECRET — set it with `wrangler secret put CLI_JWT_SIGNING_KEY --env <env>`
+  //     (>=32 chars). It is OPTIONAL at boot: the worker only fails when it
+  //     actually mints/verifies a CLI token, so a missing secret never breaks the
+  //     deploy verify (mirrors OAUTH_STATE_SECRET). Set it before exercising the
+  //     CLI login flows on stage/prod.
+  //   - CLI_CONSOLE_BASE_URL (non-secret) is the console origin used to build the
+  //     CLI approval page URL; defaults to the first OAUTH_ALLOWED_CONSOLE_ORIGINS
+  //     entry when blank.
   "vars": {
     "ENVIRONMENT": "local",
     "DEBUG_DELIVERY": "true",
     "GITHUB_OAUTH_CLIENT_ID": "",
     "GOOGLE_OAUTH_CLIENT_ID": "",
     "OAUTH_REDIRECT_BASE_URL": "http://localhost:8787",
-    "OAUTH_ALLOWED_CONSOLE_ORIGINS": "http://localhost:3000"
+    "OAUTH_ALLOWED_CONSOLE_ORIGINS": "http://localhost:3000",
+    "CLI_CONSOLE_BASE_URL": "http://localhost:3000"
   },
   "env": {
     "dev": {
@@ -44,7 +56,8 @@
         "GITHUB_OAUTH_CLIENT_ID": "Ov23liKBsjAqJJsmBavV",
         "GOOGLE_OAUTH_CLIENT_ID": "441163126775-7fabhvpbl9tsga921rklpdlde7mduq34.apps.googleusercontent.com",
         "OAUTH_REDIRECT_BASE_URL": "https://api-edge-stage.oruncloud.workers.dev",
-        "OAUTH_ALLOWED_CONSOLE_ORIGINS": "https://stage.orun.dev,https://orun-web-console-next-stage.oruncloud.workers.dev"
+        "OAUTH_ALLOWED_CONSOLE_ORIGINS": "https://stage.orun.dev,https://orun-web-console-next-stage.oruncloud.workers.dev",
+        "CLI_CONSOLE_BASE_URL": "https://stage.orun.dev"
       },
       "hyperdrive": [
         {
@@ -74,7 +87,8 @@
         "GITHUB_OAUTH_CLIENT_ID": "Ov23lilp2aoyeBDVU8Vc",
         "GOOGLE_OAUTH_CLIENT_ID": "441163126775-7fabhvpbl9tsga921rklpdlde7mduq34.apps.googleusercontent.com",
         "OAUTH_REDIRECT_BASE_URL": "https://api-edge-prod.oruncloud.workers.dev",
-        "OAUTH_ALLOWED_CONSOLE_ORIGINS": "https://app.orun.dev,https://orun-web-console-next-prod.oruncloud.workers.dev"
+        "OAUTH_ALLOWED_CONSOLE_ORIGINS": "https://app.orun.dev,https://orun-web-console-next-prod.oruncloud.workers.dev",
+        "CLI_CONSOLE_BASE_URL": "https://app.orun.dev"
       },
       "hyperdrive": [
         {

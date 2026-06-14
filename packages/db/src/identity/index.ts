@@ -3,6 +3,7 @@ export type {
   AuthIdentity,
   LoginChallenge,
   Session,
+  SessionKind,
   SecurityEvent,
   CreateUserInput,
   CreateAuthIdentityInput,
@@ -23,6 +24,14 @@ export type {
   ApiKeyPageQueryParams,
   ApiKeyPagedResult,
   UpdateUserProfileInput,
+  // OP1 — CLI session auth
+  CliSessionByRefresh,
+  CreateCliSessionInput,
+  RotateCliSessionInput,
+  CliLoginGrant,
+  CliLoginGrantFlow,
+  CliLoginGrantStatus,
+  CreateCliLoginGrantInput,
 } from "./types.js";
 
 export { createIdentityRepository } from "./repository.js";

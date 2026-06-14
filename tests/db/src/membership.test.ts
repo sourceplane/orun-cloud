@@ -288,6 +288,29 @@ describe("MembershipRepository", () => {
     });
   });
 
+  describe("listOrganizationsWithRoleForSubject", () => {
+    it("joins the member's org-level role and falls back to viewer when absent", async () => {
+      const { executor, queries } = createFakeExecutor({
+        rows: [
+          { ...SAMPLE_ORG_ROW, member_role: "admin" },
+          { ...SAMPLE_ORG_ROW, id: ORG1 + "-2", slug: "beta", member_role: null },
+        ],
+      });
+      const repo = createMembershipRepository(executor);
+
+      const result = await repo.listOrganizationsWithRoleForSubject("usr-001");
+
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(queries[0]!.params).toEqual(["usr-001"]);
+      expect(queries[0]!.text).toContain("role_assignments");
+      expect(queries[0]!.text).toContain("scope_kind = 'organization'");
+      const roles = result.value.map((o) => o.role);
+      expect(roles).toContain("admin");
+      expect(roles).toContain("viewer"); // null role falls back to viewer
+    });
+  });
+
   describe("bootstrapOrganization", () => {
     it("creates org, member, and role assignment atomically in a single CTE statement", async () => {
       const { executor, queries } = createFakeExecutor({

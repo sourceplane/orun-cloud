@@ -94,6 +94,12 @@ export function buildSettingsNav(orgSlug: string): SettingsNavGroup[] {
           description: "Programmatic access tokens",
         },
         {
+          href: `${base}/cli-sessions`,
+          label: "Sessions & devices",
+          icon: "Terminal",
+          description: "Active Orun CLI logins",
+        },
+        {
           href: `${base}/webhooks`,
           label: "Webhooks",
           icon: "Webhook",

@@ -1,5 +1,6 @@
 export type {
   Organization,
+  OrganizationWithRole,
   OrganizationMember,
   OrganizationInvitation,
   RoleAssignment,

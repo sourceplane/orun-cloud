@@ -302,4 +302,78 @@ describe("Identity Migration Verification", () => {
       expect(sql).toContain("last_used_at");
     });
   });
+
+  describe("230_identity_cli_sessions SQL schema validation", () => {
+    const sql = readFileSync(
+      resolve(MIGRATIONS_ROOT, "230_identity_cli_sessions/up.sql"),
+      "utf-8",
+    );
+
+    it("adds the session kind column with a web|cli check", () => {
+      expect(sql).toContain("ADD COLUMN IF NOT EXISTS kind");
+      expect(sql).toContain("sessions_kind_check");
+      expect(sql).toContain("kind IN ('web', 'cli')");
+    });
+
+    it("adds rotating-refresh + token-family columns", () => {
+      for (const col of [
+        "refresh_token_hash",
+        "refresh_family_id",
+        "refresh_generation",
+        "replaced_by",
+        "revoked_reason",
+      ]) {
+        expect(sql).toContain(col);
+      }
+    });
+
+    it("stores only hashed refresh tokens, never raw values", () => {
+      expect(sql).toContain("refresh_token_hash");
+      // No raw refresh/secret token columns.
+      expect(sql).not.toMatch(/\brefresh_token\b\s+TEXT/);
+      expect(sql).not.toMatch(/\bsecret\b\s+TEXT/);
+    });
+
+    it("indexes the live refresh hash uniquely (partial)", () => {
+      expect(sql).toContain("sessions_refresh_token_hash_idx");
+      expect(sql).toMatch(/WHERE refresh_token_hash IS NOT NULL/);
+    });
+
+    it("creates the cli_login_grants table", () => {
+      expect(sql).toContain("identity.cli_login_grants");
+    });
+
+    it("grants store only hashed codes, never raw values", () => {
+      for (const col of ["cli_code_hash", "device_code_hash", "user_code_hash"]) {
+        expect(sql).toContain(col);
+      }
+      expect(sql).not.toMatch(/\bcli_code\b\s+TEXT/);
+      expect(sql).not.toMatch(/\bdevice_code\b\s+TEXT/);
+      expect(sql).not.toMatch(/\buser_code\b\s+TEXT/);
+    });
+
+    it("grants are single-use via a status check", () => {
+      expect(sql).toContain("status IN ('pending', 'approved', 'denied', 'redeemed', 'expired')");
+    });
+
+    it("the only FK stays within the identity context", () => {
+      const fkMatches = sql.match(/REFERENCES\s+(\w+\.\w+)/g) ?? [];
+      for (const fk of fkMatches) {
+        expect(fk).toContain("identity.");
+      }
+    });
+
+    it("does not reference cross-context tables", () => {
+      expect(sql).not.toContain("membership.");
+      expect(sql).not.toContain("projects.");
+      expect(sql).not.toContain("billing.");
+      expect(sql).not.toContain("events.");
+    });
+
+    it("uses IF NOT EXISTS for idempotency on creates", () => {
+      const createStatements = sql.match(/CREATE\s+(TABLE|INDEX)/g) ?? [];
+      const ifNotExists = sql.match(/IF NOT EXISTS/g) ?? [];
+      expect(ifNotExists.length).toBeGreaterThanOrEqual(createStatements.length);
+    });
+  });
 });
