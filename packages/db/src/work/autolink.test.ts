@@ -1,12 +1,17 @@
 import { describe, expect, it } from "vitest";
 import {
+  applyAutoLinkPlan,
   AUTOLINK_ACTOR,
   computeAutoLinkPlan,
   materializeAffects,
   parseTaskKeys,
+  type AutoLinkPlan,
+  type AutoLinkRepo,
   type PullRequestContext,
   type TaskView,
 } from "./autolink.js";
+import type { CommitOutcome, LinkInput, SetStatusInput, WorkResult } from "./types.js";
+import type { WorkEvent } from "./model.js";
 
 const pr = (over: Partial<PullRequestContext> = {}): PullRequestContext => ({
   ref: "sourceplane/orun#412",
@@ -91,6 +96,14 @@ describe("auto-linker — key parsing & affects materialization", () => {
     expect(parseTaskKeys("no keys here", "ORN")).toEqual([]);
   });
 
+  it("rejects a malformed prefix instead of injecting it into the match RegExp", () => {
+    // A prefix carrying regex metacharacters (or wrong case) must fail loudly,
+    // not silently corrupt matching.
+    expect(() => parseTaskKeys("A.1-1", "A.")).toThrow();
+    expect(() => parseTaskKeys("orn-1", "orn")).toThrow();
+    expect(() => computeAutoLinkPlan(pr(), ["c/c/c"], [task("ORN-1", "backlog", ["c/c/c"])], "A|B")).toThrow();
+  });
+
   it("degrades unresolved affects visibly rather than dropping them (Q-5)", () => {
     const links = materializeAffects("ORN-1", ["a/b/c", "ghost/x/y"], (c) => c === "a/b/c");
     expect(links).toEqual([
@@ -102,5 +115,37 @@ describe("auto-linker — key parsing & affects materialization", () => {
   it("treats affects as resolved when no catalog resolver is supplied", () => {
     const links = materializeAffects("ORN-1", ["a/b/c"]);
     expect(links).toEqual([{ from: "ORN-1", to: "a/b/c", resolution: "resolved" }]);
+  });
+});
+
+describe("auto-linker — applying the plan (W2)", () => {
+  const ok = (key: string): WorkResult<CommitOutcome> => ({
+    ok: true,
+    value: { event: { eventId: "wev", project: "org/proj", subject: key, kind: "link_added", actor: AUTOLINK_ACTOR, at: "2026-06-11T09:00:00Z", seq: 0 } as WorkEvent, key },
+  });
+
+  it("accounts for per-entity failures (task removed between planning and apply)", async () => {
+    const plan: AutoLinkPlan = {
+      links: [
+        { taskKey: "ORN-1", pr: "sourceplane/orun#412", reason: "component_overlap", matchedComponents: ["c/c/c"] },
+        { taskKey: "ORN-2", pr: "sourceplane/orun#412", reason: "key_parse", matchedComponents: [] },
+      ],
+      transitions: [{ taskKey: "ORN-1", from: "backlog", to: "in_progress" }],
+      actor: AUTOLINK_ACTOR,
+    };
+    // ORN-2 was deleted after planning: its link write fails; ORN-1 succeeds.
+    const repo: AutoLinkRepo = {
+      async addLink(input: LinkInput) {
+        return input.to && input.from === "ORN-2"
+          ? { ok: false, error: { kind: "not_found", entity: "ORN-2" } }
+          : ok(input.from);
+      },
+      async setStatus(input: SetStatusInput) {
+        return ok(input.key);
+      },
+    };
+    const out = await applyAutoLinkPlan(repo, { orgId: "org", projectId: "proj" }, pr(), plan);
+    expect(out.applied).toBe(2); // ORN-1 link + ORN-1 transition
+    expect(out.rejected).toEqual([{ key: "ORN-2", reason: "not_found: ORN-2" }]);
   });
 });

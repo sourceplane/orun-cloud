@@ -11,7 +11,7 @@
 // so the bridge's component matching has parity with the engine by construction
 // (the orun-side `internal/workbridge` pins that wire contract).
 
-import type { Actor, Status } from "./model.js";
+import { validatePrefix, type Actor, type Status } from "./model.js";
 import type { ProjectScope, WorkRepository, WorkRepositoryError } from "./types.js";
 
 /** The slice of the repository the auto-linker writes through — narrowed so the
@@ -78,8 +78,12 @@ const RANK: Record<Status, number> = {
 
 const OPEN: ReadonlySet<Status> = new Set<Status>(["backlog", "todo", "in_progress", "in_review"]);
 
-/** Extract PREFIX-<n> task keys from free text (branch name, PR title). */
+/** Extract PREFIX-<n> task keys from free text (branch name, PR title). The
+ *  prefix is validated (2-5 uppercase letters) before it is interpolated into a
+ *  RegExp, so a malformed prefix fails loudly rather than injecting regex
+ *  metacharacters that would silently corrupt matching. */
 export function parseTaskKeys(text: string, prefix: string): string[] {
+  validatePrefix(prefix);
   const re = new RegExp(`\\b${prefix}-[1-9][0-9]*\\b`, "g");
   return [...new Set(text.match(re) ?? [])];
 }

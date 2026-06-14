@@ -179,6 +179,19 @@ export function resourcePhaseFor(intent: DeploymentIntent, phase: DeploymentPhas
  * condition. The resource status is derived from runtime truth, never asserted.
  */
 export function reconcile(resource: Resource, deployment: Deployment, at: string): Resource {
+  // Monotonicity guard (component 08: terminal-idempotent). `observedGeneration`
+  // only advances when a deployment reaches a terminal phase, so a deployment
+  // for an older generation — or a non-terminal event for a generation the
+  // resource has already fully reconciled — is necessarily stale (out-of-order
+  // delivery). Ignoring it keeps a `ready`/terminal resource from regressing
+  // back to `provisioning`/`pending`. Re-applying the same terminal deployment
+  // recomputes the identical terminal status (idempotent).
+  if (
+    deployment.generation < resource.status.observedGeneration ||
+    (deployment.generation === resource.status.observedGeneration && !TERMINAL.has(deployment.phase))
+  ) {
+    return resource;
+  }
   const phase = resourcePhaseFor(deployment.intent, deployment.phase);
   const ready = phase === "ready";
   const condition: ResourceCondition = {

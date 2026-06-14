@@ -16,6 +16,9 @@ export type Subscriber = (msg: ServerMessage) => void;
 export class WorkSyncServer {
   private readonly state: WorkProjection;
   private readonly log: WorkEvent[] = [];
+  /** seq → the `clientMutationId` that produced that event, so replay can
+   *  re-attach origin to a reconnecting client (see `subscribe`). */
+  private readonly origins = new Map<number, string>();
   private readonly subscribers = new Set<Subscriber>();
 
   constructor(project: string, prefix: string, mintId?: (p: string) => string) {
@@ -37,7 +40,17 @@ export class WorkSyncServer {
   subscribe(sub: Subscriber, fromSeq = 0): () => void {
     this.subscribers.add(sub);
     const missing = this.eventsSince(fromSeq);
-    if (missing.length > 0) sub({ type: "replay", events: missing });
+    if (missing.length > 0) {
+      sub({
+        type: "replay",
+        events: missing.map((event) => {
+          const clientMutationId = this.origins.get(event.seq);
+          return clientMutationId === undefined
+            ? { type: "event" as const, event }
+            : { type: "event" as const, event, clientMutationId };
+        }),
+      });
+    }
     return () => {
       this.subscribers.delete(sub);
     };
@@ -56,6 +69,7 @@ export class WorkSyncServer {
       return { ok: false, clientMutationId: m.clientMutationId, reason, code };
     }
     this.log.push(event);
+    this.origins.set(event.seq, m.clientMutationId);
     for (const sub of this.subscribers) {
       sub({ type: "event", event, clientMutationId: m.clientMutationId });
     }
