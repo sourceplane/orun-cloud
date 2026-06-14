@@ -26,10 +26,11 @@ describe("Integrations Migration Verification", () => {
     );
   });
 
-  it("orders the integrations migrations at the manifest tail", () => {
+  it("orders the integrations migrations consecutively (190 immediately after 180)", () => {
     const ids = manifest.migrations.map((m) => m.id);
-    expect(ids.indexOf("180_integrations_foundation")).toBe(ids.length - 2);
-    expect(ids.indexOf("190_integrations_delivery_attribution")).toBe(ids.length - 1);
+    const i180 = ids.indexOf("180_integrations_foundation");
+    expect(i180).toBeGreaterThanOrEqual(0);
+    expect(ids.indexOf("190_integrations_delivery_attribution")).toBe(i180 + 1);
   });
 
   it("manifest checksums match the on-disk up.sql files", () => {

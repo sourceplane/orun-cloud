@@ -1,0 +1,97 @@
+// Rendered to wrangler.jsonc by tooling/wire/render.mjs (BF6 deploy-time wiring).
+// Resource IDs are NEVER committed: @@wiring(<component>/<env>:<key>)@@ tokens are
+// resolved from AWS Secrets Manager at deploy time (wire-live) or from the
+// committed wiring.fixture.json for offline dry-runs (wire-fixture).
+{
+  "name": "state-worker",
+  "compatibility_date": "2025-05-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "main": "src/index.ts",
+  "minify": false,
+  "vars": {
+    "ENVIRONMENT": "local"
+  },
+  // Lease sweep cron (OP2): re-queue lapsed claims or time them out, derive run
+  // terminal status, emit state.run.* events (design §4.2). Commented out while
+  // OP0 is dormant — there is no run coordination to sweep yet, and the account
+  // is at its 5-cron limit (see the epic IMPLEMENTATION-STATUS). Reinstated at
+  // OP2 when the behavior it drives lands.
+  // "triggers": {
+  //   "crons": ["* * * * *"]
+  // },
+  "env": {
+    "dev": {
+      "vars": {
+        "ENVIRONMENT": "dev"
+      }
+    },
+    "stage": {
+      "workers_dev": false,
+      "vars": {
+        "ENVIRONMENT": "stage"
+        // Secrets (set via `wrangler secret put <NAME> --env stage` once the
+        // state plane goes live at OP2+):
+        //   STATE_ENCRYPTION_KEY
+      },
+      "hyperdrive": [
+        {
+          "binding": "PLATFORM_DB",
+          "id": "@@wiring(cloudflare-hyperdrive/stage:hyperdrive_id)@@"
+        }
+      ],
+      "r2_buckets": [
+        {
+          "binding": "ORUN_STATE",
+          "bucket_name": "orun-state-stage"
+        }
+      ],
+      "services": [
+        {
+          "binding": "MEMBERSHIP_WORKER",
+          "service": "membership-worker-stage"
+        },
+        {
+          "binding": "POLICY_WORKER",
+          "service": "policy-worker-stage"
+        },
+        {
+          "binding": "PROJECTS_WORKER",
+          "service": "projects-worker-stage"
+        }
+      ]
+    },
+    "prod": {
+      "workers_dev": false,
+      "vars": {
+        "ENVIRONMENT": "prod"
+        // Secrets: same set as stage, via `wrangler secret put <NAME> --env prod`
+      },
+      "hyperdrive": [
+        {
+          "binding": "PLATFORM_DB",
+          "id": "@@wiring(cloudflare-hyperdrive/prod:hyperdrive_id)@@"
+        }
+      ],
+      "r2_buckets": [
+        {
+          "binding": "ORUN_STATE",
+          "bucket_name": "orun-state-prod"
+        }
+      ],
+      "services": [
+        {
+          "binding": "MEMBERSHIP_WORKER",
+          "service": "membership-worker-prod"
+        },
+        {
+          "binding": "POLICY_WORKER",
+          "service": "policy-worker-prod"
+        },
+        {
+          "binding": "PROJECTS_WORKER",
+          "service": "projects-worker-prod"
+        }
+      ]
+    }
+  }
+}

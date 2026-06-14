@@ -1,0 +1,66 @@
+apiVersion: sourceplane.io/v1
+kind: Component
+metadata:
+  name: state-worker
+  description: Cloudflare Worker for the state bounded context — Orun Cloud's run-coordination plane, content-addressed object/log store (R2), catalog heads, and workspace links. Dormant at OP0 (health-only); the state surface lands at OP2+.
+spec:
+  type: cloudflare-worker-turbo
+  lifecycle: production
+  owner: platform
+  domain: starter-runtime
+  path: apps/state-worker
+  dependsOn:
+    - component: membership-worker
+    - component: policy-worker
+    - component: projects-worker
+    - component: cloudflare-hyperdrive
+    - component: cloudflare-r2
+  subscribe:
+    environments:
+      - name: dev
+        profile: verify
+      - name: stage
+        profile: verify
+        profileRules:
+          - profile: deploy
+            when:
+              triggerRef: github-push-main
+      - name: prod
+        profile: verify
+        profileRules:
+          - profile: deploy
+            when:
+              triggerRef: github-push-main
+  parameters:
+    nodeVersion: "22"
+    pnpmVersion: "10.12.1"
+    workspaceDir: ../..
+    appDir: .
+    # BF6b: deploy-time wiring — wrangler.jsonc is rendered, never committed.
+    # Verify lanes render from wiring.fixture.json (offline); deploy lanes
+    # resolve real IDs from the Secrets Manager wiring manifest (BF5).
+    awsAccountId: "306024784101"
+    awsRegion: us-east-1
+    orgName: sourceplane
+    owner: sourceplane
+    repo: orun-cloud
+
+    turboFilter: "@saas/state-worker"
+    wranglerConfig: wrangler.jsonc
+    wranglerTemplate: wrangler.template.jsonc
+    wiringComponents: "cloudflare-hyperdrive"
+    wiringEnvs: "stage,prod"
+    wiringFixture: wiring.fixture.json
+    installCommand: pnpm install --frozen-lockfile
+    buildCommand: pnpm exec turbo run build --filter=@saas/state-worker
+    typecheckCommand: pnpm exec turbo run typecheck --filter=@saas/state-worker
+    dryRunCommand: pnpm exec wrangler deploy --dry-run --config wrangler.jsonc --env prod
+    deployCommand: pnpm exec wrangler deploy --config wrangler.jsonc --env prod
+    preDeployCommand: "echo 'No pre-deploy step configured.'"
+    migrationCommand: "echo 'No migrations configured.'"
+    smokeCommand: "echo 'No smoke test configured.'"
+  labels:
+    team: platform
+    layer: runtime
+    surface: state
+    runtime: cloudflare

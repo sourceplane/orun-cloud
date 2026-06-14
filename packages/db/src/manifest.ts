@@ -201,5 +201,14 @@ export const manifest: MigrationManifest = {
       description:
         "Resources + runtime persistence foundation (saas-resources-runtime P2) — manifested project resources (kind/spec/status with a reconciled phase) and the runtime deployments + steps that drive them, with a one-active-deployment-per-resource guard",
     },
+    {
+      id: "220_state_foundation",
+      context: "state",
+      path: "220_state_foundation/up.sql",
+      checksum:
+        "fbefda1f93351952a4ca55a348091d451ae2deddc4d632400d0321397a321a8e",
+      description:
+        "State persistence foundation (saas-orun-platform OP0, dormant) — run coordination (runs + run_jobs with leases), the content-addressed object index, append-only log chunks, catalog heads + the catalog read-model, and Orun workspace links; all org/project-denormalized with tenant-safe composite FKs",
+    },
   ],
 };
