@@ -92,6 +92,10 @@
         {
           "binding": "INTEGRATIONS_WORKER",
           "service": "integrations-worker-stage"
+        },
+        {
+          "binding": "STATE_WORKER",
+          "service": "state-worker-stage"
         }
       ],
       "durable_objects": {
@@ -160,6 +164,10 @@
         {
           "binding": "INTEGRATIONS_WORKER",
           "service": "integrations-worker-prod"
+        },
+        {
+          "binding": "STATE_WORKER",
+          "service": "state-worker-prod"
         }
       ],
       "durable_objects": {

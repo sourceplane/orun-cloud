@@ -293,6 +293,37 @@ describe("projects-worker router", () => {
     const res = await route(req, env);
     expect(res.status).toBe(401);
   });
+
+  // OP4 — internal project resolve seam (service-binding only; no actor/policy).
+  it("internal resolve: 400 when orgId is not a UUID", async () => {
+    const env = createFakeEnv();
+    const req = new Request(
+      "https://projects-worker/v1/internal/projects/resolve?orgId=not-a-uuid&slug=platform",
+      { method: "GET", headers: { "x-request-id": "req_x" } },
+    );
+    const res = await route(req, env);
+    expect(res.status).toBe(400);
+  });
+
+  it("internal resolve: 400 when neither projectId nor slug is given", async () => {
+    const env = createFakeEnv();
+    const req = new Request(
+      `https://projects-worker/v1/internal/projects/resolve?orgId=${TEST_ORG_UUID}`,
+      { method: "GET", headers: { "x-request-id": "req_x" } },
+    );
+    const res = await route(req, env);
+    expect(res.status).toBe(400);
+  });
+
+  it("internal resolve: 405 for non-GET", async () => {
+    const env = createFakeEnv();
+    const req = new Request("https://projects-worker/v1/internal/projects/resolve", {
+      method: "POST",
+      headers: { "x-request-id": "req_x" },
+    });
+    const res = await route(req, env);
+    expect(res.status).toBe(405);
+  });
 });
 
 describe("handleCreateProject", () => {
