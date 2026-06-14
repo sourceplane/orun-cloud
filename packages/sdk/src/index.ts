@@ -14,6 +14,7 @@ import { ApiKeysClient } from "./apiKeys.js";
 import { AuthClient } from "./auth.js";
 import { CliSessionsClient } from "./cliSessions.js";
 import { IntegrationsClient } from "./integrations.js";
+import { StateClient } from "./state.js";
 import { BillingClient } from "./billing.js";
 import { ConfigClient } from "./config.js";
 import { EnvironmentsClient } from "./environments.js";
@@ -43,6 +44,7 @@ export class OrunCloud {
   readonly auth: AuthClient;
   readonly cliSessions: CliSessionsClient;
   readonly integrations: IntegrationsClient;
+  readonly state: StateClient;
   /** Underlying HTTP transport. Exposed for advanced extension. */
   readonly transport: Transport;
 
@@ -63,6 +65,7 @@ export class OrunCloud {
     this.auth = new AuthClient(this.transport);
     this.cliSessions = new CliSessionsClient(this.transport);
     this.integrations = new IntegrationsClient(this.transport);
+    this.state = new StateClient(this.transport);
   }
 }
 
@@ -102,6 +105,11 @@ export { NotificationsClient } from "./notifications.js";
 export { AuthClient } from "./auth.js";
 export { CliSessionsClient } from "./cliSessions.js";
 export { IntegrationsClient } from "./integrations.js";
+export {
+  StateClient,
+  type ListWorkspaceLinksResponse,
+  type UnlinkWorkspaceLinkResponse,
+} from "./state.js";
 
 // Transport surface.
 export {
@@ -303,6 +311,14 @@ export type {
   SuppressRecipientRequest,
   SuppressRecipientResponse,
 } from "@saas/contracts/notifications";
+
+export type {
+  // Workspace links + tenancy resolution (OP4).
+  WorkspaceLink,
+  CreateWorkspaceLinkRequest,
+  CreateWorkspaceLinkResponse,
+  ResolveWorkspaceLinksResponse,
+} from "@saas/contracts/state";
 
 export { ERROR_CODES, type ErrorCode } from "@saas/contracts/errors";
 

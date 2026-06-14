@@ -436,9 +436,15 @@ export interface CreateWorkspaceLinkResponse {
 /**
  * GET /v1/cli/links/resolve?remoteUrl= — the orgs/projects this actor may
  * link/use for that remote (powers `orun cloud link`'s picker).
+ *
+ * `candidates` are the existing active links for the normalized remote that the
+ * actor may use (each already binds an org + project). It is the set the CLI
+ * caches as its `RepoLink`. `links` is an alias kept for the CLI client that
+ * reads the field by that name — same contents, same order.
  */
 export interface ResolveWorkspaceLinksResponse {
   candidates: WorkspaceLink[];
+  links: WorkspaceLink[];
 }
 
 // ── Event taxonomy ──────────────────────────────────────────
@@ -451,6 +457,7 @@ export const STATE_EVENT_TYPES = {
   JOB_FAILED: "state.job.failed",
   CATALOG_HEAD_ADVANCED: "catalog.head.advanced",
   CLI_LINKED: "org.cli.linked",
+  CLI_UNLINKED: "org.cli.unlinked",
 } as const;
 
 export type StateEventType =

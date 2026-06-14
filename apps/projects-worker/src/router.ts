@@ -7,6 +7,7 @@ import { handleArchiveProject } from "./handlers/archive-project.js";
 import { handleCreateEnvironment } from "./handlers/create-environment.js";
 import { handleListEnvironments } from "./handlers/list-environments.js";
 import { handleInternalListEnvironments } from "./handlers/internal-environments.js";
+import { handleInternalResolveProject } from "./handlers/internal-resolve.js";
 import { handleGetEnvironment } from "./handlers/get-environment.js";
 import { handleArchiveEnvironment } from "./handlers/archive-environment.js";
 import { errorResponse, notFound, methodNotAllowed } from "./http.js";
@@ -50,6 +51,12 @@ export async function route(request: Request, env: Env): Promise<Response> {
     if (url.pathname === "/v1/internal/projects/environments") {
       if (request.method !== "GET") return methodNotAllowed(requestId);
       return handleInternalListEnvironments(request, env, requestId);
+    }
+
+    // Internal seam: resolve a project by slug or id (OP4 workspace links).
+    if (url.pathname === "/v1/internal/projects/resolve") {
+      if (request.method !== "GET") return methodNotAllowed(requestId);
+      return handleInternalResolveProject(request, env, requestId);
     }
 
     const envIdMatch = url.pathname.match(ORG_PROJECT_ENVIRONMENT_ID_RE);

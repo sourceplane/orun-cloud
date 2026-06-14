@@ -19,6 +19,7 @@ import {
   handleIntegrationsRoute,
   handleIntegrationsIngressRoute,
 } from "./integrations-facade";
+import { isStateRoute, handleStateRoute } from "./state-facade";
 
 // Durable Object class backing the PERF5 Stage B rate-limit counters. Must be
 // exported from the Worker entry so the runtime can instantiate it for the
@@ -49,6 +50,9 @@ export default {
       response = await handleIntegrationsIngressRoute(request, env, requestId, url.pathname);
     } else if (isIntegrationsRoute(url.pathname)) {
       response = await handleIntegrationsRoute(request, env, requestId, url.pathname);
+    } else if (isStateRoute(url.pathname)) {
+      // Workspace links + tenancy resolution (OP4) and the OP2+ state planes.
+      response = await handleStateRoute(request, env, requestId, url.pathname);
     } else if (isBillingWebhookRoute(url.pathname)) {
       // Public inbound provider webhook (no session) — matched before the
       // authenticated webhooks/billing facades.

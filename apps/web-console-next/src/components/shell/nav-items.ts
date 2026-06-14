@@ -70,6 +70,7 @@ export function buildNavSections(scope: NavScope): NavSection[] {
       links: [
         { href: `${projectBase}/environments`, label: "Environments", icon: "Boxes" },
         { href: `${projectBase}/git`, label: "Git", icon: "GitBranch" },
+        { href: `${projectBase}/cli`, label: "CLI", icon: "Terminal" },
         { href: `${projectBase}/config`, label: "Config", icon: "SlidersHorizontal" },
       ],
     });
