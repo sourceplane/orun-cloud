@@ -17,9 +17,9 @@ The contract-and-schema slice with zero live behavior (the IG0 pattern).
   `StateObjectRef`, `CatalogHead`, `WorkspaceLink`, request/response shapes
   from `state-api-contract.md`; error codes (`already_claimed`, `lease_lost`,
   `deps_not_ready`, `run_terminal`, `object_missing`,
-  `contract_version_unsupported`); `actorKind: "workflow"` added to
-  `tenancy.ts`. Exports wired in `package.json` + `index.ts`.
-- `packages/db`: migration `190_state_foundation` — schema `state`, tables
+  `contract_version_unsupported`). (`actorKind: "workflow"` already exists in
+  `tenancy.ts` — no change needed.) Exports wired in `package.json` + `index.ts`.
+- `packages/db`: migration `220_state_foundation` (190–210 are already taken) — schema `state`, tables
   `runs`, `run_jobs`, `objects`, `log_chunks`, `catalog_heads`,
   `catalog_entities`, `workspace_links`; all org/project-denormalized with
   composite FKs per house rules; manifest entry + checksum;
@@ -28,9 +28,16 @@ The contract-and-schema slice with zero live behavior (the IG0 pattern).
 - `apps/state-worker` skeleton: router, `/health`, env typing, id prefixes
   (`run_` display alias over ULID, `wsl_`), component.yaml, wrangler.jsonc
   (dev/stage/prod, Hyperdrive + R2 bindings, cron stub), Orun discovery wiring.
-- `infra/terraform/cloudflare-r2`: the `orun-state` bucket per environment.
-- Policy actions registered in policy-worker's action registry (deny-by-default
-  means registering them is safe before any route exists).
+- `infra/terraform/cloudflare-r2`: a **new** Terraform module + the `orun-state`
+  bucket per environment. The platform has no app-data R2 today (only the
+  Terraform-state bucket in `bootstrap`), so this is the repo's first `R2Bucket`
+  worker binding.
+- Policy actions (`state.run.*`, `state.object.*`, `catalog.read|publish`,
+  `secret.read|write|value.use`, `org.cli.link`, `org.ci.trust.write`) added to
+  `packages/policy-engine`'s action constants (`ALL_KNOWN_ACTIONS` + the
+  org/project role-permission maps) — these are compile-time constants, not a
+  dynamic registry, and no `state.*`/`secret.*`/`catalog.*` actions exist today;
+  deny-by-default means adding them is safe before any route exists.
 
 **Done when:** typecheck/lint/test green across the workspace; migration
 applies + rolls back on stage; `/health` responds on a deployed dormant
@@ -40,6 +47,10 @@ state-worker; R2 bucket provisioned; no public route reachable.
 
 Owner: identity-worker, api-edge auth-facade, console.
 
+- `identity.sessions` migration: add a `kind` column (`web`/`cli`) plus
+  rotating-refresh + token-family columns — the table is web-only today (no
+  `kind`/refresh/family). All `/v1/auth/cli/*` routes are net-new (identity-worker
+  exposes only login/session/resolve/logout/oauth today).
 - Session kind `cli`: loopback flow (`/v1/auth/cli/start` + console approval
   page + single-use grant redeem), device flow (start/poll), rotating refresh
   (`/v1/auth/cli/token`, reuse-detection ⇒ family revoke), revoke.
@@ -172,7 +183,7 @@ correct entity diff; the platform demonstrably never mutates catalog content
 
 Owner: config-worker, api-edge, console.
 
-- Migration `200_config_secrets`: versioned `config.secrets` with envelope
+- Migration `230_config_secrets` (200/210 are already taken): versioned `config.secrets` with envelope
   encryption (per-secret DEK, per-org KEK wrap, master key as Worker secret);
   scope columns (org/project?/environment?).
 - Write-only management API (PUT/list-metadata/DELETE per contract §4);

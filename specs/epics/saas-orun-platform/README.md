@@ -43,7 +43,7 @@ into a real **secret manager** with runtime grants; and the console renders
 **Runs, Stacks, Catalog, and Secrets** as the product's core surfaces. Because
 the wire contract mirrors what Orun already implements, the integration is
 seamless by construction — and because the same contract stays implementable by
-the OSS single-tenant backend (`orun backend deploy`), adopting Orun Cloud is a
+the OSS single-tenant backend (`orun backend init`), adopting Orun Cloud is a
 URL change, not a migration.
 
 ## Read order
@@ -61,7 +61,7 @@ URL change, not a migration.
 
 | ID | Milestone | Status |
 |----|-----------|--------|
-| OP0 | Foundation (dormant): contracts, `190_state_foundation`, state-worker skeleton, R2 | 🗓️ Planned |
+| OP0 | Foundation (dormant): contracts, `220_state_foundation`, state-worker skeleton, R2 (new module) | 🗓️ Planned |
 | OP1 | CLI session auth (loopback + device flow + refresh + revoke) | 🗓️ Planned |
 | OP2 | Run coordination plane (runs, claims, leases, heartbeats, transitions) | 🗓️ Planned |
 | OP3 | Object & log plane (CAS over R2, digest negotiation, log chunks + tail) | 🗓️ Planned |

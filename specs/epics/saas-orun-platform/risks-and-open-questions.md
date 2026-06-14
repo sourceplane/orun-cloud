@@ -30,12 +30,17 @@ Follow-up to D3: enterprises will ask to hold the KEK (BYO-KMS). Not in this
 epic; confirm it's roadmap (post-OP8) so OP8's crypto layout keeps the seam
 (KEK provider interface, not a hardcoded master key path).
 
-### D5 — `orun backend deploy` (OSS self-host) parity commitment
+### D5 — `orun backend init` (OSS self-host) parity commitment
 The contract promises one API, two implementations. Decide how strongly we
 commit publicly: (a) OSS backend is a reference implementation, best-effort;
 (b) OSS backend is contract-certified per release (conformance suite in the
 orun repo runs against both). Recommendation: (b) — the conformance suite also
-hardens Orun Cloud. Affects OC-side scope.
+hardens Orun Cloud. Affects OC-side scope. **Reality check:** the existing OSS
+backend (`orun backend init`, not `deploy`) is an embedded Cloudflare Worker +
+D1 on a single-tenant *namespace* model; honoring the contract means migrating
+it to the org/project `_local/_local` scope in lockstep with OC0. Decide the
+retrofit timing **before OC0**, since the namespace→org/project change spans
+both the client and this server bundle.
 
 ### D6 — Catalog annotations
 The platform never edits catalog content (provenance property). Buyers may ask
@@ -94,6 +99,20 @@ Same invariant as everywhere: every query carries `org_id + project_id`.
 state-worker repo layer takes scoped IDs as branded types (OP0), and the
 contention tests in OP2 include a cross-tenant probe (runner from org A
 claiming org B's job must 404, not 403, per house resource-hiding rules).
+
+### R9 — Cloudflare cron-trigger slot budget
+The account has a bounded number of cron triggers (the 5-trigger limit bit IG0
+once, resolved via a Workers Paid upgrade). OP2 (lease sweep) and OP9
+(retention/GC) each add a cron. Mitigation: budget the slots up front and, if
+the limit binds, coalesce the state crons into one scheduled handler that fans
+out by phase (sweep vs GC) rather than registering separate triggers.
+
+### R10 — Error-envelope type vs wire shape
+api-edge already emits the nested envelope `{ error: { code, message, details?,
+requestId } }` (`apps/api-edge/src/http.ts`), but `packages/contracts/src/errors.ts`
+is still the older flat shape (`{ error, message, requestId }`). Mitigation: OP0
+reconciles the contracts type to the nested shape so the SDK, the OC0 client
+parser, and the runtime all agree on one envelope.
 
 ## Deferred
 
