@@ -52,7 +52,7 @@ Standard Orun parameters (matching `cloudflare-kv`):
 | `stackName` | string | `cloudflare-r2` | Stack identifier |
 | `terraformDir` | string | `terraform` | Terraform module dir |
 | `terraformVersion` | string | `1.15.3` | Terraform version |
-| `r2_location_hint` | string | `enam` | R2 location hint; immutable after create |
+| `r2_location_hint` | string | `ENAM` | R2 location hint (WNAM/ENAM/WEUR/EEUR/APAC/OC); immutable after create |
 
 ## Outputs
 
@@ -97,7 +97,7 @@ Standard Orun parameters (matching `cloudflare-kv`):
 - **AWS provider pin**: `aws ~> 5.0`, matching peer slices.
 - **Terraform backend**: shared S3 backend, key supplied at runtime by Orun
   (`workspace_key_prefix = "env"`).
-- **Location hint**: set once at create (`r2_location_hint`, default `enam`);
+- **Location hint**: set once at create (`r2_location_hint`, default `ENAM`);
   R2 treats it as immutable, so changing it later forces a replace.
 
 ## Local Verification

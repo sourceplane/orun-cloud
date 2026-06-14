@@ -117,8 +117,8 @@ variable "terraformVersion" {
 
 variable "r2_location_hint" {
   type        = string
-  default     = "enam"
-  description = "R2 bucket location hint (e.g. enam, weur). Set once at create; immutable after."
+  default     = "ENAM"
+  description = "R2 bucket location hint (one of WNAM, ENAM, WEUR, EEUR, APAC, OC). Set once at create; immutable after."
 }
 
 # --- R2 bucket for the state-worker object/log store ---
@@ -139,7 +139,7 @@ locals {
 resource "cloudflare_r2_bucket" "orun_state" {
   account_id = var.cloudflare_account_id
   name       = local.state_bucket_name
-  location   = var.r2_location_hint
+  location   = upper(var.r2_location_hint)
 }
 
 # --- Wiring manifest (BF5) ---
