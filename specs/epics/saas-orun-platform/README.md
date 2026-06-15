@@ -15,7 +15,7 @@ unilaterally.
 
 | Field | Value |
 |-------|-------|
-| Status | **Draft → Ready for review** |
+| Status | **In progress** — OP0–OP4 shipped; OP5–OP9 planned |
 | Cluster | **OP** (OP0–OP9) |
 | Owner(s) | new `state-worker`, identity-worker, config-worker, api-edge, db, contracts/sdk, web-console-next, infra/terraform |
 | Target branch | `main` (PRs merged incrementally, milestone-sized) |
@@ -61,16 +61,29 @@ URL change, not a migration.
 
 | ID | Milestone | Status |
 |----|-----------|--------|
-| OP0 | Foundation (dormant): contracts, `220_state_foundation`, state-worker skeleton, R2 (new module) | 🗓️ Planned |
-| OP1 | CLI session auth (loopback + device flow + refresh + revoke) | 🗓️ Planned |
-| OP2 | Run coordination plane (runs, claims, leases, heartbeats, transitions) | 🗓️ Planned |
-| OP3 | Object & log plane (CAS over R2, digest negotiation, log chunks + tail) | 🗓️ Planned |
-| OP4 | Tenancy resolution & repo links (`orun cloud link` server side) | 🗓️ Planned |
+| OP0 | Foundation (dormant): contracts, `220_state_foundation`, state-worker skeleton, R2 (new module) | ✅ Done |
+| OP1 | CLI session auth (loopback + device flow + refresh + revoke) | ✅ Done — refresh hardening ongoing (see below) |
+| OP2 | Run coordination plane (runs, claims, leases, heartbeats, transitions) | ✅ Done |
+| OP3 | Object & log plane (CAS over R2, digest negotiation, log chunks + tail) | ✅ Done |
+| OP4 | Tenancy resolution & repo links (`orun cloud link` server side) | ✅ Done |
 | OP5 | OIDC federation for CI (GitHub Actions → Orun Cloud tokens) | 🗓️ Planned |
 | OP6 | Console: Runs & Stacks surfaces | 🗓️ Planned |
 | OP7 | Console: Catalog browser (derived-truth entity graph) | 🗓️ Planned |
 | OP8 | Secret manager (storage, grants, console, audit) | 🗓️ Planned |
 | OP9 | Metering, entitlements, retention/GC, hardening | 🗓️ Planned |
+
+### Token-refresh hardening (OP1 follow-through)
+
+Real CLI usage surfaced the rotating-refresh-token footgun (the access token is
+short-lived and the refresh token is single-use). Tracked as discrete, shippable
+units rather than re-opening OP1:
+
+| Item | Side | Status |
+|------|------|--------|
+| Concurrency-safe client refresh (singleflight + cross-process file lock + double-checked reload + proactive skew) | CLI (`orun`) | ✅ Done — `orun` PR #366 |
+| Sliding refresh-token idle window (active sessions never force a surprise re-login; idle ones still expire) | platform | ✅ Done |
+| Refresh-token reuse **grace interval** (idempotent re-issue within a short leeway — closes the kill-between-rotate-and-persist window; Auth0/Okta pattern) | platform | 🗓️ Planned — needs security review (see R11) |
+| Absolute cap on the sliding window (needs a `refresh_family_started_at` column) | platform | 🗓️ Planned |
 
 ## Cross-repo dependency map
 

@@ -81,6 +81,22 @@ Owner: identity-worker. New session kind `cli` alongside console sessions.
   hashed in `identity.sessions`, single-use rotation with reuse detection →
   revoke family). `POST /v1/auth/cli/token` refreshes; `POST /v1/auth/cli/revoke`
   kills the session. This matches Orun's `SessionTokenSource` refresh loop.
+- **Refresh robustness (world-class).** Single-use rotation is correct but
+  fragile in practice; the model is hardened on both sides (see R11):
+  - *Sliding idle window* — each refresh extends the refresh-token lifetime from
+    "now", so an actively-used session never forces a surprise re-login while an
+    idle one still expires ~30 days after last use. (An absolute cap on top is a
+    tracked follow-up; it needs a family-start column.)
+  - *Single-redemption on the client* — the CLI serializes refresh across
+    goroutines (singleflight) and processes (advisory file lock) and re-checks
+    the stored token after winning the lock, so concurrent commands reuse one
+    freshly rotated token instead of each replaying a spent one and tripping
+    reuse-detection. (Shipped: `orun` PR #366.)
+  - *Reuse grace interval* (planned) — a refresh token replayed within a short
+    leeway of its own rotation is re-served idempotently rather than revoking
+    the family, closing the window where a runner is killed between the server
+    rotating and the client persisting. Auth0/Okta "reuse interval"; gated on a
+    security review.
 - Console surface: **Settings → Sessions & devices** lists CLI sessions
   (host, last used, created) with revoke — reuses the session table.
 
