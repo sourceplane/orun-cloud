@@ -64,3 +64,8 @@ spec:
     layer: runtime
     surface: state
     runtime: cloudflare
+
+# Deploy prerequisites: R2 enabled on the account + the orun-state bucket
+# created by infra/terraform/cloudflare-r2 (state-worker binds it as
+# ORUN_STATE on stage/prod). Re-scoped 2026-06-15 to converge the first live
+# deploy after R2 was enabled.

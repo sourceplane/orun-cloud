@@ -39,3 +39,10 @@ spec:
           - profile: apply
             when:
               triggerRef: github-push-main
+
+# Prerequisite: R2 must be enabled on the Cloudflare account (Dashboard →
+# Account → R2). Until then `cloudflare_r2_bucket` apply fails with
+# "Please enable R2 through the Cloudflare Dashboard [code: 10042]", which
+# cascades into state-worker (binds ORUN_STATE) and api-edge (binds
+# STATE_WORKER). R2 enabled 2026-06-15; this re-scopes the component so the
+# orun-state buckets get created on the next merge.

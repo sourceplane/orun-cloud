@@ -18,6 +18,12 @@ spec:
     - component: webhooks-worker
     - component: billing-worker
     - component: integrations-worker
+    # OP4 added api-edge's STATE_WORKER service binding but not this dependsOn,
+    # so the deploy graph didn't order api-edge after state-worker — api-edge
+    # deploy failed with "Service binding 'STATE_WORKER' references Worker
+    # 'state-worker-stage' which was not found [code: 10143]" whenever
+    # state-worker hadn't deployed. Ordering it after state-worker fixes that.
+    - component: state-worker
   subscribe:
     environments:
       - name: dev
