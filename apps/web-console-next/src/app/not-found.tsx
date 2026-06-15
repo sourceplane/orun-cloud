@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Compass } from "lucide-react";
+import { OrunMark } from "@/components/brand/logo";
 
 /**
  * Designed 404 — every unmatched console URL lands here instead of the
@@ -8,10 +8,10 @@ import { Compass } from "lucide-react";
  */
 export default function NotFound() {
   return (
-    <div className="grid min-h-screen place-items-center px-4">
+    <div className="bg-grid-glow grid min-h-screen place-items-center px-4">
       <div className="w-full max-w-md space-y-5 text-center">
-        <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-primary/10 text-primary">
-          <Compass className="h-6 w-6" aria-hidden />
+        <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full border border-border bg-card text-foreground">
+          <OrunMark size={24} />
         </div>
         <div className="space-y-1.5">
           <h1 className="text-lg font-semibold tracking-tight">Page not found</h1>

@@ -199,7 +199,7 @@ function SettingsNavContent({
                 "flex items-center rounded-md transition-colors",
                 mobile ? "min-h-11 px-3 text-[15px] active:bg-accent" : "px-2 py-1.5 text-sm",
                 active
-                  ? "bg-accent text-accent-foreground font-medium"
+                  ? "bg-primary/10 font-medium text-primary"
                   : "text-muted-foreground hover:bg-accent/60 hover:text-foreground",
               )}
             >
@@ -300,11 +300,11 @@ function SidebarLink({
         "flex items-center rounded-md transition-colors",
         mobile ? "min-h-11 gap-3 px-3 text-[15px] active:bg-accent" : "gap-2 px-2 py-1.5 text-sm",
         active
-          ? "bg-accent text-accent-foreground font-medium"
+          ? "bg-primary/10 font-medium text-primary"
           : "text-muted-foreground hover:bg-accent/60 hover:text-foreground",
       )}
     >
-      <Icon className={cn("opacity-80", mobile ? "h-5 w-5" : "h-4 w-4")} />
+      <Icon className={cn(active ? "opacity-100" : "opacity-80", mobile ? "h-5 w-5" : "h-4 w-4")} />
       <span className="min-w-0 flex-1 truncate">{children}</span>
       {chevron && <ChevronRight className={cn("shrink-0 opacity-50", mobile ? "h-4 w-4" : "h-3.5 w-3.5")} />}
     </Link>
