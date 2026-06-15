@@ -211,6 +211,92 @@ describe("CLI auth service (OP1)", () => {
       expect(live!.refreshExpiresAt!.getTime()).toBeGreaterThan(mintedAt + REFRESH_TTL_MS);
     });
 
+    it("enforces an absolute lifetime cap even for a continuously-active family", async () => {
+      const repo = createFakeRepository();
+      seedUser(repo);
+      let clock = new Date("2026-06-14T12:00:00.000Z");
+      const svc = createCliAuthService({
+        repo,
+        env: envWithKey(),
+        now: () => clock,
+        fetchOrgs: async () => ORGS,
+      });
+
+      const started = await svc.start(null);
+      if ("error" in started) throw new Error("start failed");
+      await svc.approveGrant(started.grantId, USER_UUID);
+      const session = await svc.redeemCliCode(started.cliCode);
+      if ("error" in session) throw new Error("redeem failed");
+      const mintedAt = clock.getTime();
+
+      const ABSOLUTE_TTL_MS = 90 * 24 * 60 * 60 * 1000;
+      const day = 24 * 60 * 60 * 1000;
+
+      // Refresh actively every ~20 days. The sliding window keeps it alive...
+      let token = session.refreshToken;
+      for (const offsetDays of [20, 40, 60, 80]) {
+        clock = new Date(mintedAt + offsetDays * day);
+        const r = await svc.refresh(token);
+        expect("error" in r).toBe(false);
+        if ("error" in r) return;
+        token = r.refreshToken;
+      }
+
+      // ...until the family crosses its absolute cap (~90 days from FIRST login),
+      // at which point even the live token is rejected and the family retired.
+      clock = new Date(mintedAt + ABSOLUTE_TTL_MS + 1000);
+      const capped = await svc.refresh(token);
+      expect("error" in capped).toBe(true);
+      if (!("error" in capped)) return;
+      expect(capped.error).toBe("expired");
+
+      const familyId = [...repo._sessions.values()][0]!.refreshFamilyId!;
+      const familyRows = [...repo._sessions.values()].filter((s) => s.refreshFamilyId === familyId);
+      expect(familyRows.every((s) => s.revokedAt !== null)).toBe(true);
+      expect(familyRows.some((s) => s.revokedReason === "absolute_expiry")).toBe(true);
+    });
+
+    it("clamps the slid refresh expiry at the absolute deadline near end-of-life", async () => {
+      const repo = createFakeRepository();
+      seedUser(repo);
+      let clock = new Date("2026-06-14T12:00:00.000Z");
+      const svc = createCliAuthService({
+        repo,
+        env: envWithKey(),
+        now: () => clock,
+        fetchOrgs: async () => ORGS,
+      });
+
+      const started = await svc.start(null);
+      if ("error" in started) throw new Error("start failed");
+      await svc.approveGrant(started.grantId, USER_UUID);
+      const session = await svc.redeemCliCode(started.cliCode);
+      if ("error" in session) throw new Error("redeem failed");
+      const mintedAt = clock.getTime();
+
+      const ABSOLUTE_TTL_MS = 90 * 24 * 60 * 60 * 1000;
+      const day = 24 * 60 * 60 * 1000;
+
+      // Keep the session active (refresh strictly within each 30-day idle
+      // window — gaps 20/25/25 days) up to day 70.
+      let token = session.refreshToken;
+      for (const offsetDays of [20, 45, 70]) {
+        clock = new Date(mintedAt + offsetDays * day);
+        const r = await svc.refresh(token);
+        expect("error" in r).toBe(false);
+        if ("error" in r) return;
+        token = r.refreshToken;
+      }
+
+      // At day 70 the slid window (now + 30d = day 100) overshoots the 90-day
+      // cap, so the new expiry must be clamped to mintedAt + ABSOLUTE_TTL_MS.
+      const live = [...repo._sessions.values()].find(
+        (s) => s.kind === "cli" && s.replacedBy === null && s.revokedAt === null,
+      );
+      expect(live).toBeDefined();
+      expect(live!.refreshExpiresAt!.getTime()).toBe(mintedAt + ABSOLUTE_TTL_MS);
+    });
+
     it("revoke kills the session family (logout)", async () => {
       const repo = createFakeRepository();
       seedUser(repo);

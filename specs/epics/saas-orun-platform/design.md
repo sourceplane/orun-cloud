@@ -83,10 +83,13 @@ Owner: identity-worker. New session kind `cli` alongside console sessions.
   kills the session. This matches Orun's `SessionTokenSource` refresh loop.
 - **Refresh robustness (world-class).** Single-use rotation is correct but
   fragile in practice; the model is hardened on both sides (see R11):
-  - *Sliding idle window* — each refresh extends the refresh-token lifetime from
-    "now", so an actively-used session never forces a surprise re-login while an
-    idle one still expires ~30 days after last use. (An absolute cap on top is a
-    tracked follow-up; it needs a family-start column.)
+  - *Sliding idle window + absolute cap* — each refresh extends the refresh-token
+    lifetime from "now" (so an actively-used session never forces a surprise
+    re-login while an idle one expires ~30 days after last use), but is clamped
+    by an absolute lifetime cap (~90 days from first login, derived from the
+    family's `MIN(created_at)`): past the cap the family is retired and the user
+    re-authenticates, bounding the blast radius of a silently-compromised
+    family.
   - *Single-redemption on the client* — the CLI serializes refresh across
     goroutines (singleflight) and processes (advisory file lock) and re-checks
     the stored token after winning the lock, so concurrent commands reuse one

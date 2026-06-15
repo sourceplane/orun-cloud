@@ -72,6 +72,11 @@ export interface Session {
 export interface CliSessionByRefresh {
   session: Session;
   user: User;
+  /** When the token FAMILY was first issued (generation 1's created_at), i.e.
+   *  the original login time, carried across rotations. Backs the absolute
+   *  session-lifetime cap on top of the sliding idle window. Null only for
+   *  malformed rows with no family. */
+  familyStartedAt: Date | null;
 }
 
 export interface CreateCliSessionInput {

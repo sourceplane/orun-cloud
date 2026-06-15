@@ -120,6 +120,11 @@ Mitigations, in order of shipped→planned:
   concurrency cause; only one refresh redeems the token, the rest reuse it.
 - **Sliding idle window (shipped):** refresh extends the lifetime from "now", so
   active sessions never hit a surprise hard-expiry.
+- **Absolute lifetime cap (shipped):** the slid window is clamped at
+  `familyStart + ~90d` (family origin = `MIN(created_at)` over the family, no
+  migration); past the cap the family is retired (`absolute_expiry`) and the
+  user re-authenticates — a hard ceiling on an indefinitely-active or
+  silently-compromised session.
 - **Reuse grace interval (planned, needs review):** within a short leeway of a
   token's rotation, re-serve idempotently instead of revoking — closes the
   kill-between-rotate-and-persist window. This deliberately narrows the
@@ -127,8 +132,6 @@ Mitigations, in order of shipped→planned:
   tradeoff), so it ships only after a security review; until then the client
   lock covers the common case and a genuine theft is still caught outside the
   (not-yet-enabled) window.
-- **Absolute cap (planned):** an upper bound on an indefinitely-sliding session,
-  gated on adding a `refresh_family_started_at` column.
 
 ### R10 — Error-envelope type vs wire shape
 api-edge already emits the nested envelope `{ error: { code, message, details?,

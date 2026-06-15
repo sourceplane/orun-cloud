@@ -260,7 +260,17 @@ export function createFakeRepository(): IdentityRepository & {
         if (s.refreshTokenHash === refreshTokenHash) {
           const user = users.get(s.userId);
           if (!user) return { ok: false, error: { kind: "not_found" } };
-          return { ok: true, value: { session: s, user } };
+          // Family origin = earliest created_at across the family (mirrors the
+          // repo's MIN(created_at) subquery), backing the absolute cap.
+          let familyStartedAt = s.createdAt;
+          if (s.refreshFamilyId) {
+            for (const f of sessions.values()) {
+              if (f.refreshFamilyId === s.refreshFamilyId && f.createdAt < familyStartedAt) {
+                familyStartedAt = f.createdAt;
+              }
+            }
+          }
+          return { ok: true, value: { session: s, user, familyStartedAt } };
         }
       }
       return { ok: false, error: { kind: "not_found" } };
