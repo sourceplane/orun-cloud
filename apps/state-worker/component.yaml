@@ -69,3 +69,11 @@ spec:
 # created by infra/terraform/cloudflare-r2 (state-worker binds it as
 # ORUN_STATE on stage/prod). Re-scoped 2026-06-15 to converge the first live
 # deploy after R2 was enabled.
+# ci: re-scope to redeploy with the fixed @saas/db bundle. PR #58 fixed
+# `listMissingObjects` (objects/missing 503 — `= ANY($array)` throws under the
+# pg driver's fetch_types:false) in `packages/db`, but `orun plan --changed`
+# only matches files under this component's `path: apps/state-worker` — a
+# packages/* change doesn't rescope its consumers (same gotcha as PR #54). The
+# deployed state-worker-stage bundle therefore still embeds the pre-fix @saas/db
+# and keeps 503-ing on digest negotiation. Touching this file forces the next
+# push-to-main to rebuild + redeploy state-worker with the fix.
