@@ -131,7 +131,10 @@ export async function handleCreateWorkspaceLink(
     orgId,
     requestId,
   );
-  if (!contextResult.ok) return errorResponse("not_found", "Not found", 404, requestId);
+  if (!contextResult.ok) {
+    console.error(JSON.stringify({ level: "error", scope: "state.links.create", reason: "membership_context_unreachable", requestId, orgId, subjectId: actor.subjectId, subjectType: actor.subjectType }));
+    return errorResponse("not_found", "Not found", 404, requestId);
+  }
 
   const resource: PolicyResource = { kind: "organization", orgId };
   const policyResult = await authorizeViaPolicy(
@@ -143,7 +146,10 @@ export async function handleCreateWorkspaceLink(
     contextResult.memberships,
     requestId,
   );
-  if (!policyResult.allow) return errorResponse("not_found", "Not found", 404, requestId);
+  if (!policyResult.allow) {
+    console.error(JSON.stringify({ level: "error", scope: "state.links.create", reason: "policy_denied", requestId, orgId, subjectId: actor.subjectId, action: STATE_POLICY_ACTIONS.CLI_LINK, membershipCount: contextResult.memberships.length, memberships: contextResult.memberships.map((m) => ({ role: (m as { role?: string }).role, scope: (m as { scope?: unknown }).scope })) }));
+    return errorResponse("not_found", "Not found", 404, requestId);
+  }
 
   // ── Parse + validate body. ──
   let body: Record<string, unknown>;
@@ -182,10 +188,16 @@ export async function handleCreateWorkspaceLink(
     actor.subjectType,
     requestId,
   );
-  if (!orgsResult.ok) return errorResponse("internal_error", "Service unavailable", 503, requestId);
+  if (!orgsResult.ok) {
+    console.error(JSON.stringify({ level: "error", scope: "state.links.create", reason: "subject_orgs_unreachable", requestId, subjectId: actor.subjectId }));
+    return errorResponse("internal_error", "Service unavailable", 503, requestId);
+  }
   const orgPublic = orgPublicId(orgId);
   const orgEntry = orgsResult.orgs.find((o) => o.id === orgPublic);
-  if (!orgEntry) return errorResponse("not_found", "Not found", 404, requestId);
+  if (!orgEntry) {
+    console.error(JSON.stringify({ level: "error", scope: "state.links.create", reason: "org_not_in_subject_orgs", requestId, orgPublic, subjectId: actor.subjectId, knownOrgIds: orgsResult.orgs.map((o) => o.id) }));
+    return errorResponse("not_found", "Not found", 404, requestId);
+  }
 
   // ── Find-or-create the project. ──
   const slug = requestedSlug ?? deriveSlugFromRemote(normalized);
@@ -224,6 +236,7 @@ export async function handleCreateWorkspaceLink(
         );
       } else if (created.status === 404 || created.status === 403) {
         // Project creation requires project.create, which the actor lacks.
+        console.error(JSON.stringify({ level: "error", scope: "state.links.create", reason: "project_create_denied", requestId, orgPublic, slug, projectsWorkerStatus: created.status }));
         return errorResponse("not_found", "Not found", 404, requestId);
       } else {
         return errorResponse("internal_error", "Service unavailable", 503, requestId);
@@ -369,10 +382,12 @@ export async function handleResolveWorkspaceLinks(
       // Resolve the project slug for the projection (best-effort).
       let projectSlug = "";
       if (env.PROJECTS_WORKER) {
+        // projects-worker /v1/internal/projects/resolve validates projectId as
+        // a bare UUID and 400s on the `prj_<hex>` public form. Pass the UUID.
         const resolved = await resolveProject(
           env.PROJECTS_WORKER,
           link.orgId,
-          { projectId: projectPublicId(link.projectId) },
+          { projectId: link.projectId },
           requestId,
         );
         if (resolved.ok && resolved.project) projectSlug = resolved.project.slug;
@@ -440,10 +455,12 @@ export async function handleListWorkspaceLinks(
 
   let projectSlug = "";
   if (env.PROJECTS_WORKER) {
+    // projects-worker /v1/internal/projects/resolve validates projectId as
+    // a bare UUID and 400s on the `prj_<hex>` public form. Pass the UUID.
     const resolved = await resolveProject(
       env.PROJECTS_WORKER,
       orgId,
-      { projectId: projectPublicId(projectId) },
+      { projectId },
       requestId,
     );
     if (resolved.ok && resolved.project) projectSlug = resolved.project.slug;
