@@ -12,7 +12,6 @@ import type { ActorContext } from "./router.js";
 import type { PolicyResource } from "@saas/contracts/policy";
 import type { Uuid } from "@saas/db/ids";
 import { errorResponse } from "./http.js";
-import { orgPublicId, projectPublicId } from "./ids.js";
 import { fetchAuthorizationContext } from "./membership-client.js";
 import { authorizeViaPolicy } from "./policy-client.js";
 
@@ -22,6 +21,14 @@ export type AuthzResult = { ok: true } | { ok: false; response: Response };
 /**
  * Authorize `action` for `actor` on the (org, project) resource. Returns a 404
  * (not 403) on any denial or missing-membership, per resource-hiding.
+ *
+ * Internal-service convention (matches projects-worker, config-worker, etc.):
+ * pass bare UUIDs — membership-worker's authorization-context handler calls
+ * `asUuid()` on req.orgId and throws on non-canonical input, which would
+ * surface as a 500 here and a 404 to the caller. The policy-engine matches
+ * `fact.scope.orgId === resource.orgId` by string equality, and membership-
+ * worker propagates whatever we send into scope.orgId; the resource and the
+ * facts must therefore share the same format.
  */
 export async function authorizeRun(
   env: Env,
@@ -43,12 +50,11 @@ export async function authorizeRun(
     };
   }
 
-  const orgPublic = orgPublicId(orgId);
   const contextResult = await fetchAuthorizationContext(
     env.MEMBERSHIP_WORKER,
     actor.subjectId,
     actor.subjectType,
-    orgPublic,
+    orgId,
     requestId,
   );
   if (!contextResult.ok) {
@@ -57,8 +63,8 @@ export async function authorizeRun(
 
   const resource: PolicyResource = {
     kind: "project",
-    orgId: orgPublic,
-    projectId: projectPublicId(projectId),
+    orgId,
+    projectId,
   };
   const policyResult = await authorizeViaPolicy(
     env.POLICY_WORKER,
