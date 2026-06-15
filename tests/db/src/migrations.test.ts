@@ -4,6 +4,8 @@ import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { manifest, BOUNDED_CONTEXTS } from "@saas/db";
 import type { BoundedContext, MigrationEntry } from "@saas/db";
+// @ts-expect-error — plain .mjs generator, no types
+import { renderLock, migrationIds } from "../../../packages/db/scripts/gen-migrations-lock.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const MIGRATIONS_ROOT = resolve(
@@ -119,6 +121,24 @@ describe("Migration Manifest Verifier", () => {
       for (const m of migrations) {
         expect(m.description.length).toBeGreaterThan(0);
       }
+    });
+  });
+
+  // infra/db-migrate/migrations.lock is the change-detection stamp that makes
+  // orun's --changed planner schedule the db-migrate component when a migration
+  // is added (it keys off infra/db-migrate/, not packages/db/). If this drifts,
+  // a new migration would silently never reach the live database.
+  describe("db-migrate change-detection lock", () => {
+    const LOCK_PATH = resolve(__dirname, "../../..", "infra/db-migrate/migrations.lock");
+
+    it("infra/db-migrate/migrations.lock is in sync (run: pnpm --filter @saas/db gen:migrations-lock)", () => {
+      expect(existsSync(LOCK_PATH)).toBe(true);
+      expect(readFileSync(LOCK_PATH, "utf-8")).toBe(renderLock());
+    });
+
+    it("the lock covers exactly the manifest's migration ids", () => {
+      const manifestIds = manifest.migrations.map((m) => m.id).sort();
+      expect(migrationIds()).toEqual(manifestIds);
     });
   });
 });

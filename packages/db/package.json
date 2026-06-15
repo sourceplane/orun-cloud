@@ -44,7 +44,8 @@
     "lint": "eslint src",
     "test": "vitest run",
     "migrate:plan": "node --loader ts-node/esm src/runner/cli.ts plan",
-    "migrate:apply": "node --loader ts-node/esm src/runner/cli.ts apply"
+    "migrate:apply": "node --loader ts-node/esm src/runner/cli.ts apply",
+    "gen:migrations-lock": "node scripts/gen-migrations-lock.mjs"
   },
   "dependencies": {
     "@aws-sdk/client-secrets-manager": "^3.1067.0",

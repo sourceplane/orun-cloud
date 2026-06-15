@@ -46,6 +46,12 @@ spec:
           - profile: apply
             when:
               triggerRef: github-push-main
-# ci: trigger full-component verification (orun v2.12.0 upgrade — PR #183)
-# ci: trigger db-migrate apply — integrations migrations 180+190 were never applied (--changed planning keys off this directory, not spec.path)
-# ci: first-boot db-migrate (orun-cloud fork) — fresh Supabase databases have zero tables; no commit had ever scoped this component, so login failed with "Failed to resolve user" while the SELECT-1 health ping passed
+# Change-detection note: orun's `--changed` planner schedules this component when
+# files in THIS directory change, NOT its spec.path (packages/db/src/migrations).
+# Historically that meant new migrations (180/190, 220/230, first-boot) silently
+# never applied — the plan didn't include db-migrate, and apply only runs on merge.
+# Fix: `migrations.lock` in this directory mirrors the migration set and is
+# regenerated whenever a migration is added (`pnpm --filter @saas/db gen:migrations-lock`,
+# enforced by tests/db/src/migrations.test.ts). So adding a migration now changes a
+# file here → db-migrate is planned (PR) and applied (merge) automatically. Do not
+# hand-add ad-hoc trigger comments; update the lock instead.
