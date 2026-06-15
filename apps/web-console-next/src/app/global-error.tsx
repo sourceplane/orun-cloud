@@ -26,9 +26,10 @@ export default function GlobalError({
           minHeight: "100vh",
           display: "grid",
           placeItems: "center",
-          background: "#09090b",
+          background: "#08080a",
           color: "#fafafa",
-          fontFamily: "Inter, system-ui, sans-serif",
+          fontFamily:
+            "ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif",
           padding: "1rem",
         }}
       >
@@ -62,9 +63,10 @@ export default function GlobalError({
                 alignItems: "center",
                 padding: "0 16px",
                 borderRadius: 8,
-                background: "#6d5efc",
-                color: "#fff",
+                background: "#f59e0b",
+                color: "#1a1206",
                 fontSize: 14,
+                fontWeight: 500,
                 textDecoration: "none",
               }}
             >

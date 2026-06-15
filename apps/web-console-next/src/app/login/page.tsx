@@ -11,7 +11,8 @@ import { Label } from "@/components/ui/label";
 import { useSession } from "@/lib/session";
 import { resolvePostAuthDestination } from "@/lib/last-org";
 import { wrap, createClient } from "@/lib/api";
-import { CONSOLE_TITLE, PRODUCT_INITIAL } from "@/lib/app-config";
+import { CONSOLE_TITLE } from "@/lib/app-config";
+import { OrunMark } from "@/components/brand/logo";
 import { useToast } from "@/components/ui/toast";
 import { ZodForm } from "@/components/ui/zod-form";
 import type { OAuthProviderInfo } from "@saas/contracts/auth";
@@ -70,12 +71,10 @@ export default function LoginPage() {
   );
 
   return (
-    <div className="min-h-screen grid place-items-center bg-gradient-to-br from-background via-background to-primary/5 px-4">
+    <div className="bg-grid-glow grid min-h-screen place-items-center bg-background px-4">
       <div className="w-full max-w-md space-y-4">
         <div className="flex items-center gap-3">
-          <div className="h-9 w-9 rounded-lg bg-gradient-to-br from-primary to-primary/40 grid place-items-center text-primary-foreground font-bold">
-            {PRODUCT_INITIAL}
-          </div>
+          <OrunMark size={34} className="text-foreground" />
           <div>
             <div className="text-base font-semibold tracking-tight">{CONSOLE_TITLE}</div>
             <div className="text-xs text-muted-foreground">

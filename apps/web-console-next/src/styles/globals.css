@@ -4,61 +4,70 @@
 
 @layer base {
   :root {
-    --font-sans: "Inter", system-ui, sans-serif;
-    --font-mono: "JetBrains Mono", ui-monospace, monospace;
+    /* Match the orun.dev landing system stack so the console and the marketing
+       site render identical type without shipping a web font. */
+    --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
+      "Helvetica Neue", Arial, sans-serif;
+    --font-mono: ui-monospace, "SF Mono", "Cascadia Code", "JetBrains Mono",
+      Menlo, Consolas, monospace;
 
-    /* Light theme — "paper" surface */
-    --background: 0 0% 100%;
-    --foreground: 240 10% 4%;
+    /* Light theme — warm "paper" surface with the orun amber accent. The
+       console defaults to dark (which mirrors orun.dev one-to-one); light is the
+       opt-in counterpart, kept warm so the brand reads the same in both. */
+    --background: 40 33% 99%;
+    --foreground: 240 10% 8%;
     --card: 0 0% 100%;
-    --card-foreground: 240 10% 4%;
+    --card-foreground: 240 10% 8%;
     --popover: 0 0% 100%;
-    --popover-foreground: 240 10% 4%;
-    --primary: 245 80% 60%;
-    --primary-foreground: 0 0% 100%;
-    --secondary: 240 5% 96%;
-    --secondary-foreground: 240 6% 10%;
-    --muted: 240 5% 96%;
-    --muted-foreground: 240 4% 46%;
-    --accent: 240 5% 96%;
-    --accent-foreground: 240 6% 10%;
+    --popover-foreground: 240 10% 8%;
+    --primary: 30 94% 43%;
+    --primary-foreground: 40 60% 98%;
+    --secondary: 40 16% 95%;
+    --secondary-foreground: 240 6% 12%;
+    --muted: 40 16% 95%;
+    --muted-foreground: 240 4% 42%;
+    --accent: 40 38% 93%;
+    --accent-foreground: 240 6% 12%;
     --destructive: 0 72% 51%;
     --destructive-foreground: 0 0% 100%;
-    --warning: 38 92% 50%;
-    --warning-foreground: 26 83% 14%;
-    --success: 142 71% 45%;
+    --warning: 28 90% 48%;
+    --warning-foreground: 30 60% 10%;
+    --success: 142 64% 36%;
     --success-foreground: 0 0% 100%;
-    --border: 240 6% 90%;
-    --input: 240 6% 90%;
-    --ring: 245 80% 60%;
+    --border: 40 14% 90%;
+    --input: 40 14% 87%;
+    --ring: 30 94% 43%;
     --radius: 0.625rem;
   }
 
   .dark {
-    /* Dark theme — "Linear/Vercel" carbon */
-    --background: 240 10% 4%;
+    /* Dark theme — the orun.dev canvas: near-black zinc surfaces, amber accent.
+       Values are lifted directly from the landing page tokens (bg #050505,
+       surface #0a0a0a, border #1f1f23, text #fafafa/#a1a1aa, amber #f59e0b) so
+       "Open Console" feels like the same product, not a different app. */
+    --background: 240 8% 3.5%;
     --foreground: 0 0% 98%;
-    --card: 240 8% 7%;
+    --card: 240 7% 5%;
     --card-foreground: 0 0% 98%;
-    --popover: 240 8% 7%;
+    --popover: 240 7% 6.5%;
     --popover-foreground: 0 0% 98%;
-    --primary: 245 90% 68%;
-    --primary-foreground: 240 10% 4%;
-    --secondary: 240 6% 12%;
+    --primary: 38 92% 50%;
+    --primary-foreground: 30 45% 7%;
+    --secondary: 240 6% 11%;
     --secondary-foreground: 0 0% 98%;
-    --muted: 240 6% 12%;
-    --muted-foreground: 240 5% 64%;
-    --accent: 240 6% 14%;
+    --muted: 240 6% 11%;
+    --muted-foreground: 240 5% 65%;
+    --accent: 240 6% 13%;
     --accent-foreground: 0 0% 98%;
-    --destructive: 0 75% 60%;
+    --destructive: 0 72% 55%;
     --destructive-foreground: 0 0% 98%;
-    --warning: 38 95% 60%;
-    --warning-foreground: 26 83% 10%;
-    --success: 142 65% 55%;
-    --success-foreground: 0 0% 100%;
-    --border: 240 6% 16%;
-    --input: 240 6% 16%;
-    --ring: 245 90% 68%;
+    --warning: 30 95% 56%;
+    --warning-foreground: 30 60% 8%;
+    --success: 142 69% 58%;
+    --success-foreground: 140 65% 8%;
+    --border: 240 8% 13%;
+    --input: 240 8% 16%;
+    --ring: 38 92% 50%;
   }
 
   * {
@@ -89,6 +98,46 @@
 }
 
 @layer utilities {
+  /* The orun.dev hero backdrop: an amber radial glow over a faint engineering
+     grid, faded out toward the bottom. Used on the full-screen entry surfaces
+     (login, onboarding) so they read as a continuation of the landing hero.
+     The pseudo-element sits behind content (pointer-events:none); host elements
+     just need `position: relative`. */
+  .bg-grid-glow {
+    position: relative;
+    isolation: isolate;
+  }
+  .bg-grid-glow::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    pointer-events: none;
+    background:
+      radial-gradient(
+        620px 320px at 50% -80px,
+        hsl(var(--primary) / 0.12),
+        transparent 70%
+      ),
+      linear-gradient(hsl(var(--foreground) / 0.025) 1px, transparent 1px),
+      linear-gradient(90deg, hsl(var(--foreground) / 0.025) 1px, transparent 1px);
+    background-size:
+      auto,
+      56px 56px,
+      56px 56px;
+    -webkit-mask-image: linear-gradient(#000 0%, #000 52%, transparent 100%);
+    mask-image: linear-gradient(#000 0%, #000 52%, transparent 100%);
+  }
+
+  /* Mono, amber, uppercase section label — the landing "eyebrow" motif. */
+  .eyebrow {
+    font-family: var(--font-mono);
+    font-size: 0.6875rem;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: hsl(var(--primary));
+  }
+
   .scrollbar-thin::-webkit-scrollbar {
     width: 8px;
     height: 8px;

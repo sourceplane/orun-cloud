@@ -13,7 +13,8 @@ import { useRequireAuth } from "@/lib/use-async";
 import { useApiQuery, qk } from "@/lib/query";
 import { wrap } from "@/lib/api";
 import { defaultOrgDestination, readLastOrgSlug } from "@/lib/last-org";
-import { CONSOLE_TITLE, PRODUCT_INITIAL } from "@/lib/app-config";
+import { CONSOLE_TITLE } from "@/lib/app-config";
+import { OrunMark } from "@/components/brand/logo";
 
 /**
  * Mandatory first-run onboarding (Supabase/Vercel-style): a focused, full-screen
@@ -62,12 +63,10 @@ export default function OnboardingPage() {
   }, [phase, orgs.data, orgs.error, router]);
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-background via-background to-primary/5">
+    <div className="bg-grid-glow min-h-screen bg-background">
       <header className="mx-auto flex h-14 w-full max-w-5xl items-center justify-between px-4 md:px-8">
         <div className="flex items-center gap-2.5">
-          <div className="grid h-7 w-7 place-items-center rounded-lg bg-gradient-to-br from-primary to-primary/40 text-sm font-bold text-primary-foreground">
-            {PRODUCT_INITIAL}
-          </div>
+          <OrunMark size={26} className="text-foreground" />
           <span className="text-sm font-semibold tracking-tight">{CONSOLE_TITLE}</span>
         </div>
         <Button
