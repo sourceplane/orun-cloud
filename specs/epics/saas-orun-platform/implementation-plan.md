@@ -79,11 +79,14 @@ status table and R11.
   `services/cli-auth.ts` `refresh()` extends `refreshExpiresAt` from "now" on
   every refresh instead of carrying the original family expiry forward — active
   sessions no longer hard-expire 30 days after first login.
+- ✅ **Absolute lifetime cap** — `refresh()` derives the family origin from
+  `MIN(created_at)` over the family (no migration) and refuses to refresh past
+  `familyStart + 90d`, retiring the family (`absolute_expiry`) so even a
+  continuously-active (or silently-compromised) session has a hard max age; the
+  slid idle window is clamped to the same ceiling.
 - 🗓️ **Reuse grace interval** — idempotent re-issue of a refresh token replayed
   within a short leeway of its rotation (closes the kill-between-rotate-and-
   persist window). Security-sensitive; needs review (R11).
-- 🗓️ **Absolute cap** on the sliding window — needs a `refresh_family_started_at`
-  column; bounds the lifetime of an indefinitely-active session.
 
 ## OP2 — Run coordination plane — ✅ Done
 

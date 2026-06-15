@@ -532,6 +532,10 @@ export function createIdentityRepository(executor: SqlExecutor): IdentityReposit
              s.revoked_reason AS session_revoked_reason,
              s.client_host AS session_client_host,
              s.refresh_expires_at AS session_refresh_expires_at,
+             -- Family origin (generation 1's created_at), carried across
+             -- rotations to enforce the absolute session-lifetime cap.
+             (SELECT MIN(f.created_at) FROM identity.sessions f
+              WHERE f.refresh_family_id = s.refresh_family_id) AS family_started_at,
              u.*
            FROM identity.sessions s
            JOIN identity.users u ON u.id = s.user_id
@@ -558,7 +562,10 @@ export function createIdentityRepository(executor: SqlExecutor): IdentityReposit
           client_host: row.session_client_host,
           refresh_expires_at: row.session_refresh_expires_at,
         });
-        return { ok: true, value: { session, user: mapUser(row) } };
+        const familyStartedAt = row.family_started_at
+          ? new Date(row.family_started_at as string)
+          : session.createdAt;
+        return { ok: true, value: { session, user: mapUser(row), familyStartedAt } };
       } catch {
         return safeError("Failed to resolve CLI session");
       }

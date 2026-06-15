@@ -45,7 +45,13 @@ export interface CliAuthServiceDeps {
 
 // TTLs.
 const GRANT_TTL_MS = 10 * 60 * 1000; // loopback + device approval window
-const REFRESH_TTL_MS = 30 * 24 * 60 * 60 * 1000; // ~30 days
+const REFRESH_TTL_MS = 30 * 24 * 60 * 60 * 1000; // ~30 days (sliding idle window)
+// Absolute lifetime of a single login regardless of activity: even a
+// continuously-used session must re-authenticate after this long, bounding the
+// blast radius of a silently-compromised refresh-token family (compliance: a
+// hard max session age). The sliding idle window (REFRESH_TTL_MS) is capped by
+// this on every rotation.
+const ABSOLUTE_REFRESH_TTL_MS = 90 * 24 * 60 * 60 * 1000; // ~90 days
 const DEVICE_POLL_INTERVAL_SEC = 5;
 
 export interface CliStartResult {
@@ -317,7 +323,7 @@ export function createCliAuthService(deps: CliAuthServiceDeps) {
         // just an invalid token. Report unauthenticated.
         return { error: "not_found", message: "Invalid refresh token" };
       }
-      const { session, user } = found.value;
+      const { session, user, familyStartedAt } = found.value;
 
       // Reuse detection (RFC-9700): the presented token resolved to a row, but
       // that row is no longer the live generation — it was already rotated
@@ -337,11 +343,33 @@ export function createCliAuthService(deps: CliAuthServiceDeps) {
         }
         return { error: "not_found", message: "Refresh token reuse detected; session revoked" };
       }
-      if (session.refreshExpiresAt && session.refreshExpiresAt.getTime() <= now().getTime()) {
-        return { error: "expired", message: "Refresh token expired" };
-      }
       if (!session.refreshFamilyId) {
         return { error: "internal_error", message: "Malformed CLI session" };
+      }
+
+      // Absolute lifetime cap (checked before the idle-expiry below): even an
+      // actively-refreshed family must re-authenticate once it is older than
+      // ABSOLUTE_REFRESH_TTL_MS. The sliding idle window keeps an active session
+      // alive, but never past this hard ceiling — so a silently-compromised
+      // family cannot live forever. Hitting the cap retires the family (distinct
+      // from a plain idle timeout, which just lets the token age out).
+      const familyStart = (familyStartedAt ?? session.createdAt).getTime();
+      const absoluteDeadline = familyStart + ABSOLUTE_REFRESH_TTL_MS;
+      if (now().getTime() >= absoluteDeadline) {
+        await repo.revokeCliFamily(session.refreshFamilyId, "absolute_expiry", now());
+        await repo.recordSecurityEvent({
+          ...eventBase(),
+          eventType: "cli.session.absolute_expiry",
+          outcome: "success",
+          userId: user.id,
+          sessionId: session.id,
+          metadata: { refreshFamilyId: session.refreshFamilyId, familyStartedAt: new Date(familyStart).toISOString() },
+        });
+        return { error: "expired", message: "Session reached its maximum lifetime; sign in again" };
+      }
+
+      if (session.refreshExpiresAt && session.refreshExpiresAt.getTime() <= now().getTime()) {
+        return { error: "expired", message: "Refresh token expired" };
       }
 
       // Mint the next generation.
@@ -350,14 +378,16 @@ export function createCliAuthService(deps: CliAuthServiceDeps) {
       const newRefreshTokenHash = await hashSha256(newRefreshToken);
       const newTokenHash = await hashSha256(generateSessionTokenSecret());
       const currentTime = now();
-      // Sliding idle window: every refresh extends the refresh-token lifetime
-      // from "now", so an actively-used CLI session never forces a surprise
-      // re-login, while an idle one still expires REFRESH_TTL_MS after its last
-      // use. Previously the original family expiry was carried forward, which
-      // hard-logged-out even active users 30 days after first login. (An
-      // absolute cap on top of the idle window would need a family-start
-      // column; tracked as a follow-up in the epic.)
-      const refreshExpiresAt = new Date(currentTime.getTime() + REFRESH_TTL_MS);
+      // Sliding idle window, clamped by the absolute deadline: every refresh
+      // extends the refresh-token lifetime from "now" (so an actively-used CLI
+      // session never forces a surprise re-login, while an idle one expires
+      // REFRESH_TTL_MS after its last use) — but never past the family's
+      // absolute lifetime cap. Previously the original family expiry was carried
+      // forward, which hard-logged-out even active users 30 days after first
+      // login.
+      const refreshExpiresAt = new Date(
+        Math.min(currentTime.getTime() + REFRESH_TTL_MS, absoluteDeadline),
+      );
 
       const rotated = await repo.rotateCliSession({
         currentSessionId: session.id,

@@ -82,8 +82,8 @@ units rather than re-opening OP1:
 |------|------|--------|
 | Concurrency-safe client refresh (singleflight + cross-process file lock + double-checked reload + proactive skew) | CLI (`orun`) | ✅ Done — `orun` PR #366 |
 | Sliding refresh-token idle window (active sessions never force a surprise re-login; idle ones still expire) | platform | ✅ Done |
+| Absolute lifetime cap on the sliding window (max session age; family retired + re-auth past the cap) | platform | ✅ Done |
 | Refresh-token reuse **grace interval** (idempotent re-issue within a short leeway — closes the kill-between-rotate-and-persist window; Auth0/Okta pattern) | platform | 🗓️ Planned — needs security review (see R11) |
-| Absolute cap on the sliding window (needs a `refresh_family_started_at` column) | platform | 🗓️ Planned |
 
 ## Cross-repo dependency map
 
