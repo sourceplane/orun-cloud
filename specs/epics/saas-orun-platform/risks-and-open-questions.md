@@ -125,13 +125,25 @@ Mitigations, in order of shipped→planned:
   migration); past the cap the family is retired (`absolute_expiry`) and the
   user re-authenticates — a hard ceiling on an indefinitely-active or
   silently-compromised session.
-- **Reuse grace interval (planned, needs review):** within a short leeway of a
-  token's rotation, re-serve idempotently instead of revoking — closes the
-  kill-between-rotate-and-persist window. This deliberately narrows the
-  reuse-detection guarantee inside the leeway (the Auth0/Okta "reuse interval"
-  tradeoff), so it ships only after a security review; until then the client
-  lock covers the common case and a genuine theft is still caught outside the
-  (not-yet-enabled) window.
+- **Reuse grace interval (planned — DECIDED: Option A, needs review before ship):**
+  within a short leeway of a token's rotation, re-serve idempotently instead of
+  revoking — closes the kill-between-rotate-and-persist window (and the
+  shared-credentials case). Two implementations were weighed:
+    - *Option A — idempotent re-issue (CHOSEN, Auth0/Okta "reuse interval"):* a
+      within-window replay returns the SAME successor token first minted on
+      rotation. Needs the successor refresh token retrievable for the window —
+      i.e. a new short-TTL successor-token-at-rest column (plaintext or
+      reversibly encrypted) → a DB migration. Reuse detection is suspended only
+      for the window; the next rotation by either holder still trips reuse
+      OUTSIDE it. Brief token-at-rest is the only added exposure.
+    - *Option B — rotate-the-successor (REJECTED):* storage-free, but an attacker
+      who keeps refreshing within successive grace windows EVADES reuse detection
+      indefinitely. Detection-evasion hole; do not ship.
+  **Decision (2026-06-15): implement Option A with a ~10 s window**, emit an
+  info-level `cli.refresh.grace_replay` security event (NOT `reuse_detected`) so
+  a flood of grace replays stays visible, and gate the merge on a security
+  review. Until then the client lock (orun #366) covers the common case and a
+  genuine theft is still caught (no grace window is live yet).
 
 ### R10 — Error-envelope type vs wire shape
 api-edge already emits the nested envelope `{ error: { code, message, details?,
