@@ -236,6 +236,74 @@ describe("POST /v1/organizations/{orgId}/cli/links", () => {
     expect(createCalled).toBe(false); // resolved, never created
   });
 
+  // Regression: state-worker must send the BARE UUID (not the `org_<hex>`
+  // public form) to membership-worker's /authorization-context. The handler
+  // calls `asUuid(req.orgId)` and throws on non-canonical input; that surfaced
+  // as a 500 → 404 → CLI "not authorized to link…" with the user holding the
+  // `org.cli.link` grant. The policy resource must use the same format the
+  // facts carry (policy-engine matches by string equality) — both are UUIDs.
+  it("sends bare UUIDs (not public ids) to membership-worker and policy-worker", async () => {
+    const membershipBodies: Array<{ url: string; body: Record<string, unknown> }> = [];
+    const membership: Fetcher = {
+      fetch: async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        const body = init?.body ? (JSON.parse(String(init.body)) as Record<string, unknown>) : {};
+        membershipBodies.push({ url, body });
+        if (url.includes("authorization-context")) {
+          return Response.json({
+            data: {
+              memberships: [
+                { kind: "role_assignment", role: "admin", scope: { kind: "organization", orgId: ORG_UUID } },
+              ],
+            },
+          });
+        }
+        if (url.includes("subject-orgs")) {
+          return Response.json({ data: { orgs: [ORG_ENTRY] } });
+        }
+        return new Response(null, { status: 404 });
+      },
+      connect() { throw new Error("x"); },
+    } as unknown as Fetcher;
+    const policyBodies: Array<Record<string, unknown>> = [];
+    const policy: Fetcher = {
+      fetch: async (_input: RequestInfo | URL, init?: RequestInit) => {
+        policyBodies.push(JSON.parse(String(init?.body)) as Record<string, unknown>);
+        return Response.json({ data: { allow: true } });
+      },
+      connect() { throw new Error("x"); },
+    } as unknown as Fetcher;
+
+    const { executor } = fakeExecutor((text) => {
+      if (text.includes("INSERT INTO state.workspace_links")) return [workspaceLinkRow()];
+      return [{ _event: {}, _audit: {} }];
+    });
+    const res = await handleCreateWorkspaceLink(
+      createRequest({ remoteUrl: "git@github.com:acme/platform.git" }),
+      createEnv({
+        MEMBERSHIP_WORKER: membership,
+        POLICY_WORKER: policy,
+        PROJECTS_WORKER: projectsFetcher({ resolveSlug: { id: PROJECT_PUBLIC, slug: "platform", name: "platform", status: "active" } }),
+      }),
+      "req_1",
+      ACTOR,
+      asUuid(ORG_UUID),
+      { executor },
+    );
+    expect(res.status).toBe(201);
+
+    const ctxCall = membershipBodies.find((b) => b.url.includes("authorization-context"));
+    expect(ctxCall).toBeDefined();
+    // The canary: must be the bare UUID, NOT the `org_<hex>` public form.
+    expect(ctxCall!.body.orgId).toBe(ORG_UUID);
+    expect(ctxCall!.body.orgId).not.toMatch(/^org_/);
+
+    const policyCall = policyBodies[0];
+    expect(policyCall).toBeDefined();
+    expect((policyCall!.resource as { orgId: string }).orgId).toBe(ORG_UUID);
+    expect((policyCall!.resource as { orgId: string }).orgId).not.toMatch(/^org_/);
+  });
+
   it("returns a safe 404 when policy denies org.cli.link (resource hiding)", async () => {
     const { executor, queries } = fakeExecutor(() => []);
     const res = await handleCreateWorkspaceLink(

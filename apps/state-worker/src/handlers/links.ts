@@ -116,16 +116,24 @@ export async function handleCreateWorkspaceLink(
 
   // ── Authorize org.cli.link on the org (deny-by-default; resource-hiding
   //    means both "not a member" and "not allowed" return 404). ──
+  //
+  // Internal-service convention (matches projects-worker, config-worker, etc.):
+  // pass the bare UUID — membership-worker's authorization-context handler
+  // calls `asUuid()` on req.orgId and throws on non-canonical input, which
+  // would surface as a 500 here and a CLI "not authorized to link" 404. The
+  // policy-engine matches `fact.scope.orgId === resource.orgId` by string
+  // equality, so resource.orgId must use the SAME format the facts carry
+  // (membership-worker propagates whatever we send into scope.orgId).
   const contextResult = await fetchAuthorizationContext(
     env.MEMBERSHIP_WORKER,
     actor.subjectId,
     actor.subjectType,
-    orgPublicId(orgId),
+    orgId,
     requestId,
   );
   if (!contextResult.ok) return errorResponse("not_found", "Not found", 404, requestId);
 
-  const resource: PolicyResource = { kind: "organization", orgId: orgPublicId(orgId) };
+  const resource: PolicyResource = { kind: "organization", orgId };
   const policyResult = await authorizeViaPolicy(
     env.POLICY_WORKER,
     actor.subjectId,
@@ -402,7 +410,7 @@ export async function handleListWorkspaceLinks(
     env.MEMBERSHIP_WORKER,
     actor.subjectId,
     actor.subjectType,
-    orgPublicId(orgId),
+    orgId,
     requestId,
   );
   if (!contextResult.ok) return errorResponse("not_found", "Not found", 404, requestId);
@@ -414,7 +422,7 @@ export async function handleListWorkspaceLinks(
     actor.subjectId,
     actor.subjectType,
     STATE_POLICY_ACTIONS.CLI_LINK,
-    { kind: "organization", orgId: orgPublicId(orgId) },
+    { kind: "organization", orgId },
     contextResult.memberships,
     requestId,
   );
@@ -482,7 +490,7 @@ export async function handleUnlinkWorkspaceLink(
     env.MEMBERSHIP_WORKER,
     actor.subjectId,
     actor.subjectType,
-    orgPublicId(orgId),
+    orgId,
     requestId,
   );
   if (!contextResult.ok) return errorResponse("not_found", "Not found", 404, requestId);
@@ -492,7 +500,7 @@ export async function handleUnlinkWorkspaceLink(
     actor.subjectId,
     actor.subjectType,
     STATE_POLICY_ACTIONS.CLI_LINK,
-    { kind: "organization", orgId: orgPublicId(orgId) },
+    { kind: "organization", orgId },
     contextResult.memberships,
     requestId,
   );
