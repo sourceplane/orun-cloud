@@ -172,6 +172,45 @@ describe("CLI auth service (OP1)", () => {
       expect("error" in afterReuse).toBe(true);
     });
 
+    it("slides the refresh-token expiry forward on each refresh (active sessions stay alive)", async () => {
+      const repo = createFakeRepository();
+      seedUser(repo);
+      // Mutable clock so we can advance time between mint and refresh.
+      let clock = new Date("2026-06-14T12:00:00.000Z");
+      const svc = createCliAuthService({
+        repo,
+        env: envWithKey(),
+        now: () => clock,
+        fetchOrgs: async () => ORGS,
+      });
+
+      const started = await svc.start(null);
+      if ("error" in started) throw new Error("start failed");
+      await svc.approveGrant(started.grantId, USER_UUID);
+      const session = await svc.redeemCliCode(started.cliCode);
+      if ("error" in session) throw new Error("redeem failed");
+
+      const REFRESH_TTL_MS = 30 * 24 * 60 * 60 * 1000;
+      const mintedAt = clock.getTime();
+
+      // Use the session 10 days later — well before the original 30-day expiry.
+      const tenDays = 10 * 24 * 60 * 60 * 1000;
+      clock = new Date(mintedAt + tenDays);
+      const rotated = await svc.refresh(session.refreshToken);
+      expect("error" in rotated).toBe(false);
+      if ("error" in rotated) return;
+
+      // The new live generation's refresh expiry must slide to now + TTL, not
+      // remain anchored at the original mint + TTL.
+      const live = [...repo._sessions.values()].find(
+        (s) => s.kind === "cli" && s.replacedBy === null && s.revokedAt === null,
+      );
+      expect(live).toBeDefined();
+      expect(live!.refreshExpiresAt!.getTime()).toBe(clock.getTime() + REFRESH_TTL_MS);
+      // And that is strictly later than the original anchor (proves it slid).
+      expect(live!.refreshExpiresAt!.getTime()).toBeGreaterThan(mintedAt + REFRESH_TTL_MS);
+    });
+
     it("revoke kills the session family (logout)", async () => {
       const repo = createFakeRepository();
       seedUser(repo);

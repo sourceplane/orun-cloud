@@ -107,6 +107,29 @@ once, resolved via a Workers Paid upgrade). OP2 (lease sweep) and OP9
 the limit binds, coalesce the state crons into one scheduled handler that fans
 out by phase (sweep vs GC) rather than registering separate triggers.
 
+### R11 — Rotating-refresh-token robustness
+Single-use refresh-token rotation with reuse-detection (design §3.1) is the
+correct security posture but is fragile in real CLI use: concurrent invocations
+(two terminals, a script, one `run` firing parallel requests) or a process
+killed between the server rotating and the client persisting all cause a benign
+replay of a spent token, which trips reuse-detection and revokes the whole
+family — surfacing to users as a session that "expires" seconds after login.
+Mitigations, in order of shipped→planned:
+- **Client single-redemption (shipped, `orun` PR #366):** singleflight +
+  cross-process advisory file lock + double-checked reload removes the dominant
+  concurrency cause; only one refresh redeems the token, the rest reuse it.
+- **Sliding idle window (shipped):** refresh extends the lifetime from "now", so
+  active sessions never hit a surprise hard-expiry.
+- **Reuse grace interval (planned, needs review):** within a short leeway of a
+  token's rotation, re-serve idempotently instead of revoking — closes the
+  kill-between-rotate-and-persist window. This deliberately narrows the
+  reuse-detection guarantee inside the leeway (the Auth0/Okta "reuse interval"
+  tradeoff), so it ships only after a security review; until then the client
+  lock covers the common case and a genuine theft is still caught outside the
+  (not-yet-enabled) window.
+- **Absolute cap (planned):** an upper bound on an indefinitely-sliding session,
+  gated on adding a `refresh_family_started_at` column.
+
 ### R10 — Error-envelope type vs wire shape
 api-edge already emits the nested envelope `{ error: { code, message, details?,
 requestId } }` (`apps/api-edge/src/http.ts`), but `packages/contracts/src/errors.ts`

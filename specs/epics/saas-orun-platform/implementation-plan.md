@@ -6,7 +6,7 @@ integration environment: every milestone's "done when" that involves the CLI is
 verified with a real `orun` binary from the paired branch
 (`orun/specs/orun-cloud/`, milestones OC0–OC6) against stage.
 
-## OP0 — Foundation (dormant) — 🗓️ Planned
+## OP0 — Foundation (dormant) — ✅ Done
 
 The contract-and-schema slice with zero live behavior (the IG0 pattern).
 
@@ -43,7 +43,7 @@ The contract-and-schema slice with zero live behavior (the IG0 pattern).
 applies + rolls back on stage; `/health` responds on a deployed dormant
 state-worker; R2 bucket provisioned; no public route reachable.
 
-## OP1 — CLI session auth — 🗓️ Planned
+## OP1 — CLI session auth — ✅ Done (refresh hardening ongoing)
 
 Owner: identity-worker, api-edge auth-facade, console.
 
@@ -66,7 +66,26 @@ user + orgs; refresh works past access expiry; refresh-token reuse kills the
 family; console revoke locks the CLI out within one refresh; every grant and
 revoke is in the audit log. (Pairs with OC1.)
 
-## OP2 — Run coordination plane — 🗓️ Planned
+### OP1 hardening — refresh-token robustness
+
+Discrete, shippable follow-ups (not a re-open of OP1). Tracked in the README
+status table and R11.
+
+- ✅ **Client single-redemption** (`orun` PR #366): the CLI serializes refresh
+  across goroutines (singleflight) + processes (advisory file lock) with a
+  double-checked reload + proactive (60 s) skew, so concurrent commands stop
+  redeeming the single-use refresh token more than once.
+- ✅ **Sliding idle window** (this milestone's follow-through):
+  `services/cli-auth.ts` `refresh()` extends `refreshExpiresAt` from "now" on
+  every refresh instead of carrying the original family expiry forward — active
+  sessions no longer hard-expire 30 days after first login.
+- 🗓️ **Reuse grace interval** — idempotent re-issue of a refresh token replayed
+  within a short leeway of its rotation (closes the kill-between-rotate-and-
+  persist window). Security-sensitive; needs review (R11).
+- 🗓️ **Absolute cap** on the sliding window — needs a `refresh_family_started_at`
+  column; bounds the lifetime of an indefinitely-active session.
+
+## OP2 — Run coordination plane — ✅ Done
 
 Owner: state-worker, api-edge `state-facade`.
 
@@ -88,7 +107,7 @@ the job within one sweep and a second runner finishes the run; replayed
 create/update calls are no-ops; run lifecycle events appear in the org audit
 log and deliver to a customer webhook. (Pairs with OC3.)
 
-## OP3 — Object & log plane — 🗓️ Planned
+## OP3 — Object & log plane — ✅ Done
 
 Owner: state-worker.
 
@@ -106,7 +125,7 @@ logs --follow` tails a live job; log bytes and object bytes show up as usage
 records (metering wiring may stub until OP9 but the records flow).
 (Pairs with OC3/OC4.)
 
-## OP4 — Tenancy resolution & workspace links — 🗓️ Planned
+## OP4 — Tenancy resolution & workspace links — ✅ Done
 
 Owner: state-worker, membership/projects workers, console.
 

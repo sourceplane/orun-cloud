@@ -350,7 +350,14 @@ export function createCliAuthService(deps: CliAuthServiceDeps) {
       const newRefreshTokenHash = await hashSha256(newRefreshToken);
       const newTokenHash = await hashSha256(generateSessionTokenSecret());
       const currentTime = now();
-      const refreshExpiresAt = session.refreshExpiresAt ?? new Date(currentTime.getTime() + REFRESH_TTL_MS);
+      // Sliding idle window: every refresh extends the refresh-token lifetime
+      // from "now", so an actively-used CLI session never forces a surprise
+      // re-login, while an idle one still expires REFRESH_TTL_MS after its last
+      // use. Previously the original family expiry was carried forward, which
+      // hard-logged-out even active users 30 days after first login. (An
+      // absolute cap on top of the idle window would need a family-start
+      // column; tracked as a follow-up in the epic.)
+      const refreshExpiresAt = new Date(currentTime.getTime() + REFRESH_TTL_MS);
 
       const rotated = await repo.rotateCliSession({
         currentSessionId: session.id,
