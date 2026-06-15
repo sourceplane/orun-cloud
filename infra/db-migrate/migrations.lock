@@ -1,0 +1,32 @@
+# AUTO-GENERATED — do not edit by hand.
+#
+# Mirrors the migration ids in packages/db/src/manifest.ts so that adding a
+# migration changes a file inside this component's directory. orun's --changed
+# planner keys db-migrate off THIS directory (not packages/db), so without this
+# stamp a new migration never schedules the plan/apply and never reaches the
+# live database. Regenerate with: pnpm --filter @saas/db gen:migrations-lock
+# Enforced by tests/db/src/migrations.test.ts.
+000_control_baseline
+010_identity_core
+020_membership_core
+030_events_audit_core
+040_projects_core
+050_identity_security_events
+060_identity_api_keys
+070_config_settings_flags
+080_webhooks_core
+090_webhooks_delivery
+100_metering_foundation
+110_billing_foundation
+120_notifications_core
+130_webhook_secret_rotation_grace
+140_support_action_records
+150_entitlement_decision_observations
+160_identity_user_last_org
+170_membership_org_parent
+180_integrations_foundation
+190_integrations_delivery_attribution
+200_work_foundation
+210_resources_runtime_foundation
+220_state_foundation
+230_identity_cli_sessions

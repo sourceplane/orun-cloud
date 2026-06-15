@@ -151,7 +151,16 @@ function mapApiKey(row: Record<string, unknown>): ApiKey {
   };
 }
 
-function safeError(message: string): IdentityResult<never> {
+function safeError(message: string, cause?: unknown): IdentityResult<never> {
+  // Surface the underlying DB error to the Worker log (wrangler tail / dashboard)
+  // so a generic `internal_error` API response is diagnosable. The message
+  // returned to the caller stays generic — no internal detail leaks to clients.
+  if (cause !== undefined) {
+    const detail = cause instanceof Error ? cause.message : String(cause);
+    console.error(
+      JSON.stringify({ level: "error", scope: "identity.repository", message, detail })
+    );
+  }
   return { ok: false, error: { kind: "internal", message } };
 }
 
@@ -496,7 +505,7 @@ export function createIdentityRepository(executor: SqlExecutor): IdentityReposit
         if (isUniqueViolation(err)) {
           return { ok: false, error: { kind: "conflict", entity: "session" } };
         }
-        return safeError("Failed to create CLI session");
+        return safeError("Failed to create CLI session", err);
       }
     },
 
@@ -617,7 +626,7 @@ export function createIdentityRepository(executor: SqlExecutor): IdentityReposit
         if (isUniqueViolation(err)) {
           return { ok: false, error: { kind: "conflict", entity: "session" } };
         }
-        return safeError("Failed to rotate CLI session");
+        return safeError("Failed to rotate CLI session", err);
       }
     },
 
@@ -709,7 +718,7 @@ export function createIdentityRepository(executor: SqlExecutor): IdentityReposit
         if (isUniqueViolation(err)) {
           return { ok: false, error: { kind: "conflict", entity: "cli_login_grant" } };
         }
-        return safeError("Failed to create CLI login grant");
+        return safeError("Failed to create CLI login grant", err);
       }
     },
 
