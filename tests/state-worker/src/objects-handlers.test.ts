@@ -282,6 +282,31 @@ describe("POST …/state/objects/missing — negotiation", () => {
     expect(body.meta.requestId).toBe("req_1");
   });
 
+  it("binds digests as scalar IN-list params, never a JS array (fetch_types:false guard)", async () => {
+    // Regression: `= ANY($3::text[])` throws at bind time under the pg driver's
+    // fetch_types:false (no element-type OID), which surfaced as a hard 503 on
+    // stage. The query must bind each digest as a scalar param in an IN (...)
+    // list instead. This asserts the wire shape the fake executor can't catch.
+    const d1 = "sha256:" + "a".repeat(64);
+    const d2 = "sha256:" + "b".repeat(64);
+    const d3 = "sha256:" + "c".repeat(64);
+    const { executor, queries } = fakeExecutor(() => []);
+    const req = new Request("https://s/.../objects/missing", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ digests: [d1, d2, d3] }),
+    });
+    const res = await handleObjectsMissing(req, createEnv(new FakeBucket()), "req_1", ACTOR, asUuid(ORG), asUuid(PROJECT), { executor });
+    expect(res.status).toBe(200);
+    const q = queries.find((x) => x.text.includes("SELECT digest FROM state.objects"));
+    expect(q).toBeDefined();
+    expect(q!.text).not.toContain("ANY(");
+    expect(q!.text).not.toContain("::text[]");
+    expect(q!.text).toContain("IN ($3, $4, $5)");
+    // org, project, then one scalar param per digest — no array param.
+    expect(q!.params).toEqual([ORG, PROJECT, d1, d2, d3]);
+  });
+
   it("422 on a malformed digest", async () => {
     const { executor } = fakeExecutor(() => []);
     const req = new Request("https://s/.../objects/missing", {
