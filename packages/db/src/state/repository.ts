@@ -251,7 +251,7 @@ export function createStateRepository(executor: SqlExecutor): StateRepository {
              (id, org_id, project_id, environment, run_ulid, plan_digest, source,
               status, git_commit, git_ref, git_dirty, labels, created_by,
               created_by_kind, created_at, updated_at)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, 'pending', $8, $9, $10, $11, $12, $13, now(), now())
+           VALUES ($1, $2, $3, $4, $5, $6, $7, 'pending', $8, $9, $10, $11::text::jsonb, $12, $13, now(), now())
            ON CONFLICT (org_id, project_id, run_ulid) DO NOTHING
            RETURNING *`,
           [
@@ -338,10 +338,16 @@ export function createStateRepository(executor: SqlExecutor): StateRepository {
     async createRunJob(input: CreateRunJobInput): Promise<StateResult<RunJob>> {
       try {
         const result = await executor.execute<Record<string, unknown>>(
+          // deps is jsonb: cast the JSON text through ::text::jsonb so Postgres
+          // PARSES it into a real array. A bare $7 (jsonb param) makes the pg
+          // driver send the JSON string as a jsonb *string value*, storing the
+          // scalar "[]" — which then throws "cannot get array length of a
+          // scalar" in the runnable/claim deps guard. ::text forces the text
+          // wire type so ::jsonb parses the contents.
           `INSERT INTO state.run_jobs
              (id, org_id, project_id, run_id, job_id, component, deps, status,
               attempt, created_at, updated_at)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, 'queued', 1, now(), now())
+           VALUES ($1, $2, $3, $4, $5, $6, $7::text::jsonb, 'queued', 1, now(), now())
            RETURNING *`,
           [
             input.id,
