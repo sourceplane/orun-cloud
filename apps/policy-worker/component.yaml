@@ -55,3 +55,15 @@ spec:
     runtime: cloudflare
 # ci: trigger full-component verification (orun v2.12.0 upgrade — PR #183)
 # ci: first deploy (BF6b convergence — binding-cycle seed)
+# ci: re-scope to redeploy with the OP0 policy-engine bundle. PR #44 added
+# `org.cli.link` (+ the rest of the OP0/OP2/OP3 state-plane actions) to the
+# org-role permission maps and to ALL_KNOWN_ACTIONS in
+# `packages/policy-engine`, but `orun plan --changed` only matches files under
+# this component's `path: apps/policy-worker` — a packages/* change doesn't
+# rescope its consumers. Result: policy-worker-stage was still serving its
+# 2026-06-12 bundle (pre-OP0) and rejecting `org.cli.link` for every actor —
+# including owners — which surfaced as the `orun cloud link` 404 (state-worker
+# logs `reason: policy_denied` with role=owner and matching scope.orgId, yet
+# policy-worker returns allow=false because the action isn't in its stale
+# ALL_KNOWN_ACTIONS). Touching this file forces the next push-to-main to
+# include policy-worker in the deploy set.
