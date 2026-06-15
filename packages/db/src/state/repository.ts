@@ -409,24 +409,31 @@ export function createStateRepository(executor: SqlExecutor): StateRepository {
         // the same run. A job with no deps is trivially runnable. Computed in a
         // single statement so the CLI scheduler and the claim guard agree on
         // the same readiness predicate.
+        //
+        // Readiness is "count of this job's deps that are succeeded == number of
+        // deps". We express it with the jsonb element-existence function
+        // (jsonb_exists) + jsonb_array_length rather than a correlated
+        // jsonb_array_elements_text(j.deps) set-returning function in a subquery
+        // FROM: the latter threw at execution time against real Postgres and 503'd
+        // /runnable and /claim (it was only ever exercised by the fake-executor
+        // handler tests). jsonb_exists avoids the `?` operator so no driver
+        // mistakes it for a bind placeholder.
         const result = await executor.execute<Record<string, unknown>>(
           `SELECT j.* FROM state.run_jobs j
             WHERE j.org_id = $1 AND j.project_id = $2 AND j.run_id = $3
               AND j.status = 'queued'
-              AND NOT EXISTS (
-                SELECT 1 FROM jsonb_array_elements_text(j.deps) AS dep(job_id)
-                WHERE NOT EXISTS (
-                  SELECT 1 FROM state.run_jobs d
-                  WHERE d.run_id = j.run_id
-                    AND d.job_id = dep.job_id
-                    AND d.status = 'succeeded'
-                )
-              )
+              AND (
+                SELECT count(*) FROM state.run_jobs d
+                WHERE d.run_id = j.run_id
+                  AND d.status = 'succeeded'
+                  AND jsonb_exists(j.deps, d.job_id)
+              ) = jsonb_array_length(j.deps)
             ORDER BY j.job_id ASC`,
           [orgId, projectId, runId],
         );
         return { ok: true, value: result.rows.map(mapRunJob) };
-      } catch {
+      } catch (e) {
+        console.error(JSON.stringify({ scope: "db.listRunnableJobs", err: String(e), msg: (e as Error)?.message }));
         return safeError("Failed to list runnable jobs");
       }
     },
@@ -444,21 +451,18 @@ export function createStateRepository(executor: SqlExecutor): StateRepository {
           `UPDATE state.run_jobs j
               SET status = 'claimed',
                   runner_id = $5,
-                  lease_expires_at = now() + ($6 || ' seconds')::interval,
+                  lease_expires_at = now() + ($6::int * interval '1 second'),
                   started_at = COALESCE(j.started_at, now()),
                   updated_at = now()
             WHERE j.org_id = $1 AND j.project_id = $2 AND j.run_id = $3
               AND j.job_id = $4
               AND j.status = 'queued'
-              AND NOT EXISTS (
-                SELECT 1 FROM jsonb_array_elements_text(j.deps) AS dep(job_id)
-                WHERE NOT EXISTS (
-                  SELECT 1 FROM state.run_jobs d
-                  WHERE d.run_id = j.run_id
-                    AND d.job_id = dep.job_id
-                    AND d.status = 'succeeded'
-                )
-              )
+              AND (
+                SELECT count(*) FROM state.run_jobs d
+                WHERE d.run_id = j.run_id
+                  AND d.status = 'succeeded'
+                  AND jsonb_exists(j.deps, d.job_id)
+              ) = jsonb_array_length(j.deps)
             RETURNING *`,
           [input.orgId, input.projectId, input.runId, input.jobId, input.runnerId, String(input.leaseSeconds)],
         );
@@ -489,7 +493,8 @@ export function createStateRepository(executor: SqlExecutor): StateRepository {
         }
         // claimed / running → someone holds it.
         return { ok: true, value: { claimed: false, reason: "already_claimed" } };
-      } catch {
+      } catch (e) {
+        console.error(JSON.stringify({ scope: "db.claimRunJob", err: String(e), msg: (e as Error)?.message }));
         return safeError("Failed to claim run job");
       }
     },
@@ -500,7 +505,7 @@ export function createStateRepository(executor: SqlExecutor): StateRepository {
         // lease. A lapsed or reassigned lease yields rowCount = 0 → lease_lost.
         const result = await executor.execute<Record<string, unknown>>(
           `UPDATE state.run_jobs
-              SET lease_expires_at = now() + ($6 || ' seconds')::interval,
+              SET lease_expires_at = now() + ($6::int * interval '1 second'),
                   status = CASE WHEN status = 'claimed' THEN 'running' ELSE status END,
                   updated_at = now()
             WHERE org_id = $1 AND project_id = $2 AND run_id = $3 AND job_id = $4
@@ -512,7 +517,8 @@ export function createStateRepository(executor: SqlExecutor): StateRepository {
         );
         if (result.rowCount === 0) return { ok: true, value: { ok: false, reason: "lease_lost" } };
         return { ok: true, value: { ok: true, job: mapRunJob(result.rows[0]!) } };
-      } catch {
+      } catch (e) {
+        console.error(JSON.stringify({ scope: "db.heartbeatRunJob", err: String(e), msg: (e as Error)?.message }));
         return safeError("Failed to heartbeat run job");
       }
     },

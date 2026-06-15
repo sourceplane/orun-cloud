@@ -77,3 +77,5 @@ spec:
 # deployed state-worker-stage bundle therefore still embeds the pre-fix @saas/db
 # and keeps 503-ing on digest negotiation. Touching this file forces the next
 # push-to-main to rebuild + redeploy state-worker with the fix.
+# ci: re-scope again to redeploy with the @saas/db claim/runnable deps-guard +
+# lease-interval fix (PR #60) — same packages/* → consumer rescope gotcha.
