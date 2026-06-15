@@ -79,3 +79,6 @@ spec:
 # push-to-main to rebuild + redeploy state-worker with the fix.
 # ci: re-scope again to redeploy with the @saas/db claim/runnable deps-guard +
 # lease-interval fix (PR #60) — same packages/* → consumer rescope gotcha.
+# ci: re-scope to redeploy with the @saas/db jsonb-insert fix (PR #61) —
+# deps/labels were stored as jsonb scalar strings (double-encoded), breaking
+# the runnable/claim deps guard; same packages/* -> consumer rescope gotcha.
