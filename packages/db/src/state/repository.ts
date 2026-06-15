@@ -825,10 +825,18 @@ export function createStateRepository(executor: SqlExecutor): StateRepository {
     ): Promise<StateResult<string[]>> {
       if (digests.length === 0) return { ok: true, value: [] };
       try {
+        // NOTE: use a parameterized IN (...) list of scalar text params rather
+        // than `= ANY($3::text[])` with a JS array. The pg driver runs with
+        // `fetch_types: false` (hyperdrive.ts), which leaves array parameters
+        // without a resolvable element-type OID and makes `ANY($array)` throw at
+        // bind time — that surfaced as a hard 503 on objects/missing (digest
+        // negotiation). A scalar IN list avoids array serialization entirely.
+        // (Same root cause as membership.listRoleAssignmentsForSubjects.)
+        const placeholders = digests.map((_, i) => `$${i + 3}`).join(", ");
         const result = await executor.execute<Record<string, unknown>>(
           `SELECT digest FROM state.objects
-            WHERE org_id = $1 AND project_id = $2 AND digest = ANY($3::text[])`,
-          [orgId, projectId, digests],
+            WHERE org_id = $1 AND project_id = $2 AND digest IN (${placeholders})`,
+          [orgId, projectId, ...digests],
         );
         const present = new Set(result.rows.map((r) => r.digest as string));
         return { ok: true, value: digests.filter((d) => !present.has(d)) };
