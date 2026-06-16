@@ -1,0 +1,37 @@
+{
+  "$comment": "SS1 offline fixture — dummy escrow payloads for PR verify lanes, mirroring the shape of sourceplane/orun-cloud/worker-secrets/<env>. Never put a real value here.",
+  "stage": {
+    "identity-worker": {
+      "GITHUB_OAUTH_CLIENT_SECRET": "fixture-identity-github-stage",
+      "GOOGLE_OAUTH_CLIENT_SECRET": "fixture-identity-google-stage",
+      "OAUTH_STATE_SECRET": "fixture-identity-state-stage"
+    },
+    "billing-worker": {
+      "POLAR_ACCESS_TOKEN": "fixture-billing-token-stage",
+      "POLAR_WEBHOOK_SECRET": "fixture-billing-webhook-stage"
+    },
+    "webhooks-worker": {
+      "SECRET_ENCRYPTION_KEY": "fixture-webhooks-key-stage"
+    },
+    "config-worker": {
+      "SECRET_ENCRYPTION_KEY": "fixture-config-key-stage"
+    }
+  },
+  "prod": {
+    "identity-worker": {
+      "GITHUB_OAUTH_CLIENT_SECRET": "fixture-identity-github-prod",
+      "GOOGLE_OAUTH_CLIENT_SECRET": "fixture-identity-google-prod",
+      "OAUTH_STATE_SECRET": "fixture-identity-state-prod"
+    },
+    "billing-worker": {
+      "POLAR_ACCESS_TOKEN": "fixture-billing-token-prod",
+      "POLAR_WEBHOOK_SECRET": "fixture-billing-webhook-prod"
+    },
+    "webhooks-worker": {
+      "SECRET_ENCRYPTION_KEY": "fixture-webhooks-key-prod"
+    },
+    "config-worker": {
+      "SECRET_ENCRYPTION_KEY": "fixture-config-key-prod"
+    }
+  }
+}

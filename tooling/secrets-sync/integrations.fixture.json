@@ -1,0 +1,61 @@
+{
+  "$comment": "SS6 offline fixture — dummy per-integration documents for PR verify lanes and tests, mirroring the shape of the AWS Secrets Manager documents (one key per integration/platform doc name). Never put a real value here.",
+  "stage": {
+    "github-oauth": {
+      "GITHUB_OAUTH_CLIENT_ID": "fixture-gh-client-id-stage",
+      "GITHUB_OAUTH_CLIENT_SECRET": "fixture-gh-client-secret-stage"
+    },
+    "google-oauth": {
+      "GOOGLE_OAUTH_CLIENT_ID": "fixture-google-client-id-stage",
+      "GOOGLE_OAUTH_CLIENT_SECRET": "fixture-google-client-secret-stage"
+    },
+    "polar": {
+      "BILLING_PROVIDER": "polar",
+      "POLAR_SERVER": "sandbox",
+      "POLAR_PRODUCT_MAP": "{\"pro\":\"fixture-pro\",\"business\":\"fixture-business\"}",
+      "POLAR_SUCCESS_URL": "https://stage.example.test/",
+      "POLAR_ACCESS_TOKEN": "fixture-polar-token-stage",
+      "POLAR_WEBHOOK_SECRET": "fixture-polar-webhook-stage"
+    },
+    "cloudflare-email": {
+      "NOTIFICATIONS_PROVIDER": "cloudflare-email",
+      "EMAIL_FROM_ADDRESS": "no-reply@mail.example.test",
+      "EMAIL_FROM_NAME": "Example"
+    },
+    "platform": {
+      "SECRET_ENCRYPTION_KEY": "fixture-encryption-key-stage",
+      "OAUTH_STATE_SECRET": "fixture-oauth-state-stage",
+      "INTEGRATIONS_STATE_SECRET": "fixture-integrations-state-stage",
+      "STATE_ENCRYPTION_KEY": "fixture-state-encryption-key-stage"
+    }
+  },
+  "prod": {
+    "github-oauth": {
+      "GITHUB_OAUTH_CLIENT_ID": "fixture-gh-client-id-prod",
+      "GITHUB_OAUTH_CLIENT_SECRET": "fixture-gh-client-secret-prod"
+    },
+    "google-oauth": {
+      "GOOGLE_OAUTH_CLIENT_ID": "fixture-google-client-id-prod",
+      "GOOGLE_OAUTH_CLIENT_SECRET": "fixture-google-client-secret-prod"
+    },
+    "polar": {
+      "BILLING_PROVIDER": "polar",
+      "POLAR_SERVER": "production",
+      "POLAR_PRODUCT_MAP": "{\"pro\":\"fixture-pro\",\"business\":\"fixture-business\"}",
+      "POLAR_SUCCESS_URL": "https://app.example.test/",
+      "POLAR_ACCESS_TOKEN": "fixture-polar-token-prod",
+      "POLAR_WEBHOOK_SECRET": "fixture-polar-webhook-prod"
+    },
+    "cloudflare-email": {
+      "NOTIFICATIONS_PROVIDER": "cloudflare-email",
+      "EMAIL_FROM_ADDRESS": "no-reply@mail.example.test",
+      "EMAIL_FROM_NAME": "Example"
+    },
+    "platform": {
+      "SECRET_ENCRYPTION_KEY": "fixture-encryption-key-prod",
+      "OAUTH_STATE_SECRET": "fixture-oauth-state-prod",
+      "INTEGRATIONS_STATE_SECRET": "fixture-integrations-state-prod",
+      "STATE_ENCRYPTION_KEY": "fixture-state-encryption-key-prod"
+    }
+  }
+}

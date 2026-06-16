@@ -164,9 +164,16 @@ describe("no placeholder or committed Hyperdrive IDs in any Worker template", ()
 });
 
 // ── api-edge CONFIG_WORKER service bindings ────────────────────
+//
+// Skipped when api-edge is absent: incremental forks copy config-worker
+// (batch 14 of the fork order) before api-edge (batch 16).
 
-describe("api-edge CONFIG_WORKER service bindings", () => {
-  const rendered = renderFromFixture("apps/api-edge") as unknown as {
+const HAS_API_EDGE = fs.existsSync(path.join(ROOT, "apps", "api-edge", "component.yaml"));
+
+(HAS_API_EDGE ? describe : describe.skip)("api-edge CONFIG_WORKER service bindings", () => {
+  const rendered = (
+    HAS_API_EDGE ? renderFromFixture("apps/api-edge") : { env: {} }
+  ) as unknown as {
     env: Record<string, { services?: Array<{ binding: string; service: string }> }>;
   };
 
@@ -187,9 +194,49 @@ describe("api-edge CONFIG_WORKER service bindings", () => {
 
 // ── api-edge component.yaml depends on config-worker ───────────
 
-describe("api-edge component.yaml dependency on config-worker", () => {
+(HAS_API_EDGE ? describe : describe.skip)("api-edge component.yaml dependency on config-worker", () => {
   test("dependsOn includes config-worker", () => {
     const yaml = readYaml("apps/api-edge/component.yaml");
     expect(yaml).toContain("component: config-worker");
   });
+});
+
+// ── service bindings must be declared dependsOn edges ──────────
+//
+// A wrangler service binding is a deploy-time prerequisite (Cloudflare
+// rejects a deploy whose bound service does not exist), so the component
+// DAG must declare it — otherwise fresh-account convergence and
+// per-component forks deploy in the wrong order. Two binding edges form
+// cycles and cannot be declared in an acyclic DAG; they are acknowledged
+// here and handled operationally (deploy the cycle members together; the
+// first convergence may need one full-workflow re-run).
+
+const ACKNOWLEDGED_BINDING_CYCLES = new Set([
+  "billing-worker -> membership-worker", // mutual pair: billing <-> membership
+  "membership-worker -> notifications-worker", // cycle: membership -> notifications -> events -> membership
+]);
+
+describe("every wrangler service binding is a declared dependsOn edge", () => {
+  const appsDir = path.join(ROOT, "apps");
+  for (const app of fs.readdirSync(appsDir)) {
+    const wrangler = ["wrangler.template.jsonc", "wrangler.jsonc"]
+      .map((f) => path.join(appsDir, app, f))
+      .find((f) => fs.existsSync(f));
+    if (!wrangler) continue;
+
+    test(`${app} declares its service-binding prerequisites`, () => {
+      const raw = fs.readFileSync(wrangler, "utf-8");
+      const bound = new Set(
+        [...raw.matchAll(/"service":\s*"([a-z-]+?)-(?:dev|stage|prod)"/g)].map((m) => m[1]),
+      );
+      const componentYaml = readYaml(`apps/${app}/component.yaml`);
+      const declared = new Set(
+        [...componentYaml.matchAll(/component: ([a-z-]+)/g)].map((m) => m[1]),
+      );
+      const missing = [...bound].filter(
+        (b) => !declared.has(b) && !ACKNOWLEDGED_BINDING_CYCLES.has(`${app} -> ${b}`),
+      );
+      expect(missing).toEqual([]);
+    });
+  }
 });
