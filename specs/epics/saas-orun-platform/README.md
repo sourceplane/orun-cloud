@@ -83,7 +83,7 @@ units rather than re-opening OP1:
 | Concurrency-safe client refresh (singleflight + cross-process file lock + double-checked reload + proactive skew) | CLI (`orun`) | ✅ Done — `orun` PR #366 |
 | Sliding refresh-token idle window (active sessions never force a surprise re-login; idle ones still expire) | platform | ✅ Done |
 | Absolute lifetime cap on the sliding window (max session age; family retired + re-auth past the cap) | platform | ✅ Done |
-| Refresh-token reuse **grace interval** — **decided: Option A (idempotent re-issue), ~10 s window** (re-serve the same successor token on a within-window replay; needs a short-TTL successor-token-at-rest column + `cli.refresh.grace_replay` audit event). Pending implementation + security review. | platform | 🗓️ Planned (decided) — see R11 |
+| Refresh-token reuse **grace interval** — Option A (idempotent re-issue), ~10 s window: a within-window replay is re-served the same successor token instead of revoking the family. | platform | ✅ Shipped (PR #62) — migration 240 (AES-256-GCM successor-at-rest) + `cli.refresh.grace_replay`; see R11 |
 
 ## Cross-repo dependency map
 

@@ -125,9 +125,9 @@ Mitigations, in order of shipped→planned:
   migration); past the cap the family is retired (`absolute_expiry`) and the
   user re-authenticates — a hard ceiling on an indefinitely-active or
   silently-compromised session.
-- **Reuse grace interval (planned — DECIDED: Option A, needs review before ship):**
+- **Reuse grace interval (✅ SHIPPED: Option A — PR #62):**
   within a short leeway of a token's rotation, re-serve idempotently instead of
-  revoking — closes the kill-between-rotate-and-persist window (and the
+  revoking — closes the lost-response / concurrent-redemption window (and the
   shared-credentials case). Two implementations were weighed:
     - *Option A — idempotent re-issue (CHOSEN, Auth0/Okta "reuse interval"):* a
       within-window replay returns the SAME successor token first minted on
@@ -139,11 +139,16 @@ Mitigations, in order of shipped→planned:
     - *Option B — rotate-the-successor (REJECTED):* storage-free, but an attacker
       who keeps refreshing within successive grace windows EVADES reuse detection
       indefinitely. Detection-evasion hole; do not ship.
-  **Decision (2026-06-15): implement Option A with a ~10 s window**, emit an
+  **Decision (2026-06-15): Option A with a ~10 s window**, emitting an
   info-level `cli.refresh.grace_replay` security event (NOT `reuse_detected`) so
-  a flood of grace replays stays visible, and gate the merge on a security
-  review. Until then the client lock (orun #366) covers the common case and a
-  genuine theft is still caught (no grace window is live yet).
+  a flood of grace replays stays visible. **Shipped (PR #62, 2026-06-16):**
+  migration 240 adds `identity.sessions.grace_successor_ciphertext` (AES-256-GCM,
+  key HKDF-derived from the worker-held OAUTH_STATE_SECRET — never in the DB) +
+  `grace_expires_at`; `services/cli-auth.ts` re-serves the same successor on a
+  within-window replay of a 'superseded' token (and on the lost-rotation-race
+  path), revoking otherwise. Soft-off when no key is configured. The access
+  token is re-minted fresh (stateless JWT), so only the refresh token is held at
+  rest, encrypted, for the window.
 
 ### R10 — Error-envelope type vs wire shape
 api-edge already emits the nested envelope `{ error: { code, message, details?,

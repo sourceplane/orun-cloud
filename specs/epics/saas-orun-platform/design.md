@@ -95,11 +95,13 @@ Owner: identity-worker. New session kind `cli` alongside console sessions.
     the stored token after winning the lock, so concurrent commands reuse one
     freshly rotated token instead of each replaying a spent one and tripping
     reuse-detection. (Shipped: `orun` PR #366.)
-  - *Reuse grace interval* (planned) — a refresh token replayed within a short
-    leeway of its own rotation is re-served idempotently rather than revoking
-    the family, closing the window where a runner is killed between the server
-    rotating and the client persisting. Auth0/Okta "reuse interval"; gated on a
-    security review.
+  - *Reuse grace interval* (shipped, PR #62) — a refresh token replayed within a
+    ~10 s leeway of its own rotation is re-served the same successor idempotently
+    rather than revoking the family, closing the lost-response / concurrent-
+    redemption window. Auth0/Okta "reuse interval". The successor is held at rest
+    AES-256-GCM-encrypted (key derived from OAUTH_STATE_SECRET, never in the DB);
+    replays emit `cli.refresh.grace_replay`; replays outside the window still
+    revoke.
 - Console surface: **Settings → Sessions & devices** lists CLI sessions
   (host, last used, created) with revoke — reuses the session table.
 
