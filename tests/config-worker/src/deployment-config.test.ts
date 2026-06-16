@@ -193,3 +193,43 @@ describe("api-edge component.yaml dependency on config-worker", () => {
     expect(yaml).toContain("component: config-worker");
   });
 });
+
+// ── service bindings must be declared dependsOn edges ──────────
+//
+// A wrangler service binding is a deploy-time prerequisite (Cloudflare
+// rejects a deploy whose bound service does not exist), so the component
+// DAG must declare it — otherwise fresh-account convergence and
+// per-component forks deploy in the wrong order. Two binding edges form
+// cycles and cannot be declared in an acyclic DAG; they are acknowledged
+// here and handled operationally (deploy the cycle members together; the
+// first convergence may need one full-workflow re-run).
+
+const ACKNOWLEDGED_BINDING_CYCLES = new Set([
+  "billing-worker -> membership-worker", // mutual pair: billing <-> membership
+  "membership-worker -> notifications-worker", // cycle: membership -> notifications -> events -> membership
+]);
+
+describe("every wrangler service binding is a declared dependsOn edge", () => {
+  const appsDir = path.join(ROOT, "apps");
+  for (const app of fs.readdirSync(appsDir)) {
+    const wrangler = ["wrangler.template.jsonc", "wrangler.jsonc"]
+      .map((f) => path.join(appsDir, app, f))
+      .find((f) => fs.existsSync(f));
+    if (!wrangler) continue;
+
+    test(`${app} declares its service-binding prerequisites`, () => {
+      const raw = fs.readFileSync(wrangler, "utf-8");
+      const bound = new Set(
+        [...raw.matchAll(/"service":\s*"([a-z-]+?)-(?:dev|stage|prod)"/g)].map((m) => m[1]),
+      );
+      const componentYaml = readYaml(`apps/${app}/component.yaml`);
+      const declared = new Set(
+        [...componentYaml.matchAll(/component: ([a-z-]+)/g)].map((m) => m[1]),
+      );
+      const missing = [...bound].filter(
+        (b) => !declared.has(b) && !ACKNOWLEDGED_BINDING_CYCLES.has(`${app} -> ${b}`),
+      );
+      expect(missing).toEqual([]);
+    });
+  }
+});

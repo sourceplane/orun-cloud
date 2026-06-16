@@ -18,6 +18,14 @@ spec:
     - component: webhooks-worker
     - component: billing-worker
     - component: integrations-worker
+    # #343: api-edge service-binds these workers; declare them as deploy-time
+    # prerequisites so fresh-account convergence and per-component forks order
+    # api-edge after them (Cloudflare 10143 rejects a deploy whose bound service
+    # does not exist yet).
+    - component: identity-worker
+    - component: membership-worker
+    - component: metering-worker
+    - component: notifications-worker
     # OP4 added api-edge's STATE_WORKER service binding but not this dependsOn,
     # so the deploy graph didn't order api-edge after state-worker — api-edge
     # deploy failed with "Service binding 'STATE_WORKER' references Worker
