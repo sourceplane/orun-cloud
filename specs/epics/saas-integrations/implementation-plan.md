@@ -143,12 +143,47 @@ is replayable; admin can locate any installation by GitHub account or org.
 changes; a fresh instance can wire its own GitHub App from `instance.yaml` +
 runbook without code edits.
 
+## IG8 — Inbound projection fields for the state bridge — 🗓️ Planned
+
+The additive contract slice that lets state-worker materialize the object graph
+from `scm.*` (see `bridge-to-state.md`; pairs with `saas-orun-platform` OV4).
+
+- Extend the versioned `scm.push` / `scm.pull_request.*` projections with
+  `repository_id`, `repository_owner_id`, `commit_sha` / `head_sha`, `ref`,
+  and (PR) `base_sha` — additive-only per R7.
+- No new live path: the consumer lives in state-worker; this milestone is the
+  contract + fixtures the consumer verifies against.
+
+**Done when:** the enriched projections are versioned in `packages/contracts`,
+fixture-tested, and a recorded `scm.push` carries the identity/commit fields
+the bridge consumer needs; no breaking change to existing `scm.*` consumers.
+
+## IG9 — Write-back proxy — 🗓️ Planned (promotes the IG4 stretch)
+
+The "act on GitHub from the platform" convenience proxy, owned by
+integrations-worker (it holds the App key), driven by state-worker result
+events (pairs with `saas-orun-platform` OV5).
+
+- Endpoints, each minting a scoped installation token internally: create/update
+  **Check Run** (name, conclusion, summary, annotations, `details_url` →
+  cockpit run), create **commit status**, create/update **Deployment** +
+  deployment status (env via `repo_links.branch_env_map`).
+- Perms already granted (D2: `checks`/`statuses`/`deployments:write`); audited
+  (`integration.checkrun.posted`, `integration.deployment.posted`), never
+  logging tokens; policy/entitlement reuse from IG4.
+
+**Done when:** a state-worker result event posts a Check Run with affected
+components + a cockpit link on a stage PR; a run targeting an environment
+updates a GitHub Deployment; unlinked repos / un-granted perms fail closed.
+
 ## Sequencing note
 
 IG0 → IG1 → IG2 is the spine and strictly ordered. IG3/IG4 both ride on IG1+IG2
 and can land in either order (IG3 first gives the console story sooner; IG4
 first gives products the act-on-GitHub story sooner — default IG3). IG5 polish
 trails the surface it polishes; IG6 hardening trails live traffic; IG7 is
-detachable. Worker-side IG2 fixtures and all of IG0 can proceed while D1 (App
-registration) is pending — the same park-and-continue discipline used for
-Polar/Stripe credentials.
+detachable. **IG8/IG9 are the state-bridge pair** (`bridge-to-state.md`): IG8 is
+an additive contract slice that can land any time; IG9 rides on IG4 (the broker)
+and pairs with `saas-orun-platform` OV4/OV5. Worker-side IG2 fixtures and all of
+IG0/IG8 can proceed while D1 (App registration) is pending — the same
+park-and-continue discipline used for Polar/Stripe credentials.

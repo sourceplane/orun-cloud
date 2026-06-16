@@ -16,6 +16,8 @@ B5 outbound webhooks, B11 entitlements, console shell).
 | IG5 | 🗓️ Planned |
 | IG6 | 🗓️ Planned |
 | IG7 | 🗓️ Planned (optional tail) |
+| IG8 | 🗓️ Planned — inbound projection fields for the state bridge (additive `scm.*` slice; pairs with `saas-orun-platform` OV4) |
+| IG9 | 🗓️ Planned — write-back proxy (check-run / commit-status / deployment; promotes the IG4 stretch; pairs with OV5) |
 
 ## Notes
 

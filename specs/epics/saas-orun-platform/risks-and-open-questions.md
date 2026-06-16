@@ -202,3 +202,40 @@ parser, and the runtime all agree on one envelope.
   documented above, build on evidence.
 - GitLab/Bitbucket OIDC issuers for OP5 — adapter seam mirrors
   saas-integrations' provider registry.
+
+## v2 decisions (DV1–DV7)
+
+Ratified in design review 2026-06-16; normative in `design-v2.md`. OP0–OP4 stay
+the shipped substrate; the frozen wire identifiers (audience `orun-cloud`,
+issuer `https://api.orun.dev`) do not churn.
+
+- **DV1 — Re-anchor on the object-model seam.** The cloud exposes `ObjectStore`
+  + `RefStore` + the `ModelReader` read surface; run coordination (OP2) is
+  demoted to an execution write-path under it, not the primary contract.
+- **DV2 — Console = `ModelReader` consumer.** `bridge.Source` widens to the full
+  `ModelReader` so console and TUI share one read seam over local or cloud;
+  source/head selection = ref resolution.
+- **DV3 — Identity materialized, attributes authored.** Org is the only authored
+  structural node; project/env/component materialize from push (natural key =
+  identity); nodes may be pre-declared so settings attach before first push.
+- **DV4 — Project == repo.** Bijection on the tightened `state.workspace_links`
+  (+ rename-stable `provider_repo_id`); the link/installation *is* the CI trust
+  binding, so the planned `oidc_trust_bindings` table is **dropped**.
+- **DV5 — intent.yaml declares `org`/`env` as checked claims** (⊆ what the
+  link/installation authorizes) — **supersedes the `design.md` §8 line "org/
+  project come from the RepoLink, never from intent."**
+- **DV6 — The GitHub App is the inbound ingestion + outbound write-back bridge,**
+  across the event_log (in) and token-broker / write-back proxy (out);
+  state-worker never holds GitHub credentials.
+- **DV7 — Org-global catalog;** repo/env are index projections with provenance,
+  derived from per-`(project, environment)` catalog heads.
+
+### Open (v2)
+
+- **Monorepo granularity.** project == repo means a monorepo is one project
+  (services via the catalog, targets via environments); teams wanting one
+  project per service in a monorepo are not served until path sub-scoping is
+  added. *Confirm acceptable before OV2 lands.*
+- **IG D1 dependency.** OV3 live OIDC validation against the installation and
+  OV4/OV5 live paths need the per-environment GitHub App registration (stage
+  provisioned, prod unset). Worker-side code lands ahead of the gate.
