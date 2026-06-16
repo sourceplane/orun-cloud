@@ -50,6 +50,8 @@ spec:
     owner: sourceplane
     repo: orun-cloud
 
+    # SS2: manifest key for the secrets-live escrow sync (saas-secrets-sync).
+    secretsWorker: identity-worker
     turboFilter: "@saas/identity-worker"
     wranglerConfig: wrangler.jsonc
     wranglerTemplate: wrangler.template.jsonc
