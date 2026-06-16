@@ -155,6 +155,9 @@ Owner: identity-worker, console.
 - `POST /v1/auth/oidc/exchange`: GitHub JWKS verification (KV-cached), claim
   matching against `identity.oidc_trust_bindings` (org, project?, issuer,
   repository, ref pattern?, environment?), short-lived `workflow` token mint.
+  **D1 (frozen):** verify the incoming GHA token's audience against `orun-cloud`
+  and mint with issuer `https://api.orun.dev` — these identifiers are fixed and
+  must not churn after this milestone ships.
 - Migration for `oidc_trust_bindings`; CRUD under
   `/v1/organizations/{orgId}/ci/trust-bindings` (policy `org.ci.trust.write`).
 - Console: project Settings → CI access — binding editor, copyable GHA snippet
@@ -204,9 +207,16 @@ browsable in the console within seconds; search and facets work against a
 correct entity diff; the platform demonstrably never mutates catalog content
 (read-model rebuild from blobs is idempotent and tested). (Pairs with OC4.)
 
-## OP8 — Secret manager — 🗓️ Planned
+## OP8 — Secret manager — 🗓️ Planned (design owned by orun-secrets #341)
 
 Owner: config-worker, api-edge, console.
+
+> **D3/D4 (decided 2026-06-16):** values ARE held (envelope-encrypted), but the
+> authoritative secret design — crypto layout, the `secret://` reference model,
+> the `KEKProvider` seam for future BYO-KMS — is owned by the **orun-secrets
+> redesign (orun PR #341)**, which supersedes the sketch below. Treat the bullets
+> here as the minimum platform surface; reconcile against #341 before building.
+> Migration number `230` below is already taken — use 240+.
 
 - Migration `230_config_secrets` (200/210 are already taken): versioned `config.secrets` with envelope
   encryption (per-secret DEK, per-org KEK wrap, master key as Worker secret);
@@ -233,7 +243,9 @@ Owner: state-worker, metering-worker, billing-worker, console.
 - Entitlements: `feature.remote_state`, `feature.secret_manager`,
   `limit.state.runs_per_month`, `limit.state.retention_days`,
   `limit.secrets.count`, `limit.state.storage_gb`; 412 + upgrade UX at the
-  facade; free-tier defaults per design §7.
+  facade; free-tier defaults per design §7 (D2, decided 2026-06-16: single org,
+  3 projects, 7-day retention, ~1,000 runs/mo, ~5 GB, secret manager on with
+  `limit.secrets.count` ≈ 25 provisional).
 - Retention/GC cron: expire log chunks and unreferenced objects past plan
   retention (heads and their snapshots pinned); deletion is metered and
   audited.

@@ -112,6 +112,9 @@ Owner: identity-worker (verify + exchange) + console (trust config).
 - `POST /v1/auth/oidc/exchange` — body: GitHub Actions OIDC JWT (audience
   `orun-cloud`). The worker verifies signature against GitHub's JWKS (cached in
   KV), then matches claims against the org's **trust bindings**:
+  *(D1, frozen 2026-06-16: the OIDC audience `orun-cloud` and the minted-token
+  issuer `https://api.orun.dev` are stable protocol identifiers, decoupled from
+  the product's marketing name — they must not churn after OP5 ships.)*
   `identity.oidc_trust_bindings` (org_id, project_id?, issuer, repository,
   ref-pattern?, environment?). On match it mints a short-lived access token with
   `actorKind: "workflow"` scoped to that org/project. No stored secret in CI —
@@ -283,10 +286,18 @@ Audit, customer webhooks, and notification rules apply with zero new plumbing �
 `state.job_minutes`, `state.log_bytes`, `state.object_bytes`,
 `secrets.count`. Entitlements: `feature.remote_state`, `feature.secret_manager`,
 `limit.state.runs_per_month`, `limit.state.retention_days`,
-`limit.secrets.count`, `limit.state.storage_gb`. Free tier gets a generous
-solo allowance (remote state for one project, 7-day retention) because the
-free CLI user is the funnel; team plans pay for seats + retention + volume.
-Over-limit returns the platform's standard 412 + upgrade UX.
+`limit.secrets.count`, `limit.state.storage_gb`. The free CLI user is the
+funnel; team plans pay for seats + retention + volume. Over-limit returns the
+platform's standard 412 + upgrade UX.
+
+**Free-tier defaults (D2, decided 2026-06-16):** single org
+(`feature.multi_org` off, `limit.organizations` = 1), **3 projects**,
+`feature.remote_state` **on**, `limit.state.retention_days` = **7**,
+`limit.state.runs_per_month` ≈ **1,000**, `limit.state.storage_gb` ≈ **5**,
+`feature.secret_manager` **on for now** with `limit.secrets.count` ≈ **25**
+(provisional — free secret-manager access is fine-tuned later once usage/cost is
+known). Limits start slightly generous with hard run/storage ceilings to bound
+cost; loosening later breaks no one.
 
 ## 8. Console information architecture
 
