@@ -84,9 +84,12 @@ status table and R11.
   `familyStart + 90d`, retiring the family (`absolute_expiry`) so even a
   continuously-active (or silently-compromised) session has a hard max age; the
   slid idle window is clamped to the same ceiling.
-- 🗓️ **Reuse grace interval** — idempotent re-issue of a refresh token replayed
-  within a short leeway of its rotation (closes the kill-between-rotate-and-
-  persist window). Security-sensitive; needs review (R11).
+- ✅ **Reuse grace interval (PR #62)** — idempotent re-issue of a refresh token
+  replayed within a ~10 s leeway of its rotation (closes the lost-response /
+  concurrent-redemption window). The predecessor row keeps an AES-256-GCM
+  successor-at-rest (migration 240; key derived from OAUTH_STATE_SECRET, never in
+  the DB); a within-window replay re-serves the same successor + emits
+  `cli.refresh.grace_replay`; everything else still revokes (R11).
 
 ## OP2 — Run coordination plane — ✅ Done
 
