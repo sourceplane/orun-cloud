@@ -164,9 +164,16 @@ describe("no placeholder or committed Hyperdrive IDs in any Worker template", ()
 });
 
 // ── api-edge CONFIG_WORKER service bindings ────────────────────
+//
+// Skipped when api-edge is absent: incremental forks copy config-worker
+// (batch 14 of the fork order) before api-edge (batch 16).
 
-describe("api-edge CONFIG_WORKER service bindings", () => {
-  const rendered = renderFromFixture("apps/api-edge") as unknown as {
+const HAS_API_EDGE = fs.existsSync(path.join(ROOT, "apps", "api-edge", "component.yaml"));
+
+(HAS_API_EDGE ? describe : describe.skip)("api-edge CONFIG_WORKER service bindings", () => {
+  const rendered = (
+    HAS_API_EDGE ? renderFromFixture("apps/api-edge") : { env: {} }
+  ) as unknown as {
     env: Record<string, { services?: Array<{ binding: string; service: string }> }>;
   };
 
@@ -187,7 +194,7 @@ describe("api-edge CONFIG_WORKER service bindings", () => {
 
 // ── api-edge component.yaml depends on config-worker ───────────
 
-describe("api-edge component.yaml dependency on config-worker", () => {
+(HAS_API_EDGE ? describe : describe.skip)("api-edge component.yaml dependency on config-worker", () => {
   test("dependsOn includes config-worker", () => {
     const yaml = readYaml("apps/api-edge/component.yaml");
     expect(yaml).toContain("component: config-worker");
