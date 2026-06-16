@@ -25,6 +25,7 @@ spec:
     - cloudflare-worker-turbo.pre-deploy
     - cloudflare-worker-turbo.migrate
     - cloudflare-worker-turbo.deploy
+    - cloudflare-worker-turbo.secrets-live
     - cloudflare-worker-turbo.smoke
 
   steps:
@@ -161,6 +162,84 @@ spec:
         : "${CLOUDFLARE_ACCOUNT_ID:?CLOUDFLARE_ACCOUNT_ID is required}"
         : "${CLOUDFLARE_API_TOKEN:?CLOUDFLARE_API_TOKEN is required}"
         pnpm exec wrangler deploy --config {{ .parameters.wranglerConfig }} --env {{ .orun.environment.name }}
+      onFailure: stop
+
+    - id: secrets-live
+      name: secrets-live
+      capability: cloudflare-worker-turbo.secrets-live
+      shell: bash
+      run: |
+        {{- if .parameters.secretsWorker }}
+        # SS2/SS6b: hydrate this worker's runtime secrets from AWS Secrets
+        # Manager. The storage layout is per-integration documents
+        # (<org>/<repo>/integrations/<name>/<env>) plus a single
+        # <org>/<repo>/platform-secrets/<env> doc for non-integration secrets;
+        # assemble.mjs (SS6a) projects them into the per-worker shape sync.mjs
+        # consumes. Runs after deploy so a first-boot worker exists before
+        # secrets are pushed; `wrangler secret bulk` rolls a new version
+        # immediately, so smoke still observes the synced state.
+        #
+        # Transition contract:
+        #   - No integration/platform docs seeded for ${env_name} at all =
+        #     pre-SS3 state; clean-skip, leave existing wrangler-put secrets.
+        #   - Any doc seeded but not all required ones = hard-fail (never
+        #     deploy a worker with known-incomplete secrets — assemble.mjs
+        #     fails closed and lists exactly what's missing).
+        set -euo pipefail
+        env_name="{{ .orun.environment.name }}"
+        record_id="{{ .parameters.orgName }}/{{ .parameters.repo }}/worker-secrets-fingerprints/${env_name}"
+        work_dir=$(mktemp -d)
+        docs_dir="${work_dir}/docs"
+        mkdir -p "${docs_dir}"
+        node {{ .parameters.workspaceDir }}/tooling/secrets-sync/assemble.mjs \
+          --list-docs --env "${env_name}" > "${work_dir}/doclist.txt"
+        while IFS=$'\t' read -r name secret_id; do
+          [ -z "${name}" ] && continue
+          if aws secretsmanager get-secret-value --secret-id "${secret_id}" \
+                --query SecretString --output text \
+                > "${docs_dir}/${name}.json" 2>"${work_dir}/aws.err"; then
+            :
+          elif grep -q "ResourceNotFoundException" "${work_dir}/aws.err"; then
+            rm -f "${docs_dir}/${name}.json"
+            echo "secrets-live: ${name}.json absent (${secret_id})"
+          else
+            echo "secrets-live: failed to fetch ${secret_id}:" >&2
+            cat "${work_dir}/aws.err" >&2
+            exit 1
+          fi
+        done < "${work_dir}/doclist.txt"
+        fetched=$(find "${docs_dir}" -maxdepth 1 -type f -name '*.json' | wc -l | tr -d ' ')
+        if [ "${fetched}" = "0" ]; then
+          echo "secrets-live: no integration or platform documents seeded for ${env_name} (SS3 not started) — leaving existing worker secrets untouched."
+          exit 0
+        fi
+        node {{ .parameters.workspaceDir }}/tooling/secrets-sync/assemble.mjs \
+          --env "${env_name}" --docs-dir "${docs_dir}" \
+          --out-secrets "${work_dir}/escrow.json" \
+          --out-config "${work_dir}/config.json"
+        aws secretsmanager get-secret-value --secret-id "${record_id}" \
+          --query SecretString --output text > "${work_dir}/record.json" 2>/dev/null \
+          || echo '{}' > "${work_dir}/record.json"
+        node {{ .parameters.workspaceDir }}/tooling/secrets-sync/sync.mjs \
+          --manifest {{ .parameters.workspaceDir }}/tooling/secrets-sync/secrets.manifest.json \
+          --worker "{{ .parameters.secretsWorker }}" \
+          --env "${env_name}" \
+          --escrow "${work_dir}/escrow.json" \
+          --record "${work_dir}/record.json" \
+          --out-bulk "${work_dir}/bulk.json" \
+          --out-record "${work_dir}/record.next.json"
+        if [ "$(cat "${work_dir}/bulk.json")" != "{}" ]; then
+          pnpm exec wrangler secret bulk "${work_dir}/bulk.json" \
+            --config {{ .parameters.wranglerConfig }} --env "${env_name}"
+          aws secretsmanager put-secret-value --secret-id "${record_id}" \
+            --secret-string "file://${work_dir}/record.next.json" >/dev/null 2>&1 \
+            || aws secretsmanager create-secret --name "${record_id}" \
+                 --secret-string "file://${work_dir}/record.next.json" >/dev/null
+        fi
+        rm -rf "${work_dir}"
+        {{- else }}
+        echo "secrets-live: component has no managed runtime secrets; skipping."
+        {{- end }}
       onFailure: stop
 
     - id: smoke

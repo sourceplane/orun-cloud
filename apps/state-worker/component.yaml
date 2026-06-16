@@ -45,6 +45,11 @@ spec:
     owner: sourceplane
     repo: orun-cloud
 
+    # SS2: manifest key for the secrets-live escrow sync (saas-secrets-sync).
+    # state-worker's STATE_ENCRYPTION_KEY is a deferred platform secret (seeded
+    # at OP2+ when the state plane goes live); declared so the single-write-path
+    # invariant holds — the secrets-live step is a no-op while deferred.
+    secretsWorker: state-worker
     turboFilter: "@saas/state-worker"
     wranglerConfig: wrangler.jsonc
     wranglerTemplate: wrangler.template.jsonc

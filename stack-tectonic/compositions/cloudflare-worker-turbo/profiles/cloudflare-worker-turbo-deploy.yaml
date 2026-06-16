@@ -29,4 +29,10 @@ spec:
         - cloudflare-worker-turbo.pre-deploy
         - cloudflare-worker-turbo.migrate
         - cloudflare-worker-turbo.deploy
+        # SS2/SS6b: hydrate runtime secrets from the per-integration +
+        # platform-secrets documents (projected via assemble.mjs to the shape
+        # sync.mjs consumes). Runs after deploy (first boot creates the worker
+        # first); no-op for components without secretsWorker; clean-skip while
+        # no SS3 documents exist for the env, hard-fail on partial seeding.
+        - cloudflare-worker-turbo.secrets-live
         - cloudflare-worker-turbo.smoke

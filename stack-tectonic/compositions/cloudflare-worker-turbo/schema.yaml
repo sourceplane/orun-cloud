@@ -66,6 +66,10 @@ spec:
             type: string
             default: wiring.fixture.json
             description: Committed placeholder wiring map used for offline verify/dry-run rendering
+          secretsWorker:
+            type: string
+            default: ""
+            description: Manifest key in tooling/secrets-sync/secrets.manifest.json naming this worker's managed runtime secrets; empty = the secrets-live step skips (SS2)
           awsAccountId:
             type: string
             description: AWS account ID hosting the GitHub-OIDC role wire-live assumes to read wiring secrets

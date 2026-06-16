@@ -86,6 +86,38 @@ sourceplane/orun-cloud/supabase/stage
 Secret values must never be committed, echoed in logs, or copied into task
 reports. Reports may include secret names and non-secret resource IDs.
 
+### Worker Runtime Secrets
+
+Runtime secrets consumed by Cloudflare Workers (OAuth client secrets,
+`OAUTH_STATE_SECRET`, billing provider tokens, `SECRET_ENCRYPTION_KEY`, the
+GitHub App bundle) follow the same system-of-record rule. They are escrowed
+in AWS Secrets Manager as one document per **provider integration** (config
++ secret co-located) plus a single platform document for non-integration
+secrets:
+
+```text
+<org>/<repo>/integrations/<name>/<env>      # per-provider config + secret(s)
+<org>/<repo>/platform-secrets/<env>         # SECRET_ENCRYPTION_KEY, OAUTH_STATE_SECRET, INTEGRATIONS_STATE_SECRET
+```
+
+`tooling/secrets-sync/integrations.manifest.json` is the source of truth
+declaring which keys live in each document and which workers consume them;
+`tooling/secrets-sync/assemble.mjs` projects them into the per-worker secret
+view that `tooling/secrets-sync/sync.mjs` pushes to Cloudflare (and the
+per-worker config view that renders into wrangler `vars`).
+`tooling/secrets-sync/secrets.manifest.json` is a GENERATED projection of
+the integrations manifest used by the legacy `check.mjs` drift checker.
+Cloudflare worker secrets are deploy-time copies only — write-only, never
+the source of truth, and never read back. Workers must not call AWS Secrets
+Manager at request time. The `saas-secrets-sync` epic owns the sync/drift
+mechanics (`specs/epics/saas-secrets-sync/`).
+
+Config keys are non-secret and may be logged (or appear in plan output);
+secret keys never are. Instance *branding* constants (product name, CLI
+binary, sales email) stay in the source `app-config` seam, and
+orchestration parameters (AWS account, region, domains) stay in
+`intent.yaml` — neither belongs in Secrets Manager.
+
 ## Terraform State
 
 Terraform state for this repo uses AWS S3, not Cloudflare R2.
