@@ -114,7 +114,12 @@ re-derived (replay) rather than re-fetched.
 
 - Second live provider (GitLab/Bitbucket) — IG7 proves the seam dormant; a live
   adapter waits for demand.
-- Check-run/deployment **proxy** endpoints (IG4 stretch) — broker first.
+- Check-run/deployment **proxy** endpoints — **promoted to IG9** by the v2
+  state bridge (`bridge-to-state.md`); the token broker remains the primitive
+  underneath. Likewise, ingesting `scm.*` into the Orun object graph (IG8 +
+  `saas-orun-platform` OV4) is a deliberate, scoped extension of this epic's
+  original "no CI/CD on SCM events" boundary — state-worker owns the consumer,
+  this epic only emits the events and brokers the tokens.
 - Parent→child connection inheritance under multi-org — explicit per-org
   install until a customer asks.
 - GitHub Enterprise Server (on-prem) endpoints — the adapter keeps base URLs

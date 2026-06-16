@@ -56,6 +56,9 @@ URL change, not a migration.
 4. `implementation-plan.md` — OP0–OP9, each with goal, owner, dependencies,
    "done when".
 5. `risks-and-open-questions.md` — human decisions, deferred choices, risks.
+6. `design-v2.md` + `implementation-plan-v2.md` — the proposed **v2** re-anchor
+   (object-model control plane, materialized tenancy, credential-agnostic CI
+   auth, GitHub App bridge); see also `../saas-integrations/bridge-to-state.md`.
 
 ## Milestones at a glance
 
@@ -66,11 +69,33 @@ URL change, not a migration.
 | OP2 | Run coordination plane (runs, claims, leases, heartbeats, transitions) | ✅ Done |
 | OP3 | Object & log plane (CAS over R2, digest negotiation, log chunks + tail) | ✅ Done |
 | OP4 | Tenancy resolution & repo links (`orun cloud link` server side) | ✅ Done |
-| OP5 | OIDC federation for CI (GitHub Actions → Orun Cloud tokens) | 🗓️ Planned |
-| OP6 | Console: Runs & Stacks surfaces | 🗓️ Planned |
-| OP7 | Console: Catalog browser (derived-truth entity graph) | 🗓️ Planned |
-| OP8 | Secret manager (storage, grants, console, audit) | 🗓️ Planned |
-| OP9 | Metering, entitlements, retention/GC, hardening | 🗓️ Planned |
+| OP5 | OIDC federation for CI (GitHub Actions → Orun Cloud tokens) | 🗓️ Planned → superseded by **v2 OV3** |
+| OP6 | Console: Runs & Stacks surfaces | 🗓️ Planned → **v2 OV7** |
+| OP7 | Console: Catalog browser (derived-truth entity graph) | 🗓️ Planned → **v2 OV6** (org-global) |
+| OP8 | Secret manager (storage, grants, console, audit) | 🗓️ Planned → **v2 OV8** |
+| OP9 | Metering, entitlements, retention/GC, hardening | 🗓️ Planned → **v2 OV9** |
+
+### v2 milestones (proposed)
+
+Re-anchor from OP5 on; see [`design-v2.md`](./design-v2.md) +
+[`implementation-plan-v2.md`](./implementation-plan-v2.md). OP0–OP4 stay the
+shipped substrate.
+
+| ID | Milestone | Status |
+|----|-----------|--------|
+| OV1 | ModelReader read seam (cloud = hosted ObjectStore + RefStore + index) | 🗓️ Proposed |
+| OV2 | Materialized tenancy (project == repo bijection, env upsert) | 🗓️ Proposed |
+| OV3 | Credential-agnostic CI auth (OIDC + `sk_` key → one ActorContext) | 🗓️ Proposed |
+| OV4 | GitHub App bridge: inbound `scm.*` ingestion → object graph | 🗓️ Proposed |
+| OV5 | GitHub App bridge: outbound write-back (checks/deployments) | 🗓️ Proposed |
+| OV6 | Org-global catalog projection (repo/env as facets) | 🗓️ Proposed |
+| OV7 | Console: Runs & Stacks over ModelReader | 🗓️ Proposed |
+| OV8 | Secrets (per project/env, bind on materialize) | 🗓️ Proposed |
+| OV9 | Metering, entitlements, retention/GC | 🗓️ Proposed |
+
+Paired integrations bridge: **IG8–IG9**
+([`../saas-integrations/bridge-to-state.md`](../saas-integrations/bridge-to-state.md)).
+CLI counterpart: **OCv2-1..3** (`orun/specs/orun-cloud/design-v2.md`).
 
 ### Token-refresh hardening (OP1 follow-through)
 
