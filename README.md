@@ -33,7 +33,10 @@ This baseline is built to be instantiated as new products. The mechanical
 rename (repo slug, product name/domain, SDK class, CLI bin, worker prefixes,
 user agents, workers.dev subdomain) is one script —
 `node tooling/rebrand/rebrand.mjs --values my-brand.json` — and everything
-that needs human hands is a checklist. See **[FORKING.md](FORKING.md)**.
+that needs human hands is a checklist. Forks can also grow **a few
+components at a time**: `tooling/fork/components.mjs` orders and validates
+per-component copies against the full prerequisite graph (and keeps
+`pnpm-lock.yaml` in sync). See **[FORKING.md](FORKING.md)**.
 
 ## Prerequisites
 
