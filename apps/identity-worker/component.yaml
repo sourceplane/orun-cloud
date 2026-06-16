@@ -11,6 +11,11 @@ spec:
   path: apps/identity-worker
   dependsOn:
     - component: cloudflare-hyperdrive
+    # #343: identity-worker service-binds these workers; declare them as
+    # deploy-time prerequisites (Cloudflare 10143 ordering on fresh accounts).
+    - component: membership-worker
+    - component: policy-worker
+    - component: notifications-worker
     # Schema-before-code: identity-worker reads CLI-session columns (incl. the
     # R11 reuse-grace columns from migration 240), so migrations must apply
     # before this worker's new code goes live, or refresh transiently 503s.
