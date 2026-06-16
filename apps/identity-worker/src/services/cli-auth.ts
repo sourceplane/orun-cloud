@@ -8,11 +8,12 @@
 // revoke. Every grant and revoke records an identity security event (the
 // identity-context audit trail).
 
-import type { IdentityRepository, Session, User } from "@saas/db/identity";
+import type { IdentityRepository, Session, User, CliSessionByRefresh } from "@saas/db/identity";
 import type { CliSessionOrg, CliSessionPayload } from "@saas/contracts/auth";
 import type { Env } from "../env.js";
 import { hashSha256 } from "../crypto.js";
 import { mintCliAccessToken } from "../cli/jwt.js";
+import { encryptGraceSuccessor, decryptGraceSuccessor } from "../cli/grace-crypto.js";
 import {
   generateCliCode,
   generateDeviceCode,
@@ -53,6 +54,11 @@ const REFRESH_TTL_MS = 30 * 24 * 60 * 60 * 1000; // ~30 days (sliding idle windo
 // this on every rotation.
 const ABSOLUTE_REFRESH_TTL_MS = 90 * 24 * 60 * 60 * 1000; // ~90 days
 const DEVICE_POLL_INTERVAL_SEC = 5;
+// Reuse-grace window (risk R11): a replay of a just-rotated refresh token within
+// this window is re-issued the same successor idempotently rather than revoking
+// the family. Kept tight — it only needs to span an in-flight retry of a lost
+// rotation response, or two near-simultaneous redemptions of one token.
+const REFRESH_GRACE_TTL_MS = 10 * 1000; // ~10s
 
 export interface CliStartResult {
   authorizeUrl: string;
@@ -173,6 +179,62 @@ export function createCliAuthService(deps: CliAuthServiceDeps) {
       user: { id: userPublicId(user.id), email: user.email, displayName: user.displayName },
       orgs,
     };
+  }
+
+  // Reuse-grace (risk R11). A presented refresh token that resolves to an
+  // already-rotated row is normally reuse → revoke the whole family. But a
+  // replay of a JUST-rotated token (a normal 'superseded' rotation) within the
+  // grace window is benign — a lost-response retry, or a second near-simultaneous
+  // redemption that lost the rotation race — so re-issue the SAME successor
+  // idempotently: a fresh (stateless) access JWT for the successor session plus
+  // the stored successor refresh token. Everything else still revokes.
+  async function graceReplayOrRevoke(found: CliSessionByRefresh): Promise<CliSessionPayload | CliError> {
+    const { session, user } = found;
+    const eligible =
+      session.replacedBy !== null &&
+      session.revokedReason === "superseded" &&
+      found.graceSuccessorCiphertext !== null &&
+      found.graceExpiresAt !== null &&
+      found.graceExpiresAt.getTime() > now().getTime();
+    if (eligible) {
+      const successorRefresh = await decryptGraceSuccessor(env, found.graceSuccessorCiphertext!);
+      if (successorRefresh) {
+        const orgs = await fetchOrgs(userPublicId(user.id));
+        let access: { token: string; expiresAt: Date };
+        try {
+          access = await mintCliAccessToken(env, {
+            sub: userPublicId(user.id),
+            sessionId: cliSessionPublicId(session.replacedBy!),
+            orgIds: orgs.map((o) => o.id),
+            now: now(),
+          });
+        } catch {
+          return { error: "signing_unavailable", message: "CLI token signing is not configured" };
+        }
+        await repo.recordSecurityEvent({
+          ...eventBase(),
+          eventType: "cli.refresh.grace_replay",
+          outcome: "success",
+          userId: user.id,
+          sessionId: session.replacedBy!,
+          metadata: { refreshFamilyId: session.refreshFamilyId, generation: session.refreshGeneration },
+        });
+        return buildPayload(access, successorRefresh, user, orgs);
+      }
+    }
+    // Not grace-eligible (window elapsed, no ciphertext, a non-supersede revoke,
+    // or decryption failed) → genuine reuse → revoke the family.
+    if (session.refreshFamilyId) {
+      await repo.revokeCliFamily(session.refreshFamilyId, "reuse_detected", now());
+      await repo.recordSecurityEvent({
+        ...eventBase(),
+        eventType: "cli.refresh.reuse_detected",
+        outcome: "failure",
+        userId: user.id,
+        metadata: { refreshFamilyId: session.refreshFamilyId, generation: session.refreshGeneration },
+      });
+    }
+    return { error: "not_found", message: "Refresh token reuse detected; session revoked" };
   }
 
   return {
@@ -327,21 +389,12 @@ export function createCliAuthService(deps: CliAuthServiceDeps) {
 
       // Reuse detection (RFC-9700): the presented token resolved to a row, but
       // that row is no longer the live generation — it was already rotated
-      // (replaced_by set) or revoked. Presenting a superseded token means an
-      // attacker (or a buggy client) replayed it ⇒ revoke the WHOLE family so the
-      // legitimate holder is forced to re-login.
+      // (replaced_by set) or revoked. This is reuse ⇒ normally revoke the WHOLE
+      // family. The grace helper re-issues the successor idempotently instead,
+      // but ONLY for a just-rotated ('superseded') token still inside its grace
+      // window; anything else still revokes (risk R11).
       if (session.replacedBy !== null || session.revokedAt !== null) {
-        if (session.refreshFamilyId) {
-          await repo.revokeCliFamily(session.refreshFamilyId, "reuse_detected", now());
-          await repo.recordSecurityEvent({
-            ...eventBase(),
-            eventType: "cli.refresh.reuse_detected",
-            outcome: "failure",
-            userId: user.id,
-            metadata: { refreshFamilyId: session.refreshFamilyId, generation: session.refreshGeneration },
-          });
-        }
-        return { error: "not_found", message: "Refresh token reuse detected; session revoked" };
+        return graceReplayOrRevoke(found.value);
       }
       if (!session.refreshFamilyId) {
         return { error: "internal_error", message: "Malformed CLI session" };
@@ -389,6 +442,16 @@ export function createCliAuthService(deps: CliAuthServiceDeps) {
         Math.min(currentTime.getTime() + REFRESH_TTL_MS, absoluteDeadline),
       );
 
+      // Reuse-grace (R11): stamp the (encrypted) successor refresh token + a
+      // grace deadline on the predecessor row, so a benign replay of the token
+      // we are spending now can be re-issued this same successor within the
+      // window. encryptGraceSuccessor returns null when no key is configured →
+      // grace disabled (revoke-on-reuse as before).
+      const graceSuccessorCiphertext = await encryptGraceSuccessor(env, newRefreshToken);
+      const graceExpiresAt = graceSuccessorCiphertext
+        ? new Date(currentTime.getTime() + REFRESH_GRACE_TTL_MS)
+        : null;
+
       const rotated = await repo.rotateCliSession({
         currentSessionId: session.id,
         refreshFamilyId: session.refreshFamilyId,
@@ -401,10 +464,18 @@ export function createCliAuthService(deps: CliAuthServiceDeps) {
         refreshExpiresAt,
         clientHost: session.clientHost,
         rotatedAt: currentTime,
+        graceSuccessorCiphertext,
+        graceExpiresAt,
       });
       if (!rotated.ok) {
-        // Lost the rotation race → the token was used twice concurrently. Reuse:
-        // revoke the family.
+        // Lost the rotation race → the token was redeemed twice concurrently.
+        // The winner stamped its successor + grace on this row; re-read and,
+        // within the grace window, re-issue that successor idempotently rather
+        // than revoking (otherwise this still revokes the family).
+        const reread = await repo.getCliSessionByRefreshHash(refreshTokenHash);
+        if (reread.ok) {
+          return graceReplayOrRevoke(reread.value);
+        }
         await repo.revokeCliFamily(session.refreshFamilyId, "reuse_detected", currentTime);
         await repo.recordSecurityEvent({
           ...eventBase(),

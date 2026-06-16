@@ -77,6 +77,14 @@ export interface CliSessionByRefresh {
    *  session-lifetime cap on top of the sliding idle window. Null only for
    *  malformed rows with no family. */
   familyStartedAt: Date | null;
+  /** Reuse-grace (R11): AES-256-GCM envelope of the successor refresh token,
+   *  written on this row when it was rotated. Lets a replay of this (now-spent)
+   *  token within the grace window be re-issued the same successor idempotently
+   *  instead of revoking the family. Null when grace is disabled/unset. */
+  graceSuccessorCiphertext: string | null;
+  /** End of the reuse-grace window for this row's rotation; the ciphertext is
+   *  only honored while this is in the future. */
+  graceExpiresAt: Date | null;
 }
 
 export interface CreateCliSessionInput {
@@ -109,6 +117,11 @@ export interface RotateCliSessionInput {
   refreshExpiresAt: Date;
   clientHost?: string | null;
   rotatedAt: Date;
+  /** Reuse-grace (R11): encrypted successor-refresh envelope to stamp on the
+   *  predecessor row, and the grace deadline. Both null disables grace for this
+   *  rotation (revoke-on-reuse as before). */
+  graceSuccessorCiphertext?: string | null;
+  graceExpiresAt?: Date | null;
 }
 
 export interface CreateUserInput {

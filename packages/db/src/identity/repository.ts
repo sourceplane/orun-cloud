@@ -532,6 +532,8 @@ export function createIdentityRepository(executor: SqlExecutor): IdentityReposit
              s.revoked_reason AS session_revoked_reason,
              s.client_host AS session_client_host,
              s.refresh_expires_at AS session_refresh_expires_at,
+             s.grace_successor_ciphertext AS session_grace_successor_ciphertext,
+             s.grace_expires_at AS session_grace_expires_at,
              -- Family origin (generation 1's created_at), carried across
              -- rotations to enforce the absolute session-lifetime cap.
              (SELECT MIN(f.created_at) FROM identity.sessions f
@@ -565,7 +567,18 @@ export function createIdentityRepository(executor: SqlExecutor): IdentityReposit
         const familyStartedAt = row.family_started_at
           ? new Date(row.family_started_at as string)
           : session.createdAt;
-        return { ok: true, value: { session, user: mapUser(row), familyStartedAt } };
+        return {
+          ok: true,
+          value: {
+            session,
+            user: mapUser(row),
+            familyStartedAt,
+            graceSuccessorCiphertext: (row.session_grace_successor_ciphertext as string) ?? null,
+            graceExpiresAt: row.session_grace_expires_at
+              ? new Date(row.session_grace_expires_at as string)
+              : null,
+          },
+        };
       } catch {
         return safeError("Failed to resolve CLI session");
       }
@@ -597,9 +610,17 @@ export function createIdentityRepository(executor: SqlExecutor): IdentityReposit
           `UPDATE identity.sessions
            SET replaced_by = $2,
                revoked_at = $3,
-               revoked_reason = 'superseded'
+               revoked_reason = 'superseded',
+               grace_successor_ciphertext = $4,
+               grace_expires_at = $5
            WHERE id = $1 AND replaced_by IS NULL AND revoked_at IS NULL`,
-          [input.currentSessionId, input.newSessionId, input.rotatedAt.toISOString()],
+          [
+            input.currentSessionId,
+            input.newSessionId,
+            input.rotatedAt.toISOString(),
+            input.graceSuccessorCiphertext ?? null,
+            input.graceExpiresAt ? input.graceExpiresAt.toISOString() : null,
+          ],
         );
         if (updated.rowCount === 0) {
           return { ok: false, error: { kind: "conflict", entity: "session" } };
