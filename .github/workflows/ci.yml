@@ -5,6 +5,16 @@ on:
     branches: [main]
   pull_request:
 
+# PR runs share a group per ref and superseded runs are cancelled (each
+# push re-plans anyway), which stops stale fan-outs from starving the
+# runner pool. Main pushes get a unique group each: convergence runs plan
+# --changed per commit, and GitHub replaces *pending* runs in a shared
+# group even with cancel-in-progress false — a superseded main run's
+# components would silently never converge.
+concurrency:
+  group: ci-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 permissions:
   contents: read
   packages: write
