@@ -1,9 +1,9 @@
 # saas-orun-platform — Risks & Open Questions
 
-Status: Draft. D-items need a human decision; R-items are engineering risks
-with a chosen mitigation.
+Status: Draft. D1–D6 were resolved 2026-06-16 (decisions recorded inline below);
+R-items are engineering risks with a chosen mitigation.
 
-## Decisions needed (human)
+## Decisions (resolved 2026-06-16)
 
 ### D1 — Product naming
 "Orun Cloud" is used throughout this epic as the working name for the SaaS
@@ -12,10 +12,24 @@ surfaces) — it leaks into URLs, the approval page ("Orun CLI wants access"),
 OIDC audience (`orun-cloud`), and docs. Renaming later is mostly find/replace
 but the OIDC audience and JWT issuer should not churn after OP5.
 
+**✅ Decision (2026-06-16):** product name **"Orun Cloud"**; all human-facing copy
+(approval page, console, docs, URLs) stays free to change. The two identifiers
+that must NOT churn are frozen now and decoupled from the marketing name:
+**OIDC audience = `orun-cloud`** and **JWT issuer = `https://api.orun.dev`**. A
+future rebrand is therefore a copy-only find/replace, never a protocol break.
+
 ### D2 — Free-tier shape
 Design §7 proposes: remote state free for one project, 7-day retention, no
 secret manager. This is a pricing decision. Needed before OP9 (entitlement
 defaults), not before.
+
+**✅ Decision (2026-06-16):** free tier = **single org** (`feature.multi_org` off,
+`limit.organizations` = 1), **3 projects**, **7-day retention**,
+**~1,000 runs/month**, **~5 GB storage**, `feature.remote_state` **on**, and
+`feature.secret_manager` **on for now** (provisional `limit.secrets.count` ≈ 25)
+— free secret-manager access to be fine-tuned later once usage/cost is known.
+These are the OP9 entitlement defaults; loosening limits later breaks no one, so
+we start slightly generous with hard run/storage ceilings to bound cost.
 
 ### D3 — Hosting customer secret values at all
 OP8 makes us a secret store. Alternative: metadata-only (we store references to
@@ -25,10 +39,20 @@ the product moat and reference-fetching from runners reintroduces the
 credential-distribution problem we're solving. Confirm comfort with the
 liability, and whether SOC2 timing changes the order.
 
+**✅ Decision (2026-06-16):** **hold values** (envelope-encrypted) — principle
+locked. The full crypto/storage/policy design is decided at secret-manager
+implementation time under the **orun-secrets redesign (orun PR #341)**, which
+supersedes this epic's lighter OP8 sketch. Hard requirements either way:
+write-only API (values never readable back) + audited runtime resolve; SOC2 runs
+in parallel and does not gate OP8 engineering.
+
 ### D4 — BYO-KMS / per-org KEK custody
 Follow-up to D3: enterprises will ask to hold the KEK (BYO-KMS). Not in this
 epic; confirm it's roadmap (post-OP8) so OP8's crypto layout keeps the seam
 (KEK provider interface, not a hardcoded master key path).
+
+**✅ Decision (2026-06-16):** **owned by the secret-manager epic** (orun-secrets,
+PR #341), not this epic — BYO-KMS / KEK custody is decided there.
 
 ### D5 — `orun backend init` (OSS self-host) parity commitment
 The contract promises one API, two implementations. Decide how strongly we
@@ -42,11 +66,22 @@ it to the org/project `_local/_local` scope in lockstep with OC0. Decide the
 retrofit timing **before OC0**, since the namespace→org/project change spans
 both the client and this server bundle.
 
+**✅ Decision (2026-06-16):** **drop `orun backend init` (OSS single-tenant
+self-host) for now.** We do not commit to OSS contract parity; the
+namespace→`_local/_local` migration of the embedded Worker+D1 bundle is shelved
+and the "one API, two implementations" promise is parked (not abandoned — it can
+be revived later). **OC6 narrows** to the OIDC CI golden path; the conformance
+suite, if retained, runs against stage only (no dual-server OSS target).
+
 ### D6 — Catalog annotations
 The platform never edits catalog content (provenance property). Buyers may ask
 for console-side overrides (ownership, descriptions). If ever allowed, they
 must live as a separate annotation layer, never merged into the snapshot.
 Park: decide only if a real buyer asks.
+
+**✅ Decision (2026-06-16):** **parked** — the read-only-catalog default stands;
+revisit only on a real buyer ask (annotations would be a separate layer, never
+merged into the snapshot).
 
 ## Engineering risks (chosen mitigations)
 
