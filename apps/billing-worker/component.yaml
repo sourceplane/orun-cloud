@@ -66,3 +66,4 @@ spec:
 # ci: redeploy with live Hyperdrive wiring (BF6b convergence)
 # ci: bootstrap deploy without service bindings (binding-cycle seed)
 # ci: restore service bindings after binding-cycle seed
+# ci: SS3 prod secrets seeded — redeploy to sync runtime secrets (secrets-live)
