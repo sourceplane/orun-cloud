@@ -51,6 +51,33 @@ function makeService(repo: ReturnType<typeof createFakeRepository>, now: Date) {
   });
 }
 
+// Reuse-grace (R11) is active only when an encryption key can be derived, i.e.
+// OAUTH_STATE_SECRET is set. The default test env omits it (so the existing
+// reuse-⇒-revoke tests keep that behavior); these helpers enable grace.
+function envWithGrace(): Env {
+  return { ...envWithKey(), OAUTH_STATE_SECRET: "g".repeat(48) } as Env;
+}
+
+function makeServiceGrace(repo: ReturnType<typeof createFakeRepository>, clock: () => Date) {
+  return createCliAuthService({
+    repo,
+    env: envWithGrace(),
+    now: clock,
+    fetchOrgs: async () => ORGS,
+  });
+}
+
+async function bootstrapSession(
+  svc: ReturnType<typeof createCliAuthService>,
+): Promise<{ refreshToken: string }> {
+  const started = await svc.start(null);
+  if ("error" in started) throw new Error("start failed");
+  await svc.approveGrant(started.grantId, USER_UUID);
+  const session = await svc.redeemCliCode(started.cliCode);
+  if ("error" in session) throw new Error("redeem failed");
+  return session;
+}
+
 describe("CLI auth service (OP1)", () => {
   const now = new Date("2026-06-14T12:00:00.000Z");
 
@@ -133,6 +160,58 @@ describe("CLI auth service (OP1)", () => {
       // A re-poll after redemption is rejected (single-use).
       const after = await svc.devicePoll(started.deviceCode);
       expect("error" in after).toBe(true);
+    });
+  });
+
+  describe("reuse-grace interval (R11)", () => {
+    it("re-issues the SAME successor on a replay within the grace window (no family revoke)", async () => {
+      const repo = createFakeRepository();
+      seedUser(repo);
+      const svc = makeServiceGrace(repo, () => now); // fixed clock → replay is within the window
+      const session = await bootstrapSession(svc);
+
+      const rotated = await svc.refresh(session.refreshToken);
+      if ("error" in rotated) throw new Error("rotate failed");
+
+      // Replay the now-rotated token within the grace window: idempotent re-issue
+      // of the SAME successor refresh token (fresh access JWT), NOT a revoke.
+      const replay = await svc.refresh(session.refreshToken);
+      expect("error" in replay).toBe(false);
+      if ("error" in replay) return;
+      expect(replay.refreshToken).toBe(rotated.refreshToken);
+
+      // Family is intact: nothing revoked for reuse, and the successor still works.
+      expect([...repo._sessions.values()].some((s) => s.revokedReason === "reuse_detected")).toBe(false);
+      const next = await svc.refresh(rotated.refreshToken);
+      expect("error" in next).toBe(false);
+    });
+
+    it("revokes the family when the replay arrives after the grace window", async () => {
+      const repo = createFakeRepository();
+      seedUser(repo);
+      let clock = new Date("2026-06-14T12:00:00.000Z");
+      const svc = makeServiceGrace(repo, () => clock);
+      const session = await bootstrapSession(svc);
+
+      const rotated = await svc.refresh(session.refreshToken);
+      if ("error" in rotated) throw new Error("rotate failed");
+
+      // Advance past the ~10s grace window → a replay is genuine reuse.
+      clock = new Date(clock.getTime() + 11 * 1000);
+      const replay = await svc.refresh(session.refreshToken);
+      expect("error" in replay).toBe(true);
+      expect([...repo._sessions.values()].some((s) => s.revokedReason === "reuse_detected")).toBe(true);
+    });
+
+    it("never grace-replays a token revoked for cause (e.g. logout)", async () => {
+      const repo = createFakeRepository();
+      seedUser(repo);
+      const svc = makeServiceGrace(repo, () => now);
+      const session = await bootstrapSession(svc);
+
+      await svc.revoke(session.refreshToken); // family revoked with reason 'logout', not 'superseded'
+      const replay = await svc.refresh(session.refreshToken);
+      expect("error" in replay).toBe(true);
     });
   });
 

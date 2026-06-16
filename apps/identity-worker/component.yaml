@@ -11,6 +11,10 @@ spec:
   path: apps/identity-worker
   dependsOn:
     - component: cloudflare-hyperdrive
+    # Schema-before-code: identity-worker reads CLI-session columns (incl. the
+    # R11 reuse-grace columns from migration 240), so migrations must apply
+    # before this worker's new code goes live, or refresh transiently 503s.
+    - component: db-migrate
   subscribe:
     environments:
       - name: dev

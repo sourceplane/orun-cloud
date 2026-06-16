@@ -219,5 +219,14 @@ export const manifest: MigrationManifest = {
       description:
         "CLI session auth foundation (saas-orun-platform OP1) — extends identity.sessions with a 'cli' kind plus a rotating-refresh token family (reuse ⇒ family revoke) and adds identity.cli_login_grants, the short-lived single-use grant table backing the browser-loopback and RFC-8628 device flows; hashed secrets only",
     },
+    {
+      id: "240_identity_cli_refresh_grace",
+      context: "identity",
+      path: "240_identity_cli_refresh_grace/up.sql",
+      checksum:
+        "b337bd1fc9d0e78f58e8d824f71ad6f405b649d40d2d6a5622d291e8257595b3",
+      description:
+        "CLI refresh-token reuse-grace interval (saas-orun-platform OP1 hardening, risk R11) — adds identity.sessions.grace_successor_ciphertext (AES-256-GCM envelope of the successor refresh token) + grace_expires_at, so a replay of a just-rotated token within a short window is re-issued the same successor idempotently instead of revoking the whole family",
+    },
   ],
 };

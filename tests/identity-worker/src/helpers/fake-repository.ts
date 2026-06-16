@@ -34,6 +34,9 @@ interface StoredChallenge extends LoginChallenge {
 interface StoredSession extends Session {
   tokenHash: string;
   refreshTokenHash: string | null;
+  // Reuse-grace (R11): successor envelope + deadline stamped on rotation.
+  graceSuccessorCiphertext: string | null;
+  graceExpiresAt: Date | null;
 }
 
 interface StoredGrant extends CliLoginGrant {
@@ -193,6 +196,8 @@ export function createFakeRepository(): IdentityRepository & {
         refreshGeneration: 0,
         replacedBy: null,
         revokedReason: null,
+        graceSuccessorCiphertext: null,
+        graceExpiresAt: null,
         clientHost: null,
         refreshExpiresAt: null,
       };
@@ -246,6 +251,8 @@ export function createFakeRepository(): IdentityRepository & {
         refreshGeneration: input.refreshGeneration,
         replacedBy: null,
         revokedReason: null,
+        graceSuccessorCiphertext: null,
+        graceExpiresAt: null,
         clientHost: input.clientHost ?? null,
         refreshExpiresAt: input.refreshExpiresAt,
       };
@@ -270,7 +277,16 @@ export function createFakeRepository(): IdentityRepository & {
               }
             }
           }
-          return { ok: true, value: { session: s, user, familyStartedAt } };
+          return {
+            ok: true,
+            value: {
+              session: s,
+              user,
+              familyStartedAt,
+              graceSuccessorCiphertext: s.graceSuccessorCiphertext,
+              graceExpiresAt: s.graceExpiresAt,
+            },
+          };
         }
       }
       return { ok: false, error: { kind: "not_found" } };
@@ -292,6 +308,8 @@ export function createFakeRepository(): IdentityRepository & {
       current.replacedBy = input.newSessionId;
       current.revokedAt = input.rotatedAt;
       current.revokedReason = "superseded";
+      current.graceSuccessorCiphertext = input.graceSuccessorCiphertext ?? null;
+      current.graceExpiresAt = input.graceExpiresAt ?? null;
       const next: StoredSession = {
         id: input.newSessionId,
         userId: input.userId,
@@ -306,6 +324,8 @@ export function createFakeRepository(): IdentityRepository & {
         refreshGeneration: input.newRefreshGeneration,
         replacedBy: null,
         revokedReason: null,
+        graceSuccessorCiphertext: null,
+        graceExpiresAt: null,
         clientHost: input.clientHost ?? null,
         refreshExpiresAt: input.refreshExpiresAt,
       };
