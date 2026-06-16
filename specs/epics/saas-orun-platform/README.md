@@ -15,7 +15,7 @@ unilaterally.
 
 | Field | Value |
 |-------|-------|
-| Status | **In progress** — OP0–OP4 shipped; OP5–OP9 planned |
+| Status | **In progress** — OP0–OP4 shipped. **v2 proposed** ([`design-v2.md`](./design-v2.md) + [`implementation-plan-v2.md`](./implementation-plan-v2.md)) re-anchors OP5+ on the object-model `ModelReader` seam, materialized tenancy (project == repo), credential-agnostic CI auth, and the GitHub App bridge; v2 milestones are **OV1–OV9** plus integrations **IG8–IG9** ([`../saas-integrations/bridge-to-state.md`](../saas-integrations/bridge-to-state.md)). |
 | Cluster | **OP** (OP0–OP9) |
 | Owner(s) | new `state-worker`, identity-worker, config-worker, api-edge, db, contracts/sdk, web-console-next, infra/terraform |
 | Target branch | `main` (PRs merged incrementally, milestone-sized) |
