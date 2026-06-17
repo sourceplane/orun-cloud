@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "wrangler dev",
     "build": "wrangler deploy --dry-run",
-    "typecheck": "echo 'static site - nothing to typecheck'",
+    "typecheck": "sh ./scripts/check-install-drift.sh",
+    "sync-install": "sh ./scripts/sync-install.sh",
     "deploy": "wrangler deploy --env prod"
   },
   "devDependencies": {

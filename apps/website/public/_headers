@@ -1,0 +1,7 @@
+# Serve the install script as inline plain text so people can read it in a
+# browser (https://orun.dev/install.sh) before piping it to a shell. Short
+# cache so a re-vendored script propagates quickly.
+/install.sh
+  Content-Type: text/plain; charset=utf-8
+  Cache-Control: public, max-age=600
+  X-Content-Type-Options: nosniff

@@ -39,7 +39,7 @@ spec:
     deployCommand: pnpm exec wrangler deploy --config wrangler.jsonc --env prod
     preDeployCommand: "echo 'No pre-deploy step configured.'"
     migrationCommand: "echo 'No migrations configured.'"
-    smokeCommand: "html=$(curl -sfL \"https://orun.dev/\") && echo \"${html}\" | grep -q 'Converge infrastructure'"
+    smokeCommand: "html=$(curl -sfL \"https://orun.dev/\") && echo \"${html}\" | grep -q 'Converge infrastructure' && curl -sfL \"https://orun.dev/install.sh\" | head -n1 | grep -q '#!/usr/bin/env sh'"
   labels:
     team: platform
     layer: marketing
