@@ -509,6 +509,36 @@ export interface ListRefsResponse {
   refs: StateRef[];
 }
 
+// ── Triggers (scm.* activity projection; OV4 inbound bridge) ─
+
+/** A source-control trigger (push / PR) projected from the event_log. */
+export interface StateTrigger {
+  orgId: string;
+  projectId: string | null;
+  provider: string;
+  /** Rename-stable repo id. */
+  providerRepoId: string;
+  repoFullName: string | null;
+  kind: "push" | "pull_request";
+  /** PR action (opened|updated|merged|closed); null for push. */
+  action: string | null;
+  ref: string | null;
+  commitSha: string;
+  /** PR base commit SHA (the Merkle diff bound); null for push. */
+  baseSha: string | null;
+  prNumber: number | null;
+  actorLogin: string | null;
+  /** 'recorded' | 'materialized' — object-graph ingestion lifecycle. */
+  status: string;
+  occurredAt: string;
+}
+
+/** GET …/state/triggers?repo=&cursor= — the inbound activity feed. */
+export interface ListTriggersResponse {
+  triggers: StateTrigger[];
+  nextCursor: StateCursor | null;
+}
+
 // ── Workspace link requests/responses (state-api-contract §5) ─
 
 /** POST /v1/organizations/{orgId}/cli/links — creates project if absent. */

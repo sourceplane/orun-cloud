@@ -19,6 +19,9 @@ export const MAX_JOB_ATTEMPTS = 5;
 /** Upper bound on rows acted on per sweep pass (keeps a pass bounded). */
 export const SWEEP_BATCH_LIMIT = 200;
 
+/** Upper bound on scm.* events drained into state.triggers per cron pass. */
+export const SCM_DRAIN_BATCH_LIMIT = 200;
+
 /** Default page size for list endpoints. */
 export const DEFAULT_PAGE_LIMIT = 50;
 
