@@ -57,6 +57,16 @@ export const DEFAULT_PLAN_CODE = "free";
  * them yet** — the org-creation gate is MO2 — so adding them is behavior-neutral
  * beyond the rows that get written on plan assignment.
  *
+ * Integration entitlements (`feature.integrations.github`, `limit.repo_links`)
+ * are granted on EVERY tier, free included: the GitHub App connect flow is an
+ * activation-driving feature that should not be paywalled. The
+ * integrations-worker reads `feature.integrations.github` to gate the connect
+ * flow and `limit.repo_links` to cap repo links per org. Free explicitly
+ * enables the GitHub integration with a single repo link; paid tiers raise the
+ * repo-link cap (Enterprise = unlimited). These now materialize as real rows on
+ * plan assignment, so the connect flow no longer depends on the
+ * check-entitlement free-tier safety net.
+ *
  * No-regress rule: never reduce a limit on an in-use plan code (every org is on
  * `free`). `free` therefore keeps `limit.environments = 3` (its current value)
  * even though the D5 table proposed 2 — raising the table value, never lowering
@@ -84,6 +94,13 @@ export const PLAN_CATALOG: PlanDefinition[] = [
       { entitlementKey: "feature.custom_domains", valueType: "boolean", enabled: false, limitValue: null },
       { entitlementKey: "feature.multi_org", valueType: "boolean", enabled: false, limitValue: null },
       { entitlementKey: "limit.organizations", valueType: "quantity", enabled: true, limitValue: 1 },
+      // Integrations are an activation-driving feature available on every tier,
+      // free included: the GitHub App connect flow is enabled and one repo link
+      // is allowed. (Matches the saas-integrations D4 default and the
+      // check-entitlement safety-net values, so retiring that net cannot
+      // regress the free tier.)
+      { entitlementKey: "feature.integrations.github", valueType: "boolean", enabled: true, limitValue: null },
+      { entitlementKey: "limit.repo_links", valueType: "quantity", enabled: true, limitValue: 1 },
     ],
   },
   {
@@ -101,6 +118,8 @@ export const PLAN_CATALOG: PlanDefinition[] = [
       { entitlementKey: "feature.custom_domains", valueType: "boolean", enabled: true, limitValue: null },
       { entitlementKey: "feature.multi_org", valueType: "boolean", enabled: false, limitValue: null },
       { entitlementKey: "limit.organizations", valueType: "quantity", enabled: true, limitValue: 1 },
+      { entitlementKey: "feature.integrations.github", valueType: "boolean", enabled: true, limitValue: null },
+      { entitlementKey: "limit.repo_links", valueType: "quantity", enabled: true, limitValue: 10 },
     ],
   },
   {
@@ -118,6 +137,8 @@ export const PLAN_CATALOG: PlanDefinition[] = [
       { entitlementKey: "feature.custom_domains", valueType: "boolean", enabled: true, limitValue: null },
       { entitlementKey: "feature.multi_org", valueType: "boolean", enabled: true, limitValue: null },
       { entitlementKey: "limit.organizations", valueType: "quantity", enabled: true, limitValue: 5 },
+      { entitlementKey: "feature.integrations.github", valueType: "boolean", enabled: true, limitValue: null },
+      { entitlementKey: "limit.repo_links", valueType: "quantity", enabled: true, limitValue: 50 },
     ],
   },
   {
@@ -135,6 +156,8 @@ export const PLAN_CATALOG: PlanDefinition[] = [
       { entitlementKey: "feature.custom_domains", valueType: "boolean", enabled: true, limitValue: null },
       { entitlementKey: "feature.multi_org", valueType: "boolean", enabled: true, limitValue: null },
       { entitlementKey: "limit.organizations", valueType: "quantity", enabled: true, limitValue: null },
+      { entitlementKey: "feature.integrations.github", valueType: "boolean", enabled: true, limitValue: null },
+      { entitlementKey: "limit.repo_links", valueType: "quantity", enabled: true, limitValue: null },
     ],
   },
 ];
