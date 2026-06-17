@@ -73,6 +73,11 @@ export async function handleStateRoute(
     headers.set("x-actor-subject-id", sessionResult.subjectId);
     headers.set("x-actor-subject-type", sessionResult.subjectType);
     headers.set("x-actor-email", sessionResult.email);
+    // Workflow actors (OV3) carry their bound (org, project) — the OIDC token is
+    // the authorization, so state-worker grants within this scope without a role
+    // lookup. Forwarded only when present (CLI/user actors have neither).
+    if (sessionResult.orgId) headers.set("x-actor-org-id", sessionResult.orgId);
+    if (sessionResult.projectId) headers.set("x-actor-project-id", sessionResult.projectId);
     for (const name of FORWARDED_HEADERS) {
       if (name === "x-request-id") continue;
       const value = request.headers.get(name);
