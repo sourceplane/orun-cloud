@@ -317,3 +317,109 @@ export async function createScopedInstallationToken(
     permissions: (data.permissions as Record<string, unknown>) ?? null,
   };
 }
+
+// ── Write-back (IG9 — outbound bridge) ──────────────────────
+// Post run/PR results back to GitHub with a scoped installation token. Each
+// helper takes an already-scoped token (checks/statuses/deployments:write) and
+// returns the created resource's id/url, or null on any failure (callers audit
+// + degrade; a write-back failure never breaks a run). fetchImpl is injectable
+// for tests.
+
+export interface CheckRunInput {
+  /** Display name, e.g. "orun / affected components". */
+  name: string;
+  headSha: string;
+  /** "queued" | "in_progress" | "completed". */
+  status: "queued" | "in_progress" | "completed";
+  /** Required when status is "completed": success | failure | neutral | … */
+  conclusion?: string;
+  /** Deep link to the cockpit run. */
+  detailsUrl?: string;
+  title: string;
+  summary: string;
+}
+
+export interface PostedResource {
+  id: number;
+  url: string | null;
+}
+
+async function postJson(
+  token: string,
+  url: string,
+  body: unknown,
+  expectStatus: number,
+  fetchImpl: FetchLike,
+): Promise<Record<string, unknown> | null> {
+  let res: Response;
+  try {
+    res = await fetchImpl(url, {
+      method: "POST",
+      headers: {
+        authorization: `token ${token}`,
+        accept: "application/vnd.github+json",
+        "content-type": "application/json",
+        "user-agent": USER_AGENT,
+      },
+      body: JSON.stringify(body),
+    });
+  } catch {
+    return null;
+  }
+  if (res.status !== expectStatus) return null;
+  try {
+    return (await res.json()) as Record<string, unknown>;
+  } catch {
+    return null;
+  }
+}
+
+/** Create a Check Run on a commit. POST /repos/{owner}/{repo}/check-runs (201). */
+export async function createCheckRun(
+  token: string,
+  ownerRepo: string,
+  input: CheckRunInput,
+  fetchImpl: FetchLike = fetch,
+): Promise<PostedResource | null> {
+  const body: Record<string, unknown> = {
+    name: input.name,
+    head_sha: input.headSha,
+    status: input.status,
+    output: { title: input.title, summary: input.summary },
+  };
+  if (input.conclusion) body.conclusion = input.conclusion;
+  if (input.detailsUrl) body.details_url = input.detailsUrl;
+  const data = await postJson(token, `${API_BASE}/repos/${ownerRepo}/check-runs`, body, 201, fetchImpl);
+  if (!data || typeof data.id !== "number") return null;
+  return { id: data.id, url: typeof data.html_url === "string" ? data.html_url : null };
+}
+
+export interface CommitStatusInput {
+  sha: string;
+  /** "error" | "failure" | "pending" | "success". */
+  state: "error" | "failure" | "pending" | "success";
+  context: string;
+  description?: string;
+  targetUrl?: string;
+}
+
+/** Create a commit status. POST /repos/{owner}/{repo}/statuses/{sha} (201). */
+export async function createCommitStatus(
+  token: string,
+  ownerRepo: string,
+  input: CommitStatusInput,
+  fetchImpl: FetchLike = fetch,
+): Promise<PostedResource | null> {
+  const body: Record<string, unknown> = { state: input.state, context: input.context };
+  if (input.description) body.description = input.description;
+  if (input.targetUrl) body.target_url = input.targetUrl;
+  const data = await postJson(
+    token,
+    `${API_BASE}/repos/${ownerRepo}/statuses/${encodeURIComponent(input.sha)}`,
+    body,
+    201,
+    fetchImpl,
+  );
+  if (!data || typeof data.id !== "number") return null;
+  return { id: data.id, url: typeof data.url === "string" ? data.url : null };
+}
