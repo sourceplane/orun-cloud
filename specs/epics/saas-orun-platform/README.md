@@ -90,7 +90,7 @@ shipped substrate.
 | OV5 | GitHub App bridge: outbound write-back (checks/deployments) | 🗓️ Proposed |
 | OV6 | Org-global catalog projection (repo/env as facets) | 🗓️ Proposed |
 | OV7 | Console: Runs & Stacks over ModelReader | 🗓️ Proposed |
-| OV8 | Secrets (per project/env, bind on materialize) | 🗓️ Proposed |
+| OV8 | Secrets — Orun Cloud slice of the canonical `orun-secrets` epic (SEC) | 🗓️ Proposed |
 | OV9 | Metering, entitlements, retention/GC | 🗓️ Proposed |
 
 Paired integrations bridge: **IG8–IG9**
