@@ -52,10 +52,14 @@ interface ResolvedInstall {
   installationId: number;
   connectionId: string;
   permissions: Record<string, unknown> | null;
+  /** Authoritative "owner/repo" from the link — never trust a caller's value. */
+  ownerRepo: string;
 }
 
 // Resolve a repo's active App installation (repo_link → connection → installation)
-// within an org, or null when the repo is not App-linked.
+// within an org, or null when the repo is not App-linked. The "owner/repo" used
+// for the GitHub path is taken from the LINK we resolve here — the single source
+// of truth — not from the caller, so a stale/spoofed name can't redirect a post.
 async function resolveInstallation(
   executor: SqlExecutor,
   orgId: Uuid,
@@ -64,13 +68,14 @@ async function resolveInstallation(
   const repo = createIntegrationsRepository(executor);
   const links = await repo.listActiveRepoLinksForRepo(orgId, repoExternalId);
   if (!links.ok || links.value.length === 0) return null;
-  const connectionId = links.value[0]!.connectionId;
-  const installation = await repo.getGithubInstallationByConnectionId(asUuid(connectionId));
+  const link = links.value[0]!;
+  const installation = await repo.getGithubInstallationByConnectionId(asUuid(link.connectionId));
   if (!installation.ok) return null;
   return {
     installationId: installation.value.installationId,
-    connectionId,
+    connectionId: link.connectionId,
     permissions: installation.value.permissions,
+    ownerRepo: link.repoFullName,
   };
 }
 
@@ -126,7 +131,6 @@ async function audit(
 export interface CheckRunWritebackInput {
   orgId: Uuid;
   repoExternalId: string;
-  ownerRepo: string;
   checkRun: CheckRunInput;
 }
 
@@ -140,11 +144,11 @@ export async function postCheckRun(env: Env, input: CheckRunWritebackInput, deps
     if (!install) return { kind: "skipped", reason: "repo_not_app_linked" };
     const token = await mintScoped(env, install, input.repoExternalId, { checks: "write" }, deps?.fetchImpl);
     if (!token) return { kind: "skipped", reason: "checks_write_not_granted" };
-    const posted = await createCheckRun(token, input.ownerRepo, input.checkRun, deps?.fetchImpl);
+    const posted = await createCheckRun(token, install.ownerRepo, input.checkRun, deps?.fetchImpl);
     if (!posted) return { kind: "failed", reason: "github_rejected" };
     await audit(executor, INTEGRATION_EVENT_TYPES.CHECKRUN_POSTED, input.orgId, install.connectionId,
-      `Check Run "${input.checkRun.name}" posted to ${input.ownerRepo}@${input.checkRun.headSha.slice(0, 8)}`,
-      { repo: input.ownerRepo, headSha: input.checkRun.headSha, name: input.checkRun.name, conclusion: input.checkRun.conclusion ?? null, checkRunId: posted.id });
+      `Check Run "${input.checkRun.name}" posted to ${install.ownerRepo}@${input.checkRun.headSha.slice(0, 8)}`,
+      { repo: install.ownerRepo, headSha: input.checkRun.headSha, name: input.checkRun.name, conclusion: input.checkRun.conclusion ?? null, checkRunId: posted.id });
     return { kind: "posted", resource: posted };
   } finally {
     if (owned) await dispose(executor);
@@ -154,7 +158,6 @@ export async function postCheckRun(env: Env, input: CheckRunWritebackInput, deps
 export interface CommitStatusWritebackInput {
   orgId: Uuid;
   repoExternalId: string;
-  ownerRepo: string;
   status: CommitStatusInput;
 }
 
@@ -168,11 +171,11 @@ export async function postCommitStatus(env: Env, input: CommitStatusWritebackInp
     if (!install) return { kind: "skipped", reason: "repo_not_app_linked" };
     const token = await mintScoped(env, install, input.repoExternalId, { statuses: "write" }, deps?.fetchImpl);
     if (!token) return { kind: "skipped", reason: "statuses_write_not_granted" };
-    const posted = await createCommitStatus(token, input.ownerRepo, input.status, deps?.fetchImpl);
+    const posted = await createCommitStatus(token, install.ownerRepo, input.status, deps?.fetchImpl);
     if (!posted) return { kind: "failed", reason: "github_rejected" };
     await audit(executor, INTEGRATION_EVENT_TYPES.COMMIT_STATUS_POSTED, input.orgId, install.connectionId,
-      `Commit status "${input.status.context}" (${input.status.state}) posted to ${input.ownerRepo}@${input.status.sha.slice(0, 8)}`,
-      { repo: input.ownerRepo, sha: input.status.sha, context: input.status.context, state: input.status.state });
+      `Commit status "${input.status.context}" (${input.status.state}) posted to ${install.ownerRepo}@${input.status.sha.slice(0, 8)}`,
+      { repo: install.ownerRepo, sha: input.status.sha, context: input.status.context, state: input.status.state });
     return { kind: "posted", resource: posted };
   } finally {
     if (owned) await dispose(executor);
