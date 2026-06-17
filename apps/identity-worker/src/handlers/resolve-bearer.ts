@@ -4,7 +4,7 @@ import { createIdentityRepository } from "@saas/db/identity";
 import { createAuthService } from "../services/auth.js";
 import { successResponse, errorResponse, extractBearerToken, withTimings } from "../http.js";
 import { createTimings } from "@saas/contracts/timing";
-import { looksLikeCliAccessToken, verifyCliAccessToken } from "../cli/jwt.js";
+import { looksLikeCliAccessToken, verifyCliAccessToken, verifyWorkflowAccessToken } from "../cli/jwt.js";
 
 export async function handleResolveBearer(request: Request, env: Env, requestId: string): Promise<Response> {
   const token = extractBearerToken(request);
@@ -17,23 +17,41 @@ export async function handleResolveBearer(request: Request, env: Env, requestId:
   // bounded by the short ~15m exp; refresh re-checks the session row.) If the
   // token looks like ours but fails verification, fall through to a 401 below.
   if (looksLikeCliAccessToken(token)) {
-    const claims = await verifyCliAccessToken(env, token, new Date());
-    if (!claims) {
-      return errorResponse("unauthenticated", "Invalid or expired CLI token", 401, requestId);
-    }
-    return successResponse(
-      {
-        actor: {
-          actorType: "user",
-          actorId: claims.sub,
-          ...(claims.orgIds.length > 0 && { orgId: claims.orgIds[0] }),
+    const now = new Date();
+    const claims = await verifyCliAccessToken(env, token, now);
+    if (claims) {
+      return successResponse(
+        {
+          actor: {
+            actorType: "user",
+            actorId: claims.sub,
+            ...(claims.orgIds.length > 0 && { orgId: claims.orgIds[0] }),
+          },
+          session: { id: claims.sessionId },
+          cliOrgIds: claims.orgIds,
         },
-        session: { id: claims.sessionId },
-        cliOrgIds: claims.orgIds,
-      },
-      requestId,
-      200,
-    );
+        requestId,
+        200,
+      );
+    }
+    // Same HS256 envelope, workflow actor (OV3): resolve to the bound
+    // (org, project) ActorContext the state plane authorizes on.
+    const wf = await verifyWorkflowAccessToken(env, token, now);
+    if (wf) {
+      return successResponse(
+        {
+          actor: {
+            actorType: "workflow",
+            actorId: wf.sub,
+            orgId: wf.orgId,
+            projectId: wf.projectId,
+          },
+        },
+        requestId,
+        200,
+      );
+    }
+    return errorResponse("unauthenticated", "Invalid or expired CLI token", 401, requestId);
   }
 
   if (!env.PLATFORM_DB) {

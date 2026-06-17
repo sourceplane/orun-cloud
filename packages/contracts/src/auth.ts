@@ -241,6 +241,36 @@ export interface RevokeCliSessionResponse {
   session: CliSessionSummary;
 }
 
+// ── GitHub Actions OIDC exchange (OV3) ──────────────────────
+
+/**
+ * POST /v1/auth/oidc/exchange — exchange a GitHub Actions OIDC JWT for a
+ * short-lived platform workflow token. The CLI sends GitHub's OIDC token
+ * (audience `orun-cloud`); the server resolves the repo to a linked
+ * (org, project), gates on the link's CI settings, and mints the token.
+ */
+export interface OidcExchangeRequest {
+  /** The GitHub Actions OIDC token (signed by token.actions.githubusercontent.com). */
+  token: string;
+  /**
+   * Optional claimed org (slug or `org_…`) from intent.yaml, used to
+   * disambiguate when the repo is linked across multiple orgs. Checked, not
+   * trusted — must match one authorized link.
+   */
+  org?: string;
+}
+
+export interface OidcExchangeResponse {
+  /** Short-lived (~15m) platform access token with actorKind "workflow". */
+  accessToken: string;
+  tokenType: "Bearer";
+  /** Absolute expiry (ISO 8601). */
+  expiresAt: string;
+  /** Resolved binding (public ids). */
+  orgId: string;
+  projectId: string;
+}
+
 /** Console-side approval of a pending loopback/device grant.
  *  POST /v1/auth/cli/grants/{grantId}/approve|deny. */
 export interface CliGrantView {
