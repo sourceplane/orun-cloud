@@ -312,8 +312,12 @@ export type ScmEventType = (typeof SCM_EVENT_TYPES)[keyof typeof SCM_EVENT_TYPES
 /** Repository identity carried by every scm.* payload. */
 export interface ScmRepoRef {
   provider: IntegrationProviderId;
+  /** Rename-stable repo id (GitHub's numeric repository id, as a string). */
   externalId: string;
   fullName: string;
+  /** Rename-stable owner account id (IG8) — the object-graph bridge federates
+   *  on (provider, externalId) and records the owner id; null when absent. */
+  ownerId: string | null;
 }
 
 /** Common envelope-payload base for scm.* events (version 1). */
@@ -349,6 +353,9 @@ export interface ScmPullRequestEventV1 extends ScmEventBaseV1 {
   sourceBranch: string;
   targetBranch: string;
   headSha: string;
+  /** Base commit SHA (IG8) — the Merkle catalog diff bound (base↔head); "" when
+   *  the provider omits it. Distinct from targetBranch (the base ref name). */
+  baseSha: string;
   authorLogin: string | null;
   url: string | null;
 }

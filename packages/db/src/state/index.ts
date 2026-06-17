@@ -45,6 +45,12 @@ export type {
   WorkspaceLink,
   CreateWorkspaceLinkInput,
   UpdateWorkspaceLinkCiSettingsInput,
+  TriggerKind,
+  StateTrigger,
+  RecordTriggerInput,
+  RecordTriggerOutcome,
+  ScmIngestCursor,
+  ListTriggersQuery,
   StateRepository,
 } from "./types.js";
 

@@ -419,5 +419,36 @@ export function createEventsRepository(executor: SqlExecutor): EventsRepository 
         return safeError("Failed to get event by id");
       }
     },
+
+    async listScmEventsSince(
+      afterOccurredAt: string | null,
+      afterEventId: string | null,
+      limit: number,
+    ): Promise<EventsResult<StoredEvent[]>> {
+      try {
+        // The partial index event_log_scm_ingest_idx (occurred_at, id) WHERE
+        // type LIKE 'scm.%' makes this a bounded keyset scan, not a full log
+        // scan — the OV4 consumer's scalability keystone.
+        let sql: string;
+        let values: unknown[];
+        if (afterOccurredAt && afterEventId) {
+          sql = `SELECT * FROM events.event_log
+                 WHERE type LIKE 'scm.%' AND (occurred_at, id) > ($1, $2)
+                 ORDER BY occurred_at ASC, id ASC
+                 LIMIT $3`;
+          values = [afterOccurredAt, afterEventId, limit];
+        } else {
+          sql = `SELECT * FROM events.event_log
+                 WHERE type LIKE 'scm.%'
+                 ORDER BY occurred_at ASC, id ASC
+                 LIMIT $1`;
+          values = [limit];
+        }
+        const result = await executor.execute<Record<string, unknown>>(sql, values);
+        return { ok: true, value: result.rows.map(mapEvent) };
+      } catch {
+        return safeError("Failed to list scm events");
+      }
+    },
   };
 }

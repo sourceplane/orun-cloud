@@ -37,7 +37,10 @@ function repoRef(payload: Record<string, unknown>): ScmRepoRef | null {
   const fullName = str(repository.full_name);
   const id = repository.id;
   if (!fullName || (typeof id !== "number" && typeof id !== "string")) return null;
-  return { provider: "github", externalId: String(id), fullName };
+  const owner = record(repository.owner);
+  const ownerId =
+    owner && (typeof owner.id === "number" || typeof owner.id === "string") ? String(owner.id) : null;
+  return { provider: "github", externalId: String(id), fullName, ownerId };
 }
 
 function base(
@@ -149,6 +152,7 @@ export function normalizeScmEvent(
           sourceBranch: str(head.ref) ?? "",
           targetBranch: str(prBase.ref) ?? "",
           headSha: str(head.sha) ?? "",
+          baseSha: str(prBase.sha) ?? "",
           authorLogin: user ? str(user.login) : null,
           url: str(pr.html_url),
         },

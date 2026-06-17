@@ -255,5 +255,23 @@ export const manifest: MigrationManifest = {
       description:
         "Per-link CI trust settings (saas-orun-platform v2 OV3, additive) — adds oidc_enabled/api_key_enabled and the optional OIDC gate columns allowed_ref_pattern/allowed_environments to state.workspace_links; the workspace link is the CI trust binding, these tighten it per-link (DV4 drops the separate oidc_trust_bindings table). Permissive defaults preserve link-as-trust semantics",
     },
+    {
+      id: "280_events_scm_ingest_index",
+      context: "events",
+      path: "280_events_scm_ingest_index/up.sql",
+      checksum:
+        "a30bd40f429c58dabfa03c4de76641b599ca27fa6b328e60ddcc61f0870d5d3d",
+      description:
+        "Keyset index for the OV4 scm.* ingestion consumer — a partial index on events.event_log (occurred_at, id) WHERE type LIKE 'scm.%', so the state-worker bridge drains source-control events globally in bounded O(batch) batches without scanning the whole event log",
+    },
+    {
+      id: "290_state_scm_triggers",
+      context: "state",
+      path: "290_state_scm_triggers/up.sql",
+      checksum:
+        "63f4e59ff639bd61210d486aaff21b146d8d7ac601ad8b7a9198de90cab89473",
+      description:
+        "scm.* trigger projection + ingestion cursor (saas-orun-platform v2 OV4) — state.triggers records a normalized TriggerOccurrence per source-control event (idempotent by the source events.event_log id), the durable activity/PR feed precursor to object-graph materialization; state.scm_ingest_cursor is the consumer's bounded-work high-water mark",
+    },
   ],
 };

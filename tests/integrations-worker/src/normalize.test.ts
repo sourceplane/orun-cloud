@@ -7,7 +7,7 @@ import {
 const ORG = "org_11111111111111111111111111111111";
 
 // Recorded-shape GitHub fixtures (trimmed to the fields the projection reads).
-const REPOSITORY = { id: 777001, full_name: "acme/storefront", name: "storefront" };
+const REPOSITORY = { id: 777001, full_name: "acme/storefront", name: "storefront", owner: { id: 42042, login: "acme" } };
 
 const PUSH_FIXTURE = {
   ref: "refs/heads/main",
@@ -47,7 +47,7 @@ describe("normalizeScmEvent — fixture-driven taxonomy", () => {
     const out = normalizeScmEvent("push", null, PUSH_FIXTURE, ORG);
     expect(out).not.toBeNull();
     expect(out!.type).toBe("scm.push");
-    expect(out!.repo).toEqual({ provider: "github", externalId: "777001", fullName: "acme/storefront" });
+    expect(out!.repo).toEqual({ provider: "github", externalId: "777001", fullName: "acme/storefront", ownerId: "42042" });
     const p = out!.payload;
     expect(p.version).toBe(1);
     expect(p.orgId).toBe(ORG);
@@ -74,6 +74,11 @@ describe("normalizeScmEvent — fixture-driven taxonomy", () => {
     const merged = normalizeScmEvent("pull_request", "closed", PR_FIXTURE("closed", true), ORG)!;
     expect(merged.type).toBe("scm.pull_request.merged");
     expect(merged.payload.state).toBe("merged");
+    // IG8 identity/commit fields for the object-graph bridge: head + base SHAs
+    // (the Merkle catalog diff bound) and the rename-stable owner id.
+    expect(merged.payload.headSha).toBe("ccc333");
+    expect(merged.payload.baseSha).toBe("ddd444");
+    expect(merged.repo.ownerId).toBe("42042");
     const closed = normalizeScmEvent("pull_request", "closed", PR_FIXTURE("closed", false), ORG)!;
     expect(closed.type).toBe("scm.pull_request.closed");
     // Out-of-taxonomy actions skip, never fail.

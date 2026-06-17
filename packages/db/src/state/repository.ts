@@ -14,6 +14,12 @@ import type {
   CreateRunOutcome,
   CreateWorkspaceLinkInput,
   CursorPosition,
+  ListTriggersQuery,
+  RecordTriggerInput,
+  RecordTriggerOutcome,
+  ScmIngestCursor,
+  StateTrigger,
+  TriggerKind,
   HeartbeatOutcome,
   HeartbeatRunJobInput,
   ListCatalogEntitiesQuery,
@@ -173,6 +179,28 @@ function mapRef(row: Record<string, unknown>): StateRef {
     target: row.target as string,
     writer: (row.writer as string) ?? null,
     updatedAt: toDate(row.updated_at),
+  };
+}
+
+function mapTrigger(row: Record<string, unknown>): StateTrigger {
+  return {
+    id: row.id as string,
+    orgId: row.org_id as string,
+    projectId: (row.project_id as string) ?? null,
+    provider: row.provider as string,
+    providerRepoId: row.provider_repo_id as string,
+    repoFullName: (row.repo_full_name as string) ?? null,
+    kind: row.kind as TriggerKind,
+    action: (row.action as string) ?? null,
+    ref: (row.ref as string) ?? null,
+    commitSha: row.commit_sha as string,
+    baseSha: (row.base_sha as string) ?? null,
+    prNumber: row.pr_number === null || row.pr_number === undefined ? null : Number(row.pr_number),
+    actorLogin: (row.actor_login as string) ?? null,
+    eventId: row.event_id as string,
+    status: row.status as string,
+    occurredAt: toDate(row.occurred_at),
+    createdAt: toDate(row.created_at),
   };
 }
 
@@ -1190,6 +1218,109 @@ export function createStateRepository(executor: SqlExecutor): StateRepository {
       } catch {
         return safeError("Failed to delete ref");
       }
+    },
+
+    // ── scm.* triggers (OV4 — GitHub App bridge inbound projection) ─
+
+    async recordTrigger(input: RecordTriggerInput): Promise<StateResult<RecordTriggerOutcome>> {
+      try {
+        // Idempotent by the source event id: a redelivered/reprocessed event is
+        // a no-op. INSERT … ON CONFLICT (event_id) DO NOTHING returns the row
+        // only when freshly inserted.
+        const inserted = await executor.execute<Record<string, unknown>>(
+          `INSERT INTO state.triggers
+             (id, org_id, project_id, provider, provider_repo_id, repo_full_name,
+              kind, action, ref, commit_sha, base_sha, pr_number, actor_login,
+              event_id, occurred_at, created_at)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, now())
+           ON CONFLICT (event_id) DO NOTHING
+           RETURNING *`,
+          [
+            input.id,
+            input.orgId,
+            input.projectId ?? null,
+            input.provider,
+            input.providerRepoId,
+            input.repoFullName ?? null,
+            input.kind,
+            input.action ?? null,
+            input.ref ?? null,
+            input.commitSha,
+            input.baseSha ?? null,
+            input.prNumber ?? null,
+            input.actorLogin ?? null,
+            input.eventId,
+            input.occurredAt,
+          ],
+        );
+        if (inserted.rowCount > 0) {
+          return { ok: true, value: { trigger: mapTrigger(inserted.rows[0]!), created: true } };
+        }
+        const existing = await executor.execute<Record<string, unknown>>(
+          `SELECT * FROM state.triggers WHERE event_id = $1`,
+          [input.eventId],
+        );
+        if (existing.rowCount === 0) return { ok: false, error: { kind: "not_found" } };
+        return { ok: true, value: { trigger: mapTrigger(existing.rows[0]!), created: false } };
+      } catch {
+        return safeError("Failed to record trigger");
+      }
+    },
+
+    async readScmIngestCursor(): Promise<StateResult<ScmIngestCursor>> {
+      try {
+        const result = await executor.execute<Record<string, unknown>>(
+          `SELECT last_occurred_at, last_event_id FROM state.scm_ingest_cursor WHERE id = 'default'`,
+        );
+        if (result.rowCount === 0) {
+          return { ok: true, value: { lastOccurredAt: null, lastEventId: null } };
+        }
+        const row = result.rows[0]!;
+        return {
+          ok: true,
+          value: {
+            lastOccurredAt: row.last_occurred_at ? toDate(row.last_occurred_at).toISOString() : null,
+            lastEventId: (row.last_event_id as string) ?? null,
+          },
+        };
+      } catch {
+        return safeError("Failed to read scm ingest cursor");
+      }
+    },
+
+    async advanceScmIngestCursor(lastOccurredAt: string, lastEventId: string): Promise<StateResult<void>> {
+      try {
+        await executor.execute(
+          `INSERT INTO state.scm_ingest_cursor (id, last_occurred_at, last_event_id, updated_at)
+           VALUES ('default', $1, $2, now())
+           ON CONFLICT (id) DO UPDATE
+             SET last_occurred_at = EXCLUDED.last_occurred_at,
+                 last_event_id = EXCLUDED.last_event_id,
+                 updated_at = now()`,
+          [lastOccurredAt, lastEventId],
+        );
+        return { ok: true, value: undefined };
+      } catch {
+        return safeError("Failed to advance scm ingest cursor");
+      }
+    },
+
+    async listTriggers(
+      orgId: Uuid,
+      params: PageQueryParams,
+      query?: ListTriggersQuery,
+    ): Promise<StateResult<PagedResult<StateTrigger>>> {
+      const values: unknown[] = [orgId];
+      let sql = `SELECT * FROM state.triggers WHERE org_id = $1`;
+      if (query?.projectId) {
+        values.push(query.projectId);
+        sql += ` AND project_id = $${values.length}`;
+      }
+      if (query?.providerRepoId) {
+        values.push(query.providerRepoId);
+        sql += ` AND provider_repo_id = $${values.length}`;
+      }
+      return pagedList(executor, sql, values, params.limit, params.cursor, mapTrigger, "occurred_at");
     },
 
     // ── Workspace links ──────────────────────────────────────

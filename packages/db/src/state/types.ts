@@ -437,6 +437,67 @@ export interface UpdateWorkspaceLinkCiSettingsInput {
   allowedEnvironments?: string[] | null;
 }
 
+// ── scm.* triggers (OV4 — GitHub App bridge inbound projection) ─
+
+export type TriggerKind = "push" | "pull_request";
+
+/** A normalized source-control trigger projected from an scm.* event. */
+export interface StateTrigger {
+  id: string;
+  orgId: string;
+  projectId: string | null;
+  provider: string;
+  providerRepoId: string;
+  repoFullName: string | null;
+  kind: TriggerKind;
+  action: string | null;
+  ref: string | null;
+  commitSha: string;
+  baseSha: string | null;
+  prNumber: number | null;
+  actorLogin: string | null;
+  /** Source events.event_log id (provenance + idempotency key). */
+  eventId: string;
+  status: string;
+  occurredAt: Date;
+  createdAt: Date;
+}
+
+export interface RecordTriggerInput {
+  id: string;
+  orgId: Uuid;
+  projectId?: Uuid | null;
+  provider: string;
+  providerRepoId: string;
+  repoFullName?: string | null;
+  kind: TriggerKind;
+  action?: string | null;
+  ref?: string | null;
+  commitSha: string;
+  baseSha?: string | null;
+  prNumber?: number | null;
+  actorLogin?: string | null;
+  eventId: string;
+  occurredAt: Date;
+}
+
+/** created=false when the event was already recorded (idempotent no-op). */
+export interface RecordTriggerOutcome {
+  trigger: StateTrigger;
+  created: boolean;
+}
+
+/** The scm.* ingestion consumer's high-water mark. */
+export interface ScmIngestCursor {
+  lastOccurredAt: string | null;
+  lastEventId: string | null;
+}
+
+export interface ListTriggersQuery {
+  projectId?: Uuid | null;
+  providerRepoId?: string;
+}
+
 // ── Repository interface ────────────────────────────────────
 
 export interface StateRepository {
@@ -551,6 +612,20 @@ export interface StateRepository {
   listRefs(orgId: Uuid, projectId: Uuid, prefix: string): Promise<StateResult<StateRef[]>>;
   /** Delete a ref by name (idempotent; no-op when absent). */
   deleteRef(orgId: Uuid, projectId: Uuid, name: string): Promise<StateResult<void>>;
+
+  // scm.* triggers (OV4 — GitHub App bridge inbound projection)
+  /** Idempotently record a normalized scm.* trigger (no-op on a known event). */
+  recordTrigger(input: RecordTriggerInput): Promise<StateResult<RecordTriggerOutcome>>;
+  /** Read the scm.* ingestion consumer's high-water mark. */
+  readScmIngestCursor(): Promise<StateResult<ScmIngestCursor>>;
+  /** Advance the scm.* ingestion cursor (upsert the single high-water row). */
+  advanceScmIngestCursor(lastOccurredAt: string, lastEventId: string): Promise<StateResult<void>>;
+  /** Activity feed: triggers for an org (optionally a project / repo), newest first. */
+  listTriggers(
+    orgId: Uuid,
+    params: PageQueryParams,
+    query?: ListTriggersQuery,
+  ): Promise<StateResult<PagedResult<StateTrigger>>>;
 
   // Workspace links
   createWorkspaceLink(input: CreateWorkspaceLinkInput): Promise<StateResult<WorkspaceLink>>;
