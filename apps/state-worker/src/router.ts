@@ -39,6 +39,7 @@ import {
   handleListRefs,
   handleDeleteRef,
 } from "./handlers/refs.js";
+import { handleListTriggers } from "./handlers/triggers.js";
 import {
   generateRequestId,
   isRunUlid,
@@ -123,6 +124,9 @@ const CATALOG_ENTITIES_RE = new RegExp(`^${STATE_BASE}/catalog/entities$`);
 // (catalogs/current, executions/by-id/<id>), so the name is a greedy tail.
 const REFS_RE = new RegExp(`^${STATE_BASE}/refs$`);
 const REF_RE = new RegExp(`^${STATE_BASE}/refs/(.+)$`);
+
+// OV4 — scm.* trigger activity feed.
+const TRIGGERS_RE = new RegExp(`^${STATE_BASE}/triggers$`);
 
 export async function route(request: Request, env: Env): Promise<Response> {
   const requestId = resolveRequestId(request);
@@ -452,6 +456,15 @@ async function routeObjectAndCatalog(
       return handleDeleteRef(env, requestId, actor, scope.orgId, scope.projectId, name);
     }
     return methodNotAllowed(requestId);
+  }
+
+  // GET …/state/triggers?repo=&cursor= — the scm.* activity feed (OV4).
+  m = pathname.match(TRIGGERS_RE);
+  if (m) {
+    const scope = parseScope(m[1]!, m[2]!);
+    if (!scope) return notFound(requestId, pathname);
+    if (request.method !== "GET") return methodNotAllowed(requestId);
+    return handleListTriggers(request, env, requestId, actor, scope.orgId, scope.projectId);
   }
 
   return null;

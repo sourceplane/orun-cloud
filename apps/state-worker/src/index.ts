@@ -1,6 +1,7 @@
 import type { Env } from "./env.js";
 import { route } from "./router.js";
 import { runSweep } from "./sweep.js";
+import { runScmDrain } from "./scm-bridge.js";
 
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
@@ -19,12 +20,27 @@ export default {
   async scheduled(_controller: ScheduledController, env: Env, ctx: ExecutionContext): Promise<void> {
     ctx.waitUntil(
       (async () => {
+        // Phase 1 — lease sweep (OP2).
         const summary = await runSweep(env);
         if (summary && (summary.requeued > 0 || summary.timedOut > 0)) {
           console.warn(
             `[scheduled] lease-sweep: ${summary.requeued} requeued, ${summary.timedOut} timed_out, ` +
               `${summary.runsCompleted} runs completed, ${summary.runsFailed} runs failed`,
           );
+        }
+        // Phase 2 — scm.* → state.triggers drain (OV4 inbound bridge). Coalesced
+        // into this same cron slot (risk R9), after the sweep.
+        try {
+          const drained = await runScmDrain(env);
+          if (drained && drained.recorded > 0) {
+            console.warn(
+              `[scheduled] scm-drain: ${drained.recorded} recorded, ${drained.skipped} skipped, ` +
+                `${drained.scanned} scanned`,
+            );
+          }
+        } catch (err) {
+          // A drain failure must never break the sweep phase or the cron.
+          console.error(`[scheduled] scm-drain failed: ${String(err)}`);
         }
       })(),
     );
