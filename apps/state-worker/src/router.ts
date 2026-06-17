@@ -34,6 +34,12 @@ import {
   handleListCatalogEntities,
 } from "./handlers/catalog.js";
 import {
+  handleGetRef,
+  handleUpdateRef,
+  handleListRefs,
+  handleDeleteRef,
+} from "./handlers/refs.js";
+import {
   generateRequestId,
   isRunUlid,
   parseOrgPublicId,
@@ -100,6 +106,11 @@ const OBJECT_UPLOAD_COMPLETE_RE = new RegExp(
 const CATALOG_HEAD_RE = new RegExp(`^${STATE_BASE}/catalog/head$`);
 const CATALOG_HEADS_HISTORY_RE = new RegExp(`^${STATE_BASE}/catalog/heads/history$`);
 const CATALOG_ENTITIES_RE = new RegExp(`^${STATE_BASE}/catalog/entities$`);
+
+// OV1 — hosted RefStore (design-v2 §2). Ref names carry slashes
+// (catalogs/current, executions/by-id/<id>), so the name is a greedy tail.
+const REFS_RE = new RegExp(`^${STATE_BASE}/refs$`);
+const REF_RE = new RegExp(`^${STATE_BASE}/refs/(.+)$`);
 
 export async function route(request: Request, env: Env): Promise<Response> {
   const requestId = resolveRequestId(request);
@@ -398,6 +409,37 @@ async function routeObjectAndCatalog(
     if (!scope) return notFound(requestId, pathname);
     if (request.method !== "GET") return methodNotAllowed(requestId);
     return handleListCatalogEntities(env, requestId, actor, scope.orgId, scope.projectId);
+  }
+
+  // ── OV1 — hosted RefStore (§2). The list route (…/refs) must precede the
+  // single-ref tail (…/refs/<name>) so the bare collection isn't captured as a
+  // name. ──
+
+  // GET …/state/refs?prefix= — list ref names under a prefix.
+  m = pathname.match(REFS_RE);
+  if (m) {
+    const scope = parseScope(m[1]!, m[2]!);
+    if (!scope) return notFound(requestId, pathname);
+    if (request.method !== "GET") return methodNotAllowed(requestId);
+    return handleListRefs(request, env, requestId, actor, scope.orgId, scope.projectId);
+  }
+
+  // GET/PUT/DELETE …/state/refs/{name} — resolve / compare-and-swap / remove.
+  m = pathname.match(REF_RE);
+  if (m) {
+    const scope = parseScope(m[1]!, m[2]!);
+    if (!scope) return notFound(requestId, pathname);
+    const name = m[3]!;
+    if (request.method === "GET") {
+      return handleGetRef(env, requestId, actor, scope.orgId, scope.projectId, name);
+    }
+    if (request.method === "PUT") {
+      return handleUpdateRef(request, env, requestId, actor, scope.orgId, scope.projectId, name);
+    }
+    if (request.method === "DELETE") {
+      return handleDeleteRef(env, requestId, actor, scope.orgId, scope.projectId, name);
+    }
+    return methodNotAllowed(requestId);
   }
 
   return null;

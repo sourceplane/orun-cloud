@@ -44,6 +44,8 @@ export const STATE_ERROR_CODES = {
   RUN_TERMINAL: "run_terminal",
   /** A referenced object digest does not exist in the object plane. */
   OBJECT_MISSING: "object_missing",
+  /** A ref compare-and-swap lost: the current target did not match expected. */
+  REF_CONFLICT: "ref_conflict",
   /** The request's `Orun-Contract-Version` major is unsupported. */
   CONTRACT_VERSION_UNSUPPORTED: "contract_version_unsupported",
 } as const;
@@ -197,12 +199,20 @@ export interface LogChunk {
 
 // ── Object plane (CAS; design §4.1) ─────────────────────────
 
-/** Content-addressed object kinds the platform stores. */
+/**
+ * Content-addressed object kinds the platform stores. The four semantic kinds
+ * (plan, catalog-snapshot, …) plus the object model's two STRUCTURAL kinds
+ * (blob, tree) — the hosted ObjectStore (OV1) stores the content-addressed
+ * objects the CLI's RemoteStore uploads, each named by the hash of its framed
+ * serialization (same id local and remote).
+ */
 export type StateObjectKind =
   | "plan"
   | "catalog-snapshot"
   | "composition-lock"
-  | "artifact-manifest";
+  | "artifact-manifest"
+  | "blob"
+  | "tree";
 
 /**
  * Safe projection of a CAS index row. The blob bytes are in R2
@@ -435,6 +445,51 @@ export interface ListCatalogHeadHistoryResponse {
 export interface ListCatalogEntitiesResponse {
   entities: CatalogEntity[];
   nextCursor: StateCursor | null;
+}
+
+// ── Refs (hosted RefStore — L2 mutable CAS pointers; OV1) ────
+
+/**
+ * Safe projection of a ref: a mutable name → ObjectID pointer over the
+ * immutable object graph. Selecting a source/head (a branch, a PR, the current
+ * catalog) is resolving one of these.
+ */
+export interface StateRef {
+  orgId: string;
+  projectId: string;
+  /** Logical ref name, e.g. 'catalogs/current', 'executions/by-id/exec_00'. */
+  name: string;
+  /** Object id the ref points at ('sha256:<hex>'). */
+  target: string;
+  /** Last compare-and-swap writer: cli|runner|tui|saas|github. */
+  writer: string | null;
+  updatedAt: string;
+}
+
+/** GET …/state/refs/{name} */
+export interface GetRefResponse {
+  ref: StateRef;
+}
+
+/**
+ * PUT …/state/refs/{name} — compare-and-swap. expectedTarget "" (or omitted)
+ * requires the ref be absent (create); a non-empty value requires the current
+ * target to match (advance). 409 ref_conflict on a CAS loss; 412 object_missing
+ * when the new target was never uploaded.
+ */
+export interface UpdateRefRequest {
+  expectedTarget?: string;
+  /** New object id to point at ('sha256:<hex>'); must exist in the object plane. */
+  target: string;
+}
+
+export interface UpdateRefResponse {
+  ref: StateRef;
+}
+
+/** GET …/state/refs?prefix= — list ref names under a prefix, name-ordered. */
+export interface ListRefsResponse {
+  refs: StateRef[];
 }
 
 // ── Workspace link requests/responses (state-api-contract §5) ─
