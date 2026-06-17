@@ -89,6 +89,7 @@ function toPublicLink(
     providerRepoId: link.providerRepoId,
     providerOwnerId: link.providerOwnerId,
     providerOwnerLogin: link.providerOwnerLogin,
+    ciSettings: link.ciSettings,
     createdBy: {
       id: link.createdBy.id ?? "",
       kind: link.createdBy.kind ?? actorFallbackKind,

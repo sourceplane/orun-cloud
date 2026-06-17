@@ -389,12 +389,28 @@ export interface ProviderIdentity {
   providerOwnerLogin: string | null;
 }
 
+/**
+ * Per-link CI trust settings (OV3). The link is the trust binding; these
+ * tighten which credential methods and (for OIDC) which refs/environments may
+ * mint a workflow token. Permissive defaults (both methods, null = "any")
+ * preserve link-as-trust semantics.
+ */
+export interface LinkCiSettings {
+  oidcEnabled: boolean;
+  apiKeyEnabled: boolean;
+  /** Glob over the Actions ref claim; null = any ref. */
+  allowedRefPattern: string | null;
+  /** Allowed environment names; null = any environment. */
+  allowedEnvironments: string[] | null;
+}
+
 export interface WorkspaceLink extends ProviderIdentity {
   id: string;
   orgId: string;
   projectId: string;
   remoteUrl: string;
   status: WorkspaceLinkStatus;
+  ciSettings: LinkCiSettings;
   createdBy: ActorStamp;
   lastSeenAt: Date | null;
   createdAt: Date;
@@ -409,6 +425,16 @@ export interface CreateWorkspaceLinkInput {
   createdBy?: ActorStamp;
   /** Optional rename-stable provider identity (set when the linker knows it). */
   provider?: ProviderIdentity;
+}
+
+/** Author per-link CI settings (console/CLI). Omitted fields are unchanged. */
+export interface UpdateWorkspaceLinkCiSettingsInput {
+  orgId: Uuid;
+  id: Uuid;
+  oidcEnabled?: boolean;
+  apiKeyEnabled?: boolean;
+  allowedRefPattern?: string | null;
+  allowedEnvironments?: string[] | null;
 }
 
 // ── Repository interface ────────────────────────────────────
@@ -541,6 +567,10 @@ export interface StateRepository {
     provider: string,
     providerRepoId: string,
   ): Promise<StateResult<WorkspaceLink[]>>;
+  /** Author per-link CI trust settings (OV3). */
+  updateWorkspaceLinkCiSettings(
+    input: UpdateWorkspaceLinkCiSettingsInput,
+  ): Promise<StateResult<WorkspaceLink>>;
   /** Soft-unlink: flips status to 'unlinked'; the row remains for audit. */
   unlinkWorkspaceLink(orgId: Uuid, id: Uuid): Promise<StateResult<WorkspaceLink>>;
 }

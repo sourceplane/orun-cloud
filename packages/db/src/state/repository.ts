@@ -35,6 +35,7 @@ import type {
   UpdateRefOutcome,
   UpdateRunJobInput,
   UpdateRunJobOutcome,
+  UpdateWorkspaceLinkCiSettingsInput,
   UpsertCatalogEntityInput,
   UpsertObjectInput,
   UpsertObjectOutcome,
@@ -215,6 +216,13 @@ function mapWorkspaceLink(row: Record<string, unknown>): WorkspaceLink {
     providerRepoId: (row.provider_repo_id as string) ?? null,
     providerOwnerId: (row.provider_owner_id as string) ?? null,
     providerOwnerLogin: (row.provider_owner_login as string) ?? null,
+    ciSettings: {
+      // Columns are absent on rows from older fakes/inserts; default permissive.
+      oidcEnabled: row.oidc_enabled === undefined ? true : Boolean(row.oidc_enabled),
+      apiKeyEnabled: row.api_key_enabled === undefined ? true : Boolean(row.api_key_enabled),
+      allowedRefPattern: (row.allowed_ref_pattern as string) ?? null,
+      allowedEnvironments: parseJson<string[]>(row.allowed_environments),
+    },
     createdBy: actorOf(row, "created_by", "created_by_kind"),
     lastSeenAt: dateOrNull(row.last_seen_at),
     createdAt: toDate(row.created_at),
@@ -1272,6 +1280,51 @@ export function createStateRepository(executor: SqlExecutor): StateRepository {
         return { ok: true, value: result.rows.map(mapWorkspaceLink) };
       } catch {
         return safeError("Failed to resolve workspace links for provider repo");
+      }
+    },
+
+    async updateWorkspaceLinkCiSettings(
+      input: UpdateWorkspaceLinkCiSettingsInput,
+    ): Promise<StateResult<WorkspaceLink>> {
+      // Build a partial UPDATE: only the provided fields change (COALESCE keeps
+      // the rest). allowed_ref_pattern / allowed_environments are nullable, so a
+      // sentinel ('__keep__') distinguishes "set to null" from "leave unchanged".
+      const sets: string[] = [];
+      const values: unknown[] = [input.orgId, input.id];
+      const add = (col: string, val: unknown) => {
+        values.push(val);
+        sets.push(`${col} = $${values.length}`);
+      };
+      if (input.oidcEnabled !== undefined) add("oidc_enabled", input.oidcEnabled);
+      if (input.apiKeyEnabled !== undefined) add("api_key_enabled", input.apiKeyEnabled);
+      if (input.allowedRefPattern !== undefined) add("allowed_ref_pattern", input.allowedRefPattern);
+      if (input.allowedEnvironments !== undefined) {
+        add(
+          "allowed_environments",
+          input.allowedEnvironments === null ? null : JSON.stringify(input.allowedEnvironments),
+        );
+      }
+      try {
+        if (sets.length === 0) {
+          // No-op update: return the current active row.
+          const cur = await executor.execute<Record<string, unknown>>(
+            `SELECT * FROM state.workspace_links WHERE org_id = $1 AND id = $2 AND status = 'active'`,
+            [input.orgId, input.id],
+          );
+          if (cur.rowCount === 0) return { ok: false, error: { kind: "not_found" } };
+          return { ok: true, value: mapWorkspaceLink(cur.rows[0]!) };
+        }
+        sets.push("updated_at = now()");
+        const result = await executor.execute<Record<string, unknown>>(
+          `UPDATE state.workspace_links SET ${sets.join(", ")}
+            WHERE org_id = $1 AND id = $2 AND status = 'active'
+            RETURNING *`,
+          values,
+        );
+        if (result.rowCount === 0) return { ok: false, error: { kind: "not_found" } };
+        return { ok: true, value: mapWorkspaceLink(result.rows[0]!) };
+      } catch {
+        return safeError("Failed to update workspace link CI settings");
       }
     },
 

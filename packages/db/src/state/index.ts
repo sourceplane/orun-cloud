@@ -41,8 +41,10 @@ export type {
   ListCatalogEntitiesQuery,
   WorkspaceLinkStatus,
   ProviderIdentity,
+  LinkCiSettings,
   WorkspaceLink,
   CreateWorkspaceLinkInput,
+  UpdateWorkspaceLinkCiSettingsInput,
   StateRepository,
 } from "./types.js";
 

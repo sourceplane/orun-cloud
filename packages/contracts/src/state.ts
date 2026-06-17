@@ -293,9 +293,19 @@ export interface WorkspaceLink {
   providerOwnerId: string | null;
   /** Account login — display only. */
   providerOwnerLogin: string | null;
+  /** Per-link CI trust settings (OV3). */
+  ciSettings: LinkCiSettings;
   createdBy: ActorRef;
   createdAt: string;
   lastSeenAt: string | null;
+}
+
+/** Per-link CI trust settings (OV3). null = "any" (the link is the trust binding). */
+export interface LinkCiSettings {
+  oidcEnabled: boolean;
+  apiKeyEnabled: boolean;
+  allowedRefPattern: string | null;
+  allowedEnvironments: string[] | null;
 }
 
 // ── Cursor pagination (matches the platform list convention) ─
