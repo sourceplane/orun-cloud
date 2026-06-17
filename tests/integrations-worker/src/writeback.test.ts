@@ -156,7 +156,7 @@ describe("postCheckRun (IG9.2)", () => {
 
     const outcome = await postCheckRun(
       createEnv(),
-      { orgId: asUuid(ORG_UUID), repoExternalId: REPO_EXTERNAL_ID, ownerRepo: OWNER_REPO, checkRun: CHECK_RUN },
+      { orgId: asUuid(ORG_UUID), repoExternalId: REPO_EXTERNAL_ID, checkRun: CHECK_RUN },
       { executor, fetchImpl: githubFetch(ghCalls) },
     );
 
@@ -189,7 +189,7 @@ describe("postCheckRun (IG9.2)", () => {
     const ghCalls: GhCall[] = [];
     const outcome = await postCheckRun(
       createEnv(),
-      { orgId: asUuid(ORG_UUID), repoExternalId: REPO_EXTERNAL_ID, ownerRepo: OWNER_REPO, checkRun: CHECK_RUN },
+      { orgId: asUuid(ORG_UUID), repoExternalId: REPO_EXTERNAL_ID, checkRun: CHECK_RUN },
       { executor, fetchImpl: githubFetch(ghCalls) },
     );
     expect(outcome).toEqual({ kind: "skipped", reason: "repo_not_app_linked" });
@@ -201,7 +201,7 @@ describe("postCheckRun (IG9.2)", () => {
     const { executor } = linkedExecutor({ contents: "read" }); // no checks grant
     const outcome = await postCheckRun(
       createEnv(),
-      { orgId: asUuid(ORG_UUID), repoExternalId: REPO_EXTERNAL_ID, ownerRepo: OWNER_REPO, checkRun: CHECK_RUN },
+      { orgId: asUuid(ORG_UUID), repoExternalId: REPO_EXTERNAL_ID, checkRun: CHECK_RUN },
       { executor, fetchImpl: githubFetch(ghCalls) },
     );
     expect(outcome).toEqual({ kind: "skipped", reason: "checks_write_not_granted" });
@@ -213,7 +213,7 @@ describe("postCheckRun (IG9.2)", () => {
     const { executor } = linkedExecutor({ checks: "write" });
     const outcome = await postCheckRun(
       createEnv(),
-      { orgId: asUuid(ORG_UUID), repoExternalId: REPO_EXTERNAL_ID, ownerRepo: OWNER_REPO, checkRun: CHECK_RUN },
+      { orgId: asUuid(ORG_UUID), repoExternalId: REPO_EXTERNAL_ID, checkRun: CHECK_RUN },
       { executor, fetchImpl: githubFetch(ghCalls, { postStatus: 403 }) },
     );
     expect(outcome).toEqual({ kind: "failed", reason: "github_rejected" });
@@ -224,7 +224,7 @@ describe("postCheckRun (IG9.2)", () => {
     const { executor } = linkedExecutor({ checks: "write" });
     const outcome = await postCheckRun(
       createEnv({ GITHUB_APP_ID: undefined, GITHUB_APP_PRIVATE_KEY: undefined }),
-      { orgId: asUuid(ORG_UUID), repoExternalId: REPO_EXTERNAL_ID, ownerRepo: OWNER_REPO, checkRun: CHECK_RUN },
+      { orgId: asUuid(ORG_UUID), repoExternalId: REPO_EXTERNAL_ID, checkRun: CHECK_RUN },
       { executor, fetchImpl: githubFetch(ghCalls) },
     );
     expect(outcome.kind).toBe("skipped");
@@ -234,7 +234,7 @@ describe("postCheckRun (IG9.2)", () => {
   it("fails fast when no DB is available", async () => {
     const outcome = await postCheckRun(
       createEnv({ PLATFORM_DB: undefined }),
-      { orgId: asUuid(ORG_UUID), repoExternalId: REPO_EXTERNAL_ID, ownerRepo: OWNER_REPO, checkRun: CHECK_RUN },
+      { orgId: asUuid(ORG_UUID), repoExternalId: REPO_EXTERNAL_ID, checkRun: CHECK_RUN },
       // no executor in deps → must read env.PLATFORM_DB
     );
     expect(outcome).toEqual({ kind: "failed", reason: "db_unavailable" });
@@ -250,7 +250,6 @@ describe("postCommitStatus (IG9.2)", () => {
       {
         orgId: asUuid(ORG_UUID),
         repoExternalId: REPO_EXTERNAL_ID,
-        ownerRepo: OWNER_REPO,
         status: { sha: "deadbeefcafe", state: "success", context: "orun", description: "ok", targetUrl: "https://app.orun.dev/runs/r1" },
       },
       { executor, fetchImpl: githubFetch(ghCalls, { posted: { id: 99, url: "https://api.github.com/x/99" } }) },
@@ -273,7 +272,7 @@ describe("postCommitStatus (IG9.2)", () => {
     const { executor } = linkedExecutor({ checks: "write" }); // statuses not granted
     const outcome = await postCommitStatus(
       createEnv(),
-      { orgId: asUuid(ORG_UUID), repoExternalId: REPO_EXTERNAL_ID, ownerRepo: OWNER_REPO, status: { sha: "s", state: "pending", context: "orun" } },
+      { orgId: asUuid(ORG_UUID), repoExternalId: REPO_EXTERNAL_ID, status: { sha: "s", state: "pending", context: "orun" } },
       { executor, fetchImpl: githubFetch(ghCalls) },
     );
     expect(outcome).toEqual({ kind: "skipped", reason: "statuses_write_not_granted" });

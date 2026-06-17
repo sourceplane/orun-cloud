@@ -5,8 +5,10 @@
 // the credential and never calls GitHub directly.
 //
 // Authentication is the service-binding boundary (x-internal-caller, checked in
-// the router), NOT a user bearer. The body carries the org as a public id; the
-// repo by its rename-stable provider id; the GitHub path as "owner/repo".
+// the router), NOT a user bearer. The body carries the org as a public id and
+// the repo by its rename-stable provider id; the "owner/repo" GitHub path is
+// resolved server-side from the authoritative repo link, never trusted from the
+// caller.
 //
 // Fail-soft contract: the underlying service NEVER throws — an unlinked repo or
 // an un-granted permission is "skipped", a GitHub error is "failed". So this
@@ -22,7 +24,6 @@ import type {
   WritebackResponse,
 } from "@saas/contracts/integrations";
 
-const OWNER_REPO_RE = /^[^/\s]+\/[^/\s]+$/;
 const CHECK_STATUSES = new Set(["queued", "in_progress", "completed"]);
 const COMMIT_STATES = new Set(["error", "failure", "pending", "success"]);
 
@@ -120,27 +121,24 @@ export async function handleWritebackInternal(
     return errorResponse("bad_request", "Invalid JSON body", 400, requestId);
   }
 
-  // Common fields: org (public id → uuid), repo identity, GitHub path.
+  // Common fields: org (public id → uuid) and the rename-stable repo id. The
+  // "owner/repo" path is resolved server-side from the repo link, not here.
   const orgId = parseOrgPublicId(str(body.orgId) ?? "");
   if (!orgId) return validationError(requestId, { orgId: ["Invalid or missing organization id"] });
   const repoExternalId = str(body.repoExternalId);
   if (!repoExternalId) return validationError(requestId, { repoExternalId: ["Required"] });
-  const ownerRepo = str(body.ownerRepo);
-  if (!ownerRepo || !OWNER_REPO_RE.test(ownerRepo)) {
-    return validationError(requestId, { ownerRepo: ['Must be "owner/repo"'] });
-  }
 
   if (body.kind === "check_run") {
     const v = validateCheckRun(body.checkRun);
     if (!v.ok) return validationError(requestId, v.fields);
-    const outcome = await postCheckRun(env, { orgId, repoExternalId, ownerRepo, checkRun: v.value }, deps);
+    const outcome = await postCheckRun(env, { orgId, repoExternalId, checkRun: v.value }, deps);
     return successResponse(toResponse(outcome), requestId);
   }
 
   if (body.kind === "commit_status") {
     const v = validateCommitStatus(body.status);
     if (!v.ok) return validationError(requestId, v.fields);
-    const outcome = await postCommitStatus(env, { orgId, repoExternalId, ownerRepo, status: v.value }, deps);
+    const outcome = await postCommitStatus(env, { orgId, repoExternalId, status: v.value }, deps);
     return successResponse(toResponse(outcome), requestId);
   }
 

@@ -114,7 +114,6 @@ const CHECK_RUN_BODY = {
   kind: "check_run",
   orgId: ORG_PUBLIC,
   repoExternalId: REPO_EXTERNAL_ID,
-  ownerRepo: OWNER_REPO,
   checkRun: { name: "orun / affected", headSha: "abc123", status: "completed", conclusion: "success", title: "t", summary: "s" },
 };
 
@@ -161,8 +160,9 @@ describe("handler validation", () => {
     expect(res.status).toBe(422);
   });
 
-  it("422 on a bad owner/repo", async () => {
-    const res = await handleWritebackInternal(req({ ...CHECK_RUN_BODY, ownerRepo: "not-a-repo" }), createEnv(), "req_1");
+  it("422 on a missing repo id", async () => {
+    const { repoExternalId: _omit, ...rest } = CHECK_RUN_BODY;
+    const res = await handleWritebackInternal(req(rest), createEnv(), "req_1");
     expect(res.status).toBe(422);
   });
 
@@ -219,7 +219,6 @@ describe("handler outcome mapping", () => {
       kind: "commit_status",
       orgId: ORG_PUBLIC,
       repoExternalId: REPO_EXTERNAL_ID,
-      ownerRepo: OWNER_REPO,
       status: { sha: "deadbeef", state: "success", context: "orun" },
     };
     const res = await handleWritebackInternal(req(body), createEnv(), "req_1", {

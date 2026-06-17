@@ -296,9 +296,11 @@ export interface WritebackCommitStatus {
  * event (pairs with `saas-orun-platform` OV5). Service-binding only
  * (`x-internal-caller: state-worker`); integrations-worker owns the App key,
  * resolves the repo's installation, mints a SCOPED token, posts, and audits —
- * state-worker never sees the credential. Fail-soft: a repo that is not
- * App-linked or an App lacking the write grant resolves to `skipped`; a GitHub
- * error to `failed`. Neither ever breaks a run.
+ * state-worker never sees the credential. The "owner/repo" GitHub path is
+ * resolved server-side from the authoritative repo link (the caller supplies
+ * only the rename-stable repo id), so a stale name can't redirect a post.
+ * Fail-soft: a repo that is not App-linked or an App lacking the write grant
+ * resolves to `skipped`; a GitHub error to `failed`. Neither ever breaks a run.
  */
 export type WritebackRequest =
   | {
@@ -307,15 +309,12 @@ export type WritebackRequest =
       orgId: string;
       /** Rename-stable provider repo id (GitHub's numeric id, as a string). */
       repoExternalId: string;
-      /** "owner/repo" for the GitHub API path. */
-      ownerRepo: string;
       checkRun: WritebackCheckRun;
     }
   | {
       kind: "commit_status";
       orgId: string;
       repoExternalId: string;
-      ownerRepo: string;
       status: WritebackCommitStatus;
     };
 
