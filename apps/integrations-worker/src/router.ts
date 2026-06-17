@@ -5,6 +5,7 @@ import { handleGithubWebhookIngest } from "./handlers/ingest.js";
 import { handleListDeliveries, handleReplayDelivery } from "./handlers/deliveries.js";
 import { handleListRepositories } from "./handlers/repositories.js";
 import { handleIssueGithubToken } from "./handlers/token-broker.js";
+import { handleWritebackInternal } from "./handlers/writeback-internal.js";
 import {
   handleCreateRepoLink,
   handleListRepoLinks,
@@ -29,6 +30,24 @@ import { asUuid } from "@saas/db/ids";
 import { errorResponse, methodNotAllowed, notFound } from "./http.js";
 
 const REQUEST_ID_RE = /^[\w-]{1,128}$/;
+
+// Internal service-binding boundary (IG9.3). Inbound internal calls carry this
+// header; only a worker behind a service binding can set it (the public edge
+// strips client-supplied x-internal-* headers), so it cannot be forged from
+// outside the trust boundary. Add a caller here when a new bounded context
+// gains a service binding to this worker. Avoid wildcards.
+const INTERNAL_CALLER_HEADER = "x-internal-caller";
+const INTERNAL_CALLER_RE = /^[a-z][a-z0-9-]{0,63}$/;
+const ALLOWED_INTERNAL_CALLERS: ReadonlySet<string> = new Set([
+  // state-worker drives the write-back proxy on a run-result event (OV5).
+  "state-worker",
+]);
+
+function isAllowedInternalCaller(value: string | null): value is string {
+  if (!value) return false;
+  if (!INTERNAL_CALLER_RE.test(value)) return false;
+  return ALLOWED_INTERNAL_CALLERS.has(value);
+}
 
 export interface ActorContext {
   subjectId: string;
@@ -63,6 +82,7 @@ const PROJECT_REPO_LINK_RE =
   /^\/v1\/organizations\/([^/]+)\/projects\/([^/]+)\/repo-links\/([^/]+)$/;
 const GITHUB_SETUP_PATH = "/ingress/github/setup";
 const GITHUB_WEBHOOK_PATH = "/ingress/github/webhook";
+const GITHUB_WRITEBACK_PATH = "/internal/github/writeback";
 
 export async function route(request: Request, env: Env): Promise<Response> {
   const requestId = resolveRequestId(request);
@@ -87,6 +107,21 @@ export async function route(request: Request, env: Env): Promise<Response> {
   if (pathname === GITHUB_WEBHOOK_PATH) {
     if (request.method !== "POST") return methodNotAllowed(requestId);
     return handleGithubWebhookIngest(request, env, requestId);
+  }
+
+  // Internal write-back driver (IG9.3 outbound bridge): state-worker posts a
+  // run result here and this worker — which alone holds the App key — mints a
+  // scoped token and writes it back to GitHub. Authenticated by the
+  // service-binding boundary (x-internal-caller), never a user bearer.
+  if (pathname === GITHUB_WRITEBACK_PATH) {
+    if (request.method !== "POST") return methodNotAllowed(requestId);
+    if (!isAllowedInternalCaller(request.headers.get(INTERNAL_CALLER_HEADER))) {
+      return errorResponse("unauthorized", "Internal service-binding required", 403, requestId);
+    }
+    if (!env.PLATFORM_DB) {
+      return errorResponse("internal_error", "Database not configured", 503, requestId);
+    }
+    return handleWritebackInternal(request, env, requestId);
   }
 
   // Everything below is the authenticated org surface.
