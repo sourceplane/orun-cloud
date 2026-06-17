@@ -69,7 +69,11 @@ describe("api-edge auth facade", () => {
       expect(isAuthRoute("/v1/auth/profile")).toBe(true);
     });
 
-    it("does not match unknown auth routes", () => {
+    it("matches /v1/auth/oidc/exchange (OV3)", () => {
+      expect(isAuthRoute("/v1/auth/oidc/exchange")).toBe(true);
+    });
+
+    it("does not recognize unknown auth routes", () => {
       expect(isAuthRoute("/v1/auth/unknown")).toBe(false);
     });
 
@@ -102,6 +106,31 @@ describe("api-edge auth facade", () => {
       expect(calls).toHaveLength(1);
       expect(calls[0]!.url).toContain("/v1/auth/login/start");
       expect(calls[0]!.init.method).toBe("POST");
+    });
+
+    it("forwards POST /v1/auth/oidc/exchange as a PUBLIC route (no actor headers)", async () => {
+      const { fetcher, calls } = createFakeFetcher();
+      const request = new Request("https://api.example.com/v1/auth/oidc/exchange", {
+        method: "POST",
+        headers: { "content-type": "application/json", "x-request-id": "req_oidc" },
+        body: JSON.stringify({ token: "gh.oidc.jwt" }),
+      });
+
+      const response = await handleAuthRoute(
+        request,
+        { IDENTITY_WORKER: fetcher, ENVIRONMENT: "test" },
+        "req_oidc",
+        "/v1/auth/oidc/exchange",
+      );
+
+      expect(response.status).toBe(200);
+      expect(calls).toHaveLength(1);
+      expect(calls[0]!.url).toContain("/v1/auth/oidc/exchange");
+      expect(calls[0]!.init.method).toBe("POST");
+      // Public: the OIDC token in the body is the credential, so no bearer is
+      // resolved and no x-actor-* headers are injected.
+      const headers = calls[0]!.init.headers as Headers;
+      expect(headers.get("x-actor-subject-id")).toBeNull();
     });
 
     it("forwards POST /v1/auth/login/complete to IDENTITY_WORKER", async () => {

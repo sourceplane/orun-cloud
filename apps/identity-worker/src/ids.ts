@@ -85,6 +85,16 @@ export function parseUserPublicId(publicId: string): string | null {
   return hexToUuid(publicId.slice(4));
 }
 
+/** Encode a bare org UUID as its public id (`org_<32 hex>`). */
+export function orgPublicId(uuid: string): string {
+  return `org_${uuidToHex(uuid)}`;
+}
+
+/** Encode a bare project UUID as its public id (`prj_<32 hex>`). */
+export function projectPublicId(uuid: string): string {
+  return `prj_${uuidToHex(uuid)}`;
+}
+
 /** Decode a public org id (`org_<32 hex>`) to the bare UUID used by UUID columns. */
 export function parseOrgPublicId(publicId: string): Uuid | null {
   return uuidFromPublicId(publicId, "org");

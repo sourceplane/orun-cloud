@@ -20,6 +20,10 @@ const AUTH_ROUTES: Record<string, string> = {
   "/v1/auth/cli/device/poll": "POST",
   "/v1/auth/cli/token": "POST",
   "/v1/auth/cli/revoke": "POST",
+  // GitHub Actions OIDC exchange (OV3). Public/unauthenticated: the OIDC token
+  // in the body IS the credential, so it forwards to identity-worker without a
+  // bearer (not in cliRouteRequiresAuth).
+  "/v1/auth/oidc/exchange": "POST",
   // Console: authenticated CLI session listing.
   "/v1/auth/cli/sessions": "GET",
 };

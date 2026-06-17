@@ -117,6 +117,96 @@ export async function mintCliAccessToken(
   return { token: `${signingInput}.${sig}`, expiresAt: new Date(exp * 1000) };
 }
 
+// ── Workflow access token (OV3) ─────────────────────────────
+// A CI workflow's short-lived access token, minted by the OIDC exchange. It is
+// the SAME HS256 envelope as the CLI access token (so the api-edge bearer path
+// and `looksLikeCliAccessToken` treat both uniformly) but carries actorKind
+// "workflow" and the resolved (org, project) binding instead of a user session —
+// the credential-agnostic ActorContext{org, project} the design unifies on.
+
+export const WORKFLOW_ACCESS_TOKEN_TTL_MS = 15 * 60 * 1000;
+
+export interface WorkflowAccessClaims {
+  /** Subject: the GitHub OIDC `sub` (e.g. repo:owner/repo:ref:refs/heads/main). */
+  sub: string;
+  actorKind: "workflow";
+  /** Public org id the workflow is bound to (resolved from the workspace link). */
+  orgId: string;
+  /** Public project id the workflow is bound to. */
+  projectId: string;
+  iat: number;
+  exp: number;
+}
+
+/**
+ * Mint a workflow access JWT (OV3 OIDC exchange). Throws when the signing key is
+ * unavailable — the caller surfaces a 503, never a silent grant.
+ */
+export async function mintWorkflowAccessToken(
+  env: Env,
+  input: { sub: string; orgId: string; projectId: string; now: Date },
+): Promise<{ token: string; expiresAt: Date }> {
+  const secret = getCliSigningKey(env);
+  if (!secret) {
+    throw new Error("CLI_JWT_SIGNING_KEY is not configured");
+  }
+  const iat = Math.floor(input.now.getTime() / 1000);
+  const exp = Math.floor((input.now.getTime() + WORKFLOW_ACCESS_TOKEN_TTL_MS) / 1000);
+  const claims: WorkflowAccessClaims = {
+    sub: input.sub,
+    actorKind: "workflow",
+    orgId: input.orgId,
+    projectId: input.projectId,
+    iat,
+    exp,
+  };
+  const payloadB64 = stringToBase64url(JSON.stringify(claims));
+  const signingInput = `${HEADER_B64}.${payloadB64}`;
+  const sig = await hmacSign(signingInput, secret);
+  return { token: `${signingInput}.${sig}`, expiresAt: new Date(exp * 1000) };
+}
+
+/**
+ * Verify a workflow access JWT and return its claims, or null when malformed,
+ * mis-signed, expired, the wrong actor kind, or the signing key is unavailable.
+ */
+export async function verifyWorkflowAccessToken(
+  env: Env,
+  token: string,
+  now: Date,
+): Promise<WorkflowAccessClaims | null> {
+  const secret = getCliSigningKey(env);
+  if (!secret) return null;
+
+  const parts = token.split(".");
+  if (parts.length !== 3) return null;
+  const [headerB64, payloadB64, sig] = parts as [string, string, string];
+  if (headerB64 !== HEADER_B64) return null;
+
+  const expected = await hmacSign(`${headerB64}.${payloadB64}`, secret);
+  if (!timingSafeEqual(sig, expected)) return null;
+
+  let claims: WorkflowAccessClaims;
+  try {
+    claims = JSON.parse(base64urlToString(payloadB64)) as WorkflowAccessClaims;
+  } catch {
+    return null;
+  }
+
+  if (
+    typeof claims.sub !== "string" ||
+    claims.actorKind !== "workflow" ||
+    typeof claims.orgId !== "string" ||
+    typeof claims.projectId !== "string" ||
+    typeof claims.exp !== "number"
+  ) {
+    return null;
+  }
+  if (claims.exp * 1000 <= now.getTime()) return null;
+
+  return claims;
+}
+
 /**
  * Verify a CLI access JWT and return its claims, or null when the token is
  * malformed, mis-signed, expired, or the signing key is unavailable.
