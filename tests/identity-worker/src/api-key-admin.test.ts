@@ -211,6 +211,12 @@ function createFakeEventsRepo(): FakeEventsRepo {
     async getEventById(): Promise<EventsResult<StoredEvent | null>> {
       return { ok: true as const, value: null };
     },
+    async listScmEventsSince(): Promise<EventsResult<StoredEvent[]>> {
+      return { ok: true as const, value: [] };
+    },
+    async listRunResultEventsSince(): Promise<EventsResult<StoredEvent[]>> {
+      return { ok: true as const, value: [] };
+    },
   };
 }
 

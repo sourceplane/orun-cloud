@@ -196,6 +196,8 @@ describe("events-worker list-audit handler", () => {
       queryAuditByTarget: async () => ({ ok: true as const, value: { items: [], nextCursor: null } }),
       queryEventsByOrg: async () => ({ ok: false as const, error: { kind: "internal" as const, message: "" } }),
       getEventById: async () => ({ ok: true as const, value: null }),
+      listScmEventsSince: async () => ({ ok: true as const, value: [] }),
+      listRunResultEventsSince: async () => ({ ok: true as const, value: [] }),
     };
 
     const env = createEnv();
@@ -231,6 +233,8 @@ describe("events-worker list-audit handler", () => {
       queryAuditByTarget: async () => ({ ok: true as const, value: { items: [], nextCursor: null } }),
       queryEventsByOrg: async () => ({ ok: false as const, error: { kind: "internal" as const, message: "" } }),
       getEventById: async () => ({ ok: true as const, value: null }),
+      listScmEventsSince: async () => ({ ok: true as const, value: [] }),
+      listRunResultEventsSince: async () => ({ ok: true as const, value: [] }),
     };
 
     const env = createEnv();
@@ -254,6 +258,8 @@ describe("events-worker list-audit handler", () => {
       queryAuditByTarget: async () => ({ ok: true as const, value: { items: [], nextCursor: null } }),
       queryEventsByOrg: async () => ({ ok: false as const, error: { kind: "internal" as const, message: "" } }),
       getEventById: async () => ({ ok: true as const, value: null }),
+      listScmEventsSince: async () => ({ ok: true as const, value: [] }),
+      listRunResultEventsSince: async () => ({ ok: true as const, value: [] }),
     };
 
     const env = createEnv();
@@ -279,6 +285,8 @@ describe("events-worker list-audit handler", () => {
       queryAuditByTarget: async () => ({ ok: true as const, value: { items: [], nextCursor: null } }),
       queryEventsByOrg: async () => ({ ok: false as const, error: { kind: "internal" as const, message: "" } }),
       getEventById: async () => ({ ok: true as const, value: null }),
+      listScmEventsSince: async () => ({ ok: true as const, value: [] }),
+      listRunResultEventsSince: async () => ({ ok: true as const, value: [] }),
     };
 
     const env = createEnv();
@@ -330,6 +338,8 @@ describe("events-worker list-audit handler", () => {
       queryAuditByTarget: async () => ({ ok: true as const, value: { items: [], nextCursor: null } }),
       queryEventsByOrg: async () => ({ ok: false as const, error: { kind: "internal" as const, message: "" } }),
       getEventById: async () => ({ ok: true as const, value: null }),
+      listScmEventsSince: async () => ({ ok: true as const, value: [] }),
+      listRunResultEventsSince: async () => ({ ok: true as const, value: [] }),
     };
 
     const env = createEnv();
@@ -391,6 +401,8 @@ describe("events-worker list-audit handler", () => {
       queryAuditByTarget: async () => ({ ok: true as const, value: { items: [], nextCursor: null } }),
       queryEventsByOrg: async () => ({ ok: false as const, error: { kind: "internal" as const, message: "" } }),
       getEventById: async () => ({ ok: true as const, value: null }),
+      listScmEventsSince: async () => ({ ok: true as const, value: [] }),
+      listRunResultEventsSince: async () => ({ ok: true as const, value: [] }),
     };
 
     const env = createEnv();
@@ -451,6 +463,8 @@ describe("events-worker list-audit handler", () => {
       queryAuditByTarget: async () => ({ ok: true as const, value: { items: [], nextCursor: null } }),
       queryEventsByOrg: async () => ({ ok: false as const, error: { kind: "internal" as const, message: "" } }),
       getEventById: async () => ({ ok: true as const, value: null }),
+      listScmEventsSince: async () => ({ ok: true as const, value: [] }),
+      listRunResultEventsSince: async () => ({ ok: true as const, value: [] }),
     };
 
     const env = createEnv();
@@ -482,6 +496,8 @@ describe("events-worker list-audit handler", () => {
       queryAuditByTarget: async () => ({ ok: true as const, value: { items: [], nextCursor: null } }),
       queryEventsByOrg: async () => ({ ok: false as const, error: { kind: "internal" as const, message: "" } }),
       getEventById: async () => ({ ok: true as const, value: null }),
+      listScmEventsSince: async () => ({ ok: true as const, value: [] }),
+      listRunResultEventsSince: async () => ({ ok: true as const, value: [] }),
     };
 
     const env = createEnv();
@@ -513,6 +529,8 @@ describe("events-worker list-audit handler", () => {
       queryAuditByTarget: async () => ({ ok: true as const, value: { items: [], nextCursor: null } }),
       queryEventsByOrg: async () => ({ ok: false as const, error: { kind: "internal" as const, message: "" } }),
       getEventById: async () => ({ ok: true as const, value: null }),
+      listScmEventsSince: async () => ({ ok: true as const, value: [] }),
+      listRunResultEventsSince: async () => ({ ok: true as const, value: [] }),
     };
 
     const env = createEnv();
@@ -532,6 +550,8 @@ describe("events-worker list-audit handler", () => {
       queryAuditByTarget: async () => ({ ok: true as const, value: { items: [], nextCursor: null } }),
       queryEventsByOrg: async () => ({ ok: false as const, error: { kind: "internal" as const, message: "" } }),
       getEventById: async () => ({ ok: true as const, value: null }),
+      listScmEventsSince: async () => ({ ok: true as const, value: [] }),
+      listRunResultEventsSince: async () => ({ ok: true as const, value: [] }),
     };
 
     const env = createEnv();
@@ -555,6 +575,8 @@ describe("events-worker list-audit handler", () => {
       queryAuditByTarget: async () => ({ ok: true as const, value: { items: [], nextCursor: null } }),
       queryEventsByOrg: async () => ({ ok: false as const, error: { kind: "internal" as const, message: "" } }),
       getEventById: async () => ({ ok: true as const, value: null }),
+      listScmEventsSince: async () => ({ ok: true as const, value: [] }),
+      listRunResultEventsSince: async () => ({ ok: true as const, value: [] }),
     };
 
     const env = createEnv();
@@ -605,6 +627,8 @@ describe("events-worker list-audit handler", () => {
       queryAuditByTarget: async () => ({ ok: true as const, value: { items: [], nextCursor: null } }),
       queryEventsByOrg: async () => ({ ok: false as const, error: { kind: "internal" as const, message: "" } }),
       getEventById: async () => ({ ok: true as const, value: null }),
+      listScmEventsSince: async () => ({ ok: true as const, value: [] }),
+      listRunResultEventsSince: async () => ({ ok: true as const, value: [] }),
     };
 
     const env = createEnv({
@@ -634,6 +658,8 @@ describe("events-worker list-audit handler", () => {
       queryAuditByTarget: async () => ({ ok: true as const, value: { items: [], nextCursor: null } }),
       queryEventsByOrg: async () => ({ ok: false as const, error: { kind: "internal" as const, message: "" } }),
       getEventById: async () => ({ ok: true as const, value: null }),
+      listScmEventsSince: async () => ({ ok: true as const, value: [] }),
+      listRunResultEventsSince: async () => ({ ok: true as const, value: [] }),
     };
 
     const env = createEnv();

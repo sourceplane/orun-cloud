@@ -282,5 +282,23 @@ export const manifest: MigrationManifest = {
       description:
         "Project == repo bijection flip (saas-orun-platform v2 OV2.2) — the reverse of uq_state_workspace_link_remote: a partial unique index for at most one active workspace link per (org, project), preceded by a self-healing backfill that unlinks older duplicate active links (keep newest), so the strict flip never fails on existing data",
     },
+    {
+      id: "310_events_run_result_index",
+      context: "events",
+      path: "310_events_run_result_index/up.sql",
+      checksum:
+        "5b23b3734983022b906bc8367be1bf405b939d287572e2d69ef368159f953277",
+      description:
+        "Keyset index for the run-result write-back driver (saas-orun-platform v2 OV5 / saas-integrations IG9) — partial index event_log_run_result_idx (occurred_at, id) WHERE type IN the two terminal run results, mirroring event_log_scm_ingest_idx, so the state-worker write-back drain is O(batch) regardless of total event volume",
+    },
+    {
+      id: "320_state_run_writeback_cursor",
+      context: "state",
+      path: "320_state_run_writeback_cursor/up.sql",
+      checksum:
+        "9b802f9d107cecfeedd4f58ec9eba11b1a5ec6ef4b943b2f02d550bcc5f9bb11",
+      description:
+        "High-water mark for the OV5/IG9 run-result write-back driver — single-row state.run_writeback_cursor (occurred_at, event_id) of the last terminal run event posted back to GitHub, advanced per-event so a crash never re-posts a non-idempotent Check Run; mirrors state.scm_ingest_cursor",
+    },
   ],
 };

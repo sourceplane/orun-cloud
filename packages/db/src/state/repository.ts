@@ -1305,6 +1305,44 @@ export function createStateRepository(executor: SqlExecutor): StateRepository {
       }
     },
 
+    async readRunWritebackCursor(): Promise<StateResult<ScmIngestCursor>> {
+      try {
+        const result = await executor.execute<Record<string, unknown>>(
+          `SELECT last_occurred_at, last_event_id FROM state.run_writeback_cursor WHERE id = 'default'`,
+        );
+        if (result.rowCount === 0) {
+          return { ok: true, value: { lastOccurredAt: null, lastEventId: null } };
+        }
+        const row = result.rows[0]!;
+        return {
+          ok: true,
+          value: {
+            lastOccurredAt: row.last_occurred_at ? toDate(row.last_occurred_at).toISOString() : null,
+            lastEventId: (row.last_event_id as string) ?? null,
+          },
+        };
+      } catch {
+        return safeError("Failed to read run write-back cursor");
+      }
+    },
+
+    async advanceRunWritebackCursor(lastOccurredAt: string, lastEventId: string): Promise<StateResult<void>> {
+      try {
+        await executor.execute(
+          `INSERT INTO state.run_writeback_cursor (id, last_occurred_at, last_event_id, updated_at)
+           VALUES ('default', $1, $2, now())
+           ON CONFLICT (id) DO UPDATE
+             SET last_occurred_at = EXCLUDED.last_occurred_at,
+                 last_event_id = EXCLUDED.last_event_id,
+                 updated_at = now()`,
+          [lastOccurredAt, lastEventId],
+        );
+        return { ok: true, value: undefined };
+      } catch {
+        return safeError("Failed to advance run write-back cursor");
+      }
+    },
+
     async listTriggers(
       orgId: Uuid,
       params: PageQueryParams,

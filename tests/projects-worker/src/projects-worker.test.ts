@@ -192,6 +192,8 @@ function createFakeEventsRepo(overrides?: Partial<Record<keyof EventsRepository,
     async getEventById() { return { ok: true, value: null }; },
     async queryAuditByOrg() { return { ok: true, value: { items: [], nextCursor: null } }; },
     async queryAuditByTarget() { return { ok: true, value: { items: [], nextCursor: null } }; },
+    async listScmEventsSince() { return { ok: true, value: [] }; },
+    async listRunResultEventsSince() { return { ok: true, value: [] }; },
   };
 
   if (overrides) {

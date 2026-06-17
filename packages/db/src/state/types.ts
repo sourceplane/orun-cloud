@@ -620,6 +620,10 @@ export interface StateRepository {
   readScmIngestCursor(): Promise<StateResult<ScmIngestCursor>>;
   /** Advance the scm.* ingestion cursor (upsert the single high-water row). */
   advanceScmIngestCursor(lastOccurredAt: string, lastEventId: string): Promise<StateResult<void>>;
+  /** Read the run-result write-back driver's high-water mark (OV5/IG9). */
+  readRunWritebackCursor(): Promise<StateResult<ScmIngestCursor>>;
+  /** Advance the run-result write-back cursor (upsert the single high-water row). */
+  advanceRunWritebackCursor(lastOccurredAt: string, lastEventId: string): Promise<StateResult<void>>;
   /** Activity feed: triggers for an org (optionally a project / repo), newest first. */
   listTriggers(
     orgId: Uuid,
