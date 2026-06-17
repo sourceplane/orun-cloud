@@ -378,7 +378,18 @@ export interface ListCatalogEntitiesQuery {
 
 export type WorkspaceLinkStatus = "active" | "unlinked";
 
-export interface WorkspaceLink {
+/** Rename-stable SCM provider identity for a workspace link (OV2.1). */
+export interface ProviderIdentity {
+  /** SCM host family: 'github' | 'gitlab' | … */
+  provider: string | null;
+  /** Host's rename-stable repo id (federation matches on this, never name). */
+  providerRepoId: string | null;
+  providerOwnerId: string | null;
+  /** Account login — display only, never matched on. */
+  providerOwnerLogin: string | null;
+}
+
+export interface WorkspaceLink extends ProviderIdentity {
   id: string;
   orgId: string;
   projectId: string;
@@ -396,6 +407,8 @@ export interface CreateWorkspaceLinkInput {
   projectId: Uuid;
   remoteUrl: string;
   createdBy?: ActorStamp;
+  /** Optional rename-stable provider identity (set when the linker knows it). */
+  provider?: ProviderIdentity;
 }
 
 // ── Repository interface ────────────────────────────────────
@@ -523,6 +536,11 @@ export interface StateRepository {
   ): Promise<StateResult<PagedResult<WorkspaceLink>>>;
   /** Resolve scan: active links for a normalized remote across the actor's orgs. */
   listActiveWorkspaceLinksForRemote(remoteUrl: string): Promise<StateResult<WorkspaceLink[]>>;
+  /** Federation scan: active links for a rename-stable (provider, repo id). */
+  listActiveWorkspaceLinksForProviderRepo(
+    provider: string,
+    providerRepoId: string,
+  ): Promise<StateResult<WorkspaceLink[]>>;
   /** Soft-unlink: flips status to 'unlinked'; the row remains for audit. */
   unlinkWorkspaceLink(orgId: Uuid, id: Uuid): Promise<StateResult<WorkspaceLink>>;
 }

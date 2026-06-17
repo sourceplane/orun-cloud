@@ -40,6 +40,7 @@ export type {
   UpsertCatalogEntityInput,
   ListCatalogEntitiesQuery,
   WorkspaceLinkStatus,
+  ProviderIdentity,
   WorkspaceLink,
   CreateWorkspaceLinkInput,
   StateRepository,

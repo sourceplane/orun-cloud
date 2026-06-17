@@ -195,6 +195,63 @@ describe("POST /v1/organizations/{orgId}/cli/links", () => {
     expect(queries.some((q) => q.text.includes("events.event_log"))).toBe(true);
   });
 
+  it("persists and surfaces rename-stable provider identity (OV2.1)", async () => {
+    const { executor, queries } = fakeExecutor((text) => {
+      if (text.includes("INSERT INTO state.workspace_links")) {
+        return [
+          workspaceLinkRow({
+            provider: "github",
+            provider_repo_id: "123456",
+            provider_owner_id: "789",
+            provider_owner_login: "acme",
+          }),
+        ];
+      }
+      return [{ _event: {}, _audit: {} }];
+    });
+    const env = createEnv({
+      MEMBERSHIP_WORKER: membershipFetcher({ allow: true, orgs: [ORG_ENTRY] }),
+      POLICY_WORKER: policyFetcher(true),
+      PROJECTS_WORKER: projectsFetcher({
+        resolveSlug: { id: PROJECT_PUBLIC, slug: "platform", name: "platform", status: "active" },
+      }),
+    });
+    const res = await handleCreateWorkspaceLink(
+      createRequest({
+        remoteUrl: "git@github.com:acme/platform.git",
+        projectSlug: "platform",
+        provider: "github",
+        providerRepoId: "123456",
+        providerOwnerId: "789",
+        providerOwnerLogin: "acme",
+      }),
+      env,
+      "req_1",
+      ACTOR,
+      asUuid(ORG_UUID),
+      { executor },
+    );
+    expect(res.status).toBe(201);
+    const body = (await res.json()) as {
+      data: {
+        link: {
+          provider: string | null;
+          providerRepoId: string | null;
+          providerOwnerId: string | null;
+          providerOwnerLogin: string | null;
+        };
+      };
+    };
+    expect(body.data.link.provider).toBe("github");
+    expect(body.data.link.providerRepoId).toBe("123456");
+    expect(body.data.link.providerOwnerId).toBe("789");
+    expect(body.data.link.providerOwnerLogin).toBe("acme");
+    // The INSERT carried the rename-stable identity into the row.
+    const insert = queries.find((q) => q.text.includes("INSERT INTO state.workspace_links"));
+    expect(insert?.params).toContain("github");
+    expect(insert?.params).toContain("123456");
+  });
+
   it("reuses an existing project when the slug already resolves", async () => {
     const { executor } = fakeExecutor((text) => {
       if (text.includes("INSERT INTO state.workspace_links")) return [workspaceLinkRow()];

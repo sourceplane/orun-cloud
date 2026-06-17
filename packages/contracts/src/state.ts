@@ -286,6 +286,13 @@ export interface WorkspaceLink {
   projectSlug: string;
   /** Normalized git remote URL (host/owner/repo, scheme + auth stripped). */
   remoteUrl: string;
+  /** SCM host family: 'github' | 'gitlab' | … (null when App-less / unknown). */
+  provider: string | null;
+  /** Rename-stable repo id; federation matches on this, never owner/name. */
+  providerRepoId: string | null;
+  providerOwnerId: string | null;
+  /** Account login — display only. */
+  providerOwnerLogin: string | null;
   createdBy: ActorRef;
   createdAt: string;
   lastSeenAt: string | null;
@@ -498,6 +505,11 @@ export interface ListRefsResponse {
 export interface CreateWorkspaceLinkRequest {
   remoteUrl: string;
   projectSlug?: string;
+  /** Optional rename-stable provider identity (the CLI/App sets it when known). */
+  provider?: string;
+  providerRepoId?: string;
+  providerOwnerId?: string;
+  providerOwnerLogin?: string;
 }
 
 export interface CreateWorkspaceLinkResponse {

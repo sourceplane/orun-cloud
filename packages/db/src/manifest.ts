@@ -237,5 +237,14 @@ export const manifest: MigrationManifest = {
       description:
         "Hosted RefStore (saas-orun-platform v2 OV1) — state.refs, the L2 mutable CAS pointer layer (name → ObjectID) over the immutable object graph, one row per (org, project, name) with a composite FK to state.objects; widens state.objects.kind to admit the object model's structural kinds (blob, tree) so the hosted plane stores the content-addressed objects the CLI's RemoteStore uploads",
     },
+    {
+      id: "260_state_link_provider",
+      context: "state",
+      path: "260_state_link_provider/up.sql",
+      checksum:
+        "561ed45ee873ac7771b48db1216f319cdef3f0716f68b834fc36ce1946483368",
+      description:
+        "Workspace link provider identity (saas-orun-platform v2 OV2.1, additive) — adds rename-stable provider/provider_repo_id/provider_owner_id/provider_owner_login to state.workspace_links plus a partial federation index on (provider, provider_repo_id), so Orun workspace links and the GitHub App's repo links converge on a repo's stable id (never owner/name); the strict (org,project) bijection index is deferred to a post-backfill flip",
+    },
   ],
 };
