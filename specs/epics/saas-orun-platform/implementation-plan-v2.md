@@ -96,11 +96,18 @@ reopen these.
 - **Done when:** the surface passes the buyer-credibility bar over cloud data
   with no second read path.
 
-### OV8 — Secrets (carried from OP8)
+### OV8 — Secrets (Orun Cloud slice of `orun-secrets`)
 
-- Authored per `(project, env)`; bind to env on materialize; runtime grants +
-  redaction unchanged. **Done when:** a console-set secret injects into a step
-  on stage and never appears in state/objects/logs.
+- Canonical design is the **`orun-secrets` epic (SEC0–SEC7,
+  `orun/specs/orun-secrets/`)**, which supersedes the OP8/OC5 secret-store
+  sketch. OV8 is the platform implementation slice: values live encrypted in the
+  backend — **never in the object graph, only `secret://` references** (SD-1) —
+  authored per `(project, env)`, bound on materialize, resolved under the live
+  job lease with redaction; `secret.value.use` is gated by the `SecretPolicy`
+  engine. (`orun-secrets` keeps `namespace` = repo, which v2's project == repo
+  satisfies; the rename is its deferred follow-up.) **Done when:** a secret set
+  via the contract's write-only API materializes/resolves into a step on stage
+  under policy and never appears in state/objects/logs.
 
 ### OV9 — Metering, entitlements, retention, GC (carried from OP9)
 
