@@ -246,5 +246,14 @@ export const manifest: MigrationManifest = {
       description:
         "Workspace link provider identity (saas-orun-platform v2 OV2.1, additive) — adds rename-stable provider/provider_repo_id/provider_owner_id/provider_owner_login to state.workspace_links plus a partial federation index on (provider, provider_repo_id), so Orun workspace links and the GitHub App's repo links converge on a repo's stable id (never owner/name); the strict (org,project) bijection index is deferred to a post-backfill flip",
     },
+    {
+      id: "270_state_link_ci_settings",
+      context: "state",
+      path: "270_state_link_ci_settings/up.sql",
+      checksum:
+        "ac39e41767083297242652f360cb5c5659b7ebf5c21b78afca6215b1daa16f28",
+      description:
+        "Per-link CI trust settings (saas-orun-platform v2 OV3, additive) — adds oidc_enabled/api_key_enabled and the optional OIDC gate columns allowed_ref_pattern/allowed_environments to state.workspace_links; the workspace link is the CI trust binding, these tighten it per-link (DV4 drops the separate oidc_trust_bindings table). Permissive defaults preserve link-as-trust semantics",
+    },
   ],
 };

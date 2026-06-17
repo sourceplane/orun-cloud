@@ -5,6 +5,7 @@ import {
 import type { Env } from "@state-worker/env";
 import type { SqlExecutor, SqlExecutorResult, SqlRow } from "@saas/db/hyperdrive";
 import { asUuid } from "@saas/db";
+import { createStateRepository } from "@saas/db/state";
 
 const ORG_UUID = "11111111-1111-4111-8111-111111111111";
 const OTHER_ORG_UUID = "22222222-2222-4222-8222-222222222222";
@@ -250,6 +251,55 @@ describe("POST /v1/organizations/{orgId}/cli/links", () => {
     const insert = queries.find((q) => q.text.includes("INSERT INTO state.workspace_links"));
     expect(insert?.params).toContain("github");
     expect(insert?.params).toContain("123456");
+  });
+
+  it("surfaces per-link CI settings on the public link (OV3)", async () => {
+    const { executor } = fakeExecutor((text) => {
+      if (text.includes("INSERT INTO state.workspace_links")) {
+        return [
+          workspaceLinkRow({
+            oidc_enabled: false,
+            api_key_enabled: true,
+            allowed_ref_pattern: "refs/heads/main",
+            allowed_environments: ["prod"],
+          }),
+        ];
+      }
+      return [{ _event: {}, _audit: {} }];
+    });
+    const res = await handleCreateWorkspaceLink(
+      createRequest({ remoteUrl: "git@github.com:acme/platform.git", projectSlug: "platform" }),
+      createEnv({
+        MEMBERSHIP_WORKER: membershipFetcher({ allow: true, orgs: [ORG_ENTRY] }),
+        POLICY_WORKER: policyFetcher(true),
+        PROJECTS_WORKER: projectsFetcher({
+          resolveSlug: { id: PROJECT_PUBLIC, slug: "platform", name: "platform", status: "active" },
+        }),
+      }),
+      "req_1",
+      ACTOR,
+      asUuid(ORG_UUID),
+      { executor },
+    );
+    expect(res.status).toBe(201);
+    const body = (await res.json()) as {
+      data: {
+        link: {
+          ciSettings: {
+            oidcEnabled: boolean;
+            apiKeyEnabled: boolean;
+            allowedRefPattern: string | null;
+            allowedEnvironments: string[] | null;
+          };
+        };
+      };
+    };
+    expect(body.data.link.ciSettings).toEqual({
+      oidcEnabled: false,
+      apiKeyEnabled: true,
+      allowedRefPattern: "refs/heads/main",
+      allowedEnvironments: ["prod"],
+    });
   });
 
   it("reuses an existing project when the slug already resolves", async () => {
@@ -504,5 +554,52 @@ describe("GET /v1/cli/links/resolve", () => {
       { executor },
     );
     expect(res.status).toBe(422);
+  });
+});
+
+describe("StateRepository.updateWorkspaceLinkCiSettings (OV3)", () => {
+  it("builds a partial UPDATE of only the provided fields and maps the result", async () => {
+    const { executor, queries } = fakeExecutor((text) => {
+      if (text.includes("UPDATE state.workspace_links")) {
+        return [
+          workspaceLinkRow({
+            oidc_enabled: false,
+            allowed_ref_pattern: "refs/heads/release/*",
+          }),
+        ];
+      }
+      return [];
+    });
+    const repo = createStateRepository(executor);
+    const result = await repo.updateWorkspaceLinkCiSettings({
+      orgId: asUuid(ORG_UUID),
+      id: asUuid(LINK_UUID),
+      oidcEnabled: false,
+      allowedRefPattern: "refs/heads/release/*",
+    });
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value.ciSettings.oidcEnabled).toBe(false);
+      expect(result.value.ciSettings.allowedRefPattern).toBe("refs/heads/release/*");
+    }
+    const update = queries.find((q) => q.text.includes("UPDATE state.workspace_links"));
+    // Only oidc_enabled + allowed_ref_pattern (+ updated_at) were set — not
+    // api_key_enabled or allowed_environments.
+    expect(update?.text).toContain("oidc_enabled =");
+    expect(update?.text).toContain("allowed_ref_pattern =");
+    expect(update?.text).not.toContain("api_key_enabled =");
+    expect(update?.text).not.toContain("allowed_environments =");
+  });
+
+  it("returns not_found when no active link matches", async () => {
+    const { executor } = fakeExecutor(() => []);
+    const repo = createStateRepository(executor);
+    const result = await repo.updateWorkspaceLinkCiSettings({
+      orgId: asUuid(ORG_UUID),
+      id: asUuid(LINK_UUID),
+      apiKeyEnabled: false,
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.kind).toBe("not_found");
   });
 });
