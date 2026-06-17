@@ -67,3 +67,4 @@ spec:
 # ci: bootstrap deploy without service bindings (binding-cycle seed)
 # ci: restore service bindings after binding-cycle seed
 # ci: SS3 prod secrets seeded — redeploy to sync runtime secrets (secrets-live)
+# ci: rotate POLAR_ACCESS_TOKEN/POLAR_WEBHOOK_SECRET — redeploy prod to sync from escrow (integrations/polar/prod)
