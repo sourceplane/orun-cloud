@@ -266,6 +266,70 @@ export interface IssueIntegrationTokenResponse {
   permissions: Record<string, "read" | "write">;
 }
 
+// ── Write-back proxy (IG9 outbound bridge — internal endpoint) ──
+
+/** Check Run projection posted back to GitHub (mirrors the GitHub API shape). */
+export interface WritebackCheckRun {
+  /** Display name, e.g. "orun / affected components". */
+  name: string;
+  headSha: string;
+  status: "queued" | "in_progress" | "completed";
+  /** Required when status is "completed": success | failure | neutral | … */
+  conclusion?: string;
+  /** Deep link to the cockpit run. */
+  detailsUrl?: string;
+  title: string;
+  summary: string;
+}
+
+/** Commit-status projection posted back to GitHub. */
+export interface WritebackCommitStatus {
+  sha: string;
+  state: "error" | "failure" | "pending" | "success";
+  context: string;
+  description?: string;
+  targetUrl?: string;
+}
+
+/**
+ * POST /internal/github/writeback — state-worker drives this on a run-result
+ * event (pairs with `saas-orun-platform` OV5). Service-binding only
+ * (`x-internal-caller: state-worker`); integrations-worker owns the App key,
+ * resolves the repo's installation, mints a SCOPED token, posts, and audits —
+ * state-worker never sees the credential. Fail-soft: a repo that is not
+ * App-linked or an App lacking the write grant resolves to `skipped`; a GitHub
+ * error to `failed`. Neither ever breaks a run.
+ */
+export type WritebackRequest =
+  | {
+      kind: "check_run";
+      /** Org public id (org_…). */
+      orgId: string;
+      /** Rename-stable provider repo id (GitHub's numeric id, as a string). */
+      repoExternalId: string;
+      /** "owner/repo" for the GitHub API path. */
+      ownerRepo: string;
+      checkRun: WritebackCheckRun;
+    }
+  | {
+      kind: "commit_status";
+      orgId: string;
+      repoExternalId: string;
+      ownerRepo: string;
+      status: WritebackCommitStatus;
+    };
+
+export interface WritebackResponse {
+  outcome: "posted" | "skipped" | "failed";
+  /** Present for skipped/failed — a stable machine-readable reason. */
+  reason?: string;
+  /** Present for posted — the created GitHub resource. */
+  resource?: { id: number; url: string | null };
+}
+
+/** The only caller allowed to drive write-back (service-binding only). */
+export const INTEGRATIONS_WRITEBACK_CALLER = "state-worker";
+
 // ── Event taxonomy ──────────────────────────────────────────
 
 /** Platform lifecycle events emitted by the integrations context. */
