@@ -100,3 +100,56 @@ export async function authorizeRun(
 
   return { ok: true };
 }
+
+/**
+ * Authorize `action` for `actor` on the ORG resource (no project) — the org-
+ * global surfaces (OV6 catalog browser). Same deny-as-404 resource-hiding as
+ * authorizeRun. A workflow token is scoped to one (org, project), so it may read
+ * org-global data only for its own org; everything else hides as a 404.
+ */
+export async function authorizeOrg(
+  env: Env,
+  requestId: string,
+  actor: ActorContext,
+  orgId: Uuid,
+  action: string,
+): Promise<AuthzResult> {
+  if (actor.subjectType === "workflow") {
+    if (actor.boundOrgId && actor.boundOrgId === orgId) return { ok: true };
+    return { ok: false, response: errorResponse("not_found", "Not found", 404, requestId) };
+  }
+
+  if (!env.MEMBERSHIP_WORKER || !env.POLICY_WORKER) {
+    return {
+      ok: false,
+      response: errorResponse("internal_error", "Authorization services not configured", 503, requestId),
+    };
+  }
+
+  const contextResult = await fetchAuthorizationContext(
+    env.MEMBERSHIP_WORKER,
+    actor.subjectId,
+    actor.subjectType,
+    orgId,
+    requestId,
+  );
+  if (!contextResult.ok) {
+    return { ok: false, response: errorResponse("not_found", "Not found", 404, requestId) };
+  }
+
+  const resource: PolicyResource = { kind: "organization", orgId };
+  const policyResult = await authorizeViaPolicy(
+    env.POLICY_WORKER,
+    actor.subjectId,
+    actor.subjectType,
+    action,
+    resource,
+    contextResult.memberships,
+    requestId,
+  );
+  if (!policyResult.allow) {
+    return { ok: false, response: errorResponse("not_found", "Not found", 404, requestId) };
+  }
+
+  return { ok: true };
+}

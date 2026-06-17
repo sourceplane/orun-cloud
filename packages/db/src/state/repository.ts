@@ -23,6 +23,9 @@ import type {
   HeartbeatOutcome,
   HeartbeatRunJobInput,
   ListCatalogEntitiesQuery,
+  ListOrgCatalogEntitiesQuery,
+  OrgCatalogEntity,
+  UpsertOrgCatalogEntityInput,
   ListRunsQuery,
   LogChunk,
   PagedResult,
@@ -230,6 +233,25 @@ function mapCatalogEntity(row: Record<string, unknown>): CatalogEntity {
     lifecycle: (row.lifecycle as string) ?? null,
     relations: parseJson<CatalogEntityRelation[]>(row.relations) ?? [],
     createdAt: toDate(row.created_at),
+  };
+}
+
+function mapOrgCatalogEntity(row: Record<string, unknown>): OrgCatalogEntity {
+  return {
+    id: row.id as string,
+    orgId: row.org_id as string,
+    entityRef: row.entity_ref as string,
+    kind: row.kind as string,
+    name: row.name as string,
+    owner: (row.owner as string) ?? null,
+    lifecycle: (row.lifecycle as string) ?? null,
+    relations: parseJson<CatalogEntityRelation[]>(row.relations) ?? [],
+    sourceProjectId: row.source_project_id as string,
+    sourceEnvironment: (row.source_environment as string) ?? null,
+    sourceCommit: (row.source_commit as string) ?? null,
+    headDigest: row.head_digest as string,
+    createdAt: toDate(row.created_at),
+    updatedAt: toDate(row.updated_at),
   };
 }
 
@@ -1118,6 +1140,103 @@ export function createStateRepository(executor: SqlExecutor): StateRepository {
         sql += ` AND name ILIKE $${values.length}`;
       }
       return pagedList(executor, sql, values, params.limit, params.cursor, mapCatalogEntity);
+    },
+
+    // ── Org-global catalog projection (OV6 read-model) ─────────
+
+    async upsertOrgCatalogEntity(
+      input: UpsertOrgCatalogEntityInput,
+    ): Promise<StateResult<OrgCatalogEntity>> {
+      try {
+        const result = await executor.execute<Record<string, unknown>>(
+          `INSERT INTO state.org_catalog_entities
+             (id, org_id, entity_ref, kind, name, owner, lifecycle, relations,
+              source_project_id, source_environment, source_commit, head_digest,
+              created_at, updated_at)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, now(), now())
+           ON CONFLICT (org_id, source_project_id, COALESCE(source_environment, ''), entity_ref)
+             DO UPDATE SET
+               kind = EXCLUDED.kind,
+               name = EXCLUDED.name,
+               owner = EXCLUDED.owner,
+               lifecycle = EXCLUDED.lifecycle,
+               relations = EXCLUDED.relations,
+               source_commit = EXCLUDED.source_commit,
+               head_digest = EXCLUDED.head_digest,
+               updated_at = now()
+           RETURNING *`,
+          [
+            input.id,
+            input.orgId,
+            input.entityRef,
+            input.kind,
+            input.name,
+            input.owner ?? null,
+            input.lifecycle ?? null,
+            JSON.stringify(input.relations ?? []),
+            input.sourceProjectId,
+            input.sourceEnvironment ?? null,
+            input.sourceCommit ?? null,
+            input.headDigest,
+          ],
+        );
+        return { ok: true, value: mapOrgCatalogEntity(result.rows[0]!) };
+      } catch {
+        return safeError("Failed to upsert org catalog entity");
+      }
+    },
+
+    async listOrgCatalogEntities(
+      orgId: Uuid,
+      params: PageQueryParams,
+      query?: ListOrgCatalogEntitiesQuery,
+    ): Promise<StateResult<PagedResult<OrgCatalogEntity>>> {
+      const values: unknown[] = [orgId];
+      let sql = `SELECT * FROM state.org_catalog_entities WHERE org_id = $1`;
+      if (query?.sourceProjectId) {
+        values.push(query.sourceProjectId);
+        sql += ` AND source_project_id = $${values.length}`;
+      }
+      if (query?.sourceEnvironment !== undefined) {
+        // Explicit null narrows to the project-wide head scope.
+        if (query.sourceEnvironment === null) {
+          sql += ` AND source_environment IS NULL`;
+        } else {
+          values.push(query.sourceEnvironment);
+          sql += ` AND source_environment = $${values.length}`;
+        }
+      }
+      if (query?.kind) {
+        values.push(query.kind);
+        sql += ` AND kind = $${values.length}`;
+      }
+      if (query?.owner) {
+        values.push(query.owner);
+        sql += ` AND owner = $${values.length}`;
+      }
+      if (query?.q) {
+        values.push(`%${query.q}%`);
+        sql += ` AND (name ILIKE $${values.length} OR entity_ref ILIKE $${values.length})`;
+      }
+      return pagedList(executor, sql, values, params.limit, params.cursor, mapOrgCatalogEntity);
+    },
+
+    async deleteOrgCatalogEntitiesForScope(
+      orgId: Uuid,
+      sourceProjectId: Uuid,
+      sourceEnvironment: string | null,
+    ): Promise<StateResult<number>> {
+      try {
+        const result = await executor.execute(
+          `DELETE FROM state.org_catalog_entities
+            WHERE org_id = $1 AND source_project_id = $2
+              AND COALESCE(source_environment, '') = COALESCE($3, '')`,
+          [orgId, sourceProjectId, sourceEnvironment],
+        );
+        return { ok: true, value: result.rowCount ?? 0 };
+      } catch {
+        return safeError("Failed to delete org catalog entities for scope");
+      }
     },
 
     // ── Refs (hosted RefStore — L2 mutable CAS pointers; OV1) ─

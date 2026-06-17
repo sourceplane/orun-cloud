@@ -16,17 +16,24 @@ import type {
   PutCatalogHeadResponse,
   GetCatalogHeadResponse,
   ListCatalogHeadHistoryResponse,
+  ListOrgCatalogEntitiesResponse,
   CatalogHead as PublicCatalogHead,
+  OrgCatalogEntity as PublicOrgCatalogEntity,
 } from "@saas/contracts/state";
 import { STATE_EVENT_TYPES, STATE_POLICY_ACTIONS } from "@saas/contracts/state";
-import { createStateRepository, type CatalogHead } from "@saas/db/state";
+import {
+  createStateRepository,
+  type CatalogHead,
+  type OrgCatalogEntity,
+  type ListOrgCatalogEntitiesQuery,
+} from "@saas/db/state";
 import { createEventsRepository } from "@saas/db/events";
 import { createSqlExecutor, type SqlExecutor } from "@saas/db/hyperdrive";
 import type { Uuid } from "@saas/db/ids";
 import { errorResponse, successResponse, listResponse, validationError } from "../http.js";
-import { authorizeRun } from "../authz.js";
-import { generateUuid, orgPublicId, projectPublicId } from "../ids.js";
-import { DEFAULT_PAGE_LIMIT } from "../constants.js";
+import { authorizeRun, authorizeOrg } from "../authz.js";
+import { generateUuid, orgPublicId, projectPublicId, parseProjectPublicId } from "../ids.js";
+import { DEFAULT_PAGE_LIMIT, MAX_PAGE_LIMIT } from "../constants.js";
 import { isValidDigest } from "../object-store.js";
 
 export interface CatalogHandlerDeps {
@@ -298,4 +305,97 @@ export async function handleListCatalogEntities(
     requestId,
     { milestone: "OP7" },
   );
+}
+
+// ── GET /v1/organizations/{orgId}/catalog/entities — org-global browser (OV6) ─
+// The default catalog view: one org-wide component graph merged across projects,
+// each row carrying provenance (project, env, commit). Optional filters: project
+// + environment narrow to a repo/env sublist; kind/owner are facets; q matches
+// name or ref. Org-scoped read (catalog.read on the organization).
+
+function toPublicOrgEntity(e: OrgCatalogEntity): PublicOrgCatalogEntity {
+  return {
+    orgId: orgPublicId(e.orgId),
+    entityRef: e.entityRef,
+    kind: e.kind,
+    name: e.name,
+    owner: e.owner,
+    lifecycle: e.lifecycle,
+    relations: e.relations,
+    sourceProjectId: projectPublicId(e.sourceProjectId),
+    sourceEnvironment: e.sourceEnvironment,
+    sourceCommit: e.sourceCommit,
+    headDigest: e.headDigest,
+  };
+}
+
+export async function handleListOrgCatalogEntities(
+  request: Request,
+  env: Env,
+  requestId: string,
+  actor: ActorContext,
+  orgId: Uuid,
+  deps?: CatalogHandlerDeps,
+): Promise<Response> {
+  const authz = await authorizeOrg(env, requestId, actor, orgId, STATE_POLICY_ACTIONS.CATALOG_READ);
+  if (!authz.ok) return authz.response;
+
+  const url = new URL(request.url);
+
+  // Optional provenance filter: ?project=prj_… (parsed to uuid; bad id → 422).
+  const query: ListOrgCatalogEntitiesQuery = {};
+  const projectParam = url.searchParams.get("project");
+  if (projectParam) {
+    const projectUuid = parseProjectPublicId(projectParam);
+    if (!projectUuid) return validationError(requestId, { project: ["Malformed project id"] });
+    query.sourceProjectId = projectUuid;
+  }
+  // ?environment=prod narrows to that env; omitted = any (no env filter).
+  const envParam = url.searchParams.get("environment");
+  if (envParam && envParam.length > 0) query.sourceEnvironment = envParam;
+  const kind = url.searchParams.get("kind");
+  if (kind) query.kind = kind;
+  const owner = url.searchParams.get("owner");
+  if (owner) query.owner = owner;
+  const q = url.searchParams.get("q");
+  if (q) query.q = q;
+
+  let limit = DEFAULT_PAGE_LIMIT;
+  const limitParam = url.searchParams.get("limit");
+  if (limitParam) {
+    const parsed = Number(limitParam);
+    if (!Number.isInteger(parsed) || parsed < 1 || parsed > MAX_PAGE_LIMIT) {
+      return validationError(requestId, { limit: [`Must be 1..${MAX_PAGE_LIMIT}`] });
+    }
+    limit = parsed;
+  }
+
+  const cursorParam = url.searchParams.get("cursor");
+  let cursor: { createdAt: string; id: string } | null = null;
+  if (cursorParam) {
+    const idx = cursorParam.indexOf("|");
+    if (idx <= 0) return validationError(requestId, { cursor: ["Malformed cursor"] });
+    cursor = { createdAt: cursorParam.slice(0, idx), id: cursorParam.slice(idx + 1) };
+  }
+
+  const executor = deps?.executor ?? createSqlExecutor(env.PLATFORM_DB!);
+  const owned = !deps?.executor;
+  try {
+    const repo = createStateRepository(executor);
+    const result = await repo.listOrgCatalogEntities(orgId, { limit, cursor }, query);
+    if (!result.ok) return errorResponse("internal_error", "Service unavailable", 503, requestId);
+    const nextCursor = result.value.nextCursor
+      ? { createdAt: result.value.nextCursor.createdAt, id: result.value.nextCursor.id }
+      : null;
+    const payload: ListOrgCatalogEntitiesResponse = {
+      entities: result.value.items.map(toPublicOrgEntity),
+      nextCursor,
+    };
+    const cursorStr = nextCursor ? `${nextCursor.createdAt}|${nextCursor.id}` : null;
+    return listResponse(payload, requestId, cursorStr);
+  } catch {
+    return errorResponse("internal_error", "Service unavailable", 503, requestId);
+  } finally {
+    if (owned) await dispose(executor);
+  }
 }

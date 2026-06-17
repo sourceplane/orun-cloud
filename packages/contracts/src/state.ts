@@ -270,6 +270,33 @@ export interface CatalogEntity {
   relations: Array<{ type: string; targetRef: string }>;
 }
 
+/**
+ * One entity in the ORG-GLOBAL catalog projection (OV6 — design-v2 §6). The
+ * default catalog view is a single org-wide component graph merged across every
+ * project; each row carries its provenance (source project, environment, commit)
+ * so "repo" and "env" are filters over the merged graph, not storage partitions.
+ * Derived from the snapshot at head-advance, never authored.
+ */
+export interface OrgCatalogEntity {
+  orgId: string;
+  /** Stable entity ref (e.g. `component:default/api`); merged-graph identity is
+   *  (sourceProjectId, sourceEnvironment, entityRef) to stay collision-free. */
+  entityRef: string;
+  kind: string;
+  name: string;
+  owner: string | null;
+  lifecycle: string | null;
+  relations: Array<{ type: string; targetRef: string }>;
+  /** Provenance — the project this entity was projected from. */
+  sourceProjectId: string;
+  /** Provenance — the environment scope, or null for the project-wide head. */
+  sourceEnvironment: string | null;
+  /** Provenance — the git commit the snapshot was resolved at, when known. */
+  sourceCommit: string | null;
+  /** The catalog snapshot digest this row was projected from. */
+  headDigest: string;
+}
+
 // ── Workspace links (design §2; state-api-contract §5) ──────
 
 /**
@@ -461,6 +488,17 @@ export interface ListCatalogHeadHistoryResponse {
 /** GET …/state/catalog/entities?kind=&owner=&q=&cursor= */
 export interface ListCatalogEntitiesResponse {
   entities: CatalogEntity[];
+  nextCursor: StateCursor | null;
+}
+
+/**
+ * GET /v1/organizations/{orgId}/catalog/entities — the org-global catalog
+ * browser (OV6). Optional provenance/facet filters: `project` and `environment`
+ * narrow to a repo/env sublist; `kind` / `owner` are facets; `q` matches name or
+ * ref. Omitting all returns the merged org-wide graph, newest first.
+ */
+export interface ListOrgCatalogEntitiesResponse {
+  entities: OrgCatalogEntity[];
   nextCursor: StateCursor | null;
 }
 

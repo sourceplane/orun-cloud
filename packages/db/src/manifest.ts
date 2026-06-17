@@ -300,5 +300,14 @@ export const manifest: MigrationManifest = {
       description:
         "High-water mark for the OV5/IG9 run-result write-back driver — single-row state.run_writeback_cursor (occurred_at, event_id) of the last terminal run event posted back to GitHub, advanced per-event so a crash never re-posts a non-idempotent Check Run; mirrors state.scm_ingest_cursor",
     },
+    {
+      id: "330_state_org_catalog_index",
+      context: "state",
+      path: "330_state_org_catalog_index/up.sql",
+      checksum:
+        "1c60ce2e5fba7e590be1075b107b8828c097556f3770983fe9dcd8147f5e369f",
+      description:
+        "Org-global catalog projection read model (saas-orun-platform v2 OV6) — state.org_catalog_entities merges every project's catalog into one org-wide graph, one row per entity per (source project, environment) scope with provenance (project, env, commit, head digest); namespaced by source to stay collision-free so repo/env are filters, not partitions; derived idempotently from the snapshot, never authored",
+    },
   ],
 };
