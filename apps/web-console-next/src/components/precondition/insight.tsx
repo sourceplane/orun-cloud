@@ -101,6 +101,23 @@ export function PreconditionInsight({
     case "not_configured": {
       tone = "default";
       icon = <Wrench className="h-5 w-5" />;
+      // The connect/repo-link gates reuse `not_configured` for a non-billing
+      // cause: the environment's provider App isn't registered yet. Detect that
+      // gate so we don't send people to the Billing tab for a platform-setup
+      // step that billing can't fix.
+      if (error.details?.gate === "github_app_registration") {
+        title = "GitHub isn't set up for this workspace yet";
+        body = (
+          <p className="text-sm text-muted-foreground">
+            The GitHub App for this environment hasn&apos;t been configured yet, so connections
+            can&apos;t be created. This is a one-time platform setup step (registering the GitHub
+            App) — not a billing issue. Ask an administrator to finish GitHub App setup, then try
+            again.
+          </p>
+        );
+        // No primary CTA: opening Billing wouldn't resolve an App-registration gate.
+        break;
+      }
       title = "Billing isn't configured yet";
       body = (
         <p className="text-sm text-muted-foreground">

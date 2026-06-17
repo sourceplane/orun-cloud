@@ -22,6 +22,14 @@
       "EMAIL_FROM_ADDRESS": "no-reply@mail.example.test",
       "EMAIL_FROM_NAME": "Example"
     },
+    "github-app": {
+      "GITHUB_APP_ID": "fixture-gh-app-id-stage",
+      "GITHUB_APP_SLUG": "fixture-gh-app-slug-stage",
+      "GITHUB_APP_CLIENT_ID": "fixture-gh-app-client-id-stage",
+      "GITHUB_APP_PRIVATE_KEY": "fixture-gh-app-private-key-stage",
+      "GITHUB_APP_WEBHOOK_SECRET": "fixture-gh-app-webhook-stage",
+      "GITHUB_APP_CLIENT_SECRET": "fixture-gh-app-client-secret-stage"
+    },
     "platform": {
       "SECRET_ENCRYPTION_KEY": "fixture-encryption-key-stage",
       "OAUTH_STATE_SECRET": "fixture-oauth-state-stage",
@@ -50,6 +58,14 @@
       "NOTIFICATIONS_PROVIDER": "cloudflare-email",
       "EMAIL_FROM_ADDRESS": "no-reply@mail.example.test",
       "EMAIL_FROM_NAME": "Example"
+    },
+    "github-app": {
+      "GITHUB_APP_ID": "fixture-gh-app-id-prod",
+      "GITHUB_APP_SLUG": "fixture-gh-app-slug-prod",
+      "GITHUB_APP_CLIENT_ID": "fixture-gh-app-client-id-prod",
+      "GITHUB_APP_PRIVATE_KEY": "fixture-gh-app-private-key-prod",
+      "GITHUB_APP_WEBHOOK_SECRET": "fixture-gh-app-webhook-prod",
+      "GITHUB_APP_CLIENT_SECRET": "fixture-gh-app-client-secret-prod"
     },
     "platform": {
       "SECRET_ENCRYPTION_KEY": "fixture-encryption-key-prod",

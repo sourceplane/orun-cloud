@@ -2,7 +2,7 @@
   "$comment": "SS6 source of truth (saas-secrets-sync): per-integration documents in AWS Secrets Manager, each holding the non-secret config AND the secret(s) for ONE provider integration. Non-integration secrets (repo/account-generated, not tied to a provider) live in a single platform-secrets doc. assemble.mjs projects this into (a) the per-worker secret view committed as secrets.manifest.json and consumed by check.mjs/sync.mjs, and (b) the per-worker config view rendered into wrangler vars. config keys are non-secret and may be logged; secret keys never are.",
   "escrowRoot": "sourceplane/orun-cloud",
   "environments": ["stage", "prod"],
-  "deferredConsumers": ["integrations-worker", "state-worker"],
+  "deferredConsumers": ["state-worker"],
   "integrations": {
     "github-oauth": {
       "doc": "integrations/github-oauth/<env>",
@@ -30,10 +30,17 @@
     },
     "github-app": {
       "doc": "integrations/github-app/<env>",
-      "config": ["GITHUB_APP_ID", "GITHUB_APP_SLUG", "GITHUB_APP_CLIENT_ID"],
-      "secret": ["GITHUB_APP_PRIVATE_KEY", "GITHUB_APP_WEBHOOK_SECRET", "GITHUB_APP_CLIENT_SECRET"],
-      "consumers": ["integrations-worker"],
-      "deferred": "saas-integrations D1 — GitHub App not yet registered"
+      "$comment": "GITHUB_APP_ID/SLUG/CLIENT_ID are not sensitive, but the deploy lane only pushes `secret`-classified keys to the worker (non-secret `config` is hand-maintained in each worker's wrangler vars). integrations-worker reads GITHUB_APP_ID/SLUG at runtime via getConfiguredProvider, so all App keys are classified as secrets to flow through secrets-live — matching the worker template's documented expectation.",
+      "config": [],
+      "secret": [
+        "GITHUB_APP_ID",
+        "GITHUB_APP_SLUG",
+        "GITHUB_APP_CLIENT_ID",
+        "GITHUB_APP_PRIVATE_KEY",
+        "GITHUB_APP_WEBHOOK_SECRET",
+        "GITHUB_APP_CLIENT_SECRET"
+      ],
+      "consumers": ["integrations-worker"]
     }
   },
   "platform": {

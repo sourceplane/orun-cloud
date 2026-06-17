@@ -124,7 +124,9 @@ describe("secrets-check (SS1)", () => {
     expect(relaxed.status).toBe(0);
     const strict = runCheck(["--fixture", fixturePath, "--strict"]);
     expect(strict.status).toBe(1);
-    expect(strict.stderr).toContain("integrations-worker: missing GITHUB_APP_PRIVATE_KEY");
+    // state-worker is the remaining deferred consumer (STATE_ENCRYPTION_KEY),
+    // so the escrow fixture omits it and --strict surfaces it as missing.
+    expect(strict.stderr).toContain("state-worker: missing STATE_ENCRYPTION_KEY");
   });
 
   it("never prints secret values, only fingerprints", () => {
