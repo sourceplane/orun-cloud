@@ -48,6 +48,27 @@ describe("plan catalog", () => {
     expect(getPlanDefinition(DEFAULT_PLAN_CODE)).not.toBeNull();
   });
 
+  it("free explicitly grants the GitHub integration with one repo link", () => {
+    const free = getPlanDefinition("free")!;
+    const github = free.entitlements.find((e) => e.entitlementKey === "feature.integrations.github")!;
+    expect(github).toBeDefined();
+    expect(github.enabled).toBe(true);
+    const repoLinks = free.entitlements.find((e) => e.entitlementKey === "limit.repo_links")!;
+    expect(repoLinks.enabled).toBe(true);
+    // Free keeps >= the check-entitlement safety-net value so retiring that net
+    // cannot regress the free tier.
+    expect(repoLinks.limitValue).toBeGreaterThanOrEqual(1);
+  });
+
+  it("every tier grants the GitHub integration (it is never paywalled)", () => {
+    for (const plan of PLAN_CATALOG) {
+      const github = plan.entitlements.find((e) => e.entitlementKey === "feature.integrations.github");
+      expect(github?.enabled).toBe(true);
+      const repoLinks = plan.entitlements.find((e) => e.entitlementKey === "limit.repo_links");
+      expect(repoLinks?.enabled).toBe(true);
+    }
+  });
+
   it("adds business + enterprise tiers and the multi-org entitlement keys (D5)", () => {
     expect(PLAN_CATALOG.map((p) => p.code)).toEqual(["free", "pro", "business", "enterprise"]);
     expect(isKnownPlanCode("business")).toBe(true);
