@@ -7,6 +7,8 @@ export interface ActorInfo {
   subjectType: string;
   email: string;
   orgId?: string;
+  /** Bound project (public id) — present for workflow actors (OV3). */
+  projectId?: string;
   /** Org ids carried by a CLI access JWT (OP1). Present only for CLI sessions. */
   orgIds?: string[];
 }
@@ -77,6 +79,7 @@ export async function resolveActor(
           actorId?: string;
           email?: string;
           orgId?: string;
+          projectId?: string;
         };
         user?: { id?: string; email?: string };
         // CLI access JWT (OP1): the org ids the token was minted with.
@@ -100,6 +103,7 @@ export async function resolveActor(
       subjectType: actor.actorType,
       email,
       ...(actor.orgId && { orgId: actor.orgId }),
+      ...(actor.projectId && { projectId: actor.projectId }),
       ...(Array.isArray(cliOrgIds) && cliOrgIds.length > 0 && { orgIds: cliOrgIds }),
     };
     // Cache only successful resolutions (best-effort; never cache a denial).

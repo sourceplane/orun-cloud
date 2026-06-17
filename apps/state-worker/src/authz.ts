@@ -38,6 +38,25 @@ export async function authorizeRun(
   projectId: Uuid,
   action: string,
 ): Promise<AuthzResult> {
+  // Workflow actors (OV3 — credential-agnostic CI auth). The OIDC exchange
+  // already verified the GitHub token, resolved the repo to this (org, project),
+  // and gated on the link's CI settings; the minted token's bound scope IS the
+  // authorization. So a workflow grant is exactly: the request's (org, project)
+  // equals the token's bound (org, project) — no role lookup (a workflow has no
+  // memberships). A mismatch (or a workflow token with no bound scope) hides as
+  // a 404, like every other denial.
+  if (actor.subjectType === "workflow") {
+    if (
+      actor.boundOrgId &&
+      actor.boundProjectId &&
+      actor.boundOrgId === orgId &&
+      actor.boundProjectId === projectId
+    ) {
+      return { ok: true };
+    }
+    return { ok: false, response: errorResponse("not_found", "Not found", 404, requestId) };
+  }
+
   if (!env.MEMBERSHIP_WORKER || !env.POLICY_WORKER) {
     return {
       ok: false,

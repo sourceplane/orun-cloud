@@ -46,7 +46,7 @@ import {
   parseProjectPublicId,
   parseWorkspaceLinkPublicId,
 } from "./ids.js";
-import { asUuid } from "@saas/db/ids";
+import { asUuid, type Uuid } from "@saas/db/ids";
 import { enforceContractVersion } from "./contract-version.js";
 import { errorResponse, methodNotAllowed, notFound } from "./http.js";
 
@@ -55,6 +55,11 @@ const REQUEST_ID_RE = /^[\w-]{1,128}$/;
 export interface ActorContext {
   subjectId: string;
   subjectType: string;
+  /** Workflow actors (OV3) carry their token-bound (org, project) as UUIDs; the
+   *  OIDC token is the authorization, so authorizeRun grants within this scope
+   *  without a role lookup. Undefined for user / service_principal actors. */
+  boundOrgId?: Uuid;
+  boundProjectId?: Uuid;
 }
 
 function resolveRequestId(request: Request): string {
@@ -67,7 +72,14 @@ function resolveActor(request: Request): ActorContext | null {
   const subjectId = request.headers.get("x-actor-subject-id");
   const subjectType = request.headers.get("x-actor-subject-type");
   if (!subjectId || !subjectType) return null;
-  return { subjectId, subjectType };
+  const actor: ActorContext = { subjectId, subjectType };
+  // Bound scope for workflow actors (OV3). The edge forwards public ids; parse
+  // to UUIDs so authorizeRun can compare against the path-scoped (org, project).
+  const boundOrg = parseOrgPublicId(request.headers.get("x-actor-org-id") ?? "");
+  const boundProject = parseProjectPublicId(request.headers.get("x-actor-project-id") ?? "");
+  if (boundOrg) actor.boundOrgId = boundOrg;
+  if (boundProject) actor.boundProjectId = boundProject;
+  return actor;
 }
 
 // OP4 — Tenancy resolution & workspace links (state-api-contract §5).
