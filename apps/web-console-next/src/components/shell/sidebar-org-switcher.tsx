@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { useParams, useRouter } from "next/navigation";
+import { useRouter } from "next/navigation";
 import { ChevronsUpDown, Check, Plus, Building2 } from "lucide-react";
 import {
   DropdownMenu,
@@ -14,17 +14,24 @@ import {
 import { useSession } from "@/lib/session";
 import { wrap } from "@/lib/api";
 import { useApiQuery, qk } from "@/lib/query";
+import { useEffectiveOrgSlug } from "./use-effective-org";
 
 /**
  * Org switcher anchored at the top of the sidebar (Vercel's team-switcher
  * pattern): the current org as an avatar + name, opening a dropdown of orgs to
  * switch between, plus shortcuts to the full list and creating one.
+ *
+ * The displayed org is the *effective* org (URL → last-used → account default),
+ * not the raw URL slug, so the rail always shows a concrete workspace and never
+ * an org-less "Select organization" placeholder — even on org-less routes like
+ * `/orgs` or `/account`.
  */
 export function SidebarOrgSwitcher({ onNavigate }: { onNavigate?: () => void } = {}) {
-  const params = useParams<{ orgSlug?: string }>();
   const router = useRouter();
   const { client, token } = useSession();
-  const orgSlug = params?.orgSlug ?? null;
+  // Always resolve to a concrete org so the switcher never reads "Select
+  // organization"; the dropdown still lets the operator switch explicitly.
+  const orgSlug = useEffectiveOrgSlug();
   // Shared `orgs` query (PERF11): reuses the same cache entry as the page list
   // and `useOrgBySlug`, so the shell paints from cache and never fires a
   // duplicate org-list request on mount.

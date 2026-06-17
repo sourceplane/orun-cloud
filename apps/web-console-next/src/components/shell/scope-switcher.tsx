@@ -3,7 +3,7 @@
 import * as React from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-import { ChevronsUpDown, Slash, Building2, FolderKanban, Boxes } from "lucide-react";
+import { ChevronsUpDown, Slash, Building2, FolderKanban, Boxes, Check } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuTrigger,
@@ -16,6 +16,7 @@ import { cn } from "@/lib/cn";
 import { useSession } from "@/lib/session";
 import { wrap } from "@/lib/api";
 import { useApiQuery, qk } from "@/lib/query";
+import { useEffectiveOrgSlug } from "./use-effective-org";
 
 /**
  * URL-driven scope switcher.
@@ -45,6 +46,15 @@ export function ScopeSwitcher() {
   ).data;
   const currentOrg = React.useMemo(() => orgs?.find((o) => o.slug === orgSlug) ?? null, [orgs, orgSlug]);
 
+  // The mobile org crumb must always name a concrete org (URL → last-used →
+  // default) so small screens never sit on an org-less "Select organization"
+  // state. Project/env scope below stays strictly URL-driven.
+  const effectiveOrgSlug = useEffectiveOrgSlug();
+  const mobileOrg = React.useMemo(
+    () => orgs?.find((o) => o.slug === effectiveOrgSlug) ?? null,
+    [orgs, effectiveOrgSlug],
+  );
+
   const projectsData = useApiQuery(
     qk.projects(currentOrg?.id ?? ""),
     () => wrap(async () => (await client.projects.list(currentOrg!.id)).projects),
@@ -71,8 +81,8 @@ export function ScopeSwitcher() {
       <div className="flex min-w-0 md:hidden">
         <Crumb
           icon={<Building2 className="h-3.5 w-3.5" />}
-          label={currentOrg?.name ?? orgSlug ?? "Select organization"}
-          muted={!orgSlug}
+          label={mobileOrg?.name ?? effectiveOrgSlug ?? "Select organization"}
+          muted={!effectiveOrgSlug}
         >
           {orgs?.length ? (
             <>
@@ -80,7 +90,11 @@ export function ScopeSwitcher() {
               {orgs.map((o) => (
                 <DropdownMenuItem key={o.id} onSelect={() => router.push(`/orgs/${o.slug}/projects`)}>
                   <Building2 className="h-4 w-4 opacity-70" /> {o.name}
-                  <span className="ml-auto text-[10px] text-muted-foreground">{o.slug}</span>
+                  {o.slug === effectiveOrgSlug ? (
+                    <Check className="ml-auto h-4 w-4" />
+                  ) : (
+                    <span className="ml-auto text-[10px] text-muted-foreground">{o.slug}</span>
+                  )}
                 </DropdownMenuItem>
               ))}
               <DropdownMenuSeparator />

@@ -2,10 +2,11 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { useParams, usePathname } from "next/navigation";
+import { usePathname } from "next/navigation";
 import { Building2, FolderKanban, Gauge, Settings, User2, type LucideIcon } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { isLinkActive } from "./nav-items";
+import { useEffectiveOrgSlug } from "./use-effective-org";
 
 interface Tab {
   href: string;
@@ -20,9 +21,11 @@ interface Tab {
  * owns the full/contextual nav (org switching, settings sub-pages, account).
  */
 export function BottomTabs() {
-  const params = useParams<{ orgSlug?: string }>();
   const pathname = usePathname();
-  const orgSlug = params?.orgSlug ?? null;
+  // Resolve a concrete org (URL → last-used → default) so the primary mobile nav
+  // always offers the full org-scoped destinations instead of degrading to a
+  // pick-an-org state when the route carries no org slug.
+  const orgSlug = useEffectiveOrgSlug();
 
   const tabs: Tab[] = orgSlug
     ? [
