@@ -61,11 +61,26 @@
   .sub{max-width:640px;margin:24px auto 0;font-size:18px;color:var(--text-2)}
   .sub b{color:var(--text);font-weight:560}
   .cta-row{display:flex;align-items:center;justify-content:center;gap:14px;margin-top:36px;flex-wrap:wrap}
-  .install{display:flex;align-items:center;gap:12px;font-family:var(--mono);font-size:13.5px;color:var(--text-2);
-           border:1px solid var(--border-hi);border-radius:8px;padding:10px 14px;background:var(--surface);cursor:pointer;transition:border-color .15s}
-  .install:hover{border-color:#71717a}
-  .install .p{color:var(--amber)}
-  .install .copy{color:var(--text-3);font-family:var(--sans);font-size:12px}
+  .cmd{display:inline-flex;align-items:stretch;max-width:100%;border:1px solid var(--border-hi);border-radius:10px;
+       background:var(--surface);overflow:hidden;transition:border-color .15s,box-shadow .15s}
+  .cmd:hover{border-color:#52525b;box-shadow:0 0 0 4px rgba(245,158,11,.05)}
+  .cmd .txt{display:flex;align-items:center;gap:9px;padding:11px 16px;font-family:var(--mono);font-size:13.5px;
+            color:var(--text);white-space:nowrap;overflow-x:auto;scrollbar-width:none}
+  .cmd .txt::-webkit-scrollbar{display:none}
+  .cmd .txt .p{color:var(--amber);user-select:none}
+  .cmd .copy-btn{display:inline-flex;align-items:center;gap:7px;flex:none;border:0;border-left:1px solid var(--border);
+                 background:var(--surface-2);color:var(--text-2);font-family:var(--sans);font-size:12.5px;font-weight:550;
+                 padding:0 16px;cursor:pointer;transition:background .15s,color .15s}
+  .cmd .copy-btn:hover{background:rgba(245,158,11,.1);color:var(--amber-hi)}
+  .cmd .copy-btn:focus-visible{outline:2px solid var(--amber);outline-offset:-2px}
+  .cmd .copy-btn.done{color:#4ade80;background:rgba(74,222,128,.08)}
+  .cmd .copy-btn svg{width:14px;height:14px}
+  .cmd .copy-btn .ico-done{display:none}
+  .cmd .copy-btn.done .ico-copy{display:none}
+  .cmd .copy-btn.done .ico-done{display:inline-block}
+  .cmd-meta{margin-top:14px;font-size:12.5px;color:var(--text-3)}
+  .cmd-meta a{color:var(--text-2);border-bottom:1px solid var(--border-hi);transition:color .15s,border-color .15s}
+  .cmd-meta a:hover{color:var(--text);border-color:var(--text-3)}
 
   /* terminal */
   .term-wrap{margin:64px auto 0;max-width:780px;text-align:left}
@@ -163,15 +178,20 @@
      across Cloudflare, AWS, and Supabase. Every change is a reviewable plan.
      Every merge converges to your declared state.</p>
   <div class="cta-row">
-    <button class="install" id="install" aria-label="Copy install command">
-      <span><span class="p">$</span> curl -sSL https://install.orun.dev | bash</span>
-      <span class="copy" id="copyhint">copy</span>
-    </button>
+    <div class="cmd">
+      <span class="txt"><span class="p">$</span>&nbsp;curl -fsSL https://orun.dev/install.sh | bash</span>
+      <button class="copy-btn" type="button" data-copy data-cmd="curl -fsSL https://orun.dev/install.sh | bash" aria-label="Copy install command">
+        <svg class="ico-copy" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+        <svg class="ico-done" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>
+        <span class="label">Copy</span>
+      </button>
+    </div>
     <a class="btn btn-ghost" href="https://github.com/sourceplane/orun">
       <svg width="15" height="15" viewBox="0 0 16 16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27s1.36.09 2 .27c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></svg>
       Star on GitHub
     </a>
   </div>
+  <p class="cmd-meta">macOS &amp; Linux · no sudo, installs to <code style="font-family:var(--mono)">~/.local/bin</code> · <a href="/install.sh">inspect the script</a></p>
 
   <div class="term-wrap reveal">
     <div class="term">
@@ -278,9 +298,17 @@
   <h2>Start converging</h2>
   <p>Open source. One binary. Your infrastructure, declared.</p>
   <div class="cta-row">
-    <button class="install" onclick="copyInstall()"><span><span class="p">$</span> curl -sSL https://install.orun.dev | bash</span></button>
+    <div class="cmd">
+      <span class="txt"><span class="p">$</span>&nbsp;curl -fsSL https://orun.dev/install.sh | bash</span>
+      <button class="copy-btn" type="button" data-copy data-cmd="curl -fsSL https://orun.dev/install.sh | bash" aria-label="Copy install command">
+        <svg class="ico-copy" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+        <svg class="ico-done" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>
+        <span class="label">Copy</span>
+      </button>
+    </div>
     <a class="btn btn-solid" href="https://github.com/sourceplane/orun">View on GitHub</a>
   </div>
+  <p class="cmd-meta">One binary · macOS &amp; Linux · <a href="/install.sh">inspect the script</a></p>
 </div></section>
 
 <footer><div class="wrap foot">
@@ -294,11 +322,22 @@
 </div></footer>
 
 <script>
-function copyInstall(){
-  navigator.clipboard&&navigator.clipboard.writeText('curl -sSL https://install.orun.dev | bash');
-  var h=document.getElementById('copyhint'); if(h){h.textContent='copied';setTimeout(function(){h.textContent='copy'},1600)}
+function fallbackCopy(t){
+  var ta=document.createElement('textarea');ta.value=t;ta.setAttribute('readonly','');
+  ta.style.position='fixed';ta.style.top='-9999px';document.body.appendChild(ta);
+  ta.select();try{document.execCommand('copy')}catch(e){}document.body.removeChild(ta);
 }
-document.getElementById('install').addEventListener('click',copyInstall);
+function flashCopied(btn){
+  btn.classList.add('done');var l=btn.querySelector('.label');if(l)l.textContent='Copied';
+  setTimeout(function(){btn.classList.remove('done');if(l)l.textContent='Copy';},1600);
+}
+function copyCmd(btn){
+  var cmd=btn.getAttribute('data-cmd')||'';
+  if(navigator.clipboard&&navigator.clipboard.writeText){
+    navigator.clipboard.writeText(cmd).then(function(){flashCopied(btn)}).catch(function(){fallbackCopy(cmd);flashCopied(btn)});
+  }else{fallbackCopy(cmd);flashCopied(btn)}
+}
+document.querySelectorAll('[data-copy]').forEach(function(b){b.addEventListener('click',function(){copyCmd(b)})});
 if('IntersectionObserver' in window){
   var io=new IntersectionObserver(function(es){es.forEach(function(e){if(e.isIntersecting){e.target.classList.add('in');io.unobserve(e.target)}})},{threshold:.12});
   document.querySelectorAll('.reveal').forEach(function(el){io.observe(el)});
