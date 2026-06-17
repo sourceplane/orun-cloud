@@ -2,6 +2,7 @@ import type { Env } from "./env.js";
 import { route } from "./router.js";
 import { runSweep } from "./sweep.js";
 import { runScmDrain } from "./scm-bridge.js";
+import { runRunWriteback } from "./run-writeback.js";
 
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
@@ -41,6 +42,21 @@ export default {
         } catch (err) {
           // A drain failure must never break the sweep phase or the cron.
           console.error(`[scheduled] scm-drain failed: ${String(err)}`);
+        }
+        // Phase 3 — run-result → GitHub write-back (OV5/IG9 outbound bridge).
+        // Coalesced into this same cron slot (risk R9), after the scm drain.
+        // Dormant (no-op) until the integrations-worker binding + GitHub App
+        // (D1) exist; never breaks the prior phases or the cron.
+        try {
+          const posted = await runRunWriteback(env);
+          if (posted && (posted.posted > 0 || posted.failed > 0)) {
+            console.warn(
+              `[scheduled] run-writeback: ${posted.posted} posted, ${posted.failed} failed, ` +
+                `${posted.skipped} skipped, ${posted.scanned} scanned`,
+            );
+          }
+        } catch (err) {
+          console.error(`[scheduled] run-writeback failed: ${String(err)}`);
         }
       })(),
     );

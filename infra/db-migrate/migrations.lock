@@ -37,3 +37,5 @@
 280_events_scm_ingest_index
 290_state_scm_triggers
 300_state_link_bijection
+310_events_run_result_index
+320_state_run_writeback_cursor

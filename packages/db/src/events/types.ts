@@ -194,4 +194,16 @@ export interface EventsRepository {
     afterEventId: string | null,
     limit: number,
   ): Promise<EventsResult<StoredEvent[]>>;
+  /**
+   * Global, time-ordered keyset scan of TERMINAL run events (`type IN
+   * ('state.run.completed', 'state.run.failed')`) strictly after the cursor —
+   * the OV5/IG9 state-worker write-back driver's drain query. Backed by the
+   * partial index event_log_run_result_idx, so per call is O(limit) regardless
+   * of total event volume.
+   */
+  listRunResultEventsSince(
+    afterOccurredAt: string | null,
+    afterEventId: string | null,
+    limit: number,
+  ): Promise<EventsResult<StoredEvent[]>>;
 }

@@ -5,6 +5,13 @@ export interface Env {
   MEMBERSHIP_WORKER?: Fetcher;
   POLICY_WORKER?: Fetcher;
   PROJECTS_WORKER?: Fetcher;
+  /**
+   * integrations-worker service binding (OV5/IG9 write-back). The run-result
+   * driver POSTs a Check Run back to GitHub through this binding; absent =
+   * write-back is dormant (a safe no-op, e.g. before the GitHub App exists). The
+   * App private key lives in integrations-worker — state-worker never sees it.
+   */
+  INTEGRATIONS_WORKER?: Fetcher;
   ENVIRONMENT: string;
 
   // ── Per-environment secrets (wrangler secret put; never vars) ──

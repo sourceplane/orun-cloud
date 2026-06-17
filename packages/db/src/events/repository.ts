@@ -450,5 +450,37 @@ export function createEventsRepository(executor: SqlExecutor): EventsRepository 
         return safeError("Failed to list scm events");
       }
     },
+
+    async listRunResultEventsSince(
+      afterOccurredAt: string | null,
+      afterEventId: string | null,
+      limit: number,
+    ): Promise<EventsResult<StoredEvent[]>> {
+      try {
+        // The partial index event_log_run_result_idx (occurred_at, id) WHERE
+        // type IN (the two terminal run results) makes this a bounded keyset
+        // scan, not a full log scan — the OV5/IG9 driver's scalability keystone.
+        let sql: string;
+        let values: unknown[];
+        if (afterOccurredAt && afterEventId) {
+          sql = `SELECT * FROM events.event_log
+                 WHERE type IN ('state.run.completed', 'state.run.failed')
+                   AND (occurred_at, id) > ($1, $2)
+                 ORDER BY occurred_at ASC, id ASC
+                 LIMIT $3`;
+          values = [afterOccurredAt, afterEventId, limit];
+        } else {
+          sql = `SELECT * FROM events.event_log
+                 WHERE type IN ('state.run.completed', 'state.run.failed')
+                 ORDER BY occurred_at ASC, id ASC
+                 LIMIT $1`;
+          values = [limit];
+        }
+        const result = await executor.execute<Record<string, unknown>>(sql, values);
+        return { ok: true, value: result.rows.map(mapEvent) };
+      } catch {
+        return safeError("Failed to list run-result events");
+      }
+    },
   };
 }

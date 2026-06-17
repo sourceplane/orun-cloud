@@ -22,6 +22,13 @@ export const SWEEP_BATCH_LIMIT = 200;
 /** Upper bound on scm.* events drained into state.triggers per cron pass. */
 export const SCM_DRAIN_BATCH_LIMIT = 200;
 
+/**
+ * Upper bound on terminal run events drained per cron pass by the write-back
+ * driver. Smaller than the scm drain: each event is an outbound GitHub POST, so
+ * a tighter batch keeps the cron tick (and GitHub call volume) bounded.
+ */
+export const RUN_WRITEBACK_BATCH_LIMIT = 50;
+
 /** Default page size for list endpoints. */
 export const DEFAULT_PAGE_LIMIT = 50;
 
