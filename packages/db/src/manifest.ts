@@ -273,5 +273,14 @@ export const manifest: MigrationManifest = {
       description:
         "scm.* trigger projection + ingestion cursor (saas-orun-platform v2 OV4) — state.triggers records a normalized TriggerOccurrence per source-control event (idempotent by the source events.event_log id), the durable activity/PR feed precursor to object-graph materialization; state.scm_ingest_cursor is the consumer's bounded-work high-water mark",
     },
+    {
+      id: "300_state_link_bijection",
+      context: "state",
+      path: "300_state_link_bijection/up.sql",
+      checksum:
+        "c5b496478752af2af8b7e738ca7d4c63db5cb9de09083ca54f014a93cc41f7a6",
+      description:
+        "Project == repo bijection flip (saas-orun-platform v2 OV2.2) — the reverse of uq_state_workspace_link_remote: a partial unique index for at most one active workspace link per (org, project), preceded by a self-healing backfill that unlinks older duplicate active links (keep newest), so the strict flip never fails on existing data",
+    },
   ],
 };
