@@ -276,6 +276,9 @@ export const INTEGRATION_EVENT_TYPES = {
   REVOKED: "integration.revoked",
   REPO_SELECTION_CHANGED: "integration.repo_selection_changed",
   TOKEN_ISSUED: "integration.token.issued",
+  // Write-back proxy (IG9 outbound bridge).
+  CHECKRUN_POSTED: "integration.checkrun.posted",
+  COMMIT_STATUS_POSTED: "integration.commit_status.posted",
 } as const;
 
 export type IntegrationEventType =
