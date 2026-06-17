@@ -32,6 +32,7 @@ import {
   handleGetCatalogHead,
   handleCatalogHeadHistory,
   handleListCatalogEntities,
+  handleListOrgCatalogEntities,
 } from "./handlers/catalog.js";
 import {
   handleGetRef,
@@ -119,6 +120,8 @@ const OBJECT_UPLOAD_COMPLETE_RE = new RegExp(
 const CATALOG_HEAD_RE = new RegExp(`^${STATE_BASE}/catalog/head$`);
 const CATALOG_HEADS_HISTORY_RE = new RegExp(`^${STATE_BASE}/catalog/heads/history$`);
 const CATALOG_ENTITIES_RE = new RegExp(`^${STATE_BASE}/catalog/entities$`);
+// OV6 — org-global catalog browser (no project scope): the default merged graph.
+const ORG_CATALOG_ENTITIES_RE = /^\/v1\/organizations\/([^/]+)\/catalog\/entities$/;
 
 // OV1 — hosted RefStore (design-v2 §2). Ref names carry slashes
 // (catalogs/current, executions/by-id/<id>), so the name is a greedy tail.
@@ -425,6 +428,15 @@ async function routeObjectAndCatalog(
     if (!scope) return notFound(requestId, pathname);
     if (request.method !== "GET") return methodNotAllowed(requestId);
     return handleListCatalogEntities(env, requestId, actor, scope.orgId, scope.projectId);
+  }
+
+  // GET /v1/organizations/{orgId}/catalog/entities — org-global browser (OV6).
+  m = pathname.match(ORG_CATALOG_ENTITIES_RE);
+  if (m) {
+    const orgId = parseOrgPublicId(m[1]!);
+    if (!orgId) return notFound(requestId, pathname);
+    if (request.method !== "GET") return methodNotAllowed(requestId);
+    return handleListOrgCatalogEntities(request, env, requestId, actor, orgId);
   }
 
   // ── OV1 — hosted RefStore (§2). The list route (…/refs) must precede the

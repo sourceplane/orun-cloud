@@ -374,6 +374,50 @@ export interface ListCatalogEntitiesQuery {
   q?: string;
 }
 
+// ── Org-global catalog projection (OV6 read-model) ──────────
+
+/** A row in the merged org-wide catalog graph, with provenance. */
+export interface OrgCatalogEntity {
+  id: string;
+  orgId: string;
+  entityRef: string;
+  kind: string;
+  name: string;
+  owner: string | null;
+  lifecycle: string | null;
+  relations: CatalogEntityRelation[];
+  sourceProjectId: string;
+  sourceEnvironment: string | null;
+  sourceCommit: string | null;
+  headDigest: string;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface UpsertOrgCatalogEntityInput {
+  id: string;
+  orgId: Uuid;
+  entityRef: string;
+  kind: string;
+  name: string;
+  sourceProjectId: Uuid;
+  headDigest: string;
+  owner?: string | null;
+  lifecycle?: string | null;
+  relations?: CatalogEntityRelation[];
+  sourceEnvironment?: string | null;
+  sourceCommit?: string | null;
+}
+
+/** Org-global browse filters (all optional; provenance + facets). */
+export interface ListOrgCatalogEntitiesQuery {
+  sourceProjectId?: Uuid;
+  sourceEnvironment?: string | null;
+  kind?: string;
+  owner?: string;
+  q?: string;
+}
+
 // ── Workspace links ─────────────────────────────────────────
 
 export type WorkspaceLinkStatus = "active" | "unlinked";
@@ -602,6 +646,27 @@ export interface StateRepository {
     params: PageQueryParams,
     query?: ListCatalogEntitiesQuery,
   ): Promise<StateResult<PagedResult<CatalogEntity>>>;
+
+  // Org-global catalog projection (OV6 read-model)
+  /** Idempotently project one entity into the org graph (per source scope). */
+  upsertOrgCatalogEntity(input: UpsertOrgCatalogEntityInput): Promise<StateResult<OrgCatalogEntity>>;
+  /** Org-global browse: merged graph for an org, provenance/facet filtered. */
+  listOrgCatalogEntities(
+    orgId: Uuid,
+    params: PageQueryParams,
+    query?: ListOrgCatalogEntitiesQuery,
+  ): Promise<StateResult<PagedResult<OrgCatalogEntity>>>;
+  /**
+   * Remove a (project, environment) scope's projected rows — the projector's
+   * "replace the scope" primitive: delete-then-reproject makes a head-advance
+   * idempotent and drops entities no longer in the new snapshot. Returns the
+   * number of rows removed.
+   */
+  deleteOrgCatalogEntitiesForScope(
+    orgId: Uuid,
+    sourceProjectId: Uuid,
+    sourceEnvironment: string | null,
+  ): Promise<StateResult<number>>;
 
   // Refs (hosted RefStore — L2 mutable CAS pointers; OV1)
   /** Read one ref by name (current target). */
