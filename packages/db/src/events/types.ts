@@ -183,4 +183,15 @@ export interface EventsRepository {
    * rehydrate the full original event payload by id.
    */
   getEventById(orgId: string, eventId: string): Promise<EventsResult<StoredEvent | null>>;
+  /**
+   * Global, time-ordered keyset scan of source-control events (`type LIKE
+   * 'scm.%'`) strictly after the cursor — the OV4 state-worker bridge consumer's
+   * drain query. Backed by the partial index event_log_scm_ingest_idx, so per
+   * call is O(limit) regardless of total event volume.
+   */
+  listScmEventsSince(
+    afterOccurredAt: string | null,
+    afterEventId: string | null,
+    limit: number,
+  ): Promise<EventsResult<StoredEvent[]>>;
 }

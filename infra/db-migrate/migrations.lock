@@ -34,3 +34,5 @@
 250_state_refs
 260_state_link_provider
 270_state_link_ci_settings
+280_events_scm_ingest_index
+290_state_scm_triggers
