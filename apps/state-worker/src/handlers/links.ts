@@ -85,6 +85,10 @@ function toPublicLink(
     projectId: projectPublicId(link.projectId),
     projectSlug,
     remoteUrl: link.remoteUrl,
+    provider: link.provider,
+    providerRepoId: link.providerRepoId,
+    providerOwnerId: link.providerOwnerId,
+    providerOwnerLogin: link.providerOwnerLogin,
     createdBy: {
       id: link.createdBy.id ?? "",
       kind: link.createdBy.kind ?? actorFallbackKind,
@@ -181,6 +185,16 @@ export async function handleCreateWorkspaceLink(
     requestedSlug = body.projectSlug;
   }
 
+  // Optional rename-stable provider identity (OV2.1). Each field is a string or
+  // absent; non-string values are ignored rather than rejected (additive).
+  const str = (v: unknown): string | null => (typeof v === "string" && v.length > 0 ? v : null);
+  const providerIdentity = {
+    provider: str(body.provider),
+    providerRepoId: str(body.providerRepoId),
+    providerOwnerId: str(body.providerOwnerId),
+    providerOwnerLogin: str(body.providerOwnerLogin),
+  };
+
   // ── Resolve the org slug (the actor is a member, per the policy check). ──
   const orgsResult = await fetchSubjectOrgs(
     env.MEMBERSHIP_WORKER,
@@ -261,6 +275,7 @@ export async function handleCreateWorkspaceLink(
       projectId: projectUuid,
       remoteUrl: normalized,
       createdBy: { id: actor.subjectId, kind: actorKindOf(actor.subjectType) },
+      provider: providerIdentity,
     });
 
     let link: WorkspaceLink;

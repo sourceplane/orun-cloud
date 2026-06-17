@@ -211,6 +211,10 @@ function mapWorkspaceLink(row: Record<string, unknown>): WorkspaceLink {
     projectId: row.project_id as string,
     remoteUrl: row.remote_url as string,
     status: row.status as WorkspaceLink["status"],
+    provider: (row.provider as string) ?? null,
+    providerRepoId: (row.provider_repo_id as string) ?? null,
+    providerOwnerId: (row.provider_owner_id as string) ?? null,
+    providerOwnerLogin: (row.provider_owner_login as string) ?? null,
     createdBy: actorOf(row, "created_by", "created_by_kind"),
     lastSeenAt: dateOrNull(row.last_seen_at),
     createdAt: toDate(row.created_at),
@@ -1189,8 +1193,9 @@ export function createStateRepository(executor: SqlExecutor): StateRepository {
         const result = await executor.execute<Record<string, unknown>>(
           `INSERT INTO state.workspace_links
              (id, org_id, project_id, remote_url, status, created_by,
-              created_by_kind, created_at, updated_at)
-           VALUES ($1, $2, $3, $4, 'active', $5, $6, now(), now())
+              created_by_kind, provider, provider_repo_id, provider_owner_id,
+              provider_owner_login, created_at, updated_at)
+           VALUES ($1, $2, $3, $4, 'active', $5, $6, $7, $8, $9, $10, now(), now())
            RETURNING *`,
           [
             input.id,
@@ -1199,6 +1204,10 @@ export function createStateRepository(executor: SqlExecutor): StateRepository {
             input.remoteUrl,
             input.createdBy?.id ?? null,
             input.createdBy?.kind ?? null,
+            input.provider?.provider ?? null,
+            input.provider?.providerRepoId ?? null,
+            input.provider?.providerOwnerId ?? null,
+            input.provider?.providerOwnerLogin ?? null,
           ],
         );
         return { ok: true, value: mapWorkspaceLink(result.rows[0]!) };
@@ -1246,6 +1255,23 @@ export function createStateRepository(executor: SqlExecutor): StateRepository {
         return { ok: true, value: result.rows.map(mapWorkspaceLink) };
       } catch {
         return safeError("Failed to resolve workspace links for remote");
+      }
+    },
+
+    async listActiveWorkspaceLinksForProviderRepo(
+      provider: string,
+      providerRepoId: string,
+    ): Promise<StateResult<WorkspaceLink[]>> {
+      try {
+        const result = await executor.execute<Record<string, unknown>>(
+          `SELECT * FROM state.workspace_links
+            WHERE provider = $1 AND provider_repo_id = $2 AND status = 'active'
+            ORDER BY created_at ASC, id ASC`,
+          [provider, providerRepoId],
+        );
+        return { ok: true, value: result.rows.map(mapWorkspaceLink) };
+      } catch {
+        return safeError("Failed to resolve workspace links for provider repo");
       }
     },
 
