@@ -33,6 +33,7 @@ import { buildSettingsNav, flattenSettingsNav, isSettingsLinkActive } from "./se
 import { SidebarAccount } from "./sidebar-account";
 import { SidebarOrgSwitcher } from "./sidebar-org-switcher";
 import { SidebarFind } from "./sidebar-find";
+import { useEffectiveOrgSlug } from "./use-effective-org";
 
 const ICONS: Record<string, LucideIcon> = {
   Building2,
@@ -69,9 +70,13 @@ export function NavContent({
   onNavigate?: (() => void) | undefined;
   mobile?: boolean;
 }) {
-  const params = useParams<{ orgSlug?: string; projectSlug?: string }>();
+  const params = useParams<{ projectSlug?: string }>();
   const pathname = usePathname();
-  const orgSlug = params?.orgSlug ?? null;
+  // Drive the nav from the active workspace (URL → last-used → default), not the
+  // raw URL slug, so the product nav stays in lockstep with the org switcher
+  // even on org-less routes (`/orgs`, `/account`) — the chrome always reflects a
+  // genuinely-selected org instead of collapsing to an empty rail.
+  const orgSlug = useEffectiveOrgSlug();
 
   // Within `/settings`, the sidebar swaps from the product nav to a dedicated
   // settings nav (a flat list under a centered "Settings" header), mirroring

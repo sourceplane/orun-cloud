@@ -3,7 +3,7 @@
 import * as React from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Building2, FolderKanban, Gauge, Settings, User2, type LucideIcon } from "lucide-react";
+import { FolderKanban, Gauge, Settings, type LucideIcon } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { isLinkActive } from "./nav-items";
 import { useEffectiveOrgSlug } from "./use-effective-org";
@@ -15,29 +15,32 @@ interface Tab {
 }
 
 /**
- * Mobile bottom tab bar (`md:hidden`) for the primary product destinations —
- * the single biggest "native-app feel" upgrade. Thumb-reachable, fixed to the
- * bottom edge with home-indicator safe-area padding. The hamburger drawer still
- * owns the full/contextual nav (org switching, settings sub-pages, account).
+ * Mobile bottom tab bar (`md:hidden`) for the primary destinations *inside the
+ * active organization* — the single biggest "native-app feel" upgrade.
+ * Thumb-reachable, fixed to the bottom edge with home-indicator safe-area
+ * padding.
+ *
+ * The organization is ambient context, not a destination: you're always *in* an
+ * org (resolved via `useEffectiveOrgSlug` → URL → last-used → default) and you
+ * switch it from the topbar workspace switcher, so there is deliberately no
+ * "Organizations" tab. The tabs are the day-to-day surfaces — Projects (home),
+ * Usage, Settings — and the hamburger drawer still owns the full/contextual nav.
+ *
+ * Renders nothing only in the transient state where no org is resolvable yet
+ * (a zero-org account, which the shell's OnboardingGate redirects to
+ * `/onboarding`); there are no org-scoped destinations to show until then.
  */
 export function BottomTabs() {
   const pathname = usePathname();
-  // Resolve a concrete org (URL → last-used → default) so the primary mobile nav
-  // always offers the full org-scoped destinations instead of degrading to a
-  // pick-an-org state when the route carries no org slug.
   const orgSlug = useEffectiveOrgSlug();
 
-  const tabs: Tab[] = orgSlug
-    ? [
-        { href: "/orgs", label: "Orgs", icon: Building2 },
-        { href: `/orgs/${orgSlug}/projects`, label: "Projects", icon: FolderKanban },
-        { href: `/orgs/${orgSlug}/usage`, label: "Usage", icon: Gauge },
-        { href: `/orgs/${orgSlug}/settings`, label: "Settings", icon: Settings },
-      ]
-    : [
-        { href: "/orgs", label: "Organizations", icon: Building2 },
-        { href: "/account", label: "Account", icon: User2 },
-      ];
+  if (!orgSlug) return null;
+
+  const tabs: Tab[] = [
+    { href: `/orgs/${orgSlug}/projects`, label: "Projects", icon: FolderKanban },
+    { href: `/orgs/${orgSlug}/usage`, label: "Usage", icon: Gauge },
+    { href: `/orgs/${orgSlug}/settings`, label: "Settings", icon: Settings },
+  ];
 
   return (
     <nav
