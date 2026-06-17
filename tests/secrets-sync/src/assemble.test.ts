@@ -127,10 +127,12 @@ describe("--list-docs (SS6b deploy-lane fetch list)", () => {
     expect(map.get("platform")).toBe("sourceplane/orun-cloud/platform-secrets/stage");
   });
 
-  it("excludes fully-deferred integrations (github-app has only the deferred integrations-worker)", () => {
+  it("includes the now-active github-app integration doc (integrations-worker activated)", () => {
     const { lines } = listDocs("stage");
-    const names = lines.map(([n]) => n);
-    expect(names).not.toContain("github-app");
+    const map = new Map(lines);
+    expect(map.get("github-app")).toBe(
+      "sourceplane/orun-cloud/integrations/github-app/stage",
+    );
   });
 
   it("works for prod as well, swapping only the env segment", () => {
@@ -186,9 +188,27 @@ describe("assemble projection from documents (SS6)", () => {
     }
   });
 
-  it("excludes deferred consumers entirely (integrations-worker has no projected secrets)", () => {
+  it("excludes deferred consumers entirely (state-worker has no projected secrets)", () => {
     const { secrets, config } = assembleStage(integrationsFixturePath);
-    expect(secrets["integrations-worker"]).toBeUndefined();
+    expect(secrets["state-worker"]).toBeUndefined();
+    expect(config["state-worker"]).toBeUndefined();
+  });
+
+  it("projects the now-active integrations-worker GitHub App secrets", () => {
+    const { secrets, config } = assembleStage(integrationsFixturePath);
+    // All GitHub App keys (incl. the non-sensitive ID/SLUG/CLIENT_ID) are
+    // classified as secrets so the secrets-live pipeline delivers them; the
+    // worker therefore has no separate config projection.
+    expect(Object.keys(w(secrets, "integrations-worker")).sort()).toEqual([
+      "GITHUB_APP_CLIENT_ID",
+      "GITHUB_APP_CLIENT_SECRET",
+      "GITHUB_APP_ID",
+      "GITHUB_APP_PRIVATE_KEY",
+      "GITHUB_APP_SLUG",
+      "GITHUB_APP_WEBHOOK_SECRET",
+      "INTEGRATIONS_STATE_SECRET",
+      "SECRET_ENCRYPTION_KEY",
+    ]);
     expect(config["integrations-worker"]).toBeUndefined();
   });
 

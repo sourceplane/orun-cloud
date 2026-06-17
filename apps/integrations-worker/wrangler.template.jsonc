@@ -28,11 +28,13 @@
       "workers_dev": false,
       "vars": {
         "ENVIRONMENT": "stage"
-        // Secrets (set via `wrangler secret put <NAME> --env stage` once the
-        // GitHub App for stage is registered — saas-integrations D1):
+        // Runtime secrets are provisioned by the deploy `secrets-live` step from
+        // AWS Secrets Manager (tooling/secrets-sync), not by manual
+        // `wrangler secret put`. See secrets.manifest.json → integrations-worker
+        // for the required set:
         //   SECRET_ENCRYPTION_KEY, INTEGRATIONS_STATE_SECRET,
-        //   GITHUB_APP_ID, GITHUB_APP_PRIVATE_KEY, GITHUB_APP_WEBHOOK_SECRET,
-        //   GITHUB_APP_CLIENT_ID, GITHUB_APP_CLIENT_SECRET, GITHUB_APP_SLUG
+        //   GITHUB_APP_ID, GITHUB_APP_SLUG, GITHUB_APP_CLIENT_ID,
+        //   GITHUB_APP_PRIVATE_KEY, GITHUB_APP_WEBHOOK_SECRET, GITHUB_APP_CLIENT_SECRET
       },
       "hyperdrive": [
         {
@@ -63,7 +65,7 @@
       "workers_dev": false,
       "vars": {
         "ENVIRONMENT": "prod"
-        // Secrets: same set as stage, via `wrangler secret put <NAME> --env prod`
+        // Runtime secrets: same set as stage, provisioned by `secrets-live`.
       },
       "hyperdrive": [
         {

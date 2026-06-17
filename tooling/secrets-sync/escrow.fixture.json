@@ -15,6 +15,16 @@
     },
     "config-worker": {
       "SECRET_ENCRYPTION_KEY": "fixture-config-key-stage"
+    },
+    "integrations-worker": {
+      "GITHUB_APP_ID": "fixture-integrations-gh-app-id-stage",
+      "GITHUB_APP_SLUG": "fixture-integrations-gh-app-slug-stage",
+      "GITHUB_APP_CLIENT_ID": "fixture-integrations-gh-app-client-id-stage",
+      "GITHUB_APP_PRIVATE_KEY": "fixture-integrations-gh-app-key-stage",
+      "GITHUB_APP_WEBHOOK_SECRET": "fixture-integrations-gh-app-webhook-stage",
+      "GITHUB_APP_CLIENT_SECRET": "fixture-integrations-gh-app-client-secret-stage",
+      "INTEGRATIONS_STATE_SECRET": "fixture-integrations-state-stage",
+      "SECRET_ENCRYPTION_KEY": "fixture-integrations-encryption-key-stage"
     }
   },
   "prod": {
@@ -32,6 +42,16 @@
     },
     "config-worker": {
       "SECRET_ENCRYPTION_KEY": "fixture-config-key-prod"
+    },
+    "integrations-worker": {
+      "GITHUB_APP_ID": "fixture-integrations-gh-app-id-prod",
+      "GITHUB_APP_SLUG": "fixture-integrations-gh-app-slug-prod",
+      "GITHUB_APP_CLIENT_ID": "fixture-integrations-gh-app-client-id-prod",
+      "GITHUB_APP_PRIVATE_KEY": "fixture-integrations-gh-app-key-prod",
+      "GITHUB_APP_WEBHOOK_SECRET": "fixture-integrations-gh-app-webhook-prod",
+      "GITHUB_APP_CLIENT_SECRET": "fixture-integrations-gh-app-client-secret-prod",
+      "INTEGRATIONS_STATE_SECRET": "fixture-integrations-state-prod",
+      "SECRET_ENCRYPTION_KEY": "fixture-integrations-encryption-key-prod"
     }
   }
 }
