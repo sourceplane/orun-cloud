@@ -218,7 +218,10 @@ export type StateObjectKind =
   | "plan"
   | "catalog-snapshot"
   | "composition-lock"
-  | "artifact-manifest";
+  | "artifact-manifest"
+  // Object model structural kinds (OV1).
+  | "blob"
+  | "tree";
 
 export interface StateObject {
   id: string;
@@ -292,6 +295,44 @@ export interface AdvanceCatalogHeadInput {
   commit?: string | null;
   advancedBy?: ActorStamp;
 }
+
+// ── Refs (hosted RefStore, L2 mutable CAS pointers; OV1) ────
+
+/** A mutable name → ObjectID pointer over the immutable object graph. */
+export interface StateRef {
+  id: string;
+  orgId: string;
+  projectId: string;
+  /** Logical ref name, e.g. 'catalogs/current', 'executions/by-id/exec_00'. */
+  name: string;
+  /** Object id the ref points at ('sha256:<hex>'); exists in state.objects. */
+  target: string;
+  /** Last compare-and-swap writer: cli|runner|tui|saas|github. */
+  writer: string | null;
+  updatedAt: Date;
+}
+
+/**
+ * Compare-and-swap update of a ref. expectedTarget "" requires the ref be
+ * absent (create); a non-empty expectedTarget requires the current target to
+ * match (advance). The outcome reports whether the swap won.
+ */
+export interface UpdateRefInput {
+  id: string;
+  orgId: Uuid;
+  projectId: Uuid;
+  name: string;
+  expectedTarget: string;
+  newTarget: string;
+  writer?: string | null;
+}
+
+export type UpdateRefOutcome =
+  | { kind: "updated"; ref: StateRef }
+  /** CAS lost: the current target did not equal expectedTarget. */
+  | { kind: "conflict"; current: StateRef | null }
+  /** newTarget is not present in state.objects (the closure wasn't uploaded). */
+  | { kind: "target_missing" };
 
 // ── Catalog entities (read-model) ───────────────────────────
 
@@ -461,6 +502,16 @@ export interface StateRepository {
     params: PageQueryParams,
     query?: ListCatalogEntitiesQuery,
   ): Promise<StateResult<PagedResult<CatalogEntity>>>;
+
+  // Refs (hosted RefStore — L2 mutable CAS pointers; OV1)
+  /** Read one ref by name (current target). */
+  getRef(orgId: Uuid, projectId: Uuid, name: string): Promise<StateResult<StateRef>>;
+  /** Compare-and-swap a ref (create-if-absent or conditional advance). */
+  updateRef(input: UpdateRefInput): Promise<StateResult<UpdateRefOutcome>>;
+  /** List ref names under a prefix, name-ordered. */
+  listRefs(orgId: Uuid, projectId: Uuid, prefix: string): Promise<StateResult<StateRef[]>>;
+  /** Delete a ref by name (idempotent; no-op when absent). */
+  deleteRef(orgId: Uuid, projectId: Uuid, name: string): Promise<StateResult<void>>;
 
   // Workspace links
   createWorkspaceLink(input: CreateWorkspaceLinkInput): Promise<StateResult<WorkspaceLink>>;

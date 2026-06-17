@@ -27,9 +27,12 @@ import type {
   RunStatus,
   StateObject,
   StateObjectKind,
+  StateRef,
   StateRepository,
   StateResult,
   SweptJob,
+  UpdateRefInput,
+  UpdateRefOutcome,
   UpdateRunJobInput,
   UpdateRunJobOutcome,
   UpsertCatalogEntityInput,
@@ -50,6 +53,15 @@ function isUniqueViolation(err: unknown): boolean {
     err !== null &&
     "code" in err &&
     (err as { code: string }).code === "23505"
+  );
+}
+
+function isForeignKeyViolation(err: unknown): boolean {
+  return (
+    typeof err === "object" &&
+    err !== null &&
+    "code" in err &&
+    (err as { code: string }).code === "23503"
   );
 }
 
@@ -148,6 +160,18 @@ function mapLogChunk(row: Record<string, unknown>): LogChunk {
     seq: Number(row.seq),
     byteLength: Number(row.byte_length),
     createdAt: toDate(row.created_at),
+  };
+}
+
+function mapRef(row: Record<string, unknown>): StateRef {
+  return {
+    id: row.id as string,
+    orgId: row.org_id as string,
+    projectId: row.project_id as string,
+    name: row.name as string,
+    target: row.target as string,
+    writer: (row.writer as string) ?? null,
+    updatedAt: toDate(row.updated_at),
   };
 }
 
@@ -1054,6 +1078,106 @@ export function createStateRepository(executor: SqlExecutor): StateRepository {
         sql += ` AND name ILIKE $${values.length}`;
       }
       return pagedList(executor, sql, values, params.limit, params.cursor, mapCatalogEntity);
+    },
+
+    // ── Refs (hosted RefStore — L2 mutable CAS pointers; OV1) ─
+
+    async getRef(orgId: Uuid, projectId: Uuid, name: string): Promise<StateResult<StateRef>> {
+      try {
+        const result = await executor.execute<Record<string, unknown>>(
+          `SELECT * FROM state.refs WHERE org_id = $1 AND project_id = $2 AND name = $3`,
+          [orgId, projectId, name],
+        );
+        if (result.rowCount === 0) return { ok: false, error: { kind: "not_found" } };
+        return { ok: true, value: mapRef(result.rows[0]!) };
+      } catch {
+        return safeError("Failed to get ref");
+      }
+    },
+
+    async updateRef(input: UpdateRefInput): Promise<StateResult<UpdateRefOutcome>> {
+      try {
+        // CAS. expectedTarget "" ⇒ create-if-absent (INSERT … ON CONFLICT DO
+        // NOTHING); a non-empty expectedTarget ⇒ conditional advance (UPDATE …
+        // WHERE target = expected). Either path is one atomic statement.
+        if (input.expectedTarget === "") {
+          const inserted = await executor.execute<Record<string, unknown>>(
+            `INSERT INTO state.refs (id, org_id, project_id, name, target, writer, created_at, updated_at)
+             VALUES ($1, $2, $3, $4, $5, $6, now(), now())
+             ON CONFLICT (org_id, project_id, name) DO NOTHING
+             RETURNING *`,
+            [input.id, input.orgId, input.projectId, input.name, input.newTarget, input.writer ?? null],
+          );
+          if (inserted.rowCount > 0) {
+            return { ok: true, value: { kind: "updated", ref: mapRef(inserted.rows[0]!) } };
+          }
+          // The ref already exists — CAS expecting absence lost.
+          const current = await executor.execute<Record<string, unknown>>(
+            `SELECT * FROM state.refs WHERE org_id = $1 AND project_id = $2 AND name = $3`,
+            [input.orgId, input.projectId, input.name],
+          );
+          return {
+            ok: true,
+            value: { kind: "conflict", current: current.rowCount > 0 ? mapRef(current.rows[0]!) : null },
+          };
+        }
+
+        const updated = await executor.execute<Record<string, unknown>>(
+          `UPDATE state.refs
+             SET target = $5, writer = $6, updated_at = now()
+           WHERE org_id = $1 AND project_id = $2 AND name = $3 AND target = $4
+           RETURNING *`,
+          [input.orgId, input.projectId, input.name, input.expectedTarget, input.newTarget, input.writer ?? null],
+        );
+        if (updated.rowCount > 0) {
+          return { ok: true, value: { kind: "updated", ref: mapRef(updated.rows[0]!) } };
+        }
+        // No row matched (target stale or ref absent) — report the current value.
+        const current = await executor.execute<Record<string, unknown>>(
+          `SELECT * FROM state.refs WHERE org_id = $1 AND project_id = $2 AND name = $3`,
+          [input.orgId, input.projectId, input.name],
+        );
+        return {
+          ok: true,
+          value: { kind: "conflict", current: current.rowCount > 0 ? mapRef(current.rows[0]!) : null },
+        };
+      } catch (err) {
+        // Composite FK to state.objects failed → the new target's object (and
+        // therefore its closure) was never uploaded.
+        if (isForeignKeyViolation(err)) {
+          return { ok: true, value: { kind: "target_missing" } };
+        }
+        return safeError("Failed to update ref");
+      }
+    },
+
+    async listRefs(orgId: Uuid, projectId: Uuid, prefix: string): Promise<StateResult<StateRef[]>> {
+      try {
+        // Prefix match with the literal LIKE wildcards escaped, so a name like
+        // 'a_b' matches only itself, not 'axb'.
+        const escaped = prefix.replace(/([\\%_])/g, "\\$1");
+        const result = await executor.execute<Record<string, unknown>>(
+          `SELECT * FROM state.refs
+            WHERE org_id = $1 AND project_id = $2 AND name LIKE $3 ESCAPE '\\'
+            ORDER BY name ASC`,
+          [orgId, projectId, `${escaped}%`],
+        );
+        return { ok: true, value: result.rows.map(mapRef) };
+      } catch {
+        return safeError("Failed to list refs");
+      }
+    },
+
+    async deleteRef(orgId: Uuid, projectId: Uuid, name: string): Promise<StateResult<void>> {
+      try {
+        await executor.execute(
+          `DELETE FROM state.refs WHERE org_id = $1 AND project_id = $2 AND name = $3`,
+          [orgId, projectId, name],
+        );
+        return { ok: true, value: undefined };
+      } catch {
+        return safeError("Failed to delete ref");
+      }
     },
 
     // ── Workspace links ──────────────────────────────────────

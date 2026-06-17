@@ -228,5 +228,14 @@ export const manifest: MigrationManifest = {
       description:
         "CLI refresh-token reuse-grace interval (saas-orun-platform OP1 hardening, risk R11) — adds identity.sessions.grace_successor_ciphertext (AES-256-GCM envelope of the successor refresh token) + grace_expires_at, so a replay of a just-rotated token within a short window is re-issued the same successor idempotently instead of revoking the whole family",
     },
+    {
+      id: "250_state_refs",
+      context: "state",
+      path: "250_state_refs/up.sql",
+      checksum:
+        "b3bc8da388c96f27e1a7038b7f0aac332c293e34ff53db43c59e0e5f549b5c69",
+      description:
+        "Hosted RefStore (saas-orun-platform v2 OV1) — state.refs, the L2 mutable CAS pointer layer (name → ObjectID) over the immutable object graph, one row per (org, project, name) with a composite FK to state.objects; widens state.objects.kind to admit the object model's structural kinds (blob, tree) so the hosted plane stores the content-addressed objects the CLI's RemoteStore uploads",
+    },
   ],
 };

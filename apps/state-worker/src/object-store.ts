@@ -128,6 +128,10 @@ const OBJECT_KINDS = new Set([
   "catalog-snapshot",
   "composition-lock",
   "artifact-manifest",
+  // Object model structural kinds (OV1): the hosted ObjectStore stores the
+  // content-addressed blobs and trees the CLI's RemoteStore uploads.
+  "blob",
+  "tree",
 ]);
 
 export function isValidObjectKind(value: string): boolean {
