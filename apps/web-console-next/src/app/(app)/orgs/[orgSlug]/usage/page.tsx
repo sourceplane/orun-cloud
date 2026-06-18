@@ -77,21 +77,38 @@ function Inner({ orgId }: { orgId: string }) {
 }
 
 // --- State-plane usage (OV9) -------------------------------------------------
-// At-a-glance state footprint from the metrics the state-worker emits per push,
-// so an operator sees object/log volume without naming a metric key. These are
-// flow metrics (volume pushed within the window), not a live storage gauge.
+// The org's state footprint: the live STOCK (what's stored right now, from the
+// object/log indexes) as the headline, plus the FLOW (volume pushed in a
+// selectable window, from the per-push metering metrics) as the windowed detail.
 
 function StatePlaneUsage({ orgId }: { orgId: string }) {
   const { client } = useSession();
   const [range, setRange] = React.useState<RangePreset>("30d");
-  const [totals, setTotals] = React.useState<{ objectCount: number; objectBytes: number; logBytes: number } | null>(null);
+  const [stored, setStored] = React.useState<{
+    objects: { count: number; bytes: number };
+    logs: { count: number; bytes: number };
+  } | null>(null);
+  const [flow, setFlow] = React.useState<{ objectCount: number; objectBytes: number; logBytes: number } | null>(null);
   const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState<{ code: string; message: string } | null>(null);
 
+  // STOCK — current footprint, window-independent.
+  React.useEffect(() => {
+    let cancelled = false;
+    void wrap(() => client.state.getStateStorage(orgId)).then((r) => {
+      if (cancelled) return;
+      if (r.ok) setStored(r.data.usage);
+      else setError((e) => e ?? { code: r.error.code, message: r.error.message });
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [client, orgId]);
+
+  // FLOW — volume pushed in the selected window (three per-push metrics).
   React.useEffect(() => {
     let cancelled = false;
     setLoading(true);
-    setError(null);
     const q = (metric: string) =>
       wrap(() => client.metering.getUsageSummary(orgId, buildUsageQuery({ metric, bucketType: "day", range })));
     void Promise.all([
@@ -100,22 +117,19 @@ function StatePlaneUsage({ orgId }: { orgId: string }) {
       q(STATE_USAGE_METRICS.logBytes),
     ]).then(([count, bytes, logs]) => {
       if (cancelled) return;
-      const firstErr = [count, bytes, logs].find((r) => !r.ok);
-      if (firstErr && !firstErr.ok) {
-        setError({ code: firstErr.error.code, message: firstErr.error.message });
-      } else {
-        setTotals({
-          objectCount: count.ok ? count.data.totalQuantity : 0,
-          objectBytes: bytes.ok ? bytes.data.totalQuantity : 0,
-          logBytes: logs.ok ? logs.data.totalQuantity : 0,
-        });
-      }
+      setFlow({
+        objectCount: count.ok ? count.data.totalQuantity : 0,
+        objectBytes: bytes.ok ? bytes.data.totalQuantity : 0,
+        logBytes: logs.ok ? logs.data.totalQuantity : 0,
+      });
       setLoading(false);
     });
     return () => {
       cancelled = true;
     };
   }, [client, orgId, range]);
+
+  const rangeLabel = (RANGE_PRESETS.find((p) => p.value === range) ?? RANGE_PRESETS[2]!).label.toLowerCase();
 
   return (
     <Card>
@@ -124,7 +138,7 @@ function StatePlaneUsage({ orgId }: { orgId: string }) {
           <CardTitle className="text-base flex items-center gap-2">
             <Database className="h-4 w-4 text-muted-foreground" /> State plane
           </CardTitle>
-          <CardDescription>Objects and logs pushed to remote state in the selected window.</CardDescription>
+          <CardDescription>What this organization stores in remote state, and recent push volume.</CardDescription>
         </div>
         <Select value={range} onValueChange={(v) => setRange(v as RangePreset)}>
           <SelectTrigger className="h-8 w-[150px] text-xs"><SelectValue /></SelectTrigger>
@@ -135,23 +149,46 @@ function StatePlaneUsage({ orgId }: { orgId: string }) {
           </SelectContent>
         </Select>
       </CardHeader>
-      <CardContent>
-        {loading ? (
-          <div className="flex flex-wrap gap-8">
-            {Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-12 w-28" />)}
-          </div>
-        ) : error ? (
+      <CardContent className="space-y-5">
+        {error ? (
           <div className="rounded-md border border-destructive/40 bg-destructive/5 p-4">
             <div className="font-medium text-destructive">{error.code}</div>
             <div className="text-sm text-muted-foreground">{error.message}</div>
           </div>
-        ) : totals ? (
-          <div className="flex flex-wrap gap-8">
-            <Metric label="Objects pushed" value={formatQuantity(totals.objectCount)} />
-            <Metric label="Object volume" value={formatBytes(totals.objectBytes)} />
-            <Metric label="Log volume" value={formatBytes(totals.logBytes)} />
-          </div>
-        ) : null}
+        ) : (
+          <>
+            <div>
+              <div className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">Stored now</div>
+              {stored ? (
+                <div className="flex flex-wrap gap-8">
+                  <Metric label="Objects" value={formatQuantity(stored.objects.count)} />
+                  <Metric label="Object storage" value={formatBytes(stored.objects.bytes)} />
+                  <Metric label="Log storage" value={formatBytes(stored.logs.bytes)} />
+                </div>
+              ) : (
+                <div className="flex flex-wrap gap-8">
+                  {Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-12 w-28" />)}
+                </div>
+              )}
+            </div>
+            <div>
+              <div className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                Pushed · {rangeLabel}
+              </div>
+              {loading || !flow ? (
+                <div className="flex flex-wrap gap-8">
+                  {Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-12 w-28" />)}
+                </div>
+              ) : (
+                <div className="flex flex-wrap gap-8">
+                  <Metric label="Objects pushed" value={formatQuantity(flow.objectCount)} />
+                  <Metric label="Object volume" value={formatBytes(flow.objectBytes)} />
+                  <Metric label="Log volume" value={formatBytes(flow.logBytes)} />
+                </div>
+              )}
+            </div>
+          </>
+        )}
       </CardContent>
     </Card>
   );

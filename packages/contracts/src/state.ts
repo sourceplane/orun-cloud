@@ -502,6 +502,22 @@ export interface ListOrgCatalogEntitiesResponse {
   nextCursor: StateCursor | null;
 }
 
+/**
+ * GET /v1/organizations/{orgId}/state/usage — current state-plane storage
+ * footprint for the org (OV9). A live STOCK count from the object/log indexes
+ * (distinct from the metering FLOW metrics), the basis for storage quotas.
+ */
+export interface StateStorageUsage {
+  /** Content-addressed objects stored in the org's object plane. */
+  objects: { count: number; bytes: number };
+  /** Append-only log chunks stored for the org's runs. */
+  logs: { count: number; bytes: number };
+}
+
+export interface GetStateStorageResponse {
+  usage: StateStorageUsage;
+}
+
 // ── Refs (hosted RefStore — L2 mutable CAS pointers; OV1) ────
 
 /**

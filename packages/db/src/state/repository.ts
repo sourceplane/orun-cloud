@@ -25,6 +25,7 @@ import type {
   ListCatalogEntitiesQuery,
   ListOrgCatalogEntitiesQuery,
   OrgCatalogEntity,
+  StateStorageUsage,
   UpsertOrgCatalogEntityInput,
   ListRunsQuery,
   LogChunk,
@@ -1236,6 +1237,40 @@ export function createStateRepository(executor: SqlExecutor): StateRepository {
         return { ok: true, value: result.rowCount ?? 0 };
       } catch {
         return safeError("Failed to delete org catalog entities for scope");
+      }
+    },
+
+    async getOrgStateStorage(orgId: Uuid): Promise<StateResult<StateStorageUsage>> {
+      try {
+        // Two indexed aggregates over the org's denormalized indexes. bigint
+        // sums arrive as strings under pg — coerce defensively.
+        const [objects, logs] = await Promise.all([
+          executor.execute<Record<string, unknown>>(
+            `SELECT count(*)::bigint AS count, COALESCE(sum(size_bytes), 0)::bigint AS bytes
+               FROM state.objects WHERE org_id = $1`,
+            [orgId],
+          ),
+          executor.execute<Record<string, unknown>>(
+            `SELECT count(*)::bigint AS count, COALESCE(sum(byte_length), 0)::bigint AS bytes
+               FROM state.log_chunks WHERE org_id = $1`,
+            [orgId],
+          ),
+        ]);
+        const num = (v: unknown): number => {
+          const n = typeof v === "number" ? v : typeof v === "bigint" ? Number(v) : v == null ? 0 : Number(v);
+          return Number.isFinite(n) && n >= 0 ? n : 0;
+        };
+        const o = objects.rows[0] ?? {};
+        const l = logs.rows[0] ?? {};
+        return {
+          ok: true,
+          value: {
+            objects: { count: num(o.count), bytes: num(o.bytes) },
+            logs: { count: num(l.count), bytes: num(l.bytes) },
+          },
+        };
+      } catch {
+        return safeError("Failed to read org state storage");
       }
     },
 
