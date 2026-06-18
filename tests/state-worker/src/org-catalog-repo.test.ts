@@ -184,21 +184,33 @@ describe("StateRepository GC inputs (OV9)", () => {
     return { executor, queries };
   }
 
-  it("listObjectDigestsWithSize returns digest + numeric size, bounded by limit", async () => {
+  it("listObjectDigestsWithSize returns digest + numeric size + createdAt, bounded by limit", async () => {
     const { executor, queries } = capturingExecutor([
-      { digest: "sha256:aa", size_bytes: "100" },
-      { digest: "sha256:bb", size_bytes: 200 },
+      { digest: "sha256:aa", size_bytes: "100", created_at: "2026-01-01T00:00:00.000Z" },
+      { digest: "sha256:bb", size_bytes: 200, created_at: new Date("2026-02-02T00:00:00.000Z") },
     ]);
     const repo = createStateRepository(executor);
     const res = await repo.listObjectDigestsWithSize(asUuid(ORG), asUuid(PROJECT_A), 5000);
     expect(res.ok).toBe(true);
     if (res.ok) {
       expect(res.value).toEqual([
-        { digest: "sha256:aa", sizeBytes: 100 },
-        { digest: "sha256:bb", sizeBytes: 200 },
+        { digest: "sha256:aa", sizeBytes: 100, createdAt: "2026-01-01T00:00:00.000Z" },
+        { digest: "sha256:bb", sizeBytes: 200, createdAt: "2026-02-02T00:00:00.000Z" },
       ]);
     }
     expect(queries[0]).toContain("LIMIT $3");
+    expect(queries[0]).toContain("created_at");
+  });
+
+  it("deleteObject removes one object row and reports whether it existed", async () => {
+    const executor = {
+      execute: (text: string) =>
+        Promise.resolve(text.includes("DELETE FROM state.objects") ? { rows: [], rowCount: 1 } : { rows: [], rowCount: 0 }),
+    } as unknown as SqlExecutor;
+    const repo = createStateRepository(executor);
+    const res = await repo.deleteObject(asUuid(ORG), asUuid(PROJECT_A), "sha256:dead");
+    expect(res.ok).toBe(true);
+    if (res.ok) expect(res.value).toBe(true);
   });
 
   it("listStorageGcRoots unions refs, catalog heads, and run plans", async () => {

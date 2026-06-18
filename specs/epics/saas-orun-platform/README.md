@@ -15,7 +15,7 @@ unilaterally.
 
 | Field | Value |
 |-------|-------|
-| Status | **In progress** — OP0–OP4 substrate + **v2 OV1–OV7 & OV9 shipped** ([`design-v2.md`](./design-v2.md) + [`implementation-plan-v2.md`](./implementation-plan-v2.md)): the object-model `ModelReader` seam, materialized tenancy (project == repo), credential-agnostic CI auth, the GitHub App bridge (inbound trigger recording + outbound write-back **live** — IG D1 registered in all envs as of 2026-06-18), the org-global catalog + Runs/Stacks console, and metering/retention (env-lifecycle archival, usage visibility, over-quota 412 off-by-default, object-GC report-only). **Remaining:** OV8 secrets (deferred — canonical `orun-secrets` epic), the OV9 object-GC **deletion** path (only reporting shipped), and OV4 inbound object-graph authorship (deferred to IG8 — not part of the D1 gate). |
+| Status | **In progress** — OP0–OP4 substrate + **v2 OV1–OV7 & OV9 shipped** ([`design-v2.md`](./design-v2.md) + [`implementation-plan-v2.md`](./implementation-plan-v2.md)): the object-model `ModelReader` seam, materialized tenancy (project == repo), credential-agnostic CI auth, the GitHub App bridge (inbound trigger recording + outbound write-back **live** — IG D1 registered in all envs as of 2026-06-18), the org-global catalog + Runs/Stacks console, and metering/retention (env-lifecycle archival, usage visibility, over-quota 412 off-by-default, object-GC report + safe-by-default reclamation). **Remaining:** OV8 secrets (deferred — canonical `orun-secrets` epic), and OV4 inbound object-graph authorship (deferred to IG8 — not part of the D1 gate). Object-GC reclamation ships **off** (`STATE_GC_COLLECT_ENABLED` unset ⇒ dry-run only) pending a per-env enable decision. |
 | Cluster | **OP** (OP0–OP9) |
 | Owner(s) | new `state-worker`, identity-worker, config-worker, api-edge, db, contracts/sdk, web-console-next, infra/terraform |
 | Target branch | `main` (PRs merged incrementally, milestone-sized) |
@@ -91,7 +91,7 @@ shipped substrate.
 | OV6 | Org-global catalog projection (repo/env as facets) | ✅ Done (#93–#95) |
 | OV7 | Console: Runs & Stacks over ModelReader | ✅ Done (#96–#104) |
 | OV8 | Secrets — Orun Cloud slice of the canonical `orun-secrets` epic (SEC) | 🗓️ Deferred — canonical design reconciled (#72); platform slice not yet built |
-| OV9 | Metering, entitlements, retention/GC | ✅ Done (#105–#112) — env-lifecycle archival, metering visibility (flow + stock), over-quota 412 (off by default), object-GC **report-only** (deletion path deliberately deferred) |
+| OV9 | Metering, entitlements, retention/GC | ✅ Done — env-lifecycle archival, metering visibility (flow + stock), over-quota 412 (off by default), object-GC report + **safe-by-default reclamation** (`…/state/gc/collect`: dry-run unless `STATE_GC_COLLECT_ENABLED`, refuses when the reachability walk is capped, grace-windowed, audited) |
 
 Paired integrations bridge: **IG8–IG9**
 ([`../saas-integrations/bridge-to-state.md`](../saas-integrations/bridge-to-state.md)).

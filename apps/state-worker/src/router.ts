@@ -36,6 +36,7 @@ import {
 } from "./handlers/catalog.js";
 import { handleGetOrgStateStorage } from "./handlers/state-usage.js";
 import { handleGetStateGcReport } from "./handlers/gc-report.js";
+import { handleCollectStateGc } from "./handlers/gc-collect.js";
 import {
   handleGetRef,
   handleUpdateRef,
@@ -124,6 +125,8 @@ const CATALOG_HEADS_HISTORY_RE = new RegExp(`^${STATE_BASE}/catalog/heads/histor
 const CATALOG_ENTITIES_RE = new RegExp(`^${STATE_BASE}/catalog/entities$`);
 // OV9 — object GC reachability report (report-only; no deletion).
 const GC_REPORT_RE = new RegExp(`^${STATE_BASE}/gc/report$`);
+// OV9 — object GC reclamation (the deleting path; safe-by-default, env-gated).
+const GC_COLLECT_RE = new RegExp(`^${STATE_BASE}/gc/collect$`);
 // OV6 — org-global catalog browser (no project scope): the default merged graph.
 const ORG_CATALOG_ENTITIES_RE = /^\/v1\/organizations\/([^/]+)\/catalog\/entities$/;
 // OV9 — org state-plane storage footprint (no project scope): the STOCK gauge.
@@ -467,6 +470,15 @@ async function routeObjectAndCatalog(
     if (!scope) return notFound(requestId, pathname);
     if (request.method !== "GET") return methodNotAllowed(requestId);
     return handleGetStateGcReport(request, env, requestId, actor, scope.orgId, scope.projectId);
+  }
+
+  // POST …/state/gc/collect — object GC reclamation (OV9, safe-by-default).
+  m = pathname.match(GC_COLLECT_RE);
+  if (m) {
+    const scope = parseScope(m[1]!, m[2]!);
+    if (!scope) return notFound(requestId, pathname);
+    if (request.method !== "POST") return methodNotAllowed(requestId);
+    return handleCollectStateGc(request, env, requestId, actor, scope.orgId, scope.projectId);
   }
 
   // ── OV1 — hosted RefStore (§2). The list route (…/refs) must precede the

@@ -628,7 +628,9 @@ export interface StateRepository {
     orgId: Uuid,
     projectId: Uuid,
     limit: number,
-  ): Promise<StateResult<{ digest: string; sizeBytes: number }[]>>;
+  ): Promise<StateResult<{ digest: string; sizeBytes: number; createdAt: string }[]>>;
+  /** Object GC reclamation (OV9): drop one unreachable object's index row. */
+  deleteObject(orgId: Uuid, projectId: Uuid, digest: string): Promise<StateResult<boolean>>;
   /**
    * Object GC roots: every live pointer's target for a project — current ref
    * targets, retained catalog-head digests, and run plan digests. The reachable
