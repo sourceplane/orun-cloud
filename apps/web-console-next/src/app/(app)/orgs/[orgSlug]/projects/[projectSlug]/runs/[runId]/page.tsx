@@ -14,6 +14,7 @@ import { OrgScope } from "@/components/shell/org-scope";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Table, TableHeader, TableRow, TableHead, TableBody, TableCell } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { EmptyState } from "@/components/ui/empty-state";
 import { wrap } from "@/lib/api";
@@ -79,6 +80,7 @@ function Inner({
 }) {
   const { client } = useSession();
   const runsHref = `/orgs/${orgSlug}/projects/${projectSlug}/runs`;
+  const [openJob, setOpenJob] = React.useState<string | null>(null);
 
   const projectsList = useApiQuery(qk.projects(orgId), () =>
     wrap(async () => (await client.projects.list(orgId)).projects),
@@ -207,6 +209,7 @@ function Inner({
                   <TableHead>Deps</TableHead>
                   <TableHead>Attempt</TableHead>
                   <TableHead>Finished</TableHead>
+                  <TableHead className="text-right">Logs</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -227,14 +230,112 @@ function Inner({
                     <TableCell className="text-xs text-muted-foreground">{j.deps.length > 0 ? j.deps.join(", ") : "—"}</TableCell>
                     <TableCell className="text-xs text-muted-foreground">{j.attempt}</TableCell>
                     <TableCell className="text-xs text-muted-foreground">{fmt(j.finishedAt)}</TableCell>
+                    <TableCell className="text-right">
+                      <Button
+                        size="sm"
+                        variant={openJob === j.jobId ? "secondary" : "ghost"}
+                        onClick={() => setOpenJob((cur) => (cur === j.jobId ? null : j.jobId))}
+                      >
+                        Logs
+                      </Button>
+                    </TableCell>
                   </TableRow>
                 ))}
               </TableBody>
             </Table>
           </Card>
         )}
+
+        {openJob ? (
+          <JobLogs
+            orgId={orgId}
+            projectId={projectId}
+            runId={runId}
+            jobId={openJob}
+            onClose={() => setOpenJob(null)}
+          />
+        ) : null}
       </section>
     </div>
+  );
+}
+
+/** A job's assembled logs with manual live-tail (re-fetch from the nextSeq cursor). */
+function JobLogs({
+  orgId,
+  projectId,
+  runId,
+  jobId,
+  onClose,
+}: {
+  orgId: string;
+  projectId: string;
+  runId: string;
+  jobId: string;
+  onClose: () => void;
+}) {
+  const { client } = useSession();
+  const [content, setContent] = React.useState("");
+  const [nextSeq, setNextSeq] = React.useState(0);
+  const [complete, setComplete] = React.useState(false);
+  const [loading, setLoading] = React.useState(true);
+  const [error, setError] = React.useState<{ code: string; message: string } | null>(null);
+
+  // Fetch from `seq`; reset replaces (initial load), else append (tail).
+  const fetchFrom = React.useCallback(
+    async (seq: number, reset: boolean) => {
+      setLoading(true);
+      const res = await wrap(() => client.state.readRunJobLogs(orgId, projectId, runId, jobId, seq));
+      if (res.ok) {
+        setContent((prev) => (reset ? res.data.content : prev + res.data.content));
+        setNextSeq(res.data.nextSeq);
+        setComplete(res.data.complete);
+        setError(null);
+      } else {
+        setError({ code: res.error.code, message: res.error.message });
+      }
+      setLoading(false);
+    },
+    [client, orgId, projectId, runId, jobId],
+  );
+
+  // Reload from the start whenever the selected job changes.
+  React.useEffect(() => {
+    setContent("");
+    void fetchFrom(0, true);
+  }, [fetchFrom]);
+
+  return (
+    <Card>
+      <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0">
+        <CardTitle className="font-mono text-sm">{jobId} · logs</CardTitle>
+        <div className="flex items-center gap-2">
+          {complete ? (
+            <Badge variant="secondary">complete</Badge>
+          ) : (
+            <Button size="sm" variant="outline" onClick={() => void fetchFrom(nextSeq, false)} loading={loading}>
+              Refresh
+            </Button>
+          )}
+          <Button size="sm" variant="ghost" onClick={onClose}>
+            Close
+          </Button>
+        </div>
+      </CardHeader>
+      <CardContent>
+        {error ? (
+          <p className="text-sm text-destructive">
+            {error.code}: {error.message}
+          </p>
+        ) : content.length === 0 ? (
+          <p className="text-sm text-muted-foreground">{loading ? "Loading…" : "No log output for this job."}</p>
+        ) : (
+          <pre className="max-h-96 overflow-auto whitespace-pre-wrap rounded-md border bg-background p-3 font-mono text-[11px] leading-relaxed">
+            {content}
+          </pre>
+        )}
+      </CardContent>
+    </Card>
   );
 }
 

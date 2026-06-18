@@ -95,4 +95,12 @@ describe("StateClient — project runs (OV7)", () => {
     await client(fetch).state.listRunJobs("org_1", "prj_2", "01J0");
     expect(calls[0]!.url).toBe("https://api.test/v1/organizations/org_1/projects/prj_2/state/runs/01J0/jobs");
   });
+
+  it("reads a job's logs from a seq cursor", async () => {
+    const { fetch, calls } = captureFetch(jsonResponse(envelope({ content: "", nextSeq: 0, complete: false })));
+    await client(fetch).state.readRunJobLogs("org_1", "prj_2", "01J0", "build", 12);
+    const url = new URL(calls[0]!.url);
+    expect(url.pathname).toBe("/v1/organizations/org_1/projects/prj_2/state/runs/01J0/logs/build");
+    expect(url.searchParams.get("fromSeq")).toBe("12");
+  });
 });
