@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { useParams, usePathname } from "next/navigation";
+import { useParams, usePathname, useSearchParams } from "next/navigation";
 import {
   Building2,
   ChevronDown,
@@ -105,13 +105,7 @@ export function NavContent({
       {inSettings && orgSlug && pathname ? (
         <SettingsNavContent orgSlug={orgSlug} pathname={pathname} onNavigate={onNavigate} mobile={mobile} />
       ) : entityKey && orgSlug ? (
-        <EntityNavContent
-          orgSlug={orgSlug}
-          entityKey={entityKey}
-          pathname={pathname}
-          onNavigate={onNavigate}
-          mobile={mobile}
-        />
+        <EntityNavContent orgSlug={orgSlug} entityKey={entityKey} onNavigate={onNavigate} mobile={mobile} />
       ) : (
         <ProductNav
           orgSlug={orgSlug}
@@ -234,18 +228,19 @@ function SettingsNavContent({
 function EntityNavContent({
   orgSlug,
   entityKey,
-  pathname,
   onNavigate,
   mobile = false,
 }: {
   orgSlug: string;
   entityKey: string;
-  pathname: string | null;
   onNavigate?: (() => void) | undefined;
   mobile?: boolean;
 }) {
   const model = buildEntityNav(orgSlug, entityKey);
   const backHref = model?.backHref ?? `/orgs/${orgSlug}/catalog`;
+  // Tabs select via `?tab=` (overview is the default, query-less, tab).
+  const searchParams = useSearchParams();
+  const activeTab = searchParams?.get("tab") ?? "overview";
   return (
     <nav className="px-2 pb-4 pt-3">
       {/* Back button on the left, "Catalog" centered (mirrors the settings rail). */}
@@ -275,7 +270,7 @@ function EntityNavContent({
           </div>
           <div className="space-y-0.5">
             {model.links.map((link) => {
-              const active = isLinkActive(link.href, pathname);
+              const active = link.tab === activeTab;
               return (
                 <Link
                   key={link.href}

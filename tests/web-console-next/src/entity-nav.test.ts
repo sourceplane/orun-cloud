@@ -8,13 +8,16 @@ const KEY = encodeEntityKey({
 });
 
 describe("buildEntityNav", () => {
-  it("derives the identity + Overview link from the URL key alone", () => {
+  it("derives the identity + tab links from the URL key alone", () => {
     const model = buildEntityNav("acme", KEY)!;
     expect(model.name).toBe("api");
     expect(model.kind).toBe("Component");
     expect(model.backHref).toBe("/orgs/acme/catalog");
-    expect(model.links.map((l) => l.href)).toEqual([`/orgs/acme/catalog/${KEY}`]);
-    expect(model.links[0]!.label).toBe("Overview");
+    expect(model.links.map((l) => l.tab)).toEqual(["overview", "dependencies"]);
+    expect(model.links.map((l) => l.label)).toEqual(["Overview", "Dependencies"]);
+    // Overview is the query-less default; Dependencies carries `?tab=`.
+    expect(model.links[0]!.href).toBe(`/orgs/acme/catalog/${KEY}`);
+    expect(model.links[1]!.href).toBe(`/orgs/acme/catalog/${KEY}?tab=dependencies`);
   });
 
   it("returns null for a malformed key", () => {
