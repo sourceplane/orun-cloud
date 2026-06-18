@@ -619,6 +619,23 @@ export interface StateRepository {
     params: PageQueryParams,
     query?: { kind?: StateObjectKind },
   ): Promise<StateResult<PagedResult<StateObject>>>;
+  /**
+   * Object GC (OV9, report-only): every stored object's digest + byte size for a
+   * project, bounded by `limit`. Diffed against the reachable closure to compute
+   * reclaimable storage.
+   */
+  listObjectDigestsWithSize(
+    orgId: Uuid,
+    projectId: Uuid,
+    limit: number,
+  ): Promise<StateResult<{ digest: string; sizeBytes: number }[]>>;
+  /**
+   * Object GC roots: every live pointer's target for a project — current ref
+   * targets, retained catalog-head digests, and run plan digests. The reachable
+   * set is the closure of these (conservative: retained history keeps its
+   * objects reachable, so the report never over-claims reclaimable storage).
+   */
+  listStorageGcRoots(orgId: Uuid, projectId: Uuid): Promise<StateResult<string[]>>;
 
   // Log chunks
   appendLogChunk(input: AppendLogChunkInput): Promise<StateResult<LogChunk>>;

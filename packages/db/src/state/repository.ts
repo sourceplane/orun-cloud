@@ -959,6 +959,51 @@ export function createStateRepository(executor: SqlExecutor): StateRepository {
       return pagedList(executor, sql, values, params.limit, params.cursor, mapObject);
     },
 
+    async listObjectDigestsWithSize(
+      orgId: Uuid,
+      projectId: Uuid,
+      limit: number,
+    ): Promise<StateResult<{ digest: string; sizeBytes: number }[]>> {
+      try {
+        const result = await executor.execute<Record<string, unknown>>(
+          `SELECT digest, size_bytes FROM state.objects
+            WHERE org_id = $1 AND project_id = $2
+            ORDER BY created_at ASC
+            LIMIT $3`,
+          [orgId, projectId, limit],
+        );
+        return {
+          ok: true,
+          value: result.rows.map((r) => ({
+            digest: r.digest as string,
+            sizeBytes: Number(r.size_bytes ?? 0),
+          })),
+        };
+      } catch {
+        return safeError("Failed to list object digests");
+      }
+    },
+
+    async listStorageGcRoots(orgId: Uuid, projectId: Uuid): Promise<StateResult<string[]>> {
+      try {
+        // Three live-pointer sources, unioned: current ref targets, retained
+        // catalog-head digests, and run plan digests. Each is the head of a
+        // reachable closure; retained history keeps its objects reachable so the
+        // report is conservative (never over-claims reclaimable storage).
+        const result = await executor.execute<Record<string, unknown>>(
+          `SELECT target AS digest FROM state.refs WHERE org_id = $1 AND project_id = $2
+           UNION
+           SELECT digest FROM state.catalog_heads WHERE org_id = $1 AND project_id = $2
+           UNION
+           SELECT plan_digest AS digest FROM state.runs WHERE org_id = $1 AND project_id = $2`,
+          [orgId, projectId],
+        );
+        return { ok: true, value: result.rows.map((r) => r.digest as string).filter((d) => typeof d === "string" && d.length > 0) };
+      } catch {
+        return safeError("Failed to list storage GC roots");
+      }
+    },
+
     // ── Log chunks ───────────────────────────────────────────
 
     async appendLogChunk(input: AppendLogChunkInput): Promise<StateResult<LogChunk>> {

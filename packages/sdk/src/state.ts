@@ -5,6 +5,7 @@ import type {
   WorkspaceLink,
   ListOrgCatalogEntitiesResponse,
   GetStateStorageResponse,
+  GetStateGcReportResponse,
   ListRunsResponse,
   GetRunResponse,
   ListJobsResponse,
@@ -162,6 +163,22 @@ export class StateClient {
       {
         method: "GET",
         path: `/v1/organizations/${encodeURIComponent(orgId)}/state/usage`,
+      },
+      opts,
+    );
+  }
+
+  /**
+   * GET /v1/organizations/:orgId/projects/:projectId/state/gc/report — object GC
+   * reachability report (OV9, report-only): reclaimable storage for the project,
+   * computed from the live-pointer closure. Reads only; deletes nothing. Policy:
+   * state.object.read.
+   */
+  getGcReport(orgId: string, projectId: string, opts: RequestOptions = {}): Promise<GetStateGcReportResponse> {
+    return this.transport.request<GetStateGcReportResponse>(
+      {
+        method: "GET",
+        path: `/v1/organizations/${encodeURIComponent(orgId)}/projects/${encodeURIComponent(projectId)}/state/gc/report`,
       },
       opts,
     );
