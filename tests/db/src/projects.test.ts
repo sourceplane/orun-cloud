@@ -641,6 +641,18 @@ describe("ProjectsRepository", () => {
       expect(queries[0]!.params).toEqual([ORG_ID, PRJ_ID, 11]);
     });
 
+    it("filters to active by default but drops the status filter with includeArchived (OV9)", async () => {
+      const active = createFakeExecutor({ rows: [SAMPLE_ENVIRONMENT_ROW] });
+      const activeRepo = createProjectsRepository(active.executor);
+      await activeRepo.listEnvironmentsPaged(ORG_ID, PRJ_ID, { limit: 10, cursor: null });
+      expect(active.queries[0]!.text).toContain("status = 'active'");
+
+      const all = createFakeExecutor({ rows: [SAMPLE_ENVIRONMENT_ROW] });
+      const allRepo = createProjectsRepository(all.executor);
+      await allRepo.listEnvironmentsPaged(ORG_ID, PRJ_ID, { limit: 10, cursor: null }, { includeArchived: true });
+      expect(all.queries[0]!.text).not.toContain("status = 'active'");
+    });
+
     it("applies cursor filtering with timestamp and id tie-breaker", async () => {
       const { executor, queries } = createFakeExecutor({ rows: [] });
       const repo = createProjectsRepository(executor);

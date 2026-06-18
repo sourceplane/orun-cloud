@@ -65,7 +65,7 @@ function validateBody(body: unknown): { valid: true; name: string; slug: string 
   return { valid: true, name: req.name as string, slug };
 }
 
-export function toPublicEnvironment(env: { id: string; orgId: string; projectId: string; name: string; slug: string; status: string; createdAt: Date; updatedAt: Date; archivedAt: Date | null }): PublicEnvironment {
+export function toPublicEnvironment(env: { id: string; orgId: string; projectId: string; name: string; slug: string; status: string; createdAt: Date; updatedAt: Date; archivedAt: Date | null; lastActiveAt: Date }): PublicEnvironment {
   return {
     id: environmentPublicId(env.id),
     orgId: orgPublicId(env.orgId),
@@ -76,6 +76,7 @@ export function toPublicEnvironment(env: { id: string; orgId: string; projectId:
     createdAt: env.createdAt.toISOString(),
     updatedAt: env.updatedAt.toISOString(),
     archivedAt: env.archivedAt ? env.archivedAt.toISOString() : null,
+    lastActiveAt: env.lastActiveAt.toISOString(),
   };
 }
 

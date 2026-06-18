@@ -106,6 +106,7 @@ describe("contracts: environment types", () => {
       createdAt: "2026-01-01T00:00:00Z",
       updatedAt: "2026-01-01T00:00:00Z",
       archivedAt: null,
+      lastActiveAt: "2026-01-01T00:00:00Z",
     };
     expect(env.orgId).toBe("org_001");
     expect(env.projectId).toBe("prj_001");
@@ -129,6 +130,7 @@ describe("contracts: environment types", () => {
         createdAt: "2026-01-01T00:00:00Z",
         updatedAt: "2026-01-01T00:00:00Z",
         archivedAt: null,
+        lastActiveAt: "2026-01-01T00:00:00Z",
       },
     };
     expect(res.environment.projectId).toBe("prj_001");
@@ -146,6 +148,7 @@ describe("contracts: environment types", () => {
         createdAt: "2026-01-01T00:00:00Z",
         updatedAt: "2026-01-01T00:00:00Z",
         archivedAt: null,
+        lastActiveAt: "2026-01-01T00:00:00Z",
       },
     };
     expect(res.environment.orgId).toBe("org_001");
@@ -168,6 +171,7 @@ describe("contracts: environment types", () => {
         createdAt: "2026-01-01T00:00:00Z",
         updatedAt: "2026-02-01T00:00:00Z",
         archivedAt: "2026-02-01T00:00:00Z",
+        lastActiveAt: "2026-01-15T00:00:00Z",
       },
     };
     expect(res.environment.status).toBe("archived");

@@ -271,21 +271,24 @@ export function createProjectsRepository(executor: SqlExecutor): ProjectsReposit
       }
     },
 
-    async listEnvironmentsPaged(orgId: string, projectId: string, params: PageQueryParams): Promise<ProjectsResult<PagedResult<Environment>>> {
+    async listEnvironmentsPaged(orgId: string, projectId: string, params: PageQueryParams, opts?: { includeArchived?: boolean }): Promise<ProjectsResult<PagedResult<Environment>>> {
       try {
         const fetchLimit = params.limit + 1;
+        // Active-only unless the caller opts into archived rows (OV9 lifecycle
+        // visibility). Inlined literal — no params, so no injection surface.
+        const statusFilter = opts?.includeArchived ? "" : " AND status = 'active'";
         let sql: string;
         let values: unknown[];
         if (params.cursor) {
           sql = `SELECT * FROM projects.environments
-           WHERE org_id = $1 AND project_id = $2 AND status = 'active'
+           WHERE org_id = $1 AND project_id = $2${statusFilter}
              AND (created_at, id) < ($4, $5)
            ORDER BY created_at DESC, id DESC
            LIMIT $3`;
           values = [orgId, projectId, fetchLimit, params.cursor.createdAt, params.cursor.id];
         } else {
           sql = `SELECT * FROM projects.environments
-           WHERE org_id = $1 AND project_id = $2 AND status = 'active'
+           WHERE org_id = $1 AND project_id = $2${statusFilter}
            ORDER BY created_at DESC, id DESC
            LIMIT $3`;
           values = [orgId, projectId, fetchLimit];
