@@ -33,6 +33,7 @@ describe("buildNavSections", () => {
     const org = buildNavSections({ orgSlug: "acme" }).find((s) => s.id === "org")!;
     const hrefs = org.links.map((l) => l.href);
     expect(hrefs).toContain("/orgs/acme/projects");
+    expect(hrefs).toContain("/orgs/acme/catalog");
     expect(hrefs).toContain("/orgs/acme/usage");
     expect(hrefs).toContain("/orgs/acme/settings");
     expect(org.label).toBe("Org · acme");
