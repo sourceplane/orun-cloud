@@ -27,6 +27,7 @@ const SEGMENT_LABELS: Record<string, string> = {
   billing: "Billing & plan",
   "change-plan": "Change plan",
   config: "Config",
+  storage: "Storage",
   audit: "Audit log",
   notifications: "Notifications",
 };

@@ -26,6 +26,7 @@ import {
   GitBranch,
   Terminal,
   Play,
+  HardDrive,
   type LucideIcon,
 } from "lucide-react";
 import { cn } from "@/lib/cn";
@@ -56,6 +57,7 @@ const ICONS: Record<string, LucideIcon> = {
   GitBranch,
   Terminal,
   Play,
+  HardDrive,
 };
 
 /**

@@ -73,6 +73,7 @@ export function buildNavSections(scope: NavScope): NavSection[] {
         { href: `${projectBase}/environments`, label: "Environments", icon: "Boxes" },
         { href: `${projectBase}/git`, label: "Git", icon: "GitBranch" },
         { href: `${projectBase}/cli`, label: "CLI", icon: "Terminal" },
+        { href: `${projectBase}/storage`, label: "Storage", icon: "HardDrive" },
         { href: `${projectBase}/config`, label: "Config", icon: "SlidersHorizontal" },
       ],
     });
