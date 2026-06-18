@@ -7,6 +7,7 @@ import type {
   ListRunsResponse,
   GetRunResponse,
   ListJobsResponse,
+  ReadLogResponse,
 } from "@saas/contracts/state";
 
 import type { Transport, RequestOptions } from "./transport.js";
@@ -203,6 +204,29 @@ export class StateClient {
       {
         method: "GET",
         path: `/v1/organizations/${encodeURIComponent(orgId)}/projects/${encodeURIComponent(projectId)}/state/runs/${encodeURIComponent(runId)}/jobs`,
+      },
+      opts,
+    );
+  }
+
+  /**
+   * GET …/state/runs/:runId/logs/:jobId?fromSeq= — a job's assembled logs plus a
+   * live-tail cursor (OV7 run detail). `fromSeq` resumes from a prior nextSeq so
+   * the console tails by re-fetching the tail rather than the whole log.
+   */
+  readRunJobLogs(
+    orgId: string,
+    projectId: string,
+    runId: string,
+    jobId: string,
+    fromSeq = 0,
+    opts: RequestOptions = {},
+  ): Promise<ReadLogResponse> {
+    return this.transport.request<ReadLogResponse>(
+      {
+        method: "GET",
+        path: `/v1/organizations/${encodeURIComponent(orgId)}/projects/${encodeURIComponent(projectId)}/state/runs/${encodeURIComponent(runId)}/logs/${encodeURIComponent(jobId)}`,
+        query: { fromSeq },
       },
       opts,
     );
