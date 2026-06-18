@@ -1,30 +1,30 @@
 "use client";
 
-// OV7 — the org-global catalog browser. One merged component graph across the
-// org's projects (OV6), each row carrying provenance (project, environment,
-// commit). Filters narrow by project / kind / owner / env / free-text; clicking
-// a row opens a quick-peek drawer (URL-synced via `?entity=`) with an "Expand"
-// to the dedicated entity route. "Load more" walks the keyset cursor. Mirrors
-// the audit page's manual-pagination pattern.
+// OV7 — the org-global catalog browser, redesigned as a master-detail surface.
+// One merged component graph across the org's projects (OV6), each row carrying
+// provenance (project, environment, commit). Filters narrow by project / kind /
+// owner / env / free-text. The list is a column of "thick" rows; selecting one
+// (URL-synced via `?entity=`) shows it in a **pinned detail panel** on wide
+// screens (the third panel, alongside the global nav and the list), and in a
+// peek **drawer** below `xl`. "Open page" promotes the peek to the dedicated
+// entity route. "Load more" walks the keyset cursor (audit-page pattern).
 
 import * as React from "react";
-import Link from "next/link";
 import { useParams, usePathname, useRouter, useSearchParams } from "next/navigation";
-import { Boxes, ArrowUpRight } from "lucide-react";
+import { Boxes } from "lucide-react";
 import type { OrgCatalogEntity, StateCursor } from "@saas/contracts/state";
 import { OrgScope } from "@/components/shell/org-scope";
-import { EntityOverview } from "@/components/catalog/entity-overview";
+import { EntityListItem } from "@/components/catalog/entity-list-item";
+import { EntityDetailPanel, EntityDetailEmpty } from "@/components/catalog/entity-detail-panel";
 import { DependencyGraph } from "@/components/catalog/dependency-graph";
 import { InsightsBar } from "@/components/catalog/insights-bar";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { Table, TableHeader, TableRow, TableHead, TableBody, TableCell } from "@/components/ui/table";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from "@/components/ui/sheet";
+import { Sheet, SheetContent, SheetTitle, SheetDescription } from "@/components/ui/sheet";
 import { cn } from "@/lib/cn";
 import { wrap } from "@/lib/api";
 import { useSession } from "@/lib/session";
@@ -46,6 +46,25 @@ function useDebounced<T>(value: T, delayMs = 400): T {
   return debounced;
 }
 
+/**
+ * Track a media query (client-only). Drives the 3-panel ⇄ drawer switch: the
+ * pinned detail panel and the peek drawer are mutually exclusive, and Radix
+ * portals the drawer to <body> (ignoring CSS `hidden`), so the choice has to be
+ * made in JS. Starts `false` (mobile-first) and settles on mount — invisible
+ * because the catalog data loads behind a skeleton first.
+ */
+function useMediaQuery(query: string): boolean {
+  const [matches, setMatches] = React.useState(false);
+  React.useEffect(() => {
+    const m = window.matchMedia(query);
+    const on = () => setMatches(m.matches);
+    on();
+    m.addEventListener("change", on);
+    return () => m.removeEventListener("change", on);
+  }, [query]);
+  return matches;
+}
+
 /** Stable list/dedup key: the (project, environment, ref) scope is unique. */
 function entityKey(e: OrgCatalogEntity): string {
   return `${e.sourceProjectId}:${e.sourceEnvironment ?? ""}:${e.entityRef}`;
@@ -60,8 +79,6 @@ function urlKey(e: OrgCatalogEntity): string {
   });
 }
 
-const dash = <span className="text-muted-foreground">—</span>;
-
 export default function CatalogPage() {
   const params = useParams<{ orgSlug: string }>();
   const slug = params?.orgSlug ?? "";
@@ -74,6 +91,8 @@ function Inner({ orgId, orgSlug }: { orgId: string; orgSlug: string }) {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const selectedKey = searchParams?.get("entity") ?? null;
+  // ≥ xl: the detail panel is pinned as the third panel; below, it's a drawer.
+  const isWide = useMediaQuery("(min-width: 1280px)");
 
   // Projects power the provenance filter + map a source project id to a label.
   const projects = useApiQuery(qk.projects(orgId), () =>
@@ -114,7 +133,7 @@ function Inner({ orgId, orgSlug }: { orgId: string; orgSlug: string }) {
   const [loading, setLoading] = React.useState(true);
   const [loadingMore, setLoadingMore] = React.useState(false);
   const [error, setError] = React.useState<{ code: string; message: string } | null>(null);
-  const [view, setView] = React.useState<"table" | "graph">("table");
+  const [view, setView] = React.useState<"list" | "graph">("list");
   const [insight, setInsight] = React.useState<InsightId | null>(null);
 
   /** Set or clear the `?entity=` selection without growing the history stack. */
@@ -184,11 +203,17 @@ function Inner({ orgId, orgSlug }: { orgId: string; orgSlug: string }) {
     [entities, selectedKey],
   );
   // SC4 data-quality insights, computed over the loaded view, drive a
-  // click-to-filter narrowing (`shown`) applied to the table, cards, and graph.
+  // click-to-filter narrowing (`shown`) applied to the list and graph.
   const insights = React.useMemo(() => computeInsights(entities), [entities]);
   const shown = React.useMemo(
     () => (insight ? filterByInsight(entities, insight) : entities),
     [entities, insight],
+  );
+  // The set of rows with a relation pointing outside the loaded catalog — drives
+  // the per-row "dangling" badge (reuses the SC4 insight definition).
+  const danglingKeys = React.useMemo(
+    () => new Set(filterByInsight(entities, "dangling-deps").map(urlKey)),
+    [entities],
   );
   const orgGraph = React.useMemo(() => buildOrgGraph(shown, orgSlug), [shown, orgSlug]);
   const isSelected = (e: OrgCatalogEntity) => selectedKey !== null && urlKey(e) === selectedKey;
@@ -196,6 +221,49 @@ function Inner({ orgId, orgSlug }: { orgId: string; orgSlug: string }) {
     const k = urlKey(e);
     setSelectedKey(selectedKey === k ? null : k);
   };
+
+  // Keyboard triage (wide, list view only): ↑/↓ or j/k move the selection
+  // through the pinned panel, ↵ opens the full page, Esc deselects. Ignored when
+  // a form field is focused, and when a modifier is held (so Cmd-K still works).
+  const listRef = React.useRef<HTMLDivElement>(null);
+  const scrollRowIntoView = React.useCallback((key: string) => {
+    requestAnimationFrame(() => {
+      listRef.current?.querySelector<HTMLElement>(`[data-entitykey="${CSS.escape(key)}"]`)?.scrollIntoView({
+        block: "nearest",
+      });
+    });
+  }, []);
+  React.useEffect(() => {
+    if (!isWide || view !== "list" || shown.length === 0) return;
+    const move = (delta: number) => {
+      const idx = selectedKey ? shown.findIndex((e) => urlKey(e) === selectedKey) : -1;
+      const next = shown[Math.max(0, Math.min(idx + delta, shown.length - 1))] ?? shown[0];
+      if (!next) return;
+      const k = urlKey(next);
+      setSelectedKey(k);
+      scrollRowIntoView(k);
+    };
+    const onKey = (ev: KeyboardEvent) => {
+      if (ev.metaKey || ev.ctrlKey || ev.altKey) return;
+      const el = document.activeElement as HTMLElement | null;
+      const tag = el?.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || el?.isContentEditable) return;
+      if (ev.key === "ArrowDown" || ev.key === "j") {
+        ev.preventDefault();
+        move(1);
+      } else if (ev.key === "ArrowUp" || ev.key === "k") {
+        ev.preventDefault();
+        move(-1);
+      } else if (ev.key === "Enter" && selectedKey) {
+        ev.preventDefault();
+        router.push(`/orgs/${orgSlug}/catalog/${selectedKey}`);
+      } else if (ev.key === "Escape" && selectedKey) {
+        setSelectedKey(null);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [isWide, view, shown, selectedKey, setSelectedKey, scrollRowIntoView, router, orgSlug]);
 
   return (
     <div className="space-y-5">
@@ -257,7 +325,7 @@ function Inner({ orgId, orgSlug }: { orgId: string; orgSlug: string }) {
           className="h-8 w-[220px] text-xs"
         />
         <div className="ml-auto inline-flex rounded-md border p-0.5" role="group" aria-label="View">
-          {(["table", "graph"] as const).map((v) => (
+          {(["list", "graph"] as const).map((v) => (
             <button
               key={v}
               type="button"
@@ -279,13 +347,11 @@ function Inner({ orgId, orgSlug }: { orgId: string; orgSlug: string }) {
       ) : null}
 
       {loading ? (
-        <Card>
-          <CardContent className="space-y-2 pt-6">
-            {Array.from({ length: 6 }).map((_, i) => (
-              <Skeleton key={i} className="h-9 w-full" />
-            ))}
-          </CardContent>
-        </Card>
+        <div className="space-y-2">
+          {Array.from({ length: 6 }).map((_, i) => (
+            <Skeleton key={i} className="h-[72px] w-full rounded-xl" />
+          ))}
+        </div>
       ) : error ? (
         <Card>
           <CardHeader>
@@ -326,67 +392,42 @@ function Inner({ orgId, orgSlug }: { orgId: string; orgSlug: string }) {
               </CardContent>
             </Card>
           ) : (
-            <>
-          {/* Mobile: stacked cards */}
-          <div className="space-y-3 md:hidden">
-            {shown.map((e) => (
-              <Card
-                key={entityKey(e)}
-                onClick={() => toggle(e)}
-                className={cn("cursor-pointer space-y-2 p-4 transition-colors", isSelected(e) && "ring-1 ring-primary")}
-              >
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0 space-y-1">
-                    <div className="truncate font-medium">{e.name}</div>
-                    <div className="break-all font-mono text-[11px] text-muted-foreground">{e.entityRef}</div>
-                  </div>
-                  <Badge variant="secondary">{e.kind}</Badge>
-                </div>
-                <div className="flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-muted-foreground">
-                  <span>{projectLabel(e.sourceProjectId)}</span>
-                  {e.owner ? <span>owner: {e.owner}</span> : null}
-                  {e.sourceEnvironment ? <span>env: {e.sourceEnvironment}</span> : null}
-                </div>
-              </Card>
-            ))}
-          </div>
-
-          {/* Desktop: table */}
-          <Card className="hidden md:block">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Name</TableHead>
-                  <TableHead>Kind</TableHead>
-                  <TableHead>Ref</TableHead>
-                  <TableHead>Project</TableHead>
-                  <TableHead>Owner</TableHead>
-                  <TableHead>Lifecycle</TableHead>
-                  <TableHead>Environment</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
+            // Master-detail: the thick-row list, plus the pinned detail panel as
+            // the third panel on wide screens (drawer below xl, rendered later).
+            <div className={cn("grid items-start gap-5", isWide && "grid-cols-[minmax(0,1fr)_360px]")}>
+              <div ref={listRef} className="space-y-2">
                 {shown.map((e) => (
-                  <TableRow
+                  <EntityListItem
                     key={entityKey(e)}
-                    onClick={() => toggle(e)}
-                    className={cn("cursor-pointer", isSelected(e) && "bg-accent/60")}
-                  >
-                    <TableCell className="font-medium">{e.name}</TableCell>
-                    <TableCell>
-                      <Badge variant="secondary">{e.kind}</Badge>
-                    </TableCell>
-                    <TableCell className="font-mono text-xs text-muted-foreground">{e.entityRef}</TableCell>
-                    <TableCell className="text-sm">{projectLabel(e.sourceProjectId)}</TableCell>
-                    <TableCell className="text-sm">{e.owner ?? dash}</TableCell>
-                    <TableCell className="text-sm">{e.lifecycle ?? dash}</TableCell>
-                    <TableCell className="text-sm">{e.sourceEnvironment ?? dash}</TableCell>
-                  </TableRow>
+                    entity={e}
+                    projectLabel={projectLabel}
+                    selected={isSelected(e)}
+                    dangling={danglingKeys.has(urlKey(e))}
+                    urlKey={urlKey(e)}
+                    onSelect={() => toggle(e)}
+                  />
                 ))}
-              </TableBody>
-            </Table>
-          </Card>
-            </>
+              </div>
+
+              {isWide ? (
+                <aside aria-label="Component detail">
+                  <div className="sticky top-6">
+                    <div className="relative flex min-h-[460px] max-h-[calc(100dvh-5.5rem)] flex-col overflow-hidden rounded-xl border bg-card p-4 shadow-sm">
+                      {selected ? (
+                        <EntityDetailPanel
+                          entity={selected}
+                          projectLabel={projectLabel}
+                          orgSlug={orgSlug}
+                          onClose={() => setSelectedKey(null)}
+                        />
+                      ) : (
+                        <EntityDetailEmpty />
+                      )}
+                    </div>
+                  </div>
+                </aside>
+              ) : null}
+            </div>
           )}
 
           {cursor !== null ? (
@@ -403,30 +444,21 @@ function Inner({ orgId, orgSlug }: { orgId: string; orgSlug: string }) {
         </>
       )}
 
-      {/* Quick-peek drawer: opens when `?entity=` resolves to a loaded row. */}
-      <Sheet open={selected !== null} onOpenChange={(open) => (open ? undefined : setSelectedKey(null))}>
-        <SheetContent side="right" className="w-[420px] max-w-[92vw] overflow-y-auto">
-          {selected ? (
-            <>
-              <SheetHeader className="pr-8">
-                <SheetTitle className="flex items-center gap-2 text-base">
-                  <span className="truncate">{selected.name}</span>
-                  <Badge variant="secondary">{selected.kind}</Badge>
-                </SheetTitle>
-                <SheetDescription className="break-all font-mono">{selected.entityRef}</SheetDescription>
-              </SheetHeader>
-              <EntityOverview entity={selected} projectLabel={projectLabel} />
-              <Link
-                href={`/orgs/${orgSlug}/catalog/${urlKey(selected)}`}
-                className="mt-auto inline-flex w-full items-center justify-center gap-1 rounded-md border px-3 py-2 text-sm font-medium transition-colors hover:bg-accent"
-              >
-                Expand
-                <ArrowUpRight className="h-4 w-4" />
-              </Link>
-            </>
-          ) : null}
-        </SheetContent>
-      </Sheet>
+      {/* Peek drawer — only below xl, where the panel isn't pinned. Mutually
+          exclusive with the pinned panel so a selection never opens both. */}
+      {!isWide ? (
+        <Sheet open={selected !== null} onOpenChange={(open) => (open ? undefined : setSelectedKey(null))}>
+          <SheetContent side="right" className="w-[400px] max-w-[92vw] overflow-y-auto">
+            {selected ? (
+              <>
+                <SheetTitle className="sr-only">{selected.name}</SheetTitle>
+                <SheetDescription className="sr-only">{selected.entityRef}</SheetDescription>
+                <EntityDetailPanel entity={selected} projectLabel={projectLabel} orgSlug={orgSlug} />
+              </>
+            ) : null}
+          </SheetContent>
+        </Sheet>
+      ) : null}
     </div>
   );
 }
