@@ -3,14 +3,17 @@
 // OV7 — the org-global catalog browser. One merged component graph across the
 // org's projects (OV6), each row carrying provenance (project, environment,
 // commit). Filters narrow by project / kind / owner / env / free-text; clicking
-// a row opens a detail panel with its relations + full provenance. "Load more"
-// walks the keyset cursor. Mirrors the audit page's manual-pagination pattern.
+// a row opens a quick-peek drawer (URL-synced via `?entity=`) with an "Expand"
+// to the dedicated entity route. "Load more" walks the keyset cursor. Mirrors
+// the audit page's manual-pagination pattern.
 
 import * as React from "react";
-import { useParams } from "next/navigation";
-import { Boxes } from "lucide-react";
+import Link from "next/link";
+import { useParams, usePathname, useRouter, useSearchParams } from "next/navigation";
+import { Boxes, ArrowUpRight } from "lucide-react";
 import type { OrgCatalogEntity, StateCursor } from "@saas/contracts/state";
 import { OrgScope } from "@/components/shell/org-scope";
+import { EntityOverview } from "@/components/catalog/entity-overview";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Table, TableHeader, TableRow, TableHead, TableBody, TableCell } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
@@ -19,10 +22,12 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from "@/components/ui/sheet";
 import { cn } from "@/lib/cn";
 import { wrap } from "@/lib/api";
 import { useSession } from "@/lib/session";
 import { useApiQuery, qk } from "@/lib/query";
+import { encodeEntityKey } from "@/lib/catalog-entity-key";
 
 // The kinds the org-service-catalog projects (data-model.md §2/§4).
 const KIND_OPTIONS = ["Component", "API", "Resource", "System", "Domain", "Group"];
@@ -37,9 +42,18 @@ function useDebounced<T>(value: T, delayMs = 400): T {
   return debounced;
 }
 
-/** Stable key: the (project, environment, ref) scope is unique per entity. */
+/** Stable list/dedup key: the (project, environment, ref) scope is unique. */
 function entityKey(e: OrgCatalogEntity): string {
   return `${e.sourceProjectId}:${e.sourceEnvironment ?? ""}:${e.entityRef}`;
+}
+
+/** The opaque, URL-safe key for an entity's detail route + `?entity=` param. */
+function urlKey(e: OrgCatalogEntity): string {
+  return encodeEntityKey({
+    sourceProjectId: e.sourceProjectId,
+    sourceEnvironment: e.sourceEnvironment,
+    entityRef: e.entityRef,
+  });
 }
 
 const dash = <span className="text-muted-foreground">—</span>;
@@ -47,11 +61,15 @@ const dash = <span className="text-muted-foreground">—</span>;
 export default function CatalogPage() {
   const params = useParams<{ orgSlug: string }>();
   const slug = params?.orgSlug ?? "";
-  return <OrgScope slug={slug}>{(org) => <Inner orgId={org.id} />}</OrgScope>;
+  return <OrgScope slug={slug}>{(org) => <Inner orgId={org.id} orgSlug={slug} />}</OrgScope>;
 }
 
-function Inner({ orgId }: { orgId: string }) {
+function Inner({ orgId, orgSlug }: { orgId: string; orgSlug: string }) {
   const { client } = useSession();
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const selectedKey = searchParams?.get("entity") ?? null;
 
   // Projects power the provenance filter + map a source project id to a label.
   const projects = useApiQuery(qk.projects(orgId), () =>
@@ -92,12 +110,22 @@ function Inner({ orgId }: { orgId: string }) {
   const [loading, setLoading] = React.useState(true);
   const [loadingMore, setLoadingMore] = React.useState(false);
   const [error, setError] = React.useState<{ code: string; message: string } | null>(null);
-  const [selected, setSelected] = React.useState<OrgCatalogEntity | null>(null);
+
+  /** Set or clear the `?entity=` selection without growing the history stack. */
+  const setSelectedKey = React.useCallback(
+    (key: string | null) => {
+      const sp = new URLSearchParams(searchParams?.toString() ?? "");
+      if (key) sp.set("entity", key);
+      else sp.delete("entity");
+      const qs = sp.toString();
+      router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
+    },
+    [router, pathname, searchParams],
+  );
 
   const loadFirstPage = React.useCallback(async () => {
     setLoading(true);
     setError(null);
-    setSelected(null);
     const res = await wrap(() => client.state.listOrgCatalogEntities(orgId, applied));
     if (res.ok) {
       setEntities(res.data.entities);
@@ -145,8 +173,15 @@ function Inner({ orgId }: { orgId: string }) {
     setQInput("");
   };
 
-  const isSelected = (e: OrgCatalogEntity) => selected !== null && entityKey(selected) === entityKey(e);
-  const toggle = (e: OrgCatalogEntity) => setSelected((cur) => (cur && entityKey(cur) === entityKey(e) ? null : e));
+  const selected = React.useMemo(
+    () => entities.find((e) => urlKey(e) === selectedKey) ?? null,
+    [entities, selectedKey],
+  );
+  const isSelected = (e: OrgCatalogEntity) => selectedKey !== null && urlKey(e) === selectedKey;
+  const toggle = (e: OrgCatalogEntity) => {
+    const k = urlKey(e);
+    setSelectedKey(selectedKey === k ? null : k);
+  };
 
   return (
     <div className="space-y-5">
@@ -297,10 +332,6 @@ function Inner({ orgId }: { orgId: string }) {
             </Table>
           </Card>
 
-          {selected ? (
-            <EntityDetail entity={selected} projectLabel={projectLabel} onClose={() => setSelected(null)} />
-          ) : null}
-
           {cursor !== null ? (
             <div className="flex justify-center pt-1">
               <Button type="button" variant="outline" onClick={() => void loadMore()} loading={loadingMore}>
@@ -314,74 +345,31 @@ function Inner({ orgId }: { orgId: string }) {
           )}
         </>
       )}
-    </div>
-  );
-}
 
-/** The selected entity's full provenance + relations (all from the list row). */
-function EntityDetail({
-  entity: e,
-  projectLabel,
-  onClose,
-}: {
-  entity: OrgCatalogEntity;
-  projectLabel: (id: string) => string;
-  onClose: () => void;
-}) {
-  return (
-    <Card>
-      <CardHeader className="flex flex-row items-start justify-between gap-2 space-y-0">
-        <div className="min-w-0">
-          <CardTitle className="flex items-center gap-2 text-base">
-            <span className="truncate">{e.name}</span>
-            <Badge variant="secondary">{e.kind}</Badge>
-          </CardTitle>
-          <CardDescription className="break-all font-mono text-xs">{e.entityRef}</CardDescription>
-        </div>
-        <Button size="sm" variant="ghost" onClick={onClose}>
-          Close
-        </Button>
-      </CardHeader>
-      <CardContent className="space-y-4">
-        <dl className="grid grid-cols-1 gap-x-8 gap-y-2 text-sm sm:grid-cols-2">
-          <Pair label="Owner" value={e.owner ?? "—"} />
-          <Pair label="Lifecycle" value={e.lifecycle ?? "—"} />
-          <Pair label="Project" value={projectLabel(e.sourceProjectId)} />
-          <Pair label="Environment" value={e.sourceEnvironment ?? "project-wide"} />
-          <Pair label="Commit" value={e.sourceCommit ? e.sourceCommit.slice(0, 12) : "—"} mono />
-          <Pair label="Snapshot" value={e.headDigest.slice(0, 19)} mono />
-        </dl>
-
-        <div>
-          <div className="mb-1 text-[11px] uppercase tracking-wide text-muted-foreground">
-            Relations ({e.relations.length})
-          </div>
-          {e.relations.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No relations.</p>
-          ) : (
-            <ul className="space-y-1">
-              {e.relations.map((r, i) => (
-                <li key={i} className="flex items-center gap-2 text-xs">
-                  <Badge variant="outline">{r.type}</Badge>
-                  <span className="text-muted-foreground">→</span>
-                  <span className="break-all font-mono">{r.targetRef}</span>
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
-      </CardContent>
-    </Card>
-  );
-}
-
-function Pair({ label, value, mono = false }: { label: string; value: string; mono?: boolean }) {
-  return (
-    <div className="flex min-w-0 items-center justify-between gap-3 border-b border-dashed py-1 last:border-0 sm:last:border-b">
-      <dt className="shrink-0 text-muted-foreground">{label}</dt>
-      <dd className={cn("truncate", mono && "font-mono text-xs")} title={value}>
-        {value}
-      </dd>
+      {/* Quick-peek drawer: opens when `?entity=` resolves to a loaded row. */}
+      <Sheet open={selected !== null} onOpenChange={(open) => (open ? undefined : setSelectedKey(null))}>
+        <SheetContent side="right" className="w-[420px] max-w-[92vw] overflow-y-auto">
+          {selected ? (
+            <>
+              <SheetHeader className="pr-8">
+                <SheetTitle className="flex items-center gap-2 text-base">
+                  <span className="truncate">{selected.name}</span>
+                  <Badge variant="secondary">{selected.kind}</Badge>
+                </SheetTitle>
+                <SheetDescription className="break-all font-mono">{selected.entityRef}</SheetDescription>
+              </SheetHeader>
+              <EntityOverview entity={selected} projectLabel={projectLabel} />
+              <Link
+                href={`/orgs/${orgSlug}/catalog/${urlKey(selected)}`}
+                className="mt-auto inline-flex w-full items-center justify-center gap-1 rounded-md border px-3 py-2 text-sm font-medium transition-colors hover:bg-accent"
+              >
+                Expand
+                <ArrowUpRight className="h-4 w-4" />
+              </Link>
+            </>
+          ) : null}
+        </SheetContent>
+      </Sheet>
     </div>
   );
 }

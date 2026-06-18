@@ -28,6 +28,7 @@ export const qk = {
   configSettings: (scopeKey: string) => ["configSettings", scopeKey] as const,
   configFlags: (scopeKey: string) => ["configFlags", scopeKey] as const,
   configSecrets: (scopeKey: string) => ["configSecrets", scopeKey] as const,
+  catalogEntity: (orgId: string, entityKey: string) => ["catalogEntity", orgId, entityKey] as const,
   run: (orgId: string, projectId: string, runId: string) => ["run", orgId, projectId, runId] as const,
   runJobs: (orgId: string, projectId: string, runId: string) => ["runJobs", orgId, projectId, runId] as const,
   billingSummary: (orgId: string) => ["billingSummary", orgId] as const,
