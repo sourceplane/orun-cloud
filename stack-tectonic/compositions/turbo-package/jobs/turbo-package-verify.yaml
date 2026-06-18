@@ -21,13 +21,8 @@ spec:
     - turbo-package.typecheck
 
   steps:
-    - id: setup-node
-      name: setup-node
-      capability: turbo-package.setup-node
-      use: actions/setup-node@v6
-      with:
-        node-version: "{{.parameters.nodeVersion}}"
-
+    # setup-pnpm runs before setup-node so setup-node can warm and persist the
+    # pnpm store cache (keyed on the workspace lockfile).
     - id: setup-pnpm
       name: setup-pnpm
       capability: turbo-package.setup-pnpm
@@ -35,10 +30,19 @@ spec:
       with:
         version: "{{.parameters.pnpmVersion}}"
 
+    - id: setup-node
+      name: setup-node
+      capability: turbo-package.setup-node
+      use: actions/setup-node@v6
+      with:
+        node-version: "{{.parameters.nodeVersion}}"
+        cache: pnpm
+        cache-dependency-path: "**/pnpm-lock.yaml"
+
     - id: install-workspace-dependencies
       name: install-workspace-dependencies
       capability: turbo-package.install
-      run: pnpm install --no-frozen-lockfile
+      run: pnpm install --frozen-lockfile
       onFailure: stop
 
     - id: pre-build
