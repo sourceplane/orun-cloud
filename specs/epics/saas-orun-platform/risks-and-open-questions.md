@@ -236,6 +236,9 @@ issuer `https://api.orun.dev`) do not churn.
   (services via the catalog, targets via environments); teams wanting one
   project per service in a monorepo are not served until path sub-scoping is
   added. *Confirm acceptable before OV2 lands.*
-- **IG D1 dependency.** OV3 live OIDC validation against the installation and
-  OV4/OV5 live paths need the per-environment GitHub App registration (stage
-  provisioned, prod unset). Worker-side code lands ahead of the gate.
+- **IG D1 dependency.** ✅ **Resolved (2026-06-18)** — the per-environment GitHub
+  App is registered in stage AND prod, with all integrations-worker secrets
+  provisioned. OV3 OIDC, OV4 trigger recording, and OV5 write-back are live in
+  all environments with no code change (worker-side landed ahead of the gate).
+  Still deferred (separate from D1): OV4 object-graph authorship (→ IG8) and the
+  D4 entitlement plan placement for `feature.integrations.github`.

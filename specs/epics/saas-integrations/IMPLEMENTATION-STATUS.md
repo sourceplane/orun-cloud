@@ -17,7 +17,7 @@ B5 outbound webhooks, B11 entitlements, console shell).
 | IG6 | 🗓️ Planned |
 | IG7 | 🗓️ Planned (optional tail) |
 | IG8 | 🗓️ Planned — inbound projection fields for the state bridge (additive `scm.*` slice; pairs with `saas-orun-platform` OV4) |
-| IG9 | 🗓️ Planned — write-back proxy (check-run / commit-status / deployment; promotes the IG4 stretch; pairs with OV5) |
+| IG9 | ✅ Code complete — write-back proxy (`integrations-worker /internal/github/writeback`: check-run / commit-status), driven by state-worker cron Phase 3 (`run-writeback.ts`); pairs with OV5. Live once D1 secrets are present. |
 
 ## Notes
 
@@ -31,14 +31,26 @@ B5 outbound webhooks, B11 entitlements, console shell).
   is attached. D1 stage secrets are provisioned (App registered, all eight
   worker secrets set) — stage live path unparked.
 
+- **2026-06-18: D1 complete — GitHub App registered in prod too.** All eight
+  `integrations-worker` secrets are now provisioned in stage AND prod, so every
+  live GitHub path unparks in all environments with no code change:
+  IG1 connect, IG2 inbound drain, IG3 repo links, IG4 token broker, and IG9/OV5
+  write-back (state-worker already binds `INTEGRATIONS_WORKER` for stage+prod).
+  Operational confirmation: `GET /health` on the prod integrations-worker
+  reports `githubApp.configured: true`, and a PR on an installed repo produces a
+  Check Run (OV5 done-when). OV4 object-graph authorship (Source/Catalog
+  materialization) stays deferred to IG8 — it is NOT part of the D1 gate.
+
 - 2026-06-11: IG0 (#307, task 0138) landed the bounded context with zero live
   behavior. No public route beyond `/health`; provider credentials are
   per-environment worker secrets (all unset — worker reports
   `githubApp.configured: false` on `/health`). Migration applies via the
   standard db-migrate apply profile on main push.
-- Human gates outstanding (risks-and-open-questions.md): **D1** App
-  registration per environment (blocks IG1+ live paths), **D2** App permission
-  set (blocks the registration form), **D3** broker exposure posture (IG4),
-  **D4** plan placement for `feature.integrations.github` / `limit.repo_links`
-  (blocks IG1 gate wiring — until decided, gates evaluate against whatever the
-  catalog ships, defaulting closed).
+- Human gates: **D1** App registration per environment — ✅ **SATISFIED**
+  (stage + prod, 2026-06-18); **D2** App permission set — ✅ satisfied as a
+  registration prerequisite (`checks:write` / `statuses:write`). Still open:
+  **D3** broker exposure posture (IG4), and **D4** plan placement for
+  `feature.integrations.github` / `limit.repo_links` (until decided, the
+  integration entitlement gate defaults closed, so the *connect* flow is denied
+  until an org is explicitly granted — this gates onboarding, not the OV5
+  write-back read-path for already-linked repos).
