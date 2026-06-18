@@ -4,7 +4,10 @@ import {
   sortRollups,
   usageBarPercents,
   formatQuantity,
+  formatBytes,
   formatBucket,
+  METRIC_SUGGESTIONS,
+  STATE_USAGE_METRICS,
   buildViolationsQuery,
   appendViolationsPage,
   hasMoreViolations,
@@ -105,6 +108,29 @@ describe("formatQuantity", () => {
   });
   it("returns an em dash for non-finite input", () => {
     expect(formatQuantity(Number.NaN)).toBe("—");
+  });
+});
+
+describe("formatBytes", () => {
+  it("formats base-1024 sizes, stripping trailing .0", () => {
+    expect(formatBytes(0)).toBe("0 B");
+    expect(formatBytes(512)).toBe("512 B");
+    expect(formatBytes(1024)).toBe("1 KB");
+    expect(formatBytes(1536)).toBe("1.5 KB");
+    expect(formatBytes(1024 * 1024)).toBe("1 MB");
+    expect(formatBytes(5.5 * 1024 * 1024 * 1024)).toBe("5.5 GB");
+  });
+  it("returns an em dash for non-finite or negative input", () => {
+    expect(formatBytes(Number.NaN)).toBe("—");
+    expect(formatBytes(-1)).toBe("—");
+  });
+});
+
+describe("STATE_USAGE_METRICS", () => {
+  it("are offered as metric suggestions so an operator needn't know the keys", () => {
+    expect(METRIC_SUGGESTIONS).toContain(STATE_USAGE_METRICS.objectBytes);
+    expect(METRIC_SUGGESTIONS).toContain(STATE_USAGE_METRICS.objectCount);
+    expect(METRIC_SUGGESTIONS).toContain(STATE_USAGE_METRICS.logBytes);
   });
 });
 
