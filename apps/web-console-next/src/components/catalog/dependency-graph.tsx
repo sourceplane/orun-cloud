@@ -11,16 +11,6 @@ import Link from "next/link";
 import { cn } from "@/lib/cn";
 import { layoutGraph, type Graph, type PositionedNode } from "@/lib/catalog-graph";
 
-const KIND_COLOR: Record<string, string> = {
-  Component: "border-sky-500/60 bg-sky-500/10",
-  API: "border-violet-500/60 bg-violet-500/10",
-  Resource: "border-amber-500/60 bg-amber-500/10",
-  System: "border-emerald-500/60 bg-emerald-500/10",
-  Domain: "border-rose-500/60 bg-rose-500/10",
-  Group: "border-slate-500/60 bg-slate-500/10",
-};
-const DEFAULT_COLOR = "border-border bg-muted";
-
 /** Past this, a client-side radial layout stops being legible — ask to filter. */
 const MAX_NODES = 60;
 
@@ -74,13 +64,13 @@ export function DependencyGraph({ graph, height = 420 }: { graph: Graph; height?
 }
 
 function NodeChip({ node }: { node: PositionedNode }) {
-  const color = KIND_COLOR[node.kind] ?? DEFAULT_COLOR;
+  // Calm, monochrome chips — kind is conveyed by the title tooltip, not colour.
+  // The brand amber is reserved for the focused (center) node.
   const chip = (
     <span
       className={cn(
-        "block max-w-[150px] truncate rounded-md border px-2 py-1 text-xs font-medium text-foreground shadow-sm",
-        color,
-        node.center && "ring-2 ring-primary",
+        "block max-w-[150px] truncate rounded-md border px-2 py-1 text-xs font-medium shadow-sm",
+        node.center ? "border-primary/50 bg-primary/10 text-foreground" : "border-border bg-card text-muted-foreground",
       )}
     >
       {node.name}
