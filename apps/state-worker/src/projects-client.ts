@@ -8,8 +8,11 @@
 // own `project.create` policy + entitlement gate.
 //
 // Env auto-registration (OP4: "register the environment on first run/plan")
-// uses the same public create-environment route; a 409 is the idempotent
-// "already registered" case and is treated as success.
+// uses the internal create-or-touch route (OV9): it materializes the
+// environment if absent AND bumps its last_active_at liveness signal on every
+// reference, so an actively-used environment is never wrongly archived by the
+// OV9 stale-archival sweep. System-initiated (no actor / policy / billing gate);
+// the run/plan already happened, so materialization is not quota-blocked.
 
 export interface ResolvedProject {
   id: string;
@@ -128,22 +131,23 @@ export type RegisterEnvironmentResult =
   | { ok: false; status: number };
 
 /**
- * Idempotently register an environment by slug on first reference (OP4). A 409
- * (already exists) is the success-no-op case. Forwards the actor so
- * projects-worker runs `environment.create`.
+ * Create-or-touch an environment on activity (OV9), via the internal
+ * service-binding route. Materializes the environment if absent and bumps its
+ * last_active_at liveness signal (reviving an archived row). `created` reports
+ * whether this call freshly inserted it. `orgId`/`projectId` are raw UUIDs (the
+ * internal endpoint takes ids in the body, not public ids in the path).
  */
-export async function registerEnvironment(
+export async function registerEnvironmentActivity(
   projectsWorker: Fetcher,
-  orgPublicId: string,
-  projectPublicId: string,
+  orgId: string,
+  projectId: string,
   name: string,
-  actor: { subjectId: string; subjectType: string },
   requestId: string,
 ): Promise<RegisterEnvironmentResult> {
   let response: Response;
   try {
     const target = new URL(
-      `/v1/organizations/${orgPublicId}/projects/${projectPublicId}/environments`,
+      "/v1/internal/projects/environments/register",
       "http://projects-worker",
     );
     response = await projectsWorker.fetch(target.toString(), {
@@ -151,15 +155,23 @@ export async function registerEnvironment(
       headers: {
         "content-type": "application/json",
         "x-request-id": requestId,
-        "x-actor-subject-id": actor.subjectId,
-        "x-actor-subject-type": actor.subjectType,
       },
-      body: JSON.stringify({ name }),
+      body: JSON.stringify({ orgId, projectId, name }),
     });
   } catch {
     return { ok: false, status: 503 };
   }
-  if (response.status === 409) return { ok: true, created: false };
   if (!response.ok) return { ok: false, status: response.status };
-  return { ok: true, created: true };
+
+  let parsed: unknown;
+  try {
+    parsed = await response.json();
+  } catch {
+    return { ok: false, status: 502 };
+  }
+  const created =
+    parsed && typeof parsed === "object" && "data" in parsed
+      ? (parsed as { data: { created?: unknown } }).data?.created === true
+      : false;
+  return { ok: true, created };
 }
