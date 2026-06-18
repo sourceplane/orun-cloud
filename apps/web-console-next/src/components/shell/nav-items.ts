@@ -56,6 +56,7 @@ export function buildNavSections(scope: NavScope): NavSection[] {
       label: orgSlug ? `Org · ${orgSlug}` : "Organization",
       links: [
         { href: `${orgBase}/projects`, label: "Projects", icon: "FolderKanban" },
+        { href: `${orgBase}/catalog`, label: "Catalog", icon: "Boxes" },
         { href: `${orgBase}/usage`, label: "Usage & quota", icon: "Gauge" },
         // Opens the dedicated settings panel — flagged so the renderer shows a ›.
         { href: `${orgBase}/settings`, label: "Settings", icon: "Settings", subPanel: true },
