@@ -963,10 +963,10 @@ export function createStateRepository(executor: SqlExecutor): StateRepository {
       orgId: Uuid,
       projectId: Uuid,
       limit: number,
-    ): Promise<StateResult<{ digest: string; sizeBytes: number }[]>> {
+    ): Promise<StateResult<{ digest: string; sizeBytes: number; createdAt: string }[]>> {
       try {
         const result = await executor.execute<Record<string, unknown>>(
-          `SELECT digest, size_bytes FROM state.objects
+          `SELECT digest, size_bytes, created_at FROM state.objects
             WHERE org_id = $1 AND project_id = $2
             ORDER BY created_at ASC
             LIMIT $3`,
@@ -977,10 +977,25 @@ export function createStateRepository(executor: SqlExecutor): StateRepository {
           value: result.rows.map((r) => ({
             digest: r.digest as string,
             sizeBytes: Number(r.size_bytes ?? 0),
+            createdAt: r.created_at instanceof Date ? r.created_at.toISOString() : String(r.created_at ?? ""),
           })),
         };
       } catch {
         return safeError("Failed to list object digests");
+      }
+    },
+
+    async deleteObject(orgId: Uuid, projectId: Uuid, digest: string): Promise<StateResult<boolean>> {
+      try {
+        // Object GC reclamation (OV9): drop one unreachable object's index row.
+        // The caller deletes the R2 blob; this removes the existence record.
+        const result = await executor.execute(
+          `DELETE FROM state.objects WHERE org_id = $1 AND project_id = $2 AND digest = $3`,
+          [orgId, projectId, digest],
+        );
+        return { ok: true, value: (result.rowCount ?? 0) > 0 };
+      } catch {
+        return safeError("Failed to delete object");
       }
     },
 

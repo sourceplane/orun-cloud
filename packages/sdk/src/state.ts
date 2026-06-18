@@ -6,6 +6,8 @@ import type {
   ListOrgCatalogEntitiesResponse,
   GetStateStorageResponse,
   GetStateGcReportResponse,
+  CollectStateGcRequest,
+  CollectStateGcResponse,
   ListRunsResponse,
   GetRunResponse,
   ListJobsResponse,
@@ -179,6 +181,28 @@ export class StateClient {
       {
         method: "GET",
         path: `/v1/organizations/${encodeURIComponent(orgId)}/projects/${encodeURIComponent(projectId)}/state/gc/report`,
+      },
+      opts,
+    );
+  }
+
+  /**
+   * POST /v1/organizations/:orgId/projects/:projectId/state/gc/collect — reclaim
+   * unreachable objects (OV9). Safe by default: omit `dryRun` (or pass true) to
+   * preview; actual deletion also requires the env master switch and a complete
+   * (non-capped) reachability walk. Policy: state.object.write.
+   */
+  collectGc(
+    orgId: string,
+    projectId: string,
+    body: CollectStateGcRequest = {},
+    opts: RequestOptions = {},
+  ): Promise<CollectStateGcResponse> {
+    return this.transport.request<CollectStateGcResponse>(
+      {
+        method: "POST",
+        path: `/v1/organizations/${encodeURIComponent(orgId)}/projects/${encodeURIComponent(projectId)}/state/gc/collect`,
+        body,
       },
       opts,
     );

@@ -108,6 +108,28 @@ describe("StateClient — object GC report (OV9)", () => {
   });
 });
 
+describe("StateClient — object GC collect (OV9)", () => {
+  const okResult = {
+    result: { totalObjects: 1, reachableObjects: 0, unreachableObjects: 1, candidateObjects: 1, candidateBytes: 9, deletedObjects: 0, deletedBytes: 0, dryRun: true, capped: false, graceDays: 7 },
+  };
+
+  it("POSTs the collect endpoint with the body", async () => {
+    const { fetch, calls } = captureFetch(jsonResponse(envelope(okResult)));
+    const out = await client(fetch).state.collectGc("org_1", "prj_1", { dryRun: false, graceDays: 14 });
+    expect(calls[0]!.url).toBe("https://api.test/v1/organizations/org_1/projects/prj_1/state/gc/collect");
+    expect(calls[0]!.init.method).toBe("POST");
+    expect(JSON.parse(String(calls[0]!.init.body))).toEqual({ dryRun: false, graceDays: 14 });
+    expect(out.result.dryRun).toBe(true);
+  });
+
+  it("defaults to an empty body (dry-run preview) and escapes the path", async () => {
+    const { fetch, calls } = captureFetch(jsonResponse(envelope(okResult)));
+    await client(fetch).state.collectGc("org/x", "prj/y");
+    expect(calls[0]!.url).toContain("/v1/organizations/org%2Fx/projects/prj%2Fy/state/gc/collect");
+    expect(JSON.parse(String(calls[0]!.init.body))).toEqual({});
+  });
+});
+
 describe("StateClient — project runs (OV7)", () => {
   it("lists the project-scoped runs path with status/environment filters", async () => {
     const { fetch, calls } = captureFetch(jsonResponse(envelope({ runs: [], nextCursor: null })));

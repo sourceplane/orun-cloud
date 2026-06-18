@@ -24,4 +24,13 @@ export interface Env {
    * plane adds (reserved; unused while dormant).
    */
   STATE_ENCRYPTION_KEY?: string;
+
+  /**
+   * Master kill-switch for object-GC reclamation (OV9). When unset (the default)
+   * the collect endpoint can only ever dry-run — it never deletes, regardless of
+   * the request. Set to the string "true" per environment to allow an explicit
+   * `dryRun: false` collect to actually delete unreachable objects from R2 + the
+   * index. Off by default so deletion is a deliberate, per-environment opt-in.
+   */
+  STATE_GC_COLLECT_ENABLED?: string;
 }

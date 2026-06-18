@@ -44,7 +44,7 @@ function gcExecutor(): SqlExecutor {
   return {
     execute<T extends SqlRow = SqlRow>(text: string): Promise<SqlExecutorResult<T>> {
       if (text.includes("UNION")) return Promise.resolve({ rows: [{ digest: ROOT }] as unknown as T[], rowCount: 1 });
-      if (text.includes("SELECT digest, size_bytes FROM state.objects")) {
+      if (text.includes("FROM state.objects")) {
         const rows = [
           { digest: ROOT, size_bytes: 100 },
           { digest: ORPHAN, size_bytes: 4096 },

@@ -538,6 +538,39 @@ export interface GetStateGcReportResponse {
   report: StateGcReport;
 }
 
+/**
+ * POST …/state/gc/collect — reclaim unreachable objects (OV9). Safe by default:
+ * `dryRun` (default true) computes candidates without deleting; actual deletion
+ * also requires the env master switch on, a complete (non-`capped`) reachability
+ * walk, and only objects older than `graceDays` (default 7). Policy:
+ * state.object.write.
+ */
+export interface CollectStateGcRequest {
+  dryRun?: boolean;
+  graceDays?: number;
+  limit?: number;
+}
+
+export interface StateGcCollectResult {
+  totalObjects: number;
+  reachableObjects: number;
+  unreachableObjects: number;
+  /** Unreachable AND older than the grace window AND within the limit. */
+  candidateObjects: number;
+  candidateBytes: number;
+  deletedObjects: number;
+  deletedBytes: number;
+  /** Effective dry-run (requested, OR forced because capped / disabled). */
+  dryRun: boolean;
+  /** Reachable set incomplete — deletion refused. */
+  capped: boolean;
+  graceDays: number;
+}
+
+export interface CollectStateGcResponse {
+  result: StateGcCollectResult;
+}
+
 // ── Refs (hosted RefStore — L2 mutable CAS pointers; OV1) ────
 
 /**
@@ -655,6 +688,7 @@ export const STATE_EVENT_TYPES = {
   CATALOG_HEAD_ADVANCED: "catalog.head.advanced",
   CLI_LINKED: "org.cli.linked",
   CLI_UNLINKED: "org.cli.unlinked",
+  GC_COLLECTED: "state.gc.collected",
 } as const;
 
 export type StateEventType =
