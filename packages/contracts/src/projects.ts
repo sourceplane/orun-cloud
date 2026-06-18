@@ -40,6 +40,12 @@ export interface PublicEnvironment {
   createdAt: string;
   updatedAt: string;
   archivedAt: string | null;
+  /**
+   * Last time the environment was pushed to (a run/plan/catalog-push
+   * referencing it). The OV9 stale-archival sweep archives an active
+   * environment whose last_active_at predates the retention window.
+   */
+  lastActiveAt: string;
 }
 
 export interface CreateEnvironmentRequest {

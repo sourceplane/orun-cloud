@@ -1873,6 +1873,29 @@ describe("handleListEnvironments", () => {
     expect((listCalls[0]![2] as { limit: number }).limit).toBe(10);
   });
 
+  it("passes includeArchived=true through to the repo (OV9), defaulting false", async () => {
+    const env = createFakeEnv();
+    const listCalls: unknown[][] = [];
+    const projectsRepo = createFakeProjectsRepo({
+      listEnvironmentsPaged: (...args: unknown[]) => {
+        listCalls.push(args);
+        return Promise.resolve({ ok: true, value: { items: [], nextCursor: null } });
+      },
+    });
+
+    await handleListEnvironments(
+      listRequest(TEST_ORG_PUBLIC, TEST_PROJECT_PUBLIC, "?includeArchived=true"),
+      env, "req_test", { subjectId: TEST_USER_ID, subjectType: "user" }, TEST_ORG_UUID, TEST_PROJECT_UUID, { projectsRepo },
+    );
+    expect(listCalls[0]![3]).toEqual({ includeArchived: true });
+
+    await handleListEnvironments(
+      listRequest(TEST_ORG_PUBLIC, TEST_PROJECT_PUBLIC),
+      env, "req_test", { subjectId: TEST_USER_ID, subjectType: "user" }, TEST_ORG_UUID, TEST_PROJECT_UUID, { projectsRepo },
+    );
+    expect(listCalls[1]![3]).toEqual({ includeArchived: false });
+  });
+
   it("returns validation_failed for limit > 100", async () => {
     const env = createFakeEnv();
     const projectsRepo = createFakeProjectsRepo();

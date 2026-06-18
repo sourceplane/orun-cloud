@@ -23,16 +23,23 @@ import type { Transport, RequestOptions } from "./transport.js";
 export class EnvironmentsClient {
   constructor(private readonly transport: Transport) {}
 
-  /** GET /v1/organizations/:orgId/projects/:projectId/environments */
+  /**
+   * GET /v1/organizations/:orgId/projects/:projectId/environments
+   *
+   * Active-only by default; pass `{ includeArchived: true }` to also return
+   * archived environments (those the OV9 stale-archival sweep retired).
+   */
   list(
     orgId: string,
     projectId: string,
+    params: { includeArchived?: boolean } = {},
     opts: RequestOptions = {},
   ): Promise<ListEnvironmentsResponse> {
+    const query = params.includeArchived ? "?includeArchived=true" : "";
     return this.transport.request<ListEnvironmentsResponse>(
       {
         method: "GET",
-        path: `/v1/organizations/${encodeURIComponent(orgId)}/projects/${encodeURIComponent(projectId)}/environments`,
+        path: `/v1/organizations/${encodeURIComponent(orgId)}/projects/${encodeURIComponent(projectId)}/environments${query}`,
       },
       opts,
     );

@@ -61,10 +61,17 @@ function Inner({ orgId, orgSlug, projectSlug }: { orgId: string; orgSlug: string
     [projectsList.data, projectSlug],
   );
 
-  const envKey = qk.environments(orgId, project?.id ?? "pending");
+  const [showArchived, setShowArchived] = React.useState(false);
+  // The active and include-archived views are distinct caches (different key)
+  // so toggling never shows a stale set and archive's optimistic update is
+  // scoped to the view it ran in.
+  const envKey = [...qk.environments(orgId, project?.id ?? "pending"), showArchived ? "all" : "active"];
   const envs = useApiQuery(
     envKey,
-    () => wrap(async () => (await client.environments.list(orgId, project!.id)).environments),
+    () =>
+      wrap(async () =>
+        (await client.environments.list(orgId, project!.id, showArchived ? { includeArchived: true } : {})).environments,
+      ),
     { enabled: !!project },
   );
 
@@ -85,6 +92,7 @@ function Inner({ orgId, orgSlug, projectSlug }: { orgId: string; orgSlug: string
       return;
     }
     toast({ kind: "success", title: `Archived ${env.name}` });
+    envs.reload(); // reconcile (in the archived view the row returns, now archived)
   };
 
   if (projectsList.loading) {
@@ -111,13 +119,22 @@ function Inner({ orgId, orgSlug, projectSlug }: { orgId: string; orgSlug: string
             Deployment targets within this project. Each gets isolated config and bindings.
           </p>
         </div>
-        <Dialog open={open} onOpenChange={setOpen}>
-          <DialogTrigger asChild>
-            <Button>
-              <Plus className="h-4 w-4 mr-1.5" />
-              New environment
-            </Button>
-          </DialogTrigger>
+        <div className="flex items-center gap-2">
+          <Button
+            type="button"
+            variant={showArchived ? "secondary" : "outline"}
+            size="sm"
+            onClick={() => setShowArchived((v) => !v)}
+          >
+            {showArchived ? "Hide archived" : "Show archived"}
+          </Button>
+          <Dialog open={open} onOpenChange={setOpen}>
+            <DialogTrigger asChild>
+              <Button>
+                <Plus className="h-4 w-4 mr-1.5" />
+                New environment
+              </Button>
+            </DialogTrigger>
           <DialogContent>
             <DialogHeader>
               <DialogTitle>Create environment</DialogTitle>
@@ -151,7 +168,8 @@ function Inner({ orgId, orgSlug, projectSlug }: { orgId: string; orgSlug: string
               }}
             />
           </DialogContent>
-        </Dialog>
+          </Dialog>
+        </div>
       </header>
 
       {precondition && (
@@ -191,13 +209,15 @@ function Inner({ orgId, orgSlug, projectSlug }: { orgId: string; orgSlug: string
         <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
           {items.map((e) => (
             <div key={e.id} className="relative">
-              <div className="absolute right-3 top-3 z-10">
-                <ArchiveMenu
-                  resourceLabel="environment"
-                  name={e.name}
-                  onConfirm={() => archive(e)}
-                />
-              </div>
+              {e.status === "active" ? (
+                <div className="absolute right-3 top-3 z-10">
+                  <ArchiveMenu
+                    resourceLabel="environment"
+                    name={e.name}
+                    onConfirm={() => archive(e)}
+                  />
+                </div>
+              ) : null}
               <Link
                 href={`/orgs/${orgSlug}/projects/${projectSlug}/environments/${e.slug}`}
                 className="group block"
@@ -212,7 +232,9 @@ function Inner({ orgId, orgSlug, projectSlug }: { orgId: string; orgSlug: string
                   </CardHeader>
                   <CardContent>
                     <div className="text-xs text-muted-foreground">
-                      Updated {new Date(e.updatedAt).toLocaleDateString()}
+                      {e.status === "archived" && e.archivedAt
+                        ? `Archived ${new Date(e.archivedAt).toLocaleDateString()}`
+                        : `Last active ${new Date(e.lastActiveAt).toLocaleDateString()}`}
                     </div>
                   </CardContent>
                 </Card>

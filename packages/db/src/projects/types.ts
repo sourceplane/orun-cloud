@@ -135,6 +135,16 @@ export interface ProjectsRepository {
   countActiveEnvironments(orgId: Uuid, projectId: Uuid): Promise<ProjectsResult<number>>;
   getEnvironmentById(orgId: Uuid, projectId: Uuid, environmentId: string): Promise<ProjectsResult<Environment>>;
   getEnvironmentBySlug(orgId: Uuid, projectId: Uuid, slugLower: string): Promise<ProjectsResult<Environment>>;
-  listEnvironmentsPaged(orgId: Uuid, projectId: Uuid, params: PageQueryParams): Promise<ProjectsResult<PagedResult<Environment>>>;
+  /**
+   * Paginate a project's environments, newest-first. Active-only by default;
+   * pass `{ includeArchived: true }` to also return archived rows (so the
+   * console can show what the OV9 sweep archived).
+   */
+  listEnvironmentsPaged(
+    orgId: Uuid,
+    projectId: Uuid,
+    params: PageQueryParams,
+    opts?: { includeArchived?: boolean },
+  ): Promise<ProjectsResult<PagedResult<Environment>>>;
   archiveEnvironment(orgId: Uuid, projectId: Uuid, environmentId: string, archivedAt: Date): Promise<ProjectsResult<Environment>>;
 }

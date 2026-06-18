@@ -75,7 +75,8 @@ export async function handleListEnvironments(
       return errorResponse("not_found", "Not found", 404, requestId);
     }
 
-    const result = await repo.listEnvironmentsPaged(orgId, projectId, { limit, cursor: dbCursor });
+    const includeArchived = url.searchParams.get("includeArchived") === "true";
+    const result = await repo.listEnvironmentsPaged(orgId, projectId, { limit, cursor: dbCursor }, { includeArchived });
 
     if (!result.ok) {
       return errorResponse("internal_error", "Service unavailable", 503, requestId);
