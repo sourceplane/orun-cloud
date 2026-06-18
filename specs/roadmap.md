@@ -38,6 +38,7 @@ The architect-style ground rules:
 | **PX** | [`epics/saas-product-experience/`](./epics/saas-product-experience/) | In progress | Close the backend-ahead-of-surface gap: PX1 console truth/papercuts · PX2 config/flags/secrets UI · PX3 notification preferences e2e · PX4 rename lifecycle · PX5 first-run onboarding · PX6 Cmd-K resource search. All human-independent. |
 | **IG** | [`epics/saas-integrations/`](./epics/saas-integrations/) | Draft | Pluggable integrations platform (promotes P5), GitHub App first: IG0 foundation · IG1 connect flow · IG2 inbound `scm.*` events · IG3 repo links · IG4 token broker · IG5 console · IG6 lifecycle hardening · IG7 pluggability/instance proof · IG8 inbound projection fields · IG9 write-back proxy (the Orun Cloud v2 state bridge — `epics/saas-integrations/bridge-to-state.md`). |
 | **SS** | [`epics/saas-secrets-sync/`](./epics/saas-secrets-sync/) | Draft (SS0/SS1 in progress) | One write path for every secret: SS0 escrow convention + manifest · SS1 drift checker enforced in verify lanes · SS2 deploy-lane sync · SS3 escrow seeding (human-gated) · SS4 Secrets Store for shared keys · SS5 rotation runbook + BF9 preflight. |
+| **BM** | [`epics/saas-orun-backend-merge/`](./epics/saas-orun-backend-merge/) | Draft | Fold the standalone `orun-backend` hosted plane into Orun Cloud's `state-worker`: BM0 parity audit + legacy-compat annex · BM1 coordinator parity hardening · BM2 legacy `/v1/runs` shim (`repository_id`→org/project) · BM3 catalog-sync compat · BM4 accounts/OAuth compat · BM5 data migration (DO+D1+R2→Postgres+R2) · BM6 `orun-api.sourceplane.ai` cutover · BM7 decommission + deprecation. `orun-backend` is the parity reference, not a port; extends OP/OV. |
 | **SC** | [`epics/saas-service-catalog/`](./epics/saas-service-catalog/) | Draft | Org catalog → internal developer portal: SC0 drill-down foundation (entity route + contextual sidebar + drawer) · SC1 dependency graph · SC2 deployments · SC3 activity · SC4 insights · SC5 scorecards · SC6 ownership/on-call · SC7 golden-path scaffolder · SC8 index polish. Every enrichment is a computed overlay, git-authored snapshot, separated operational annotation, or git-writing scaffolder — never console-authored catalog content (`components/18-state.md`). |
 | **P1, P3–P7** | [`epics/saas-product-areas/`](./epics/saas-product-areas/) | Holding register | P1 promote-flow · P3 observability · P4 notification inbox · P5 marketplace (⬆ promoted → `saas-integrations`) · P6 changelog/status · P7 AI-native. |
 
@@ -94,6 +95,18 @@ see [`README.md`](./README.md).
   sibling overlays. SC7 (golden-path scaffolder) is the detachable, highest-lift
   tail — it writes git via IG4, never the catalog, and is a sub-epic candidate.
   Highest-leverage first slice: **SC0 + SC1 + SC4**.
+- **BM (orun-backend merge)** consolidates the *other* live coordinator into the
+  one Orun Cloud already shipped (OP2/OV) — it is not a greenfield build but a
+  parity + compat + migration program. `orun-backend` (Durable Object at
+  `orun-api.sourceplane.ai`) is the **reference**, never lifted in: porting the
+  DO would duplicate OP2 and add a second source of truth to a Postgres repo.
+  BM0 (parity audit + `state-legacy-v0` contract annex) and BM1 (coordinator
+  parity hardening) are human-independent and the strict spine; BM2 (the
+  unscoped `/v1/runs` → org/project shim) unlocks BM3/BM4. Only BM6 (cutover
+  window) and BM7 (OSS self-host disposition) need a human call — D2
+  (default-org materialization) wants a billing-attribution sign-off before BM2
+  ships. Existing CI workflows and pinned CLIs keep working throughout; the
+  cutover is a URL answering-host change, not a client migration.
 - **BF (bootstrap factory)** is orthogonal to B/U/P and mostly human-independent:
   BF0–BF2 (docs truth, infra `dependsOn` edges, parameterizing the Terraform +
   stack identity surface) are safe to schedule any time and improve this
