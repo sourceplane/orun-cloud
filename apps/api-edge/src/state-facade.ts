@@ -18,6 +18,9 @@ const ORG_PROJECT_CLI_LINKS_RE = /^\/v1\/organizations\/[^/]+\/projects\/[^/]+\/
 // (runs, jobs, claim/heartbeat/update, runnable, cancel, logs). One prefix
 // covers all of §2; the owning worker re-checks policy + the contract version.
 const STATE_PLANE_RE = /^\/v1\/organizations\/[^/]+\/projects\/[^/]+\/state\//;
+// OV6 — org-global catalog browser: org-scoped (no project), the merged catalog
+// graph the console renders. Distinct from the project-scoped /state/catalog/*.
+const ORG_CATALOG_ENTITIES_RE = /^\/v1\/organizations\/[^/]+\/catalog\/entities$/;
 
 // `orun-contract-version` is forwarded so state-worker enforces the major and
 // rejects unsupported skew with 409 contract_version_unsupported. `orun-object-
@@ -38,6 +41,7 @@ export function isStateRoute(pathname: string): boolean {
     pathname === CLI_LINKS_RESOLVE_PATH ||
     ORG_CLI_LINKS_RE.test(pathname) ||
     ORG_PROJECT_CLI_LINKS_RE.test(pathname) ||
+    ORG_CATALOG_ENTITIES_RE.test(pathname) ||
     STATE_PLANE_RE.test(pathname)
   );
 }

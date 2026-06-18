@@ -3,6 +3,8 @@ import type {
   CreateWorkspaceLinkResponse,
   ResolveWorkspaceLinksResponse,
   WorkspaceLink,
+  ListOrgCatalogEntitiesResponse,
+  ListRunsResponse,
 } from "@saas/contracts/state";
 
 import type { Transport, RequestOptions } from "./transport.js";
@@ -15,6 +17,32 @@ export interface ListWorkspaceLinksResponse {
 /** DELETE .../cli/links/:linkId response. */
 export interface UnlinkWorkspaceLinkResponse {
   deleted: boolean;
+}
+
+/** Filters for the org-global catalog browser (OV6/OV7). All optional. */
+export interface OrgCatalogEntitiesQuery {
+  /** Provenance filter: a project public id (prj_…). */
+  project?: string;
+  /** Provenance filter: an environment slug. */
+  environment?: string;
+  /** Facet: entity kind (Component | API | System | …). */
+  kind?: string;
+  /** Facet: owner. */
+  owner?: string;
+  /** Free-text match over name/ref. */
+  q?: string;
+  /** Keyset cursor from a prior page. */
+  cursor?: string;
+  /** Page size. */
+  limit?: number;
+}
+
+/** Filters for the project runs list (OV7). All optional. */
+export interface RunsQuery {
+  environment?: string;
+  status?: string;
+  cursor?: string;
+  limit?: number;
 }
 
 /**
@@ -86,6 +114,61 @@ export class StateClient {
       {
         method: "DELETE",
         path: `/v1/organizations/${encodeURIComponent(orgId)}/projects/${encodeURIComponent(projectId)}/cli/links/${encodeURIComponent(linkId)}`,
+      },
+      opts,
+    );
+  }
+
+  /**
+   * GET /v1/organizations/:orgId/catalog/entities — the org-global catalog
+   * browser (OV6). The merged component graph across the org's projects, each
+   * row carrying provenance; project/environment narrow to a repo/env sublist,
+   * kind/owner are facets, q matches name or ref. Policy: catalog.read.
+   */
+  listOrgCatalogEntities(
+    orgId: string,
+    query: OrgCatalogEntitiesQuery = {},
+    opts: RequestOptions = {},
+  ): Promise<ListOrgCatalogEntitiesResponse> {
+    return this.transport.request<ListOrgCatalogEntitiesResponse>(
+      {
+        method: "GET",
+        path: `/v1/organizations/${encodeURIComponent(orgId)}/catalog/entities`,
+        query: {
+          project: query.project,
+          environment: query.environment,
+          kind: query.kind,
+          owner: query.owner,
+          q: query.q,
+          cursor: query.cursor,
+          limit: query.limit,
+        },
+      },
+      opts,
+    );
+  }
+
+  /**
+   * GET /v1/organizations/:orgId/projects/:projectId/state/runs — the project's
+   * runs list (OV7), newest first, filterable by environment/status. Policy:
+   * state.run.read.
+   */
+  listRuns(
+    orgId: string,
+    projectId: string,
+    query: RunsQuery = {},
+    opts: RequestOptions = {},
+  ): Promise<ListRunsResponse> {
+    return this.transport.request<ListRunsResponse>(
+      {
+        method: "GET",
+        path: `/v1/organizations/${encodeURIComponent(orgId)}/projects/${encodeURIComponent(projectId)}/state/runs`,
+        query: {
+          environment: query.environment,
+          status: query.status,
+          cursor: query.cursor,
+          limit: query.limit,
+        },
       },
       opts,
     );
