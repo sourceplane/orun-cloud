@@ -1,17 +1,18 @@
-// Environment auto-registration (OP4 deliverable 3).
+// Environment auto-registration + liveness touch (OP4 deliverable 3 / OV9).
 //
-// When a run or plan first references an environment by name, the platform
-// registers it so it shows up as a real `projects.environments` row (stacks,
-// drift, secrets all key off environment identity). This is the SEAM OP2 wires
-// into run-create — it is intentionally dormant here: no run route calls it
-// yet. Kept minimal, idempotent, and unit-tested so OP2 only has to call it.
+// When a run or plan references an environment by name, the platform registers
+// it so it shows up as a real `projects.environments` row (stacks, drift,
+// secrets all key off environment identity) AND bumps its last_active_at
+// liveness signal — so an actively-used environment is never wrongly archived by
+// the OV9 stale-archival sweep. This is the seam OP2 wires into run-create and
+// OV9.2 also wires into catalog head-advance.
 //
-// Idempotency is delegated to projects-worker's unique (project, slug) index:
-// a duplicate registration comes back 409 and we report `created: false`
-// rather than erroring. A bad/empty name is a no-op (returns `skipped`) so a
-// run is never blocked by an un-namable environment.
+// Idempotent + system-initiated: the internal register route upserts on
+// (org, project, slug), so a re-reference is a cheap liveness bump (`created`
+// false) rather than a conflict. A bad/empty name is a no-op (returns `skipped`)
+// so a run is never blocked by an un-namable environment.
 
-import { registerEnvironment } from "./projects-client.js";
+import { registerEnvironmentActivity } from "./projects-client.js";
 
 const ENV_NAME_RE = /^[A-Za-z0-9][A-Za-z0-9 ._-]{0,99}$/;
 
@@ -22,17 +23,16 @@ export type EnvRegistrationOutcome =
   | { kind: "error"; status: number };
 
 /**
- * Ensure the named environment exists for a project, idempotently. Safe to
- * call on every run/plan referencing the name — the first call creates it, the
- * rest are cheap no-ops. `environmentName` is the human name; projects-worker
- * derives the slug.
+ * Ensure the named environment exists for a project and mark it active,
+ * idempotently. Safe to call on every run/plan/catalog-push referencing the
+ * name — the first call creates it, the rest bump last_active_at. `orgId` and
+ * `projectId` are raw UUIDs; projects-worker derives the slug from the name.
  */
 export async function ensureEnvironmentRegistered(
   projectsWorker: Fetcher,
-  orgPublicId: string,
-  projectPublicId: string,
+  orgId: string,
+  projectId: string,
   environmentName: string | null | undefined,
-  actor: { subjectId: string; subjectType: string },
   requestId: string,
 ): Promise<EnvRegistrationOutcome> {
   if (environmentName == null) {
@@ -46,14 +46,7 @@ export async function ensureEnvironmentRegistered(
     return { kind: "skipped", reason: "invalid_name" };
   }
 
-  const result = await registerEnvironment(
-    projectsWorker,
-    orgPublicId,
-    projectPublicId,
-    trimmed,
-    actor,
-    requestId,
-  );
+  const result = await registerEnvironmentActivity(projectsWorker, orgId, projectId, trimmed, requestId);
   if (!result.ok) {
     return { kind: "error", status: result.status };
   }

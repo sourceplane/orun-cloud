@@ -250,14 +250,15 @@ export async function handleCreateRun(
       );
     }
 
-    // ── Register the environment on first use (OP4 seam; best-effort). ──
+    // ── Register + touch the environment on use (OP4/OV9 seam; best-effort).
+    //    Bumps last_active_at so an actively-run environment is never archived
+    //    by the OV9 stale-archival sweep. ──
     if (environment && env.PROJECTS_WORKER) {
       await ensureEnvironmentRegistered(
         env.PROJECTS_WORKER,
-        orgPublicId(orgId),
-        projectPublicId(projectId),
+        orgId,
+        projectId,
         environment,
-        actor,
         requestId,
       );
     }

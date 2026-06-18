@@ -33,6 +33,7 @@ import type { Uuid } from "@saas/db/ids";
 import { errorResponse, successResponse, listResponse, validationError } from "../http.js";
 import { authorizeRun, authorizeOrg } from "../authz.js";
 import { projectCatalogSnapshot } from "../catalog-projection.js";
+import { ensureEnvironmentRegistered } from "../env-registration.js";
 import { generateUuid, orgPublicId, projectPublicId, parseProjectPublicId } from "../ids.js";
 import { DEFAULT_PAGE_LIMIT, MAX_PAGE_LIMIT } from "../constants.js";
 import { isValidDigest } from "../object-store.js";
@@ -224,6 +225,22 @@ export async function handleAdvanceCatalogHead(
       } catch {
         // Best-effort projection.
       }
+    }
+
+    // ── Catalog-push liveness (OV9): bump the environment's last_active_at so a
+    // project that pushes catalogs per-env (without runs) doesn't have its envs
+    // wrongly archived by the stale-archival sweep. Off the response path
+    // (waitUntil) — a head advance must never wait on projects-worker.
+    if (head.environment && env.PROJECTS_WORKER) {
+      const touch = ensureEnvironmentRegistered(
+        env.PROJECTS_WORKER,
+        orgId,
+        projectId,
+        head.environment,
+        requestId,
+      );
+      if (ctx) ctx.waitUntil(touch.then(() => undefined).catch(() => undefined));
+      else await touch.catch(() => undefined);
     }
 
     const payload: PutCatalogHeadResponse = { head: toPublicHead(head), previous };

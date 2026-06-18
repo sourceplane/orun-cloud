@@ -3,6 +3,7 @@ import { route } from "./router.js";
 import { runSweep } from "./sweep.js";
 import { runScmDrain } from "./scm-bridge.js";
 import { runRunWriteback } from "./run-writeback.js";
+import { runEnvArchiveSweep } from "./env-archive-sweep.js";
 
 export default {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
@@ -57,6 +58,18 @@ export default {
           }
         } catch (err) {
           console.error(`[scheduled] run-writeback failed: ${String(err)}`);
+        }
+        // Phase 4 — stale-environment archival sweep (OV9). Coalesced into this
+        // same cron slot (risk R9), after the write-back. Archives a bounded
+        // batch of environments no longer pushed to; reversible. Dormant without
+        // the projects-worker binding; never breaks the prior phases or the cron.
+        try {
+          const swept = await runEnvArchiveSweep(env);
+          if (swept && swept.archived > 0) {
+            console.warn(`[scheduled] env-archive: ${swept.archived} environments archived`);
+          }
+        } catch (err) {
+          console.error(`[scheduled] env-archive failed: ${String(err)}`);
         }
       })(),
     );
