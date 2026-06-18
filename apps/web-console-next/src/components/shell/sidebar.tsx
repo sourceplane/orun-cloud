@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { useParams, usePathname, useSearchParams } from "next/navigation";
+import { useParams, usePathname } from "next/navigation";
 import {
   Building2,
   ChevronDown,
@@ -31,7 +31,6 @@ import {
 import { cn } from "@/lib/cn";
 import { buildNavSections, isLinkActive } from "./nav-items";
 import { buildSettingsNav, flattenSettingsNav, isSettingsLinkActive } from "./settings-nav";
-import { buildEntityNav, entityKeyFromPath } from "./entity-nav";
 import { SidebarAccount } from "./sidebar-account";
 import { SidebarOrgSwitcher } from "./sidebar-org-switcher";
 import { SidebarFind } from "./sidebar-find";
@@ -81,13 +80,13 @@ export function NavContent({
   // genuinely-selected org instead of collapsing to an empty rail.
   const orgSlug = useEffectiveOrgSlug();
 
-  // The left rail swaps to a dedicated sub-panel for two scopes, mirroring how
-  // Vercel turns the whole rail into a settings menu: `/settings` (a flat
-  // settings nav) and a selected catalog entity (its contextual nav). Otherwise
-  // it shows the product nav.
+  // The left rail swaps to a dedicated sub-panel for the settings scope only
+  // (`/settings`), mirroring how Vercel turns the whole rail into a settings
+  // menu. The catalog keeps the stable product nav — its own list is the
+  // navigation now, so the rail no longer swaps per selected entity (calmer,
+  // and the entity page is a 3-panel surface that keeps the list in view).
   const inSettings = !!orgSlug && !!pathname && pathname.startsWith(`/orgs/${orgSlug}/settings`);
-  const entityKey = orgSlug && !inSettings ? entityKeyFromPath(orgSlug, pathname) : null;
-  const mode: "settings" | "entity" | "product" = inSettings ? "settings" : entityKey ? "entity" : "product";
+  const mode: "settings" | "product" = inSettings ? "settings" : "product";
 
   // Subtle directional swap: a sub-panel slides in from the right, back-to-app
   // from the left. The `key` remounts the panel so the animation replays.
@@ -104,8 +103,6 @@ export function NavContent({
     <div key={mode} className={anim}>
       {inSettings && orgSlug && pathname ? (
         <SettingsNavContent orgSlug={orgSlug} pathname={pathname} onNavigate={onNavigate} mobile={mobile} />
-      ) : entityKey && orgSlug ? (
-        <EntityNavContent orgSlug={orgSlug} entityKey={entityKey} onNavigate={onNavigate} mobile={mobile} />
       ) : (
         <ProductNav
           orgSlug={orgSlug}
@@ -216,82 +213,6 @@ function SettingsNavContent({
           );
         })}
       </div>
-    </nav>
-  );
-}
-
-/**
- * Catalog-entity-scoped sidebar: a "‹ Catalog" back row that returns to the
- * index, the entity identity (name + kind), then its tab links. Built from the
- * URL key alone (no fetch) so the rail paints instantly on navigation.
- */
-function EntityNavContent({
-  orgSlug,
-  entityKey,
-  onNavigate,
-  mobile = false,
-}: {
-  orgSlug: string;
-  entityKey: string;
-  onNavigate?: (() => void) | undefined;
-  mobile?: boolean;
-}) {
-  const model = buildEntityNav(orgSlug, entityKey);
-  const backHref = model?.backHref ?? `/orgs/${orgSlug}/catalog`;
-  // Tabs select via `?tab=` (overview is the default, query-less, tab).
-  const searchParams = useSearchParams();
-  const activeTab = searchParams?.get("tab") ?? "overview";
-  return (
-    <nav className="px-2 pb-4 pt-3">
-      {/* Back button on the left, "Catalog" centered (mirrors the settings rail). */}
-      <div className={cn("relative mb-2 flex items-center justify-center", mobile ? "h-11" : "h-8")}>
-        <Link
-          href={backHref}
-          {...(onNavigate ? { onClick: onNavigate } : {})}
-          aria-label="Back to catalog"
-          className={cn(
-            "absolute left-0 grid place-items-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground active:bg-accent",
-            mobile ? "h-9 w-9" : "h-7 w-7",
-          )}
-        >
-          <ChevronLeft className={mobile ? "h-5 w-5" : "h-4 w-4"} />
-        </Link>
-        <span className={cn("font-medium tracking-tight", mobile ? "text-base" : "text-sm")}>Catalog</span>
-      </div>
-      {model ? (
-        <>
-          <div className="mb-2 px-2">
-            <div className="truncate text-sm font-medium" title={model.name}>
-              {model.name}
-            </div>
-            {model.kind ? (
-              <div className="mt-0.5 text-[11px] uppercase tracking-wide text-muted-foreground">{model.kind}</div>
-            ) : null}
-          </div>
-          <div className="space-y-0.5">
-            {model.links.map((link) => {
-              const active = link.tab === activeTab;
-              return (
-                <Link
-                  key={link.href}
-                  href={link.href}
-                  {...(onNavigate ? { onClick: onNavigate } : {})}
-                  aria-current={active ? "page" : undefined}
-                  className={cn(
-                    "flex items-center rounded-md transition-colors",
-                    mobile ? "min-h-11 px-3 text-[15px] active:bg-accent" : "px-2 py-1.5 text-sm",
-                    active
-                      ? "bg-primary/10 font-medium text-primary"
-                      : "text-muted-foreground hover:bg-accent/60 hover:text-foreground",
-                  )}
-                >
-                  {link.label}
-                </Link>
-              );
-            })}
-          </div>
-        </>
-      ) : null}
     </nav>
   );
 }
