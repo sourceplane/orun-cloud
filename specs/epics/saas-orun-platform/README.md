@@ -15,7 +15,7 @@ unilaterally.
 
 | Field | Value |
 |-------|-------|
-| Status | **In progress** — OP0–OP4 substrate + **v2 OV1–OV7 & OV9 shipped** ([`design-v2.md`](./design-v2.md) + [`implementation-plan-v2.md`](./implementation-plan-v2.md)): the object-model `ModelReader` seam, materialized tenancy (project == repo), credential-agnostic CI auth, the GitHub App bridge (write-back live path gated on IG D1), the org-global catalog + Runs/Stacks console, and metering/retention (env-lifecycle archival, usage visibility, over-quota 412 off-by-default, object-GC report-only). **Remaining:** OV8 secrets (deferred — canonical `orun-secrets` epic) and the OV9 object-GC **deletion** path (only reporting shipped). |
+| Status | **In progress** — OP0–OP4 substrate + **v2 OV1–OV7 & OV9 shipped** ([`design-v2.md`](./design-v2.md) + [`implementation-plan-v2.md`](./implementation-plan-v2.md)): the object-model `ModelReader` seam, materialized tenancy (project == repo), credential-agnostic CI auth, the GitHub App bridge (inbound trigger recording + outbound write-back **live** — IG D1 registered in all envs as of 2026-06-18), the org-global catalog + Runs/Stacks console, and metering/retention (env-lifecycle archival, usage visibility, over-quota 412 off-by-default, object-GC report-only). **Remaining:** OV8 secrets (deferred — canonical `orun-secrets` epic), the OV9 object-GC **deletion** path (only reporting shipped), and OV4 inbound object-graph authorship (deferred to IG8 — not part of the D1 gate). |
 | Cluster | **OP** (OP0–OP9) |
 | Owner(s) | new `state-worker`, identity-worker, config-worker, api-edge, db, contracts/sdk, web-console-next, infra/terraform |
 | Target branch | `main` (PRs merged incrementally, milestone-sized) |
@@ -87,7 +87,7 @@ shipped substrate.
 | OV2 | Materialized tenancy (project == repo bijection, env upsert) | ✅ Done (#81, #87) |
 | OV3 | Credential-agnostic CI auth (OIDC + `sk_` key → one ActorContext) | ✅ Done (#82–#84) |
 | OV4 | GitHub App bridge: inbound `scm.*` ingestion → object graph | ✅ Done (#85, #86) |
-| OV5 | GitHub App bridge: outbound write-back (checks/deployments) | ✅ Done — worker-side; live path gated on IG D1 (GitHub App registration) |
+| OV5 | GitHub App bridge: outbound write-back (checks/deployments) | ✅ Done — **live**: IG D1 satisfied (App registered stage+prod, 2026-06-18); state-worker cron Phase 3 → `integrations-worker /internal/github/writeback` posts Check Runs |
 | OV6 | Org-global catalog projection (repo/env as facets) | ✅ Done (#93–#95) |
 | OV7 | Console: Runs & Stacks over ModelReader | ✅ Done (#96–#104) |
 | OV8 | Secrets — Orun Cloud slice of the canonical `orun-secrets` epic (SEC) | 🗓️ Deferred — canonical design reconciled (#72); platform slice not yet built |
