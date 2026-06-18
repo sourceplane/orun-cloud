@@ -191,6 +191,17 @@ export async function route(request: Request, env: Env, ctx?: ExecutionContext):
     return handleUnlinkWorkspaceLink(env, requestId, actor, orgId, projectId, asUuid(linkId));
   }
 
+  // GET /v1/organizations/{orgId}/catalog/entities — org-global catalog browser
+  // (OV6). Org-scoped (no project), so it is dispatched here at the top level —
+  // NOT under the `/state/`-gated run/object plane below.
+  m = pathname.match(ORG_CATALOG_ENTITIES_RE);
+  if (m) {
+    const orgId = parseOrgPublicId(m[1]!);
+    if (!orgId) return notFound(requestId, pathname);
+    if (request.method !== "GET") return methodNotAllowed(requestId);
+    return handleListOrgCatalogEntities(request, env, requestId, actor, orgId);
+  }
+
   // ── OP2 — Run coordination plane (§2). ──
   // Every run route enforces Orun-Contract-Version before any work.
   if (pathname.includes("/state/")) {
@@ -430,15 +441,6 @@ async function routeObjectAndCatalog(
     if (!scope) return notFound(requestId, pathname);
     if (request.method !== "GET") return methodNotAllowed(requestId);
     return handleListCatalogEntities(env, requestId, actor, scope.orgId, scope.projectId);
-  }
-
-  // GET /v1/organizations/{orgId}/catalog/entities — org-global browser (OV6).
-  m = pathname.match(ORG_CATALOG_ENTITIES_RE);
-  if (m) {
-    const orgId = parseOrgPublicId(m[1]!);
-    if (!orgId) return notFound(requestId, pathname);
-    if (request.method !== "GET") return methodNotAllowed(requestId);
-    return handleListOrgCatalogEntities(request, env, requestId, actor, orgId);
   }
 
   // ── OV1 — hosted RefStore (§2). The list route (…/refs) must precede the

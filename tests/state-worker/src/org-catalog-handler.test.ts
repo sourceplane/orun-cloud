@@ -4,6 +4,7 @@
 // as a 404.
 
 import { handleListOrgCatalogEntities } from "@state-worker/handlers/catalog";
+import { route } from "@state-worker/router";
 import type { Env } from "@state-worker/env";
 import type { SqlExecutor, SqlExecutorResult, SqlRow } from "@saas/db/hyperdrive";
 import { asUuid } from "@saas/db";
@@ -125,5 +126,27 @@ describe("GET /v1/organizations/{orgId}/catalog/entities (OV6)", () => {
     const { executor } = capturingExecutor([entityRow()]);
     const res = await handleListOrgCatalogEntities(req(), createEnv(false), "req_2", ACTOR, asUuid(ORG), { executor });
     expect(res.status).toBe(404);
+  });
+});
+
+// Regression: the org-global catalog route is org-scoped (no project), so it
+// must be dispatched at the TOP LEVEL — not under the `/state/`-gated run/object
+// plane, where it once sat unreachable (a path with no `/state/` segment never
+// entered that sub-router, so the console got "Route not found").
+describe("route() — org-global catalog endpoint is reachable", () => {
+  it("dispatches /v1/organizations/{org}/catalog/entities to the handler, not Route-not-found", async () => {
+    const req = new Request(`https://state.test/v1/organizations/${ORG_PUBLIC}/catalog/entities`, {
+      headers: {
+        "x-actor-subject-id": ACTOR.subjectId,
+        "x-actor-subject-type": ACTOR.subjectType,
+      },
+    });
+    // Policy denies → the handler resource-hides as a plain 404 ("Not found"),
+    // which still PROVES the route reached the handler (vs the router's
+    // "Route not found: <path>" fall-through).
+    const res = await route(req, createEnv(false));
+    expect(res.status).toBe(404);
+    const body = (await res.json()) as { error?: { message?: string } };
+    expect(body.error?.message ?? "").not.toContain("Route not found");
   });
 });
