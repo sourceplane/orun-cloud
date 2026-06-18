@@ -81,6 +81,56 @@ describe("computeStorageGcReport (OV9, report-only)", () => {
     expect(report!.capped).toBe(false);
   });
 
+  it("terminates on a cycle (A→B→A) via the visited set, counting both reachable", async () => {
+    // A and B point at each other; the walk must not loop forever.
+    const cycA = `sha256:${hex("e")}`;
+    const cycB = `sha256:${hex("f")}`;
+    const cyclicStore: Record<string, Uint8Array> = {
+      [cycA]: frame("tree", entry("tree", "b", hex("f"))),
+      [cycB]: frame("tree", entry("tree", "a", hex("e"))),
+    };
+    const executor = {
+      execute<T extends SqlRow = SqlRow>(text: string): Promise<SqlExecutorResult<T>> {
+        if (text.includes("UNION")) return Promise.resolve({ rows: [{ digest: cycA }] as unknown as T[], rowCount: 1 });
+        if (text.includes("SELECT digest, size_bytes FROM state.objects")) {
+          const rows = [
+            { digest: cycA, size_bytes: 10 },
+            { digest: cycB, size_bytes: 20 },
+          ];
+          return Promise.resolve({ rows: rows as unknown as T[], rowCount: rows.length });
+        }
+        return Promise.resolve({ rows: [] as T[], rowCount: 0 });
+      },
+    } as unknown as SqlExecutor;
+    const report = await computeStorageGcReport({} as unknown as Env, scope, {
+      executor,
+      fetcher: (d) => Promise.resolve(cyclicStore[d] ?? null),
+    });
+    expect(report!.reachableObjects).toBe(2);
+    expect(report!.unreachableObjects).toBe(0);
+    expect(report!.capped).toBe(false);
+  });
+
+  it("flags capped when a root is unreadable (subtree closure incomplete is still bounded)", async () => {
+    // A root with no fetchable bytes yields an empty closure → the lone stored
+    // object is (conservatively) unreachable; capped stays false (walk bounded).
+    const executor = {
+      execute<T extends SqlRow = SqlRow>(text: string): Promise<SqlExecutorResult<T>> {
+        if (text.includes("UNION")) return Promise.resolve({ rows: [{ digest: ROOT }] as unknown as T[], rowCount: 1 });
+        if (text.includes("SELECT digest, size_bytes FROM state.objects")) {
+          return Promise.resolve({ rows: [{ digest: CHILD1, size_bytes: 50 }] as unknown as T[], rowCount: 1 });
+        }
+        return Promise.resolve({ rows: [] as T[], rowCount: 0 });
+      },
+    } as unknown as SqlExecutor;
+    const report = await computeStorageGcReport({} as unknown as Env, scope, {
+      executor,
+      fetcher: () => Promise.resolve(null), // nothing readable
+    });
+    expect(report!.unreachableObjects).toBe(1);
+    expect(report!.reclaimableBytes).toBe(50);
+  });
+
   it("reports nothing reclaimable when every object is reachable from a root", async () => {
     const executor = {
       execute<T extends SqlRow = SqlRow>(text: string): Promise<SqlExecutorResult<T>> {
