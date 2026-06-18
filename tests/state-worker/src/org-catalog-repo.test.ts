@@ -170,3 +170,46 @@ describe("StateRepository.getOrgStateStorage (OV9)", () => {
     }
   });
 });
+
+// OV9 — object GC reachability inputs.
+describe("StateRepository GC inputs (OV9)", () => {
+  function capturingExecutor(rows: Record<string, unknown>[]): { executor: SqlExecutor; queries: string[] } {
+    const queries: string[] = [];
+    const executor = {
+      execute<T extends SqlRow = SqlRow>(text: string): Promise<SqlExecutorResult<T>> {
+        queries.push(text);
+        return Promise.resolve({ rows: rows as unknown as T[], rowCount: rows.length });
+      },
+    } as unknown as SqlExecutor;
+    return { executor, queries };
+  }
+
+  it("listObjectDigestsWithSize returns digest + numeric size, bounded by limit", async () => {
+    const { executor, queries } = capturingExecutor([
+      { digest: "sha256:aa", size_bytes: "100" },
+      { digest: "sha256:bb", size_bytes: 200 },
+    ]);
+    const repo = createStateRepository(executor);
+    const res = await repo.listObjectDigestsWithSize(asUuid(ORG), asUuid(PROJECT_A), 5000);
+    expect(res.ok).toBe(true);
+    if (res.ok) {
+      expect(res.value).toEqual([
+        { digest: "sha256:aa", sizeBytes: 100 },
+        { digest: "sha256:bb", sizeBytes: 200 },
+      ]);
+    }
+    expect(queries[0]).toContain("LIMIT $3");
+  });
+
+  it("listStorageGcRoots unions refs, catalog heads, and run plans", async () => {
+    const { executor, queries } = capturingExecutor([{ digest: "sha256:root1" }, { digest: "sha256:root2" }]);
+    const repo = createStateRepository(executor);
+    const res = await repo.listStorageGcRoots(asUuid(ORG), asUuid(PROJECT_A));
+    expect(res.ok).toBe(true);
+    if (res.ok) expect(res.value).toEqual(["sha256:root1", "sha256:root2"]);
+    expect(queries[0]).toContain("state.refs");
+    expect(queries[0]).toContain("state.catalog_heads");
+    expect(queries[0]).toContain("state.runs");
+    expect(queries[0]).toContain("UNION");
+  });
+});

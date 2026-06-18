@@ -87,6 +87,27 @@ describe("StateClient — state storage footprint (OV9)", () => {
   });
 });
 
+describe("StateClient — object GC report (OV9)", () => {
+  it("GETs the project-scoped, report-only gc endpoint", async () => {
+    const { fetch, calls } = captureFetch(
+      jsonResponse(
+        envelope({ report: { totalObjects: 4, totalBytes: 4696, reachableObjects: 3, unreachableObjects: 1, reclaimableBytes: 4096, capped: false } }),
+      ),
+    );
+    const out = await client(fetch).state.getGcReport("org_1", "prj_1");
+    expect(calls[0]!.url).toBe("https://api.test/v1/organizations/org_1/projects/prj_1/state/gc/report");
+    expect(out.report.reclaimableBytes).toBe(4096);
+  });
+
+  it("encodeURIComponent-escapes the path segments", async () => {
+    const { fetch, calls } = captureFetch(
+      jsonResponse(envelope({ report: { totalObjects: 0, totalBytes: 0, reachableObjects: 0, unreachableObjects: 0, reclaimableBytes: 0, capped: false } })),
+    );
+    await client(fetch).state.getGcReport("org/x", "prj/y");
+    expect(calls[0]!.url).toContain("/v1/organizations/org%2Fx/projects/prj%2Fy/state/gc/report");
+  });
+});
+
 describe("StateClient — project runs (OV7)", () => {
   it("lists the project-scoped runs path with status/environment filters", async () => {
     const { fetch, calls } = captureFetch(jsonResponse(envelope({ runs: [], nextCursor: null })));

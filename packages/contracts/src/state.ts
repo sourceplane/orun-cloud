@@ -518,6 +518,26 @@ export interface GetStateStorageResponse {
   usage: StateStorageUsage;
 }
 
+/**
+ * GET …/state/gc/report — object GC reachability report for a project (OV9,
+ * report-only). How much of the object store no live pointer reaches, i.e. what
+ * a future GC could reclaim. Computed, never mutated; nothing is deleted.
+ */
+export interface StateGcReport {
+  totalObjects: number;
+  totalBytes: number;
+  reachableObjects: number;
+  unreachableObjects: number;
+  /** Bytes held by unreachable objects — the reclaimable estimate. */
+  reclaimableBytes: number;
+  /** The reachability walk hit its bound: reclaimableBytes is an upper bound. */
+  capped: boolean;
+}
+
+export interface GetStateGcReportResponse {
+  report: StateGcReport;
+}
+
 // ── Refs (hosted RefStore — L2 mutable CAS pointers; OV1) ────
 
 /**

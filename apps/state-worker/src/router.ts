@@ -35,6 +35,7 @@ import {
   handleListOrgCatalogEntities,
 } from "./handlers/catalog.js";
 import { handleGetOrgStateStorage } from "./handlers/state-usage.js";
+import { handleGetStateGcReport } from "./handlers/gc-report.js";
 import {
   handleGetRef,
   handleUpdateRef,
@@ -121,6 +122,8 @@ const OBJECT_UPLOAD_COMPLETE_RE = new RegExp(
 const CATALOG_HEAD_RE = new RegExp(`^${STATE_BASE}/catalog/head$`);
 const CATALOG_HEADS_HISTORY_RE = new RegExp(`^${STATE_BASE}/catalog/heads/history$`);
 const CATALOG_ENTITIES_RE = new RegExp(`^${STATE_BASE}/catalog/entities$`);
+// OV9 — object GC reachability report (report-only; no deletion).
+const GC_REPORT_RE = new RegExp(`^${STATE_BASE}/gc/report$`);
 // OV6 — org-global catalog browser (no project scope): the default merged graph.
 const ORG_CATALOG_ENTITIES_RE = /^\/v1\/organizations\/([^/]+)\/catalog\/entities$/;
 // OV9 — org state-plane storage footprint (no project scope): the STOCK gauge.
@@ -455,6 +458,15 @@ async function routeObjectAndCatalog(
     if (!scope) return notFound(requestId, pathname);
     if (request.method !== "GET") return methodNotAllowed(requestId);
     return handleListCatalogEntities(env, requestId, actor, scope.orgId, scope.projectId);
+  }
+
+  // GET …/state/gc/report — object GC reachability report (OV9, report-only).
+  m = pathname.match(GC_REPORT_RE);
+  if (m) {
+    const scope = parseScope(m[1]!, m[2]!);
+    if (!scope) return notFound(requestId, pathname);
+    if (request.method !== "GET") return methodNotAllowed(requestId);
+    return handleGetStateGcReport(request, env, requestId, actor, scope.orgId, scope.projectId);
   }
 
   // ── OV1 — hosted RefStore (§2). The list route (…/refs) must precede the
