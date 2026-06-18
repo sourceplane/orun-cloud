@@ -86,7 +86,7 @@ shipped substrate.
 | OV1 | ModelReader read seam (cloud = hosted ObjectStore + RefStore + index) | ✅ Done (#80) |
 | OV2 | Materialized tenancy (project == repo bijection, env upsert) | ✅ Done (#81, #87) |
 | OV3 | Credential-agnostic CI auth (OIDC + `sk_` key → one ActorContext) | ✅ Done (#82–#84) |
-| OV4 | GitHub App bridge: inbound `scm.*` ingestion → object graph | ✅ Done (#85, #86) |
+| OV4 | GitHub App bridge: inbound `scm.*` ingestion → object graph | ⚠️ Partial — trigger recording live (#85, #86); **object-graph authorship (Source/Catalog materialization) parked as a later consideration** (needs a server-side resolution substrate — see Deferred) |
 | OV5 | GitHub App bridge: outbound write-back (checks/deployments) | ✅ Done — **live**: IG D1 satisfied (App registered stage+prod, 2026-06-18); state-worker cron Phase 3 → `integrations-worker /internal/github/writeback` posts Check Runs |
 | OV6 | Org-global catalog projection (repo/env as facets) | ✅ Done (#93–#95) |
 | OV7 | Console: Runs & Stacks over ModelReader | ✅ Done (#96–#104) |
