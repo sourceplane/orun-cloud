@@ -47,7 +47,9 @@ export async function handleGetStateGcReport(
     });
     if (!report) {
       // Storage unavailable (no R2 binding / DB) — report-only is dormant here.
-      return errorResponse("unavailable", "Object storage is not available in this environment.", 503, requestId);
+      // Use the standard internal_error code (the ErrorCode vocabulary) like the
+      // sibling state-usage handler, not an ad-hoc "unavailable".
+      return errorResponse("internal_error", "Object storage is not available in this environment.", 503, requestId);
     }
     const payload: GetStateGcReportResponse = { report };
     return successResponse(payload, requestId);

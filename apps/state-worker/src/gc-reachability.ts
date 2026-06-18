@@ -115,6 +115,11 @@ export async function computeStorageGcReport(
 
     const { visited, capped } = await reachableClosure(fetcher, rootsResult.value);
 
+    // The object list is also bounded by MAX_VISIT; if it filled the cap the
+    // project has more objects than we enumerated, so the report is incomplete —
+    // fold that into `capped` (a future delete path must refuse when capped).
+    const objectsTruncated = objects.length >= MAX_VISIT;
+
     let totalBytes = 0;
     let reachableObjects = 0;
     let reclaimableBytes = 0;
@@ -129,7 +134,7 @@ export async function computeStorageGcReport(
       reachableObjects,
       unreachableObjects: objects.length - reachableObjects,
       reclaimableBytes,
-      capped,
+      capped: capped || objectsTruncated,
     };
   } finally {
     if (owned && "dispose" in executor && typeof (executor as { dispose?: unknown }).dispose === "function") {

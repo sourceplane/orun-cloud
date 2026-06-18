@@ -23,6 +23,12 @@ export interface StateUsageHandlerDeps {
   executor?: SqlExecutor;
 }
 
+async function dispose(executor: SqlExecutor): Promise<void> {
+  if ("dispose" in executor && typeof (executor as { dispose?: unknown }).dispose === "function") {
+    await (executor as unknown as { dispose: () => Promise<void> }).dispose();
+  }
+}
+
 export async function handleGetOrgStateStorage(
   _request: Request,
   env: Env,
@@ -45,8 +51,6 @@ export async function handleGetOrgStateStorage(
   } catch {
     return errorResponse("internal_error", "Service unavailable", 503, requestId);
   } finally {
-    if (owned && "dispose" in executor && typeof (executor as { dispose?: unknown }).dispose === "function") {
-      await (executor as unknown as { dispose: () => Promise<void> }).dispose();
-    }
+    if (owned) await dispose(executor);
   }
 }

@@ -196,6 +196,25 @@ describe("POST …/state/runs — create", () => {
     expect(body.error.details?.metric).toBe("state.runs");
   });
 
+  it("never gates a replay: an existing run returns 200 even when a HARD quota is exceeded", async () => {
+    // The replay short-circuits before the quota gate, so an over-quota org can
+    // still re-fetch a run it already created.
+    const { executor } = fakeExecutor((text) => {
+      if (text.startsWith("SELECT * FROM state.runs WHERE org_id = $1 AND project_id = $2 AND run_ulid")) return [runRow({ status: "running" })]; // replay
+      if (text.includes("metering.quota_definitions")) return [{ limit_value: 1, period: "month", enforcement: "hard" }];
+      if (text.includes("FROM metering.usage_records")) return [{ total: 999 }];
+      if (text.includes("COUNT(*) FILTER")) return [COUNTS];
+      return [];
+    });
+    const req = new Request("https://state.test/v1/organizations/x/projects/y/state/runs", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ runId: ULID, planDigest: PLAN, source: "cli", git: { commit: "abc", ref: "refs/heads/main", dirty: false } }),
+    });
+    const res = await handleCreateRun(req, createEnv(), "req_1", ACTOR, asUuid(ORG), asUuid(PROJECT), { executor });
+    expect(res.status).toBe(200);
+  });
+
   it("does NOT block on a SOFT over-quota (the violation is tracked, the run proceeds)", async () => {
     const { executor } = fakeExecutor((text) => {
       if (text.includes("FROM state.objects")) return [{ id: "obj", org_id: ORG, project_id: PROJECT, digest: PLAN, kind: "plan", size_bytes: 10, created_by: null, created_by_kind: null, created_at: NOW.toISOString() }];
