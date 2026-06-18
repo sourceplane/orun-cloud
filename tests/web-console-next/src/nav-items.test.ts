@@ -57,7 +57,9 @@ describe("buildNavSections", () => {
   it("adds the project section only when both slugs are present", () => {
     expect(buildNavSections({ orgSlug: "acme" }).find((s) => s.id === "project")).toBeUndefined();
     const project = buildNavSections({ orgSlug: "acme", projectSlug: "web" }).find((s) => s.id === "project")!;
-    expect(project.links[0]!.href).toBe("/orgs/acme/projects/web/environments");
+    const hrefs = project.links.map((l) => l.href);
+    expect(project.links[0]!.href).toBe("/orgs/acme/projects/web/runs");
+    expect(hrefs).toContain("/orgs/acme/projects/web/environments");
   });
 });
 

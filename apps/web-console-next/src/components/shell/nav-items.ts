@@ -69,6 +69,7 @@ export function buildNavSections(scope: NavScope): NavSection[] {
       id: "project",
       label: projectSlug ? `Project · ${projectSlug}` : "Project",
       links: [
+        { href: `${projectBase}/runs`, label: "Runs", icon: "Play" },
         { href: `${projectBase}/environments`, label: "Environments", icon: "Boxes" },
         { href: `${projectBase}/git`, label: "Git", icon: "GitBranch" },
         { href: `${projectBase}/cli`, label: "CLI", icon: "Terminal" },
