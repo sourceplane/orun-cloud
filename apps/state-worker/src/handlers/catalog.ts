@@ -90,6 +90,7 @@ export async function handleAdvanceCatalogHead(
   orgId: Uuid,
   projectId: Uuid,
   deps?: CatalogHandlerDeps,
+  ctx?: ExecutionContext,
 ): Promise<Response> {
   const authz = await authorizeRun(env, requestId, actor, orgId, projectId, STATE_POLICY_ACTIONS.CATALOG_PUBLISH);
   if (!authz.ok) return authz.response;
@@ -196,26 +197,33 @@ export async function handleAdvanceCatalogHead(
       // Best-effort audit.
     }
 
-    // ── Project the snapshot into the org-global read model (OV6). Best-effort
-    // and AFTER the advance: the head is the source of truth, so a projection
-    // miss (no R2 on dev, an unreadable snapshot) must never fail the push — the
-    // read model is always rebuildable from the head. Reuses the same executor.
-    try {
-      await projectCatalogSnapshot(
-        env,
-        {
-          orgId,
-          projectId,
-          orgPublic: orgPublicId(orgId),
-          projectPublic: projectPublicId(projectId),
-          environment: head.environment,
-          digest: head.digest,
-          commit: head.commit,
-        },
-        { executor },
-      );
-    } catch {
-      // Best-effort projection.
+    // ── Project the snapshot into the org-global read model (OV6) — OFF the
+    // response path. Walking the snapshot (R2 fetches + upserts) can exceed the
+    // client timeout for a real catalog, so it must NOT block the advance: the
+    // head is the source of truth and the read model is always rebuildable from
+    // it. We hand the work to ctx.waitUntil so the response returns immediately
+    // and the projection runs in the background with its OWN executor (the
+    // request's executor is disposed in the finally below). Best-effort +
+    // idempotent (replace-the-scope), so a re-advance simply re-projects.
+    const scope = {
+      orgId,
+      projectId,
+      orgPublic: orgPublicId(orgId),
+      projectPublic: projectPublicId(projectId),
+      environment: head.environment,
+      digest: head.digest,
+      commit: head.commit,
+    };
+    if (ctx) {
+      ctx.waitUntil(projectCatalogSnapshot(env, scope).catch(() => undefined));
+    } else {
+      // No execution context (unit tests / non-Worker callers): project inline.
+      // Dormant without R2, so this is a fast no-op there.
+      try {
+        await projectCatalogSnapshot(env, scope, { executor });
+      } catch {
+        // Best-effort projection.
+      }
     }
 
     const payload: PutCatalogHeadResponse = { head: toPublicHead(head), previous };

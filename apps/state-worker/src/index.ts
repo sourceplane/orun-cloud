@@ -5,8 +5,8 @@ import { runScmDrain } from "./scm-bridge.js";
 import { runRunWriteback } from "./run-writeback.js";
 
 export default {
-  async fetch(request: Request, env: Env): Promise<Response> {
-    return route(request, env);
+  async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
+    return route(request, env, ctx);
   },
 
   // Lease sweep cron (OP2 — design §4.2): re-queue lapsed job claims (attempt+1,
