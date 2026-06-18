@@ -309,5 +309,14 @@ export const manifest: MigrationManifest = {
       description:
         "Org-global catalog projection read model (saas-orun-platform v2 OV6) — state.org_catalog_entities merges every project's catalog into one org-wide graph, one row per entity per (source project, environment) scope with provenance (project, env, commit, head digest); namespaced by source to stay collision-free so repo/env are filters, not partitions; derived idempotently from the snapshot, never authored",
     },
+    {
+      id: "340_projects_environment_activity",
+      context: "projects",
+      path: "340_projects_environment_activity/up.sql",
+      checksum:
+        "77b2e20ea449e3908fed84c9ce45c3a724dffa1c3b0027e5d3eb550abc87e416",
+      description:
+        "Environment lifecycle liveness (saas-orun-platform v2 OV9) — adds projects.environments.last_active_at (bumped on every activity touch, backfilled to updated_at, defaults now()) plus a partial index on (last_active_at) WHERE status='active' to drive the stale-environment archival sweep; an active environment unpushed past the retention window archives reversibly (a fresh push revives it). Dormant until the OV9.2 cron",
+    },
   ],
 };

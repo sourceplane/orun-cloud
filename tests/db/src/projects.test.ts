@@ -56,6 +56,7 @@ const SAMPLE_ENVIRONMENT_ROW = {
   created_at: NOW.toISOString(),
   updated_at: NOW.toISOString(),
   archived_at: null,
+  last_active_at: NOW.toISOString(),
 };
 
 describe("ProjectsRepository", () => {
@@ -779,6 +780,91 @@ describe("ProjectsRepository", () => {
         expect(result.error.message).not.toContain("secret");
         expect(result.error.message).not.toContain("db.internal");
       }
+    });
+  });
+
+  describe("registerEnvironmentActivity", () => {
+    it("upserts on (org, project, slug_lower), bumping last_active_at and reviving an archived row", async () => {
+      const { executor, queries } = createFakeExecutor({
+        rows: [{ ...SAMPLE_ENVIRONMENT_ROW, inserted: false }],
+      });
+      const repo = createProjectsRepository(executor);
+      const at = new Date("2026-02-01T00:00:00Z");
+      const result = await repo.registerEnvironmentActivity({
+        id: "env-new",
+        orgId: ORG_ID,
+        projectId: PRJ_ID,
+        name: "Production",
+        slug: "production",
+        slugLower: "production",
+        at,
+      });
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.value.created).toBe(false); // xmax != 0 → updated, not inserted
+        expect(result.value.environment.slug).toBe("production");
+      }
+      const q = queries[0]!;
+      expect(q.text).toContain("ON CONFLICT (org_id, project_id, slug_lower) DO UPDATE");
+      expect(q.text).toContain("status = 'active'");
+      expect(q.text).toContain("archived_at = NULL");
+      expect(q.text).toContain("(xmax = 0) AS inserted");
+      expect(q.params).toContain(at.toISOString());
+    });
+
+    it("reports created=true when the row was freshly inserted", async () => {
+      const { executor } = createFakeExecutor({
+        rows: [{ ...SAMPLE_ENVIRONMENT_ROW, inserted: true }],
+      });
+      const repo = createProjectsRepository(executor);
+      const result = await repo.registerEnvironmentActivity({
+        id: "env-new",
+        orgId: ORG_ID,
+        projectId: PRJ_ID,
+        name: "Staging",
+        slug: "staging",
+        slugLower: "staging",
+        at: NOW,
+      });
+      expect(result.ok).toBe(true);
+      if (result.ok) expect(result.value.created).toBe(true);
+    });
+  });
+
+  describe("archiveStaleEnvironments", () => {
+    it("archives active rows older than the cutoff, bounded by limit, returning the archived rows", async () => {
+      const { executor, queries } = createFakeExecutor({
+        rows: [
+          { ...SAMPLE_ENVIRONMENT_ROW, status: "archived" },
+          { ...SAMPLE_ENVIRONMENT_ROW, id: "env-002", status: "archived" },
+        ],
+      });
+      const repo = createProjectsRepository(executor);
+      const cutoff = new Date("2026-01-01T00:00:00Z");
+      const archivedAt = new Date("2026-04-01T00:00:00Z");
+      const result = await repo.archiveStaleEnvironments(cutoff, archivedAt, 200);
+      expect(result.ok).toBe(true);
+      if (result.ok) expect(result.value).toHaveLength(2);
+      const q = queries[0]!;
+      expect(q.text).toContain("UPDATE projects.environments");
+      expect(q.text).toContain("status = 'active' AND last_active_at <");
+      expect(q.text).toContain("LIMIT $3");
+      expect(q.params).toEqual([cutoff.toISOString(), archivedAt.toISOString(), 200]);
+    });
+
+    it("returns an empty list when nothing is stale", async () => {
+      const { executor } = createFakeExecutor({ rows: [] });
+      const repo = createProjectsRepository(executor);
+      const result = await repo.archiveStaleEnvironments(NOW, NOW, 50);
+      expect(result.ok).toBe(true);
+      if (result.ok) expect(result.value).toEqual([]);
+    });
+
+    it("fails safe (no throw) on a query error", async () => {
+      const { executor } = createFakeExecutor({ error: new Error("db down") });
+      const repo = createProjectsRepository(executor);
+      const result = await repo.archiveStaleEnvironments(NOW, NOW, 50);
+      expect(result.ok).toBe(false);
     });
   });
 

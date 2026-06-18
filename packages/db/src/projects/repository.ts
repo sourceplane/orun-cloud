@@ -9,6 +9,7 @@ import type {
   Project,
   ProjectsRepository,
   ProjectsResult,
+  RegisterEnvironmentActivityInput,
 } from "./types.js";
 
 function mapProject(row: Record<string, unknown>): Project {
@@ -37,6 +38,11 @@ function mapEnvironment(row: Record<string, unknown>): Environment {
     createdAt: new Date(row.created_at as string),
     updatedAt: new Date(row.updated_at as string),
     archivedAt: row.archived_at ? new Date(row.archived_at as string) : null,
+    // Pre-340 callers/fixtures may not carry last_active_at; fall back to
+    // updated_at so the mapped row is always a valid date.
+    lastActiveAt: row.last_active_at
+      ? new Date(row.last_active_at as string)
+      : new Date(row.updated_at as string),
   };
 }
 
@@ -313,6 +319,68 @@ export function createProjectsRepository(executor: SqlExecutor): ProjectsReposit
         return { ok: true, value: mapEnvironment(result.rows[0]!) };
       } catch {
         return safeError("Failed to archive environment");
+      }
+    },
+
+    async registerEnvironmentActivity(
+      input: RegisterEnvironmentActivityInput,
+    ): Promise<ProjectsResult<{ environment: Environment; created: boolean }>> {
+      try {
+        // Upsert on the (org, project, slug_lower) unique index: insert when
+        // absent, else bump liveness and revive an archived row. `xmax = 0`
+        // distinguishes the insert from the update path. Name/slug are NOT
+        // overwritten on touch — activity never renames.
+        const at = input.at.toISOString();
+        const result = await executor.execute<Record<string, unknown>>(
+          `INSERT INTO projects.environments
+             (id, org_id, project_id, name, slug, slug_lower, status, created_at, updated_at, last_active_at)
+           VALUES ($1, $2, $3, $4, $5, $6, 'active', $7, $7, $7)
+           ON CONFLICT (org_id, project_id, slug_lower) DO UPDATE
+             SET last_active_at = EXCLUDED.last_active_at,
+                 updated_at = EXCLUDED.last_active_at,
+                 status = 'active',
+                 archived_at = NULL
+           RETURNING *, (xmax = 0) AS inserted`,
+          [input.id, input.orgId, input.projectId, input.name, input.slug, input.slugLower, at],
+        );
+        if (result.rowCount === 0 || !result.rows[0]) {
+          return safeError("Failed to register environment activity");
+        }
+        const row = result.rows[0];
+        return {
+          ok: true,
+          value: { environment: mapEnvironment(row), created: row.inserted === true },
+        };
+      } catch {
+        return safeError("Failed to register environment activity");
+      }
+    },
+
+    async archiveStaleEnvironments(
+      cutoff: Date,
+      archivedAt: Date,
+      limit: number,
+    ): Promise<ProjectsResult<Environment[]>> {
+      try {
+        // Archive the oldest-inactive active rows past the cutoff, bounded by
+        // `limit` so one sweep does bounded work (the cron drains a backlog
+        // over successive ticks). The inner SELECT uses the partial
+        // (last_active_at) WHERE status='active' index.
+        const result = await executor.execute<Record<string, unknown>>(
+          `UPDATE projects.environments
+              SET status = 'archived', archived_at = $2, updated_at = $2
+            WHERE id IN (
+              SELECT id FROM projects.environments
+               WHERE status = 'active' AND last_active_at < $1
+               ORDER BY last_active_at ASC
+               LIMIT $3
+            )
+           RETURNING *`,
+          [cutoff.toISOString(), archivedAt.toISOString(), limit],
+        );
+        return { ok: true, value: result.rows.map(mapEnvironment) };
+      } catch {
+        return safeError("Failed to archive stale environments");
       }
     },
   };

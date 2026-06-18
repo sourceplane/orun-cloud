@@ -33,6 +33,11 @@ export interface Environment {
   createdAt: Date;
   updatedAt: Date;
   archivedAt: Date | null;
+  /**
+   * Last time this environment was pushed to (a run/plan referencing it),
+   * bumped on every activity touch. The OV9 stale-archival sweep keys off it.
+   */
+  lastActiveAt: Date;
 }
 
 export interface CreateProjectInput {
@@ -52,6 +57,24 @@ export interface CreateEnvironmentInput {
   slug: string;
   slugLower: string;
   createdAt: Date;
+}
+
+/**
+ * Create-or-touch an environment by (org, project, slug). The first call
+ * inserts (using `id`); subsequent calls bump `last_active_at` to `at` and
+ * revive an archived row. The OV9 liveness signal — driven by the state-worker
+ * run-create seam, not a user action.
+ */
+export interface RegisterEnvironmentActivityInput {
+  /** Candidate id used only when the row is inserted (absent today). */
+  id: string;
+  orgId: Uuid;
+  projectId: Uuid;
+  name: string;
+  slug: string;
+  slugLower: string;
+  /** The activity timestamp (last_active_at, and updated_at on touch). */
+  at: Date;
 }
 
 export interface CursorPosition {
@@ -83,6 +106,25 @@ export interface ProjectsRepository {
   countActiveProjects(orgId: Uuid): Promise<ProjectsResult<number>>;
 
   createEnvironment(input: CreateEnvironmentInput): Promise<ProjectsResult<Environment>>;
+  /**
+   * Create-or-touch an environment by (org, project, slug_lower), returning the
+   * row and whether it was freshly inserted. Bumps `last_active_at` (and revives
+   * an archived row) on an existing match. The OV9 activity touch.
+   */
+  registerEnvironmentActivity(
+    input: RegisterEnvironmentActivityInput,
+  ): Promise<ProjectsResult<{ environment: Environment; created: boolean }>>;
+  /**
+   * Archive up to `limit` active environments whose `last_active_at` predates
+   * `cutoff`, stamping `archived_at = archivedAt`. Returns the archived rows
+   * (oldest-first) so the caller can emit a per-environment archival event. The
+   * OV9 stale-archival sweep; reversible — a later activity touch revives a row.
+   */
+  archiveStaleEnvironments(
+    cutoff: Date,
+    archivedAt: Date,
+    limit: number,
+  ): Promise<ProjectsResult<Environment[]>>;
   /**
    * Count of active (non-archived) environments under a specific parent
    * project. Used by domain callers (e.g. projects-worker) to compare

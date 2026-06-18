@@ -7,6 +7,8 @@ import { handleArchiveProject } from "./handlers/archive-project.js";
 import { handleCreateEnvironment } from "./handlers/create-environment.js";
 import { handleListEnvironments } from "./handlers/list-environments.js";
 import { handleInternalListEnvironments } from "./handlers/internal-environments.js";
+import { handleInternalRegisterEnvironment } from "./handlers/internal-register-environment.js";
+import { handleInternalArchiveStaleEnvironments } from "./handlers/internal-archive-stale-environments.js";
 import { handleInternalResolveProject } from "./handlers/internal-resolve.js";
 import { handleGetEnvironment } from "./handlers/get-environment.js";
 import { handleArchiveEnvironment } from "./handlers/archive-environment.js";
@@ -51,6 +53,18 @@ export async function route(request: Request, env: Env): Promise<Response> {
     if (url.pathname === "/v1/internal/projects/environments") {
       if (request.method !== "GET") return methodNotAllowed(requestId);
       return handleInternalListEnvironments(request, env, requestId);
+    }
+
+    // Internal seam: create-or-touch an environment on activity (OV9 liveness).
+    if (url.pathname === "/v1/internal/projects/environments/register") {
+      if (request.method !== "POST") return methodNotAllowed(requestId);
+      return handleInternalRegisterEnvironment(request, env, requestId);
+    }
+
+    // Internal seam: archive environments no longer pushed to (OV9 sweep).
+    if (url.pathname === "/v1/internal/projects/environments/archive-stale") {
+      if (request.method !== "POST") return methodNotAllowed(requestId);
+      return handleInternalArchiveStaleEnvironments(request, env, requestId);
     }
 
     // Internal seam: resolve a project by slug or id (OP4 workspace links).

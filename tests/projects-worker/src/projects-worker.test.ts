@@ -6,6 +6,8 @@ import { handleCreateEnvironment } from "@projects-worker/handlers/create-enviro
 import { handleListEnvironments } from "@projects-worker/handlers/list-environments";
 import { handleGetEnvironment } from "@projects-worker/handlers/get-environment";
 import { handleArchiveEnvironment } from "@projects-worker/handlers/archive-environment";
+import { handleInternalRegisterEnvironment } from "@projects-worker/handlers/internal-register-environment";
+import { handleInternalArchiveStaleEnvironments } from "@projects-worker/handlers/internal-archive-stale-environments";
 import { route } from "@projects-worker/router";
 import type { Env } from "@projects-worker/env";
 import type { ProjectsRepository, ProjectsResult, Project, CreateProjectInput, Environment, CreateEnvironmentInput } from "@saas/db/projects";
@@ -90,15 +92,27 @@ const fakeProject: Project = {
   archivedAt: null,
 };
 
-function createFakeProjectsRepo(overrides?: Partial<Record<keyof ProjectsRepository, unknown>>): ProjectsRepository & { createProjectCalls: unknown[][]; getProjectByIdCalls: unknown[][]; createEnvironmentCalls: unknown[][] } {
+type FakeProjectsRepo = ProjectsRepository & {
+  createProjectCalls: unknown[][];
+  getProjectByIdCalls: unknown[][];
+  createEnvironmentCalls: unknown[][];
+  registerEnvironmentActivityCalls: unknown[][];
+  archiveStaleEnvironmentsCalls: unknown[][];
+};
+
+function createFakeProjectsRepo(overrides?: Partial<Record<keyof ProjectsRepository, unknown>>): FakeProjectsRepo {
   const createProjectCalls: unknown[][] = [];
   const getProjectByIdCalls: unknown[][] = [];
   const createEnvironmentCalls: unknown[][] = [];
+  const registerEnvironmentActivityCalls: unknown[][] = [];
+  const archiveStaleEnvironmentsCalls: unknown[][] = [];
 
-  const repo: ProjectsRepository & { createProjectCalls: unknown[][]; getProjectByIdCalls: unknown[][]; createEnvironmentCalls: unknown[][] } = {
+  const repo: FakeProjectsRepo = {
     createProjectCalls,
     getProjectByIdCalls,
     createEnvironmentCalls,
+    registerEnvironmentActivityCalls,
+    archiveStaleEnvironmentsCalls,
     async createProject(input: CreateProjectInput): Promise<ProjectsResult<Project>> {
       createProjectCalls.push([input]);
       return { ok: true, value: { ...fakeProject, id: input.id, name: input.name, slug: input.slug, slugLower: input.slugLower } };
@@ -120,6 +134,14 @@ function createFakeProjectsRepo(overrides?: Partial<Record<keyof ProjectsReposit
     async getEnvironmentBySlug() { return { ok: false as const, error: { kind: "not_found" as const } }; },
     async listEnvironmentsPaged() { return { ok: true, value: { items: [], nextCursor: null } }; },
     async archiveEnvironment() { return { ok: false as const, error: { kind: "not_found" as const } }; },
+    async registerEnvironmentActivity(input: unknown) {
+      registerEnvironmentActivityCalls.push([input]);
+      return { ok: true as const, value: { environment: fakeEnvironment, created: true } };
+    },
+    async archiveStaleEnvironments(cutoff: unknown, archivedAt: unknown, limit: unknown) {
+      archiveStaleEnvironmentsCalls.push([cutoff, archivedAt, limit]);
+      return { ok: true as const, value: [] as Environment[] };
+    },
   };
 
   if (overrides) {
@@ -1332,6 +1354,7 @@ const fakeEnvironment: Environment = {
   createdAt: new Date("2026-01-01T00:00:00Z"),
   updatedAt: new Date("2026-01-01T00:00:00Z"),
   archivedAt: null,
+  lastActiveAt: new Date("2026-01-01T00:00:00Z"),
 };
 
 describe("handleCreateEnvironment", () => {
@@ -2390,5 +2413,164 @@ describe("handleArchiveEnvironment", () => {
     expect(payloadStr).not.toContain(TEST_ORG_UUID);
     expect(payloadStr).not.toContain(TEST_PROJECT_UUID);
     expect(payloadStr).not.toContain(TEST_ENVIRONMENT_UUID);
+  });
+});
+
+// OV9 — environment lifecycle: the internal (service-binding) activity touch and
+// the stale-archival sweep. No actor/policy; driven by platform workers.
+describe("internal environment lifecycle (OV9)", () => {
+  function internalReq(path: string, body?: unknown): Request {
+    const init: RequestInit = { method: "POST", headers: { "content-type": "application/json" } };
+    if (body !== undefined) init.body = JSON.stringify(body);
+    return new Request(`https://projects-worker${path}`, init);
+  }
+
+  describe("register (create-or-touch on activity)", () => {
+    it("creates a fresh environment and emits environment.created (system actor)", async () => {
+      const env = createFakeEnv();
+      const projectsRepo = createFakeProjectsRepo();
+      const eventsRepo = createFakeEventsRepo();
+      const res = await handleInternalRegisterEnvironment(
+        internalReq("/v1/internal/projects/environments/register", {
+          orgId: TEST_ORG_UUID,
+          projectId: TEST_PROJECT_UUID,
+          name: "Production",
+        }),
+        env,
+        "req_test",
+        { projectsRepo, eventsRepo },
+      );
+      expect(res.status).toBe(200);
+      const json = (await res.json()) as { data: { created: boolean; environment: { slug: string } } };
+      expect(json.data.created).toBe(true);
+      expect(projectsRepo.registerEnvironmentActivityCalls.length).toBe(1);
+      expect(eventsRepo.appendEventWithAuditCalls.length).toBe(1);
+      const event = (eventsRepo.appendEventWithAuditCalls[0]![0] as AppendEventWithAuditInput).event;
+      expect(event.type).toBe("environment.created");
+      expect(event.actorType).toBe("system");
+    });
+
+    it("touches an existing environment without emitting an event", async () => {
+      const env = createFakeEnv();
+      const projectsRepo = createFakeProjectsRepo({
+        registerEnvironmentActivity: async () => ({
+          ok: true as const,
+          value: { environment: fakeEnvironment, created: false },
+        }),
+      });
+      const eventsRepo = createFakeEventsRepo();
+      const res = await handleInternalRegisterEnvironment(
+        internalReq("/v1/internal/projects/environments/register", {
+          orgId: TEST_ORG_UUID,
+          projectId: TEST_PROJECT_UUID,
+          name: "Production",
+        }),
+        env,
+        "req_test",
+        { projectsRepo, eventsRepo },
+      );
+      expect(res.status).toBe(200);
+      const json = (await res.json()) as { data: { created: boolean } };
+      expect(json.data.created).toBe(false);
+      expect(eventsRepo.appendEventWithAuditCalls.length).toBe(0);
+    });
+
+    it("400s on a non-UUID org/project id", async () => {
+      const env = createFakeEnv();
+      const res = await handleInternalRegisterEnvironment(
+        internalReq("/v1/internal/projects/environments/register", {
+          orgId: "not-a-uuid",
+          projectId: TEST_PROJECT_UUID,
+          name: "Production",
+        }),
+        env,
+        "req_test",
+        { projectsRepo: createFakeProjectsRepo(), eventsRepo: createFakeEventsRepo() },
+      );
+      expect(res.status).toBe(400);
+    });
+
+    it("422s on a missing name", async () => {
+      const env = createFakeEnv();
+      const res = await handleInternalRegisterEnvironment(
+        internalReq("/v1/internal/projects/environments/register", {
+          orgId: TEST_ORG_UUID,
+          projectId: TEST_PROJECT_UUID,
+        }),
+        env,
+        "req_test",
+        { projectsRepo: createFakeProjectsRepo(), eventsRepo: createFakeEventsRepo() },
+      );
+      expect(res.status).toBe(422);
+    });
+
+    it("405s on GET (route wiring)", async () => {
+      const env = createFakeEnv();
+      const res = await route(makeRequest("GET", "/v1/internal/projects/environments/register"), env);
+      expect(res.status).toBe(405);
+    });
+  });
+
+  describe("archive-stale (sweep)", () => {
+    const stagingEnv: Environment = { ...fakeEnvironment, id: "44444444-4444-4444-8444-444444444444", name: "Staging" };
+
+    it("archives stale environments and emits environment.archived per row (system actor)", async () => {
+      const env = createFakeEnv();
+      const projectsRepo = createFakeProjectsRepo({
+        archiveStaleEnvironments: async () => ({ ok: true as const, value: [fakeEnvironment, stagingEnv] }),
+      });
+      const eventsRepo = createFakeEventsRepo();
+      const res = await handleInternalArchiveStaleEnvironments(
+        internalReq("/v1/internal/projects/environments/archive-stale", { olderThanDays: 30 }),
+        env,
+        "req_test",
+        { projectsRepo, eventsRepo },
+      );
+      expect(res.status).toBe(200);
+      const json = (await res.json()) as { data: { archived: number; environmentIds: string[] } };
+      expect(json.data.archived).toBe(2);
+      expect(json.data.environmentIds).toHaveLength(2);
+      expect(eventsRepo.appendEventWithAuditCalls.length).toBe(2);
+      const event = (eventsRepo.appendEventWithAuditCalls[0]![0] as AppendEventWithAuditInput).event;
+      expect(event.type).toBe("environment.archived");
+      expect(event.actorType).toBe("system");
+    });
+
+    it("returns archived=0 and emits no events when nothing is stale", async () => {
+      const env = createFakeEnv();
+      const projectsRepo = createFakeProjectsRepo();
+      const eventsRepo = createFakeEventsRepo();
+      const res = await handleInternalArchiveStaleEnvironments(
+        internalReq("/v1/internal/projects/environments/archive-stale", {}),
+        env,
+        "req_test",
+        { projectsRepo, eventsRepo },
+      );
+      expect(res.status).toBe(200);
+      const json = (await res.json()) as { data: { archived: number } };
+      expect(json.data.archived).toBe(0);
+      expect(eventsRepo.appendEventWithAuditCalls.length).toBe(0);
+    });
+
+    it("clamps an out-of-range limit before querying", async () => {
+      const env = createFakeEnv();
+      const projectsRepo = createFakeProjectsRepo();
+      const eventsRepo = createFakeEventsRepo();
+      await handleInternalArchiveStaleEnvironments(
+        internalReq("/v1/internal/projects/environments/archive-stale", { limit: 999999, olderThanDays: 0 }),
+        env,
+        "req_test",
+        { projectsRepo, eventsRepo },
+      );
+      expect(projectsRepo.archiveStaleEnvironmentsCalls.length).toBe(1);
+      const [, , limit] = projectsRepo.archiveStaleEnvironmentsCalls[0]!;
+      expect(limit).toBe(1000); // MAX_LIMIT
+    });
+
+    it("405s on GET (route wiring)", async () => {
+      const env = createFakeEnv();
+      const res = await route(makeRequest("GET", "/v1/internal/projects/environments/archive-stale"), env);
+      expect(res.status).toBe(405);
+    });
   });
 });
