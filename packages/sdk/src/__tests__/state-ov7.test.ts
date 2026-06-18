@@ -83,4 +83,16 @@ describe("StateClient — project runs (OV7)", () => {
     await client(fetch).state.listRuns("org_1", "prj_2");
     expect(calls[0]!.url).toBe("https://api.test/v1/organizations/org_1/projects/prj_2/state/runs");
   });
+
+  it("gets one run by id", async () => {
+    const { fetch, calls } = captureFetch(jsonResponse(envelope({ run: { runId: "01J0" } })));
+    await client(fetch).state.getRun("org_1", "prj_2", "01J0");
+    expect(calls[0]!.url).toBe("https://api.test/v1/organizations/org_1/projects/prj_2/state/runs/01J0");
+  });
+
+  it("lists a run's jobs", async () => {
+    const { fetch, calls } = captureFetch(jsonResponse(envelope({ jobs: [] })));
+    await client(fetch).state.listRunJobs("org_1", "prj_2", "01J0");
+    expect(calls[0]!.url).toBe("https://api.test/v1/organizations/org_1/projects/prj_2/state/runs/01J0/jobs");
+  });
 });

@@ -7,6 +7,7 @@
 
 import * as React from "react";
 import { useParams } from "next/navigation";
+import Link from "next/link";
 import { Play } from "lucide-react";
 import type { Run, RunStatus, StateCursor } from "@saas/contracts/state";
 import { OrgScope } from "@/components/shell/org-scope";
@@ -53,11 +54,14 @@ export default function RunsPage() {
   const params = useParams<{ orgSlug: string; projectSlug: string }>();
   const orgSlug = params?.orgSlug ?? "";
   const projectSlug = params?.projectSlug ?? "";
-  return <OrgScope slug={orgSlug}>{(org) => <Inner orgId={org.id} projectSlug={projectSlug} />}</OrgScope>;
+  return (
+    <OrgScope slug={orgSlug}>{(org) => <Inner orgId={org.id} orgSlug={orgSlug} projectSlug={projectSlug} />}</OrgScope>
+  );
 }
 
-function Inner({ orgId, projectSlug }: { orgId: string; projectSlug: string }) {
+function Inner({ orgId, orgSlug, projectSlug }: { orgId: string; orgSlug: string; projectSlug: string }) {
   const { client } = useSession();
+  const runHref = (runId: string) => `/orgs/${orgSlug}/projects/${projectSlug}/runs/${runId}`;
 
   const projectsList = useApiQuery(qk.projects(orgId), () =>
     wrap(async () => (await client.projects.list(orgId)).projects),
@@ -200,7 +204,9 @@ function Inner({ orgId, projectSlug }: { orgId: string; projectSlug: string }) {
               <Card key={r.runId} className="space-y-2 p-4">
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0 space-y-1">
-                    <div className="break-all font-mono text-xs">{r.runId}</div>
+                    <Link href={runHref(r.runId)} className="block break-all font-mono text-xs hover:underline">
+                      {r.runId}
+                    </Link>
                     <div className="text-[11px] text-muted-foreground">{new Date(r.createdAt).toLocaleString()}</div>
                   </div>
                   <Badge variant={statusVariant(r.status)}>{r.status}</Badge>
@@ -232,7 +238,11 @@ function Inner({ orgId, projectSlug }: { orgId: string; projectSlug: string }) {
               <TableBody>
                 {runs.map((r) => (
                   <TableRow key={r.runId}>
-                    <TableCell className="font-mono text-xs">{r.runId}</TableCell>
+                    <TableCell className="font-mono text-xs">
+                      <Link href={runHref(r.runId)} className="hover:underline">
+                        {r.runId}
+                      </Link>
+                    </TableCell>
                     <TableCell>
                       <Badge variant={statusVariant(r.status)}>{r.status}</Badge>
                     </TableCell>
