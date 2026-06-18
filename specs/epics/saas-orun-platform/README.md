@@ -15,7 +15,7 @@ unilaterally.
 
 | Field | Value |
 |-------|-------|
-| Status | **In progress** — OP0–OP4 shipped. **v2 proposed** ([`design-v2.md`](./design-v2.md) + [`implementation-plan-v2.md`](./implementation-plan-v2.md)) re-anchors OP5+ on the object-model `ModelReader` seam, materialized tenancy (project == repo), credential-agnostic CI auth, and the GitHub App bridge; v2 milestones are **OV1–OV9** plus integrations **IG8–IG9** ([`../saas-integrations/bridge-to-state.md`](../saas-integrations/bridge-to-state.md)). |
+| Status | **In progress** — OP0–OP4 substrate + **v2 OV1–OV7 & OV9 shipped** ([`design-v2.md`](./design-v2.md) + [`implementation-plan-v2.md`](./implementation-plan-v2.md)): the object-model `ModelReader` seam, materialized tenancy (project == repo), credential-agnostic CI auth, the GitHub App bridge (write-back live path gated on IG D1), the org-global catalog + Runs/Stacks console, and metering/retention (env-lifecycle archival, usage visibility, over-quota 412 off-by-default, object-GC report-only). **Remaining:** OV8 secrets (deferred — canonical `orun-secrets` epic) and the OV9 object-GC **deletion** path (only reporting shipped). |
 | Cluster | **OP** (OP0–OP9) |
 | Owner(s) | new `state-worker`, identity-worker, config-worker, api-edge, db, contracts/sdk, web-console-next, infra/terraform |
 | Target branch | `main` (PRs merged incrementally, milestone-sized) |
@@ -83,15 +83,15 @@ shipped substrate.
 
 | ID | Milestone | Status |
 |----|-----------|--------|
-| OV1 | ModelReader read seam (cloud = hosted ObjectStore + RefStore + index) | 🗓️ Proposed |
-| OV2 | Materialized tenancy (project == repo bijection, env upsert) | 🗓️ Proposed |
-| OV3 | Credential-agnostic CI auth (OIDC + `sk_` key → one ActorContext) | 🗓️ Proposed |
-| OV4 | GitHub App bridge: inbound `scm.*` ingestion → object graph | 🗓️ Proposed |
-| OV5 | GitHub App bridge: outbound write-back (checks/deployments) | 🗓️ Proposed |
-| OV6 | Org-global catalog projection (repo/env as facets) | 🗓️ Proposed |
-| OV7 | Console: Runs & Stacks over ModelReader | 🗓️ Proposed |
-| OV8 | Secrets — Orun Cloud slice of the canonical `orun-secrets` epic (SEC) | 🗓️ Proposed |
-| OV9 | Metering, entitlements, retention/GC | 🗓️ Proposed |
+| OV1 | ModelReader read seam (cloud = hosted ObjectStore + RefStore + index) | ✅ Done (#80) |
+| OV2 | Materialized tenancy (project == repo bijection, env upsert) | ✅ Done (#81, #87) |
+| OV3 | Credential-agnostic CI auth (OIDC + `sk_` key → one ActorContext) | ✅ Done (#82–#84) |
+| OV4 | GitHub App bridge: inbound `scm.*` ingestion → object graph | ✅ Done (#85, #86) |
+| OV5 | GitHub App bridge: outbound write-back (checks/deployments) | ✅ Done — worker-side; live path gated on IG D1 (GitHub App registration) |
+| OV6 | Org-global catalog projection (repo/env as facets) | ✅ Done (#93–#95) |
+| OV7 | Console: Runs & Stacks over ModelReader | ✅ Done (#96–#104) |
+| OV8 | Secrets — Orun Cloud slice of the canonical `orun-secrets` epic (SEC) | 🗓️ Deferred — canonical design reconciled (#72); platform slice not yet built |
+| OV9 | Metering, entitlements, retention/GC | ✅ Done (#105–#112) — env-lifecycle archival, metering visibility (flow + stock), over-quota 412 (off by default), object-GC **report-only** (deletion path deliberately deferred) |
 
 Paired integrations bridge: **IG8–IG9**
 ([`../saas-integrations/bridge-to-state.md`](../saas-integrations/bridge-to-state.md)).

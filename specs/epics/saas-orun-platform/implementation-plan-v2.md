@@ -1,10 +1,14 @@
 # Orun Cloud v2 — implementation plan
 
-> Status: Proposed. Supersedes the OP5+ milestones of `implementation-plan.md`.
-> OP0–OP4 stay shipped; v2 milestones are numbered **OV1–OV9** to avoid
-> collision. Each is a PR-sized coherent unit; the Orchestrator sequences them.
-> Stage is the integration environment; CLI-side gates verify against a real
-> `orun` binary from `orun/specs/orun-cloud/` (milestones OCv2).
+> Status: **In progress** — OV1–OV7 & OV9 shipped (see the milestone table in
+> [`README.md`](./README.md) for per-milestone PRs). Remaining: **OV8** secrets
+> (deferred to the canonical `orun-secrets` epic) and the **OV9 object-GC
+> deletion** path (only the report-only reachability surface shipped).
+> Supersedes the OP5+ milestones of `implementation-plan.md`. OP0–OP4 stay
+> shipped; v2 milestones are numbered **OV1–OV9** to avoid collision. Each is a
+> PR-sized coherent unit; the Orchestrator sequences them. Stage is the
+> integration environment; CLI-side gates verify against a real `orun` binary
+> from `orun/specs/orun-cloud/` (milestones OCv2).
 
 ## Substrate (unchanged, shipped)
 
