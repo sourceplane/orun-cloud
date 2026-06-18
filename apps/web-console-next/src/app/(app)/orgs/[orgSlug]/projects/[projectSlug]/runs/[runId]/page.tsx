@@ -260,7 +260,15 @@ function Inner({
   );
 }
 
-/** A job's assembled logs with manual live-tail (re-fetch from the nextSeq cursor). */
+/** How often live-tail polls the log tail while a job is still producing output. */
+const LOG_TAIL_INTERVAL_MS = 3000;
+
+/**
+ * A job's assembled logs with live-tail. The initial load replaces; subsequent
+ * fetches append from the server's nextSeq cursor. While the log is incomplete
+ * and auto-tail is on, it polls the tail every few seconds (silently, so the
+ * panel doesn't flicker); it stops the moment the server reports `complete`.
+ */
 function JobLogs({
   orgId,
   projectId,
@@ -279,12 +287,18 @@ function JobLogs({
   const [nextSeq, setNextSeq] = React.useState(0);
   const [complete, setComplete] = React.useState(false);
   const [loading, setLoading] = React.useState(true);
+  const [autoTail, setAutoTail] = React.useState(true);
   const [error, setError] = React.useState<{ code: string; message: string } | null>(null);
+  // Guards against overlapping fetches if one tick's request outlives the interval.
+  const inFlight = React.useRef(false);
 
-  // Fetch from `seq`; reset replaces (initial load), else append (tail).
+  // Fetch from `seq`; reset replaces (initial load), else append (tail). `silent`
+  // skips the loading flag so the periodic tail doesn't visibly flicker.
   const fetchFrom = React.useCallback(
-    async (seq: number, reset: boolean) => {
-      setLoading(true);
+    async (seq: number, reset: boolean, silent = false) => {
+      if (inFlight.current) return;
+      inFlight.current = true;
+      if (!silent) setLoading(true);
       const res = await wrap(() => client.state.readRunJobLogs(orgId, projectId, runId, jobId, seq));
       if (res.ok) {
         setContent((prev) => (reset ? res.data.content : prev + res.data.content));
@@ -294,7 +308,8 @@ function JobLogs({
       } else {
         setError({ code: res.error.code, message: res.error.message });
       }
-      setLoading(false);
+      if (!silent) setLoading(false);
+      inFlight.current = false;
     },
     [client, orgId, projectId, runId, jobId],
   );
@@ -302,8 +317,17 @@ function JobLogs({
   // Reload from the start whenever the selected job changes.
   React.useEffect(() => {
     setContent("");
+    setComplete(false);
+    setAutoTail(true);
     void fetchFrom(0, true);
   }, [fetchFrom]);
+
+  // Live-tail: while incomplete and auto-tail is on, poll the tail silently.
+  React.useEffect(() => {
+    if (!autoTail || complete) return;
+    const id = setInterval(() => void fetchFrom(nextSeq, false, true), LOG_TAIL_INTERVAL_MS);
+    return () => clearInterval(id);
+  }, [autoTail, complete, nextSeq, fetchFrom]);
 
   return (
     <Card>
@@ -313,9 +337,19 @@ function JobLogs({
           {complete ? (
             <Badge variant="secondary">complete</Badge>
           ) : (
-            <Button size="sm" variant="outline" onClick={() => void fetchFrom(nextSeq, false)} loading={loading}>
-              Refresh
-            </Button>
+            <>
+              <Button
+                size="sm"
+                variant={autoTail ? "secondary" : "outline"}
+                onClick={() => setAutoTail((on) => !on)}
+                title={autoTail ? "Pause live tail" : "Resume live tail"}
+              >
+                {autoTail ? "Live" : "Paused"}
+              </Button>
+              <Button size="sm" variant="outline" onClick={() => void fetchFrom(nextSeq, false)} loading={loading}>
+                Refresh
+              </Button>
+            </>
           )}
           <Button size="sm" variant="ghost" onClick={onClose}>
             Close
