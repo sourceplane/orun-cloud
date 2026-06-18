@@ -76,9 +76,16 @@ describe("state facade — route matching", () => {
     expect(isStateRoute(`${base}/catalog/heads/history`)).toBe(true);
   });
 
+  it("matches the OV6 org-global catalog browser (org-scoped, no project)", () => {
+    expect(isStateRoute("/v1/organizations/org_x/catalog/entities")).toBe(true);
+  });
+
   it("does not match unrelated project routes", () => {
     expect(isStateRoute("/v1/organizations/org_x/projects/prj_y/environments")).toBe(false);
     expect(isStateRoute("/v1/organizations/org_x/projects/prj_y")).toBe(false);
+    // The catalog browser is exactly /catalog/entities — not a broader prefix.
+    expect(isStateRoute("/v1/organizations/org_x/catalog")).toBe(false);
+    expect(isStateRoute("/v1/organizations/org_x/catalog/entities/extra")).toBe(false);
   });
 });
 
