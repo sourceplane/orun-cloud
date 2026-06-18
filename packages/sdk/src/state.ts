@@ -5,6 +5,8 @@ import type {
   WorkspaceLink,
   ListOrgCatalogEntitiesResponse,
   ListRunsResponse,
+  GetRunResponse,
+  ListJobsResponse,
 } from "@saas/contracts/state";
 
 import type { Transport, RequestOptions } from "./transport.js";
@@ -169,6 +171,38 @@ export class StateClient {
           cursor: query.cursor,
           limit: query.limit,
         },
+      },
+      opts,
+    );
+  }
+
+  /** GET …/state/runs/:runId — one run's projection (OV7 run detail). */
+  getRun(
+    orgId: string,
+    projectId: string,
+    runId: string,
+    opts: RequestOptions = {},
+  ): Promise<GetRunResponse> {
+    return this.transport.request<GetRunResponse>(
+      {
+        method: "GET",
+        path: `/v1/organizations/${encodeURIComponent(orgId)}/projects/${encodeURIComponent(projectId)}/state/runs/${encodeURIComponent(runId)}`,
+      },
+      opts,
+    );
+  }
+
+  /** GET …/state/runs/:runId/jobs — the run's plan-DAG jobs (OV7 run detail). */
+  listRunJobs(
+    orgId: string,
+    projectId: string,
+    runId: string,
+    opts: RequestOptions = {},
+  ): Promise<ListJobsResponse> {
+    return this.transport.request<ListJobsResponse>(
+      {
+        method: "GET",
+        path: `/v1/organizations/${encodeURIComponent(orgId)}/projects/${encodeURIComponent(projectId)}/state/runs/${encodeURIComponent(runId)}/jobs`,
       },
       opts,
     );
