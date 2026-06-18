@@ -418,6 +418,12 @@ export interface ListOrgCatalogEntitiesQuery {
   q?: string;
 }
 
+/** Current state-plane storage footprint for an org (OV9), a live STOCK count. */
+export interface StateStorageUsage {
+  objects: { count: number; bytes: number };
+  logs: { count: number; bytes: number };
+}
+
 // ── Workspace links ─────────────────────────────────────────
 
 export type WorkspaceLinkStatus = "active" | "unlinked";
@@ -667,6 +673,13 @@ export interface StateRepository {
     sourceProjectId: Uuid,
     sourceEnvironment: string | null,
   ): Promise<StateResult<number>>;
+
+  /**
+   * Current state-plane storage footprint for an org (OV9): live object + log
+   * counts and byte sums from the indexes. A STOCK gauge (distinct from the
+   * metering FLOW metrics) — the basis for storage quotas.
+   */
+  getOrgStateStorage(orgId: Uuid): Promise<StateResult<StateStorageUsage>>;
 
   // Refs (hosted RefStore — L2 mutable CAS pointers; OV1)
   /** Read one ref by name (current target). */

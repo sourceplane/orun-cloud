@@ -136,3 +136,37 @@ describe("StateRepository org-global catalog (OV6)", () => {
     expect(rows.size).toBe(1); // the prod-scoped entity survives
   });
 });
+
+// OV9 — the org state-plane storage footprint (STOCK aggregates).
+function storageExecutor(objects: Record<string, unknown>, logs: Record<string, unknown>): SqlExecutor {
+  return {
+    execute<T extends SqlRow = SqlRow>(text: string): Promise<SqlExecutorResult<T>> {
+      const row = text.includes("FROM state.objects") ? objects : text.includes("FROM state.log_chunks") ? logs : {};
+      return Promise.resolve({ rows: [row] as unknown as T[], rowCount: 1 });
+    },
+  } as unknown as SqlExecutor;
+}
+
+describe("StateRepository.getOrgStateStorage (OV9)", () => {
+  it("aggregates object + log counts and bytes, coercing pg bigint strings", async () => {
+    const repo = createStateRepository(
+      storageExecutor({ count: "12", bytes: "204800" }, { count: 3, bytes: BigInt(5120) }),
+    );
+    const res = await repo.getOrgStateStorage(asUuid(ORG));
+    expect(res.ok).toBe(true);
+    if (res.ok) {
+      expect(res.value.objects).toEqual({ count: 12, bytes: 204800 });
+      expect(res.value.logs).toEqual({ count: 3, bytes: 5120 });
+    }
+  });
+
+  it("defaults missing/negative aggregates to zero", async () => {
+    const repo = createStateRepository(storageExecutor({ count: null, bytes: -1 }, {}));
+    const res = await repo.getOrgStateStorage(asUuid(ORG));
+    expect(res.ok).toBe(true);
+    if (res.ok) {
+      expect(res.value.objects).toEqual({ count: 0, bytes: 0 });
+      expect(res.value.logs).toEqual({ count: 0, bytes: 0 });
+    }
+  });
+});

@@ -4,6 +4,7 @@ import type {
   ResolveWorkspaceLinksResponse,
   WorkspaceLink,
   ListOrgCatalogEntitiesResponse,
+  GetStateStorageResponse,
   ListRunsResponse,
   GetRunResponse,
   ListJobsResponse,
@@ -146,6 +147,21 @@ export class StateClient {
           cursor: query.cursor,
           limit: query.limit,
         },
+      },
+      opts,
+    );
+  }
+
+  /**
+   * GET /v1/organizations/:orgId/state/usage — the org's current state-plane
+   * storage footprint (OV9): live object + log-chunk counts and bytes. A STOCK
+   * gauge (distinct from the metering FLOW metrics). Policy: catalog.read.
+   */
+  getStateStorage(orgId: string, opts: RequestOptions = {}): Promise<GetStateStorageResponse> {
+    return this.transport.request<GetStateStorageResponse>(
+      {
+        method: "GET",
+        path: `/v1/organizations/${encodeURIComponent(orgId)}/state/usage`,
       },
       opts,
     );

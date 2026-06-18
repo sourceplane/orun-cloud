@@ -34,6 +34,7 @@ import {
   handleListCatalogEntities,
   handleListOrgCatalogEntities,
 } from "./handlers/catalog.js";
+import { handleGetOrgStateStorage } from "./handlers/state-usage.js";
 import {
   handleGetRef,
   handleUpdateRef,
@@ -122,6 +123,8 @@ const CATALOG_HEADS_HISTORY_RE = new RegExp(`^${STATE_BASE}/catalog/heads/histor
 const CATALOG_ENTITIES_RE = new RegExp(`^${STATE_BASE}/catalog/entities$`);
 // OV6 — org-global catalog browser (no project scope): the default merged graph.
 const ORG_CATALOG_ENTITIES_RE = /^\/v1\/organizations\/([^/]+)\/catalog\/entities$/;
+// OV9 — org state-plane storage footprint (no project scope): the STOCK gauge.
+const ORG_STATE_USAGE_RE = /^\/v1\/organizations\/([^/]+)\/state\/usage$/;
 
 // OV1 — hosted RefStore (design-v2 §2). Ref names carry slashes
 // (catalogs/current, executions/by-id/<id>), so the name is a greedy tail.
@@ -200,6 +203,17 @@ export async function route(request: Request, env: Env, ctx?: ExecutionContext):
     if (!orgId) return notFound(requestId, pathname);
     if (request.method !== "GET") return methodNotAllowed(requestId);
     return handleListOrgCatalogEntities(request, env, requestId, actor, orgId);
+  }
+
+  // GET /v1/organizations/{orgId}/state/usage — org state-plane storage footprint
+  // (OV9). Org-scoped (no project); dispatched here at the top level BEFORE the
+  // `/state/`-gated project plane below (this path has no project segment).
+  m = pathname.match(ORG_STATE_USAGE_RE);
+  if (m) {
+    const orgId = parseOrgPublicId(m[1]!);
+    if (!orgId) return notFound(requestId, pathname);
+    if (request.method !== "GET") return methodNotAllowed(requestId);
+    return handleGetOrgStateStorage(request, env, requestId, actor, orgId);
   }
 
   // ── OP2 — Run coordination plane (§2). ──

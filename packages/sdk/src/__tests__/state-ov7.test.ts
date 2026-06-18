@@ -68,6 +68,25 @@ describe("StateClient — org-global catalog (OV7)", () => {
   });
 });
 
+describe("StateClient — state storage footprint (OV9)", () => {
+  it("GETs the org-scoped state usage endpoint", async () => {
+    const { fetch, calls } = captureFetch(
+      jsonResponse(envelope({ usage: { objects: { count: 1, bytes: 2 }, logs: { count: 3, bytes: 4 } } })),
+    );
+    const out = await client(fetch).state.getStateStorage("org_1");
+    expect(calls[0]!.url).toBe("https://api.test/v1/organizations/org_1/state/usage");
+    expect(out.usage.objects.bytes).toBe(2);
+  });
+
+  it("encodeURIComponent-escapes the org id", async () => {
+    const { fetch, calls } = captureFetch(
+      jsonResponse(envelope({ usage: { objects: { count: 0, bytes: 0 }, logs: { count: 0, bytes: 0 } } })),
+    );
+    await client(fetch).state.getStateStorage("org/with slash");
+    expect(calls[0]!.url).toContain("/v1/organizations/org%2Fwith%20slash/state/usage");
+  });
+});
+
 describe("StateClient — project runs (OV7)", () => {
   it("lists the project-scoped runs path with status/environment filters", async () => {
     const { fetch, calls } = captureFetch(jsonResponse(envelope({ runs: [], nextCursor: null })));
