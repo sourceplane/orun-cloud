@@ -33,7 +33,9 @@ import {
   type RunStatus,
 } from "@saas/db/state";
 import { createEventsRepository } from "@saas/db/events";
+import { createMeteringRepository } from "@saas/db/metering";
 import { createSqlExecutor, type SqlExecutor } from "@saas/db/hyperdrive";
+import { emitUsage, STATE_METRICS } from "../metering.js";
 import { asUuid, type Uuid } from "@saas/db/ids";
 import { errorResponse, listResponse, successResponse, validationError } from "../http.js";
 import { generateUuid, isRunUlid } from "../ids.js";
@@ -237,6 +239,32 @@ export async function handleCreateRun(
       return successResponse(payload, requestId, 200);
     }
 
+    // ── Over-quota gate (OV9, OFF by default). Block a new run ONLY when a HARD
+    //    state.runs quota is configured AND exceeded; a soft quota or no quota
+    //    passes (the metering-worker records the soft-violation trail). Fail-OPEN
+    //    on any error — a quota-check failure must never block a run. Replays
+    //    short-circuited above are never gated. ──
+    try {
+      const quota = await createMeteringRepository(executor).checkQuota(orgPublicId(orgId), STATE_METRICS.RUNS);
+      if (quota.ok && !quota.value.allowed && quota.value.enforcement === "hard") {
+        return errorResponse(
+          "precondition_failed",
+          `Run quota reached (${quota.value.used}/${quota.value.limit} per ${quota.value.period}). Upgrade your plan to start more runs.`,
+          412,
+          requestId,
+          {
+            reason: "quota_exceeded",
+            metric: STATE_METRICS.RUNS,
+            limit: quota.value.limit,
+            used: quota.value.used,
+            period: quota.value.period,
+          },
+        );
+      }
+    } catch {
+      // Fail-open: never block a run on a quota-check failure.
+    }
+
     // ── Plan-digest existence in the object plane → else 412 object_missing.
     //    (OP3 lands objects; runs created before OP3 will 412 — expected.) ──
     const planObject = await repo.getObject(orgId, projectId, planDigest);
@@ -291,6 +319,17 @@ export async function handleCreateRun(
     }
 
     const run = created.value.run;
+
+    // ── Meter the run (best-effort; feeds the state.runs usage + quota gate).
+    //    Idempotent on the ULID, so a replayed create never double-counts. ──
+    await emitUsage({
+      executor,
+      orgPublicId: orgPublicId(orgId),
+      projectPublicId: projectPublicId(projectId),
+      metric: STATE_METRICS.RUNS,
+      quantity: 1,
+      idempotencySeed: run.runUlid,
+    });
 
     // ── Persist the plan DAG as run_jobs. ──
     if (planJobs && planJobs.length > 0) {

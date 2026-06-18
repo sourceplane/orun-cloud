@@ -19,6 +19,8 @@ export const STATE_METRICS = {
   LOG_BYTES: "state.log_bytes",
   OBJECT_BYTES: "state.object_bytes",
   OBJECT_COUNT: "state.object_count",
+  /** Count of runs created — metered, and the over-quota gate's metric (OV9). */
+  RUNS: "state.runs",
 } as const;
 
 export interface EmitUsageInput {

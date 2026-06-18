@@ -176,6 +176,45 @@ describe("POST …/state/runs — create", () => {
     expect(body.meta.cursor).toBeNull();
   });
 
+  it("blocks a new run with 412 when a HARD state.runs quota is exceeded (OV9)", async () => {
+    const { executor } = fakeExecutor((text) => {
+      if (text.startsWith("SELECT * FROM state.runs WHERE org_id = $1 AND project_id = $2 AND run_ulid")) return []; // not a replay
+      if (text.includes("metering.quota_definitions")) return [{ limit_value: 10, period: "month", enforcement: "hard" }];
+      if (text.includes("FROM metering.usage_records")) return [{ total: 10 }]; // used == limit → over
+      return [];
+    });
+    const req = new Request("https://state.test/v1/organizations/x/projects/y/state/runs", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ runId: ULID, planDigest: PLAN, source: "cli", git: { commit: "abc", ref: "refs/heads/main", dirty: false } }),
+    });
+    const res = await handleCreateRun(req, createEnv(), "req_1", ACTOR, asUuid(ORG), asUuid(PROJECT), { executor });
+    expect(res.status).toBe(412);
+    const body = (await res.json()) as { error: { code: string; details?: { reason?: string; metric?: string } } };
+    expect(body.error.code).toBe("precondition_failed");
+    expect(body.error.details?.reason).toBe("quota_exceeded");
+    expect(body.error.details?.metric).toBe("state.runs");
+  });
+
+  it("does NOT block on a SOFT over-quota (the violation is tracked, the run proceeds)", async () => {
+    const { executor } = fakeExecutor((text) => {
+      if (text.includes("FROM state.objects")) return [{ id: "obj", org_id: ORG, project_id: PROJECT, digest: PLAN, kind: "plan", size_bytes: 10, created_by: null, created_by_kind: null, created_at: NOW.toISOString() }];
+      if (text.includes("INSERT INTO state.runs")) return [runRow()];
+      if (text.startsWith("SELECT * FROM state.runs WHERE org_id = $1 AND project_id = $2 AND run_ulid")) return []; // not a replay
+      if (text.includes("metering.quota_definitions")) return [{ limit_value: 1, period: "month", enforcement: "soft" }];
+      if (text.includes("FROM metering.usage_records")) return [{ total: 99 }]; // way over, but soft
+      if (text.includes("COUNT(*) FILTER")) return [COUNTS];
+      return [{ _event: {}, _audit: {} }];
+    });
+    const req = new Request("https://state.test/v1/organizations/x/projects/y/state/runs", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ runId: ULID, planDigest: PLAN, source: "cli", git: { commit: "abc", ref: "refs/heads/main", dirty: false } }),
+    });
+    const res = await handleCreateRun(req, createEnv(), "req_1", ACTOR, asUuid(ORG), asUuid(PROJECT), { executor });
+    expect(res.status).toBe(201);
+  });
+
   it("replays an existing run with 200 (not 409)", async () => {
     const { executor } = fakeExecutor((text) => {
       if (text.startsWith("SELECT * FROM state.runs WHERE org_id = $1 AND project_id = $2 AND run_ulid")) return [runRow({ status: "running" })];
