@@ -33,6 +33,17 @@ export const RANGE_PRESETS: { value: RangePreset; label: string; hours: number }
   { value: "90d", label: "Last 90 days", hours: 24 * 90 },
 ];
 
+/**
+ * State-plane metric keys the state-worker emits per push (saas-orun-platform
+ * OV9; `apps/state-worker/src/metering.ts`). The dedicated State-plane card
+ * reads these directly so an operator never has to know the key.
+ */
+export const STATE_USAGE_METRICS = {
+  objectCount: "state.object_count",
+  objectBytes: "state.object_bytes",
+  logBytes: "state.log_bytes",
+} as const;
+
 /** Common metric keys offered as suggestions (no list-metrics API exists). */
 export const METRIC_SUGGESTIONS = [
   "api_requests",
@@ -40,6 +51,9 @@ export const METRIC_SUGGESTIONS = [
   "bandwidth_gb",
   "storage_gb",
   "seats",
+  STATE_USAGE_METRICS.objectBytes,
+  STATE_USAGE_METRICS.objectCount,
+  STATE_USAGE_METRICS.logBytes,
 ] as const;
 
 export interface UsageFormValues {
@@ -107,6 +121,20 @@ export function formatQuantity(n: number): string {
   if (abs >= 1_000_000) return `${(n / 1_000_000).toFixed(1).replace(/\.0$/, "")}M`;
   if (abs >= 1_000) return `${(n / 1_000).toFixed(1).replace(/\.0$/, "")}k`;
   return String(n);
+}
+
+/** Human byte size (base-1024): 512 B, 1.5 KB, 3.2 MB, 1.1 GB. */
+export function formatBytes(n: number): string {
+  if (!Number.isFinite(n) || n < 0) return "—";
+  if (n < 1024) return `${Math.round(n)} B`;
+  const units = ["KB", "MB", "GB", "TB", "PB"];
+  let v = n / 1024;
+  let i = 0;
+  while (v >= 1024 && i < units.length - 1) {
+    v /= 1024;
+    i++;
+  }
+  return `${v.toFixed(v >= 100 ? 0 : 1).replace(/\.0$/, "")} ${units[i]}`;
 }
 
 /** Short local label for a bucket start, granularity-aware. */

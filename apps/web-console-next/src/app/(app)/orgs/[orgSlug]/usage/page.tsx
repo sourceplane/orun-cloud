@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { useParams } from "next/navigation";
-import { Gauge, AlertTriangle, BarChart3 } from "lucide-react";
+import { Gauge, AlertTriangle, BarChart3, Database } from "lucide-react";
 import { OrgScope } from "@/components/shell/org-scope";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -37,7 +37,9 @@ import {
   sortRollups,
   usageBarPercents,
   formatQuantity,
+  formatBytes,
   formatBucket,
+  STATE_USAGE_METRICS,
   buildViolationsQuery,
   appendViolationsPage,
   hasMoreViolations,
@@ -67,9 +69,91 @@ function Inner({ orgId }: { orgId: string }) {
           Metered consumption and quota status for this organization.
         </p>
       </header>
+      <StatePlaneUsage orgId={orgId} />
       <UsageSummary orgId={orgId} />
       <QuotaViolations orgId={orgId} />
     </div>
+  );
+}
+
+// --- State-plane usage (OV9) -------------------------------------------------
+// At-a-glance state footprint from the metrics the state-worker emits per push,
+// so an operator sees object/log volume without naming a metric key. These are
+// flow metrics (volume pushed within the window), not a live storage gauge.
+
+function StatePlaneUsage({ orgId }: { orgId: string }) {
+  const { client } = useSession();
+  const [range, setRange] = React.useState<RangePreset>("30d");
+  const [totals, setTotals] = React.useState<{ objectCount: number; objectBytes: number; logBytes: number } | null>(null);
+  const [loading, setLoading] = React.useState(true);
+  const [error, setError] = React.useState<{ code: string; message: string } | null>(null);
+
+  React.useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    setError(null);
+    const q = (metric: string) =>
+      wrap(() => client.metering.getUsageSummary(orgId, buildUsageQuery({ metric, bucketType: "day", range })));
+    void Promise.all([
+      q(STATE_USAGE_METRICS.objectCount),
+      q(STATE_USAGE_METRICS.objectBytes),
+      q(STATE_USAGE_METRICS.logBytes),
+    ]).then(([count, bytes, logs]) => {
+      if (cancelled) return;
+      const firstErr = [count, bytes, logs].find((r) => !r.ok);
+      if (firstErr && !firstErr.ok) {
+        setError({ code: firstErr.error.code, message: firstErr.error.message });
+      } else {
+        setTotals({
+          objectCount: count.ok ? count.data.totalQuantity : 0,
+          objectBytes: bytes.ok ? bytes.data.totalQuantity : 0,
+          logBytes: logs.ok ? logs.data.totalQuantity : 0,
+        });
+      }
+      setLoading(false);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [client, orgId, range]);
+
+  return (
+    <Card>
+      <CardHeader className="flex flex-row items-start justify-between gap-2 space-y-0">
+        <div>
+          <CardTitle className="text-base flex items-center gap-2">
+            <Database className="h-4 w-4 text-muted-foreground" /> State plane
+          </CardTitle>
+          <CardDescription>Objects and logs pushed to remote state in the selected window.</CardDescription>
+        </div>
+        <Select value={range} onValueChange={(v) => setRange(v as RangePreset)}>
+          <SelectTrigger className="h-8 w-[150px] text-xs"><SelectValue /></SelectTrigger>
+          <SelectContent>
+            {RANGE_PRESETS.map((p) => (
+              <SelectItem key={p.value} value={p.value}>{p.label}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </CardHeader>
+      <CardContent>
+        {loading ? (
+          <div className="flex flex-wrap gap-8">
+            {Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-12 w-28" />)}
+          </div>
+        ) : error ? (
+          <div className="rounded-md border border-destructive/40 bg-destructive/5 p-4">
+            <div className="font-medium text-destructive">{error.code}</div>
+            <div className="text-sm text-muted-foreground">{error.message}</div>
+          </div>
+        ) : totals ? (
+          <div className="flex flex-wrap gap-8">
+            <Metric label="Objects pushed" value={formatQuantity(totals.objectCount)} />
+            <Metric label="Object volume" value={formatBytes(totals.objectBytes)} />
+            <Metric label="Log volume" value={formatBytes(totals.logBytes)} />
+          </div>
+        ) : null}
+      </CardContent>
+    </Card>
   );
 }
 
