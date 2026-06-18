@@ -18,6 +18,7 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { EmptyState } from "@/components/ui/empty-state";
 import { wrap } from "@/lib/api";
+import { formatTimestamp } from "@/lib/format";
 import { useSession } from "@/lib/session";
 import { useApiQuery, qk } from "@/lib/query";
 
@@ -51,9 +52,7 @@ function jobStatusVariant(status: RunJobStatus): "success" | "destructive" | "wa
   }
 }
 
-function fmt(iso: string | null): string {
-  return iso ? new Date(iso).toLocaleString() : "—";
-}
+const fmt = formatTimestamp;
 
 export default function RunDetailPage() {
   const params = useParams<{ orgSlug: string; projectSlug: string; runId: string }>();
@@ -343,6 +342,8 @@ function JobLogs({
                 variant={autoTail ? "secondary" : "outline"}
                 onClick={() => setAutoTail((on) => !on)}
                 title={autoTail ? "Pause live tail" : "Resume live tail"}
+                aria-label="Live-tail logs"
+                aria-pressed={autoTail}
               >
                 {autoTail ? "Live" : "Paused"}
               </Button>

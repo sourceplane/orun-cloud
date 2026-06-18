@@ -20,6 +20,7 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { wrap } from "@/lib/api";
+import { formatTimestamp } from "@/lib/format";
 import { useSession } from "@/lib/session";
 import { useApiQuery, qk } from "@/lib/query";
 
@@ -207,7 +208,7 @@ function Inner({ orgId, orgSlug, projectSlug }: { orgId: string; orgSlug: string
                     <Link href={runHref(r.runId)} className="block break-all font-mono text-xs hover:underline">
                       {r.runId}
                     </Link>
-                    <div className="text-[11px] text-muted-foreground">{new Date(r.createdAt).toLocaleString()}</div>
+                    <div className="text-[11px] text-muted-foreground">{formatTimestamp(r.createdAt)}</div>
                   </div>
                   <Badge variant={statusVariant(r.status)}>{r.status}</Badge>
                 </div>
@@ -256,7 +257,7 @@ function Inner({ orgId, orgSlug, projectSlug }: { orgId: string; orgSlug: string
                       {r.jobCounts.succeeded}✓ {r.jobCounts.failed}✗ {r.jobCounts.running + r.jobCounts.queued}⋯
                     </TableCell>
                     <TableCell className="text-xs text-muted-foreground">
-                      {new Date(r.createdAt).toLocaleString()}
+                      {formatTimestamp(r.createdAt)}
                     </TableCell>
                   </TableRow>
                 ))}
