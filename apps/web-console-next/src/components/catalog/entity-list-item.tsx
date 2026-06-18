@@ -106,7 +106,7 @@ export function EntityListItem({
               {e.owner}
             </span>
           ) : (
-            <span className="inline-flex items-center gap-1 text-warning-foreground/80 dark:text-warning">
+            <span className="inline-flex items-center gap-1 text-warning">
               <UserCircle2 className="h-3 w-3" />
               unowned
             </span>
