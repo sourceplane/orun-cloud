@@ -14,6 +14,7 @@ import { Boxes, ArrowUpRight } from "lucide-react";
 import type { OrgCatalogEntity, StateCursor } from "@saas/contracts/state";
 import { OrgScope } from "@/components/shell/org-scope";
 import { EntityOverview } from "@/components/catalog/entity-overview";
+import { DependencyGraph } from "@/components/catalog/dependency-graph";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Table, TableHeader, TableRow, TableHead, TableBody, TableCell } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
@@ -28,6 +29,7 @@ import { wrap } from "@/lib/api";
 import { useSession } from "@/lib/session";
 import { useApiQuery, qk } from "@/lib/query";
 import { encodeEntityKey } from "@/lib/catalog-entity-key";
+import { buildOrgGraph } from "@/lib/catalog-graph";
 
 // The kinds the org-service-catalog projects (data-model.md §2/§4).
 const KIND_OPTIONS = ["Component", "API", "Resource", "System", "Domain", "Group"];
@@ -110,6 +112,7 @@ function Inner({ orgId, orgSlug }: { orgId: string; orgSlug: string }) {
   const [loading, setLoading] = React.useState(true);
   const [loadingMore, setLoadingMore] = React.useState(false);
   const [error, setError] = React.useState<{ code: string; message: string } | null>(null);
+  const [view, setView] = React.useState<"table" | "graph">("table");
 
   /** Set or clear the `?entity=` selection without growing the history stack. */
   const setSelectedKey = React.useCallback(
@@ -177,6 +180,7 @@ function Inner({ orgId, orgSlug }: { orgId: string; orgSlug: string }) {
     () => entities.find((e) => urlKey(e) === selectedKey) ?? null,
     [entities, selectedKey],
   );
+  const orgGraph = React.useMemo(() => buildOrgGraph(entities, orgSlug), [entities, orgSlug]);
   const isSelected = (e: OrgCatalogEntity) => selectedKey !== null && urlKey(e) === selectedKey;
   const toggle = (e: OrgCatalogEntity) => {
     const k = urlKey(e);
@@ -242,6 +246,22 @@ function Inner({ orgId, orgSlug }: { orgId: string; orgSlug: string }) {
           aria-label="Search"
           className="h-8 w-[220px] text-xs"
         />
+        <div className="ml-auto inline-flex rounded-md border p-0.5" role="group" aria-label="View">
+          {(["table", "graph"] as const).map((v) => (
+            <button
+              key={v}
+              type="button"
+              onClick={() => setView(v)}
+              aria-pressed={view === v}
+              className={cn(
+                "rounded px-2.5 py-1 text-xs capitalize transition-colors",
+                view === v ? "bg-accent font-medium text-foreground" : "text-muted-foreground hover:text-foreground",
+              )}
+            >
+              {v}
+            </button>
+          ))}
+        </div>
       </div>
 
       {loading ? (
@@ -272,6 +292,14 @@ function Inner({ orgId, orgSlug }: { orgId: string; orgSlug: string }) {
         />
       ) : (
         <>
+          {view === "graph" ? (
+            <Card>
+              <CardContent className="pt-6">
+                <DependencyGraph graph={orgGraph} height={520} />
+              </CardContent>
+            </Card>
+          ) : (
+            <>
           {/* Mobile: stacked cards */}
           <div className="space-y-3 md:hidden">
             {entities.map((e) => (
@@ -331,6 +359,8 @@ function Inner({ orgId, orgSlug }: { orgId: string; orgSlug: string }) {
               </TableBody>
             </Table>
           </Card>
+            </>
+          )}
 
           {cursor !== null ? (
             <div className="flex justify-center pt-1">

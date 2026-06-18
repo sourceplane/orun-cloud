@@ -13,6 +13,8 @@ import { decodeEntityKey, parseEntityRef } from "@/lib/catalog-entity-key";
 export interface EntityNavLink {
   href: string;
   label: string;
+  /** Tab id this link selects (`?tab=`), used for active state in the rail. */
+  tab: string;
 }
 
 export interface EntityNavModel {
@@ -22,7 +24,7 @@ export interface EntityNavModel {
   name: string;
   /** Display kind (Component | API | …), derived from the entity ref. */
   kind: string;
-  /** Tab links for this entity. SC0 ships Overview; later milestones add more. */
+  /** Tab links for this entity. Grows as milestones add tabs. */
   links: EntityNavLink[];
 }
 
@@ -41,7 +43,10 @@ export function buildEntityNav(orgSlug: string, entityKey: string): EntityNavMod
     backHref: `/orgs/${orgSlug}/catalog`,
     name: name || id.entityRef,
     kind,
-    links: [{ href: base, label: "Overview" }],
+    links: [
+      { href: base, label: "Overview", tab: "overview" },
+      { href: `${base}?tab=dependencies`, label: "Dependencies", tab: "dependencies" },
+    ],
   };
 }
 

@@ -1,30 +1,37 @@
 "use client";
 
-// The catalog entity detail route (saas-service-catalog SC0). A deep-linkable,
-// shareable page for one merged-graph entity, reached from the index drawer's
-// "Expand" or directly by URL. The left rail swaps to this entity's contextual
-// nav (see `sidebar.tsx` + `entity-nav.ts`).
+// The catalog entity detail route (saas-service-catalog SC0/SC1). A
+// deep-linkable page for one merged-graph entity, reached from the index
+// drawer's "Expand" or directly by URL. The left rail swaps to this entity's
+// contextual nav (see `sidebar.tsx` + `entity-nav.ts`). Tabs (Overview ·
+// Dependencies) are URL-synced via `?tab=` so each is shareable.
 //
-// SC0 resolves the entity over the existing org-catalog list endpoint, narrowed
-// by the provenance project + a name query, then matches the exact identity
-// triple. The dedicated single-entity read (`state.getOrgCatalogEntity`) is a
-// follow-up backend slice; this keeps SC0 to the console with no new wire.
+// The entity resolves over the existing org-catalog list endpoint (narrowed by
+// the provenance project + a name query, then matched on the exact identity
+// triple). The dedicated single-entity read (`state.getOrgCatalogEntity`) is a
+// follow-up backend slice; this keeps the console self-contained.
 
 import * as React from "react";
 import Link from "next/link";
-import { useParams } from "next/navigation";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { Boxes, ChevronLeft } from "lucide-react";
 import type { OrgCatalogEntity } from "@saas/contracts/state";
 import { OrgScope } from "@/components/shell/org-scope";
 import { EntityOverview } from "@/components/catalog/entity-overview";
+import { DependencyGraph } from "@/components/catalog/dependency-graph";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { EmptyState } from "@/components/ui/empty-state";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { wrap } from "@/lib/api";
 import { useSession } from "@/lib/session";
 import { useApiQuery, qk } from "@/lib/query";
 import { decodeEntityKey, parseEntityRef, type EntityIdentity } from "@/lib/catalog-entity-key";
+import { buildNeighborhood } from "@/lib/catalog-graph";
+
+const TABS = ["overview", "dependencies"] as const;
+type Tab = (typeof TABS)[number];
 
 function sameEntity(e: OrgCatalogEntity, id: EntityIdentity): boolean {
   return (
@@ -43,8 +50,20 @@ export default function CatalogEntityPage() {
 
 function Inner({ orgId, orgSlug, entityKey }: { orgId: string; orgSlug: string; entityKey: string }) {
   const { client } = useSession();
+  const router = useRouter();
+  const searchParams = useSearchParams();
   const id = React.useMemo(() => decodeEntityKey(entityKey), [entityKey]);
   const catalogHref = `/orgs/${orgSlug}/catalog`;
+  const entityHref = `/orgs/${orgSlug}/catalog/${entityKey}`;
+
+  const rawTab = searchParams?.get("tab") ?? "";
+  const activeTab: Tab = (TABS as readonly string[]).includes(rawTab) ? (rawTab as Tab) : "overview";
+  const setTab = React.useCallback(
+    (tab: string) => {
+      router.replace(tab === "overview" ? entityHref : `${entityHref}?tab=${tab}`, { scroll: false });
+    },
+    [router, entityHref],
+  );
 
   // Provenance + name narrow the merged graph to a tight candidate set; the
   // exact identity triple then disambiguates same-named entities across envs.
@@ -75,6 +94,7 @@ function Inner({ orgId, orgSlug, entityKey }: { orgId: string; orgSlug: string; 
     () => (id && query.data ? (query.data.entities.find((e) => sameEntity(e, id)) ?? null) : null),
     [id, query.data],
   );
+  const graph = React.useMemo(() => (entity ? buildNeighborhood(entity, orgSlug) : null), [entity, orgSlug]);
 
   const back = (
     <Link
@@ -154,14 +174,34 @@ function Inner({ orgId, orgSlug, entityKey }: { orgId: string; orgSlug: string; 
         </div>
         <p className="break-all font-mono text-xs text-muted-foreground">{entity.entityRef}</p>
       </header>
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Overview</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <EntityOverview entity={entity} projectLabel={projectLabel} />
-        </CardContent>
-      </Card>
+
+      <Tabs value={activeTab} onValueChange={setTab}>
+        <TabsList>
+          <TabsTrigger value="overview">Overview</TabsTrigger>
+          <TabsTrigger value="dependencies">Dependencies</TabsTrigger>
+        </TabsList>
+        <TabsContent value="overview">
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">Overview</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <EntityOverview entity={entity} projectLabel={projectLabel} />
+            </CardContent>
+          </Card>
+        </TabsContent>
+        <TabsContent value="dependencies">
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">Dependencies</CardTitle>
+              <CardDescription>
+                This component and its direct relations. Click a node to open it.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>{graph ? <DependencyGraph graph={graph} /> : null}</CardContent>
+          </Card>
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }
