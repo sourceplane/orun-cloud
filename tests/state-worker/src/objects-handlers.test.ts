@@ -643,6 +643,39 @@ describe("PUT …/state/catalog/head — advance", () => {
     expect(eventEmitted).toBe(true);
   });
 
+  it("defers the org projection to ctx.waitUntil so the advance response is not blocked", async () => {
+    // Regression: the projection walks the snapshot (R2 + upserts) and must NOT
+    // run inline — that once exceeded the client timeout on a real catalog. With
+    // an execution context it is handed to waitUntil and the response returns now.
+    const { executor, queries } = fakeExecutor((text) => {
+      if (text.includes("SELECT * FROM state.objects")) return [objectRow({ kind: "catalog-snapshot" })];
+      if (text.includes("FROM state.catalog_heads") && text.includes("SELECT")) return [];
+      if (text.includes("INSERT INTO state.catalog_heads")) {
+        return [{ id: "head-1", org_id: ORG, project_id: PROJECT, environment: null, digest: HELLO_DIGEST, commit: "c1", advanced_by: ACTOR.subjectId, advanced_by_kind: "user", advanced_at: NOW.toISOString() }];
+      }
+      if (text.includes("events.event_log")) return [{ id: "e", _event: {}, _audit: {} }];
+      return [];
+    });
+    const deferred: Promise<unknown>[] = [];
+    const ctx = {
+      waitUntil: (p: Promise<unknown>) => deferred.push(p),
+      passThroughOnException: () => undefined,
+    } as unknown as ExecutionContext;
+
+    const req = new Request("https://s/catalog/head", {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ digest: HELLO_DIGEST, environment: null, commit: "c1" }),
+    });
+    const res = await handleAdvanceCatalogHead(req, createEnv(new FakeBucket()), "req_1", ACTOR, asUuid(ORG), asUuid(PROJECT), { executor }, ctx);
+
+    expect(res.status).toBe(200);
+    // The projection was handed off, not awaited inline...
+    expect(deferred).toHaveLength(1);
+    // ...so no org-projection write touched the request's executor synchronously.
+    expect(queries.some((q) => q.text.includes("state.org_catalog_entities"))).toBe(false);
+  });
+
   it("412 object_missing when the digest is not in the object plane", async () => {
     const { executor } = fakeExecutor((text) => {
       if (text.includes("SELECT * FROM state.objects")) return []; // digest absent

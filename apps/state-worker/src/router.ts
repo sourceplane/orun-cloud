@@ -131,7 +131,7 @@ const REF_RE = new RegExp(`^${STATE_BASE}/refs/(.+)$`);
 // OV4 — scm.* trigger activity feed.
 const TRIGGERS_RE = new RegExp(`^${STATE_BASE}/triggers$`);
 
-export async function route(request: Request, env: Env): Promise<Response> {
+export async function route(request: Request, env: Env, ctx?: ExecutionContext): Promise<Response> {
   const requestId = resolveRequestId(request);
   const url = new URL(request.url);
   const pathname = url.pathname;
@@ -196,7 +196,7 @@ export async function route(request: Request, env: Env): Promise<Response> {
   if (pathname.includes("/state/")) {
     const versionError = enforceContractVersion(request, requestId);
     if (versionError) return versionError;
-    const runResponse = await routeRun(request, env, requestId, actor, pathname);
+    const runResponse = await routeRun(request, env, requestId, actor, pathname, ctx);
     if (runResponse) return runResponse;
   }
 
@@ -215,9 +215,10 @@ async function routeRun(
   requestId: string,
   actor: ActorContext,
   pathname: string,
+  ctx?: ExecutionContext,
 ): Promise<Response | null> {
   // ── OP3 — Object & log plane (§3) + catalog heads (§3.1). ──
-  const objectOrCatalog = await routeObjectAndCatalog(request, env, requestId, actor, pathname);
+  const objectOrCatalog = await routeObjectAndCatalog(request, env, requestId, actor, pathname, ctx);
   if (objectOrCatalog) return objectOrCatalog;
 
   // POST/GET …/state/runs
@@ -327,6 +328,7 @@ async function routeObjectAndCatalog(
   requestId: string,
   actor: ActorContext,
   pathname: string,
+  ctx?: ExecutionContext,
 ): Promise<Response | null> {
   // POST …/state/objects/missing — digest negotiation.
   let m = pathname.match(OBJECTS_MISSING_RE);
@@ -404,7 +406,7 @@ async function routeObjectAndCatalog(
     const scope = parseScope(m[1]!, m[2]!);
     if (!scope) return notFound(requestId, pathname);
     if (request.method === "PUT") {
-      return handleAdvanceCatalogHead(request, env, requestId, actor, scope.orgId, scope.projectId);
+      return handleAdvanceCatalogHead(request, env, requestId, actor, scope.orgId, scope.projectId, undefined, ctx);
     }
     if (request.method === "GET") {
       return handleGetCatalogHead(request, env, requestId, actor, scope.orgId, scope.projectId);
