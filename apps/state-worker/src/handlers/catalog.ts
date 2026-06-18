@@ -32,6 +32,7 @@ import { createSqlExecutor, type SqlExecutor } from "@saas/db/hyperdrive";
 import type { Uuid } from "@saas/db/ids";
 import { errorResponse, successResponse, listResponse, validationError } from "../http.js";
 import { authorizeRun, authorizeOrg } from "../authz.js";
+import { projectCatalogSnapshot } from "../catalog-projection.js";
 import { generateUuid, orgPublicId, projectPublicId, parseProjectPublicId } from "../ids.js";
 import { DEFAULT_PAGE_LIMIT, MAX_PAGE_LIMIT } from "../constants.js";
 import { isValidDigest } from "../object-store.js";
@@ -193,6 +194,28 @@ export async function handleAdvanceCatalogHead(
       });
     } catch {
       // Best-effort audit.
+    }
+
+    // ── Project the snapshot into the org-global read model (OV6). Best-effort
+    // and AFTER the advance: the head is the source of truth, so a projection
+    // miss (no R2 on dev, an unreadable snapshot) must never fail the push — the
+    // read model is always rebuildable from the head. Reuses the same executor.
+    try {
+      await projectCatalogSnapshot(
+        env,
+        {
+          orgId,
+          projectId,
+          orgPublic: orgPublicId(orgId),
+          projectPublic: projectPublicId(projectId),
+          environment: head.environment,
+          digest: head.digest,
+          commit: head.commit,
+        },
+        { executor },
+      );
+    } catch {
+      // Best-effort projection.
     }
 
     const payload: PutCatalogHeadResponse = { head: toPublicHead(head), previous };
