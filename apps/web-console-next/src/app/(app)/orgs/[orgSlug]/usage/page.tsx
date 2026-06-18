@@ -27,6 +27,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { wrap } from "@/lib/api";
+import { formatTimestamp } from "@/lib/format";
 import { useSession } from "@/lib/session";
 import {
   DEFAULT_USAGE_FORM,
@@ -88,27 +89,32 @@ function StatePlaneUsage({ orgId }: { orgId: string }) {
     objects: { count: number; bytes: number };
     logs: { count: number; bytes: number };
   } | null>(null);
+  const [storedError, setStoredError] = React.useState<{ code: string; message: string } | null>(null);
   const [flow, setFlow] = React.useState<{ objectCount: number; objectBytes: number; logBytes: number } | null>(null);
-  const [loading, setLoading] = React.useState(true);
-  const [error, setError] = React.useState<{ code: string; message: string } | null>(null);
+  const [flowError, setFlowError] = React.useState<{ code: string; message: string } | null>(null);
+  const [flowLoading, setFlowLoading] = React.useState(true);
 
-  // STOCK — current footprint, window-independent.
+  // STOCK — current footprint, window-independent. Its failure stays scoped to
+  // the "Stored now" section; the FLOW detail still renders.
   React.useEffect(() => {
     let cancelled = false;
+    setStoredError(null);
     void wrap(() => client.state.getStateStorage(orgId)).then((r) => {
       if (cancelled) return;
       if (r.ok) setStored(r.data.usage);
-      else setError((e) => e ?? { code: r.error.code, message: r.error.message });
+      else setStoredError({ code: r.error.code, message: r.error.message });
     });
     return () => {
       cancelled = true;
     };
   }, [client, orgId]);
 
-  // FLOW — volume pushed in the selected window (three per-push metrics).
+  // FLOW — volume pushed in the selected window (three per-push metrics). A
+  // failure of any of the three surfaces in the "Pushed" section, not as a 0.
   React.useEffect(() => {
     let cancelled = false;
-    setLoading(true);
+    setFlowLoading(true);
+    setFlowError(null);
     const q = (metric: string) =>
       wrap(() => client.metering.getUsageSummary(orgId, buildUsageQuery({ metric, bucketType: "day", range })));
     void Promise.all([
@@ -117,12 +123,17 @@ function StatePlaneUsage({ orgId }: { orgId: string }) {
       q(STATE_USAGE_METRICS.logBytes),
     ]).then(([count, bytes, logs]) => {
       if (cancelled) return;
-      setFlow({
-        objectCount: count.ok ? count.data.totalQuantity : 0,
-        objectBytes: bytes.ok ? bytes.data.totalQuantity : 0,
-        logBytes: logs.ok ? logs.data.totalQuantity : 0,
-      });
-      setLoading(false);
+      const failed = [count, bytes, logs].find((r) => !r.ok);
+      if (failed && !failed.ok) {
+        setFlowError({ code: failed.error.code, message: failed.error.message });
+      } else {
+        setFlow({
+          objectCount: count.ok ? count.data.totalQuantity : 0,
+          objectBytes: bytes.ok ? bytes.data.totalQuantity : 0,
+          logBytes: logs.ok ? logs.data.totalQuantity : 0,
+        });
+      }
+      setFlowLoading(false);
     });
     return () => {
       cancelled = true;
@@ -150,47 +161,65 @@ function StatePlaneUsage({ orgId }: { orgId: string }) {
         </Select>
       </CardHeader>
       <CardContent className="space-y-5">
-        {error ? (
-          <div className="rounded-md border border-destructive/40 bg-destructive/5 p-4">
-            <div className="font-medium text-destructive">{error.code}</div>
-            <div className="text-sm text-muted-foreground">{error.message}</div>
-          </div>
-        ) : (
-          <>
-            <div>
-              <div className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">Stored now</div>
-              {stored ? (
-                <div className="flex flex-wrap gap-8">
-                  <Metric label="Objects" value={formatQuantity(stored.objects.count)} />
-                  <Metric label="Object storage" value={formatBytes(stored.objects.bytes)} />
-                  <Metric label="Log storage" value={formatBytes(stored.logs.bytes)} />
-                </div>
-              ) : (
-                <div className="flex flex-wrap gap-8">
-                  {Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-12 w-28" />)}
-                </div>
-              )}
+        <UsageSection label="Stored now" error={storedError}>
+          {stored ? (
+            <div className="flex flex-wrap gap-8">
+              <Metric label="Objects" value={formatQuantity(stored.objects.count)} />
+              <Metric label="Object storage" value={formatBytes(stored.objects.bytes)} />
+              <Metric label="Log storage" value={formatBytes(stored.logs.bytes)} />
             </div>
-            <div>
-              <div className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                Pushed · {rangeLabel}
-              </div>
-              {loading || !flow ? (
-                <div className="flex flex-wrap gap-8">
-                  {Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-12 w-28" />)}
-                </div>
-              ) : (
-                <div className="flex flex-wrap gap-8">
-                  <Metric label="Objects pushed" value={formatQuantity(flow.objectCount)} />
-                  <Metric label="Object volume" value={formatBytes(flow.objectBytes)} />
-                  <Metric label="Log volume" value={formatBytes(flow.logBytes)} />
-                </div>
-              )}
+          ) : (
+            <MetricSkeletons />
+          )}
+        </UsageSection>
+        <UsageSection label={`Pushed · ${rangeLabel}`} error={flowError}>
+          {flowLoading || !flow ? (
+            <MetricSkeletons />
+          ) : (
+            <div className="flex flex-wrap gap-8">
+              <Metric label="Objects pushed" value={formatQuantity(flow.objectCount)} />
+              <Metric label="Object volume" value={formatBytes(flow.objectBytes)} />
+              <Metric label="Log volume" value={formatBytes(flow.logBytes)} />
             </div>
-          </>
-        )}
+          )}
+        </UsageSection>
       </CardContent>
     </Card>
+  );
+}
+
+function MetricSkeletons() {
+  return (
+    <div className="flex flex-wrap gap-8">
+      {Array.from({ length: 3 }).map((_, i) => (
+        <Skeleton key={i} className="h-12 w-28" />
+      ))}
+    </div>
+  );
+}
+
+/** One labelled section of the State-plane card; its error stays scoped here. */
+function UsageSection({
+  label,
+  error,
+  children,
+}: {
+  label: string;
+  error: { code: string; message: string } | null;
+  children: React.ReactNode;
+}) {
+  return (
+    <div>
+      <div className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">{label}</div>
+      {error ? (
+        <div className="rounded-md border border-destructive/40 bg-destructive/5 p-3 text-sm">
+          <span className="font-medium text-destructive">{error.code}</span>{" "}
+          <span className="text-muted-foreground">{error.message}</span>
+        </div>
+      ) : (
+        children
+      )}
+    </div>
   );
 }
 
@@ -488,15 +517,15 @@ function QuotaViolations({ orgId }: { orgId: string }) {
                     </div>
                   </div>
                   <div className="whitespace-nowrap text-[11px] text-muted-foreground">
-                    {new Date(v.violatedAt).toLocaleString()}
+                    {formatTimestamp(v.violatedAt)}
                   </div>
                 </div>
               );
             })}
             {hasMoreViolations(state) ? (
               <div className="flex justify-center pt-2">
-                <Button type="button" variant="outline" onClick={() => void loadMore()} disabled={loadingMore}>
-                  {loadingMore ? "Loading…" : "Load more"}
+                <Button type="button" variant="outline" onClick={() => void loadMore()} loading={loadingMore}>
+                  Load more
                 </Button>
               </div>
             ) : null}

@@ -28,6 +28,7 @@ import { useSession } from "@/lib/session";
 import { useApiQuery, qk } from "@/lib/query";
 import { useToast } from "@/components/ui/toast";
 import { wrap, type ApiErrorBody } from "@/lib/api";
+import { formatDate } from "@/lib/format";
 import type { PublicEnvironment } from "@saas/contracts/projects";
 
 const schema = z.object({
@@ -233,8 +234,8 @@ function Inner({ orgId, orgSlug, projectSlug }: { orgId: string; orgSlug: string
                   <CardContent>
                     <div className="text-xs text-muted-foreground">
                       {e.status === "archived" && e.archivedAt
-                        ? `Archived ${new Date(e.archivedAt).toLocaleDateString()}`
-                        : `Last active ${new Date(e.lastActiveAt).toLocaleDateString()}`}
+                        ? `Archived ${formatDate(e.archivedAt)}`
+                        : `Last active ${formatDate(e.lastActiveAt)}`}
                     </div>
                   </CardContent>
                 </Card>
