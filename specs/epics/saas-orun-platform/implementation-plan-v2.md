@@ -72,6 +72,11 @@ reopen these.
 - **Done when:** on stage, a push to an installed repo materializes its
   source + catalog in the object graph (no CLI), visible via `ModelReader`;
   redeliveries do not double-write (idempotent by commit + delivery id).
+- **Status (2026-06-18): trigger recording live; object-graph authorship parked
+  as a later consideration.** The Source half needs the platform's first
+  server-side TS object encoder; the Catalog half needs a server-side resolution
+  substrate (TS port / Go→WASM / platform-hosted runners). Prereq: IG8 `scm.*`
+  projection fields. See `risks-and-open-questions.md` → Deferred.
 
 ### OV5 — GitHub App bridge: outbound write-back (DV6)
 

@@ -196,6 +196,19 @@ parser, and the runtime all agree on one envelope.
 
 - Platform-hosted runners (compute on Orun Cloud) — separate epic; security
   model (sandboxing, egress policy) is its own program.
+- **OV4 object-graph authorship (Source/Catalog materialization from a push) —
+  later consideration (parked 2026-06-18).** The trigger-recording half is live
+  (`scm-bridge.ts`). Authoring the graph splits into (a) **Source
+  materialization** — mechanical, but needs the platform's first server-side TS
+  object *encoder* (today it is decode-only; the Part C golden vectors would
+  guard byte-for-byte parity, adding an encode direction); and (b) **Catalog
+  resolution** — the heavy blocker: resolution is the orun CLI's core (Go-only:
+  `catalogmodel`/`objcatalog`/`nodes`/orun-service-catalog), with no TS resolver.
+  Server-side resolution needs a TS port (large; fights single-source-of-truth),
+  a Go→WASM build in the Worker (heavy/constrained), or platform-hosted runners
+  (the separate deferred epic above). Revisit when a resolution substrate is
+  chosen; IG8 projection fields (`repository_id`/`commit_sha`/`ref`/`base_sha`)
+  are the prerequisite even for the Source-only slice.
 - Scorecards/health live plane in the catalog read-model — columns reserved
   (OP7), fed by a later orun-service-catalog leg.
 - SSE log streaming; presigned R2 uploads; per-run Durable Object — seams
