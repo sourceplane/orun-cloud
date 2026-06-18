@@ -1,0 +1,232 @@
+// Catalog projection (OV6.2b — the org-global read model's writer; design-v2 §6).
+// When a catalog head advances, the pushed snapshot's components + derived
+// entities are indexed into the org-wide graph (state.org_catalog_entities) with
+// provenance. This is the TS projector: it fetches the snapshot's object-model
+// tree from R2, walks it with the OV6.2a reader, and replaces this (project,
+// environment) scope's rows — derived, never authored, idempotently rebuildable.
+//
+// Best-effort + dormant: it needs the ORUN_STATE R2 bucket (absent on dev), and
+// the head-advance handler calls it AFTER the advance + event, in a try/catch —
+// so a projection miss never fails a push (the head is the source of truth; the
+// read model can always be rebuilt from it).
+//
+// "Replace the scope": delete-then-upsert under the (org, project, environment)
+// scope makes re-projection idempotent and drops entities no longer present in
+// the new snapshot — the bijection between a head and its projected rows.
+
+import type { Env } from "./env.js";
+import type { SqlExecutor } from "@saas/db/hyperdrive";
+import type { Uuid } from "@saas/db/ids";
+import { createStateRepository, type UpsertOrgCatalogEntityInput, type CatalogEntityRelation } from "@saas/db/state";
+import { requireBucket, objectKey } from "./object-store.js";
+import { readTree, readJsonBlob, type ObjectFetcher } from "./object-model.js";
+import { generateUuid } from "./ids.js";
+
+// Root tree entry names (orun objcatalog: components/<name>.json blobs and the
+// entities/<Kind>/ subtree of derived multi-kind entity blobs).
+const DIR_COMPONENTS = "components";
+const DIR_ENTITIES = "entities";
+
+export interface CatalogProjectionScope {
+  orgId: Uuid;
+  projectId: Uuid;
+  /** Public ids — the R2 key layout (object-store.ts) addresses by these. */
+  orgPublic: string;
+  projectPublic: string;
+  environment: string | null;
+  /** The catalog snapshot root digest (sha256:<hex>). */
+  digest: string;
+  /** Source git commit the snapshot was resolved at, when known. */
+  commit: string | null;
+}
+
+export interface CatalogProjectionSummary {
+  deleted: number;
+  projected: number;
+}
+
+export interface CatalogProjectionDeps {
+  executor?: SqlExecutor;
+  /** Override the object byte-fetch (tests inject a synthetic store). */
+  fetcher?: ObjectFetcher;
+}
+
+// ── On-disk blob shapes (the JSON the orun CLI writes; nodes/model.go) ──
+
+interface ComponentIdentity {
+  componentKey?: string;
+  name?: string;
+}
+interface EntityRelationJson {
+  type?: string;
+  to?: string;
+}
+interface ComponentManifestJson {
+  identity?: ComponentIdentity;
+  ownership?: Record<string, unknown>;
+  lifecycle?: Record<string, unknown>;
+  relations?: EntityRelationJson[];
+}
+interface EntityIdentity {
+  entityKey?: string;
+  kind?: string;
+  name?: string;
+}
+interface EntityJson {
+  kind?: string;
+  identity?: EntityIdentity;
+  ownership?: Record<string, unknown>;
+  lifecycle?: Record<string, unknown>;
+}
+
+function pickString(obj: Record<string, unknown> | undefined, ...keys: string[]): string | null {
+  if (!obj) return null;
+  for (const k of keys) {
+    const v = obj[k];
+    if (typeof v === "string" && v.length > 0) return v;
+  }
+  return null;
+}
+
+function relationsOf(rels: EntityRelationJson[] | undefined): CatalogEntityRelation[] {
+  if (!Array.isArray(rels)) return [];
+  const out: CatalogEntityRelation[] = [];
+  for (const r of rels) {
+    if (r && typeof r.type === "string" && typeof r.to === "string") {
+      out.push({ type: r.type, targetRef: r.to });
+    }
+  }
+  return out;
+}
+
+/** One projected entity, pre-provenance. */
+interface ProjectedEntity {
+  entityRef: string;
+  kind: string;
+  name: string;
+  owner: string | null;
+  lifecycle: string | null;
+  relations: CatalogEntityRelation[];
+}
+
+function componentEntity(m: ComponentManifestJson): ProjectedEntity | null {
+  const entityRef = pickString(m.identity as Record<string, unknown> | undefined, "componentKey");
+  if (!entityRef) return null;
+  return {
+    entityRef,
+    kind: "Component",
+    name: pickString(m.identity as Record<string, unknown> | undefined, "name") ?? entityRef,
+    owner: pickString(m.ownership, "owner"),
+    lifecycle: pickString(m.lifecycle, "stage", "lifecycle"),
+    relations: relationsOf(m.relations),
+  };
+}
+
+function derivedEntity(e: EntityJson): ProjectedEntity | null {
+  const id = e.identity as Record<string, unknown> | undefined;
+  const entityRef = pickString(id, "entityKey");
+  if (!entityRef) return null;
+  const kind = (typeof e.kind === "string" && e.kind) || pickString(id, "kind");
+  if (!kind) return null;
+  return {
+    entityRef,
+    kind,
+    name: pickString(id, "name") ?? entityRef,
+    owner: pickString(e.ownership, "owner"),
+    lifecycle: pickString(e.lifecycle, "stage", "lifecycle"),
+    relations: [],
+  };
+}
+
+/** Walk the snapshot tree and collect every component + derived entity. */
+async function collectEntities(fetch: ObjectFetcher, rootDigest: string): Promise<ProjectedEntity[]> {
+  const root = await readTree(fetch, rootDigest);
+  if (!root) return [];
+  const out: ProjectedEntity[] = [];
+
+  const components = root.find((e) => e.name === DIR_COMPONENTS && e.kind === "tree");
+  if (components) {
+    const blobs = await readTree(fetch, components.id);
+    for (const b of blobs ?? []) {
+      if (b.kind !== "blob") continue;
+      const manifest = await readJsonBlob<ComponentManifestJson>(fetch, b.id);
+      const ent = manifest ? componentEntity(manifest) : null;
+      if (ent) out.push(ent);
+    }
+  }
+
+  const entities = root.find((e) => e.name === DIR_ENTITIES && e.kind === "tree");
+  if (entities) {
+    const kindTrees = await readTree(fetch, entities.id);
+    for (const kt of kindTrees ?? []) {
+      if (kt.kind !== "tree") continue;
+      const blobs = await readTree(fetch, kt.id);
+      for (const b of blobs ?? []) {
+        if (b.kind !== "blob") continue;
+        const entity = await readJsonBlob<EntityJson>(fetch, b.id);
+        const ent = entity ? derivedEntity(entity) : null;
+        if (ent) out.push(ent);
+      }
+    }
+  }
+
+  return out;
+}
+
+/**
+ * Project a catalog snapshot into the org-global read model for one (project,
+ * environment) scope. Best-effort: returns null when storage is unavailable
+ * (dormant dev) or the snapshot root is unreadable; otherwise replaces the
+ * scope's rows and returns the counts. Never throws to the caller's happy path —
+ * the head-advance must succeed regardless.
+ */
+export async function projectCatalogSnapshot(
+  env: Env,
+  scope: CatalogProjectionScope,
+  deps?: CatalogProjectionDeps,
+): Promise<CatalogProjectionSummary | null> {
+  let fetcher = deps?.fetcher;
+  if (!fetcher) {
+    const bucket = requireBucket(env);
+    if (!bucket.ok) return null; // no R2 binding (dev) — dormant no-op
+    fetcher = (digest: string) =>
+      bucket.bucket
+        .get(objectKey(scope.orgPublic, scope.projectPublic, digest))
+        .then(async (o) => (o ? new Uint8Array(await o.arrayBuffer()) : null));
+  }
+
+  const entities = await collectEntities(fetcher, scope.digest);
+
+  if (!deps?.executor && !env.PLATFORM_DB) return null;
+  const executor = deps?.executor ?? (await import("@saas/db/hyperdrive")).createSqlExecutor(env.PLATFORM_DB!);
+  const owned = !deps?.executor;
+  try {
+    const repo = createStateRepository(executor);
+    // Replace the scope: drop the prior projection, then upsert the new set.
+    const deleted = await repo.deleteOrgCatalogEntitiesForScope(scope.orgId, scope.projectId, scope.environment);
+    let projected = 0;
+    for (const e of entities) {
+      const input: UpsertOrgCatalogEntityInput = {
+        id: generateUuid(),
+        orgId: scope.orgId,
+        entityRef: e.entityRef,
+        kind: e.kind,
+        name: e.name,
+        sourceProjectId: scope.projectId,
+        headDigest: scope.digest,
+        owner: e.owner,
+        lifecycle: e.lifecycle,
+        relations: e.relations,
+        sourceEnvironment: scope.environment,
+        sourceCommit: scope.commit,
+      };
+      const up = await repo.upsertOrgCatalogEntity(input);
+      if (up.ok) projected++;
+    }
+    return { deleted: deleted.ok ? deleted.value : 0, projected };
+  } finally {
+    if (owned && "dispose" in executor && typeof (executor as { dispose?: unknown }).dispose === "function") {
+      await (executor as unknown as { dispose: () => Promise<void> }).dispose();
+    }
+  }
+}
