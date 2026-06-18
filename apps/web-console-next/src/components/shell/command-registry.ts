@@ -171,6 +171,7 @@ export function buildBaseCommands(ctx: CommandContext): CommandDescriptor[] {
   if (projectBase) {
     out.push(
       navItem("nav.environments", "Environments", `${projectBase}/environments`, "Boxes", ["env", "environment"]),
+      navItem("nav.storage", "Storage", `${projectBase}/storage`, "HardDrive", ["gc", "garbage", "reclaim", "objects"]),
     );
   }
 

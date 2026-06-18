@@ -34,4 +34,5 @@ export const qk = {
   billingSummary: (orgId: string) => ["billingSummary", orgId] as const,
   entitlements: (orgId: string) => ["entitlements", orgId] as const,
   invoices: (orgId: string) => ["invoices", orgId] as const,
+  gcReport: (orgId: string, projectId: string) => ["gcReport", orgId, projectId] as const,
 };

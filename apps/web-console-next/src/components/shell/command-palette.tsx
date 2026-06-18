@@ -34,6 +34,7 @@ import {
   ShieldCheck,
   User2,
   Webhook,
+  HardDrive,
   type LucideIcon,
 } from "lucide-react";
 import {
@@ -66,6 +67,7 @@ const ICONS: Record<string, LucideIcon> = {
   ShieldCheck,
   User2,
   Webhook,
+  HardDrive,
 };
 
 // --- Registration context --------------------------------------------------
