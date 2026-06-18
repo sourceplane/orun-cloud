@@ -15,6 +15,7 @@ import type { OrgCatalogEntity, StateCursor } from "@saas/contracts/state";
 import { OrgScope } from "@/components/shell/org-scope";
 import { EntityOverview } from "@/components/catalog/entity-overview";
 import { DependencyGraph } from "@/components/catalog/dependency-graph";
+import { InsightsBar } from "@/components/catalog/insights-bar";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Table, TableHeader, TableRow, TableHead, TableBody, TableCell } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
@@ -30,6 +31,7 @@ import { useSession } from "@/lib/session";
 import { useApiQuery, qk } from "@/lib/query";
 import { encodeEntityKey } from "@/lib/catalog-entity-key";
 import { buildOrgGraph } from "@/lib/catalog-graph";
+import { computeInsights, filterByInsight, INSIGHT_LABEL, type InsightId } from "@/lib/catalog-insights";
 
 // The kinds the org-service-catalog projects (data-model.md §2/§4).
 const KIND_OPTIONS = ["Component", "API", "Resource", "System", "Domain", "Group"];
@@ -113,6 +115,7 @@ function Inner({ orgId, orgSlug }: { orgId: string; orgSlug: string }) {
   const [loadingMore, setLoadingMore] = React.useState(false);
   const [error, setError] = React.useState<{ code: string; message: string } | null>(null);
   const [view, setView] = React.useState<"table" | "graph">("table");
+  const [insight, setInsight] = React.useState<InsightId | null>(null);
 
   /** Set or clear the `?entity=` selection without growing the history stack. */
   const setSelectedKey = React.useCallback(
@@ -180,7 +183,14 @@ function Inner({ orgId, orgSlug }: { orgId: string; orgSlug: string }) {
     () => entities.find((e) => urlKey(e) === selectedKey) ?? null,
     [entities, selectedKey],
   );
-  const orgGraph = React.useMemo(() => buildOrgGraph(entities, orgSlug), [entities, orgSlug]);
+  // SC4 data-quality insights, computed over the loaded view, drive a
+  // click-to-filter narrowing (`shown`) applied to the table, cards, and graph.
+  const insights = React.useMemo(() => computeInsights(entities), [entities]);
+  const shown = React.useMemo(
+    () => (insight ? filterByInsight(entities, insight) : entities),
+    [entities, insight],
+  );
+  const orgGraph = React.useMemo(() => buildOrgGraph(shown, orgSlug), [shown, orgSlug]);
   const isSelected = (e: OrgCatalogEntity) => selectedKey !== null && urlKey(e) === selectedKey;
   const toggle = (e: OrgCatalogEntity) => {
     const k = urlKey(e);
@@ -264,6 +274,10 @@ function Inner({ orgId, orgSlug }: { orgId: string; orgSlug: string }) {
         </div>
       </div>
 
+      {!loading && !error && entities.length > 0 ? (
+        <InsightsBar insights={insights} active={insight} onToggle={setInsight} />
+      ) : null}
+
       {loading ? (
         <Card>
           <CardContent className="space-y-2 pt-6">
@@ -292,7 +306,20 @@ function Inner({ orgId, orgSlug }: { orgId: string; orgSlug: string }) {
         />
       ) : (
         <>
-          {view === "graph" ? (
+          {shown.length === 0 ? (
+            <Card>
+              <CardContent className="py-10 text-center text-sm text-muted-foreground">
+                No components in this view match “{insight ? INSIGHT_LABEL[insight] : ""}”.{" "}
+                <button
+                  type="button"
+                  onClick={() => setInsight(null)}
+                  className="text-primary underline-offset-2 hover:underline"
+                >
+                  Clear filter
+                </button>
+              </CardContent>
+            </Card>
+          ) : view === "graph" ? (
             <Card>
               <CardContent className="pt-6">
                 <DependencyGraph graph={orgGraph} height={520} />
@@ -302,7 +329,7 @@ function Inner({ orgId, orgSlug }: { orgId: string; orgSlug: string }) {
             <>
           {/* Mobile: stacked cards */}
           <div className="space-y-3 md:hidden">
-            {entities.map((e) => (
+            {shown.map((e) => (
               <Card
                 key={entityKey(e)}
                 onClick={() => toggle(e)}
@@ -339,7 +366,7 @@ function Inner({ orgId, orgSlug }: { orgId: string; orgSlug: string }) {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {entities.map((e) => (
+                {shown.map((e) => (
                   <TableRow
                     key={entityKey(e)}
                     onClick={() => toggle(e)}
