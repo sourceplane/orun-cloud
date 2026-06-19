@@ -38,6 +38,7 @@ The architect-style ground rules:
 | **PX** | [`epics/saas-product-experience/`](./epics/saas-product-experience/) | In progress | Close the backend-ahead-of-surface gap: PX1 console truth/papercuts · PX2 config/flags/secrets UI · PX3 notification preferences e2e · PX4 rename lifecycle · PX5 first-run onboarding · PX6 Cmd-K resource search. All human-independent. |
 | **IG** | [`epics/saas-integrations/`](./epics/saas-integrations/) | Draft | Pluggable integrations platform (promotes P5), GitHub App first: IG0 foundation · IG1 connect flow · IG2 inbound `scm.*` events · IG3 repo links · IG4 token broker · IG5 console · IG6 lifecycle hardening · IG7 pluggability/instance proof · IG8 inbound projection fields · IG9 write-back proxy (the Orun Cloud v2 state bridge — `epics/saas-integrations/bridge-to-state.md`). |
 | **SS** | [`epics/saas-secrets-sync/`](./epics/saas-secrets-sync/) | Draft (SS0/SS1 in progress) | One write path for every secret: SS0 escrow convention + manifest · SS1 drift checker enforced in verify lanes · SS2 deploy-lane sync · SS3 escrow seeding (human-gated) · SS4 Secrets Store for shared keys · SS5 rotation runbook + BF9 preflight. |
+| **BM** | [`epics/saas-orun-backend-merge/`](./epics/saas-orun-backend-merge/) | Ready | Replace `orun-backend`'s relational coordination plane with **native event-sourced coordination** (DO-sharded per run, Postgres projection, content-addressed `job-result` memoization), cross-repo with `orun` (**NC**): BM0 contract v2 + vendor · BM1 object kinds + memoization · BM2 per-run Durable-Object event log (conditional append) · BM3 projections · BM4 CLI adoption · BM5 auth/quota · BM6 cutover · BM7 decommission. Greenfield (no permanent backcompat); `orun-backend` is the parity reference. Extends OP/OV. |
 | **SC** | [`epics/saas-service-catalog/`](./epics/saas-service-catalog/) | Draft | Org catalog → internal developer portal: SC0 drill-down foundation (entity route + contextual sidebar + drawer) · SC1 dependency graph · SC2 deployments · SC3 activity · SC4 insights · SC5 scorecards · SC6 ownership/on-call · SC7 golden-path scaffolder · SC8 index polish. Every enrichment is a computed overlay, git-authored snapshot, separated operational annotation, or git-writing scaffolder — never console-authored catalog content (`components/18-state.md`). |
 | **P1, P3–P7** | [`epics/saas-product-areas/`](./epics/saas-product-areas/) | Holding register | P1 promote-flow · P3 observability · P4 notification inbox · P5 marketplace (⬆ promoted → `saas-integrations`) · P6 changelog/status · P7 AI-native. |
 
@@ -94,6 +95,24 @@ see [`README.md`](./README.md).
   sibling overlays. SC7 (golden-path scaffolder) is the detachable, highest-lift
   tail — it writes git via IG4, never the catalog, and is a sub-epic candidate.
   Highest-leverage first slice: **SC0 + SC1 + SC4**.
+- **BM (orun-backend merge)** is a **greenfield, cross-repo** redesign, not a
+  compat exercise: it replaces `orun-backend`'s relational `runs/jobs/claim`
+  plane with coordination native to the content-addressed store — a run is an
+  append-only **event stream** rooted at `planDigest → sourceHash`, claims are
+  **conditional appends** sharded **per run on a Durable Object**, and Postgres
+  becomes a **delayed projection**. This is also the scaling answer (the per-run
+  DO is the partition unit; heartbeats/claims leave the shared primary) and the
+  provenance answer (`sourceHash → plan → job → result` Merkle chain, with
+  content-addressed `job-result` memoization). It **pairs with `orun`'s NC
+  cluster** on one vendored contract (`coordination-api.md`); the CLI moves to an
+  append/fold/read-the-log client, so there is **no permanent backward-compat
+  surface** — only a transient read-only drain bridge at BM6 cutover.
+  `orun-backend` is the parity reference for the claim/lease invariants, never
+  lifted in. BM0–BM3 (contract, object kinds, the DO event log, projections) are
+  the human-independent server spine; BM4 co-develops with NC; only BM6 (cutover)
+  and BM7 (decommission) need an operator call. Open product/security calls: D1
+  memoization scope (per-project → org-shared → global) and D2 `jobInputHash`
+  definition.
 - **BF (bootstrap factory)** is orthogonal to B/U/P and mostly human-independent:
   BF0–BF2 (docs truth, infra `dependsOn` edges, parameterizing the Terraform +
   stack identity surface) are safe to schedule any time and improve this
