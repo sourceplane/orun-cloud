@@ -200,8 +200,9 @@ export interface LogChunk {
 // ── Object plane (CAS; design §4.1) ─────────────────────────
 
 /**
- * Content-addressed object kinds the platform stores. The four semantic kinds
- * (plan, catalog-snapshot, …) plus the object model's two STRUCTURAL kinds
+ * Content-addressed object kinds the platform stores. The semantic kinds
+ * (plan, catalog-snapshot, …, and the coordination kinds job-result/log/
+ * run-record from BM1) plus the object model's two STRUCTURAL kinds
  * (blob, tree) — the hosted ObjectStore (OV1) stores the content-addressed
  * objects the CLI's RemoteStore uploads, each named by the hash of its framed
  * serialization (same id local and remote).
@@ -211,6 +212,9 @@ export type StateObjectKind =
   | "catalog-snapshot"
   | "composition-lock"
   | "artifact-manifest"
+  | "job-result"
+  | "log"
+  | "run-record"
   | "blob"
   | "tree";
 

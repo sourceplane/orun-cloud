@@ -344,3 +344,73 @@ function computeFrontier(
   }
   return frontier.sort();
 }
+
+// ── Job results & memoization (BM1 — coordination-api.md §1, §8.4) ──
+
+/** A completed job's content-addressed result object (`job-result` kind). */
+export interface JobResult {
+  /** sha256 of the canonicalized job inputs — the memoization key. */
+  jobInputHash: string;
+  /** Output object digests (`sha256:…`). */
+  outputs: string[];
+  exit: number;
+  /** The sealed `log` object referenced by this result. */
+  logsDigest: string;
+}
+
+/**
+ * The inputs that determine a job's `jobInputHash` (C5). Hermetic by
+ * construction: resolved step definitions, declared input object digests,
+ * declared environment-variable **keys** (never values), and the composition
+ * lock — it deliberately excludes wall-clock, secret values, and runner identity.
+ */
+export interface JobInputHashInput {
+  /** Resolved step definitions (order-significant). */
+  steps: unknown;
+  /** Declared input object digests (`sha256:…`); order-insensitive. */
+  inputDigests: string[];
+  /** Declared environment-variable keys (NOT values); order-insensitive. */
+  envKeys: string[];
+  /** The composition-lock digest. */
+  compositionLockDigest: string;
+}
+
+/**
+ * Deterministic canonical serialization of a job's inputs — the normative,
+ * cross-language form the `jobInputHash` is computed over (the Go CLI port must
+ * reproduce it byte-for-byte). Object keys are sorted recursively; set-like
+ * fields (inputDigests, envKeys) are sorted; step order is preserved.
+ *
+ * The digest is `"sha256:" + sha256hex(canonicalizeJobInput(input))`, computed
+ * by the caller (state-worker / CLI) where a crypto primitive is available —
+ * kept out of `@saas/contracts` so this package stays pure and lib-agnostic.
+ */
+export function canonicalizeJobInput(input: JobInputHashInput): string {
+  return canonicalJson({
+    steps: input.steps,
+    inputDigests: [...input.inputDigests].sort(),
+    envKeys: [...input.envKeys].sort(),
+    compositionLockDigest: input.compositionLockDigest,
+  });
+}
+
+function canonicalJson(value: unknown): string {
+  if (value === null || typeof value !== "object") return JSON.stringify(value) ?? "null";
+  if (Array.isArray(value)) return "[" + value.map(canonicalJson).join(",") + "]";
+  const obj = value as Record<string, unknown>;
+  const keys = Object.keys(obj).sort();
+  return "{" + keys.map((k) => JSON.stringify(k) + ":" + canonicalJson(obj[k])).join(",") + "}";
+}
+
+/**
+ * The opt-in memoization gate (C6 / D1): only a job the plan marks `hermetic`
+ * may reuse a prior `job-result`; a non-hermetic job is never memoized (default
+ * off). Returns the result to adopt on a hit, or null to execute.
+ */
+export function memoizationHit(opts: {
+  hermetic: boolean;
+  existing: JobResult | null;
+}): JobResult | null {
+  if (!opts.hermetic) return null;
+  return opts.existing ?? null;
+}
