@@ -49,10 +49,14 @@ import {
 import { ensureEnvironmentRegistered } from "../env-registration.js";
 import { orgPublicId, projectPublicId } from "../ids.js";
 import {
+  coordinatorCancelOP2,
+  coordinatorClaimOP2,
+  coordinatorCompleteOP2,
+  coordinatorHeartbeatOP2,
   initCoordinator,
   planFromJobs,
   projectAfterVerb,
-  proxyCoordinatorVerb,
+  runIsDoBacked,
   useDoCoordination,
 } from "../coordination-route.js";
 
@@ -603,20 +607,29 @@ export async function handleClaimJob(
   const authz = await authorizeRun(env, requestId, actor, orgId, projectId, STATE_POLICY_ACTIONS.RUN_WRITE);
   if (!authz.ok) return authz.response;
 
-  // DO backend (BM4b): proxy the §3 :claim to the run shard (returns the bare §3
-  // envelope, not the OP2 { claim: … } wrapper). Mutually exclusive with OP2.
-  if (useDoCoordination(env)) {
+  // DO backend (BM6 facade): :claim over the DO, OP2 { claim: … } envelope.
+  // Routes here iff this run is DO-backed (sticky per run), so flipping the flag
+  // never breaks an in-flight OP2 run.
+  if (useDoCoordination(env) && (await runIsDoBacked(env, runUlid))) {
     const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
     const runnerId = typeof body.runnerId === "string" ? body.runnerId : "";
     if (!runnerId) return validationError(requestId, { runnerId: ["Required; non-empty string"] });
-    const res = await proxyCoordinatorVerb(env, runUlid, "claim", {
-      jobId,
-      runnerId,
-      ...(body.hermetic === true ? { hermetic: true } : {}),
-      ...(typeof body.memoResultDigest === "string" ? { memoResultDigest: body.memoResultDigest } : {}),
-    });
+    const out = await coordinatorClaimOP2(env, runUlid, jobId, runnerId);
     await projectAfterVerb(env, deps, { orgId, projectId }, runUlid);
-    return res;
+    if (out.kind === "error") return errorResponse("internal_error", "Service unavailable", 503, requestId);
+    const payload: ClaimJobResponse =
+      out.kind === "claimed"
+        ? {
+            claim: {
+              claimed: true,
+              leaseExpiresAt: out.leaseExpiresAt,
+              attempt: out.attempt,
+              leaseSeconds: LEASE_SECONDS,
+              heartbeatIntervalSeconds: HEARTBEAT_INTERVAL_SECONDS,
+            },
+          }
+        : { claim: { claimed: false, reason: out.reason } };
+    return successResponse(payload, requestId);
   }
 
   const runnerId = await readRunnerId(request);
@@ -691,13 +704,24 @@ export async function handleHeartbeatJob(
   const authz = await authorizeRun(env, requestId, actor, orgId, projectId, STATE_POLICY_ACTIONS.RUN_WRITE);
   if (!authz.ok) return authz.response;
 
-  // DO backend (BM4b): proxy the §3 :heartbeat (200 { leaseExpiresAt } | 409 lease_lost).
-  if (useDoCoordination(env)) {
+  // DO backend (BM6 facade): :heartbeat over the DO, OP2 envelope. leaseEpoch is
+  // derived from the shard (OP2 has none); a takeover surfaces as the OP2 409.
+  if (useDoCoordination(env) && (await runIsDoBacked(env, runUlid))) {
     const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
     const runnerId = typeof body.runnerId === "string" ? body.runnerId : "";
-    const leaseEpoch = typeof body.leaseEpoch === "number" ? body.leaseEpoch : 0;
     if (!runnerId) return validationError(requestId, { runnerId: ["Required; non-empty string"] });
-    return proxyCoordinatorVerb(env, runUlid, "heartbeat", { jobId, runnerId, leaseEpoch });
+    const out = await coordinatorHeartbeatOP2(env, runUlid, jobId, runnerId);
+    await projectAfterVerb(env, deps, { orgId, projectId }, runUlid);
+    if (out.kind === "lease_lost") {
+      return errorResponse("lease_lost", "Lease lapsed or was reassigned; stop work on this job", 409, requestId);
+    }
+    if (out.kind === "error") return errorResponse("internal_error", "Service unavailable", 503, requestId);
+    const payload: HeartbeatJobResponse = {
+      leaseExpiresAt: out.leaseExpiresAt ?? "",
+      leaseSeconds: LEASE_SECONDS,
+      heartbeatIntervalSeconds: HEARTBEAT_INTERVAL_SECONDS,
+    };
+    return successResponse(payload, requestId);
   }
 
   const runnerId = await readRunnerId(request);
@@ -772,20 +796,16 @@ export async function handleUpdateJob(
   }
   if (Object.keys(fields).length > 0) return validationError(requestId, fields);
 
-  // DO backend (BM4b): proxy the §3 :complete (200 { seq } | 409 lease_lost).
-  if (useDoCoordination(env)) {
-    const leaseEpoch = typeof body.leaseEpoch === "number" ? body.leaseEpoch : 0;
-    const resultDigest = typeof body.resultDigest === "string" ? body.resultDigest : undefined;
-    const res = await proxyCoordinatorVerb(env, runUlid, "complete", {
-      jobId,
-      runnerId: runnerId!,
-      leaseEpoch,
-      outcome: status as "succeeded" | "failed",
-      ...(resultDigest !== undefined ? { resultDigest } : {}),
-      ...(errorText !== null ? { errorText } : {}),
-    });
+  // DO backend (BM6 facade): :update over the DO, OP2 envelope. Terminal-sticky
+  // (idempotent re-complete) and lease-checked; an empty body matches OP2.
+  if (useDoCoordination(env) && (await runIsDoBacked(env, runUlid))) {
+    const out = await coordinatorCompleteOP2(env, runUlid, jobId, runnerId!, status as "succeeded" | "failed", errorText);
     await projectAfterVerb(env, deps, { orgId, projectId }, runUlid);
-    return res;
+    if (out.kind === "lease_lost") {
+      return errorResponse("lease_lost", "Lease lapsed or was reassigned; this update is rejected", 409, requestId);
+    }
+    if (out.kind === "error") return errorResponse("internal_error", "Service unavailable", 503, requestId);
+    return successResponse({}, requestId);
   }
 
   const executor = deps?.executor ?? createSqlExecutor(env.PLATFORM_DB!);
@@ -860,13 +880,23 @@ export async function handleCancelRun(
   const authz = await authorizeRun(env, requestId, actor, orgId, projectId, STATE_POLICY_ACTIONS.RUN_WRITE);
   if (!authz.ok) return authz.response;
 
-  // DO backend (BM4b): proxy the §3 :cancel (200 { seq }).
-  if (useDoCoordination(env)) {
-    const res = await proxyCoordinatorVerb(env, runUlid, "cancel", {
-      actor: { id: actor.subjectId, type: actor.subjectType },
-    });
+  // DO backend (BM6 facade): cancel the shard, project, return the run (OP2 shape).
+  if (useDoCoordination(env) && (await runIsDoBacked(env, runUlid))) {
+    const ok = await coordinatorCancelOP2(env, runUlid, { id: actor.subjectId, type: actor.subjectType });
+    if (!ok) return errorResponse("internal_error", "Service unavailable", 503, requestId);
     await projectAfterVerb(env, deps, { orgId, projectId }, runUlid);
-    return res;
+    const executor = deps?.executor ?? createSqlExecutor(env.PLATFORM_DB!);
+    const owned = !deps?.executor;
+    try {
+      const repo = createStateRepository(executor);
+      const run = await repo.getRunByUlid(orgId, projectId, runUlid);
+      if (!run.ok) return errorResponse("not_found", "Not found", 404, requestId);
+      const counts = await repo.getRunJobCounts(orgId, projectId, asUuid(run.value.id));
+      const payload: CancelRunResponse = { run: toPublicRun(run.value, counts.ok ? counts.value : zeroCounts()) };
+      return successResponse(payload, requestId);
+    } finally {
+      if (owned) await dispose(executor);
+    }
   }
 
   const executor = deps?.executor ?? createSqlExecutor(env.PLATFORM_DB!);
