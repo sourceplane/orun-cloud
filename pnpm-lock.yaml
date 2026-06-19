@@ -354,9 +354,18 @@ importers:
       '@saas/tsconfig':
         specifier: workspace:*
         version: link:../../tooling/tsconfig
+      esbuild:
+        specifier: ^0.25.12
+        version: 0.25.12
+      miniflare:
+        specifier: ^4.20260611.0
+        version: 4.20260611.0
       typescript:
         specifier: ^5.9.3
         version: 5.9.3
+      vitest:
+        specifier: 3.2.6
+        version: 3.2.6(@types/node@25.9.3)(terser@5.16.9)
       wrangler:
         specifier: ^4.100.0
         version: 4.100.0(@cloudflare/workers-types@4.20260612.1)
