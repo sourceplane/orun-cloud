@@ -318,5 +318,14 @@ export const manifest: MigrationManifest = {
       description:
         "Environment lifecycle liveness (saas-orun-platform v2 OV9) — adds projects.environments.last_active_at (bumped on every activity touch, backfilled to updated_at, defaults now()) plus a partial index on (last_active_at) WHERE status='active' to drive the stale-environment archival sweep; an active environment unpushed past the retention window archives reversibly (a fresh push revives it). Dormant until the OV9.2 cron",
     },
+    {
+      id: "350_state_run_last_seq",
+      context: "state",
+      path: "350_state_run_last_seq/up.sql",
+      checksum:
+        "247dee804462d813a4bd277c71c3759cf2cc87050320eb840801d86adb5826e3",
+      description:
+        "Projector high-water mark (saas-orun-backend-merge BM3) — adds state.runs.last_seq (BIGINT, default 0), the per-run seq the projector guards its writes on so projecting the RunCoordinator DO's fold into Postgres is idempotent under replay/out-of-order delivery. Dormant until the projector runs on the DO backend.",
+    },
   ],
 };

@@ -49,10 +49,12 @@
   },
   "dependencies": {
     "@aws-sdk/client-secrets-manager": "^3.1067.0",
+    "@saas/contracts": "workspace:*",
     "pg": "^8.21.0",
     "postgres": "^3.4.9"
   },
   "devDependencies": {
+    "@electric-sql/pglite": "^0.5.3",
     "@saas/eslint-config": "workspace:*",
     "@saas/tsconfig": "workspace:*",
     "@types/pg": "^8.20.0",
