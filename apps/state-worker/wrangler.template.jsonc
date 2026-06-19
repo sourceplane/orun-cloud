@@ -22,10 +22,22 @@
   "triggers": {
     "crons": ["* * * * *"]
   },
+  // Per-run coordination shard (BM2b/BM4). One Durable Object per run
+  // (idFromName(runId)) owns the append-only event log + deciders + lease alarm;
+  // exactly-one-winner claims fall out of its single-threaded serialization.
+  // SQLite-backed. DO bindings are NOT inherited by named environments, so the
+  // block is repeated under env.dev/stage/prod; the migration is top-level.
+  "durable_objects": {
+    "bindings": [{ "name": "COORDINATOR", "class_name": "RunCoordinator" }]
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["RunCoordinator"] }],
   "env": {
     "dev": {
       "vars": {
         "ENVIRONMENT": "dev"
+      },
+      "durable_objects": {
+        "bindings": [{ "name": "COORDINATOR", "class_name": "RunCoordinator" }]
       }
     },
     "stage": {
@@ -35,6 +47,9 @@
         // Secrets (set via `wrangler secret put <NAME> --env stage` once the
         // state plane goes live at OP2+):
         //   STATE_ENCRYPTION_KEY
+      },
+      "durable_objects": {
+        "bindings": [{ "name": "COORDINATOR", "class_name": "RunCoordinator" }]
       },
       "hyperdrive": [
         {
@@ -74,6 +89,9 @@
       "vars": {
         "ENVIRONMENT": "prod"
         // Secrets: same set as stage, via `wrangler secret put <NAME> --env prod`
+      },
+      "durable_objects": {
+        "bindings": [{ "name": "COORDINATOR", "class_name": "RunCoordinator" }]
       },
       "hyperdrive": [
         {

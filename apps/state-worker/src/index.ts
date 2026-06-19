@@ -5,6 +5,10 @@ import { runScmDrain } from "./scm-bridge.js";
 import { runRunWriteback } from "./run-writeback.js";
 import { runEnvArchiveSweep } from "./env-archive-sweep.js";
 
+// Per-run coordination Durable Object (BM2b/BM4). Re-exported here so the runtime
+// can resolve the COORDINATOR binding's class_name; bound in wrangler.template.
+export { RunCoordinator } from "./run-coordinator.js";
+
 export default {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     return route(request, env, ctx);

@@ -1,5 +1,12 @@
 export interface Env {
   PLATFORM_DB?: Hyperdrive;
+  /**
+   * Per-run coordination shard (BM2b/BM4). One RunCoordinator Durable Object per
+   * run (idFromName(runId)) owns the append-only log + deciders + lease alarm.
+   * Bound in all environments; the §3 verbs route here when the coordination
+   * backend is the DO. Optional so a misconfigured env fails closed to OP2.
+   */
+  COORDINATOR?: DurableObjectNamespace;
   /** Object/log blob store (R2 bucket `orun-state`). CAS + log chunks (design §4). */
   ORUN_STATE?: R2Bucket;
   MEMBERSHIP_WORKER?: Fetcher;
