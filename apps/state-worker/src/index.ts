@@ -4,6 +4,7 @@ import { runSweep } from "./sweep.js";
 import { runScmDrain } from "./scm-bridge.js";
 import { runRunWriteback } from "./run-writeback.js";
 import { runEnvArchiveSweep } from "./env-archive-sweep.js";
+import { runProjectionSweep } from "./projection-sweep.js";
 
 // Per-run coordination Durable Object (BM2b/BM4). Re-exported here so the runtime
 // can resolve the COORDINATOR binding's class_name; bound in wrangler.template.
@@ -74,6 +75,21 @@ export default {
           }
         } catch (err) {
           console.error(`[scheduled] env-archive failed: ${String(err)}`);
+        }
+        // Phase 5 — coordination projection sweep (BM3d). Coalesced into this same
+        // cron slot (risk R9), after the env-archive. Folds a bounded batch of
+        // non-terminal runs so DO-autonomous lease sweeps reach the read model
+        // without client traffic. Dormant (returns null) unless COORDINATION_BACKEND
+        // = do; never breaks the prior phases or the cron.
+        try {
+          const projected = await runProjectionSweep(env);
+          if (projected && projected.projected > 0) {
+            console.warn(
+              `[scheduled] projection-sweep: ${projected.projected} projected / ${projected.scanned} scanned`,
+            );
+          }
+        } catch (err) {
+          console.error(`[scheduled] projection-sweep failed: ${String(err)}`);
         }
       })(),
     );
