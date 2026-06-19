@@ -1,122 +1,107 @@
 # saas-orun-backend-merge — Risks & Open Questions
 
-Status: Draft. D1–D4 are human-gated product/operational decisions; R1–R6 are
-engineering risks owned by the milestones. Each default recommendation is the
-proposed posture unless the operator overrides.
+Status: Draft. The architecture bets are **locked** in the README (greenfield
+event-sourced coordination, DO-per-run shard, Postgres projection, opt-in
+memoization, no permanent backcompat). What remains here are the **decisions
+still open behind those bets** (D-set) and the **engineering risks** the
+milestones own (R-set).
 
-## Human-gated decisions
+## Open questions (behind the locked bet)
 
-### D1 — The OSS self-host backend's future (blocks BM7 final teardown only)
+### D1 — Memoization scope & GC (owner BM1)
 
-`orun-backend` does double duty: the **hosted** plane at
-`orun-api.sourceplane.ai` *and* the `orun backend init` **OSS single-tenant
-reference** that the CLI detects via `ManagedBy == "orun-backend-init"`. This
-epic absorbs the hosted role; the OSS role needs a home. Options: (a) keep the
-`orun-backend` repo as the OSS reference with its hosted deploy frozen; (b)
-re-derive self-host from Orun Cloud's `_local/_local` fixed-scope mode (the
-contract already states the OSS backend "serves the same paths with a fixed
-`_local/_local` scope", so one codebase could serve both). **Default
-recommendation:** (a) for BM6/BM7 (freeze the hosted deploy, keep the repo as
-the OSS reference so nothing self-hosted breaks), with (b) as a tracked follow-on
-once Orun Cloud's single-tenant mode is proven — do **not** block cutover on it.
+Opt-in hermetic memoization is locked; its *blast radius* is not. Is a
+`job-result` cache **per-project**, **org-shared**, or **global** (a true
+cross-tenant build cache)? Global is the biggest win and the biggest trust/PII
+surface (one tenant's outputs visible to another by content hash). **Leaning:**
+per-project by default, org-shared opt-in, global never without explicit
+publish — and a TTL/refcount GC on `job-result`/`log` objects folded into the
+existing OV9 object-GC. Needs a product/security call before org-shared ships.
 
-### D2 — Default org/project materialization for accountless CI (blocks BM2 auth)
+### D2 — `jobInputHash` definition (owner BM1)
 
-`orun-backend` works with no account: OIDC `repository_id` *is* the namespace.
-On the platform every run needs an `{orgId, projectId}`. When OIDC/key traffic
-arrives for an unlinked repo, do we **auto-materialize** a per-owner default org
-+ `project == repo` (frictionless, preserves today's CI experience), or
-**require** an explicit `orun cloud link` first (stricter tenancy, but breaks
-standing workflows at cutover)? **Default recommendation:** auto-materialize into
-a per-owner default org (OV2 project==repo), upgradeable to a named org later, so
-no existing CI workflow needs a human in the loop. This has billing/entitlement
-attribution implications (whose org owns the usage) — confirm with the
-multi-org-billing owners before BM2 ships.
+What exactly is hashed decides both cache hit-rate and correctness. Too broad →
+no hits; too narrow → unsafe reuse. **Leaning:** resolved step definitions +
+declared input object digests + declared environment keys (not values) + the
+composition lock; explicitly excludes wall-clock/secrets. Must be specified and
+golden-vectored; a wrong hash is a correctness bug, not a perf miss.
 
-### D3 — Cutover window & in-flight runs (blocks BM6)
+### D3 — DO global placement vs runner locality (owner BM2)
 
-Freeze-and-drain (short read-only window while in-flight runs finish, then flip)
-vs. a dual-write bridge (no window, but two writers). **Default recommendation:**
-freeze-and-drain — a dual-write bridge reintroduces the exact cross-writer race
-the Durable Object was built to prevent (R1). The window size comes from BM5's
-prod-snapshot rehearsal + the heartbeat drain bound; operator picks the calendar
-slot and the customer-comms posture.
+A run's DO lives in one Cloudflare location; runners (CI) may be elsewhere →
+every append is a cross-region hop. **Leaning:** accept it (appends are small and
+infrequent vs heartbeats which stay client-side between beats); revisit with
+location hints only if claim latency breaches SLO. Open: whether to pin a run's
+DO near its first runner.
 
-### D4 — Legacy `/v1/runs` deprecation horizon (blocks BM7 deprecation notice)
+### D4 — Drain window for in-flight legacy runs (owner BM6)
 
-How long the unscoped shim is supported before it returns `410`. The Orun CLI
-already speaks the scoped contract, so the shim mostly serves **old pinned**
-clients and standing CI. **Default recommendation:** support for a fixed window
-(e.g. ≥ 2 CLI minor releases / one published calendar quarter), announced at BM6,
-enforced at the window's end — long enough that a `kiox` provider-pin bump
-carries clients across without a fire drill.
+How long `orun-backend` stays read-only-serving in-flight runs at cutover.
+**Leaning:** one max-run-duration window (legacy runs are bounded); new runs
+never start on the old plane. No dual-write bridge (it reintroduces the
+cross-writer race). Operator picks the calendar slot.
+
+### D5 — OSS self-host implementation timing (owner BM7)
+
+The contract is implementable on plain Postgres, but the OSS self-host is parked
+(`orun/specs/orun-cloud` D5). Do we build the plain-Postgres conditional-append
+server now (as the conformance reference) or only define the gate? **Leaning:**
+define the conformance gate at BM7, build the server only when self-host is
+unparked — but keep the contract DO-free so it stays buildable.
 
 ## Engineering risks
 
-### R1 — Coordinator semantic drift (severity: critical; owner BM1)
+### R1 — Conditional-append correctness (severity: critical; owner BM2)
 
-If the Postgres conditional-`UPDATE` claim does not reproduce the Durable
-Object's single-threaded guarantees exactly — deps-blocked vs deps-waiting,
-takeover on stale heartbeat, idempotent init, GC — a migrated client sees subtly
-different behavior (double-claims, deps-gate escapes, false sweeps). Mitigation:
-BM1's shared golden vectors (the reference `coordinator.test.ts` scenarios) plus
-fuzzed concurrent-claim tests; the single atomic `UPDATE` is the serialization
-point and must be the *only* claim path. No shim-side coordination.
+The whole safety model is "exactly one `:claim` append wins." If the DO's
+in-memory guard or the OSS `INSERT … WHERE NOT EXISTS` is wrong, two runners
+execute one job (double-deploy). Mitigation: the single writer per run is the
+serialization point; BM2's parity suite + fuzzed concurrent-claim tests are the
+gate; the predicate (latest-event ∈ ready ∧ deps terminal-success ∧ no memo) is
+evaluated atomically under the writer, never read-then-write in app code.
 
-### R2 — `repository_id` mis-binding / tenant crossover (severity: critical; owner BM2)
+### R2 — DO durability / recovery (severity: high; owner BM2)
 
-The legacy OIDC path turns a numeric `repository_id` into an `{orgId, projectId}`.
-A forged or raced binding leaks one tenant's runs/logs into another. Mitigation:
-bind only through the IG **connection trust** (signed, single-use,
-`installation_id ↔ org_id`, fail-closed) and OV2 materialization; never auto-bind
-a repo to an org that hasn't proven ownership; resource-hiding 404 on every
-cross-tenant access. Test plan must include: OIDC for repo A redeemed under a
-session for org B, replayed/expired bindings, and an unlinked-repo first push.
+DO storage is authoritative for the live stream; a permanent DO loss without a
+recent snapshot could strand a run. Mitigation: snapshot objects every N appends +
+projected checkpoints; rebuild = last snapshot + replay; unrecoverable tail =
+re-drive from `planDigest` with `Succeeded` jobs short-circuited by their
+`job-result` (memoization doubles as crash recovery). Rehearse a forced-loss
+recovery on stage.
 
-### R3 — Data-migration fidelity (severity: high; owner BM5)
+### R3 — Projection lag visible as "lost" work (severity: medium; owner BM3)
 
-The DO `runState` object shape, the D1 index rows, and the R2 key layout differ
-from `@saas/db/state` + Orun Cloud R2. A lossy import silently drops runs/logs or
-mis-scopes them. Mitigation: idempotent, resumable importer with **dry-run +
-row/object verification** (counts + digests), checkpointed by `(namespace,
-runId)`, **read-only on the source**, rehearsed against a prod snapshot;
-`orun-backend` stays available as a fallback through the dual-run window (BM6).
+Because Postgres is delayed, a user may not see a just-claimed job for seconds.
+Mitigation: `…/log` (SSE/long-poll) is the live truth for anyone who needs it;
+the console reads the stream for active runs and the projection for lists;
+document the consistency contract (§7) so staleness is expected, not a bug.
 
-### R4 — Heartbeat/lease constant mismatch (severity: medium; owner BM1/BM6)
+### R4 — Event-schema immutability (severity: medium; owner BM0)
 
-`orun-backend`'s `HEARTBEAT_TIMEOUT_MS = 300_000` vs `state-worker`'s
-`LEASE_SECONDS` / `HEARTBEAT_INTERVAL_SECONDS`: if they disagree, a run migrated
-mid-flight can be falsely swept to `failed` (or a dead runner held too long).
-Mitigation: reconcile the constants in BM1 and **freeze in-flight runs** at
-cutover (D3) so no lease straddles the migration boundary.
+The log is forever; a breaking event-shape change orphans old runs and CLIs.
+Mitigation: every event versioned + additive-only from BM0; the shared fold
+tolerates unknown future fields; contract major bump only via the platform's
+change-control, vendored + checksum-guarded into `orun`.
 
-### R5 — Contract-version skew on the legacy surface (severity: medium; owner BM2)
+### R5 — At-least-once surprises (severity: medium; owner BM2/BM4)
 
-Old clients send no `Orun-Contract-Version` header (or a v0-shaped body); the
-scoped plane rejects unknown majors with `409 contract_version_unsupported`. If
-the shim forwards that strictness, every legacy client breaks at cutover.
-Mitigation: the shim pins the legacy surface to `state-legacy-v0`, treats an
-absent version header as legacy, and only fails loud on genuinely unknown *new*
-majors — version skew stays actionable, not fatal, for the surface whose whole
-job is backward compatibility.
+Lease takeover can run a job twice; non-idempotent steps corrupt. This is
+unchanged from the reference but now explicit. Mitigation: document at-least-once
+in the contract (§7); memoization is opt-in and never a correctness crutch; the
+CLI surfaces takeover in the cockpit so a re-run is visible.
 
-### R6 — Catalog-model divergence (severity: medium; owner BM3)
+### R6 — Cross-repo contract skew (severity: medium; owner BM0/BM4)
 
-`orun-backend` stores catalog rows directly (flat D1 tables); Orun Cloud's
-catalog is **git-derived** and never console/API-authored (`components/18-state.md`,
-OV6). Importing the legacy catalog as authored truth would violate that
-invariant and create un-reprojectable state. Mitigation: BM3 feeds the legacy
-sync into the OV6 **projector** as a derived source; the catalog is always
-re-derivable from the object graph, never written as truth by the compat layer.
+Server and CLI evolving the contract independently breaks runs. Mitigation: one
+owned copy here, vendored + checksum-guarded into `orun` (mirrors the existing
+`orun-cloud/vendored` mechanism); the shared fold lives in `packages/contracts`
+and is the single reduction both sides import-or-port; neither repo bumps the
+major unilaterally.
 
-## Explicitly deferred
+## Explicitly out (per the locked bet)
 
-- **Platform-hosted runners.** Job execution stays customer-side, as in
-  `saas-orun-platform`. This epic moves coordination + state, not execution.
-- **`orun-backend`'s in-flight V2 org/project layer** (Tasks 0021–0023). It was
-  the backend converging toward Orun Cloud's tenancy; superseded by the real
-  thing, not ported.
-- **OSS self-host re-derivation from `_local/_local`** (D1 option b). Tracked as a
-  follow-on; cutover does not depend on it.
-- **Renaming the CLI's `allowedNamespaceIds` field.** A client-contract rev owned
-  by `orun/specs/orun-cloud/`; the shim satisfies the field as-is in the interim.
+- A permanent legacy `/v1/runs` surface — dropped; only the transient BM6 drain
+  bridge exists.
+- Lifting `orun-backend`'s Durable Object code or its V2 (Tasks 0021–0023)
+  org/project layer — superseded; `orun-backend` is a parity reference only.
+- Platform-hosted runners — job execution stays customer-side.

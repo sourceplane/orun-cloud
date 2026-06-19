@@ -1,30 +1,63 @@
 # Epic: saas-orun-backend-merge
 
-**Fold the standalone `orun-backend` control plane into Orun Cloud.** Today the
-hosted run-coordination / dependency-checking backend that Orun CLIs hit in CI
-lives in a separate repo (`sourceplane/orun-backend`) — a Cloudflare **Durable
-Object** coordinator + D1 index + R2, namespaced by GitHub `repository_id`,
-serving the **unscoped `/v1/runs/...`** API at `orun-api.sourceplane.ai`. This
-epic makes Orun Cloud's already-shipped `state-worker` the single
-implementation, **keeps the old API working byte-for-byte** behind a
-compatibility shim, migrates the live data, cuts `orun-api.sourceplane.ai` over,
-and decommissions the standalone backend.
+**Replace the standalone `orun-backend` coordination plane with a coordination
+model native to Orun Cloud's content-addressed state store — event-sourced, run
+state rooted at the source hash, sharded per run on a Durable Object, with
+Postgres as a delayed projection.** `orun-backend`'s `runs/jobs/claim` REST plane
+was designed *before* the object store existed; it is a relational coordination
+layer bolted beside the store. This epic does not preserve it. It redesigns job
+coordination as **append-only events over the Merkle object graph** and spans
+**both repos**: the server (this repo) and the Orun CLI client
+(`orun/specs/orun-native-coordination/`, cluster **NC**).
 
-Paired/parent epic: [`saas-orun-platform`](../saas-orun-platform/) (cluster
-**OP/OV**) — it owns `state-worker`, the tenancy spine, and the normative
-[`state-api-contract.md`](../saas-orun-platform/state-api-contract.md). This epic
-does **not** introduce a second coordinator; it consolidates onto that one and
-adds a legacy-compat surface as an additive annex to that contract.
+> **This epic was re-scoped.** It began as "absorb `orun-backend` behind a
+> backward-compatible shim." With the CLI now in scope (cross-repo) and the
+> design discussion settled on a greenfield, content-addressed, event-sourced
+> model with a Durable-Object coordination shard, **backward compatibility is no
+> longer the spine.** The legacy unscoped `/v1/runs` surface is dropped; the only
+> concession is a short read-only **drain bridge** for in-flight runs at cutover.
+> `orun-backend` remains the **parity reference** for the coordination invariants,
+> not an API to keep.
 
-> **Why not a literal port.** `orun-backend`'s coordinator is a faithful,
-> well-tested reference — but Orun Cloud already re-implemented the same
-> dependency-checking run-coordination plane on Postgres/Hyperdrive (OP2), fully
-> wired to org/project tenancy, deny-by-default policy, OIDC + `sk_` auth (OV3),
-> metering, catalog, and console (OV1–OV9). Lifting the Durable Object in would
-> duplicate OP2 and bolt a **second source of truth** onto a repo that
-> standardized on Postgres. So we take `orun-backend` as the **reference spec
-> for parity** and reduce the "move" to: parity-harden → compat shim → migrate →
-> cut over → decommission.
+Paired CLI epic: `orun/specs/orun-native-coordination/` (cluster **NC**). The two
+share one normative wire contract — [`coordination-api.md`](./coordination-api.md),
+owned here, vendored into the CLI repo with a checksum drift guard (the same
+mechanism `orun/specs/orun-cloud/vendored/` already uses).
+
+## The bet (locked decisions)
+
+These are the recommended calls, taken as decisions rather than options:
+
+1. **Greenfield, no permanent backward-compat.** Because we control the client,
+   the CLI moves to the new contract directly. No legacy `/v1/runs` surface
+   survives; a time-boxed read-only drain bridge covers in-flight runs at cutover
+   only.
+2. **Coordination is event-sourced.** A run is an **append-only, per-run event
+   stream** rooted at `planDigest → sourceHash`. Authoritative job/lease state is
+   a **fold** over the stream; a claim is a **conditional append**, not a row
+   `UPDATE`. Postgres tables become a derived read model.
+3. **The per-run coordination shard is a Durable Object.** One DO per run is the
+   single writer of that run's event stream — in-memory single-threaded
+   serialization, DO-storage-durable appends, an alarm for lease expiry. This is
+   the strong-consistency primitive *and* the horizontal-scale unit (one tiny DO
+   per concurrent run). **Postgres is a delayed projection** (lists, status,
+   frontier cache, catalog, metering). Strong consistency is spent only on
+   per-run append and on run-create/quota.
+4. **Job results are content-addressed objects** (`job-result` kind), which makes
+   a successful job **memoizable across tenants and repos** (a content-addressed
+   build cache). Memoization is **opt-in per job via a hermetic/purity
+   declaration in the plan; default off** (safe).
+5. **One contract, two server implementations.** Hosted (DO-sharded) and OSS
+   self-host (plain-Postgres conditional-append) implement the same wire
+   contract; the CLI is implementation-agnostic. (OSS self-host stays parked per
+   `orun/specs/orun-cloud` D5, but the contract remains implementable on plain
+   Postgres — no Cloudflare-only primitive leaks into the wire.)
+6. **Logs and run records fold into the same substrate** — log chunks are events,
+   sealed into a content-addressed `log` object referenced by the `job-result`;
+   a terminal run can be sealed as a `run-record` object for immutable provenance.
+7. **DO durability/recovery.** DO storage is authoritative for the live stream;
+   periodic **snapshot objects** + a projected checkpoint in Postgres are the
+   backstop. On permanent DO loss, rebuild from the last snapshot + replay.
 
 ## Status
 
@@ -32,102 +65,69 @@ adds a legacy-compat surface as an additive annex to that contract.
 |-------|-------|
 | Status | **Draft** (not started) |
 | Cluster | **BM** (BM0–BM7) |
-| Owner(s) | `state-worker`, `api-edge`, `identity-worker`, `integrations-worker`, `packages/{db,contracts}`, `infra/terraform`, tooling/migrate (new) |
+| Owner(s) | `state-worker` (coordination shard + projections + object plane), `api-edge`, `identity-worker`, `packages/{db,contracts}`, `infra/terraform`; CLI side owned by `orun` (cluster **NC**) |
 | Target branch | `main` (PRs merged incrementally, milestone-sized) |
-| Builds on | `saas-orun-platform` (OP2 run coordination, OV2 project==repo, OV3 credential-agnostic CI auth, OV6 catalog projection), `saas-integrations` (connection trust binding, `repo_links`), `core/domain-model.md` (one tenancy spine) |
-| Reference | `sourceplane/orun-backend` — coordinator semantics, V1 wire surface, auth model, storage shapes are taken from there as the parity target (see [Provenance](#provenance--what-we-take-from-orun-backend)) |
-| Pairs with | `orun/specs/orun-cloud/` (CLI side; the client already speaks the scoped contract — the shim serves older pinned clients) |
-| Decisions locked | one coordinator (Orun Cloud `state-worker`, Postgres), not a ported Durable Object; legacy unscoped `/v1/runs` stays a **transitional** compat surface (deprecation-dated, not permanent); `repository_id` resolves to org/project through the existing trust bindings (OV2/OV3/IG), never auto-bound without proof of ownership; freeze-and-drain cutover (no dual-write); no client changes required at cutover |
+| Builds on | `saas-orun-platform` (OP3 object/CAS plane, OV1 `ModelReader` seam, OV6 catalog projection, OV3 credential-agnostic CI auth), `core/domain-model.md` (one tenancy spine) |
+| Reference | `sourceplane/orun-backend` — coordinator **invariants** (deps gating, 5-min liveness, takeover, idempotency) are the parity target; its API is **not** preserved |
+| Pairs with | `orun/specs/orun-native-coordination/` (cluster **NC**) — the CLI client |
+| Contract | [`coordination-api.md`](./coordination-api.md) — owned here, vendored into `orun` |
 
 ## Thesis
 
-`orun-backend` and Orun Cloud's `state-worker` solve the same problem twice. The
-backend is the **original** hosted answer (Durable Object as the single-threaded
-serialization point, `repository_id` as the namespace, accountless OIDC); the
-`state-worker` is the **multi-tenant** answer the platform was built for (atomic
-Postgres conditional-UPDATE claim, org→project→environment spine, policy +
-metering + catalog for free). Both implement the same `statebackend.Backend`
-shape the Orun CLI ships — that is the whole reason the consolidation is cheap.
+The store already has the right substrate and uses it the wrong way round for
+coordination. Objects are content-addressed and immutable (`PUT /objects/{digest}`,
+kinds `plan | catalog-snapshot | …`); catalog **heads** are mutable refs into
+that graph that **emit events** (`catalog.head.advanced`). But job coordination
+is the one plane still living in mutable `run_jobs` rows, with events emitted as
+*exhaust*. We invert that: **events become the authority, the relational tables
+become a projection, and job results become first-class content-addressed
+objects.**
 
-So we don't rebuild and we don't run two planes. We (1) prove the Postgres
-coordinator matches the Durable Object's invariants exactly, (2) wrap it in a
-**legacy compatibility shim** that accepts `orun-backend`'s unscoped
-`/v1/runs/...` + `repository_id`-OIDC API and translates it onto org/project
-tenancy, (3) port the few surfaces the shim is missing (catalog sync, accounts,
-GitHub OAuth), (4) migrate the live runs/jobs/logs/catalog out of DO+D1+R2 into
-Postgres+R2, (5) cut `orun-api.sourceplane.ai` over to Orun Cloud, and (6) tear
-the standalone backend down. Existing CI workflows and pinned CLIs keep working
-through the whole sequence — the only thing that changes is who answers the URL.
+Concretely, a claim stops being `UPDATE run_jobs SET status='claimed'` and becomes
+"**append `JobClaimed` to the run's event stream iff the job's latest event
+permits it and its deps are satisfied**" — a conditional append serialized by the
+run's Durable Object. Completion appends `JobSucceeded{ result: sha256:… }`,
+where the result is a content-addressed object. This unifies three things we have
+been treating separately — coordination, the scaling story, and provenance — into
+one design: the per-run event stream **is** the partition boundary (so it scales
+by run), conditional append **is** the cheap strong-consistency primitive, and
+the `sourceHash → plan → job → result` Merkle chain **is** provenance and a build
+cache for free.
 
 ## Read order
 
-1. `README.md` (this file) — status, thesis, milestone-at-a-glance, provenance, dependency map.
-2. `design.md` — the parity matrix, the unscoped→scoped translation, `repository_id`→org/project resolution, data migration, cutover & rollback, decommission.
-3. `implementation-plan.md` — BM0–BM7, each with goal, owner, dependencies, "done when".
-4. `risks-and-open-questions.md` — human-gated decisions (OSS self-host future, default-org materialization, cutover window) and engineering risks.
+1. `README.md` (this file) — the bet, status, milestone-at-a-glance, dependency map.
+2. `design.md` — the three planes, the event model + fold, the DO coordination shard, the scalability tiers, memoization, recovery.
+3. `coordination-api.md` — the **normative** redesigned wire contract (owned here, vendored into `orun`).
+4. `implementation-plan.md` — BM0–BM7 with "done when".
+5. `risks-and-open-questions.md` — remaining open questions behind the locked bet.
 
 ## Milestones at a glance
 
 | ID | Milestone | Status |
 |----|-----------|--------|
-| BM0 | Parity audit + legacy-compat contract annex (dormant, no code) | 🗓️ Planned |
-| BM1 | Coordinator parity hardening (Postgres == Durable Object semantics; shared golden vectors) | 🗓️ Planned |
-| BM2 | Legacy compatibility shim — unscoped `/v1/runs/*` + `repository_id`-OIDC + CLI-session/deploy-token → org/project | 🗓️ Planned |
-| BM3 | Catalog sync compat (`/v1/catalog/*` → OV6 org-global projection) | 🗓️ Planned |
-| BM4 | Accounts + GitHub OAuth compat (`/v1/accounts/*`, `/v1/auth/github`) | 🗓️ Planned |
-| BM5 | Data migration (DO + D1 + R2 → Postgres + R2), idempotent/resumable/verified | 🗓️ Planned |
-| BM6 | Cutover `orun-api.sourceplane.ai` → Orun Cloud (freeze-and-drain, canary, rollback) | 🗓️ Planned |
-| BM7 | Decommission `orun-backend` hosted deploy + legacy-surface deprecation timeline | 🗓️ Planned |
+| BM0 | Coordination contract v2 (`coordination-api.md`) + vendor into `orun`; object kinds + event vocab frozen (dormant, no behavior) | 🗓️ Planned |
+| BM1 | Object-plane extensions: `job-result` + `log` kinds, digest negotiation, memoization lookup (opt-in purity) | 🗓️ Planned |
+| BM2 | Per-run coordination shard (Durable Object): event log, conditional append, claim/heartbeat/complete, lease-expiry alarm, snapshots | 🗓️ Planned |
+| BM3 | Projections: Postgres read models (run list/status/frontier/metering) derived from the stream; DO alarms replace the cron sweep | 🗓️ Planned |
+| BM4 | CLI adoption (pairs **NC**): new `statebackend.Backend` shape (append/fold/read-the-log + result push), offline event log + cloud sync, cockpit/status/logs | 🗓️ Planned |
+| BM5 | Auth + tenancy + quota on the new surface: OIDC/key/session → ActorContext; run-create + quota strong-consistent in Postgres; policy actions | 🗓️ Planned |
+| BM6 | Migration & cutover: retire the legacy plane; read-only drain bridge for in-flight; provenance migration; `orun-api.sourceplane.ai` cutover | 🗓️ Planned |
+| BM7 | Decommission `orun-backend`; OSS self-host plain-Postgres conformance (parked); closeout | 🗓️ Planned |
 
 ## Cross-repo dependency map
 
-The Orun CLI already implements the scoped contract (`internal/remotestate/client.go`),
-so no CLI milestone is required for correctness — the shim exists for **older,
-pinned** clients and standing CI workflows. The seams this epic verifies against:
-
-| Orun Cloud (this epic) | Counterpart | Seam |
-|------------------------|-------------|------|
-| BM1 coordinator parity | `orun-backend` `packages/coordinator/src/coordinator.ts` | claim/deps/heartbeat/GC golden vectors ↔ `state-worker` `handlers/runs.ts` + `sweep.ts` |
-| BM2 legacy shim | `orun-backend` `apps/worker/src/router.ts` (V1) + `auth/*` | unscoped `/v1/runs/*` + OIDC `repository_id` ↔ api-edge state-facade → scoped `state-worker` |
-| BM2 tenancy resolution | OV2 project==repo, OV3 ActorContext, IG connection trust | `repository_id` → `{orgId, projectId}` |
-| BM3 catalog compat | `orun-backend` `/v1/catalog/*` + `migrations/0005_catalog_index.sql` | legacy sync envelope ↔ OV6 catalog projector |
-| BM4 accounts/OAuth compat | `orun-backend` `/v1/accounts/*`, `/v1/auth/github` | identity-worker sessions + `state.workspace_links`/IG `repo_links` |
-| BM5 data migration | `orun-backend` DO state + D1 (`0001_init.sql`) + R2 | `@saas/db/state` rows + Orun Cloud R2 |
-| BM6 cutover | `orun-cloud/intent.yaml` `execution.state.backendUrl`, CLI default backend URL | DNS/route of `orun-api.sourceplane.ai` |
-
-## Provenance — what we take from `orun-backend`
-
-This epic is explicitly **reference-driven**: the durable behavior of the hosted
-backend is the acceptance bar, and we lift it from `orun-backend` rather than
-re-deriving it. Taken as the parity target (not as code to copy):
-
-- **Coordinator state machine** (`packages/coordinator/src/coordinator.ts`):
-  `JobStatus` set (`pending|running|success|failed|skipped`), `ClaimResult`
-  fields (`claimed`, `takeover`, `currentStatus`, `depsBlocked`, `depsWaiting`),
-  init idempotency by `runId + namespace + plan.checksum`, deps-blocked vs
-  deps-waiting distinction, **`HEARTBEAT_TIMEOUT_MS = 300_000`** liveness +
-  takeover, run-status propagation, GC sweep, runnable frontier. These become
-  BM1's golden vectors against `state-worker`.
-- **Public V1 wire surface** (`apps/worker/src/router.ts`): the exact unscoped
-  path templates (`/v1/runs/...`, `/v1/catalog/*`, `/v1/accounts/*`,
-  `/v1/auth/*`) are the byte-for-byte backward-compat target for BM2–BM4.
-- **Auth model** (`apps/worker/src/auth/{oidc,session,index}.ts`): OIDC issuer +
-  claim→namespace extraction (`repository_id`), HMAC CLI session
-  (`allowedNamespaceIds`, `local:user:<githubUserId>:repo:<repoId>`), deploy
-  token. BM2 reproduces these as authentication adapters that resolve to the
-  platform `ActorContext`.
-- **Storage shapes** (`migrations/0001_init.sql`, `0005_catalog_index.sql`,
-  `packages/storage/*`): the run/job index + catalog tables + R2 key layout are
-  the source schema BM5's importer reads.
-
-What we deliberately **do not** take: the Durable Object as a runtime primitive
-(superseded by the Postgres conditional-UPDATE claim), and `orun-backend`'s own
-in-flight "V2" org/project layer (Tasks 0021–0023) — that was the backend
-starting to grow toward the tenancy Orun Cloud already has; it is superseded,
-not ported.
+| Orun Cloud (this epic) | Orun CLI (`orun-native-coordination`, **NC**) | Seam |
+|---|---|---|
+| BM0 contract v2 | NC0 vendor + drift guard | `coordination-api.md` ↔ `specs/.../vendored/` + checksum test |
+| BM1 object kinds + memoization | NC1 result push + cache-aware claim | `job-result`/`log` objects ↔ object-model sync |
+| BM2 DO coordination shard | NC2 event-log client (append + fold) | conditional-append verbs ↔ `internal/remotestate` |
+| BM3 projections | NC3 read-the-log status/frontier | event stream + projections ↔ `bridge.Source`/cockpit |
+| BM4 CLI adoption | NC2–NC4 | new `statebackend.Backend` interface |
+| BM5 auth/quota | NC4 OIDC golden path | exchange + ActorContext ↔ `OIDCTokenSource` |
 
 ## Scope boundary
 
 | In scope | Out of scope |
 |----------|--------------|
-| Coordinator parity hardening; legacy unscoped `/v1/runs` + OIDC/session/deploy-token shim; `repository_id`→org/project resolution; catalog-sync + accounts + OAuth compat; DO+D1+R2 → Postgres+R2 migration; `orun-api.sourceplane.ai` cutover + rollback; standalone backend decommission; legacy-surface deprecation plan | CLI-side changes (the client already speaks scoped; → `orun/specs/orun-cloud/`); the OSS self-host backend's long-term home (→ this epic's **D1** open question); executing jobs on platform-hosted runners (still customer-side; → future epic); the catalog *model* itself (→ `orun/specs/orun-service-catalog`); new product surfaces beyond restoring backend parity |
+| The redesigned `coordination-api.md`; `job-result`/`log`/`run-record` object kinds + memoization; per-run DO coordination shard (event log, conditional append, lease alarms, snapshots); Postgres projections; auth/tenancy/quota on the new surface; CLI client move (paired **NC**); migration off the legacy plane + cutover + decommission | A permanent legacy `/v1/runs` surface (dropped); the catalog *model* (→ `orun-service-catalog`); platform-hosted runners (still customer-side); the CLI's internal refactor detail (→ `orun-native-coordination`); secrets (→ `orun-secrets`/OV8) |
