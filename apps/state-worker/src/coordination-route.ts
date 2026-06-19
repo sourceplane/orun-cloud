@@ -103,6 +103,20 @@ export async function proxyCoordinatorLog(env: Env, runId: string, fromSeq: numb
 
 const TERMINAL_PHASES = new Set(["succeeded", "failed", "timed_out", "canceled", "memoized"]);
 
+/**
+ * True iff this run has an initialized DO shard, so its verbs route to the DO.
+ * The coordination backend is sticky PER RUN: a run created on OP2 (no shard)
+ * keeps finishing on OP2 even after the flag flips, and a DO-backed run keeps
+ * using the DO even if the flag flips back. useDoCoordination only governs
+ * whether a NEW run (createRun) seeds a shard — so flipping the flag never breaks
+ * an in-flight run. A run is DO-backed exactly when /state reports its runId.
+ */
+export async function runIsDoBacked(env: Env, runId: string): Promise<boolean> {
+  if (env.COORDINATOR === undefined) return false;
+  const fold = await readCoordinatorState(env, runId);
+  return fold !== null && fold.runId === runId;
+}
+
 /** The OP2 claim-reject vocabulary (contract §2.2). */
 export type Op2ClaimReason = "already_claimed" | "terminal" | "deps_not_ready";
 

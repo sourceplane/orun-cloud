@@ -7,6 +7,7 @@ import {
   coordinatorClaimOP2,
   coordinatorCompleteOP2,
   coordinatorHeartbeatOP2,
+  runIsDoBacked,
 } from "../src/coordination-route.js";
 
 // OP2↔DO facade conformance (BM6 cutover). Drives the OP2 compatibility helpers
@@ -84,6 +85,15 @@ describe("OP2 facade over the real DO", () => {
 
     // a done → b now claimable.
     expect((await coordinatorClaimOP2(env, run, "b", "r1")).kind).toBe("claimed");
+  });
+
+  it("backend stickiness: a run is DO-backed only once its shard is initialized", async () => {
+    // Never-initialized run → not DO-backed → verbs fall back to OP2 (no in-flight
+    // breakage when the flag flips on for runs created before the flip).
+    expect(await runIsDoBacked(env, "never-seeded-run")).toBe(false);
+    // Seed it → now DO-backed.
+    await initRun("sticky-1", LINEAR);
+    expect(await runIsDoBacked(env, "sticky-1")).toBe(true);
   });
 
   it("a failed completion is terminal and blocks dependents", async () => {

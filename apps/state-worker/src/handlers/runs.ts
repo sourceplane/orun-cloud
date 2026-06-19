@@ -56,6 +56,7 @@ import {
   initCoordinator,
   planFromJobs,
   projectAfterVerb,
+  runIsDoBacked,
   useDoCoordination,
 } from "../coordination-route.js";
 
@@ -606,9 +607,10 @@ export async function handleClaimJob(
   const authz = await authorizeRun(env, requestId, actor, orgId, projectId, STATE_POLICY_ACTIONS.RUN_WRITE);
   if (!authz.ok) return authz.response;
 
-  // DO backend (BM4b): proxy the §3 :claim to the run shard (returns the bare §3
-  // envelope, not the OP2 { claim: … } wrapper). Mutually exclusive with OP2.
-  if (useDoCoordination(env)) {
+  // DO backend (BM6 facade): :claim over the DO, OP2 { claim: … } envelope.
+  // Routes here iff this run is DO-backed (sticky per run), so flipping the flag
+  // never breaks an in-flight OP2 run.
+  if (useDoCoordination(env) && (await runIsDoBacked(env, runUlid))) {
     const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
     const runnerId = typeof body.runnerId === "string" ? body.runnerId : "";
     if (!runnerId) return validationError(requestId, { runnerId: ["Required; non-empty string"] });
@@ -704,7 +706,7 @@ export async function handleHeartbeatJob(
 
   // DO backend (BM6 facade): :heartbeat over the DO, OP2 envelope. leaseEpoch is
   // derived from the shard (OP2 has none); a takeover surfaces as the OP2 409.
-  if (useDoCoordination(env)) {
+  if (useDoCoordination(env) && (await runIsDoBacked(env, runUlid))) {
     const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
     const runnerId = typeof body.runnerId === "string" ? body.runnerId : "";
     if (!runnerId) return validationError(requestId, { runnerId: ["Required; non-empty string"] });
@@ -796,7 +798,7 @@ export async function handleUpdateJob(
 
   // DO backend (BM6 facade): :update over the DO, OP2 envelope. Terminal-sticky
   // (idempotent re-complete) and lease-checked; an empty body matches OP2.
-  if (useDoCoordination(env)) {
+  if (useDoCoordination(env) && (await runIsDoBacked(env, runUlid))) {
     const out = await coordinatorCompleteOP2(env, runUlid, jobId, runnerId!, status as "succeeded" | "failed", errorText);
     await projectAfterVerb(env, deps, { orgId, projectId }, runUlid);
     if (out.kind === "lease_lost") {
@@ -879,7 +881,7 @@ export async function handleCancelRun(
   if (!authz.ok) return authz.response;
 
   // DO backend (BM6 facade): cancel the shard, project, return the run (OP2 shape).
-  if (useDoCoordination(env)) {
+  if (useDoCoordination(env) && (await runIsDoBacked(env, runUlid))) {
     const ok = await coordinatorCancelOP2(env, runUlid, { id: actor.subjectId, type: actor.subjectType });
     if (!ok) return errorResponse("internal_error", "Service unavailable", 503, requestId);
     await projectAfterVerb(env, deps, { orgId, projectId }, runUlid);
