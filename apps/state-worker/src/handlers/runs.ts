@@ -51,6 +51,7 @@ import { orgPublicId, projectPublicId } from "../ids.js";
 import {
   initCoordinator,
   planFromJobs,
+  projectAfterVerb,
   proxyCoordinatorVerb,
   useDoCoordination,
 } from "../coordination-route.js";
@@ -608,12 +609,14 @@ export async function handleClaimJob(
     const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
     const runnerId = typeof body.runnerId === "string" ? body.runnerId : "";
     if (!runnerId) return validationError(requestId, { runnerId: ["Required; non-empty string"] });
-    return proxyCoordinatorVerb(env, runUlid, "claim", {
+    const res = await proxyCoordinatorVerb(env, runUlid, "claim", {
       jobId,
       runnerId,
       ...(body.hermetic === true ? { hermetic: true } : {}),
       ...(typeof body.memoResultDigest === "string" ? { memoResultDigest: body.memoResultDigest } : {}),
     });
+    await projectAfterVerb(env, deps, { orgId, projectId }, runUlid);
+    return res;
   }
 
   const runnerId = await readRunnerId(request);
@@ -773,7 +776,7 @@ export async function handleUpdateJob(
   if (useDoCoordination(env)) {
     const leaseEpoch = typeof body.leaseEpoch === "number" ? body.leaseEpoch : 0;
     const resultDigest = typeof body.resultDigest === "string" ? body.resultDigest : undefined;
-    return proxyCoordinatorVerb(env, runUlid, "complete", {
+    const res = await proxyCoordinatorVerb(env, runUlid, "complete", {
       jobId,
       runnerId: runnerId!,
       leaseEpoch,
@@ -781,6 +784,8 @@ export async function handleUpdateJob(
       ...(resultDigest !== undefined ? { resultDigest } : {}),
       ...(errorText !== null ? { errorText } : {}),
     });
+    await projectAfterVerb(env, deps, { orgId, projectId }, runUlid);
+    return res;
   }
 
   const executor = deps?.executor ?? createSqlExecutor(env.PLATFORM_DB!);
@@ -857,9 +862,11 @@ export async function handleCancelRun(
 
   // DO backend (BM4b): proxy the §3 :cancel (200 { seq }).
   if (useDoCoordination(env)) {
-    return proxyCoordinatorVerb(env, runUlid, "cancel", {
+    const res = await proxyCoordinatorVerb(env, runUlid, "cancel", {
       actor: { id: actor.subjectId, type: actor.subjectType },
     });
+    await projectAfterVerb(env, deps, { orgId, projectId }, runUlid);
+    return res;
   }
 
   const executor = deps?.executor ?? createSqlExecutor(env.PLATFORM_DB!);

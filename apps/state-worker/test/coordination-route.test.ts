@@ -1,9 +1,13 @@
+import { COORDINATION_EVENT_TYPES as K, reduce, type CoordinationEvent } from "@saas/contracts/coordination";
+import type { SqlExecutor } from "@saas/db/hyperdrive";
+import type { Uuid } from "@saas/db/ids";
 import { describe, expect, it } from "vitest";
 
 import type { Env } from "../src/env.js";
 import {
   initCoordinator,
   planFromJobs,
+  projectCoordinatorRun,
   proxyCoordinatorLog,
   proxyCoordinatorVerb,
   useDoCoordination,
@@ -94,6 +98,60 @@ describe("initCoordinator — idempotent run shard init", () => {
     });
     expect(calls[0]!.url).toBe("https://coordinator/init");
     expect(calls[0]!.body).toMatchObject({ runId: "run-1", planDigest: "sha256:p", plan: { jobs: { a: { deps: [] } } } });
+  });
+});
+
+function ev(seq: number, kind: string, jobId: string | undefined, payload: unknown): CoordinationEvent {
+  return { seq, kind, runId: "r1", jobId, actor: { id: "u", type: "user" }, at: "t", idempotencyKey: `${seq}`, v: 1, payload } as CoordinationEvent;
+}
+
+function fakeExecutor(): { exec: SqlExecutor; calls: { text: string; params: unknown[] }[] } {
+  const calls: { text: string; params: unknown[] }[] = [];
+  const exec: SqlExecutor = {
+    async execute(text, params = []) {
+      calls.push({ text, params });
+      if (/SELECT last_seq/.test(text)) return { rows: [{ last_seq: 0 }] as never[], rowCount: 1 };
+      if (/UPDATE state\.runs/.test(text)) return { rows: [{ id: "run-row" }] as never[], rowCount: 1 };
+      return { rows: [] as never[], rowCount: 0 };
+    },
+  };
+  return { exec, calls };
+}
+
+describe("projectCoordinatorRun — fold the shard → apply projection", () => {
+  it("reads /state, folds, and issues the seq-guarded read-model writes", async () => {
+    const fold = reduce(
+      [
+        ev(1, K.RUN_CREATED, undefined, { planDigest: "sha256:p", sourceHash: "sha256:s", environment: null }),
+        ev(2, K.JOB_CLAIMED, "a", { runnerId: "r1", leaseEpoch: 1, leaseExpiresAt: "2026-12-01T00:00:00Z", attempt: 1 }),
+      ],
+      { jobs: { a: { deps: [] }, b: { deps: ["a"] } } },
+    );
+    const { env } = fakeEnv("do", (call) =>
+      call.url.endsWith("/state")
+        ? new Response(JSON.stringify(fold), { status: 200 })
+        : new Response("{}", { status: 200 }),
+    );
+    const { exec, calls } = fakeExecutor();
+
+    await projectCoordinatorRun(env, exec, { orgId: "o" as Uuid, projectId: "p" as Uuid }, "r1");
+
+    expect(calls.some((c) => /SELECT last_seq/.test(c.text))).toBe(true);
+    const runUpdate = calls.find((c) => /UPDATE state\.runs/.test(c.text));
+    expect(runUpdate).toBeDefined();
+    // params: [orgId, projectId, runId, status, lastSeq]
+    expect(runUpdate!.params[3]).toBe("running");
+    expect(runUpdate!.params[4]).toBe(2);
+    // job 'a' projected as claimed
+    const jobUpdate = calls.find((c) => /UPDATE state\.run_jobs/.test(c.text));
+    expect(jobUpdate!.params[3]).toBe("claimed");
+  });
+
+  it("no-ops when the shard has no state (unreachable / uninitialized)", async () => {
+    const { env } = fakeEnv("do", () => new Response("nope", { status: 404 }));
+    const { exec, calls } = fakeExecutor();
+    await projectCoordinatorRun(env, exec, { orgId: "o" as Uuid, projectId: "p" as Uuid }, "r1");
+    expect(calls.length).toBe(0); // never touched Postgres
   });
 });
 

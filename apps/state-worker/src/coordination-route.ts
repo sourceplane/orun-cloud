@@ -6,6 +6,10 @@
 // is OP2 (default) or the binding is absent, the handlers keep the relational
 // path and never call here.
 
+import type { RunFoldState } from "@saas/contracts/coordination";
+import { planProjection } from "@saas/contracts/coordination-projector";
+import { applyProjection, type ProjectionScope } from "@saas/db/state";
+import { createSqlExecutor, type SqlExecutor } from "@saas/db/hyperdrive";
 import type { Env } from "./env.js";
 
 /** Plan job as parsed from a create-run body. */
@@ -87,4 +91,57 @@ export async function proxyCoordinatorVerb(
 /** Proxy the §2 event-log read (GET /log?from=) to the run shard. */
 export async function proxyCoordinatorLog(env: Env, runId: string, fromSeq: number): Promise<Response> {
   return proxy(await callCoordinator(env, runId, "GET", `/log?from=${fromSeq}`));
+}
+
+// ── Projection trigger (BM3c) ───────────────────────────────────────────────
+// After a state-changing verb, fold the shard and project it into Postgres so
+// reads (status/jobs) stay fresh. The DO is the authority; this keeps the
+// delayed read model close behind, seq-guarded so it is safe to run repeatedly.
+
+/** Read the run shard's folded state (GET /state → RunFoldState), or null. */
+async function readCoordinatorState(env: Env, runId: string): Promise<RunFoldState | null> {
+  const res = await callCoordinator(env, runId, "GET", "/state");
+  if (!res.ok) return null;
+  return (await res.json()) as RunFoldState;
+}
+
+/** Fold the shard and apply the projection (guarded by the run's stored last_seq). */
+export async function projectCoordinatorRun(
+  env: Env,
+  executor: SqlExecutor,
+  scope: ProjectionScope,
+  runId: string,
+): Promise<void> {
+  const fold = await readCoordinatorState(env, runId);
+  if (fold === null) return;
+  const cur = await executor.execute<{ last_seq: string | number }>(
+    `SELECT last_seq FROM state.runs WHERE org_id = $1 AND project_id = $2 AND run_ulid = $3`,
+    [scope.orgId, scope.projectId, runId],
+  );
+  const appliedSeq = cur.rows[0] ? Number(cur.rows[0].last_seq) : 0;
+  await applyProjection(executor, scope, planProjection(fold, appliedSeq));
+}
+
+/**
+ * Handler-side projection: best-effort, never fails the verb (the read model is
+ * eventually consistent — the DO log is the source of truth). Manages its own
+ * executor unless the caller injects one (tests).
+ */
+export async function projectAfterVerb(
+  env: Env,
+  deps: { executor?: SqlExecutor } | undefined,
+  scope: ProjectionScope,
+  runId: string,
+): Promise<void> {
+  if (!env.PLATFORM_DB && !deps?.executor) return;
+  const executor = deps?.executor ?? createSqlExecutor(env.PLATFORM_DB!);
+  try {
+    await projectCoordinatorRun(env, executor, scope, runId);
+  } catch {
+    // Eventually consistent: a projection failure must never fail the verb.
+  } finally {
+    if (!deps?.executor && "dispose" in executor) {
+      await (executor as unknown as { dispose: () => Promise<void> }).dispose();
+    }
+  }
 }
