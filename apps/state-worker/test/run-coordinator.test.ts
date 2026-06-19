@@ -66,9 +66,9 @@ describe("RunCoordinator (miniflare integration)", () => {
     const cb = await call(run, "/claim", "POST", { jobId: "b", runnerId: "r1" });
     expect(cb.json).toMatchObject({ claimed: false, reason: "deps_not_ready" });
 
-    // The holder completes a; b becomes claimable.
+    // The holder completes a; b becomes claimable. §3: complete → { seq }.
     const done = await call(run, "/complete", "POST", { jobId: "a", runnerId: "r1", leaseEpoch, outcome: "succeeded", resultDigest: "sha256:ra" });
-    expect(done.json.ok).toBe(true);
+    expect(typeof done.json.seq).toBe("number");
 
     const st = await call(run, "/state", "GET");
     expect((st.json as { jobs: Record<string, { phase: string }> }).jobs.a!.phase).toBe("succeeded");
@@ -90,6 +90,36 @@ describe("RunCoordinator (miniflare integration)", () => {
     const lost = await call(run, "/heartbeat", "POST", { jobId: "a", runnerId: "r2", leaseEpoch });
     expect(lost.status).toBe(409);
     expect(lost.json).toMatchObject({ error: "lease_lost" });
+  });
+
+  it("emits the coordination-api §3 response envelopes", async () => {
+    const run = "r-int-4";
+    await call(run, "/init", "POST", { runId: run, plan: PLAN, planDigest: "sha256:p", sourceHash: "sha256:s" });
+
+    // claimed → { claimed:true, leaseEpoch, leaseExpiresAt, seq }
+    const claimed = await call(run, "/claim", "POST", { jobId: "a", runnerId: "r1" });
+    expect(claimed.json).toMatchObject({ claimed: true });
+    expect(typeof claimed.json.seq).toBe("number");
+    expect(typeof claimed.json.leaseExpiresAt).toBe("string");
+
+    // complete a, then a re-claim of a terminal job → reason run_terminal (not "terminal")
+    const leaseEpoch = claimed.json.leaseEpoch as number;
+    await call(run, "/complete", "POST", { jobId: "a", runnerId: "r1", leaseEpoch, outcome: "succeeded", resultDigest: "sha256:ra" });
+    const terminal = await call(run, "/claim", "POST", { jobId: "a", runnerId: "r9" });
+    expect(terminal.json).toMatchObject({ claimed: false, reason: "run_terminal" });
+
+    // cancel → { seq }
+    const canceled = await call(run, "/cancel", "POST", {});
+    expect(typeof canceled.json.seq).toBe("number");
+  });
+
+  it("a memoized claim returns { cached:true, result:{ digest } } (§3)", async () => {
+    const run = "r-int-5";
+    // single hermetic job memo plan
+    const memoPlan = { jobs: { h: { deps: [] as string[] } } };
+    await call(run, "/init", "POST", { runId: run, plan: memoPlan, planDigest: "sha256:p", sourceHash: "sha256:s" });
+    const cached = await call(run, "/claim", "POST", { jobId: "h", runnerId: "r1", hermetic: true, memoResultDigest: "sha256:memo" });
+    expect(cached.json).toMatchObject({ claimed: false, cached: true, result: { digest: "sha256:memo" } });
   });
 
   it("init is idempotent for the same plan and conflicts on a different plan", async () => {

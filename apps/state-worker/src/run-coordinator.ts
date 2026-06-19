@@ -50,6 +50,10 @@ export class RunCoordinator extends DurableObject {
     return reduce(await this.log(), await this.plan());
   }
 
+  private async seqHead(): Promise<number> {
+    return (await this.ctx.storage.get<number>("seq")) ?? 0;
+  }
+
   /** Finalize append intents into events (assign seq/at/actor/key) and persist. */
   private async appendAll(
     intents: AppendIntent[],
@@ -142,7 +146,7 @@ export class RunCoordinator extends DurableObject {
     const job = state.jobs[body.jobId];
     // Idempotent re-claim by the current holder with a live lease.
     if (job && job.phase === "claimed" && job.holder === body.runnerId) {
-      return json({ claimed: true, leaseEpoch: job.leaseEpoch, leaseExpiresAt: job.leaseExpiresAt, leaseSeconds: DEFAULT_LEASE_SECONDS, heartbeatIntervalSeconds: DEFAULT_HEARTBEAT_INTERVAL_SECONDS });
+      return json({ claimed: true, leaseEpoch: job.leaseEpoch, leaseExpiresAt: job.leaseExpiresAt, seq: await this.seqHead(), leaseSeconds: DEFAULT_LEASE_SECONDS, heartbeatIntervalSeconds: DEFAULT_HEARTBEAT_INTERVAL_SECONDS });
     }
     const d = decideClaim(
       state,
@@ -155,12 +159,13 @@ export class RunCoordinator extends DurableObject {
       },
       new Date().toISOString(),
     );
-    if (!d.ok) return json({ claimed: false, reason: d.reason });
+    // §3 claim reject reasons are deps_not_ready | job_held | run_terminal.
+    if (!d.ok) return json({ claimed: false, reason: d.reason === "terminal" ? "run_terminal" : d.reason });
     await this.appendAll(d.appends, body.actor ?? SYSTEM_ACTOR, runId);
     await this.ensureAlarm();
-    if (d.cached) return json({ claimed: false, cached: true, resultDigest: body.memoResultDigest });
+    if (d.cached) return json({ claimed: false, cached: true, result: { digest: body.memoResultDigest } });
     const after = (await this.state()).jobs[body.jobId]!;
-    return json({ claimed: true, leaseEpoch: after.leaseEpoch, leaseExpiresAt: after.leaseExpiresAt, attempt: after.attempt, leaseSeconds: DEFAULT_LEASE_SECONDS, heartbeatIntervalSeconds: DEFAULT_HEARTBEAT_INTERVAL_SECONDS });
+    return json({ claimed: true, leaseEpoch: after.leaseEpoch, leaseExpiresAt: after.leaseExpiresAt, seq: await this.seqHead(), attempt: after.attempt, leaseSeconds: DEFAULT_LEASE_SECONDS, heartbeatIntervalSeconds: DEFAULT_HEARTBEAT_INTERVAL_SECONDS });
   }
 
   private async heartbeat(body: { jobId: string; runnerId: string; leaseEpoch: number; actor?: CoordinationActor }): Promise<Response> {
@@ -186,7 +191,7 @@ export class RunCoordinator extends DurableObject {
     const job = state.jobs[body.jobId];
     // Idempotent: a job already in the requested terminal state is a no-op.
     if (job && (job.phase === "succeeded" || job.phase === "memoized" || job.phase === "failed" || job.phase === "timed_out")) {
-      return json({ ok: true });
+      return json({ seq: await this.seqHead() });
     }
     const d = decideComplete(state, {
       jobId: body.jobId,
@@ -199,7 +204,7 @@ export class RunCoordinator extends DurableObject {
     });
     if (!d.ok) return json({ error: d.reason }, d.reason === "lease_lost" ? 409 : 400);
     await this.appendAll(d.appends, body.actor ?? SYSTEM_ACTOR, state.runId);
-    return json({ ok: true });
+    return json({ seq: await this.seqHead() });
   }
 
   private async cancel(body: { actor?: CoordinationActor }): Promise<Response> {
@@ -207,7 +212,7 @@ export class RunCoordinator extends DurableObject {
     const d = decideCancel(state);
     if (!d.ok) return json({ error: d.reason }, 409);
     await this.appendAll(d.appends, body.actor ?? SYSTEM_ACTOR, state.runId);
-    return json({ ok: true });
+    return json({ seq: await this.seqHead() });
   }
 
   // Lease sweep on the alarm — re-queues lapsed leases (attempt+1) or times them
