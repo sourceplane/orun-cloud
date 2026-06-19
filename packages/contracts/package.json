@@ -24,16 +24,20 @@
     "./notifications": "./src/notifications.ts",
     "./integrations": "./src/integrations.ts",
     "./state": "./src/state.ts",
+    "./coordination": "./src/coordination.ts",
+    "./coordination-vectors": "./src/coordination-vectors.ts",
     "./idempotency": "./src/idempotency.ts"
   },
   "scripts": {
     "build": "tsc --project tsconfig.build.json",
     "typecheck": "tsc --noEmit",
-    "lint": "eslint src"
+    "lint": "eslint src",
+    "test": "vitest run"
   },
   "devDependencies": {
     "@saas/eslint-config": "workspace:*",
     "@saas/tsconfig": "workspace:*",
-    "typescript": "^5.9.3"
+    "typescript": "^5.9.3",
+    "vitest": "^3.2.6"
   }
 }
