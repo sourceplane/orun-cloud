@@ -58,3 +58,4 @@ export type {
 } from "./types.js";
 
 export { createStateRepository } from "./repository.js";
+export { applyProjection, type ProjectionScope } from "./projector.js";
