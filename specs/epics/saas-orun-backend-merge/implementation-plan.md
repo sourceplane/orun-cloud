@@ -1,10 +1,12 @@
 # saas-orun-backend-merge — Implementation Plan (BM0–BM7)
 
-Status: Draft. Milestones are PR-sized coherent units. The spine is **BM0 → BM1
-→ BM2 → BM3**, then **BM4** (CLI, paired with cluster **NC**) rides on BM2/BM3,
-**BM5** hardens auth/quota, and **BM6/BM7** migrate + decommission. BM0–BM3 are
-human-independent; BM6 (cutover) and BM7 (decommission) carry the operational
-gates.
+Status: **Ready for implementation** — all design/product decisions are locked
+(`risks-and-open-questions.md`: G0, C1–C10, D1–D5, O1–O3) and the contract is
+frozen (`coordination-api.md` §8). Milestones are PR-sized coherent units. The
+spine is **BM0 → BM1 → BM2 → BM3**, then **BM4** (CLI, paired with cluster
+**NC**) rides on BM2/BM3, **BM5** hardens auth/quota, and **BM6/BM7** migrate +
+decommission. BM0–BM5 are human-independent; BM6 (cutover) and BM7
+(decommission) carry the operational gates.
 
 ## BM0 — Coordination contract v2 + vendor — 🗓️ Planned
 
@@ -109,18 +111,25 @@ event carries a verified actor; policy gates fail closed.
 
 ## BM6 — Migration & cutover — 🗓️ Planned (operational gate)
 
-- Provenance backfill: terminal legacy `orun-backend` runs → `run-record` objects
-  + projection rows (history continuity); live legacy coordination state is **not**
-  migrated.
-- Drain bridge: put `orun-backend` read-only; in-flight legacy runs finish on the
-  old plane; new runs start only on the new plane.
-- Cut `orun-api.sourceplane.ai` to Orun Cloud; update `intent.yaml`
-  `execution.state.backendUrl` + the CLI default; canary + rollback drill (DNS
-  flip back, old plane still read-only-intact).
+Direct replacement of **both** legacy planes (G0): `orun-backend` *and*
+orun-cloud's OP2 relational coordination.
+
+- Provenance backfill (O2): last 90 days of terminal legacy runs → `run-record`
+  objects + projection rows; older history archived; live legacy coordination
+  state is **not** migrated.
+- Drain bridge: put the legacy planes read-only; in-flight legacy runs finish;
+  new runs start only on the new plane.
+- Cut `orun-api.sourceplane.ai` per environment against the **O3 SLOs** (claim
+  p99 ≤ 150 ms, zero deps-gate escapes, projection lag p99 ≤ 2 s, forced-DO-loss
+  recovery drill passed); canary first; rollback = DNS flip back (legacy
+  read-only-intact). Update `intent.yaml` `execution.state.backendUrl` + the CLI
+  default.
+- **Delete the OP2 `run_jobs` claim/sweep path** after the drain window.
 
 **Done when:** production traffic (incl. Orun Cloud's own CI) runs on the new
-plane; the old plane takes no new runs; a rollback drill succeeds on stage; the
-runbook is recorded in `IMPLEMENTATION-STATUS.md`.
+plane; the legacy planes take no new runs and OP2's claim path is removed; a
+rollback drill succeeds on stage; the runbook is recorded in
+`IMPLEMENTATION-STATUS.md`.
 
 ## BM7 — Decommission + conformance — 🗓️ Planned
 

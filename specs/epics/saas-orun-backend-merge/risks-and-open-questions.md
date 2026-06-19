@@ -1,107 +1,130 @@
-# saas-orun-backend-merge — Risks & Open Questions
+# saas-orun-backend-merge — Decisions (locked) & residual risks
 
-Status: Draft. The architecture bets are **locked** in the README (greenfield
-event-sourced coordination, DO-per-run shard, Postgres projection, opt-in
-memoization, no permanent backcompat). What remains here are the **decisions
-still open behind those bets** (D-set) and the **engineering risks** the
-milestones own (R-set).
+Status: **Locked — ready for implementation.** Every design and product decision
+behind this epic is resolved below (the recommended defaults, taken as
+decisions). What remains are **residual engineering risks** the milestones own,
+not open choices. The contract specifics (event envelope, fold, `runId`,
+`jobInputHash`, delivery) are frozen in [`coordination-api.md`](./coordination-api.md)
+§8.
 
-## Open questions (behind the locked bet)
+## Locked decisions
 
-### D1 — Memoization scope & GC (owner BM1)
+### G0 — Replace OP2 directly (no staged strangler)
 
-Opt-in hermetic memoization is locked; its *blast radius* is not. Is a
-`job-result` cache **per-project**, **org-shared**, or **global** (a true
-cross-tenant build cache)? Global is the biggest win and the biggest trust/PII
-surface (one tenant's outputs visible to another by content hash). **Leaning:**
-per-project by default, org-shared opt-in, global never without explicit
-publish — and a TTL/refcount GC on `job-result`/`log` objects folded into the
-existing OV9 object-GC. Needs a product/security call before org-shared ships.
+The greenfield event-sourced + Durable-Object coordination plane **replaces
+orun-cloud's shipped OP2 relational coordination outright** (and the separate
+`orun-backend`). We do **not** run a long shadow/dual-run: build the new plane
+behind the contract, prove it on stage with the parity + fuzz suites (BM2), cut
+each environment over in one move (BM6), then **delete the OP2 `run_jobs`
+claim/sweep path**. The only transient compatibility is a read-only **drain
+bridge** for in-flight legacy runs at cutover. `orun-backend` and OP2 remain
+parity references for the claim/lease invariants, not code to keep.
 
-### D2 — `jobInputHash` definition (owner BM1)
+### Contract freeze (BM0)
 
-What exactly is hashed decides both cache hit-rate and correctness. Too broad →
-no hits; too narrow → unsafe reuse. **Leaning:** resolved step definitions +
-declared input object digests + declared environment keys (not values) + the
-composition lock; explicitly excludes wall-clock/secrets. Must be specified and
-golden-vectored; a wrong hash is a correctness bug, not a perf miss.
+- **C1 Event envelope** — `{ seq, kind, runId, jobId?, actor, at, idempotencyKey,
+  v, payload }`; `seq` gap-free monotonic per run (writer-assigned); additive
+  forever; readers tolerate unknown kinds/fields. (`coordination-api.md` §8.1)
+- **C2 Fold** — deterministic left-fold by `seq`, last-writer-by-seq; one shared
+  pure `reduce()` in `packages/contracts`, ported to Go, pinned by a shared
+  golden-vector suite run in both CIs. (§8.2)
+- **C3 `runId` binding** — bound to `planDigest` at create; same-id/different-plan
+  ⇒ 409; coordination appends idempotent by `(jobId,kind,leaseEpoch)`. (§8.3)
+- **C4 Contract change-control** — the platform repo owns the normative
+  `coordination-api.md` + the golden vectors; the CLI vendors with a checksum
+  guard; a **major bump requires a coordinated re-vendor with CLI sign-off** —
+  neither repo bumps unilaterally. Owner: `state-worker` maintainers.
 
-### D3 — DO global placement vs runner locality (owner BM2)
+### Correctness (BM1/BM2)
 
-A run's DO lives in one Cloudflare location; runners (CI) may be elsewhere →
-every append is a cross-region hop. **Leaning:** accept it (appends are small and
-infrequent vs heartbeats which stay client-side between beats); revisit with
-location hints only if claim latency breaches SLO. Open: whether to pin a run's
-DO near its first runner.
+- **C5 `jobInputHash`** — resolved steps + input digests + declared env **keys** +
+  composition-lock digest; excludes clock/secrets/runner; client is sole hasher;
+  golden-vectored. (§8.4)
+- **C6 `hermetic` declaration** — opt-in per job via `hermetic: true` in the
+  composition/plan schema (author-annotated, never inferred); default **off**;
+  non-hermetic jobs always execute. Cross-repo: adds a field to the orun
+  composition schema (paired NC1).
+- **C7 Projection delivery** — per-run **outbox** → projector into Postgres +
+  metering, idempotent by `(runId, seq)` (effectively exactly-once); never on the
+  claim path. (§8.5)
+- **C8 run-create ↔ DO-init ordering** — api-edge does the strong Postgres
+  run-row insert + quota check **first**, then inits the DO; a run is not live
+  until the DO acks `RunCreated`; a reconcile sweep GCs orphan rows if DO init
+  fails. Quota is the single strong gate, at create, not per job.
+- **C9 Object-existence + memoization lookup** — `:complete` requires the
+  `resultDigest` to exist in the CAS (else `object_missing`); the runner PUTs
+  `job-result`/`log` before `:complete`. Memoization lookup goes through the CAS
+  **object index** (a projection), not R2 HEAD on the hot path; a miss falls
+  through to execution.
+- **C10 Lease constants** — lease 60s, heartbeat 20s, `MAX_JOB_ATTEMPTS = 5`
+  (re-queue then `JobFailed{timed_out}`), driven by the DO alarm (cadence ≤
+  lease); server returns tunables, client never hardcodes.
 
-### D4 — Drain window for in-flight legacy runs (owner BM6)
+### Product & security
 
-How long `orun-backend` stays read-only-serving in-flight runs at cutover.
-**Leaning:** one max-run-duration window (legacy runs are bounded); new runs
-never start on the old plane. No dual-write bridge (it reintroduces the
-cross-writer race). Operator picks the calendar slot.
+- **D1 Memoization scope** — default **per-project**; **org-shared opt-in**;
+  **global never** without explicit publish. Keyed by `jobInputHash` (no implicit
+  cross-tenant leak). GC: TTL + refcount on `job-result`/`log`, folded into OV9
+  object-GC.
+- **D2 Quota/entitlement** — enforced strongly at run-create:
+  `limit.runs.concurrent` (per org), `limit.jobs.per_run`, `limit.state.storage`
+  (reuse the OV9 stock gauge); over-limit ⇒ 412 + upgrade UX, **off by default**
+  initially (mirrors OV9 over-quota posture).
+- **D3 Accountless OIDC CI** — frictionless: a runner with only OIDC and no prior
+  link **auto-materializes** a per-owner default org + `project == repo` (OV2),
+  upgradeable to a named org; binding fail-closed via the IG connection trust,
+  never auto-bound to an org that hasn't proven ownership.
+- **D4 DO placement** — accept default Cloudflare placement; add location hints
+  only if claim p99 breaches the SLO (not a blocker).
 
-### D5 — OSS self-host implementation timing (owner BM7)
+### Ops / cutover (BM6)
 
-The contract is implementable on plain Postgres, but the OSS self-host is parked
-(`orun/specs/orun-cloud` D5). Do we build the plain-Postgres conditional-append
-server now (as the conformance reference) or only define the gate? **Leaning:**
-define the conformance gate at BM7, build the server only when self-host is
-unparked — but keep the contract DO-free so it stays buildable.
+- **O1 Direct cutover** — per G0: build + validate on stage, cut
+  `orun-api.sourceplane.ai` per environment, drain in-flight legacy runs
+  read-only (window = one max-run-duration), delete OP2's claim path after the
+  window. Rollback = DNS flip back while legacy stays read-only-intact, valid
+  until BM7.
+- **O2 Provenance backfill** — backfill the last **90 days** of terminal legacy
+  runs as `run-record` objects + projection rows; older history stays in an
+  archived projection, not migrated live; live legacy coordination state is never
+  migrated (it drains).
+- **O3 Cutover SLOs** — cut over only when, on stage: claim p99 ≤ 150 ms, zero
+  deps-gate escapes in the fuzz suite, projection lag p99 ≤ 2 s, and a successful
+  forced-DO-loss recovery drill. Canary first; rollback on any regression.
 
-## Engineering risks
+### Program
 
-### R1 — Conditional-append correctness (severity: critical; owner BM2)
+- **D5 OSS self-host** — define the plain-Postgres **conformance gate** at BM7;
+  build the OSS server only when self-host is unparked (`orun/specs/orun-cloud`
+  D5). The contract stays DO-free so it remains buildable off-DO.
 
-The whole safety model is "exactly one `:claim` append wins." If the DO's
-in-memory guard or the OSS `INSERT … WHERE NOT EXISTS` is wrong, two runners
-execute one job (double-deploy). Mitigation: the single writer per run is the
-serialization point; BM2's parity suite + fuzzed concurrent-claim tests are the
-gate; the predicate (latest-event ∈ ready ∧ deps terminal-success ∧ no memo) is
-evaluated atomically under the writer, never read-then-write in app code.
+## Residual engineering risks
 
-### R2 — DO durability / recovery (severity: high; owner BM2)
+These are owned and mitigated by the milestones; they are *risks*, not unresolved
+decisions.
 
-DO storage is authoritative for the live stream; a permanent DO loss without a
-recent snapshot could strand a run. Mitigation: snapshot objects every N appends +
-projected checkpoints; rebuild = last snapshot + replay; unrecoverable tail =
-re-drive from `planDigest` with `Succeeded` jobs short-circuited by their
-`job-result` (memoization doubles as crash recovery). Rehearse a forced-loss
-recovery on stage.
+- **R1 Conditional-append correctness (critical; BM2).** One `:claim` append must
+  win. Mitigation: single writer per run; BM2 parity + fuzzed concurrent-claim
+  suite is the gate; the predicate is evaluated atomically under the writer.
+- **R2 DO durability/recovery (high; BM2).** Mitigation: snapshot objects every N
+  appends + projected checkpoints; rebuild = snapshot + replay; unrecoverable
+  tail re-driven from `planDigest` with `Succeeded` jobs short-circuited by their
+  `job-result` (memoization doubles as crash recovery); forced-loss drill in O3.
+- **R3 Projection lag seen as "lost" work (medium; BM3).** Mitigation: `…/log`
+  (SSE/long-poll) is live truth; console reads the stream for active runs; the
+  consistency contract documents expected staleness.
+- **R4 Event-schema immutability (medium; BM0).** Mitigation: versioned,
+  additive-only; the fold tolerates unknowns; majors only via C4.
+- **R5 At-least-once execution (medium; BM2/BM4).** Lease takeover can re-run a
+  job. Mitigation: documented in the contract §7; the cockpit labels re-runs;
+  memoization is opt-in, never a correctness crutch.
+- **R6 Cross-repo contract skew (medium; BM0/BM4).** Mitigation: owned copy +
+  vendored checksum guard + shared fold vectors (C4); no unilateral major.
 
-### R3 — Projection lag visible as "lost" work (severity: medium; owner BM3)
+## Out of scope (per the locked bet)
 
-Because Postgres is delayed, a user may not see a just-claimed job for seconds.
-Mitigation: `…/log` (SSE/long-poll) is the live truth for anyone who needs it;
-the console reads the stream for active runs and the projection for lists;
-document the consistency contract (§7) so staleness is expected, not a bug.
-
-### R4 — Event-schema immutability (severity: medium; owner BM0)
-
-The log is forever; a breaking event-shape change orphans old runs and CLIs.
-Mitigation: every event versioned + additive-only from BM0; the shared fold
-tolerates unknown future fields; contract major bump only via the platform's
-change-control, vendored + checksum-guarded into `orun`.
-
-### R5 — At-least-once surprises (severity: medium; owner BM2/BM4)
-
-Lease takeover can run a job twice; non-idempotent steps corrupt. This is
-unchanged from the reference but now explicit. Mitigation: document at-least-once
-in the contract (§7); memoization is opt-in and never a correctness crutch; the
-CLI surfaces takeover in the cockpit so a re-run is visible.
-
-### R6 — Cross-repo contract skew (severity: medium; owner BM0/BM4)
-
-Server and CLI evolving the contract independently breaks runs. Mitigation: one
-owned copy here, vendored + checksum-guarded into `orun` (mirrors the existing
-`orun-cloud/vendored` mechanism); the shared fold lives in `packages/contracts`
-and is the single reduction both sides import-or-port; neither repo bumps the
-major unilaterally.
-
-## Explicitly out (per the locked bet)
-
-- A permanent legacy `/v1/runs` surface — dropped; only the transient BM6 drain
+- A permanent legacy `/v1/runs` surface — dropped; only the transient O1 drain
   bridge exists.
-- Lifting `orun-backend`'s Durable Object code or its V2 (Tasks 0021–0023)
-  org/project layer — superseded; `orun-backend` is a parity reference only.
-- Platform-hosted runners — job execution stays customer-side.
+- Lifting `orun-backend`'s Durable Object code or its V2 (Tasks 0021–0023) layer,
+  or keeping OP2's relational claim path — all superseded.
+- Platform-hosted runners — execution stays customer-side.

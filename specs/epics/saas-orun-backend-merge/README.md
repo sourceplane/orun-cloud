@@ -26,8 +26,14 @@ mechanism `orun/specs/orun-cloud/vendored/` already uses).
 
 ## The bet (locked decisions)
 
-These are the recommended calls, taken as decisions rather than options:
+These are the recommended calls, taken as decisions rather than options. The
+**full decision register (G0, C1–C10, D1–D5, O1–O3) is locked** in
+[`risks-and-open-questions.md`](./risks-and-open-questions.md); the headline bets:
 
+0. **Replace OP2 directly (G0).** This supersedes orun-cloud's *own* shipped OP2
+   relational coordination, not just the separate `orun-backend`. No staged
+   shadow/dual-run: build behind the contract, prove on stage, cut each
+   environment over in one move, then delete the OP2 `run_jobs` claim/sweep path.
 1. **Greenfield, no permanent backward-compat.** Because we control the client,
    the CLI moves to the new contract directly. No legacy `/v1/runs` surface
    survives; a time-boxed read-only drain bridge covers in-flight runs at cutover
@@ -63,7 +69,7 @@ These are the recommended calls, taken as decisions rather than options:
 
 | Field | Value |
 |-------|-------|
-| Status | **Draft** (not started) |
+| Status | **Ready for implementation** — all decisions locked ([`risks-and-open-questions.md`](./risks-and-open-questions.md)); contract frozen ([`coordination-api.md`](./coordination-api.md) §8); not yet started |
 | Cluster | **BM** (BM0–BM7) |
 | Owner(s) | `state-worker` (coordination shard + projections + object plane), `api-edge`, `identity-worker`, `packages/{db,contracts}`, `infra/terraform`; CLI side owned by `orun` (cluster **NC**) |
 | Target branch | `main` (PRs merged incrementally, milestone-sized) |

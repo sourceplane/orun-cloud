@@ -165,22 +165,26 @@ existence + an event.
   from `planDigest` (deterministic) with already-`Succeeded` jobs short-circuited
   by their `job-result` objects — memoization doubles as crash recovery.
 
-## 7. Migration & cutover (no permanent compat)
+## 7. Migration & cutover (direct replacement — G0, no permanent compat)
 
-Because the CLI moves with us (cross-repo), we do **not** keep the legacy surface:
+This replaces **both** the separate `orun-backend` **and** orun-cloud's own
+shipped OP2 relational coordination — directly, with no staged shadow/dual-run
+(G0). Because the CLI moves with us (cross-repo), we keep no legacy surface:
 
 1. **BM0–BM5** build the new plane behind the new contract on stage; the new CLI
-   targets it.
-2. **Drain bridge (transient).** At cutover, put `orun-backend` read-only; let
-   in-flight legacy runs finish on the old plane (bounded by the lease window). No
-   translation shim — new runs start on the new plane only.
-3. **Provenance migration.** Backfill terminal legacy runs as `run-record`
-   objects + projection rows for history continuity; live legacy coordination
-   state is *not* migrated (it drains).
-4. **Cutover** `orun-api.sourceplane.ai` to Orun Cloud; update
-   `intent.yaml` `execution.state.backendUrl` and the CLI default. Rollback =
-   DNS flip back while the old plane is still read-only-intact, valid until BM7.
-5. **Decommission** the standalone backend (BM7).
+   targets it; the parity + fuzz suites (BM2) and the O3 SLOs are the bar.
+2. **Drain bridge (transient).** At cutover, put the legacy planes read-only; let
+   in-flight legacy runs finish (bounded by the lease window). No translation
+   shim — new runs start on the new plane only.
+3. **Provenance backfill (O2).** Backfill the last 90 days of terminal legacy runs
+   as `run-record` objects + projection rows; older history stays in an archived
+   projection; live legacy coordination state is *not* migrated (it drains).
+4. **Cutover (O1/O3).** Cut `orun-api.sourceplane.ai` to Orun Cloud per
+   environment (canary first, against the O3 SLOs); update `intent.yaml`
+   `execution.state.backendUrl` and the CLI default. Rollback = DNS flip back
+   while the legacy planes are still read-only-intact, valid until BM7.
+5. **Delete OP2 + decommission.** After the drain window, **delete the OP2
+   `run_jobs` claim/sweep path** and tear down the standalone backend (BM7).
 
 ## 8. Boundary invariants (must hold)
 
