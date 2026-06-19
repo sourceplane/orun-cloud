@@ -1,0 +1,104 @@
+import { build } from "esbuild";
+import { Miniflare } from "miniflare";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
+
+// Integration test for the RunCoordinator Durable Object against the real
+// Workers runtime (miniflare): durable storage + the pure deciders + exactly-one
+// -winner serialization. We bundle the test entry with esbuild and load it into
+// miniflare with a DO binding.
+
+let mf: Miniflare;
+
+async function bundle(): Promise<string> {
+  const res = await build({
+    entryPoints: [new URL("./coordinator-entry.ts", import.meta.url).pathname],
+    bundle: true,
+    format: "esm",
+    platform: "neutral",
+    write: false,
+    conditions: ["workerd", "worker", "import", "default"],
+    mainFields: ["module", "main"],
+    external: ["cloudflare:workers"],
+  });
+  return res.outputFiles[0]!.text;
+}
+
+beforeAll(async () => {
+  const script = await bundle();
+  mf = new Miniflare({
+    modules: [{ type: "ESModule", path: "worker.mjs", contents: script }],
+    compatibilityDate: "2025-05-01",
+    durableObjects: { COORDINATOR: "RunCoordinator" },
+  });
+  await mf.ready;
+});
+
+afterAll(async () => {
+  await mf?.dispose();
+});
+
+async function call(runId: string, op: string, method: "GET" | "POST", body?: unknown) {
+  const res = await mf.dispatchFetch(`http://x/runs/${runId}${op}`, {
+    method,
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
+  return { status: res.status, json: (await res.json()) as Record<string, unknown> };
+}
+
+const PLAN = { jobs: { a: { deps: [] as string[] }, b: { deps: ["a"] } } };
+
+describe("RunCoordinator (miniflare integration)", () => {
+  it("inits, claims, gates deps, and runs to a folded read of state", async () => {
+    const run = "r-int-1";
+    const init = await call(run, "/init", "POST", { runId: run, plan: PLAN, planDigest: "sha256:p", sourceHash: "sha256:s" });
+    expect(init.status).toBe(200);
+
+    // a is in the frontier and can be claimed.
+    const c1 = await call(run, "/claim", "POST", { jobId: "a", runnerId: "r1" });
+    expect(c1.json.claimed).toBe(true);
+    const leaseEpoch = c1.json.leaseEpoch as number;
+
+    // A second runner cannot claim the held job.
+    const c2 = await call(run, "/claim", "POST", { jobId: "a", runnerId: "r2" });
+    expect(c2.json).toMatchObject({ claimed: false, reason: "job_held" });
+
+    // b is blocked until a succeeds.
+    const cb = await call(run, "/claim", "POST", { jobId: "b", runnerId: "r1" });
+    expect(cb.json).toMatchObject({ claimed: false, reason: "deps_not_ready" });
+
+    // The holder completes a; b becomes claimable.
+    const done = await call(run, "/complete", "POST", { jobId: "a", runnerId: "r1", leaseEpoch, outcome: "succeeded", resultDigest: "sha256:ra" });
+    expect(done.json.ok).toBe(true);
+
+    const st = await call(run, "/state", "GET");
+    expect((st.json as { jobs: Record<string, { phase: string }> }).jobs.a!.phase).toBe("succeeded");
+    expect((st.json as { frontier: string[] }).frontier).toEqual(["b"]);
+
+    const cb2 = await call(run, "/claim", "POST", { jobId: "b", runnerId: "r1" });
+    expect(cb2.json.claimed).toBe(true);
+  });
+
+  it("rejects a foreign heartbeat with 409 lease_lost", async () => {
+    const run = "r-int-2";
+    await call(run, "/init", "POST", { runId: run, plan: PLAN, planDigest: "sha256:p", sourceHash: "sha256:s" });
+    const c = await call(run, "/claim", "POST", { jobId: "a", runnerId: "r1" });
+    const leaseEpoch = c.json.leaseEpoch as number;
+
+    const ok = await call(run, "/heartbeat", "POST", { jobId: "a", runnerId: "r1", leaseEpoch });
+    expect(ok.status).toBe(200);
+
+    const lost = await call(run, "/heartbeat", "POST", { jobId: "a", runnerId: "r2", leaseEpoch });
+    expect(lost.status).toBe(409);
+    expect(lost.json).toMatchObject({ error: "lease_lost" });
+  });
+
+  it("init is idempotent for the same plan and conflicts on a different plan", async () => {
+    const run = "r-int-3";
+    const a = await call(run, "/init", "POST", { runId: run, plan: PLAN, planDigest: "sha256:p", sourceHash: "sha256:s" });
+    expect(a.status).toBe(200);
+    const again = await call(run, "/init", "POST", { runId: run, plan: PLAN, planDigest: "sha256:p", sourceHash: "sha256:s" });
+    expect(again.status).toBe(200);
+    const conflict = await call(run, "/init", "POST", { runId: run, plan: PLAN, planDigest: "sha256:DIFFERENT", sourceHash: "sha256:s" });
+    expect(conflict.status).toBe(409);
+  });
+});
