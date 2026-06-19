@@ -40,4 +40,12 @@ export interface Env {
    * index. Off by default so deletion is a deliberate, per-environment opt-in.
    */
   STATE_GC_COLLECT_ENABLED?: string;
+
+  /**
+   * Coordination backend selector (BM4/BM6 cutover). "do" routes the §3 verbs to
+   * the RunCoordinator Durable Object; anything else (incl. unset) keeps the OP2
+   * relational claim path. Per-environment flag so traffic flips without a
+   * redeploy; fails closed to OP2 when the DO binding is absent.
+   */
+  COORDINATION_BACKEND?: string;
 }

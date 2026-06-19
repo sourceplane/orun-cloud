@@ -48,6 +48,12 @@ import {
 } from "../constants.js";
 import { ensureEnvironmentRegistered } from "../env-registration.js";
 import { orgPublicId, projectPublicId } from "../ids.js";
+import {
+  initCoordinator,
+  planFromJobs,
+  proxyCoordinatorVerb,
+  useDoCoordination,
+} from "../coordination-route.js";
 
 export interface RunHandlerDeps {
   executor?: SqlExecutor;
@@ -350,6 +356,23 @@ export async function handleCreateRun(
       }
     }
 
+    // ── DO backend (BM4b): initialize the per-run coordination shard with the
+    //    plan DAG (idempotent RunCreated). Required on the DO path — claims fail
+    //    if the shard was never seeded. The Postgres rows above remain the read
+    //    model; the projector reconciles them from the DO log. ──
+    if (useDoCoordination(env)) {
+      const initRes = await initCoordinator(env, run.runUlid, {
+        plan: planFromJobs(planJobs ?? []),
+        planDigest,
+        sourceHash: gitCommit ?? planDigest,
+        environment,
+        actor: { id: actor.subjectId, type: actor.subjectType },
+      });
+      if (initRes.status >= 300) {
+        return errorResponse("internal_error", "Coordinator init failed", 503, requestId);
+      }
+    }
+
     // ── Emit state.run.created (best-effort audit; never fails the create). ──
     try {
       const events = createEventsRepository(executor);
@@ -579,6 +602,20 @@ export async function handleClaimJob(
   const authz = await authorizeRun(env, requestId, actor, orgId, projectId, STATE_POLICY_ACTIONS.RUN_WRITE);
   if (!authz.ok) return authz.response;
 
+  // DO backend (BM4b): proxy the §3 :claim to the run shard (returns the bare §3
+  // envelope, not the OP2 { claim: … } wrapper). Mutually exclusive with OP2.
+  if (useDoCoordination(env)) {
+    const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
+    const runnerId = typeof body.runnerId === "string" ? body.runnerId : "";
+    if (!runnerId) return validationError(requestId, { runnerId: ["Required; non-empty string"] });
+    return proxyCoordinatorVerb(env, runUlid, "claim", {
+      jobId,
+      runnerId,
+      ...(body.hermetic === true ? { hermetic: true } : {}),
+      ...(typeof body.memoResultDigest === "string" ? { memoResultDigest: body.memoResultDigest } : {}),
+    });
+  }
+
   const runnerId = await readRunnerId(request);
   if (!runnerId) return validationError(requestId, { runnerId: ["Required; non-empty string"] });
 
@@ -650,6 +687,15 @@ export async function handleHeartbeatJob(
 ): Promise<Response> {
   const authz = await authorizeRun(env, requestId, actor, orgId, projectId, STATE_POLICY_ACTIONS.RUN_WRITE);
   if (!authz.ok) return authz.response;
+
+  // DO backend (BM4b): proxy the §3 :heartbeat (200 { leaseExpiresAt } | 409 lease_lost).
+  if (useDoCoordination(env)) {
+    const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
+    const runnerId = typeof body.runnerId === "string" ? body.runnerId : "";
+    const leaseEpoch = typeof body.leaseEpoch === "number" ? body.leaseEpoch : 0;
+    if (!runnerId) return validationError(requestId, { runnerId: ["Required; non-empty string"] });
+    return proxyCoordinatorVerb(env, runUlid, "heartbeat", { jobId, runnerId, leaseEpoch });
+  }
 
   const runnerId = await readRunnerId(request);
   if (!runnerId) return validationError(requestId, { runnerId: ["Required; non-empty string"] });
@@ -723,6 +769,20 @@ export async function handleUpdateJob(
   }
   if (Object.keys(fields).length > 0) return validationError(requestId, fields);
 
+  // DO backend (BM4b): proxy the §3 :complete (200 { seq } | 409 lease_lost).
+  if (useDoCoordination(env)) {
+    const leaseEpoch = typeof body.leaseEpoch === "number" ? body.leaseEpoch : 0;
+    const resultDigest = typeof body.resultDigest === "string" ? body.resultDigest : undefined;
+    return proxyCoordinatorVerb(env, runUlid, "complete", {
+      jobId,
+      runnerId: runnerId!,
+      leaseEpoch,
+      outcome: status as "succeeded" | "failed",
+      ...(resultDigest !== undefined ? { resultDigest } : {}),
+      ...(errorText !== null ? { errorText } : {}),
+    });
+  }
+
   const executor = deps?.executor ?? createSqlExecutor(env.PLATFORM_DB!);
   const owned = !deps?.executor;
   try {
@@ -794,6 +854,13 @@ export async function handleCancelRun(
 ): Promise<Response> {
   const authz = await authorizeRun(env, requestId, actor, orgId, projectId, STATE_POLICY_ACTIONS.RUN_WRITE);
   if (!authz.ok) return authz.response;
+
+  // DO backend (BM4b): proxy the §3 :cancel (200 { seq }).
+  if (useDoCoordination(env)) {
+    return proxyCoordinatorVerb(env, runUlid, "cancel", {
+      actor: { id: actor.subjectId, type: actor.subjectType },
+    });
+  }
 
   const executor = deps?.executor ?? createSqlExecutor(env.PLATFORM_DB!);
   const owned = !deps?.executor;
