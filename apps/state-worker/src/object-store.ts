@@ -128,6 +128,11 @@ const OBJECT_KINDS = new Set([
   "catalog-snapshot",
   "composition-lock",
   "artifact-manifest",
+  // Coordination object plane (BM1): content-addressed job results (the
+  // memoization key), sealed job logs, and immutable run-record provenance.
+  "job-result",
+  "log",
+  "run-record",
   // Object model structural kinds (OV1): the hosted ObjectStore stores the
   // content-addressed blobs and trees the CLI's RemoteStore uploads.
   "blob",

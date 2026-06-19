@@ -161,7 +161,7 @@ export async function handlePutObject(
   const kind = request.headers.get("Orun-Object-Kind") ?? "";
   if (!isValidObjectKind(kind)) {
     return validationError(requestId, {
-      "Orun-Object-Kind": ["Required header; one of plan|catalog-snapshot|composition-lock|artifact-manifest"],
+      "Orun-Object-Kind": ["Required header; one of plan|catalog-snapshot|composition-lock|artifact-manifest|job-result|log|run-record"],
     });
   }
 
@@ -504,7 +504,7 @@ export async function handleCompleteUpload(
   const kind = request.headers.get("Orun-Object-Kind") ?? "";
   if (!isValidObjectKind(kind)) {
     return validationError(requestId, {
-      "Orun-Object-Kind": ["Required header; one of plan|catalog-snapshot|composition-lock|artifact-manifest"],
+      "Orun-Object-Kind": ["Required header; one of plan|catalog-snapshot|composition-lock|artifact-manifest|job-result|log|run-record"],
     });
   }
 
