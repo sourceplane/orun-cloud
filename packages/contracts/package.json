@@ -25,6 +25,7 @@
     "./integrations": "./src/integrations.ts",
     "./state": "./src/state.ts",
     "./coordination": "./src/coordination.ts",
+    "./coordination-core": "./src/coordination-core.ts",
     "./coordination-vectors": "./src/coordination-vectors.ts",
     "./idempotency": "./src/idempotency.ts"
   },
