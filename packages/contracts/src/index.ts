@@ -19,3 +19,4 @@ export * from "./integrations.js";
 export * from "./state.js";
 export * from "./coordination.js";
 export * from "./coordination-core.js";
+export * from "./coordination-projection.js";
