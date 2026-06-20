@@ -1,14 +1,19 @@
 # saas-orun-backend-merge — Implementation Plan (BM0–BM7)
 
-Status: **Ready for implementation** — all design/product decisions are locked
-(`risks-and-open-questions.md`: G0, C1–C10, D1–D5, O1–O3) and the contract is
-frozen (`coordination-api.md` §8). Milestones are PR-sized coherent units. The
-spine is **BM0 → BM1 → BM2 → BM3**, then **BM4** (CLI, paired with cluster
-**NC**) rides on BM2/BM3, **BM5** hardens auth/quota, and **BM6/BM7** migrate +
-decommission. BM0–BM5 are human-independent; BM6 (cutover) and BM7
-(decommission) carry the operational gates.
+Status (audited **2026-06-20**): **In progress** — BM0 ✅; BM1–BM5 🟡 partial;
+BM6/BM7 ⛔. Cores are built and test-green, but the native v2 wire is unexposed
+(DO reached via an OP2↔DO facade) and the CLI is unwired. Per-milestone reality
+is in each heading below; the rolled-up tracker is
+[`IMPLEMENTATION-STATUS.md`](./IMPLEMENTATION-STATUS.md) and the evidence is in
+[`GAPS.md`](./GAPS.md). Original plan text is preserved below for the "Done when"
+criteria each milestone is measured against.
 
-## BM0 — Coordination contract v2 + vendor — 🗓️ Planned
+Milestones are PR-sized coherent units. The spine is **BM0 → BM1 → BM2 → BM3**,
+then **BM4** (CLI, paired with cluster **NC**) rides on BM2/BM3, **BM5** hardens
+auth/quota, and **BM6/BM7** migrate + decommission. BM0–BM5 are human-independent;
+BM6 (cutover) and BM7 (decommission) carry the operational gates.
+
+## BM0 — Coordination contract v2 + vendor — ✅ Done
 
 Contract-only, dormant, safe to land any time.
 
@@ -28,7 +33,7 @@ Contract-only, dormant, safe to land any time.
 fixture-tested in isolation; the vendored copy + checksum guard are in place;
 no runtime behavior.
 
-## BM1 — Object-plane extensions + memoization lookup — 🗓️ Planned
+## BM1 — Object-plane extensions + memoization lookup — 🟡 Partial (server-side memo lookup by `jobInputHash` missing; new kinds untested through CAS)
 
 - New object kinds `job-result`, `log`, `run-record` in the CAS handlers
   (`apps/state-worker/src/handlers/objects.ts`), digest-verified and idempotent;
@@ -43,7 +48,7 @@ no runtime behavior.
 memoization lookup returns hit/miss correctly; non-hermetic jobs are never
 reported cacheable; no coordination behavior yet.
 
-## BM2 — Per-run coordination shard (Durable Object) — 🗓️ Planned
+## BM2 — Per-run coordination shard (Durable Object) — 🟡 Partial (no snapshotting/recovery; alarm-timeout & fuzz-claim untested; logs unsealed; memo digest client-trusted)
 
 The concurrency heart. The DO is the single writer of a run's event stream.
 
@@ -65,7 +70,7 @@ shows exactly-one-winner and no deps-gate escape; killing a runner re-queues its
 job within the lease window via the DO alarm (no cron); the event log + snapshots
 survive a forced DO restart.
 
-## BM3 — Projections (read models) — 🗓️ Planned
+## BM3 — Projections (read models) — 🟡 Partial (legacy cron sweep NOT removed; `…/log`/`…/frontier` unexposed; sync-after-verb not async outbox; no metering)
 
 - Async projector consumes the DO's append/checkpoint stream into Postgres read
   models (run list, status, job counts, frontier cache) + metering; batched, so
@@ -79,7 +84,7 @@ survive a forced DO restart.
 (seconds) on stage; the projection is rebuildable from the event log (drop +
 replay); no reader depends on a synchronous coordination write.
 
-## BM4 — CLI adoption (pairs cluster NC) — 🗓️ Planned
+## BM4 — CLI adoption (pairs cluster NC) — 🟡 Partial (§3 verbs routed only via OP2 facade; no public `…/log`/`…/frontier`; CLI unwired — see NC)
 
 The Orun CLI moves to the event-log client; owned in `orun`
 (`orun-native-coordination`), gated here on BM2/BM3.
@@ -96,7 +101,7 @@ The Orun CLI moves to the event-log client; owned in `orun`
 deps gating, heartbeat, complete-with-result, memoized skip, live `logs
 --follow`); cockpit/status parity with local; conformance suite green vs stage.
 
-## BM5 — Auth, tenancy & quota on the new surface — 🗓️ Planned
+## BM5 — Auth, tenancy & quota on the new surface — 🟡 Partial (quota off-by-default/fail-open; no DO soft cap; DO-bridged verbs lose the verified actor; no BM5 commit)
 
 - OIDC / `sk_` key / CLI session → one `ActorContext` (reuse OV3); every event
   attributed; resource-hiding 404 on cross-tenant.
@@ -109,7 +114,7 @@ deps gating, heartbeat, complete-with-result, memoized skip, live `logs
 run (404); over-quota run-create is rejected with upgrade UX; every coordination
 event carries a verified actor; policy gates fail closed.
 
-## BM6 — Migration & cutover — 🗓️ Planned (operational gate)
+## BM6 — Migration & cutover — ⛔ Missing (scaffolding only: flag pre-set + projector; no backfill/drain/OP2-deletion/recovery drill; intent.yaml unchanged) — operational gate
 
 Direct replacement of **both** legacy planes (G0): `orun-backend` *and*
 orun-cloud's OP2 relational coordination.
@@ -131,7 +136,7 @@ plane; the legacy planes take no new runs and OP2's claim path is removed; a
 rollback drill succeeds on stage; the runbook is recorded in
 `IMPLEMENTATION-STATUS.md`.
 
-## BM7 — Decommission + conformance — 🗓️ Planned
+## BM7 — Decommission + conformance — ⛔ Missing (`orun-api.sourceplane.ai` still serves the legacy bundle; no OSS conformance harness)
 
 - Tear down `orun-backend` hosted resources after a clean dual-run window.
 - OSS self-host conformance: a plain-Postgres conditional-append implementation
