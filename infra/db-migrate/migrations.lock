@@ -41,3 +41,4 @@
 320_state_run_writeback_cursor
 330_state_org_catalog_index
 340_projects_environment_activity
+350_state_run_last_seq
