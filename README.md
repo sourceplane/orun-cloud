@@ -1,10 +1,25 @@
 # orun-cloud
 
-Reusable Cloudflare + Supabase multi-tenant SaaS starter, built as an
-[Orun](https://opencode.ai/docs) component-native desired-state repo. Identity,
-organizations, projects, RBAC, audit, metering, billing, webhooks, and
+**A production SaaS platform written as a portable collection of component
+intent — compiled and converged by [Orun](https://orun.sourceplane.ai).**
+
+orun-cloud is a reusable Cloudflare + Supabase multi-tenant SaaS starter, and a
+real-world proof of the Orun model. Every Worker, Terraform stack, and database
+migration declares itself as **component intent** next to its code; the repo as
+a whole is **platform intent**; and CI never runs a raw `pnpm`, `wrangler`, or
+`terraform` command — it runs `orun plan` and `orun run`, compiling the platform
+into a deterministic state and converging the deviation on every commit.
+
+Identity, organizations, projects, RBAC, audit, metering, billing, webhooks, and
 notifications ship as separate bounded-context Cloudflare Workers behind a single
 public edge API, with a Next.js console on Workers + Static Assets.
+
+> **The thesis, made concrete.** Orun treats your whole platform as intent:
+> platform intent (`intent.yaml`), component intent (`component.yaml` beside each
+> unit), and golden-path intent (the repo-local **Stack Tectonic** composition
+> stack). orun-cloud is what that looks like at production scale — fork it, grow
+> it a few components at a time, and every commit reconverges toward the desired
+> state you declared. See **[Orun](https://orun.sourceplane.ai)** for the model.
 
 ## Status
 
@@ -100,10 +115,11 @@ tests/*                   Per-component contract and verifier test suites
 
 ## CI
 
-CI is powered by [Orun](https://opencode.ai/docs) with the local Stack Tectonic
-composition stack. `.github/workflows/ci.yml` calls only `orun plan` and
-`orun run` — no direct `pnpm`, `turbo`, Wrangler, or Terraform commands run in
-GitHub Actions. The Orun runtime is pinned in `kiox.yaml` (resolved digest in
+CI is powered by [Orun](https://orun.sourceplane.ai) with the local Stack
+Tectonic composition stack — the repo's **golden-path intent**. Each commit,
+Orun compiles the platform intent and converges only the deviation:
+`.github/workflows/ci.yml` calls only `orun plan` and `orun run` — no direct
+`pnpm`, `turbo`, Wrangler, or Terraform commands run in GitHub Actions. The Orun runtime is pinned in `kiox.yaml` (resolved digest in
 `kiox.lock`); the workflow's `orun-action` `version:` matches that pin.
 
 ### Local Orun Verification
@@ -129,6 +145,9 @@ repo). See `specs/core/access-and-infra.md` for the access model and the
 manual prerequisites.
 
 ## Adding a New Component
+
+Each component is a self-contained unit of intent — declare it next to its code
+and Orun binds it to the platform on the next plan. No global script to edit.
 
 1. Create the directory under `apps/`, `packages/`, `tests/`, or `infra/`.
 2. Add a `component.yaml` with the appropriate `spec.type` — one of
