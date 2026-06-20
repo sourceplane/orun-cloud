@@ -53,8 +53,12 @@ export async function runProjectionSweep(
           r.run_ulid,
         );
         projected += 1;
-      } catch {
-        // Best-effort per run — one shard's failure never stalls the batch.
+      } catch (err) {
+        // Best-effort per run — one shard's failure never stalls the batch — but
+        // log it so a *systemic* projection failure (e.g. migration 350 not yet
+        // applied on this environment) is visible in tail rather than presenting
+        // as a silently frozen read model across every run.
+        console.error(`[projection-sweep] run ${r.run_ulid} projection failed: ${String(err)}`);
       }
     }
   } finally {

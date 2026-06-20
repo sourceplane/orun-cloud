@@ -245,8 +245,14 @@ export async function projectAfterVerb(
   const executor = deps?.executor ?? createSqlExecutor(env.PLATFORM_DB!);
   try {
     await projectCoordinatorRun(env, executor, scope, runId);
-  } catch {
-    // Eventually consistent: a projection failure must never fail the verb.
+  } catch (err) {
+    // Eventually consistent: a projection failure must never fail the verb — but
+    // it must never be invisible either. A persistent failure here (e.g. the BM3
+    // `state.runs.last_seq` column missing because migration 350 was not applied
+    // before the COORDINATION_BACKEND=do cutover) silently freezes the read model
+    // into a DO/Postgres split-brain. Surface it loudly so tail/alerting catches
+    // it instead of clients seeing a run that never progresses.
+    console.error(`[projection] run ${runId} projection failed (read model may be stale): ${String(err)}`);
   } finally {
     if (!deps?.executor && "dispose" in executor) {
       await (executor as unknown as { dispose: () => Promise<void> }).dispose();
