@@ -14,8 +14,9 @@ function req(version?: string): Request {
 }
 
 describe("enforceContractVersion", () => {
-  it("allows the supported major (1)", () => {
+  it("allows the supported majors (1 = OP2, 2 = native v2 wire)", () => {
     expect(enforceContractVersion(req("1"), "req_1")).toBeNull();
+    expect(enforceContractVersion(req("2"), "req_1")).toBeNull();
   });
 
   it("tolerates a missing header", () => {
@@ -27,14 +28,14 @@ describe("enforceContractVersion", () => {
   });
 
   it("rejects an unsupported major with 409 + the supported range", async () => {
-    const res = enforceContractVersion(req("2"), "req_1");
+    const res = enforceContractVersion(req("3"), "req_1");
     expect(res).not.toBeNull();
     expect(res!.status).toBe(409);
     const body = (await res!.json()) as {
       error: { code: string; details: { supported: { min: number; max: number } }; requestId: string };
     };
     expect(body.error.code).toBe("contract_version_unsupported");
-    expect(body.error.details.supported).toEqual({ min: 1, max: 1 });
+    expect(body.error.details.supported).toEqual({ min: 1, max: 2 });
     expect(body.error.requestId).toBe("req_1");
   });
 

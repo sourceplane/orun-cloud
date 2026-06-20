@@ -628,7 +628,7 @@ export async function handleClaimJob(
     const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
     const runnerId = typeof body.runnerId === "string" ? body.runnerId : "";
     if (!runnerId) return validationError(requestId, { runnerId: ["Required; non-empty string"] });
-    const out = await coordinatorClaimOP2(env, runUlid, jobId, runnerId);
+    const out = await coordinatorClaimOP2(env, runUlid, jobId, runnerId, { id: actor.subjectId, type: actor.subjectType });
     await projectAfterVerb(env, deps, { orgId, projectId }, runUlid);
     if (out.kind === "error") return errorResponse("internal_error", "Service unavailable", 503, requestId);
     const payload: ClaimJobResponse =
@@ -724,7 +724,7 @@ export async function handleHeartbeatJob(
     const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
     const runnerId = typeof body.runnerId === "string" ? body.runnerId : "";
     if (!runnerId) return validationError(requestId, { runnerId: ["Required; non-empty string"] });
-    const out = await coordinatorHeartbeatOP2(env, runUlid, jobId, runnerId);
+    const out = await coordinatorHeartbeatOP2(env, runUlid, jobId, runnerId, { id: actor.subjectId, type: actor.subjectType });
     await projectAfterVerb(env, deps, { orgId, projectId }, runUlid);
     if (out.kind === "lease_lost") {
       return errorResponse("lease_lost", "Lease lapsed or was reassigned; stop work on this job", 409, requestId);
@@ -813,7 +813,7 @@ export async function handleUpdateJob(
   // DO backend (BM6 facade): :update over the DO, OP2 envelope. Terminal-sticky
   // (idempotent re-complete) and lease-checked; an empty body matches OP2.
   if (useDoCoordination(env) && (await runIsDoBacked(env, runUlid))) {
-    const out = await coordinatorCompleteOP2(env, runUlid, jobId, runnerId!, status as "succeeded" | "failed", errorText);
+    const out = await coordinatorCompleteOP2(env, runUlid, jobId, runnerId!, status as "succeeded" | "failed", errorText, { id: actor.subjectId, type: actor.subjectType });
     await projectAfterVerb(env, deps, { orgId, projectId }, runUlid);
     if (out.kind === "lease_lost") {
       return errorResponse("lease_lost", "Lease lapsed or was reassigned; this update is rejected", 409, requestId);

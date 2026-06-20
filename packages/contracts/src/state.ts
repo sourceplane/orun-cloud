@@ -18,12 +18,15 @@
 // ── Versioning ──────────────────────────────────────────────
 
 /**
- * Contract major sent by the client on every request as
+ * Highest contract major this server implements, advertised on every request as
  * `Orun-Contract-Version: <n>`. Servers reject unknown majors with
  * `409 contract_version_unsupported` + the supported range, so version skew
- * fails loud and actionable at the CLI.
+ * fails loud and actionable at the CLI. The server accepts majors 1..N: major 1
+ * is the legacy OP2 relational coordination surface; major 2 adds the native
+ * event-sourced wire (coordination-api.md §2/§3 — the colon-verbs + run
+ * event-log/frontier reads). The CLI's CoordClient sends `2`.
  */
-export const STATE_CONTRACT_VERSION = 1 as const;
+export const STATE_CONTRACT_VERSION = 2 as const;
 
 /** Request header carrying the client's contract major. */
 export const STATE_CONTRACT_VERSION_HEADER = "Orun-Contract-Version" as const;

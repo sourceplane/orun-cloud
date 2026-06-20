@@ -19,6 +19,14 @@ import {
 } from "./handlers/runs.js";
 import { handleAppendLog, handleReadLog } from "./handlers/logs.js";
 import {
+  handleNativeCancel,
+  handleNativeClaim,
+  handleNativeComplete,
+  handleNativeFrontier,
+  handleNativeHeartbeat,
+  handleNativeLog,
+} from "./coordination-native.js";
+import {
   handleObjectsMissing,
   handlePutObject,
   handleGetObject,
@@ -108,6 +116,16 @@ const RUN_JOB_CLAIM_RE = new RegExp(`^${STATE_BASE}/runs/([^/]+)/jobs/([^/]+)/cl
 const RUN_JOB_HEARTBEAT_RE = new RegExp(`^${STATE_BASE}/runs/([^/]+)/jobs/([^/]+)/heartbeat$`);
 const RUN_JOB_UPDATE_RE = new RegExp(`^${STATE_BASE}/runs/([^/]+)/jobs/([^/]+)/update$`);
 const RUN_LOGS_RE = new RegExp(`^${STATE_BASE}/runs/([^/]+)/logs/([^/]+)$`);
+
+// Native v2 coordination wire (coordination-api.md §2/§3) — colon-verbs + the
+// run event-log/frontier reads, routed to the RunCoordinator DO. Disjoint from
+// the OP2 slash-verb routes above (different path shape ⇒ no overlap).
+const RUN_JOB_CLAIM_NATIVE_RE = new RegExp(`^${STATE_BASE}/runs/([^/]+)/jobs/([^/:]+):claim$`);
+const RUN_JOB_HEARTBEAT_NATIVE_RE = new RegExp(`^${STATE_BASE}/runs/([^/]+)/jobs/([^/:]+):heartbeat$`);
+const RUN_JOB_COMPLETE_NATIVE_RE = new RegExp(`^${STATE_BASE}/runs/([^/]+)/jobs/([^/:]+):complete$`);
+const RUN_CANCEL_NATIVE_RE = new RegExp(`^${STATE_BASE}/runs/([^/:]+):cancel$`);
+const RUN_LOG_RE = new RegExp(`^${STATE_BASE}/runs/([^/]+)/log$`);
+const RUN_FRONTIER_RE = new RegExp(`^${STATE_BASE}/runs/([^/]+)/frontier$`);
 
 // OP3 — Object & log plane (state-api-contract §3) + catalog heads (§3.1).
 const OBJECTS_RE = new RegExp(`^${STATE_BASE}/objects$`);
@@ -264,6 +282,52 @@ async function routeRun(
       return handleListRuns(request, env, requestId, actor, scope.orgId, scope.projectId);
     }
     return methodNotAllowed(requestId);
+  }
+
+  // ── Native v2 coordination wire (coordination-api.md §2/§3) ──
+  // Matched before the OP2 routes and the greedy single-run GET (RUN_RE). The
+  // colon-verbs/log/frontier route to the per-run RunCoordinator DO.
+  m = pathname.match(RUN_JOB_CLAIM_NATIVE_RE);
+  if (m) {
+    const scope = parseScope(m[1]!, m[2]!);
+    if (!scope || !isRunUlid(m[3]!)) return notFound(requestId, pathname);
+    if (request.method !== "POST") return methodNotAllowed(requestId);
+    return handleNativeClaim(request, env, requestId, actor, scope.orgId, scope.projectId, m[3]!, m[4]!);
+  }
+  m = pathname.match(RUN_JOB_HEARTBEAT_NATIVE_RE);
+  if (m) {
+    const scope = parseScope(m[1]!, m[2]!);
+    if (!scope || !isRunUlid(m[3]!)) return notFound(requestId, pathname);
+    if (request.method !== "POST") return methodNotAllowed(requestId);
+    return handleNativeHeartbeat(request, env, requestId, actor, scope.orgId, scope.projectId, m[3]!, m[4]!);
+  }
+  m = pathname.match(RUN_JOB_COMPLETE_NATIVE_RE);
+  if (m) {
+    const scope = parseScope(m[1]!, m[2]!);
+    if (!scope || !isRunUlid(m[3]!)) return notFound(requestId, pathname);
+    if (request.method !== "POST") return methodNotAllowed(requestId);
+    return handleNativeComplete(request, env, requestId, actor, scope.orgId, scope.projectId, m[3]!, m[4]!);
+  }
+  m = pathname.match(RUN_CANCEL_NATIVE_RE);
+  if (m) {
+    const scope = parseScope(m[1]!, m[2]!);
+    if (!scope || !isRunUlid(m[3]!)) return notFound(requestId, pathname);
+    if (request.method !== "POST") return methodNotAllowed(requestId);
+    return handleNativeCancel(env, requestId, actor, scope.orgId, scope.projectId, m[3]!);
+  }
+  m = pathname.match(RUN_LOG_RE);
+  if (m) {
+    const scope = parseScope(m[1]!, m[2]!);
+    if (!scope || !isRunUlid(m[3]!)) return notFound(requestId, pathname);
+    if (request.method !== "GET") return methodNotAllowed(requestId);
+    return handleNativeLog(request, env, requestId, actor, scope.orgId, scope.projectId, m[3]!);
+  }
+  m = pathname.match(RUN_FRONTIER_RE);
+  if (m) {
+    const scope = parseScope(m[1]!, m[2]!);
+    if (!scope || !isRunUlid(m[3]!)) return notFound(requestId, pathname);
+    if (request.method !== "GET") return methodNotAllowed(requestId);
+    return handleNativeFrontier(env, requestId, actor, scope.orgId, scope.projectId, m[3]!);
   }
 
   // POST …/runs/{runId}/jobs/{jobId}/claim

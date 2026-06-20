@@ -205,10 +205,24 @@ BM/NC coordination source.
   legacy bundle's `404 NOT_FOUND`. **The v2 contract is not served at the CLI's
   default/`intent.yaml` backend URL**, and `orun-api.sourceplane.ai` is still the
   un-decommissioned legacy backend (consistent with BM6/BM7 = Missing).
-- The new `api-edge`→`state-worker` plane was not reachable for unauthenticated
-  behavioral probing (auth at the edge; and the native surface isn't routed
-  anyway). Behavioral verification of the implemented pieces is via the local
-  suites above (61 + 22 + Go, all green).
+- **Correction (deployed edge).** `orun-api.sourceplane.ai` is the **old**
+  standalone backend, deployed separately. The real deployed edge is
+  `api-edge-{stage,prod}.oruncloud.workers.dev`. Re-probed live: `/health` →
+  `{"service":"api-edge",…,"database":{"reachable":true}}`, and unauthenticated
+  coordination paths (both `:claim` colon-verbs and `/claim` slash-verbs) →
+  **`401 unauthenticated`** with the edge's error envelope — i.e. the edge facade
+  is live and correctly auth-gating the `/state/` plane (resource-hiding). The
+  native §3 verbs route past the edge to `state-worker` once authenticated.
+- Behavioral verification of the implemented pieces is via the local suites
+  (contracts 61, state-worker 30, state-worker-tests 177, Go `statebackend` — all
+  green) plus the new `coordination-native.test.ts`.
+
+> **Progress (2026-06-20):** P0 #1 partially landed — the native v2 wire
+> (`:claim`/`:heartbeat`/`:complete`/`:cancel`, `…/log`, `…/frontier`) is now
+> routed on `state-worker`, the contract major is bumped to 2, and the verified
+> actor is stamped on every event (BM5). See `IMPLEMENTATION-STATUS.md`
+> §"Progress log". Remaining P0: wire the CLI (`cmd/orun` → `CoordClient`), the
+> `…/events` primitive + SSE/long-poll, and server-side memoization lookup.
 
 ---
 
