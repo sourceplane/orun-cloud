@@ -69,7 +69,7 @@ These are the recommended calls, taken as decisions rather than options. The
 
 | Field | Value |
 |-------|-------|
-| Status | **Ready for implementation** — all decisions locked ([`risks-and-open-questions.md`](./risks-and-open-questions.md)); contract frozen ([`coordination-api.md`](./coordination-api.md) §8); not yet started |
+| Status | **In progress (cores landed, not wired/exposed)** — audited 2026-06-20. BM0/NC0 ✅; BM1–BM5/NC1–NC5 🟡 partial; BM6/BM7/NC3 ⛔. The frozen contract, pure fold, `RunCoordinator` DO, and projections are built and **test-green** (contracts 61/61, state-worker DO 22/22, Go `statebackend` ok), but the **native v2 wire is unexposed** (DO reached only via an OP2↔DO facade) and the **CLI never adopted the new client** (dead-code island; `cmd/orun` still uses legacy `remotestate`). Source of truth: [`IMPLEMENTATION-STATUS.md`](./IMPLEMENTATION-STATUS.md) + [`GAPS.md`](./GAPS.md). |
 | Cluster | **BM** (BM0–BM7) |
 | Owner(s) | `state-worker` (coordination shard + projections + object plane), `api-edge`, `identity-worker`, `packages/{db,contracts}`, `infra/terraform`; CLI side owned by `orun` (cluster **NC**) |
 | Target branch | `main` (PRs merged incrementally, milestone-sized) |
@@ -110,16 +110,19 @@ cache for free.
 
 ## Milestones at a glance
 
+Status audited 2026-06-20 — see [`IMPLEMENTATION-STATUS.md`](./IMPLEMENTATION-STATUS.md)
+and [`GAPS.md`](./GAPS.md). ✅ Done · 🟡 Partial · ⛔ Missing.
+
 | ID | Milestone | Status |
 |----|-----------|--------|
-| BM0 | Coordination contract v2 (`coordination-api.md`) + vendor into `orun`; object kinds + event vocab frozen (dormant, no behavior) | 🗓️ Planned |
-| BM1 | Object-plane extensions: `job-result` + `log` kinds, digest negotiation, memoization lookup (opt-in purity) | 🗓️ Planned |
-| BM2 | Per-run coordination shard (Durable Object): event log, conditional append, claim/heartbeat/complete, lease-expiry alarm, snapshots | 🗓️ Planned |
-| BM3 | Projections: Postgres read models (run list/status/frontier/metering) derived from the stream; DO alarms replace the cron sweep | 🗓️ Planned |
-| BM4 | CLI adoption (pairs **NC**): new `statebackend.Backend` shape (append/fold/read-the-log + result push), offline event log + cloud sync, cockpit/status/logs | 🗓️ Planned |
-| BM5 | Auth + tenancy + quota on the new surface: OIDC/key/session → ActorContext; run-create + quota strong-consistent in Postgres; policy actions | 🗓️ Planned |
-| BM6 | Migration & cutover: retire the legacy plane; read-only drain bridge for in-flight; provenance migration; `orun-api.sourceplane.ai` cutover | 🗓️ Planned |
-| BM7 | Decommission `orun-backend`; OSS self-host plain-Postgres conformance (parked); closeout | 🗓️ Planned |
+| BM0 | Coordination contract v2 (`coordination-api.md`) + vendor into `orun`; object kinds + event vocab frozen (dormant, no behavior) | ✅ Done |
+| BM1 | Object-plane extensions: `job-result` + `log` kinds, digest negotiation, memoization lookup (opt-in purity) | 🟡 Partial — kinds + canonicalization + gate done; **server-side memo lookup by `jobInputHash` missing** |
+| BM2 | Per-run coordination shard (Durable Object): event log, conditional append, claim/heartbeat/complete, lease-expiry alarm, snapshots | 🟡 Partial — DO + conditional append + lease alarm + conformance green; **no snapshotting/recovery; logs unsealed** |
+| BM3 | Projections: Postgres read models (run list/status/frontier/metering) derived from the stream; DO alarms replace the cron sweep | 🟡 Partial — projector + idempotency-by-seq + sweep cron; **legacy cron NOT removed; `…/log`/`…/frontier` unexposed; no metering** |
+| BM4 | CLI adoption (pairs **NC**): new `statebackend.Backend` shape (append/fold/read-the-log + result push), offline event log + cloud sync, cockpit/status/logs | 🟡 Partial — DO bound + per-run-sticky flag + diamond conformance; **§3 verbs routed only via OP2 facade; CLI unwired (see NC)** |
+| BM5 | Auth + tenancy + quota on the new surface: OIDC/key/session → ActorContext; run-create + quota strong-consistent in Postgres; policy actions | 🟡 Partial — authz + deny-by-default + cross-tenant 404 on every route; **quota off-by-default/fail-open; no DO soft cap; DO-bridged verbs lose the verified actor** |
+| BM6 | Migration & cutover: retire the legacy plane; read-only drain bridge for in-flight; provenance migration; `orun-api.sourceplane.ai` cutover | ⛔ Missing — flag pre-set + projector substrate only; **no backfill/drain/OP2-deletion/recovery drill; intent.yaml unchanged; not cut over** |
+| BM7 | Decommission `orun-backend`; OSS self-host plain-Postgres conformance (parked); closeout | ⛔ Missing — `orun-api.sourceplane.ai` still serves the legacy bundle; no OSS conformance harness |
 
 ## Cross-repo dependency map
 
