@@ -43,7 +43,12 @@
     "stage": {
       "workers_dev": false,
       "vars": {
-        "ENVIRONMENT": "stage"
+        "ENVIRONMENT": "stage",
+        // BM6 cutover (canary): route run coordination to the RunCoordinator DO.
+        // Safe with the deployed OP2 CLI via the OP2↔DO facade + per-run backend
+        // stickiness (legacy in-flight runs keep finishing on OP2). Stage leads
+        // prod so the DO path is exercised on the canary first.
+        "COORDINATION_BACKEND": "do"
         // Secrets (set via `wrangler secret put <NAME> --env stage` once the
         // state plane goes live at OP2+):
         //   STATE_ENCRYPTION_KEY
