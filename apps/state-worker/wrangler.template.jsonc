@@ -87,7 +87,11 @@
     "prod": {
       "workers_dev": false,
       "vars": {
-        "ENVIRONMENT": "prod"
+        "ENVIRONMENT": "prod",
+        // BM6 cutover: route run coordination to the RunCoordinator DO. Safe with
+        // the deployed OP2 CLI via the OP2↔DO facade + per-run backend stickiness
+        // (legacy in-flight runs keep finishing on OP2; only new runs use the DO).
+        "COORDINATION_BACKEND": "do"
         // Secrets: same set as stage, via `wrangler secret put <NAME> --env prod`
       },
       "durable_objects": {
