@@ -259,3 +259,36 @@ export async function projectAfterVerb(
     }
   }
 }
+
+// ── Projector-readiness gate (fail-closed cutover) ──────────────────────────
+// The DO backend is only safe for a NEW run once the projector can write its
+// fold into Postgres — i.e. migration 350 (state.runs.last_seq) is applied on
+// this environment. Until then, seeding a shard yields a silent split-brain: the
+// DO holds the truth while the read model freezes at creation. Probe the column
+// once and cache a positive result for the isolate's life; a negative result is
+// NOT cached, so the worker honors the cutover the moment the migration lands —
+// no redeploy. This is what makes useDoCoordination's "fails closed to OP2"
+// contract real for the createRun seeding decision.
+let projectorReadyCache = false;
+
+/**
+ * True once `state.runs.last_seq` (migration 350) is confirmed present, so the
+ * projector can keep the read model in sync. Fails closed (false) on any probe
+ * error: a new run then stays on the fully-functional OP2 relational path
+ * instead of stranding in a DO/Postgres split-brain.
+ */
+export async function projectorReady(executor: SqlExecutor): Promise<boolean> {
+  if (projectorReadyCache) return true;
+  try {
+    await executor.execute("SELECT last_seq FROM state.runs LIMIT 0");
+    projectorReadyCache = true;
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** Test seam: clear the cached probe result so each case starts cold. */
+export function __resetProjectorReadyCache(): void {
+  projectorReadyCache = false;
+}

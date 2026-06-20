@@ -54,6 +54,7 @@ import {
   coordinatorCompleteOP2,
   coordinatorHeartbeatOP2,
   initCoordinator,
+  projectorReady,
   planFromJobs,
   projectAfterVerb,
   runIsDoBacked,
@@ -366,15 +367,28 @@ export async function handleCreateRun(
     //    if the shard was never seeded. The Postgres rows above remain the read
     //    model; the projector reconciles them from the DO log. ──
     if (useDoCoordination(env)) {
-      const initRes = await initCoordinator(env, run.runUlid, {
-        plan: planFromJobs(planJobs ?? []),
-        planDigest,
-        sourceHash: gitCommit ?? planDigest,
-        environment,
-        actor: { id: actor.subjectId, type: actor.subjectType },
-      });
-      if (initRes.status >= 300) {
-        return errorResponse("internal_error", "Coordinator init failed", 503, requestId);
+      // Fail-closed cutover gate: only seed a DO shard if the projector can keep
+      // the read model in sync (migration 350 → state.runs.last_seq applied).
+      // Otherwise this run would write to the DO while its read model froze at
+      // creation — the silent split-brain. Skip seeding so the run stays on the
+      // fully-functional OP2 relational path, and log loudly so the missing
+      // migration gets fixed.
+      if (await projectorReady(executor)) {
+        const initRes = await initCoordinator(env, run.runUlid, {
+          plan: planFromJobs(planJobs ?? []),
+          planDigest,
+          sourceHash: gitCommit ?? planDigest,
+          environment,
+          actor: { id: actor.subjectId, type: actor.subjectType },
+        });
+        if (initRes.status >= 300) {
+          return errorResponse("internal_error", "Coordinator init failed", 503, requestId);
+        }
+      } else {
+        console.error(
+          `[coordination] run ${run.runUlid}: COORDINATION_BACKEND=do but projector not ready ` +
+            `(state.runs.last_seq missing — apply migration 350); shard not seeded, run stays on OP2`,
+        );
       }
     }
 
