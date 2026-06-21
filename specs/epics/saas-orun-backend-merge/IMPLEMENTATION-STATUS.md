@@ -43,10 +43,11 @@ disagree. Full evidence + per-criterion analysis: [`GAPS.md`](./GAPS.md).
    by the same auth/policy/contract-version as OP2, and the server advertises
    contract major 2. Still open: the `…/events` append primitive (§5), SSE +
    long-poll on `…/log`, and a §2-native `POST …/runs` create shape.
-2. **CLI new client is unwired** — `cmd/orun` still uses the legacy `remotestate`
-   client; `CoordClient`/`Fold`/`RunLoop` are a dead-code island. **This is now
-   the primary blocker** — the server wire exists; the CLI must adopt it (NC2/NC5
-   wiring + `statebackend.Backend` reshape).
+2. **CLI adoption** — 🟡 **coordination cycle now wired (opt-in)** (Progress log
+   2026-06-20): `orun`'s `CoordBackend` drives claim/heartbeat/complete + the
+   runnable frontier over the §3 wire (lease epoch threaded), selected with
+   `ORUN_COORDINATION=v2`. Still open: an async heartbeat goroutine, §3-native
+   create/logs, the offline event log + cloud sync (NC3), and result push (NC1).
 
 See `GAPS.md` §"Prioritized remaining work".
 
@@ -74,6 +75,18 @@ See `GAPS.md` §"Prioritized remaining work".
   contracts 61, state-worker 30, state-worker-tests 177.
 - **Still open for BM4:** `…/events` (§5), `…/log` SSE/long-poll, §2-native create;
   and the CLI adoption (NC). BM5 remainder: quota choke + DO soft per-run cap.
+
+### 2026-06-20 — CLI adoption (NC2, in `sourceplane/orun`)
+- **`CoordBackend`** (`internal/statebackend/coordbackend.go`) implements the CLI's
+  `Backend` over the native §3 wire: claim/heartbeat/complete + the runnable
+  frontier are conditional appends/reads against the per-run shard, with the lease
+  epoch from `:claim` threaded into `:heartbeat`/`:complete`. `cmd/orun run`
+  selects it under **`ORUN_COORDINATION=v2`** (default off → legacy `remotestate`);
+  run create, logs, and read-model loads still delegate to the v1 client.
+- Tests: `coordbackend_test.go` drives it against a fake §3 server (outcome
+  mapping, lease-epoch threading, succeeded/failed, frontier). Go suites green.
+- Still open (NC): async heartbeat goroutine, §3-native create/logs, the offline
+  event log + cloud sync (NC3), result push (NC1).
 
 ## Cutover / operational gate (BM6) — runbook record
 
