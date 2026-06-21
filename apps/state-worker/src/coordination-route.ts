@@ -93,6 +93,14 @@ export async function proxyCoordinatorLog(env: Env, runId: string, fromSeq: numb
   return proxy(await callCoordinator(env, runId, "GET", `/log?from=${fromSeq}`));
 }
 
+/** Serve the §2 frontier read (GET /frontier) — the runnable job ids, projected
+ *  from the shard's fold. An absent/uninitialized shard yields an empty frontier. */
+export async function proxyCoordinatorFrontier(env: Env, runId: string): Promise<Response> {
+  const fold = await readCoordinatorState(env, runId);
+  const jobs = fold?.frontier ?? [];
+  return new Response(JSON.stringify({ jobs }), { status: 200, headers: { "Content-Type": "application/json" } });
+}
+
 // ── OP2 compatibility facade (BM6 cutover) ──────────────────────────────────
 // The deployed CLI speaks the OP2 protocol (path-style routes, runnerId-as-lease
 // holder, the { claim: … } envelope). These helpers let that surface run on the
@@ -141,8 +149,9 @@ export async function coordinatorClaimOP2(
   runId: string,
   jobId: string,
   runnerId: string,
+  actor: CoordinationActorStamp,
 ): Promise<Op2ClaimResult> {
-  const res = await callCoordinator(env, runId, "POST", "/claim", { jobId, runnerId });
+  const res = await callCoordinator(env, runId, "POST", "/claim", { jobId, runnerId, actor });
   if (!res.ok) return { kind: "error" };
   const b = (await res.json()) as { claimed?: boolean; leaseExpiresAt?: string; attempt?: number; reason?: string };
   if (b.claimed) return { kind: "claimed", leaseExpiresAt: b.leaseExpiresAt ?? "", attempt: b.attempt ?? 1 };
@@ -158,10 +167,10 @@ async function jobLease(env: Env, runId: string, jobId: string): Promise<{ phase
 }
 
 /** OP2 :heartbeat over the DO. Lease-lost (incl. takeover) maps to the OP2 409. */
-export async function coordinatorHeartbeatOP2(env: Env, runId: string, jobId: string, runnerId: string): Promise<Op2LeaseResult> {
+export async function coordinatorHeartbeatOP2(env: Env, runId: string, jobId: string, runnerId: string, actor: CoordinationActorStamp): Promise<Op2LeaseResult> {
   const lease = await jobLease(env, runId, jobId);
   if (!lease || lease.holder !== runnerId) return { kind: "lease_lost" };
-  const res = await callCoordinator(env, runId, "POST", "/heartbeat", { jobId, runnerId, leaseEpoch: lease.leaseEpoch });
+  const res = await callCoordinator(env, runId, "POST", "/heartbeat", { jobId, runnerId, leaseEpoch: lease.leaseEpoch, actor });
   if (res.status === 409) return { kind: "lease_lost" };
   if (!res.ok) return { kind: "error" };
   const b = (await res.json()) as { leaseExpiresAt?: string };
@@ -177,6 +186,7 @@ export async function coordinatorCompleteOP2(
   runnerId: string,
   status: "succeeded" | "failed",
   errorText: string | null,
+  actor: CoordinationActorStamp,
 ): Promise<Op2LeaseResult> {
   const lease = await jobLease(env, runId, jobId);
   if (!lease) return { kind: "lease_lost" };
@@ -188,6 +198,7 @@ export async function coordinatorCompleteOP2(
     runnerId,
     leaseEpoch: lease.leaseEpoch,
     outcome: status,
+    actor,
     ...(errorText !== null ? { errorText } : {}),
   });
   if (res.status === 409) return { kind: "lease_lost" };

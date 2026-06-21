@@ -51,6 +51,8 @@ async function initRun(run: string, plan: unknown) {
 }
 
 const LINEAR = { jobs: { a: { deps: [] as string[] }, b: { deps: ["a"] } } };
+// The verified actor the facade now stamps onto every appended event (BM5).
+const A = { id: "u-test", type: "user" };
 
 describe("OP2 facade over the real DO", () => {
   it("claim → heartbeat → complete with OP2 holder semantics", async () => {
@@ -58,7 +60,7 @@ describe("OP2 facade over the real DO", () => {
     await initRun(run, LINEAR);
 
     // Claim a; the OP2 envelope is {claimed, leaseExpiresAt, attempt}.
-    const claim = await coordinatorClaimOP2(env, run, "a", "r1");
+    const claim = await coordinatorClaimOP2(env, run, "a", "r1", A);
     expect(claim.kind).toBe("claimed");
     if (claim.kind === "claimed") {
       expect(claim.attempt).toBe(1);
@@ -66,25 +68,25 @@ describe("OP2 facade over the real DO", () => {
     }
 
     // A different runner loses → already_claimed (OP2 vocabulary).
-    const loser = await coordinatorClaimOP2(env, run, "a", "r2");
+    const loser = await coordinatorClaimOP2(env, run, "a", "r2", A);
     expect(loser).toEqual({ kind: "refused", reason: "already_claimed" });
 
     // b is gated until a completes.
-    expect(await coordinatorClaimOP2(env, run, "b", "r1")).toEqual({ kind: "refused", reason: "deps_not_ready" });
+    expect(await coordinatorClaimOP2(env, run, "b", "r1", A)).toEqual({ kind: "refused", reason: "deps_not_ready" });
 
     // Heartbeat by the holder renews; by a non-holder it's lease_lost (no leaseEpoch needed from the client).
-    expect((await coordinatorHeartbeatOP2(env, run, "a", "r1")).kind).toBe("ok");
-    expect(await coordinatorHeartbeatOP2(env, run, "a", "r2")).toEqual({ kind: "lease_lost" });
+    expect((await coordinatorHeartbeatOP2(env, run, "a", "r1", A)).kind).toBe("ok");
+    expect(await coordinatorHeartbeatOP2(env, run, "a", "r2", A)).toEqual({ kind: "lease_lost" });
 
     // A non-holder cannot complete a live job.
-    expect(await coordinatorCompleteOP2(env, run, "a", "r2", "succeeded", null)).toEqual({ kind: "lease_lost" });
+    expect(await coordinatorCompleteOP2(env, run, "a", "r2", "succeeded", null, A)).toEqual({ kind: "lease_lost" });
 
     // The holder completes; a re-complete is idempotent (terminal-sticky).
-    expect(await coordinatorCompleteOP2(env, run, "a", "r1", "succeeded", null)).toEqual({ kind: "ok" });
-    expect(await coordinatorCompleteOP2(env, run, "a", "r1", "succeeded", null)).toEqual({ kind: "ok" });
+    expect(await coordinatorCompleteOP2(env, run, "a", "r1", "succeeded", null, A)).toEqual({ kind: "ok" });
+    expect(await coordinatorCompleteOP2(env, run, "a", "r1", "succeeded", null, A)).toEqual({ kind: "ok" });
 
     // a done → b now claimable.
-    expect((await coordinatorClaimOP2(env, run, "b", "r1")).kind).toBe("claimed");
+    expect((await coordinatorClaimOP2(env, run, "b", "r1", A)).kind).toBe("claimed");
   });
 
   it("backend stickiness: a run is DO-backed only once its shard is initialized", async () => {
@@ -99,9 +101,9 @@ describe("OP2 facade over the real DO", () => {
   it("a failed completion is terminal and blocks dependents", async () => {
     const run = "facade-2";
     await initRun(run, LINEAR);
-    await coordinatorClaimOP2(env, run, "a", "r1");
-    expect(await coordinatorCompleteOP2(env, run, "a", "r1", "failed", "boom")).toEqual({ kind: "ok" });
+    await coordinatorClaimOP2(env, run, "a", "r1", A);
+    expect(await coordinatorCompleteOP2(env, run, "a", "r1", "failed", "boom", A)).toEqual({ kind: "ok" });
     // b's dep failed → never ready.
-    expect(await coordinatorClaimOP2(env, run, "b", "r1")).toEqual({ kind: "refused", reason: "deps_not_ready" });
+    expect(await coordinatorClaimOP2(env, run, "b", "r1", A)).toEqual({ kind: "refused", reason: "deps_not_ready" });
   });
 });
