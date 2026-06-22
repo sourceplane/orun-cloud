@@ -162,7 +162,7 @@ BM/NC coordination source.
 > exist only on the concrete `CoordClient`, which does not implement `Backend`.
 
 - **NC0 — ✅ Done.** Vendored contract + `CHECKSUM` + drift guard; pure `Fold` (`fold.go`) + 9 golden vectors + determinism/terminal-sticky/idempotent tests. (Vector parity with the TS source is hand-transcribed, not CI-enforced — same nit as BM0.)
-- **NC1 — 🟡 Partial.** `JobInputHash`/`canonicalizeJobInput` + `MemoizationHit` gate tested. **No result push** (`RunLoop` trusts an executor digest, never builds/uploads `job-result`/`log`); **no `--no-cache`**; **no `hermetic` field** in the plan/model; **no cockpit "memoized"** rendering; `jobInputHash` never computed for a real job.
+- **NC1 — 🟡 Partial (wired).** On the `ORUN_COORDINATION=v2` path, `CoordBackend` now computes a deterministic `jobInputHash` for `orun.dev/hermetic`-labelled jobs (steps + env-var KEYS; values/clock/runner excluded), sends it as the KEY on `:claim`, treats a `cached` hit as adopt-by-skip, and on a hermetic success **pushes a `job-result`** (`EnsureObject`) and reports `jobInputHash`+`resultDigest` on `:complete` — closing the producer/consumer loop with BM1's server-resolved index. Remaining: **output adoption** (download artifacts on a hit), real input-artifact digests in the hash, `--no-cache`, cockpit "memoized", `log` object sealing. (`RunLoop`/NC5 still uses an executor digest; the wired path is `CoordBackend`.)
 - **NC2 — 🟡 Partial → Missing.** `ActionForClaim`/`ActionForHeartbeat`/`ClaimableJobs=Frontier` tested. But `Backend` not reshaped; `internal/remotestate` still speaks `/claim`,`/update`,`/runnable` (no `:claim`, no `…/events`, no `expectedSeq`); **no heartbeat goroutine** (`RunLoop` executes inline; lease tunables aren't even decoded); `lease_lost` mid-execution isn't actively halted; full-log re-read from seq 0 each tick.
 - **NC3 — ⛔ Missing.** `status`→`LoadRunState` row reads; `logs --follow`→polls the old per-job `/logs/{id}?fromSeq=`; no `bridge.Source` stream fold, no SSE/long-poll, no `.orun/` offline event log, no cloud sync/reconcile.
 - **NC4 — 🟡 Partial.** `OIDCTokenSource` (audience `orun-cloud`, `→ POST /v1/auth/oidc/exchange`) exists and is wired in `command_run.go` — but feeds the **legacy** `RemoteStateBackend`. `CoordClient.TokenSource` is correct but **never set in prod**. No stage conformance suite (only in-process fake-coordinator loop tests).
@@ -185,12 +185,12 @@ BM/NC coordination source.
    2` (`coordclient.go:54`). Latent today (neither is wired), but the new CLI
    would be 409'd by the new server. Bump the server major to 2 (with the v2
    surface) **or** align the client.
-4. **Memoization trust hole** (BM1→BM2→NC1) — **closed server-side**: the native
-   claim now **resolves** the result digest from the job's `jobInputHash` via the
-   project-scoped memo index and existence-verifies it (the client supplies only
-   the key — it can neither fabricate a hit nor choose which result is reused).
-   Remaining is the CLI half (NC1): produce `jobInputHash` for real jobs and push
-   the `job-result`/`log` objects the index points at.
+4. **Memoization trust hole** (BM1→BM2→NC1) — **closed end-to-end**: the server
+   resolves the digest from the job's `jobInputHash` via the project-scoped index
+   and existence-verifies it (the client supplies only the key), and the CLI
+   (`CoordBackend`) now produces `jobInputHash` for `hermetic` jobs and pushes the
+   `job-result` the index points at. Remaining polish (not a trust issue): output
+   adoption on a hit, real input-artifact digests in the hash, and `log` sealing.
 5. **Recovery substrate missing** (BM2 snapshots) — BM6's forced-DO-loss drill
    has nothing to replay from.
 6. **Docs lagged reality** — fixed by this audit + `IMPLEMENTATION-STATUS.md` +

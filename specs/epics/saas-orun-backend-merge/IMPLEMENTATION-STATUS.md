@@ -76,6 +76,22 @@ See `GAPS.md` §"Prioritized remaining work".
 - **Still open for BM4:** `…/events` (§5), `…/log` SSE/long-poll, §2-native create;
   and the CLI adoption (NC). BM5 remainder: quota choke + DO soft per-run cap.
 
+### 2026-06-20 — NC1 CLI memoization (producer half, in `sourceplane/orun`)
+- Pairs with the server-resolved index below to close memoization end-to-end. On
+  the `ORUN_COORDINATION=v2` path, `CoordBackend` now: marks a job memoizable from
+  the `orun.dev/hermetic` label (opt-in; labels already flow source → `PlanJob`),
+  computes a deterministic `jobInputHash` (steps + env-var KEYS; values/clock/runner
+  excluded per C5), sends it as the KEY on `:claim`, treats a `cached` hit as
+  adopt-by-skip, and on a hermetic success pushes a `job-result` (`EnsureObject`) +
+  reports `jobInputHash`+`resultDigest` on `:complete`. `CoordClient.Claim` takes a
+  `ClaimRequest`; `CompleteRequest` carries `jobInputHash`.
+- Tests: hermetic claim carries the recomputed hash; hermetic success pushes a
+  job-result + matching memo key/digest; non-hermetic sends nothing. orun
+  statebackend suite green.
+- Cross-cutting #4 (memoization trust hole) is now closed end-to-end. Remaining
+  NC1 polish: output adoption on a hit, real input-artifact digests, `--no-cache`,
+  cockpit "memoized", `log` sealing.
+
 ### 2026-06-20 — BM1 server-side memoization (jobInputHash → digest index)
 - **Server-resolved memoization** — the central BM1 deliverable. The native claim
   now **resolves** the result digest from the job's `jobInputHash` via a
