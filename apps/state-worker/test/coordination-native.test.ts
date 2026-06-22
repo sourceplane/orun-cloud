@@ -153,6 +153,45 @@ describe("native v2 coordination wire over the real DO", () => {
     expect(await res.json()).toMatchObject({ claimed: false, cached: true, result: { digest } });
   });
 
+  it("memoizes across runs: a recorded jobInputHash is server-resolved on a later claim", async () => {
+    const plan = { jobs: { h: { deps: [] as string[] } } };
+    const jobInputHash = "sha256:" + "d".repeat(64);
+    const resultDigest = "sha256:" + "e".repeat(64);
+    // Seed the result object so existence verification of the resolved digest passes.
+    await (env as unknown as { ORUN_STATE: R2Bucket }).ORUN_STATE.put(
+      objectKey(orgPublicId(ORG), projectPublicId(PROJ), resultDigest), "result-bytes");
+
+    // Run 1: execute h and complete it with its input hash + result → indexes it.
+    const run1 = "native-memo-run1";
+    await initRun(run1, plan);
+    const c1 = (await (await handleNativeClaim(post({ runnerId: "r1" }), env, "req", ACTOR, ORG, PROJ, run1, "h")).json()) as { leaseEpoch: number };
+    const done = await handleNativeComplete(
+      post({ runnerId: "r1", leaseEpoch: c1.leaseEpoch, outcome: "succeeded", resultDigest, jobInputHash }),
+      env, "req", ACTOR, ORG, PROJ, run1, "h",
+    );
+    expect(done.status).toBe(200);
+
+    // Run 2: the same hermetic job (same input hash) is served from cache — the
+    // server resolved the digest from its index; the client sent only the key,
+    // never a digest.
+    const run2 = "native-memo-run2";
+    await initRun(run2, plan);
+    const c2 = await handleNativeClaim(post({ runnerId: "r2", hermetic: true, jobInputHash }), env, "req", ACTOR, ORG, PROJ, run2, "h");
+    expect(c2.status).toBe(200);
+    expect(await c2.json()).toMatchObject({ claimed: false, cached: true, result: { digest: resultDigest } });
+  });
+
+  it("re-executes when the input hash has no index entry", async () => {
+    const run = "native-memo-none";
+    await initRun(run, { jobs: { h: { deps: [] as string[] } } });
+    const c = await handleNativeClaim(
+      post({ runnerId: "r1", hermetic: true, jobInputHash: "sha256:" + "f".repeat(64) }),
+      env, "req", ACTOR, ORG, PROJ, run, "h",
+    );
+    expect(c.status).toBe(200);
+    expect((await c.json() as { claimed: boolean }).claimed).toBe(true); // no memo → normal claim
+  });
+
   it("frontier reflects the runnable set and advances as jobs complete", async () => {
     const run = "native-2";
     await initRun(run, LINEAR);

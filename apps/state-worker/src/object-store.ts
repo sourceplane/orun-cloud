@@ -49,6 +49,13 @@ export function objectKey(orgPublic: string, projectPublic: string, digest: stri
   return `state/${orgPublic}/${projectPublic}/objects/${digest}`;
 }
 
+/** `state/{orgId}/{projectId}/memo/{jobInputHash}` — the memoization index: a
+ *  marker whose body is the `job-result` digest a hermetic job with this input
+ *  hash produced. Project-scoped so a result is never reused across tenants. */
+export function memoIndexKey(orgPublic: string, projectPublic: string, jobInputHash: string): string {
+  return `state/${orgPublic}/${projectPublic}/memo/${jobInputHash}`;
+}
+
 /** `state/{org}/{project}/runs/{runId}/logs/{jobId}/{seq}` — one log chunk. */
 export function logChunkKey(
   orgPublic: string,

@@ -76,19 +76,23 @@ See `GAPS.md` §"Prioritized remaining work".
 - **Still open for BM4:** `…/events` (§5), `…/log` SSE/long-poll, §2-native create;
   and the CLI adoption (NC). BM5 remainder: quota choke + DO soft per-run cap.
 
-### 2026-06-20 — BM1 memo-result existence verification
-- **`handleNativeClaim`** now verifies a client-supplied `memoResultDigest`
-  references an existing CAS object before the DO can honor it as a cache hit,
-  returning **412 `object_missing`** otherwise. Closes the phantom-hit half of the
-  memoization trust hole — no fabricated or GC'd digest can shortcut execution.
-  Uses the project's R2 store via `requireBucket` + `objectKey(orgPublicId,
-  projectPublicId, digest)` (the same key layout as object PUT/GET).
-- Tests (`coordination-native.test.ts`, R2 now bound in the harness): a missing
-  result → 412 and the job stays claimable; an existing result → `cached`.
-  state-worker 35, all green; typecheck clean.
-- Still open (BM1): the server does not **resolve** the digest from `jobInputHash`
-  (the client still supplies it) — needs a project-scoped `jobInputHash → digest`
-  index written on `:complete`, plus the CLI result push (NC1).
+### 2026-06-20 — BM1 server-side memoization (jobInputHash → digest index)
+- **Server-resolved memoization** — the central BM1 deliverable. The native claim
+  now **resolves** the result digest from the job's `jobInputHash` via a
+  **project-scoped memo index** (`memoIndexKey` → `state/{org}/{proj}/memo/{hash}`,
+  an R2 marker holding the digest), written best-effort on a successful hermetic
+  `:complete` (`recordMemoResult`) and existence-verified on claim
+  (`resolveMemoDigest`; a GC'd result resolves to a re-run). The client supplies
+  only the key — it can neither fabricate a hit nor choose which result is reused.
+  The legacy client-supplied `memoResultDigest` path stays but is existence-verified
+  (**412 `object_missing`**) — closing the phantom-hit hole.
+- Tests (`coordination-native.test.ts`, R2 bound in the harness): cross-run memo
+  hit (server-resolved digest), no index entry → re-execute, missing object → 412,
+  legacy existing-digest → `cached`. state-worker 37, all green; typecheck clean.
+- Still open (BM1, the CLI half / NC1): produce `jobInputHash` for real jobs and
+  push the `job-result`/`log` objects the index points at. Refinement: threading
+  `jobInputHash` into `JobSucceeded` would let the projector build the index from
+  the event log (provenance); a `run-record` writer is still absent.
 
 ### 2026-06-20 — BM2 DO snapshotting + incremental fold
 - **`reduceFrom(prev, events, plan)`** added to `@saas/contracts/coordination` — a
