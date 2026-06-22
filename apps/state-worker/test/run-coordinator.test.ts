@@ -1,3 +1,6 @@
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { build } from "esbuild";
 import { Miniflare } from "miniflare";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -149,6 +152,81 @@ describe("RunCoordinator (miniflare integration)", () => {
     const tail = await call(run, "/log?from=80", "GET");
     const tailEvents = (tail.json as { events: CoordinationEvent[] }).events;
     expect(tailEvents.map((e) => e.seq)).toEqual([81, 82]);
+  });
+
+  it("admits exactly one winner when claims for a job race concurrently", async () => {
+    const run = "r-int-race";
+    await call(run, "/init", "POST", { runId: run, plan: PLAN, planDigest: "sha256:p", sourceHash: "sha256:s" });
+
+    // Fire 8 claims for `a` without awaiting between them. The single-threaded DO
+    // serializes them: exactly one wins, the rest see the job held.
+    const results = await Promise.all(
+      Array.from({ length: 8 }, (_, i) => call(run, "/claim", "POST", { jobId: "a", runnerId: `r${i}` })),
+    );
+    const winners = results.filter((r) => r.json.claimed === true);
+    const losers = results.filter((r) => r.json.claimed === false);
+    expect(winners).toHaveLength(1);
+    expect(losers).toHaveLength(7);
+    for (const l of losers) expect(l.json.reason).toBe("job_held");
+
+    // The log records exactly one JobClaimed for `a` — no double-claim slipped through.
+    const logRes = await call(run, "/log", "GET");
+    const events = (logRes.json as { events: CoordinationEvent[] }).events;
+    const claims = events.filter((e) => e.jobId === "a" && e.kind.includes("claimed"));
+    expect(claims).toHaveLength(1);
+  });
+
+  it("recovers its fold from storage after a forced restart (cold start)", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "orun-do-recovery-"));
+    const script = await bundle();
+    const mfConfig = {
+      modules: [{ type: "ESModule" as const, path: "worker.mjs", contents: script }],
+      compatibilityDate: "2025-05-01",
+      durableObjects: { COORDINATOR: "RunCoordinator" },
+      durableObjectsPersist: dir, // persist DO storage so a fresh instance can reload it
+    };
+    const callMf = async (m: Miniflare, run: string, op: string, method: "GET" | "POST", body?: unknown) => {
+      const res = await m.dispatchFetch(`http://x/runs/${run}${op}`, {
+        method,
+        body: body === undefined ? undefined : JSON.stringify(body),
+      });
+      return { status: res.status, json: (await res.json()) as Record<string, unknown> };
+    };
+
+    try {
+      const run = "r-recovery";
+      // First lifetime: init, claim, and enough heartbeats to write a snapshot
+      // AND leave a tail of events after it (so cold start exercises both the
+      // snapshot read and the reduceFrom replay).
+      const mf1 = new Miniflare(mfConfig);
+      await mf1.ready;
+      await callMf(mf1, run, "/init", "POST", { runId: run, plan: PLAN, planDigest: "sha256:p", sourceHash: "sha256:s" });
+      const c = await callMf(mf1, run, "/claim", "POST", { jobId: "a", runnerId: "r1" });
+      const leaseEpoch = c.json.leaseEpoch as number;
+      for (let i = 0; i < 70; i++) {
+        await callMf(mf1, run, "/heartbeat", "POST", { jobId: "a", runnerId: "r1", leaseEpoch });
+      }
+      const before = await callMf(mf1, run, "/state", "GET");
+      await mf1.dispose(); // evict the in-memory fold; storage stays on disk
+
+      // Second lifetime: a fresh runtime + fresh DO instance reads persisted
+      // storage. The rebuilt fold must match, and the run must keep advancing.
+      const mf2 = new Miniflare(mfConfig);
+      await mf2.ready;
+      const after = await callMf(mf2, run, "/state", "GET");
+      expect(after.json).toEqual(before.json);
+
+      const logRes = await callMf(mf2, run, "/log", "GET");
+      const events = (logRes.json as { events: CoordinationEvent[] }).events;
+      expect(after.json).toEqual(reduce(events, PLAN)); // cold fold == from-scratch fold
+
+      // The recovered DO continues the seq line and completes the job.
+      const done = await callMf(mf2, run, "/complete", "POST", { jobId: "a", runnerId: "r1", leaseEpoch, outcome: "succeeded", resultDigest: "sha256:ra" });
+      expect(done.json.seq).toBe(73); // 1 created + 1 claimed + 70 renewed + 1 succeeded
+      await mf2.dispose();
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 
   it("init is idempotent for the same plan and conflicts on a different plan", async () => {

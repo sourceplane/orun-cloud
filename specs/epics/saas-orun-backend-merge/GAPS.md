@@ -69,7 +69,7 @@ BM/NC coordination source.
 |---|---|---|
 | **BM0** contract v2 + fold + vendor | ✅ **Done** | Event vocab, pure `reduce()`, golden vectors; vendored + `CHECKSUM` + drift guard live in `orun` (NC0). Naming diverges (`state.*` vs plan's CamelCase); two event taxonomies coexist. |
 | **BM1** object kinds + memoization | 🟡 **Partial** | Kinds registered + canonicalization + opt-in gate tested. **Server-side memo lookup missing** (DO trusts a client-supplied digest); new kinds untested through the CAS; no `jobInputHash` producer; no `run-record` writer. |
-| **BM2** RunCoordinator DO | 🟡 **Partial** | DO + deciders + conditional append + lease alarm + parity/conformance green. **Snapshotting + incremental fold done** (append-only per-event keys, in-memory `reduceFrom` cache, periodic `snap` checkpoint). Remaining: fuzz concurrent-claim test; forced-restart recovery test; alarm path untested; logs not sealed; destructive compaction. |
+| **BM2** RunCoordinator DO | 🟡 **Partial** | DO + deciders + conditional append + lease alarm + parity/conformance green. **Snapshotting + incremental fold done** (append-only per-event keys, in-memory `reduceFrom` cache, periodic `snap` checkpoint), **concurrent-claim race + forced-restart recovery tested**. Remaining: alarm-driven timeout integration test; logs not sealed; destructive compaction. |
 | **BM3** projections | 🟡 **Partial** | Pure projector + idempotency-by-seq + projection sweep cron; reads served from Postgres. **Legacy cron sweep NOT removed**; `…/log` & `…/frontier` not exposed; no SSE/long-poll; projector is sync-after-verb, not the async outbox; no metering. |
 | **BM4** DO routing / CLI adoption | 🟡 **Partial** | DO bound + deployed; per-run-sticky backend flag; diamond-DAG conformance green. **§3 verbs not routed** (OP2 facade only); no public `…/log`/`…/frontier`/live-tail. |
 | **BM5** auth / tenancy / quota | 🟡 **Partial** | Auth + deny-by-default policy + cross-tenant 404 enforced on every *existing* route (DO runs inside OP2 handlers, after authz). **Quota off-by-default & fail-open**; **no DO soft per-run cap**; **DO-bridged claim/heartbeat/complete lose the verified actor** (stamped `system:coordinator`). No BM5 commit. |
@@ -105,9 +105,9 @@ BM/NC coordination source.
 - **Satisfied:** `RunCoordinator` DO keyed by `runId` (`run-coordinator.ts`), append-only log in DO storage, in-memory fold, single-writer seq; deciders enforce deps/lease/terminal/cache (`coordination-core.ts`); lease alarm (`alarm()`→`sweepLeases`, 60s/20s, attempt+1 bounded to 5); parity + diamond conformance suites green in miniflare.
 - **Gaps (each an explicit "Done when"):**
   - ~~**Snapshotting absent.**~~ ✅ **Done.** The log is now append-only per-event keys (`e:<paddedSeq>`), not a single rewritten array, so an append is O(events appended) writes. The fold is held in memory and advanced with `reduceFrom` (a pure continuation of `reduce`, golden-tested), so no verb re-reads or re-folds the whole log. A `snap` checkpoint every 64 events (and at a terminal phase) bounds cold-start replay — the recovery substrate BM6's drill needs. Tests: contracts `reduceFrom` incrementality (`reduce(all) == reduceFrom(reduce(prefix), suffix)`, non-mutation, canceled-carry-forward) + a DO integration test crossing the snapshot boundary (82 events; live fold == from-scratch re-fold of `/log`; `/log?from=` slice). **Remaining:** destructive compaction needs a snapshot-aware `/log` read protocol (events are retained today since `/log?from=0` must serve the full stream).
-  - **No fuzz concurrent-claim test** — the "concurrent" claims are sequential `await`s.
-  - **No forced-DO-restart / recovery test.**
-  - **Alarm-driven timeout never integration-tested** (only pure `sweepLeases`).
+  - ~~**No fuzz concurrent-claim test.**~~ ✅ **Done** — 8 claims raced with `Promise.all` against one DO; asserts exactly one winner, 7 `job_held`, and a single `JobClaimed` in the log.
+  - ~~**No forced-DO-restart / recovery test.**~~ ✅ **Done** — a persisted-storage test (`durableObjectsPersist`) inits + claims + 70 heartbeats (crossing the snapshot), disposes the runtime, then a **fresh** runtime cold-starts: the rebuilt fold equals the pre-restart state and a from-scratch re-fold of `/log`, and the run continues its seq line to completion.
+  - **Alarm-driven timeout never integration-tested** (only pure `sweepLeases`; raw-miniflare harness has no alarm-fire hook — needs `@cloudflare/vitest-pool-workers`'s `runDurableObjectAlarm`).
   - **Logs not sealed on `:complete`** (contract §4); the DO has no `LogChunk` path — logs stay on the disjoint OP2 per-job R2 path.
   - **Memo digest is client-trusted** (carried from BM1) — false-reuse hole.
 
@@ -242,8 +242,9 @@ BM/NC coordination source.
 
 **P1 — durability & correctness:**
 4. ✅ DO **snapshotting** + checkpoint landed (incremental `reduceFrom` fold +
-   per-event keys + `snap` every 64 events). Still open: forced-restart recovery
-   test, alarm-driven timeout integration test, fuzz concurrent-claim test (BM2).
+   per-event keys + `snap` every 64 events), plus **concurrent-claim race** and
+   **forced-restart recovery** tests. Still open: alarm-driven timeout integration
+   test (needs `runDurableObjectAlarm`) (BM2).
 5. Forward the **verified actor** through the DO-bridged verbs; turn the quota
    gate into a real strong-consistent choke + DO soft per-run cap (BM5).
 6. Seal logs into a `log` object on `:complete`; consume `LogChunk` in the DO (BM2/§4).
