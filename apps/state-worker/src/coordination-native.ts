@@ -25,7 +25,7 @@ import type { ActorContext } from "./router.js";
 import type { RunHandlerDeps } from "./handlers/runs.js";
 import { errorResponse, validationError } from "./http.js";
 import { authorizeRun } from "./authz.js";
-import { isValidDigest, objectKey, requireBucket } from "./object-store.js";
+import { isValidDigest, memoIndexKey, objectKey, requireBucket } from "./object-store.js";
 import { orgPublicId, projectPublicId } from "./ids.js";
 import {
   projectAfterVerb,
@@ -73,6 +73,36 @@ async function memoResultExists(env: Env, orgId: Uuid, projectId: Uuid, digest: 
   return head !== null;
 }
 
+/** Resolve the memoized `job-result` digest for a `jobInputHash` from the
+ *  project's memo index — the server's own lookup, so the client supplies only
+ *  the key, never the digest. Returns null when there is no index entry or the
+ *  referenced object no longer exists (e.g. GC'd) — either way the job re-runs. */
+async function resolveMemoDigest(env: Env, orgId: Uuid, projectId: Uuid, jobInputHash: string): Promise<string | null> {
+  if (!isValidDigest(jobInputHash)) return null;
+  const b = requireBucket(env);
+  if (!b.ok) return null;
+  const marker = await b.bucket.get(memoIndexKey(orgPublicId(orgId), projectPublicId(projectId), jobInputHash));
+  if (marker === null) return null;
+  const digest = (await marker.text()).trim();
+  if (!(await memoResultExists(env, orgId, projectId, digest))) return null;
+  return digest;
+}
+
+/** Record `jobInputHash → resultDigest` in the project's memo index so a later
+ *  hermetic claim with the same input hash can be served from cache. Best-effort:
+ *  memoization is opt-in and never required for correctness, so an index write
+ *  failure (or no object store) is swallowed. */
+async function recordMemoResult(env: Env, orgId: Uuid, projectId: Uuid, jobInputHash: string, resultDigest: string): Promise<void> {
+  if (!isValidDigest(jobInputHash) || !isValidDigest(resultDigest)) return;
+  const b = requireBucket(env);
+  if (!b.ok) return;
+  try {
+    await b.bucket.put(memoIndexKey(orgPublicId(orgId), projectPublicId(projectId), jobInputHash), resultDigest);
+  } catch {
+    // index is a cache; a failed write just means the next run re-executes.
+  }
+}
+
 /** POST …/runs/{runId}/jobs/{jobId}:claim — conditional-append claim. */
 export async function handleNativeClaim(
   request: Request,
@@ -92,11 +122,16 @@ export async function handleNativeClaim(
   if (!runnerId) return validationError(requestId, { runnerId: ["Required; non-empty string"] });
   const verbBody: Record<string, unknown> = { jobId, runnerId, actor: stampOf(actor) };
   if (typeof body.hermetic === "boolean") verbBody.hermetic = body.hermetic;
-  if (typeof body.memoResultDigest === "string") {
-    // Verify the referenced result exists before the DO can honor it as a cache
-    // hit — never let a client shortcut execution with a fabricated or GC'd
-    // digest. (Resolving the digest from the job's jobInputHash server-side, so
-    // the client supplies only the key, is the remaining BM1 work.)
+  if (body.hermetic === true && typeof body.jobInputHash === "string") {
+    // Server-resolved memoization (BM1): the client supplies only the input-hash
+    // key; the server looks up the result digest in its own project-scoped index.
+    // This is the trust-correct path — the client can neither fabricate a hit nor
+    // pick which result is reused.
+    const resolved = await resolveMemoDigest(env, orgId, projectId, body.jobInputHash);
+    if (resolved !== null) verbBody.memoResultDigest = resolved;
+  } else if (typeof body.memoResultDigest === "string") {
+    // Legacy path: a pre-resolved client digest. Still verify the object exists
+    // (no fabricated/GC'd hit can shortcut execution) — 412 otherwise.
     if (!(await memoResultExists(env, orgId, projectId, body.memoResultDigest))) {
       return errorResponse("object_missing", `Memoized result ${body.memoResultDigest} does not exist`, 412, requestId);
     }
@@ -157,6 +192,12 @@ export async function handleNativeComplete(
   if (typeof body.errorText === "string") verbBody.errorText = body.errorText;
   if (typeof body.reason === "string") verbBody.reason = body.reason;
   const res = await proxyCoordinatorVerb(env, runUlid, "complete", verbBody);
+  // Index jobInputHash → resultDigest so a later hermetic claim with the same
+  // inputs is served from cache (BM1). Only on a recorded success that carries
+  // both; best-effort and never blocks the response.
+  if (res.ok && outcome === "succeeded" && typeof body.resultDigest === "string" && typeof body.jobInputHash === "string") {
+    await recordMemoResult(env, orgId, projectId, body.jobInputHash, body.resultDigest);
+  }
   await projectAfterVerb(env, deps, { orgId, projectId }, runUlid);
   return res;
 }
