@@ -76,6 +76,20 @@ See `GAPS.md` §"Prioritized remaining work".
 - **Still open for BM4:** `…/events` (§5), `…/log` SSE/long-poll, §2-native create;
   and the CLI adoption (NC). BM5 remainder: quota choke + DO soft per-run cap.
 
+### 2026-06-20 — BM1 memo-result existence verification
+- **`handleNativeClaim`** now verifies a client-supplied `memoResultDigest`
+  references an existing CAS object before the DO can honor it as a cache hit,
+  returning **412 `object_missing`** otherwise. Closes the phantom-hit half of the
+  memoization trust hole — no fabricated or GC'd digest can shortcut execution.
+  Uses the project's R2 store via `requireBucket` + `objectKey(orgPublicId,
+  projectPublicId, digest)` (the same key layout as object PUT/GET).
+- Tests (`coordination-native.test.ts`, R2 now bound in the harness): a missing
+  result → 412 and the job stays claimable; an existing result → `cached`.
+  state-worker 35, all green; typecheck clean.
+- Still open (BM1): the server does not **resolve** the digest from `jobInputHash`
+  (the client still supplies it) — needs a project-scoped `jobInputHash → digest`
+  index written on `:complete`, plus the CLI result push (NC1).
+
 ### 2026-06-20 — BM2 DO snapshotting + incremental fold
 - **`reduceFrom(prev, events, plan)`** added to `@saas/contracts/coordination` — a
   pure continuation of `reduce` (`reduce(events) === reduceFrom(initialFold, events)`),
