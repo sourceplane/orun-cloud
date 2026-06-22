@@ -93,9 +93,14 @@ See `GAPS.md` §"Prioritized remaining work".
   total) + a DO integration test crossing the snapshot boundary (82 events; live
   fold == from-scratch re-fold of `/log`; `/log?from=` slice). Contracts 64,
   state-worker 31 — all green; both packages typecheck.
-- Still open (BM2): forced-restart recovery test, alarm-driven timeout integration
-  test, fuzz concurrent-claim test, log sealing on `:complete`, destructive
-  compaction (needs a snapshot-aware `/log` read).
+- Also added (BM2 test "Done when"): a **concurrent-claim race** test (8 claims via
+  `Promise.all` → exactly one winner, one `JobClaimed`) and a **forced-restart
+  recovery** test (persisted DO storage; a fresh runtime cold-starts and the
+  rebuilt fold matches + the run completes) — the latter exercises the snapshot
+  `load()`/`reduceFrom(tail)` path end-to-end. state-worker 33, all green.
+- Still open (BM2): alarm-driven timeout integration test (needs
+  `runDurableObjectAlarm`), log sealing on `:complete`, destructive compaction
+  (needs a snapshot-aware `/log` read).
 
 ### 2026-06-20 — CLI adoption (NC2, in `sourceplane/orun`)
 - **`CoordBackend`** (`internal/statebackend/coordbackend.go`) implements the CLI's
