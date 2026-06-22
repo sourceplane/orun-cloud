@@ -1,6 +1,7 @@
 import { build } from "esbuild";
 import { Miniflare } from "miniflare";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { reduce, type CoordinationEvent } from "@saas/contracts/coordination";
 
 // Integration test for the RunCoordinator Durable Object against the real
 // Workers runtime (miniflare): durable storage + the pure deciders + exactly-one
@@ -120,6 +121,34 @@ describe("RunCoordinator (miniflare integration)", () => {
     await call(run, "/init", "POST", { runId: run, plan: memoPlan, planDigest: "sha256:p", sourceHash: "sha256:s" });
     const cached = await call(run, "/claim", "POST", { jobId: "h", runnerId: "r1", hermetic: true, memoResultDigest: "sha256:memo" });
     expect(cached.json).toMatchObject({ claimed: false, cached: true, result: { digest: "sha256:memo" } });
+  });
+
+  it("keeps the incrementally-folded state consistent across a snapshot boundary", async () => {
+    const run = "r-int-snap";
+    await call(run, "/init", "POST", { runId: run, plan: PLAN, planDigest: "sha256:p", sourceHash: "sha256:s" });
+    const c = await call(run, "/claim", "POST", { jobId: "a", runnerId: "r1" });
+    const leaseEpoch = c.json.leaseEpoch as number;
+
+    // Drive well past SNAPSHOT_EVERY (64) so the DO checkpoints and keeps
+    // advancing the in-memory fold incrementally rather than re-folding the log.
+    for (let i = 0; i < 80; i++) {
+      const hb = await call(run, "/heartbeat", "POST", { jobId: "a", runnerId: "r1", leaseEpoch });
+      expect(hb.status).toBe(200);
+    }
+
+    // The authoritative live state must equal a from-scratch fold of the full log.
+    const st = await call(run, "/state", "GET");
+    const logRes = await call(run, "/log", "GET");
+    const events = (logRes.json as { events: CoordinationEvent[] }).events;
+    expect(events.length).toBe(82); // RunCreated + JobClaimed + 80 LeaseRenewed
+    expect(events.map((e) => e.seq)).toEqual(events.map((_, i) => i + 1)); // contiguous, ordered
+    expect(st.json).toEqual(reduce(events, PLAN));
+    expect((st.json as { jobs: Record<string, { phase: string }> }).jobs.a!.phase).toBe("claimed");
+
+    // `/log?from=` returns only the strictly-later events (per-event key slice).
+    const tail = await call(run, "/log?from=80", "GET");
+    const tailEvents = (tail.json as { events: CoordinationEvent[] }).events;
+    expect(tailEvents.map((e) => e.seq)).toEqual([81, 82]);
   });
 
   it("init is idempotent for the same plan and conflicts on a different plan", async () => {

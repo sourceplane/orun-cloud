@@ -202,16 +202,46 @@ export function reduce(
   events: readonly CoordinationEvent[],
   plan: CoordinationPlan,
 ): RunFoldState {
+  return reduceFrom(initialFold(plan), events, plan);
+}
+
+/** The zero state of a fold: every plan job fresh, nothing claimed. */
+function initialFold(plan: CoordinationPlan): RunFoldState {
   const jobs: Record<string, JobFoldState> = {};
   for (const jobId of Object.keys(plan.jobs)) {
     jobs[jobId] = freshJob(jobId);
   }
+  return { runId: "", planDigest: null, sourceHash: null, phase: "pending", jobs, frontier: [], lastSeq: 0 };
+}
 
-  let planDigest: string | null = null;
-  let sourceHash: string | null = null;
-  let runId = "";
-  let lastSeq = 0;
-  let canceled = false;
+/**
+ * Continue a fold from a prior state: `reduce(events, plan)` is exactly
+ * `reduceFrom(initialFold(plan), events, plan)`. A long-lived holder of the fold
+ * (the RunCoordinator DO) uses this to apply newly appended events incrementally
+ * and to resume from a periodic snapshot, instead of re-folding the whole log on
+ * every verb. `events` must be a higher-seq continuation of `prev` (the caller
+ * appends in strict seq order); they are seq-sorted defensively. Pure — `prev` is
+ * not mutated.
+ */
+export function reduceFrom(
+  prev: RunFoldState,
+  events: readonly CoordinationEvent[],
+  plan: CoordinationPlan,
+): RunFoldState {
+  const jobs: Record<string, JobFoldState> = {};
+  for (const jobId of Object.keys(plan.jobs)) {
+    jobs[jobId] = freshJob(jobId);
+  }
+  // Carry the prior fold forward (cloned, so `prev` is untouched).
+  for (const [jobId, job] of Object.entries(prev.jobs)) {
+    jobs[jobId] = { ...job };
+  }
+
+  let planDigest: string | null = prev.planDigest;
+  let sourceHash: string | null = prev.sourceHash;
+  let runId = prev.runId;
+  let lastSeq = prev.lastSeq;
+  let canceled = prev.phase === "canceled";
 
   const ordered = [...events].sort((a, b) => a.seq - b.seq);
   for (const e of ordered) {
