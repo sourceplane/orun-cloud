@@ -76,6 +76,27 @@ See `GAPS.md` §"Prioritized remaining work".
 - **Still open for BM4:** `…/events` (§5), `…/log` SSE/long-poll, §2-native create;
   and the CLI adoption (NC). BM5 remainder: quota choke + DO soft per-run cap.
 
+### 2026-06-20 — BM2 DO snapshotting + incremental fold
+- **`reduceFrom(prev, events, plan)`** added to `@saas/contracts/coordination` — a
+  pure continuation of `reduce` (`reduce(events) === reduceFrom(initialFold, events)`),
+  so the golden vectors still pin both. Lets a long-lived fold holder apply newly
+  appended events incrementally and resume from a checkpoint.
+- **`RunCoordinator` storage reshaped** (`apps/state-worker/src/run-coordinator.ts`):
+  the log is append-only per-event keys `e:<paddedSeq>` (an append is O(events
+  appended) writes, not a full-array rewrite); the fold is held in memory and
+  advanced with `reduceFrom` (no verb re-reads/re-folds the whole log); a `snap`
+  checkpoint every 64 events (and at a terminal phase) bounds cold-start replay.
+  Events are retained — `GET /log?from=` still serves the full authoritative
+  stream — so this is checkpointing, not destructive compaction. A one-time
+  migration folds a legacy `"log"` array into per-event keys on first access.
+- Tests: contracts `reduceFrom` incrementality (16 in `coordination.test.ts`, 64
+  total) + a DO integration test crossing the snapshot boundary (82 events; live
+  fold == from-scratch re-fold of `/log`; `/log?from=` slice). Contracts 64,
+  state-worker 31 — all green; both packages typecheck.
+- Still open (BM2): forced-restart recovery test, alarm-driven timeout integration
+  test, fuzz concurrent-claim test, log sealing on `:complete`, destructive
+  compaction (needs a snapshot-aware `/log` read).
+
 ### 2026-06-20 — CLI adoption (NC2, in `sourceplane/orun`)
 - **`CoordBackend`** (`internal/statebackend/coordbackend.go`) implements the CLI's
   `Backend` over the native §3 wire: claim/heartbeat/complete + the runnable
