@@ -25,6 +25,8 @@ import type { ActorContext } from "./router.js";
 import type { RunHandlerDeps } from "./handlers/runs.js";
 import { errorResponse, validationError } from "./http.js";
 import { authorizeRun } from "./authz.js";
+import { isValidDigest, objectKey, requireBucket } from "./object-store.js";
+import { orgPublicId, projectPublicId } from "./ids.js";
 import {
   projectAfterVerb,
   proxyCoordinatorFrontier,
@@ -58,6 +60,19 @@ function stampOf(actor: ActorContext): { id: string; type: string } {
   return { id: actor.subjectId, type: actor.subjectType };
 }
 
+/** Whether a `job-result` (or any CAS object) exists for this digest in the
+ *  project's store. A memo hit must reference a real object — the runner adopts
+ *  the result and skips execution, so an absent/fabricated digest cannot be
+ *  allowed to shortcut work (contract §: referenced object must exist). Returns
+ *  false when the digest is malformed or no object store is bound. */
+async function memoResultExists(env: Env, orgId: Uuid, projectId: Uuid, digest: string): Promise<boolean> {
+  if (!isValidDigest(digest)) return false;
+  const b = requireBucket(env);
+  if (!b.ok) return false;
+  const head = await b.bucket.head(objectKey(orgPublicId(orgId), projectPublicId(projectId), digest));
+  return head !== null;
+}
+
 /** POST …/runs/{runId}/jobs/{jobId}:claim — conditional-append claim. */
 export async function handleNativeClaim(
   request: Request,
@@ -77,7 +92,16 @@ export async function handleNativeClaim(
   if (!runnerId) return validationError(requestId, { runnerId: ["Required; non-empty string"] });
   const verbBody: Record<string, unknown> = { jobId, runnerId, actor: stampOf(actor) };
   if (typeof body.hermetic === "boolean") verbBody.hermetic = body.hermetic;
-  if (typeof body.memoResultDigest === "string") verbBody.memoResultDigest = body.memoResultDigest;
+  if (typeof body.memoResultDigest === "string") {
+    // Verify the referenced result exists before the DO can honor it as a cache
+    // hit — never let a client shortcut execution with a fabricated or GC'd
+    // digest. (Resolving the digest from the job's jobInputHash server-side, so
+    // the client supplies only the key, is the remaining BM1 work.)
+    if (!(await memoResultExists(env, orgId, projectId, body.memoResultDigest))) {
+      return errorResponse("object_missing", `Memoized result ${body.memoResultDigest} does not exist`, 412, requestId);
+    }
+    verbBody.memoResultDigest = body.memoResultDigest;
+  }
   const res = await proxyCoordinatorVerb(env, runUlid, "claim", verbBody);
   await projectAfterVerb(env, deps, { orgId, projectId }, runUlid);
   return res;

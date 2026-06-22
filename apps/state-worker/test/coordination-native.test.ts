@@ -13,6 +13,8 @@ import {
   handleNativeHeartbeat,
   handleNativeLog,
 } from "../src/coordination-native.js";
+import { objectKey } from "../src/object-store.js";
+import { orgPublicId, projectPublicId } from "../src/ids.js";
 
 // Native v2 coordination wire (BM4 — coordination-api.md §2/§3) against the
 // *real* RunCoordinator DO (miniflare). Verifies the §3 verbs/reads the handlers
@@ -64,10 +66,12 @@ beforeAll(async () => {
     modules: [{ type: "ESModule", path: "worker.mjs", contents: res.outputFiles[0]!.text }],
     compatibilityDate: "2025-05-01",
     durableObjects: { COORDINATOR: "RunCoordinator" },
+    r2Buckets: ["ORUN_STATE"],
   });
   await mf.ready;
   const ns = await mf.getDurableObjectNamespace("COORDINATOR");
-  env = { COORDINATION_BACKEND: "do", COORDINATOR: ns } as unknown as Env;
+  const bucket = await mf.getR2Bucket("ORUN_STATE");
+  env = { COORDINATION_BACKEND: "do", COORDINATOR: ns, ORUN_STATE: bucket } as unknown as Env;
 });
 
 afterAll(async () => {
@@ -114,6 +118,39 @@ describe("native v2 coordination wire over the real DO", () => {
     const claimedEvt = events.find((e) => e.kind.includes("claimed") && e.jobId === "a");
     expect(claimedEvt).toBeDefined();
     expect(claimedEvt!.actor).toEqual({ id: "wf-runner-1", type: "workflow" });
+  });
+
+  it("rejects a memo claim whose result object is missing (412 object_missing)", async () => {
+    const run = "native-memo-miss";
+    await initRun(run, { jobs: { h: { deps: [] as string[] } } });
+    const digest = "sha256:" + "b".repeat(64); // never PUT — phantom
+    const res = await handleNativeClaim(
+      post({ runnerId: "r1", hermetic: true, memoResultDigest: digest }),
+      env, "req", ACTOR, ORG, PROJ, run, "h",
+    );
+    expect(res.status).toBe(412);
+    const body = (await res.json()) as { error: { code: string } };
+    expect(body.error.code).toBe("object_missing");
+    // The phantom hit never appended a JobMemoized — the job is still claimable.
+    const claim = (await (await handleNativeClaim(post({ runnerId: "r1" }), env, "req", ACTOR, ORG, PROJ, run, "h")).json()) as { claimed: boolean };
+    expect(claim.claimed).toBe(true);
+  });
+
+  it("honors a memo claim when the result object exists (cached → skip exec)", async () => {
+    const run = "native-memo-hit";
+    await initRun(run, { jobs: { h: { deps: [] as string[] } } });
+    const digest = "sha256:" + "c".repeat(64);
+    // Seed the CAS so the existence check passes (head only needs the key present).
+    await (env as unknown as { ORUN_STATE: R2Bucket }).ORUN_STATE.put(
+      objectKey(orgPublicId(ORG), projectPublicId(PROJ), digest),
+      "result-bytes",
+    );
+    const res = await handleNativeClaim(
+      post({ runnerId: "r1", hermetic: true, memoResultDigest: digest }),
+      env, "req", ACTOR, ORG, PROJ, run, "h",
+    );
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({ claimed: false, cached: true, result: { digest } });
   });
 
   it("frontier reflects the runnable set and advances as jobs complete", async () => {

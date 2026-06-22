@@ -68,7 +68,7 @@ BM/NC coordination source.
 | Milestone | Verdict | One-line |
 |---|---|---|
 | **BM0** contract v2 + fold + vendor | ✅ **Done** | Event vocab, pure `reduce()`, golden vectors; vendored + `CHECKSUM` + drift guard live in `orun` (NC0). Naming diverges (`state.*` vs plan's CamelCase); two event taxonomies coexist. |
-| **BM1** object kinds + memoization | 🟡 **Partial** | Kinds registered + canonicalization + opt-in gate tested. **Server-side memo lookup missing** (DO trusts a client-supplied digest); new kinds untested through the CAS; no `jobInputHash` producer; no `run-record` writer. |
+| **BM1** object kinds + memoization | 🟡 **Partial** | Kinds registered + canonicalization + opt-in gate tested. **Native claim now verifies the memo result object exists (412 `object_missing` on a phantom digest)** — no fabricated/GC'd hit can shortcut execution. Still missing: server-side resolution of the digest from `jobInputHash` (client still supplies the digest); new kinds untested through the CAS; no `jobInputHash` producer; no `run-record` writer. |
 | **BM2** RunCoordinator DO | 🟡 **Partial** | DO + deciders + conditional append + lease alarm + parity/conformance green. **Snapshotting + incremental fold done** (append-only per-event keys, in-memory `reduceFrom` cache, periodic `snap` checkpoint), **concurrent-claim race + forced-restart recovery tested**. Remaining: alarm-driven timeout integration test; logs not sealed; destructive compaction. |
 | **BM3** projections | 🟡 **Partial** | Pure projector + idempotency-by-seq + projection sweep cron; reads served from Postgres. **Legacy cron sweep NOT removed**; `…/log` & `…/frontier` not exposed; no SSE/long-poll; projector is sync-after-verb, not the async outbox; no metering. |
 | **BM4** DO routing / CLI adoption | 🟡 **Partial** | DO bound + deployed; per-run-sticky backend flag; diamond-DAG conformance green. **§3 verbs not routed** (OP2 facade only); no public `…/log`/`…/frontier`/live-tail. |
@@ -96,7 +96,7 @@ BM/NC coordination source.
 ### BM1 — Object-plane extensions + memoization lookup — 🟡 Partial
 - **Satisfied:** kinds `job-result`/`log`/`run-record` registered (`object-store.ts:126-140`, `state.ts:210-219`); PUT digest-verified + idempotent (`handlers/objects.ts:188-221`); `objects/missing` covers them by digest; canonicalization `canonicalizeJobInput` spec'd + golden-tested (`coordination-memo.test.ts`); opt-in gate (`coordination-core.ts:124`, hermetic-only).
 - **Gaps:**
-  - **No server-side `job-result`-by-`jobInputHash` lookup** — the central BM1 deliverable. `decideClaim` consumes a **client-supplied** `memoResultDigest`; the server never resolves object existence by hash. `memoizationHit()` (`coordination.ts:410-416`) is **dead code** (only its own test calls it).
+  - **Server-side `job-result`-by-`jobInputHash` lookup — partial.** ✅ The native claim handler (`coordination-native.ts`) now **verifies the referenced result object exists in the CAS and returns 412 `object_missing` otherwise**, so a client can no longer shortcut execution with a fabricated/GC'd digest (tests: missing → 412 + job stays claimable; existing → `cached`). ⛔ Still missing the central deliverable: the server does not **resolve** the digest from the job's `jobInputHash` — the client still *supplies* `memoResultDigest`, so the server trusts the key→value binding. `memoizationHit()` (`coordination.ts:410-416`) remains unwired (needs a project-scoped `jobInputHash → digest` index written on `:complete`).
   - New kinds are **never exercised through the CAS** in tests (every PUT/GET test uses `kind:"plan"`); the "round-trips on stage" criterion is unverified.
   - **No `jobInputHash` producer** anywhere (server or, in prod, CLI) — derivation is spec-only.
   - **No `run-record` writer** — kind registered, never emitted.
@@ -185,10 +185,11 @@ BM/NC coordination source.
    2` (`coordclient.go:54`). Latent today (neither is wired), but the new CLI
    would be 409'd by the new server. Bump the server major to 2 (with the v2
    surface) **or** align the client.
-4. **Memoization trust hole** (BM1→BM2→NC1): the contract requires the server to
-   store/look-up `job-result` by `jobInputHash` and to 412 on a missing object;
-   instead the DO memoizes on an unverified client digest, and the CLI never
-   uploads the result it references.
+4. **Memoization trust hole** (BM1→BM2→NC1) — **partially closed**: the native
+   claim handler now 412s `object_missing` on a digest that references no CAS
+   object, so phantom hits can't shortcut execution. Still open: the server does
+   not resolve the digest from `jobInputHash` (the client supplies it), and the
+   CLI never uploads the result it references.
 5. **Recovery substrate missing** (BM2 snapshots) — BM6's forced-DO-loss drill
    has nothing to replay from.
 6. **Docs lagged reality** — fixed by this audit + `IMPLEMENTATION-STATUS.md` +
