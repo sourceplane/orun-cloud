@@ -161,6 +161,7 @@ export async function handleNativeClaim(
   runUlid: string,
   jobId: string,
   deps?: RunHandlerDeps,
+  ctx?: ExecutionContext,
 ): Promise<Response> {
   const g = await gate(env, requestId, actor, orgId, projectId, runUlid, STATE_POLICY_ACTIONS.RUN_WRITE);
   if (!g.ok) return g.response;
@@ -185,7 +186,7 @@ export async function handleNativeClaim(
     verbBody.memoResultDigest = body.memoResultDigest;
   }
   const res = await proxyCoordinatorVerb(env, runUlid, "claim", verbBody);
-  await projectAfterVerb(env, deps, { orgId, projectId }, runUlid);
+  await projectAfterVerb(env, deps, { orgId, projectId }, runUlid, ctx);
   return res;
 }
 
@@ -229,6 +230,7 @@ export async function handleNativeComplete(
   runUlid: string,
   jobId: string,
   deps?: RunHandlerDeps,
+  ctx?: ExecutionContext,
 ): Promise<Response> {
   const g = await gate(env, requestId, actor, orgId, projectId, runUlid, STATE_POLICY_ACTIONS.RUN_WRITE);
   if (!g.ok) return g.response;
@@ -262,7 +264,7 @@ export async function handleNativeComplete(
   if (res.ok && outcome === "succeeded" && typeof body.resultDigest === "string" && typeof body.jobInputHash === "string") {
     await recordMemoResult(env, orgId, projectId, body.jobInputHash, body.resultDigest);
   }
-  await projectAfterVerb(env, deps, { orgId, projectId }, runUlid);
+  await projectAfterVerb(env, deps, { orgId, projectId }, runUlid, ctx);
   return res;
 }
 
@@ -275,11 +277,12 @@ export async function handleNativeCancel(
   projectId: Uuid,
   runUlid: string,
   deps?: RunHandlerDeps,
+  ctx?: ExecutionContext,
 ): Promise<Response> {
   const g = await gate(env, requestId, actor, orgId, projectId, runUlid, STATE_POLICY_ACTIONS.RUN_WRITE);
   if (!g.ok) return g.response;
   const res = await proxyCoordinatorVerb(env, runUlid, "cancel", { actor: stampOf(actor) });
-  await projectAfterVerb(env, deps, { orgId, projectId }, runUlid);
+  await projectAfterVerb(env, deps, { orgId, projectId }, runUlid, ctx);
   return res;
 }
 

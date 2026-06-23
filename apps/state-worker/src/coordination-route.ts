@@ -252,24 +252,41 @@ export async function projectAfterVerb(
   deps: { executor?: SqlExecutor } | undefined,
   scope: ProjectionScope,
   runId: string,
+  ctx?: ExecutionContext,
 ): Promise<void> {
   if (!env.PLATFORM_DB && !deps?.executor) return;
+  // BM3 / DB-protection at scale: when an ExecutionContext is provided, defer
+  // the projection to `ctx.waitUntil` so the verb response is not blocked on a
+  // DB roundtrip. The projection still runs (the worker keeps the request alive
+  // until the deferred promise settles), and the bounded projection sweep is the
+  // safety net if it ever fails. Without a ctx (e.g. unit tests, ad-hoc calls)
+  // we keep the synchronous path so callers can deterministically observe the
+  // post-verb read-model state.
   const executor = deps?.executor ?? createSqlExecutor(env.PLATFORM_DB!);
-  try {
-    await projectCoordinatorRun(env, executor, scope, runId);
-  } catch (err) {
-    // Eventually consistent: a projection failure must never fail the verb — but
-    // it must never be invisible either. A persistent failure here (e.g. the BM3
-    // `state.runs.last_seq` column missing because migration 350 was not applied
-    // before the COORDINATION_BACKEND=do cutover) silently freezes the read model
-    // into a DO/Postgres split-brain. Surface it loudly so tail/alerting catches
-    // it instead of clients seeing a run that never progresses.
-    console.error(`[projection] run ${runId} projection failed (read model may be stale): ${String(err)}`);
-  } finally {
-    if (!deps?.executor && "dispose" in executor) {
-      await (executor as unknown as { dispose: () => Promise<void> }).dispose();
+  const ownsExecutor = !deps?.executor;
+  const work = async () => {
+    try {
+      await projectCoordinatorRun(env, executor, scope, runId);
+    } catch (err) {
+      // Eventually consistent: a projection failure must never fail the verb —
+      // but it must never be invisible either. A persistent failure here (e.g.
+      // the BM3 `state.runs.last_seq` column missing because migration 350 was
+      // not applied before the COORDINATION_BACKEND=do cutover) silently freezes
+      // the read model into a DO/Postgres split-brain. Surface it loudly so
+      // tail/alerting catches it instead of clients seeing a run that never
+      // progresses.
+      console.error(`[projection] run ${runId} projection failed (read model may be stale): ${String(err)}`);
+    } finally {
+      if (ownsExecutor && "dispose" in executor) {
+        await (executor as unknown as { dispose: () => Promise<void> }).dispose();
+      }
     }
+  };
+  if (ctx) {
+    ctx.waitUntil(work());
+    return;
   }
+  await work();
 }
 
 // ── Projector-readiness gate (fail-closed cutover) ──────────────────────────

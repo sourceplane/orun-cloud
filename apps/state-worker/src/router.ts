@@ -292,7 +292,7 @@ async function routeRun(
     const scope = parseScope(m[1]!, m[2]!);
     if (!scope || !isRunUlid(m[3]!)) return notFound(requestId, pathname);
     if (request.method !== "POST") return methodNotAllowed(requestId);
-    return handleNativeClaim(request, env, requestId, actor, scope.orgId, scope.projectId, m[3]!, m[4]!);
+    return handleNativeClaim(request, env, requestId, actor, scope.orgId, scope.projectId, m[3]!, m[4]!, undefined, ctx);
   }
   m = pathname.match(RUN_JOB_HEARTBEAT_NATIVE_RE);
   if (m) {
@@ -306,14 +306,14 @@ async function routeRun(
     const scope = parseScope(m[1]!, m[2]!);
     if (!scope || !isRunUlid(m[3]!)) return notFound(requestId, pathname);
     if (request.method !== "POST") return methodNotAllowed(requestId);
-    return handleNativeComplete(request, env, requestId, actor, scope.orgId, scope.projectId, m[3]!, m[4]!);
+    return handleNativeComplete(request, env, requestId, actor, scope.orgId, scope.projectId, m[3]!, m[4]!, undefined, ctx);
   }
   m = pathname.match(RUN_CANCEL_NATIVE_RE);
   if (m) {
     const scope = parseScope(m[1]!, m[2]!);
     if (!scope || !isRunUlid(m[3]!)) return notFound(requestId, pathname);
     if (request.method !== "POST") return methodNotAllowed(requestId);
-    return handleNativeCancel(env, requestId, actor, scope.orgId, scope.projectId, m[3]!);
+    return handleNativeCancel(env, requestId, actor, scope.orgId, scope.projectId, m[3]!, undefined, ctx);
   }
   m = pathname.match(RUN_LOG_RE);
   if (m) {
@@ -336,7 +336,7 @@ async function routeRun(
     const scope = parseScope(m[1]!, m[2]!);
     if (!scope || !isRunUlid(m[3]!)) return notFound(requestId, pathname);
     if (request.method !== "POST") return methodNotAllowed(requestId);
-    return handleClaimJob(request, env, requestId, actor, scope.orgId, scope.projectId, m[3]!, m[4]!);
+    return handleClaimJob(request, env, requestId, actor, scope.orgId, scope.projectId, m[3]!, m[4]!, undefined, ctx);
   }
 
   // POST …/runs/{runId}/jobs/{jobId}/heartbeat
@@ -354,7 +354,7 @@ async function routeRun(
     const scope = parseScope(m[1]!, m[2]!);
     if (!scope || !isRunUlid(m[3]!)) return notFound(requestId, pathname);
     if (request.method !== "POST") return methodNotAllowed(requestId);
-    return handleUpdateJob(request, env, requestId, actor, scope.orgId, scope.projectId, m[3]!, m[4]!);
+    return handleUpdateJob(request, env, requestId, actor, scope.orgId, scope.projectId, m[3]!, m[4]!, undefined, ctx);
   }
 
   // GET …/runs/{runId}/jobs
@@ -381,7 +381,7 @@ async function routeRun(
     const scope = parseScope(m[1]!, m[2]!);
     if (!scope || !isRunUlid(m[3]!)) return notFound(requestId, pathname);
     if (request.method !== "POST") return methodNotAllowed(requestId);
-    return handleCancelRun(env, requestId, actor, scope.orgId, scope.projectId, m[3]!);
+    return handleCancelRun(env, requestId, actor, scope.orgId, scope.projectId, m[3]!, undefined, ctx);
   }
 
   // POST/GET …/runs/{runId}/logs/{jobId} (OP3 — §2.3).

@@ -164,6 +164,32 @@ describe("native v2 coordination wire over the real DO", () => {
     expect(calls()).toBe(before); // heartbeat added zero DB queries
   });
 
+  it("claim defers the read-model projection to ctx.waitUntil (verb is not blocked on the DB)", async () => {
+    // At burst load (1000 jobs simultaneously claiming), a sync DB roundtrip
+    // per claim would serialize all claims behind Postgres latency. The handler
+    // now hands the projection to ctx.waitUntil when a context is provided, so
+    // the verb returns immediately and the DB write completes in the background.
+    const run = "native-claim-deferred";
+    await initRun(run, { jobs: { a: { deps: [] as string[] } } });
+    const { exec, calls } = countingExecutor();
+    const deferred: Promise<unknown>[] = [];
+    const ctx = {
+      waitUntil: (p: Promise<unknown>) => { deferred.push(p); },
+      passThroughOnException: () => undefined,
+    } as unknown as ExecutionContext;
+
+    const before = calls();
+    const claimRes = await handleNativeClaim(post({ runnerId: "r1" }), env, "req", ACTOR, ORG, PROJ, run, "a", { executor: exec }, ctx);
+    expect(claimRes.status).toBe(200);
+    expect(deferred).toHaveLength(1); // the projection was handed to waitUntil
+    expect(calls()).toBe(before); // ...so the verb response did NOT block on a DB query
+
+    // Drain the deferred work; THEN the DB call lands (the projection still runs,
+    // just not on the request's critical path).
+    await Promise.all(deferred);
+    expect(calls()).toBeGreaterThan(before);
+  });
+
   it("alarm sweeps an expired lease → LEASE_EXPIRED re-queue → re-claimable (BM2 §4 done-when)", async () => {
     // BM2 "Done when": killing a runner re-queues its job within the lease window
     // via the DO alarm. Integration test — covers the alarm wakeup → sweepLeases
