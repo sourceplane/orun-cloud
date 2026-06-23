@@ -76,6 +76,25 @@ See `GAPS.md` §"Prioritized remaining work".
 - **Still open for BM4:** `…/events` (§5), `…/log` SSE/long-poll, §2-native create;
   and the CLI adoption (NC). BM5 remainder: quota choke + DO soft per-run cap.
 
+### 2026-06-20 — BM2 log sealing (§4: seal on `:complete`)
+- On a successful native `:complete`, `handleNativeComplete` now seals the job's
+  log into a content-addressed `log` object before the DO append. `sealJobLog`
+  lists the job's R2 chunks (`logChunkPrefix`), assembles them in **numeric** seq
+  order (lexical R2 order would mis-sort "10" before "2"), `computeDigest`s the
+  concatenation, and writes it to the CAS. The digest rides on the `JobSucceeded`
+  event as `logsDigest` (`JobSucceededPayload.logsDigest?` + `CompleteRequest` +
+  `decideComplete`, conditional so the no-log event shape is byte-identical to
+  before). Reads R2 directly (no Postgres index, so it works in the native
+  harness), best-effort (a seal failure is swallowed — completion never blocks),
+  idempotent (content-addressed re-seal is a no-op).
+- Tests: contracts — decider carries `logsDigest` onto `JobSucceeded` only when
+  provided (65 total). state-worker — assembled-stream seal + `logsDigest` on the
+  event read (out-of-order seeds prove numeric ordering), and empty-log → no
+  `logsDigest` (39 total). All green; typecheck clean.
+- Remaining (BM2/§4): project `logsDigest` into the `…/runs/{id}` read model and
+  reference it from the client-built `job-result`; a DO `LogChunk` consumer is a
+  separate (heavier) model not pursued here.
+
 ### 2026-06-20 — NC1 CLI memoization (producer half, in `sourceplane/orun`)
 - Pairs with the server-resolved index below to close memoization end-to-end. On
   the `ORUN_COORDINATION=v2` path, `CoordBackend` now: marks a job memoizable from

@@ -25,7 +25,7 @@ import type { ActorContext } from "./router.js";
 import type { RunHandlerDeps } from "./handlers/runs.js";
 import { errorResponse, validationError } from "./http.js";
 import { authorizeRun } from "./authz.js";
-import { isValidDigest, memoIndexKey, objectKey, requireBucket } from "./object-store.js";
+import { computeDigest, isValidDigest, logChunkPrefix, memoIndexKey, objectKey, requireBucket } from "./object-store.js";
 import { orgPublicId, projectPublicId } from "./ids.js";
 import {
   projectAfterVerb,
@@ -85,6 +85,53 @@ async function resolveMemoDigest(env: Env, orgId: Uuid, projectId: Uuid, jobInpu
   if (marker === null) return null;
   const digest = (await marker.text()).trim();
   if (!(await memoResultExists(env, orgId, projectId, digest))) return null;
+  return digest;
+}
+
+/** Seal a job's streamed log into a content-addressed `log` object on :complete
+ *  (§4): list the job's R2 chunks, assemble them in seq order, and write the
+ *  concatenation to the CAS. Returns the `log` digest, or null when the job
+ *  produced no output. Reads R2 directly (no Postgres index) so the assembled
+ *  bytes are the ground truth and the seal works without the projection store. */
+async function sealJobLog(env: Env, orgId: Uuid, projectId: Uuid, runUlid: string, jobId: string): Promise<string | null> {
+  const b = requireBucket(env);
+  if (!b.ok) return null;
+  const bucket = b.bucket;
+  const prefix = logChunkPrefix(orgPublicId(orgId), projectPublicId(projectId), runUlid, jobId);
+
+  // List every chunk under the job's prefix (paged), then order by numeric seq —
+  // a lexical sort would put "10" before "2", so parse the suffix as an integer.
+  const keys: { seq: number; key: string }[] = [];
+  let cursor: string | undefined;
+  do {
+    const listed = await bucket.list({ prefix, ...(cursor ? { cursor } : {}) });
+    for (const o of listed.objects) {
+      const seq = Number.parseInt(o.key.slice(prefix.length), 10);
+      if (Number.isInteger(seq)) keys.push({ seq, key: o.key });
+    }
+    cursor = listed.truncated ? listed.cursor : undefined;
+  } while (cursor);
+  if (keys.length === 0) return null;
+  keys.sort((x, y) => x.seq - y.seq);
+
+  const parts: Uint8Array[] = [];
+  let total = 0;
+  for (const { key } of keys) {
+    const obj = await bucket.get(key);
+    if (!obj) continue;
+    const bytes = new Uint8Array(await obj.arrayBuffer());
+    parts.push(bytes);
+    total += bytes.byteLength;
+  }
+  const assembled = new Uint8Array(total);
+  let offset = 0;
+  for (const p of parts) {
+    assembled.set(p, offset);
+    offset += p.byteLength;
+  }
+  const digest = await computeDigest(assembled);
+  // Content-addressed + idempotent: re-sealing the same bytes is a no-op write.
+  await bucket.put(objectKey(orgPublicId(orgId), projectPublicId(projectId), digest), assembled);
   return digest;
 }
 
@@ -191,6 +238,18 @@ export async function handleNativeComplete(
   if (typeof body.resultDigest === "string") verbBody.resultDigest = body.resultDigest;
   if (typeof body.errorText === "string") verbBody.errorText = body.errorText;
   if (typeof body.reason === "string") verbBody.reason = body.reason;
+  // Seal the job's log into a `log` object before the append, so the digest can
+  // ride on the JobSucceeded event (§4). Best-effort: a seal failure must not
+  // block completion, so it only adds the field when it produced a digest.
+  if (outcome === "succeeded") {
+    try {
+      const logsDigest = await sealJobLog(env, orgId, projectId, runUlid, jobId);
+      if (logsDigest) verbBody.logsDigest = logsDigest;
+    } catch {
+      // A seal hiccup must never block a job's completion; the log simply stays
+      // unsealed (still retrievable chunk-by-chunk via the OP3 log read).
+    }
+  }
   const res = await proxyCoordinatorVerb(env, runUlid, "complete", verbBody);
   // Index jobInputHash → resultDigest so a later hermetic claim with the same
   // inputs is served from cache (BM1). Only on a recorded success that carries

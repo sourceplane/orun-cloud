@@ -64,7 +64,18 @@ export function logChunkKey(
   jobId: string,
   seq: number,
 ): string {
-  return `state/${orgPublic}/${projectPublic}/runs/${runUlid}/logs/${encodeURIComponent(jobId)}/${seq}`;
+  return `${logChunkPrefix(orgPublic, projectPublic, runUlid, jobId)}${seq}`;
+}
+
+/** Prefix for all of a job's log chunks — used to list + assemble them when
+ *  sealing the log into a `log` object on :complete (§4). */
+export function logChunkPrefix(
+  orgPublic: string,
+  projectPublic: string,
+  runUlid: string,
+  jobId: string,
+): string {
+  return `state/${orgPublic}/${projectPublic}/runs/${runUlid}/logs/${encodeURIComponent(jobId)}/`;
 }
 
 /** Marker object holding a pending multipart upload's metadata (digest+kind). */

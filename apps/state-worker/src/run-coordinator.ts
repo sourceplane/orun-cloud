@@ -283,6 +283,7 @@ export class RunCoordinator extends DurableObject {
     leaseEpoch: number;
     outcome: "succeeded" | "failed";
     resultDigest?: string;
+    logsDigest?: string;
     reason?: string;
     errorText?: string;
     actor?: CoordinationActor;
@@ -299,6 +300,7 @@ export class RunCoordinator extends DurableObject {
       leaseEpoch: body.leaseEpoch,
       outcome: body.outcome,
       ...(body.resultDigest !== undefined ? { resultDigest: body.resultDigest } : {}),
+      ...(body.logsDigest !== undefined ? { logsDigest: body.logsDigest } : {}),
       ...(body.reason !== undefined ? { reason: body.reason } : {}),
       ...(body.errorText !== undefined ? { errorText: body.errorText } : {}),
     });
