@@ -5,8 +5,9 @@ Authoritative over the prose in `README.md`/`implementation-plan.md` when they
 disagree. Full evidence + per-criterion analysis: [`GAPS.md`](./GAPS.md).
 
 **Last audited:** 2026-06-23 (source review of both repos + executed test suites
-+ live probes). **Branch:** `claude/sleepy-edison-99y58a` (PRs #127–#159 here,
-#386–#401 in `orun`; #157/#159 merged here, #400/#401 merged in `orun`).
++ live probes). **Branch:** `claude/sleepy-edison-99y58a` (PRs #127–#163 here,
+#386–#401 in `orun`; #157/#159/#160/#161/#162/#163 merged here, #400/#401
+merged in `orun`).
 
 ## Legend
 ✅ Done · 🟡 Partial · ⛔ Missing
@@ -17,10 +18,10 @@ disagree. Full evidence + per-criterion analysis: [`GAPS.md`](./GAPS.md).
 |----|--------|--------|-------------|
 | BM0 | ✅ | event vocab, pure `reduce()`, golden vectors, vendored contract + checksum drift guard (in `orun`) | kind-naming reconcile; converge the two event taxonomies; CI-enforce cross-repo vectors |
 | BM1 | 🟡 | object kinds registered, digest-verified PUT, `canonicalizeJobInput` + opt-in memo gate | **server-side memo lookup by `jobInputHash`**; exercise new kinds through CAS; `jobInputHash` producer; `run-record` writer |
-| BM2 | 🟡 | `RunCoordinator` DO, conditional append, lease alarm, parity + diamond conformance (22/22 green) | **snapshotting/checkpoint + recovery test**; fuzz concurrent-claim; alarm-timeout integration test; seal logs on `:complete`; stop trusting client memo digest |
-| BM3 | 🟡 | pure projector, idempotency-by-seq (mig `350`), projection sweep cron, reads from Postgres; **`…/log?wait=` long-poll exposed**; **heartbeat no longer projects** (write volume now ∝ runs, not ∝ heartbeats — PR #159) | **remove legacy OP2 cron sweep**; SSE framing on `…/log`; async outbox projector; metering; drop+replay rebuild |
+| BM2 | 🟡 | `RunCoordinator` DO, conditional append, lease alarm, parity + diamond conformance; snapshotting + recovery test; concurrent-claim fuzz; log sealing on `:complete`; **alarm-driven timeout integration test** (PR #161 — `__test/alarm-now` route + per-DO `leaseSeconds`); server-side memo lookup (no longer trusts client digest) | project `logsDigest` into `…/runs/{id}` read model (needs DB migration) |
+| BM3 | 🟡 | pure projector, idempotency-by-seq (mig `350`), projection sweep cron, reads from Postgres; **`…/log?wait=` long-poll exposed**; **heartbeat no longer projects** (write volume now ∝ runs, not ∝ heartbeats — PR #159); **post-verb projection deferred to `ctx.waitUntil`** (DB roundtrip off the request critical path — PR #163) | **remove legacy OP2 cron sweep** (cutover gate); SSE framing on `…/log`; durable outbox for projection (currently best-effort + sweep safety net); metering; drop+replay rebuild |
 | BM4 | 🟡 | DO bound/deployed; per-run-sticky flag; diamond conformance; **native §3 wire now routed** (`:claim`/`:heartbeat`/`:complete`/`:cancel` + `…/log` + `…/frontier`, contract major 2) — see Progress log | `…/events` append primitive (§5); SSE/long-poll on `…/log`; native `POST …/runs` create shape; CLI adoption (NC) |
-| BM5 | 🟡 | authz + deny-by-default + cross-tenant 404; **verified actor now stamped on every coordination event** (OP2 facade + native verbs) — see Progress log | real run-create quota choke (off-by-default/fail-open); DO soft per-run cap |
+| BM5 | 🟡 | authz + deny-by-default + cross-tenant 404; **verified actor now stamped on every coordination event** (OP2 facade + native verbs); **soft per-run job cap** (1000 jobs/run; rejected at the edge before any DO storage is allocated — PR #162) | real run-create quota choke (off-by-default/fail-open); per-tenant rate-limit on run creation |
 | BM6 | ⛔ | flag pre-set `do` (stage+prod), projector + fail-closed gate | backfill, drain bridge, **delete OP2 claim/sweep**, recovery drill vs O3 SLOs, update `intent.yaml`/CLI default, record runbook here |
 | BM7 | ⛔ | — | decommission `orun-backend` (`orun-api.sourceplane.ai` still serves the legacy bundle); parameterized OSS plain-Postgres conformance harness; closeout |
 
@@ -56,6 +57,53 @@ disagree. Full evidence + per-criterion analysis: [`GAPS.md`](./GAPS.md).
 See `GAPS.md` §"Prioritized remaining work".
 
 ## Progress log
+
+### 2026-06-23 — BM3 defer post-verb projection to `ctx.waitUntil` (PR #163)
+- After #159 removed per-heartbeat projection, `claim`/`complete`/`cancel`
+  were still projecting **synchronously** — the verb's HTTP response blocked
+  on a DB roundtrip (DO `/state` fetch + `SELECT last_seq` + read-model
+  upsert, ~50ms). At burst load (1000 jobs claiming simultaneously), that
+  serializes every claim behind Postgres latency on the request's critical
+  path. The projection itself is necessary; awaiting it in-band is not.
+- `projectAfterVerb` now hands the projection to `ctx.waitUntil` when an
+  `ExecutionContext` is supplied; the worker keeps the request alive until
+  the deferred promise settles. The bounded projection sweep is the safety
+  net. Threaded `ctx?` through the 6 verb handlers + router call sites;
+  follows the `handleAdvanceCatalogHead` precedent.
+- Trade-off: the post-verb read model is now eventually consistent on the
+  order of the deferred-promise drain (typically <100ms); CLI doesn't
+  read-after-claim from the projection (uses the DO log).
+- Tests: a new deferred-path test (claim returns 200 with zero DB queries on
+  the request path; projection runs once `waitUntil`'s promise drains).
+  state-worker 44/44, state-worker-tests 178/178.
+
+### 2026-06-23 — BM5 soft per-run job cap (PR #162)
+- A coordination shard's storage scales with the job count (event log,
+  snapshots, in-memory fold). A runaway plan (100k-job POST) would inflate
+  a DO beyond healthy operating bounds and starve neighbor shards on the
+  same colocation. There was no backstop.
+- `MAX_JOBS_PER_RUN = 1000` constant; enforced in `handleCreateRun`
+  immediately after `parsePlanJobs` and **before any DB executor or DO
+  storage is allocated**. Returns 422 with a clear field error pointing at
+  the cap. Generous for real workloads; raise in `constants.ts` if needed.
+- Test asserts a 1001-job plan is rejected with the cap message in
+  `error.details.fields.jobs`. state-worker-tests 178/178 green.
+
+### 2026-06-23 — BM2 alarm-driven timeout integration test (PR #161)
+- BM2's "Done when" included _"killing a runner re-queues its job within the
+  lease window via the DO alarm."_ `sweepLeases` was unit-tested but the
+  alarm-wakeup → sweep → append chain was untested end-to-end. Miniflare 4
+  has no public alarm-now or clock-advance API, so closing it required:
+  (1) **`InitBody.leaseSeconds?`** — per-DO lease tunable persisted on init
+  (default `DEFAULT_LEASE_SECONDS`; the test sets `0` to make the lease
+  expirable in test time); threaded through `decideClaim`/`decideHeartbeat`/
+  the alarm reschedule + response payloads. (2) **`POST /__test/alarm-now`**
+  — internal-only DO route that synchronously invokes `this.alarm()`; the
+  DO is reached only via the stub (never from the public router), so the
+  route is unreachable externally.
+- Integration test drives: `init(leaseSeconds: 0)` → r1 claims (attempt 1) →
+  trigger-alarm → assert `LEASE_EXPIRED` event → r2 re-claims at attempt 2.
+- state-worker 43/43 green; typecheck + lint clean.
 
 ### 2026-06-23 — NC1 cockpit "memoized" surface (PR #401, `orun`)
 - `ClaimResult` gained `Cached` + `ResultDigest`; `CoordBackend.ClaimJob`

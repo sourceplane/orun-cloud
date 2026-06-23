@@ -250,23 +250,26 @@ BM/NC coordination source.
    field surface, real input-artifact digests, log sealing CLI-side.
 
 **P1 — durability & correctness:**
-4. ✅ DO **snapshotting** + checkpoint landed (incremental `reduceFrom` fold +
-   per-event keys + `snap` every 64 events), plus **concurrent-claim race** and
-   **forced-restart recovery** tests. Still open: alarm-driven timeout integration
-   test (needs `runDurableObjectAlarm`) (BM2).
-5. ✅ **Verified actor** is now forwarded through the DO-bridged verbs (OP2
-   facade + native verbs both stamp the authenticated actor). Still open:
-   turn the quota gate into a real strong-consistent choke + DO soft per-run
-   cap (BM5).
-6. ✅ Seal logs into a `log` object on `:complete` (server-side, `logsDigest` on
-   `JobSucceeded`). Remaining: project `logsDigest` into the read model / `job-result`,
-   and (optionally) a DO `LogChunk` consumer (BM2/§4).
-7. ✅ **Stop projecting on heartbeat** (PR #159): per-heartbeat
-   `projectAfterVerb` removed from both heartbeat handlers — at ~1000
-   concurrent jobs that path dominated Postgres load (DO fold + `SELECT
-   last_seq` + read-model upsert per beat) for zero correctness gain. The
-   bounded projection sweep reconciles `leaseExpiresAt` for non-terminal
-   runs. Directly advances BM3's "write volume ∝ runs" criterion.
+4. ✅ DO **snapshotting** + checkpoint landed; **concurrent-claim race** +
+   **forced-restart recovery** + **alarm-driven timeout integration** (PR
+   #161 — `__test/alarm-now` route + per-DO `leaseSeconds`) all green.
+   BM2 "Done when" is now closed.
+5. ✅ **Verified actor** is now forwarded through the DO-bridged verbs.
+   ✅ **DO soft per-run job cap** (PR #162 — 1000 jobs/run, enforced at the
+   edge before any DO storage). Still open: real strong-consistent run-create
+   quota choke + per-tenant rate-limit on run creation (BM5).
+6. ✅ Seal logs into a `log` object on `:complete` (server-side, `logsDigest`
+   on `JobSucceeded`). Remaining: project `logsDigest` into the read model /
+   `job-result` (needs DB migration), and (optionally) a DO `LogChunk`
+   consumer (BM2/§4).
+7. ✅ **Stop projecting on heartbeat** (PR #159) AND ✅ **defer post-verb
+   projection to `ctx.waitUntil`** (PR #163): the projection is no longer on
+   any verb's response-critical path. Heartbeat does zero DB work;
+   claim/complete/cancel hand the projection to `waitUntil` so the response
+   returns immediately. The bounded projection sweep is the safety net for
+   any deferred projection that drops. Directly closes BM3's "write volume ∝
+   runs, not ∝ heartbeats" criterion (and removes the synchronous DB latency
+   from the per-claim hot path).
 
 **P2 — cutover & cleanup:**
 7. Provenance **backfill**, **drain bridge**, **delete the OP2 claim/sweep + legacy
