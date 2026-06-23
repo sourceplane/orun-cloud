@@ -626,6 +626,7 @@ export async function handleClaimJob(
   runUlid: string,
   jobId: string,
   deps?: RunHandlerDeps,
+  ctx?: ExecutionContext,
 ): Promise<Response> {
   const authz = await authorizeRun(env, requestId, actor, orgId, projectId, STATE_POLICY_ACTIONS.RUN_WRITE);
   if (!authz.ok) return authz.response;
@@ -638,7 +639,7 @@ export async function handleClaimJob(
     const runnerId = typeof body.runnerId === "string" ? body.runnerId : "";
     if (!runnerId) return validationError(requestId, { runnerId: ["Required; non-empty string"] });
     const out = await coordinatorClaimOP2(env, runUlid, jobId, runnerId, { id: actor.subjectId, type: actor.subjectType });
-    await projectAfterVerb(env, deps, { orgId, projectId }, runUlid);
+    await projectAfterVerb(env, deps, { orgId, projectId }, runUlid, ctx);
     if (out.kind === "error") return errorResponse("internal_error", "Service unavailable", 503, requestId);
     const payload: ClaimJobResponse =
       out.kind === "claimed"
@@ -803,6 +804,7 @@ export async function handleUpdateJob(
   runUlid: string,
   jobId: string,
   deps?: RunHandlerDeps,
+  ctx?: ExecutionContext,
 ): Promise<Response> {
   const authz = await authorizeRun(env, requestId, actor, orgId, projectId, STATE_POLICY_ACTIONS.RUN_WRITE);
   if (!authz.ok) return authz.response;
@@ -827,7 +829,7 @@ export async function handleUpdateJob(
   // (idempotent re-complete) and lease-checked; an empty body matches OP2.
   if (useDoCoordination(env) && (await runIsDoBacked(env, runUlid))) {
     const out = await coordinatorCompleteOP2(env, runUlid, jobId, runnerId!, status as "succeeded" | "failed", errorText, { id: actor.subjectId, type: actor.subjectType });
-    await projectAfterVerb(env, deps, { orgId, projectId }, runUlid);
+    await projectAfterVerb(env, deps, { orgId, projectId }, runUlid, ctx);
     if (out.kind === "lease_lost") {
       return errorResponse("lease_lost", "Lease lapsed or was reassigned; this update is rejected", 409, requestId);
     }
@@ -903,6 +905,7 @@ export async function handleCancelRun(
   projectId: Uuid,
   runUlid: string,
   deps?: RunHandlerDeps,
+  ctx?: ExecutionContext,
 ): Promise<Response> {
   const authz = await authorizeRun(env, requestId, actor, orgId, projectId, STATE_POLICY_ACTIONS.RUN_WRITE);
   if (!authz.ok) return authz.response;
@@ -911,7 +914,7 @@ export async function handleCancelRun(
   if (useDoCoordination(env) && (await runIsDoBacked(env, runUlid))) {
     const ok = await coordinatorCancelOP2(env, runUlid, { id: actor.subjectId, type: actor.subjectType });
     if (!ok) return errorResponse("internal_error", "Service unavailable", 503, requestId);
-    await projectAfterVerb(env, deps, { orgId, projectId }, runUlid);
+    await projectAfterVerb(env, deps, { orgId, projectId }, runUlid, ctx);
     const executor = deps?.executor ?? createSqlExecutor(env.PLATFORM_DB!);
     const owned = !deps?.executor;
     try {
