@@ -725,7 +725,11 @@ export async function handleHeartbeatJob(
     const runnerId = typeof body.runnerId === "string" ? body.runnerId : "";
     if (!runnerId) return validationError(requestId, { runnerId: ["Required; non-empty string"] });
     const out = await coordinatorHeartbeatOP2(env, runUlid, jobId, runnerId, { id: actor.subjectId, type: actor.subjectType });
-    await projectAfterVerb(env, deps, { orgId, projectId }, runUlid);
+    // No per-heartbeat projection (DB-protection at scale): a heartbeat only
+    // renews the DO-owned lease, so a DO fold + Postgres upsert on every beat —
+    // ~1000 concurrent jobs each beating periodically — would dominate DB load
+    // for no correctness gain. The projection sweep reconciles `leaseExpiresAt`
+    // for non-terminal runs; lifecycle verbs still project immediately.
     if (out.kind === "lease_lost") {
       return errorResponse("lease_lost", "Lease lapsed or was reassigned; stop work on this job", 409, requestId);
     }
