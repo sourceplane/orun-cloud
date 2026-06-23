@@ -164,7 +164,7 @@ BM/NC coordination source.
 - **NC0 — ✅ Done.** Vendored contract + `CHECKSUM` + drift guard; pure `Fold` (`fold.go`) + 9 golden vectors + determinism/terminal-sticky/idempotent tests. (Vector parity with the TS source is hand-transcribed, not CI-enforced — same nit as BM0.)
 - **NC1 — 🟡 Partial (wired).** On the `ORUN_COORDINATION=v2` path, `CoordBackend` now computes a deterministic `jobInputHash` for `orun.dev/hermetic`-labelled jobs (steps + env-var KEYS; values/clock/runner excluded), sends it as the KEY on `:claim`, treats a `cached` hit as adopt-by-skip, and on a hermetic success **pushes a `job-result`** (`EnsureObject`) and reports `jobInputHash`+`resultDigest` on `:complete` — closing the producer/consumer loop with BM1's server-resolved index. Remaining: **output adoption** (download artifacts on a hit), real input-artifact digests in the hash, `--no-cache`, cockpit "memoized", `log` object sealing. (`RunLoop`/NC5 still uses an executor digest; the wired path is `CoordBackend`.)
 - **NC2 — 🟡 Partial → Missing.** `ActionForClaim`/`ActionForHeartbeat`/`ClaimableJobs=Frontier` tested. But `Backend` not reshaped; `internal/remotestate` still speaks `/claim`,`/update`,`/runnable` (no `:claim`, no `…/events`, no `expectedSeq`); **no heartbeat goroutine** (`RunLoop` executes inline; lease tunables aren't even decoded); `lease_lost` mid-execution isn't actively halted; full-log re-read from seq 0 each tick.
-- **NC3 — 🟡 Partial.** `status`→`LoadRunState` now folds the native `…/log` event stream (reads the log + plan object → `Fold` → ExecState/ExecMetadata, per-job + run timestamps recovered from event `At` stamps, fallback to the inner backend on a non-native/empty run); the previously-built-but-unwired `Fold`/`ReadLog` are now connected. Remaining: `logs --follow` still polls the old per-job `/logs/{id}?fromSeq=`; no SSE/long-poll live-tail, no `.orun/` offline event log, no cloud sync/reconcile.
+- **NC3 — 🟡 Partial.** `status`→`LoadRunState` folds the native `…/log` event stream (reads the log + plan object → `Fold` → ExecState/ExecMetadata, timestamps recovered from event `At` stamps, fallback to inner on a non-native run), and **`status --watch` is now event-driven** — `CoordClient.ReadLog(wait=)` long-polls the stream so the watcher blocks until an event lands (15s liveness refresh) instead of a fixed-interval re-poll; legacy OP2 falls back to interval polling via an optional `runEventWaiter` seam. The previously-built-but-unwired `Fold`/`ReadLog` are now connected. Remaining: `logs --follow` event-driven tail (per-job chunk stream), cockpit live-tail, `.orun/` offline event log + cloud sync.
 - **NC4 — 🟡 Partial.** `OIDCTokenSource` (audience `orun-cloud`, `→ POST /v1/auth/oidc/exchange`) exists and is wired in `command_run.go` — but feeds the **legacy** `RemoteStateBackend`. `CoordClient.TokenSource` is correct but **never set in prod**. No stage conformance suite (only in-process fake-coordinator loop tests).
 - **NC5 — 🟡 Partial.** `RunLoop` drives a deps-gated, memo-aware diamond DAG to completion against a fake coordinator (3 tests green). No heartbeat, no real lease-loss abort, no object/result push, full-log re-read per tick, unwired from `internal/runner`.
 
@@ -260,10 +260,10 @@ BM/NC coordination source.
    cron**, recovery drill against O3 SLOs, update `intent.yaml`/CLI default (BM6).
 8. **Decommission** `orun-backend` (`orun-api.sourceplane.ai`); encode a
    parameterized conformance harness for the OSS plain-Postgres impl (BM7).
-9. NC3: ✅ `status` (`LoadRunState`) now folds the native `…/log` stream (reads
-   the event log + plan object → `Fold` → ExecState, timestamps from event stamps,
-   fallback to inner on a non-native run). Remaining: SSE/long-poll `status
-   --watch`/`logs --follow` live-tail, offline `.orun/` event log + cloud sync.
+9. NC3: ✅ `status` folds the native `…/log` stream and **`status --watch` is
+   event-driven** (`ReadLog(wait=)` long-poll, OP2 falls back to interval polling).
+   Remaining: `logs --follow` event-driven tail, cockpit live-tail, offline
+   `.orun/` event log + cloud sync.
 
 **P3 — hygiene:**
 10. Reconcile wire-kind naming (dotted vs CamelCase) and converge the two event
