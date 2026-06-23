@@ -234,6 +234,42 @@ describe("native v2 coordination wire over the real DO", () => {
     expect(succ?.payload?.logsDigest).toBeUndefined();
   });
 
+  it("`…/log?wait=` long-polls and wakes when an event is appended (live-tail)", async () => {
+    const run = "native-longpoll";
+    await initRun(run, LINEAR);
+    const seed = (await (await handleNativeLog(new Request("https://x/log?from=0"), env, "req", ACTOR, ORG, PROJ, run)).json()) as {
+      events: Array<{ seq: number; kind: string }>;
+    };
+    const head = seed.events[seed.events.length - 1]!.seq;
+
+    // Start the long-poll at the head (nothing past the cursor yet), then append
+    // a claim concurrently. The DO yields during its poll wait, so the claim is
+    // processed and the held read returns the new event well before the budget.
+    const tailP = handleNativeLog(new Request(`https://x/log?from=${head}&wait=10`), env, "req", ACTOR, ORG, PROJ, run);
+    await handleNativeClaim(post({ runnerId: "r1" }), env, "req", ACTOR, ORG, PROJ, run, "a");
+
+    const tail = (await (await tailP).json()) as { events: Array<{ seq: number; kind: string }> };
+    expect(tail.events.length).toBeGreaterThan(0);
+    expect(tail.events.some((e) => e.kind === "state.job.claimed")).toBe(true);
+    expect(tail.events.every((e) => e.seq > head)).toBe(true);
+  });
+
+  it("`…/log?wait=` returns an empty page once the wait lapses with no new event", async () => {
+    const run = "native-longpoll-timeout";
+    await initRun(run, LINEAR);
+    const seed = (await (await handleNativeLog(new Request("https://x/log?from=0"), env, "req", ACTOR, ORG, PROJ, run)).json()) as {
+      events: Array<{ seq: number }>;
+    };
+    const head = seed.events[seed.events.length - 1]!.seq;
+
+    const started = Date.now();
+    const res = (await (await handleNativeLog(new Request(`https://x/log?from=${head}&wait=1`), env, "req", ACTOR, ORG, PROJ, run)).json()) as {
+      events: unknown[];
+    };
+    expect(res.events).toEqual([]);
+    expect(Date.now() - started).toBeGreaterThanOrEqual(850); // held ~1s, not a busy return
+  });
+
   it("frontier reflects the runnable set and advances as jobs complete", async () => {
     const run = "native-2";
     await initRun(run, LINEAR);

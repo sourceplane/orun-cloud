@@ -89,8 +89,9 @@ export async function proxyCoordinatorVerb(
 }
 
 /** Proxy the §2 event-log read (GET /log?from=) to the run shard. */
-export async function proxyCoordinatorLog(env: Env, runId: string, fromSeq: number): Promise<Response> {
-  return proxy(await callCoordinator(env, runId, "GET", `/log?from=${fromSeq}`));
+export async function proxyCoordinatorLog(env: Env, runId: string, fromSeq: number, waitSeconds = 0): Promise<Response> {
+  const wait = waitSeconds > 0 ? `&wait=${waitSeconds}` : "";
+  return proxy(await callCoordinator(env, runId, "GET", `/log?from=${fromSeq}${wait}`));
 }
 
 /** Serve the §2 frontier read (GET /frontier) — the runnable job ids, projected

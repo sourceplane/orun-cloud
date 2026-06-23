@@ -41,6 +41,10 @@ const SYSTEM_ACTOR: CoordinationActor = { id: "system:coordinator", type: "syste
 // on top of the last snapshot before the DO is live again.
 const SNAPSHOT_EVERY = 64;
 const EVT_PREFIX = "e:";
+// `GET /log?wait=` long-poll bounds: cap the hold below the Workers request
+// budget, and re-read on a short interval while waiting for an append.
+const MAX_LOG_WAIT_SECONDS = 25;
+const LOG_POLL_INTERVAL_MS = 250;
 
 /** A fold checkpoint: the run state through `throughSeq`. */
 interface Snapshot {
@@ -196,8 +200,23 @@ export class RunCoordinator extends DurableObject {
     if (request.method === "GET" && path === "/state") return json(await this.state());
     if (request.method === "GET" && path === "/log") {
       const from = Number(url.searchParams.get("from") ?? "0");
-      const events = await this.readEventsAfter(Number.isFinite(from) ? from : 0);
-      return json({ events });
+      const fromSeq = Number.isFinite(from) ? from : 0;
+      const waitRaw = Number(url.searchParams.get("wait") ?? "0");
+      const waitMs = (Number.isFinite(waitRaw) ? Math.min(Math.max(waitRaw, 0), MAX_LOG_WAIT_SECONDS) : 0) * 1000;
+      let events = await this.readEventsAfter(fromSeq);
+      // Long-poll: when the cursor is at the head, yield (via setTimeout) so
+      // interleaved append handlers can advance the log, then re-read — until an
+      // event arrives or the wait budget lapses. The DO is single-threaded but
+      // resumes other requests at each await, so a concurrent :claim/:complete
+      // becomes visible on the next poll.
+      if (events.length === 0 && waitMs > 0) {
+        const deadline = Date.now() + waitMs;
+        while (events.length === 0 && Date.now() < deadline) {
+          await new Promise((r) => setTimeout(r, Math.min(LOG_POLL_INTERVAL_MS, Math.max(deadline - Date.now(), 0))));
+          events = await this.readEventsAfter(fromSeq);
+        }
+      }
+      return json({ events, head: { seq: await this.seqHead() } });
     }
     return new Response("not found", { status: 404 });
   }

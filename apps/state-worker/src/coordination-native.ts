@@ -290,8 +290,18 @@ export async function handleNativeLog(
 ): Promise<Response> {
   const g = await gate(env, requestId, actor, orgId, projectId, runUlid, STATE_POLICY_ACTIONS.RUN_READ);
   if (!g.ok) return g.response;
-  const from = Number(new URL(request.url).searchParams.get("from") ?? "0");
-  return proxyCoordinatorLog(env, runUlid, Number.isFinite(from) ? from : 0);
+  const params = new URL(request.url).searchParams;
+  const from = Number(params.get("from") ?? "0");
+  // ?wait=<seconds> turns the read into a long-poll: when no event sits past the
+  // cursor, the shard holds the request until one is appended or the wait lapses
+  // (live-tail for `status --watch` / `logs --follow` without busy polling).
+  const wait = Number(params.get("wait") ?? "0");
+  return proxyCoordinatorLog(
+    env,
+    runUlid,
+    Number.isFinite(from) ? from : 0,
+    Number.isFinite(wait) && wait > 0 ? wait : 0,
+  );
 }
 
 /** GET …/runs/{runId}/frontier — the currently-runnable job ids. */

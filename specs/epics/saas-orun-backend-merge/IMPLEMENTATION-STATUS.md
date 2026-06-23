@@ -76,6 +76,19 @@ See `GAPS.md` §"Prioritized remaining work".
 - **Still open for BM4:** `…/events` (§5), `…/log` SSE/long-poll, §2-native create;
   and the CLI adoption (NC). BM5 remainder: quota choke + DO soft per-run cap.
 
+### 2026-06-20 — BM3 `…/log?wait=` long-poll (live-tail)
+- `GET …/runs/{id}/log?from=&wait=<seconds>` now long-polls: when no event sits
+  past the cursor, the `RunCoordinator` DO holds the request (capped at 25s,
+  re-reading every 250ms) and returns the moment an event is appended, else an
+  empty page when the wait lapses. The DO is single-threaded but yields at the
+  `setTimeout` await, so a concurrent `:claim`/`:complete` is processed and becomes
+  visible on the next poll — verified by a test that races a claim against a held
+  read and gets the new event back (no busy polling). `handleNativeLog` parses
+  `wait`; `proxyCoordinatorLog` threads it to the DO.
+- This is the server side of NC3 live-tail (`status --watch`/`logs --follow`); the
+  CLI consuming it + SSE framing remain. Tests: wake-on-append + timeout-empty
+  (state-worker 41). Typecheck clean.
+
 ### 2026-06-20 — BM2 log sealing (§4: seal on `:complete`)
 - On a successful native `:complete`, `handleNativeComplete` now seals the job's
   log into a content-addressed `log` object before the DO append. `sealJobLog`
