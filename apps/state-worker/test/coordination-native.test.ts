@@ -5,6 +5,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { Env } from "../src/env.js";
 import type { ActorContext } from "../src/router.js";
 import type { Uuid } from "@saas/db/ids";
+import type { SqlExecutor } from "@saas/db/hyperdrive";
 import {
   handleNativeCancel,
   handleNativeClaim,
@@ -43,6 +44,19 @@ const LINEAR = { jobs: { a: { deps: [] as string[] }, b: { deps: ["a"] } } };
 
 function post(body: unknown): Request {
   return new Request("https://x/", { method: "POST", body: JSON.stringify(body) });
+}
+
+/** A SqlExecutor that counts queries — lets a test observe whether a verb hits the DB. */
+function countingExecutor(): { exec: SqlExecutor; calls: () => number } {
+  let n = 0;
+  const exec: SqlExecutor = {
+    async execute(text: string, _params: unknown[] = []) {
+      n += 1;
+      if (/SELECT last_seq/.test(String(text))) return { rows: [{ last_seq: 0 }] as never[], rowCount: 1 };
+      return { rows: [] as never[], rowCount: 0 };
+    },
+  } as unknown as SqlExecutor;
+  return { exec, calls: () => n };
 }
 
 async function initRun(run: string, plan: unknown) {
@@ -118,6 +132,26 @@ describe("native v2 coordination wire over the real DO", () => {
     const claimedEvt = events.find((e) => e.kind.includes("claimed") && e.jobId === "a");
     expect(claimedEvt).toBeDefined();
     expect(claimedEvt!.actor).toEqual({ id: "wf-runner-1", type: "workflow" });
+  });
+
+  it("heartbeat performs no read-model projection (DB-protection at scale)", async () => {
+    // A lifecycle verb (claim) must project — the read model has to reflect the
+    // transition — but a heartbeat must NOT touch the DB: at ~1000 concurrent jobs
+    // a per-heartbeat fold + upsert would dominate Postgres load, and a heartbeat
+    // only renews the DO-owned lease (reconciled by the sweep, not per-beat).
+    const run = "native-hb-no-projection";
+    await initRun(run, { jobs: { a: { deps: [] as string[] } } });
+    const { exec, calls } = countingExecutor();
+
+    const claimRes = await handleNativeClaim(post({ runnerId: "r1" }), env, "req", ACTOR, ORG, PROJ, run, "a", { executor: exec });
+    expect(claimRes.status).toBe(200);
+    const { leaseEpoch } = (await claimRes.json()) as { leaseEpoch: number };
+    expect(calls()).toBeGreaterThan(0); // claim projected → DB touched
+
+    const before = calls();
+    const hb = await handleNativeHeartbeat(post({ runnerId: "r1", leaseEpoch }), env, "req", ACTOR, ORG, PROJ, run, "a", { executor: exec });
+    expect(hb.status).toBe(200);
+    expect(calls()).toBe(before); // heartbeat added zero DB queries
   });
 
   it("rejects a memo claim whose result object is missing (412 object_missing)", async () => {

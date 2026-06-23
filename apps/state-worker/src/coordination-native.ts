@@ -199,7 +199,7 @@ export async function handleNativeHeartbeat(
   projectId: Uuid,
   runUlid: string,
   jobId: string,
-  deps?: RunHandlerDeps,
+  _deps?: RunHandlerDeps,
 ): Promise<Response> {
   const g = await gate(env, requestId, actor, orgId, projectId, runUlid, STATE_POLICY_ACTIONS.RUN_WRITE);
   if (!g.ok) return g.response;
@@ -209,7 +209,12 @@ export async function handleNativeHeartbeat(
   if (!runnerId) return validationError(requestId, { runnerId: ["Required; non-empty string"] });
   if (!Number.isFinite(leaseEpoch)) return validationError(requestId, { leaseEpoch: ["Required; number"] });
   const res = await proxyCoordinatorVerb(env, runUlid, "heartbeat", { jobId, runnerId, leaseEpoch, actor: stampOf(actor) });
-  await projectAfterVerb(env, deps, { orgId, projectId }, runUlid);
+  // No read-model projection on heartbeat — deliberately. A heartbeat only renews
+  // the lease, which the DO owns and enforces; the only projected field it would
+  // touch is `leaseExpiresAt`. At ~1000 concurrent jobs a per-heartbeat DO fold +
+  // Postgres upsert would dominate DB load for zero correctness gain. The bounded
+  // projection sweep reconciles `leaseExpiresAt` for non-terminal runs, and the
+  // lifecycle verbs (claim/complete/cancel) still project immediately.
   return res;
 }
 
