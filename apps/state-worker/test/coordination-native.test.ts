@@ -59,10 +59,20 @@ function countingExecutor(): { exec: SqlExecutor; calls: () => number } {
   return { exec, calls: () => n };
 }
 
-async function initRun(run: string, plan: unknown) {
+async function initRun(run: string, plan: unknown, opts?: { leaseSeconds?: number }) {
   const ns = (env as unknown as { COORDINATOR: { idFromName: (n: string) => unknown; get: (id: unknown) => { fetch: (u: string, i: RequestInit) => Promise<Response> } } }).COORDINATOR;
   const stub = ns.get(ns.idFromName(run));
-  await stub.fetch("https://do/init", { method: "POST", body: JSON.stringify({ runId: run, plan, planDigest: "sha256:p", sourceHash: "sha256:s" }) });
+  const body: Record<string, unknown> = { runId: run, plan, planDigest: "sha256:p", sourceHash: "sha256:s" };
+  if (opts?.leaseSeconds !== undefined) body.leaseSeconds = opts.leaseSeconds;
+  await stub.fetch("https://do/init", { method: "POST", body: JSON.stringify(body) });
+}
+
+/** Fire the DO's alarm() synchronously (miniflare exposes no public alarm-now API). */
+async function triggerAlarm(run: string) {
+  const ns = (env as unknown as { COORDINATOR: { idFromName: (n: string) => unknown; get: (id: unknown) => { fetch: (u: string, i: RequestInit) => Promise<Response> } } }).COORDINATOR;
+  const stub = ns.get(ns.idFromName(run));
+  const res = await stub.fetch("https://do/__test/alarm-now", { method: "POST" });
+  if (!res.ok) throw new Error(`alarm-now: ${res.status}`);
 }
 
 beforeAll(async () => {
@@ -152,6 +162,42 @@ describe("native v2 coordination wire over the real DO", () => {
     const hb = await handleNativeHeartbeat(post({ runnerId: "r1", leaseEpoch }), env, "req", ACTOR, ORG, PROJ, run, "a", { executor: exec });
     expect(hb.status).toBe(200);
     expect(calls()).toBe(before); // heartbeat added zero DB queries
+  });
+
+  it("alarm sweeps an expired lease → LEASE_EXPIRED re-queue → re-claimable (BM2 §4 done-when)", async () => {
+    // BM2 "Done when": killing a runner re-queues its job within the lease window
+    // via the DO alarm. Integration test — covers the alarm wakeup → sweepLeases
+    // → append path end to end (the pure decider is unit-tested separately). Uses
+    // a per-DO `leaseSeconds: 0` so the lease is expirable in test time without
+    // manipulating the clock; the alarm is triggered via an internal DO route
+    // (miniflare exposes no public alarm-now API).
+    const run = "native-alarm-requeue";
+    await initRun(run, { jobs: { a: { deps: [] as string[] } } }, { leaseSeconds: 0 });
+
+    // r1 claims (attempt 1) — the lease is set to leaseExpiresAt=now (already
+    // expired by the time the alarm fires).
+    const c1 = await handleNativeClaim(post({ runnerId: "r1" }), env, "req", ACTOR, ORG, PROJ, run, "a");
+    expect(c1.status).toBe(200);
+    const claim1 = (await c1.json()) as { claimed: boolean; attempt: number };
+    expect(claim1.claimed).toBe(true);
+    expect(claim1.attempt).toBe(1);
+
+    // Trigger the alarm. The sweep sees a claimed job with an expired lease and
+    // emits LEASE_EXPIRED (re-queue), since attempt (1) < maxAttempts (5).
+    await triggerAlarm(run);
+
+    // Verify LEASE_EXPIRED was appended; the job is back on the runnable frontier.
+    const logRes = await handleNativeLog(new Request("https://x/log?from=0"), env, "req", ACTOR, ORG, PROJ, run);
+    const { events } = (await logRes.json()) as { events: Array<{ kind: string; jobId?: string }> };
+    const expired = events.find((e) => e.kind.includes("lease") && e.kind.includes("expired") && e.jobId === "a");
+    expect(expired).toBeDefined();
+
+    // r2 takes over — the re-queue worked, so a different runner can now win.
+    const c2 = await handleNativeClaim(post({ runnerId: "r2" }), env, "req", ACTOR, ORG, PROJ, run, "a");
+    expect(c2.status).toBe(200);
+    const claim2 = (await c2.json()) as { claimed: boolean; attempt: number };
+    expect(claim2.claimed).toBe(true);
+    expect(claim2.attempt).toBe(2); // takeover after re-queue
   });
 
   it("rejects a memo claim whose result object is missing (412 object_missing)", async () => {

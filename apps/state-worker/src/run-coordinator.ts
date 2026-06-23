@@ -64,6 +64,10 @@ interface InitBody {
   sourceHash: string;
   environment?: string | null;
   actor?: CoordinationActor;
+  // Per-DO lease tunable, persisted on init. Production omits it (DEFAULT_LEASE_
+  // SECONDS); the alarm integration test sets `leaseSeconds: 0` to make the
+  // lease expirable in test time without manipulating the clock.
+  leaseSeconds?: number;
 }
 
 export class RunCoordinator extends DurableObject {
@@ -74,6 +78,7 @@ export class RunCoordinator extends DurableObject {
   private planCache!: CoordinationPlan;
   private headSeq = 0;
   private snapAt = 0; // throughSeq of the last persisted snapshot
+  private leaseSecondsCfg = DEFAULT_LEASE_SECONDS;
 
   /** Rebuild the in-memory fold from storage: snapshot + the events after it. */
   private async load(): Promise<void> {
@@ -100,6 +105,7 @@ export class RunCoordinator extends DurableObject {
     }
     this.planCache = plan;
     this.headSeq = (await this.ctx.storage.get<number>("seq")) ?? this.fold.lastSeq;
+    this.leaseSecondsCfg = (await this.ctx.storage.get<number>("leaseSeconds")) ?? DEFAULT_LEASE_SECONDS;
     this.loaded = true;
   }
 
@@ -184,7 +190,10 @@ export class RunCoordinator extends DurableObject {
 
   private async ensureAlarm(): Promise<void> {
     if ((await this.ctx.storage.getAlarm()) === null) {
-      await this.ctx.storage.setAlarm(Date.now() + DEFAULT_LEASE_SECONDS * 1000);
+      // setAlarm requires a minimum future delay; use 1ms when the per-DO lease
+      // is 0 (alarm-integration test) so the runtime still schedules it.
+      const ms = Math.max(this.leaseSecondsCfg * 1000, 1);
+      await this.ctx.storage.setAlarm(Date.now() + ms);
     }
   }
 
@@ -192,6 +201,14 @@ export class RunCoordinator extends DurableObject {
     const url = new URL(request.url);
     const path = url.pathname;
 
+    // Internal-only synchronous alarm trigger for the alarm-integration test
+    // (miniflare exposes no public alarm-now API). The DO is never reached from
+    // the public router — only from state-worker code via the stub — so this
+    // route is unreachable from outside the worker.
+    if (request.method === "POST" && path === "/__test/alarm-now") {
+      await this.alarm();
+      return json({ ok: true, head: { seq: await this.seqHead() } });
+    }
     if (request.method === "POST" && path === "/init") return this.init(await request.json());
     if (request.method === "POST" && path === "/claim") return this.claim(await request.json());
     if (request.method === "POST" && path === "/heartbeat") return this.heartbeat(await request.json());
@@ -229,6 +246,10 @@ export class RunCoordinator extends DurableObject {
     }
     await this.ctx.storage.put("plan", body.plan);
     await this.ctx.storage.put("planDigest", body.planDigest);
+    if (typeof body.leaseSeconds === "number" && body.leaseSeconds >= 0) {
+      await this.ctx.storage.put("leaseSeconds", body.leaseSeconds);
+      this.leaseSecondsCfg = body.leaseSeconds;
+    }
     // RunCreated is a run-level event (not an AppendIntent); append it directly.
     const seq = 1;
     const created: CoordinationEvent = {
@@ -265,7 +286,7 @@ export class RunCoordinator extends DurableObject {
     const job = state.jobs[body.jobId];
     // Idempotent re-claim by the current holder with a live lease.
     if (job && job.phase === "claimed" && job.holder === body.runnerId) {
-      return json({ claimed: true, leaseEpoch: job.leaseEpoch, leaseExpiresAt: job.leaseExpiresAt, seq: await this.seqHead(), leaseSeconds: DEFAULT_LEASE_SECONDS, heartbeatIntervalSeconds: DEFAULT_HEARTBEAT_INTERVAL_SECONDS });
+      return json({ claimed: true, leaseEpoch: job.leaseEpoch, leaseExpiresAt: job.leaseExpiresAt, seq: await this.seqHead(), leaseSeconds: this.leaseSecondsCfg, heartbeatIntervalSeconds: DEFAULT_HEARTBEAT_INTERVAL_SECONDS });
     }
     const d = decideClaim(
       state,
@@ -277,6 +298,7 @@ export class RunCoordinator extends DurableObject {
         ...(body.memoResultDigest != null ? { memoResultDigest: body.memoResultDigest } : {}),
       },
       new Date().toISOString(),
+      { leaseSeconds: this.leaseSecondsCfg },
     );
     // §3 claim reject reasons are deps_not_ready | job_held | run_terminal.
     if (!d.ok) return json({ claimed: false, reason: d.reason === "terminal" ? "run_terminal" : d.reason });
@@ -284,16 +306,16 @@ export class RunCoordinator extends DurableObject {
     await this.ensureAlarm();
     if (d.cached) return json({ claimed: false, cached: true, result: { digest: body.memoResultDigest } });
     const after = (await this.state()).jobs[body.jobId]!;
-    return json({ claimed: true, leaseEpoch: after.leaseEpoch, leaseExpiresAt: after.leaseExpiresAt, seq: await this.seqHead(), attempt: after.attempt, leaseSeconds: DEFAULT_LEASE_SECONDS, heartbeatIntervalSeconds: DEFAULT_HEARTBEAT_INTERVAL_SECONDS });
+    return json({ claimed: true, leaseEpoch: after.leaseEpoch, leaseExpiresAt: after.leaseExpiresAt, seq: await this.seqHead(), attempt: after.attempt, leaseSeconds: this.leaseSecondsCfg, heartbeatIntervalSeconds: DEFAULT_HEARTBEAT_INTERVAL_SECONDS });
   }
 
   private async heartbeat(body: { jobId: string; runnerId: string; leaseEpoch: number; actor?: CoordinationActor }): Promise<Response> {
     const state = await this.state();
-    const d = decideHeartbeat(state, { jobId: body.jobId, runnerId: body.runnerId, leaseEpoch: body.leaseEpoch }, new Date().toISOString());
+    const d = decideHeartbeat(state, { jobId: body.jobId, runnerId: body.runnerId, leaseEpoch: body.leaseEpoch }, new Date().toISOString(), { leaseSeconds: this.leaseSecondsCfg });
     if (!d.ok) return json({ error: d.reason }, d.reason === "lease_lost" ? 409 : 400);
     await this.appendAll(d.appends, body.actor ?? SYSTEM_ACTOR, state.runId);
     const after = (await this.state()).jobs[body.jobId]!;
-    return json({ leaseExpiresAt: after.leaseExpiresAt, leaseSeconds: DEFAULT_LEASE_SECONDS, heartbeatIntervalSeconds: DEFAULT_HEARTBEAT_INTERVAL_SECONDS });
+    return json({ leaseExpiresAt: after.leaseExpiresAt, leaseSeconds: this.leaseSecondsCfg, heartbeatIntervalSeconds: DEFAULT_HEARTBEAT_INTERVAL_SECONDS });
   }
 
   private async complete(body: {
@@ -345,7 +367,8 @@ export class RunCoordinator extends DurableObject {
     const next = await this.state();
     const active = Object.values(next.jobs).some((j) => j.phase === "claimed" || j.phase === "queued");
     if (active && next.phase !== "canceled") {
-      await this.ctx.storage.setAlarm(Date.now() + DEFAULT_LEASE_SECONDS * 1000);
+      const ms = Math.max(this.leaseSecondsCfg * 1000, 1);
+      await this.ctx.storage.setAlarm(Date.now() + ms);
     }
   }
 }
