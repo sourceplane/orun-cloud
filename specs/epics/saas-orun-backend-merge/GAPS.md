@@ -235,25 +235,38 @@ BM/NC coordination source.
    `:cancel`, `GET …/log?from=` (now with **`?wait=` long-poll**), `…/frontier`
    are routed and the contract major is 2. Remaining: `Accept: text/event-stream`
    SSE framing (long-poll covers live-tail); `…/events` append primitive (BM4/BM3).
-2. **Wire the CLI** to the new client: reshape `statebackend.Backend`, make
-   `cmd/orun` construct the `CoordClient`-backed backend, add the heartbeat
-   goroutine and `lease_lost` abort (NC2/NC5), set `CoordClient.TokenSource` from
-   the OIDC source (NC4).
+2. ✅ **Wire the CLI** to the new client: `cmd/orun` constructs
+   `CoordBackend(CoordClient, …)` under `ORUN_COORDINATION=v2`, the async
+   heartbeat goroutine + `lease_lost` abort + `onLeaseLost` cancel are wired
+   through `RunnerHooks` (`command_run.go:511,628`; server-supplied interval
+   via `heartbeatIntervalFromClaim`), and `CoordClient.TokenSource` is set
+   from the OIDC token source. Remaining: the **default flip** off the
+   env-var opt-in (a BM6 cutover decision); §3-native run create + log read
+   (still delegate to v1).
 3. ✅ **Server-side memoization lookup** by `jobInputHash` landed (project-scoped
    memo index, written on `:complete`, resolved + existence-verified on claim).
-   Remaining: CLI result push (`job-result`/`log` objects) + a real `jobInputHash`
-   producer before `:complete` (NC1).
+   CLI producer + cockpit "memoized" surface landed (PRs #386–#395 producer,
+   `orun#401` cockpit). Remaining (NC1 polish): `--no-cache`, `hermetic` plan-
+   field surface, real input-artifact digests, log sealing CLI-side.
 
 **P1 — durability & correctness:**
 4. ✅ DO **snapshotting** + checkpoint landed (incremental `reduceFrom` fold +
    per-event keys + `snap` every 64 events), plus **concurrent-claim race** and
    **forced-restart recovery** tests. Still open: alarm-driven timeout integration
    test (needs `runDurableObjectAlarm`) (BM2).
-5. Forward the **verified actor** through the DO-bridged verbs; turn the quota
-   gate into a real strong-consistent choke + DO soft per-run cap (BM5).
+5. ✅ **Verified actor** is now forwarded through the DO-bridged verbs (OP2
+   facade + native verbs both stamp the authenticated actor). Still open:
+   turn the quota gate into a real strong-consistent choke + DO soft per-run
+   cap (BM5).
 6. ✅ Seal logs into a `log` object on `:complete` (server-side, `logsDigest` on
    `JobSucceeded`). Remaining: project `logsDigest` into the read model / `job-result`,
    and (optionally) a DO `LogChunk` consumer (BM2/§4).
+7. ✅ **Stop projecting on heartbeat** (PR #159): per-heartbeat
+   `projectAfterVerb` removed from both heartbeat handlers — at ~1000
+   concurrent jobs that path dominated Postgres load (DO fold + `SELECT
+   last_seq` + read-model upsert per beat) for zero correctness gain. The
+   bounded projection sweep reconciles `leaseExpiresAt` for non-terminal
+   runs. Directly advances BM3's "write volume ∝ runs" criterion.
 
 **P2 — cutover & cleanup:**
 7. Provenance **backfill**, **drain bridge**, **delete the OP2 claim/sweep + legacy
@@ -262,8 +275,11 @@ BM/NC coordination source.
    parameterized conformance harness for the OSS plain-Postgres impl (BM7).
 9. NC3: ✅ `status` folds the native `…/log` stream and **`status --watch` is
    event-driven** (`ReadLog(wait=)` long-poll, OP2 falls back to interval polling).
-   Remaining: `logs --follow` event-driven tail, cockpit live-tail, offline
-   `.orun/` event log + cloud sync.
+   Remaining: cockpit live-tail; offline `.orun/` event log + cloud sync.
+   **Deferred:** `logs --follow` event-driven tail — the obvious worker-held
+   re-query loop on the per-job chunk endpoint would dominate Postgres at
+   ~1000 concurrent jobs; the current interval poll is adequate for human
+   log-watching.
 
 **P3 — hygiene:**
 10. Reconcile wire-kind naming (dotted vs CamelCase) and converge the two event

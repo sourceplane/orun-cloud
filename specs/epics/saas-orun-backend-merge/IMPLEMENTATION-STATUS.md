@@ -4,9 +4,9 @@ Rolled-up state of cluster **BM** (and the paired CLI cluster **NC** in `orun`).
 Authoritative over the prose in `README.md`/`implementation-plan.md` when they
 disagree. Full evidence + per-criterion analysis: [`GAPS.md`](./GAPS.md).
 
-**Last audited:** 2026-06-20 (source review of both repos + executed test suites
-+ live probes). **Branch:** `claude/sleepy-edison-99y58a` (PRs #127–#146 here,
-#386–#395 in `orun`; not yet on `main`).
+**Last audited:** 2026-06-23 (source review of both repos + executed test suites
++ live probes). **Branch:** `claude/sleepy-edison-99y58a` (PRs #127–#159 here,
+#386–#401 in `orun`; #157/#159 merged here, #400/#401 merged in `orun`).
 
 ## Legend
 ✅ Done · 🟡 Partial · ⛔ Missing
@@ -18,7 +18,7 @@ disagree. Full evidence + per-criterion analysis: [`GAPS.md`](./GAPS.md).
 | BM0 | ✅ | event vocab, pure `reduce()`, golden vectors, vendored contract + checksum drift guard (in `orun`) | kind-naming reconcile; converge the two event taxonomies; CI-enforce cross-repo vectors |
 | BM1 | 🟡 | object kinds registered, digest-verified PUT, `canonicalizeJobInput` + opt-in memo gate | **server-side memo lookup by `jobInputHash`**; exercise new kinds through CAS; `jobInputHash` producer; `run-record` writer |
 | BM2 | 🟡 | `RunCoordinator` DO, conditional append, lease alarm, parity + diamond conformance (22/22 green) | **snapshotting/checkpoint + recovery test**; fuzz concurrent-claim; alarm-timeout integration test; seal logs on `:complete`; stop trusting client memo digest |
-| BM3 | 🟡 | pure projector, idempotency-by-seq (mig `350`), projection sweep cron, reads from Postgres | **remove legacy OP2 cron sweep**; expose `…/log` (SSE/long-poll) + `…/frontier`; async outbox projector; metering; drop+replay rebuild |
+| BM3 | 🟡 | pure projector, idempotency-by-seq (mig `350`), projection sweep cron, reads from Postgres; **`…/log?wait=` long-poll exposed**; **heartbeat no longer projects** (write volume now ∝ runs, not ∝ heartbeats — PR #159) | **remove legacy OP2 cron sweep**; SSE framing on `…/log`; async outbox projector; metering; drop+replay rebuild |
 | BM4 | 🟡 | DO bound/deployed; per-run-sticky flag; diamond conformance; **native §3 wire now routed** (`:claim`/`:heartbeat`/`:complete`/`:cancel` + `…/log` + `…/frontier`, contract major 2) — see Progress log | `…/events` append primitive (§5); SSE/long-poll on `…/log`; native `POST …/runs` create shape; CLI adoption (NC) |
 | BM5 | 🟡 | authz + deny-by-default + cross-tenant 404; **verified actor now stamped on every coordination event** (OP2 facade + native verbs) — see Progress log | real run-create quota choke (off-by-default/fail-open); DO soft per-run cap |
 | BM6 | ⛔ | flag pre-set `do` (stage+prod), projector + fail-closed gate | backfill, drain bridge, **delete OP2 claim/sweep**, recovery drill vs O3 SLOs, update `intent.yaml`/CLI default, record runbook here |
@@ -29,11 +29,11 @@ disagree. Full evidence + per-criterion analysis: [`GAPS.md`](./GAPS.md).
 | ID | Status | Landed | Outstanding |
 |----|--------|--------|-------------|
 | NC0 | ✅ | vendored contract + checksum guard, pure `Fold` + golden vectors | CI-enforce vector parity (currently hand-transcribed) |
-| NC1 | 🟡 | `JobInputHash`/canonicalization + memo gate | result push (`job-result`/`log`); `--no-cache`; `hermetic` plan field; cockpit "memoized"; **wire it** |
-| NC2 | 🟡 | claim/heartbeat→action core | **reshape `statebackend.Backend`**; `remotestate` §3 verbs + `…/events`; heartbeat goroutine; lease-loss abort; **wire it** |
-| NC3 | ⛔ | — | `bridge.Source` stream fold; SSE/long-poll `status`/`logs --follow`; offline `.orun/` event log + cloud sync |
-| NC4 | 🟡 | `OIDCTokenSource` (aud `orun-cloud`) wired to legacy client | point OIDC at `CoordClient`; stage conformance suite |
-| NC5 | 🟡 | single-runner deps-gated memo-aware DAG driver | heartbeat; real lease-loss abort; object/result push; incremental log reads; **wire to `internal/runner`** |
+| NC1 | 🟡 | `JobInputHash`/canonicalization + memo gate; **producer wired (`job-result` push + memo key/digest on `:complete`)**; **cockpit "memoized" surface** (PR #401: `Cached`/`ResultDigest` on `ClaimResult` + `orun run` prints the hit) | `--no-cache`; `hermetic` plan field surface; `log` sealing on the CLI side; real input-artifact digests |
+| NC2 | 🟡 | `CoordBackend` drives claim/heartbeat/complete/frontier over §3; **lease epoch threaded**; **async heartbeat goroutine + `lease_lost` abort wired** (`command_run.go:628` + `runHeartbeat` with `onLeaseLost`, server-supplied interval at `:699`); selected under `ORUN_COORDINATION=v2` | `…/events` (§5); §3-native create/logs (run create + log read still delegate to v1) |
+| NC3 | 🟡 | **`status --watch` event-driven via `ReadLog(wait=)` long-poll** (`#400`, `orun`); CLI consumes BM3's `…/log?wait=` | `logs --follow` event-driven tail (deferred — per-job re-query in worker would dominate DB at scale); cockpit live-tail; offline `.orun/` event log + cloud sync |
+| NC4 | 🟡 | `OIDCTokenSource` (aud `orun-cloud`) wired to legacy client; **also wired to `CoordClient`** (`command_run.go:511` passes `tokenSrc` into `CoordClient`) | stage conformance suite |
+| NC5 | 🟡 | single-runner deps-gated memo-aware DAG driver; heartbeat + lease-loss abort wired through `RunnerHooks.OnJobStart`/`BeforeJob` in `command_run.go` | object/result push beyond memo path; incremental log reads via native surface |
 
 ## The two facts that gate "done"
 
@@ -43,15 +43,50 @@ disagree. Full evidence + per-criterion analysis: [`GAPS.md`](./GAPS.md).
    by the same auth/policy/contract-version as OP2, and the server advertises
    contract major 2. Still open: the `…/events` append primitive (§5), SSE +
    long-poll on `…/log`, and a §2-native `POST …/runs` create shape.
-2. **CLI adoption** — 🟡 **coordination cycle now wired (opt-in)** (Progress log
-   2026-06-20): `orun`'s `CoordBackend` drives claim/heartbeat/complete + the
+2. **CLI adoption** — 🟡 **coordination cycle fully wired (opt-in)** (audit
+   2026-06-23): `orun`'s `CoordBackend` drives claim/heartbeat/complete + the
    runnable frontier over the §3 wire (lease epoch threaded), selected with
-   `ORUN_COORDINATION=v2`. Still open: an async heartbeat goroutine, §3-native
-   create/logs, the offline event log + cloud sync (NC3), and result push (NC1).
+   `ORUN_COORDINATION=v2`. The **async heartbeat goroutine + `lease_lost`
+   abort + OIDC** are all wired (`command_run.go:511,628`; tracker was stale).
+   Memoization is end-to-end with the producer + the visible cockpit hit (PR
+   #401). Still open: the **default flip** off the env-var opt-in (a BM6
+   cutover decision), §3-native create/logs (run create + log read still
+   delegate to v1), and the offline event log + cloud sync (NC3).
 
 See `GAPS.md` §"Prioritized remaining work".
 
 ## Progress log
+
+### 2026-06-23 — NC1 cockpit "memoized" surface (PR #401, `orun`)
+- `ClaimResult` gained `Cached` + `ResultDigest`; `CoordBackend.ClaimJob`
+  populates them on `OutcomeCached` (the existing `CurrentStatus="success"`
+  adopt-by-skip behavior is unchanged). `orun run`'s `BeforeJob` now prints
+  `✓ memoized <job> — cache hit, skipped execution (<digest>)` when a hermetic
+  job is adopted from the server-resolved memo index. Previously the hit was
+  silent (the headline v2 feature was invisible to the user).
+- Test: a cached `:claim` response surfaces `Cached`/`ResultDigest` with
+  adopt-by-skip semantics. Full `internal/statebackend` + `cmd/orun` suites
+  pass; build/vet clean.
+- **Audit correction:** while scoping this we verified the heartbeat goroutine,
+  `lease_lost` abort, and OIDC token source are all wired on the v2 path
+  (`command_run.go:511,628`). The 2026-06-20 tracker listed them as pending —
+  they are not. NC2/NC4 rows above reflect the verified state.
+
+### 2026-06-23 — BM3 stop projecting on heartbeat (DB-protection at scale, PR #159)
+- Removed the per-heartbeat `projectAfterVerb` from both heartbeat handlers
+  (`handleNativeHeartbeat` on the native wire and the DO-backed branch of
+  `handleHeartbeatJob` in the OP2 facade). Each was doing a DO `/state` fold +
+  `SELECT last_seq` + read-model upsert on every beat — at ~1000 concurrent
+  jobs that path dominated Postgres load for **zero correctness gain** (a
+  heartbeat only renews the DO-owned lease). The bounded projection sweep
+  reconciles `leaseExpiresAt` for non-terminal runs; lifecycle verbs
+  (claim/complete/cancel) still project immediately.
+- Directly advances BM3's "write volume ∝ runs, not ∝ heartbeats" criterion.
+- The legacy non-DO branch of `handleHeartbeatJob` is untouched (it writes the
+  lease directly because in the pre-DO model the read model *is* the source of
+  truth). Regression test: heartbeat issues zero DB queries while claim
+  projects (counting `SqlExecutor`). state-worker 42/42 green; typecheck +
+  lint clean.
 
 ### 2026-06-20 — BM4 native v2 wire exposed + BM5 actor attribution
 - **Exposed the native §3 coordination wire** on `state-worker`'s public router
