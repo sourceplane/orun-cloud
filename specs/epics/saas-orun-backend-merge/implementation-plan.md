@@ -1,8 +1,9 @@
 # saas-orun-backend-merge — Implementation Plan (BM0–BM7)
 
-Status (audited **2026-06-20**): **In progress** — BM0 ✅; BM1–BM5 🟡 partial;
-BM6/BM7 ⛔. Cores are built and test-green, but the native v2 wire is unexposed
-(DO reached via an OP2↔DO facade) and the CLI is unwired. Per-milestone reality
+Status (audited **2026-06-23**): **In progress** — BM0 ✅; BM1–BM5 🟡 partial;
+BM6/BM7 ⛔. Cores are built and test-green; the native v2 wire is server-
+exposed and the CLI's coordination cycle is wired (opt-in via
+`ORUN_COORDINATION=v2`, including heartbeat/abort/OIDC). Per-milestone reality
 is in each heading below; the rolled-up tracker is
 [`IMPLEMENTATION-STATUS.md`](./IMPLEMENTATION-STATUS.md) and the evidence is in
 [`GAPS.md`](./GAPS.md). Original plan text is preserved below for the "Done when"
