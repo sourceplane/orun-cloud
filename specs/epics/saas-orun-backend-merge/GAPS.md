@@ -115,7 +115,7 @@ BM/NC coordination source.
 - **Satisfied:** pure `planProjection`/`projectRun` (`coordination-projector.ts`, `coordination-projection.ts`); idempotency-by-seq (`WHERE last_seq < $5`, migration `350_state_run_last_seq`); projection sweep cron phase (`projection-sweep.ts`); `…/runs` & `…/runs/{id}` served from Postgres; reads never block on a coordination write (`projectAfterVerb` best-effort).
 - **Gaps:**
   - **Legacy OP2 cron sweep NOT removed** — `index.ts:31` still runs `runSweep(env)` as Phase 1; BM3 *added* a phase rather than replacing the cron. Dual liveness paths (DO alarm **and** cron).
-  - **`…/log` (event stream) and `…/frontier` not exposed**; no `Accept: text/event-stream` SSE; no `?wait=` long-poll. The DO's internal `GET /log?from=` and `proxyCoordinatorLog` exist but are never routed.
+  - ~~**`…/log` and `…/frontier` not exposed**; no `?wait=` long-poll.~~ ✅ `…/log` + `…/frontier` are routed (BM4, #148); **`?wait=` long-poll done** — `GET …/log?from=&wait=<s>` holds the request in the shard (capped 25s, re-reading every 250ms; the DO yields to interleaved appends) and returns as soon as an event lands past the cursor, else an empty page on timeout (live-tail for `status --watch`/`logs --follow` without busy polling). Tests: wakes on a concurrent claim; empty page after the wait lapses. **Remaining:** `Accept: text/event-stream` SSE framing (long-poll covers the live-tail need without it).
   - Projector is **synchronous-after-verb + cron fold**, not the async/outbox/batched consumer the plan specifies; `LeaseRenewed` bumps seq, so heartbeat-frequency projections aren't fully eliminated.
   - **No metering** wired into projections.
   - **Rebuild-from-event-log is DO-dependent and untested** — no Postgres event-log table, no global replay routine, no drop+replay test.
@@ -231,9 +231,10 @@ BM/NC coordination source.
 ## Prioritized remaining work
 
 **P0 — close the loop (make the new plane usable):**
-1. **Expose the v2 wire** on `state-worker` + `api-edge`: route `:claim`/
-   `:heartbeat`/`:complete`/`:cancel`, `…/events`, `GET …/log?from=` (SSE +
-   long-poll), `…/frontier` (BM4/BM3). Bump `STATE_CONTRACT_VERSION` to 2 in lockstep.
+1. ✅ **Expose the v2 wire** on `state-worker`: `:claim`/`:heartbeat`/`:complete`/
+   `:cancel`, `GET …/log?from=` (now with **`?wait=` long-poll**), `…/frontier`
+   are routed and the contract major is 2. Remaining: `Accept: text/event-stream`
+   SSE framing (long-poll covers live-tail); `…/events` append primitive (BM4/BM3).
 2. **Wire the CLI** to the new client: reshape `statebackend.Backend`, make
    `cmd/orun` construct the `CoordClient`-backed backend, add the heartbeat
    goroutine and `lease_lost` abort (NC2/NC5), set `CoordClient.TokenSource` from
