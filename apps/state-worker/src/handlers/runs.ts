@@ -44,6 +44,7 @@ import {
   DEFAULT_PAGE_LIMIT,
   HEARTBEAT_INTERVAL_SECONDS,
   LEASE_SECONDS,
+  MAX_JOBS_PER_RUN,
   MAX_PAGE_LIMIT,
 } from "../constants.js";
 import { ensureEnvironmentRegistered } from "../env-registration.js";
@@ -233,6 +234,14 @@ export async function handleCreateRun(
 
   const planJobs = parsePlanJobs(body);
   if (planJobs === null) fields.jobs = ["Must be an array of { jobId, deps?, component? } with unique ids"];
+  // Soft per-run cap (BM5): the coordination shard's storage scales with the
+  // job count (event log, snapshots, in-memory fold). Reject runaway plans at
+  // the edge before allocating any DO storage. The cap is generous enough to
+  // accommodate real workflows; if a legitimate plan exceeds it, raise it in
+  // `constants.ts` with the understanding that every shard pays proportionally.
+  else if (planJobs.length > MAX_JOBS_PER_RUN) {
+    fields.jobs = [`Plan exceeds the per-run cap of ${MAX_JOBS_PER_RUN} jobs (got ${planJobs.length}); split the run or contact support to raise the cap`];
+  }
 
   if (Object.keys(fields).length > 0) return validationError(requestId, fields);
 
