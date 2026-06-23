@@ -292,6 +292,24 @@ describe("POST …/state/runs — create", () => {
     const res = await handleCreateRun(req, createEnv(), "req_1", ACTOR, asUuid(ORG), asUuid(PROJECT), { executor });
     expect(res.status).toBe(422);
   });
+
+  it("rejects a plan that exceeds the per-run job cap (BM5 soft cap)", async () => {
+    // The coordination shard's storage scales with the job count (event log,
+    // snapshots, in-memory fold). A 100k-job plan would inflate a DO beyond
+    // healthy operating bounds. The cap is enforced at the edge before any DO
+    // storage is allocated. 1001 jobs exceeds the default 1000 cap.
+    const { executor } = fakeExecutor(() => []);
+    const oversized = Array.from({ length: 1001 }, (_, i) => ({ jobId: `j${i}`, component: "x", deps: [] as string[] }));
+    const req = new Request("https://state.test/.../runs", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ runId: ULID, planDigest: PLAN, source: "cli", git: {}, jobs: oversized }),
+    });
+    const res = await handleCreateRun(req, createEnv(), "req_1", ACTOR, asUuid(ORG), asUuid(PROJECT), { executor });
+    expect(res.status).toBe(422);
+    const body = (await res.json()) as { error: { details: { fields: { jobs: string[] } } } };
+    expect(body.error.details.fields.jobs[0]).toMatch(/per-run cap of 1000/);
+  });
 });
 
 describe("GET …/state/runs/{runId} + list", () => {

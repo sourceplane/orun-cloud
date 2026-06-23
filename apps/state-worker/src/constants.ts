@@ -19,6 +19,17 @@ export const MAX_JOB_ATTEMPTS = 5;
 /** Upper bound on rows acted on per sweep pass (keeps a pass bounded). */
 export const SWEEP_BATCH_LIMIT = 200;
 
+/**
+ * Soft per-run cap on plan size (BM5). The coordination shard's storage cost
+ * is O(jobs) — the event log, snapshots, and the in-memory fold all scale with
+ * the job count — so a runaway plan (a single run with 100k jobs) would inflate
+ * a DO beyond healthy operating bounds and starve neighbor shards on the same
+ * colocation. 1,000 jobs/run comfortably accommodates real workflows and leaves
+ * a clear backstop against accidental/malicious DoS. Raise carefully if a real
+ * workload hits this — every run pays storage proportional to the cap.
+ */
+export const MAX_JOBS_PER_RUN = 1000;
+
 /** Upper bound on scm.* events drained into state.triggers per cron pass. */
 export const SCM_DRAIN_BATCH_LIMIT = 200;
 
