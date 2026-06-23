@@ -89,6 +89,9 @@ export interface JobSucceededPayload {
   runnerId: string;
   leaseEpoch: number;
   resultDigest: string;
+  /** Digest of the sealed `log` object assembled on :complete (§4). Optional —
+   *  absent when the job produced no log output. */
+  logsDigest?: string;
 }
 export interface JobMemoizedPayload {
   resultDigest: string;

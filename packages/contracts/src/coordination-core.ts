@@ -174,6 +174,9 @@ export interface CompleteRequest {
   leaseEpoch: number;
   outcome: "succeeded" | "failed";
   resultDigest?: string;
+  /** Digest of the sealed `log` object (§4), set by the worker after assembling
+   *  the job's log chunks. Recorded on the JobSucceeded event when present. */
+  logsDigest?: string;
   reason?: string;
   errorText?: string;
 }
@@ -192,7 +195,16 @@ export function decideComplete(state: RunFoldState, req: CompleteRequest): Decis
     return {
       ok: true,
       appends: [
-        { kind: K.JOB_SUCCEEDED, jobId: req.jobId, payload: { runnerId: req.runnerId, leaseEpoch: req.leaseEpoch, resultDigest: req.resultDigest ?? "" } },
+        {
+          kind: K.JOB_SUCCEEDED,
+          jobId: req.jobId,
+          payload: {
+            runnerId: req.runnerId,
+            leaseEpoch: req.leaseEpoch,
+            resultDigest: req.resultDigest ?? "",
+            ...(req.logsDigest ? { logsDigest: req.logsDigest } : {}),
+          },
+        },
       ],
     };
   }

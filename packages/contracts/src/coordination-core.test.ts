@@ -127,6 +127,23 @@ describe("decideComplete", () => {
     // A second complete against the now-terminal job is rejected.
     expect(decideComplete(sim.state(), { jobId: "a", runnerId: "r1", leaseEpoch: 1, outcome: "failed" })).toEqual({ ok: false, reason: "terminal" });
   });
+
+  it("carries a sealed logsDigest onto JobSucceeded only when provided (§4)", () => {
+    const withLog = new Sim(linear);
+    const c1 = decideClaim(withLog.state(), linear, { jobId: "a", runnerId: "r1" }, T0);
+    if (c1.ok) withLog.apply(c1.appends);
+    const sealed = decideComplete(withLog.state(), {
+      jobId: "a", runnerId: "r1", leaseEpoch: 1, outcome: "succeeded", resultDigest: "sha256:ra", logsDigest: "sha256:lg",
+    });
+    expect(sealed.ok && sealed.appends[0]!.payload).toMatchObject({ resultDigest: "sha256:ra", logsDigest: "sha256:lg" });
+
+    // Absent log output → no logsDigest field on the event (back-compat shape).
+    const noLog = new Sim(linear);
+    const c2 = decideClaim(noLog.state(), linear, { jobId: "a", runnerId: "r1" }, T0);
+    if (c2.ok) noLog.apply(c2.appends);
+    const bare = decideComplete(noLog.state(), { jobId: "a", runnerId: "r1", leaseEpoch: 1, outcome: "succeeded", resultDigest: "sha256:ra" });
+    expect(bare.ok && bare.appends[0]!.payload).not.toHaveProperty("logsDigest");
+  });
 });
 
 describe("sweepLeases", () => {

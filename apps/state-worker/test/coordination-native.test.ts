@@ -13,7 +13,7 @@ import {
   handleNativeHeartbeat,
   handleNativeLog,
 } from "../src/coordination-native.js";
-import { objectKey } from "../src/object-store.js";
+import { logChunkKey, objectKey } from "../src/object-store.js";
 import { orgPublicId, projectPublicId } from "../src/ids.js";
 
 // Native v2 coordination wire (BM4 — coordination-api.md §2/§3) against the
@@ -190,6 +190,48 @@ describe("native v2 coordination wire over the real DO", () => {
     );
     expect(c.status).toBe(200);
     expect((await c.json() as { claimed: boolean }).claimed).toBe(true); // no memo → normal claim
+  });
+
+  it("seals the job log into a `log` object on complete and stamps its digest on JobSucceeded (§4)", async () => {
+    const run = "native-logseal";
+    await initRun(run, { jobs: { a: { deps: [] as string[] } } });
+    const bucket = (env as unknown as { ORUN_STATE: R2Bucket }).ORUN_STATE;
+    const enc = new TextEncoder();
+
+    const c = (await (await handleNativeClaim(post({ runnerId: "r1" }), env, "req", ACTOR, ORG, PROJ, run, "a")).json()) as { leaseEpoch: number };
+    // Seed chunks; seq is parsed numerically, so the assembled order is 0,1,2
+    // regardless of R2's lexical key order ("10" would otherwise precede "2").
+    await bucket.put(logChunkKey(orgPublicId(ORG), projectPublicId(PROJ), run, "a", 0), enc.encode("hello "));
+    await bucket.put(logChunkKey(orgPublicId(ORG), projectPublicId(PROJ), run, "a", 1), enc.encode("brave "));
+    await bucket.put(logChunkKey(orgPublicId(ORG), projectPublicId(PROJ), run, "a", 2), enc.encode("world"));
+
+    const done = await handleNativeComplete(post({ runnerId: "r1", leaseEpoch: c.leaseEpoch, outcome: "succeeded" }), env, "req", ACTOR, ORG, PROJ, run, "a");
+    expect(done.status).toBe(200);
+
+    const { events } = (await (await handleNativeLog(new Request("https://x/log?from=0"), env, "req", ACTOR, ORG, PROJ, run)).json()) as {
+      events: Array<{ kind: string; payload?: { logsDigest?: string } }>;
+    };
+    const succ = events.find((e) => e.kind === "state.job.succeeded");
+    const logsDigest = succ?.payload?.logsDigest;
+    expect(logsDigest).toMatch(/^sha256:[0-9a-f]{64}$/);
+
+    const sealed = await bucket.get(objectKey(orgPublicId(ORG), projectPublicId(PROJ), logsDigest!));
+    expect(sealed).not.toBeNull();
+    expect(await sealed!.text()).toBe("hello brave world");
+  });
+
+  it("omits logsDigest when the job produced no log output", async () => {
+    const run = "native-logseal-empty";
+    await initRun(run, { jobs: { a: { deps: [] as string[] } } });
+    const c = (await (await handleNativeClaim(post({ runnerId: "r1" }), env, "req", ACTOR, ORG, PROJ, run, "a")).json()) as { leaseEpoch: number };
+    const done = await handleNativeComplete(post({ runnerId: "r1", leaseEpoch: c.leaseEpoch, outcome: "succeeded" }), env, "req", ACTOR, ORG, PROJ, run, "a");
+    expect(done.status).toBe(200);
+    const { events } = (await (await handleNativeLog(new Request("https://x/log?from=0"), env, "req", ACTOR, ORG, PROJ, run)).json()) as {
+      events: Array<{ kind: string; payload?: { logsDigest?: string } }>;
+    };
+    const succ = events.find((e) => e.kind === "state.job.succeeded");
+    expect(succ).toBeDefined();
+    expect(succ?.payload?.logsDigest).toBeUndefined();
   });
 
   it("frontier reflects the runnable set and advances as jobs complete", async () => {

@@ -69,7 +69,7 @@ BM/NC coordination source.
 |---|---|---|
 | **BM0** contract v2 + fold + vendor | ✅ **Done** | Event vocab, pure `reduce()`, golden vectors; vendored + `CHECKSUM` + drift guard live in `orun` (NC0). Naming diverges (`state.*` vs plan's CamelCase); two event taxonomies coexist. |
 | **BM1** object kinds + memoization | 🟡 **Partial** | Kinds registered + canonicalization + opt-in gate tested. **Server-side memo lookup done** — the native claim resolves the result digest from the job's `jobInputHash` via a project-scoped index (written on `:complete`, existence-verified, 412 `object_missing` on the legacy client-digest path); the client supplies only the key. Remaining: CLI-side `jobInputHash` producer + result push (NC1); new kinds untested through the CAS; no `run-record` writer. |
-| **BM2** RunCoordinator DO | 🟡 **Partial** | DO + deciders + conditional append + lease alarm + parity/conformance green. **Snapshotting + incremental fold done** (append-only per-event keys, in-memory `reduceFrom` cache, periodic `snap` checkpoint), **concurrent-claim race + forced-restart recovery tested**. Remaining: alarm-driven timeout integration test; logs not sealed; destructive compaction. |
+| **BM2** RunCoordinator DO | 🟡 **Partial** | DO + deciders + conditional append + lease alarm + parity/conformance green. **Snapshotting + incremental fold done**, **concurrent-claim race + forced-restart recovery tested**, **log sealing done** (server assembles a job's R2 log chunks into a content-addressed `log` object on `:complete` and stamps `logsDigest` on `JobSucceeded`, §4). Remaining: alarm-driven timeout integration test; destructive compaction. |
 | **BM3** projections | 🟡 **Partial** | Pure projector + idempotency-by-seq + projection sweep cron; reads served from Postgres. **Legacy cron sweep NOT removed**; `…/log` & `…/frontier` not exposed; no SSE/long-poll; projector is sync-after-verb, not the async outbox; no metering. |
 | **BM4** DO routing / CLI adoption | 🟡 **Partial** | DO bound + deployed; per-run-sticky backend flag; diamond-DAG conformance green. **§3 verbs not routed** (OP2 facade only); no public `…/log`/`…/frontier`/live-tail. |
 | **BM5** auth / tenancy / quota | 🟡 **Partial** | Auth + deny-by-default policy + cross-tenant 404 enforced on every *existing* route (DO runs inside OP2 handlers, after authz). **Quota off-by-default & fail-open**; **no DO soft per-run cap**; **DO-bridged claim/heartbeat/complete lose the verified actor** (stamped `system:coordinator`). No BM5 commit. |
@@ -108,8 +108,8 @@ BM/NC coordination source.
   - ~~**No fuzz concurrent-claim test.**~~ ✅ **Done** — 8 claims raced with `Promise.all` against one DO; asserts exactly one winner, 7 `job_held`, and a single `JobClaimed` in the log.
   - ~~**No forced-DO-restart / recovery test.**~~ ✅ **Done** — a persisted-storage test (`durableObjectsPersist`) inits + claims + 70 heartbeats (crossing the snapshot), disposes the runtime, then a **fresh** runtime cold-starts: the rebuilt fold equals the pre-restart state and a from-scratch re-fold of `/log`, and the run continues its seq line to completion.
   - **Alarm-driven timeout never integration-tested** (only pure `sweepLeases`; raw-miniflare harness has no alarm-fire hook — needs `@cloudflare/vitest-pool-workers`'s `runDurableObjectAlarm`).
-  - **Logs not sealed on `:complete`** (contract §4); the DO has no `LogChunk` path — logs stay on the disjoint OP2 per-job R2 path.
-  - **Memo digest is client-trusted** (carried from BM1) — false-reuse hole.
+  - ~~**Logs not sealed on `:complete`** (contract §4).~~ ✅ **Done.** `handleNativeComplete` seals on a successful complete: `sealJobLog` lists the job's R2 log chunks (`logChunkPrefix`), assembles them in **numeric** seq order, writes the concatenation as a content-addressed `log` object, and the digest rides on the `JobSucceeded` event as `logsDigest` (added to `JobSucceededPayload` + `decideComplete`, conditional so the no-log shape is unchanged). Reads R2 directly (no Postgres index), best-effort (a seal hiccup never blocks completion), idempotent. Tests: assembled-stream seal + `logsDigest` on the event (out-of-order seeds prove numeric ordering); empty log → no `logsDigest`; decider carries it only when provided. **Remaining:** the seal lives on the worker (not a DO `LogChunk` consumer); `logsDigest` is on the event, not yet projected into the `…/runs/{id}` read model or referenced by the client-built `job-result`.
+  - ~~**Memo digest is client-trusted** (carried from BM1).~~ ✅ Closed — server resolves it from `jobInputHash` (see BM1).
 
 ### BM3 — Projections (read models) — 🟡 Partial
 - **Satisfied:** pure `planProjection`/`projectRun` (`coordination-projector.ts`, `coordination-projection.ts`); idempotency-by-seq (`WHERE last_seq < $5`, migration `350_state_run_last_seq`); projection sweep cron phase (`projection-sweep.ts`); `…/runs` & `…/runs/{id}` served from Postgres; reads never block on a coordination write (`projectAfterVerb` best-effort).
@@ -250,7 +250,9 @@ BM/NC coordination source.
    test (needs `runDurableObjectAlarm`) (BM2).
 5. Forward the **verified actor** through the DO-bridged verbs; turn the quota
    gate into a real strong-consistent choke + DO soft per-run cap (BM5).
-6. Seal logs into a `log` object on `:complete`; consume `LogChunk` in the DO (BM2/§4).
+6. ✅ Seal logs into a `log` object on `:complete` (server-side, `logsDigest` on
+   `JobSucceeded`). Remaining: project `logsDigest` into the read model / `job-result`,
+   and (optionally) a DO `LogChunk` consumer (BM2/§4).
 
 **P2 — cutover & cleanup:**
 7. Provenance **backfill**, **drain bridge**, **delete the OP2 claim/sweep + legacy
