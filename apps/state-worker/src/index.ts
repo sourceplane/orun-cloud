@@ -1,6 +1,5 @@
 import type { Env } from "./env.js";
 import { route } from "./router.js";
-import { runSweep } from "./sweep.js";
 import { runScmDrain } from "./scm-bridge.js";
 import { runRunWriteback } from "./run-writeback.js";
 import { runEnvArchiveSweep } from "./env-archive-sweep.js";
@@ -15,10 +14,11 @@ export default {
     return route(request, env, ctx);
   },
 
-  // Lease sweep cron (OP2 — design §4.2): re-queue lapsed job claims (attempt+1,
-  // bounded) or mark them timed_out, derive run terminal status, and emit
-  // state.run.completed|failed / state.job.failed into the event log. This is
-  // what makes runs survive killed laptops.
+  // State-maintenance cron. Lease liveness is NOT here: every run is DO-backed,
+  // so the RunCoordinator alarm re-queues/times-out lapsed leases (BM2). The
+  // legacy OP2 relational lease-sweep was removed in the v2 cutover — it acted
+  // on the run_jobs *projection*, which lags the DO (heartbeat no longer
+  // projects), so it could wrongly time out a healthy DO-backed job.
   //
   // CRON-SLOT BUDGET (risk R9): this is the SINGLE cron trigger state-worker
   // registers (wrangler.template.jsonc). Future state maintenance (OP9
@@ -27,16 +27,8 @@ export default {
   async scheduled(_controller: ScheduledController, env: Env, ctx: ExecutionContext): Promise<void> {
     ctx.waitUntil(
       (async () => {
-        // Phase 1 — lease sweep (OP2).
-        const summary = await runSweep(env);
-        if (summary && (summary.requeued > 0 || summary.timedOut > 0)) {
-          console.warn(
-            `[scheduled] lease-sweep: ${summary.requeued} requeued, ${summary.timedOut} timed_out, ` +
-              `${summary.runsCompleted} runs completed, ${summary.runsFailed} runs failed`,
-          );
-        }
         // Phase 2 — scm.* → state.triggers drain (OV4 inbound bridge). Coalesced
-        // into this same cron slot (risk R9), after the sweep.
+        // into this same cron slot (risk R9).
         try {
           const drained = await runScmDrain(env);
           if (drained && drained.recorded > 0) {
