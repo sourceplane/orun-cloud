@@ -10,10 +10,12 @@
 
 import {
   COORDINATION_EVENT_TYPES as K,
+  deriveRunPhase,
   type CoordinationPlan,
   type JobClaimedPayload,
   type JobFailedPayload,
   type JobMemoizedPayload,
+  type JobPhase,
   type JobReadyPayload,
   type JobSucceededPayload,
   type LeaseExpiredPayload,
@@ -35,6 +37,8 @@ export type AppendIntent =
   | { kind: typeof K.JOB_MEMOIZED; jobId: string; payload: JobMemoizedPayload }
   | { kind: typeof K.JOB_FAILED; jobId: string; payload: JobFailedPayload }
   | { kind: typeof K.JOB_READY; jobId: string; payload: JobReadyPayload }
+  | { kind: typeof K.RUN_COMPLETED; payload: RunTerminalPayload }
+  | { kind: typeof K.RUN_FAILED; payload: RunTerminalPayload }
   | { kind: typeof K.RUN_CANCELED; payload: RunTerminalPayload };
 
 export type RejectReason =
@@ -61,6 +65,34 @@ function leaseExpiry(now: string, leaseSeconds: number): string {
 function leaseExpired(leaseExpiresAt: string | null, now: string): boolean {
   if (!leaseExpiresAt) return true;
   return Date.parse(leaseExpiresAt) <= Date.parse(now);
+}
+
+/**
+ * Run-terminal *signal* (coordination-api.md §3): when a job-terminal transition
+ * makes the whole run terminal, emit a `RUN_COMPLETED`/`RUN_FAILED` event so the
+ * event log is self-describing for stream consumers (SSE, provenance). These are
+ * projection signals, not authority — the fold still derives the run phase from
+ * job phases — so emitting them is idempotent and the read model is unchanged.
+ *
+ * `overrides` maps jobId → the post-append phase for the jobs this verb is about
+ * to transition. We only emit on the *transition* into a terminal phase (guarded
+ * on the pre-append run phase) so a second failing job never re-emits RUN_FAILED.
+ */
+function runTerminalAppends(
+  state: RunFoldState,
+  overrides: Record<string, JobPhase>,
+  failReason: string | null = "job_failed",
+): AppendIntent[] {
+  // Already terminal (or never created) ⇒ no transition to signal.
+  if (state.phase === "succeeded" || state.phase === "failed" || state.phase === "canceled") return [];
+  const jobs: Record<string, { phase: JobPhase; attempt: number }> = {};
+  for (const [id, j] of Object.entries(state.jobs)) {
+    jobs[id] = { phase: overrides[id] ?? j.phase, attempt: j.attempt };
+  }
+  const phase = deriveRunPhase(jobs as RunFoldState["jobs"], false, true);
+  if (phase === "succeeded") return [{ kind: K.RUN_COMPLETED, payload: { reason: null } }];
+  if (phase === "failed") return [{ kind: K.RUN_FAILED, payload: { reason: failReason } }];
+  return [];
 }
 
 function depsSatisfied(state: RunFoldState, plan: CoordinationPlan, jobId: string): boolean {
@@ -205,13 +237,18 @@ export function decideComplete(state: RunFoldState, req: CompleteRequest): Decis
             ...(req.logsDigest ? { logsDigest: req.logsDigest } : {}),
           },
         },
+        ...runTerminalAppends(state, { [req.jobId]: "succeeded" }),
       ],
     };
   }
+  const reason = req.reason ?? "step_failed";
+  // The fold maps a `timed_out` reason to the timed_out phase; any other reason → failed.
+  const failedPhase: JobPhase = reason === "timed_out" ? "timed_out" : "failed";
   return {
     ok: true,
     appends: [
-      { kind: K.JOB_FAILED, jobId: req.jobId, payload: { runnerId: req.runnerId, leaseEpoch: req.leaseEpoch, reason: req.reason ?? "step_failed", errorText: req.errorText ?? null } },
+      { kind: K.JOB_FAILED, jobId: req.jobId, payload: { runnerId: req.runnerId, leaseEpoch: req.leaseEpoch, reason, errorText: req.errorText ?? null } },
+      ...runTerminalAppends(state, { [req.jobId]: failedPhase }, reason),
     ],
   };
 }
@@ -236,14 +273,21 @@ export function sweepLeases(
 ): AppendIntent[] {
   const maxAttempts = cfg.maxAttempts ?? DEFAULT_MAX_JOB_ATTEMPTS;
   const appends: AppendIntent[] = [];
+  // Post-sweep phase overrides, so a timeout that drains the run emits RUN_FAILED.
+  const overrides: Record<string, JobPhase> = {};
   for (const job of Object.values(state.jobs)) {
     if (job.phase !== "claimed") continue;
     if (!leaseExpired(job.leaseExpiresAt, now)) continue;
     if (job.attempt >= maxAttempts) {
       appends.push({ kind: K.JOB_FAILED, jobId: job.jobId, payload: { runnerId: job.holder, leaseEpoch: job.leaseEpoch, reason: "timed_out", errorText: "runner heartbeat timeout" } });
+      overrides[job.jobId] = "timed_out";
     } else {
       appends.push({ kind: K.LEASE_EXPIRED, jobId: job.jobId, payload: { runnerId: job.holder ?? "", leaseEpoch: job.leaseEpoch ?? 0 } });
+      overrides[job.jobId] = "queued"; // re-queued — non-terminal
     }
   }
+  // A sweep only re-queues or times-out jobs, so it can transition the run to
+  // failed (a timed_out job) but never to succeeded. Emit the signal once.
+  appends.push(...runTerminalAppends(state, overrides, "timed_out"));
   return appends;
 }
