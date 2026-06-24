@@ -344,7 +344,7 @@ export function reduceFrom(
   };
 }
 
-function deriveRunPhase(
+export function deriveRunPhase(
   jobs: Record<string, JobFoldState>,
   canceled: boolean,
   created: boolean,

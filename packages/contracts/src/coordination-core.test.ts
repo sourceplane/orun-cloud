@@ -144,6 +144,32 @@ describe("decideComplete", () => {
     const bare = decideComplete(noLog.state(), { jobId: "a", runnerId: "r1", leaseEpoch: 1, outcome: "succeeded", resultDigest: "sha256:ra" });
     expect(bare.ok && bare.appends[0]!.payload).not.toHaveProperty("logsDigest");
   });
+
+  it("emits a RUN_COMPLETED signal only when the last job succeeds (§3)", () => {
+    const sim = new Sim(linear);
+    // Complete a: b unblocks but is still queued → run still running, no signal.
+    const ca = decideClaim(sim.state(), linear, { jobId: "a", runnerId: "r1" }, T0);
+    if (ca.ok) sim.apply(ca.appends);
+    const da = decideComplete(sim.state(), { jobId: "a", runnerId: "r1", leaseEpoch: 1, outcome: "succeeded", resultDigest: "sha256:ra" });
+    expect(da.ok && da.appends.map((i) => i.kind)).toEqual([K.JOB_SUCCEEDED]);
+    if (da.ok) sim.apply(da.appends);
+
+    // Complete b: the run is now fully succeeded → RUN_COMPLETED (run-level, reason null).
+    const cb = decideClaim(sim.state(), linear, { jobId: "b", runnerId: "r1" }, T0);
+    if (cb.ok) sim.apply(cb.appends);
+    const db = decideComplete(sim.state(), { jobId: "b", runnerId: "r1", leaseEpoch: 1, outcome: "succeeded", resultDigest: "sha256:rb" });
+    expect(db.ok && db.appends.map((i) => i.kind)).toEqual([K.JOB_SUCCEEDED, K.RUN_COMPLETED]);
+    if (db.ok) expect(db.appends[1]).toEqual({ kind: K.RUN_COMPLETED, payload: { reason: null } });
+  });
+
+  it("emits a RUN_FAILED signal when a job failure makes the run terminal (§3)", () => {
+    const sim = new Sim(linear);
+    const ca = decideClaim(sim.state(), linear, { jobId: "a", runnerId: "r1" }, T0);
+    if (ca.ok) sim.apply(ca.appends);
+    const da = decideComplete(sim.state(), { jobId: "a", runnerId: "r1", leaseEpoch: 1, outcome: "failed", reason: "step_failed", errorText: "boom" });
+    expect(da.ok && da.appends.map((i) => i.kind)).toEqual([K.JOB_FAILED, K.RUN_FAILED]);
+    if (da.ok) expect(da.appends[1]).toEqual({ kind: K.RUN_FAILED, payload: { reason: "step_failed" } });
+  });
 });
 
 describe("sweepLeases", () => {
@@ -164,9 +190,28 @@ describe("sweepLeases", () => {
       ev(2, K.JOB_CLAIMED, "a", { runnerId: "r1", leaseEpoch: 5, leaseExpiresAt: "2026-06-19T00:01:00Z", attempt: 5 }),
     ];
     const intents = sweepLeases(reduce(events, plan), T_LATE, { maxAttempts: 5 });
+    // The only job timing out drains the run → emit the RUN_FAILED signal too.
     expect(intents).toEqual([
       { kind: K.JOB_FAILED, jobId: "a", payload: { runnerId: "r1", leaseEpoch: 5, reason: "timed_out", errorText: "runner heartbeat timeout" } },
+      { kind: K.RUN_FAILED, payload: { reason: "timed_out" } },
     ]);
+  });
+
+  it("does NOT re-emit RUN_FAILED when the run is already failed", () => {
+    // Idempotency guard: a run that already failed (job a) must not emit a second
+    // RUN_FAILED when a sibling (b) later times out — the signal fires only on the
+    // transition into terminal.
+    const plan: CoordinationPlan = { jobs: { a: { deps: [] }, b: { deps: [] } } };
+    const events = [
+      ev(1, K.RUN_CREATED, undefined, { planDigest: "sha256:p", sourceHash: "sha256:s", environment: null }),
+      ev(2, K.JOB_CLAIMED, "a", { runnerId: "r1", leaseEpoch: 1, leaseExpiresAt: "x", attempt: 1 }),
+      ev(3, K.JOB_FAILED, "a", { runnerId: "r1", leaseEpoch: 1, reason: "step_failed", errorText: null }),
+      ev(4, K.JOB_CLAIMED, "b", { runnerId: "r2", leaseEpoch: 1, leaseExpiresAt: "2026-06-19T00:01:00Z", attempt: 5 }),
+    ];
+    const state = reduce(events, plan);
+    expect(state.phase).toBe("failed"); // already terminal
+    const intents = sweepLeases(state, T_LATE, { maxAttempts: 5 });
+    expect(intents.map((i) => i.kind)).toEqual([K.JOB_FAILED]); // b times out, no second RUN_FAILED
   });
 
   it("ignores a healthy (un-lapsed) lease", () => {

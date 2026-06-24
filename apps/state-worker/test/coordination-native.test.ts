@@ -144,6 +144,26 @@ describe("native v2 coordination wire over the real DO", () => {
     expect(claimedEvt!.actor).toEqual({ id: "wf-runner-1", type: "workflow" });
   });
 
+  it("emits a state.run.completed signal in the log when the final job completes (§3)", async () => {
+    // The event log is self-describing for stream consumers: a run that finishes
+    // by all-jobs-succeeding appends a run-level RUN_COMPLETED signal (the fold
+    // still derives the phase, so this is additive — see contract §3).
+    const run = "native-run-completed";
+    await initRun(run, { jobs: { a: { deps: [] as string[] } } });
+    const claim = await handleNativeClaim(post({ runnerId: "r1" }), env, "req", ACTOR, ORG, PROJ, run, "a");
+    const { leaseEpoch } = (await claim.json()) as { leaseEpoch: number };
+    const done = await handleNativeComplete(post({ runnerId: "r1", leaseEpoch, outcome: "succeeded" }), env, "req", ACTOR, ORG, PROJ, run, "a");
+    expect(done.status).toBe(200);
+
+    const logRes = await handleNativeLog(new Request("https://x/log?from=0"), env, "req", ACTOR, ORG, PROJ, run);
+    const { events } = (await logRes.json()) as { events: Array<{ kind: string; jobId?: string; actor: { id: string; type: string } }> };
+    const completed = events.find((e) => e.kind === "state.run.completed");
+    expect(completed).toBeDefined();
+    expect(completed!.jobId).toBeUndefined(); // run-level signal — no jobId
+    expect(completed!.actor).toEqual({ id: "wf-runner-1", type: "workflow" }); // stamped with the verified actor
+    expect(events[events.length - 1]!.kind).toBe("state.run.completed"); // appended after job.succeeded
+  });
+
   it("heartbeat performs no read-model projection (DB-protection at scale)", async () => {
     // A lifecycle verb (claim) must project — the read model has to reflect the
     // transition — but a heartbeat must NOT touch the DB: at ~1000 concurrent jobs
