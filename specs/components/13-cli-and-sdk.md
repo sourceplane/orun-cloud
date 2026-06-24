@@ -19,9 +19,21 @@ Cloudflare primitives:
 
 - none directly for the SDK and CLI, beyond talking to the public API
 
+## Vocabulary: a project is a repo
+
+The user-facing noun is **"repo"** (a project is a git repo, 1:1 per org — see
+`05-projects-environments.md`). The SDK exposes a `repos` accessor as the
+canonical name, aliasing the existing `projects` client (`projects` is retained
+as a deprecated alias for one minor). The wire contract is unchanged: the path
+stays `/v1/organizations/{orgId}/projects/…` and ids stay `prj_`.
+
 ## Intent
 
-Make the SaaS starter scriptable and automation-friendly through a stable TypeScript SDK and a first-class CLI.
+Make the SaaS starter scriptable and automation-friendly through a stable
+TypeScript SDK and a first-class CLI. Connecting a repo is one step:
+`orun auth login` authenticates and auto-links the current repo (the repo is the
+project, named after the git repo); a brand-new user's first login also
+materializes a personal org. See `orun/specs/orun-cloud/unified-onboarding.md`.
 
 ## Scope
 

@@ -19,9 +19,24 @@ Platform dependencies:
 - Hyperdrive binding to primary Supabase Postgres
 - Supabase Postgres for project and environment state
 
+## Vocabulary: a project is a repo
+
+A **project is a git repo** (1:1, per org) — `state.workspace_links` binds a
+normalized remote to exactly one `(org_id, project_id)`. The user-facing noun is
+therefore **"repo"**: the console, CLI output, and docs say *repo*; this spec's
+prose follows suit. The internal identifiers are unchanged for contract
+stability — the table is `projects.projects`, the field is `projectId`/
+`projectSlug`, the public id prefix is `prj_`, and the state path segment stays
+`/v1/organizations/{orgId}/projects/{projectId}/…`. Read "project" (the
+identifier) and "repo" (the noun) as the same thing.
+
 ## Intent
 
-Provide Supabase-console-like project separation under an organization. Projects are the primary operational workspaces in the starter; environments are optional sub-scopes for configuration, deployment, or lifecycle separation.
+Provide Supabase-console-like repo separation under an organization. A repo
+(internally a *project*) is the primary operational workspace in the starter —
+its identity is the git remote, materialized on first link/push and named after
+the repo; environments are optional sub-scopes for configuration, deployment, or
+lifecycle separation.
 
 ## Scope
 
