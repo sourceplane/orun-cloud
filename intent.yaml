@@ -8,9 +8,12 @@ metadata:
 
 execution:
   state:
-    # v2 plane (api-edge → state-worker DO coordination). The legacy standalone
-    # orun-backend (orun-api.sourceplane.ai) is decommissioned.
-    backendUrl: https://api-edge-prod.oruncloud.workers.dev
+    # This repo's CI dogfoods `orun run` against this backend over GitHub OIDC.
+    # Keep it on the backend that trusts this repo's CI identity. Moving it to the
+    # v2 plane (api-edge-prod) is blocked until the GitHub-OIDC CI trust for the
+    # sourceplane/orun-cloud repo is configured on api-edge's identity worker —
+    # without it, create-run resource-hides as 404. (Tracked: v2 CI cutover.)
+    backendUrl: https://orun-api.sourceplane.ai
 
 compositions:
   sources:
