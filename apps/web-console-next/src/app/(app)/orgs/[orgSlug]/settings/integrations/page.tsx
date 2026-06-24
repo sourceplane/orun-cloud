@@ -154,7 +154,7 @@ function Inner({ orgId, orgSlug }: { orgId: string; orgSlug: string }) {
             <EmptyState
               icon={GitBranch}
               title="No GitHub connection yet"
-              description="Connect a GitHub organization or account to start linking repositories to projects."
+              description="Connect a GitHub organization or account to start linking repositories to repos."
               primaryAction={{ label: "Connect GitHub", onClick: () => void connect() }}
             />
           ) : (

@@ -37,7 +37,7 @@ export function BottomTabs() {
   if (!orgSlug) return null;
 
   const tabs: Tab[] = [
-    { href: `/orgs/${orgSlug}/projects`, label: "Projects", icon: FolderKanban },
+    { href: `/orgs/${orgSlug}/projects`, label: "Repos", icon: FolderKanban },
     { href: `/orgs/${orgSlug}/usage`, label: "Usage", icon: Gauge },
     { href: `/orgs/${orgSlug}/settings`, label: "Settings", icon: Settings },
   ];

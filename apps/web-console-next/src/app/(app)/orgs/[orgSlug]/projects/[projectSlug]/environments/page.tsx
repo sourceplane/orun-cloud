@@ -102,9 +102,9 @@ function Inner({ orgId, orgSlug, projectSlug }: { orgId: string; orgSlug: string
   if (!project) {
     return (
       <EmptyState
-        title="Project not found"
-        description={`No project matches slug “${projectSlug}”.`}
-        primaryAction={{ label: "Back to projects", href: `/orgs/${orgSlug}/projects` }}
+        title="Repo not found"
+        description={`No repo matches slug “${projectSlug}”.`}
+        primaryAction={{ label: "Back to repos", href: `/orgs/${orgSlug}/projects` }}
       />
     );
   }

@@ -50,7 +50,7 @@ export function SourcePicker({
         onClick={() => onChange({ kind: "scratch" })}
         icon={FilePlus2}
         title="Start from scratch"
-        description="An empty organization — add projects and environments yourself."
+        description="An empty organization — add repos and environments yourself."
       />
 
       <div>

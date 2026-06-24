@@ -72,21 +72,21 @@ function Inner({ orgId, orgSlug }: { orgId: string; orgSlug: string }) {
     <div className="space-y-5">
       <header className="flex items-end justify-between gap-4">
         <div>
-          <h1 className="text-xl font-semibold tracking-tight">Projects</h1>
-          <p className="text-sm text-muted-foreground">Project containers for environments and configuration.</p>
+          <h1 className="text-xl font-semibold tracking-tight">Repos</h1>
+          <p className="text-sm text-muted-foreground">Each repo is a project: its environments and configuration.</p>
         </div>
         <Dialog open={open} onOpenChange={setOpen}>
           <DialogTrigger asChild>
             <Button>
               <Plus className="h-4 w-4 mr-1.5" />
-              New project
+              New repo
             </Button>
           </DialogTrigger>
           <DialogContent>
             <DialogHeader>
-              <DialogTitle>Create project</DialogTitle>
+              <DialogTitle>Create repo</DialogTitle>
               <DialogDescription>
-                A project groups your environments and configuration.
+                A repo groups your environments and configuration.
               </DialogDescription>
             </DialogHeader>
             <ZodForm
@@ -110,7 +110,7 @@ function Inner({ orgId, orgSlug }: { orgId: string; orgSlug: string }) {
                   else toast({ kind: "error", title: "Create failed", description: r.error.message });
                   return;
                 }
-                toast({ kind: "success", title: "Project created" });
+                toast({ kind: "success", title: "Repo created" });
                 setOpen(false);
                 projects.reload();
               }}
@@ -148,9 +148,9 @@ function Inner({ orgId, orgSlug }: { orgId: string; orgSlug: string }) {
       ) : items.length === 0 ? (
         <EmptyState
           icon={FolderKanban}
-          title="No projects yet"
-          description="Group your environments and configuration by creating your first project."
-          primaryAction={{ label: "New project", onClick: () => setOpen(true) }}
+          title="No repos yet"
+          description="Group your environments and configuration by creating your first repo."
+          primaryAction={{ label: "New repo", onClick: () => setOpen(true) }}
         />
       ) : (
         <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -158,7 +158,7 @@ function Inner({ orgId, orgSlug }: { orgId: string; orgSlug: string }) {
             <div key={p.id} className="relative">
               <div className="absolute right-3 top-3 z-10">
                 <ArchiveMenu
-                  resourceLabel="project"
+                  resourceLabel="repo"
                   name={p.name}
                   onConfirm={() => archive(p)}
                 />

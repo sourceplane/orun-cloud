@@ -435,11 +435,11 @@ function CatalogIndex({ orgId, orgSlug }: { orgId: string; orgSlug: string }) {
 
         <div className="flex flex-wrap items-center gap-2">
           <Select value={project} onValueChange={setProject}>
-            <SelectTrigger className="h-8 w-[170px] text-xs" aria-label="Project">
-              <SelectValue placeholder="Project" />
+            <SelectTrigger className="h-8 w-[170px] text-xs" aria-label="Repo">
+              <SelectValue placeholder="Repo" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">All projects</SelectItem>
+              <SelectItem value="all">All repos</SelectItem>
               {(projects.data ?? []).map((p) => (
                 <SelectItem key={p.id} value={p.id}>
                   {p.name ?? p.slug}

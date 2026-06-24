@@ -15,7 +15,7 @@ export const PRODUCT_INITIAL = PRODUCT_NAME.charAt(0).toUpperCase();
 
 /** Marketing-facing product description (document metadata). */
 export const PRODUCT_DESCRIPTION =
-  "Next-gen control plane for your projects, environments, and entitlements.";
+  "Next-gen control plane for your repos, environments, and entitlements.";
 
 /** The Cloudflare account's workers.dev subdomain serving this instance. */
 export const WORKERS_DEV_SUBDOMAIN = "oruncloud";

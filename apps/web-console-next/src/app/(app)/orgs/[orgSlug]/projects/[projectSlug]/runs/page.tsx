@@ -178,7 +178,7 @@ function Inner({ orgId, orgSlug, projectSlug }: { orgId: string; orgSlug: string
           </CardHeader>
         </Card>
       ) : !project ? (
-        <EmptyState icon={Play} title="Project not found" description={`No project "${projectSlug}" in this organization.`} />
+        <EmptyState icon={Play} title="Repo not found" description={`No repo "${projectSlug}" in this organization.`} />
       ) : error ? (
         <Card>
           <CardHeader>

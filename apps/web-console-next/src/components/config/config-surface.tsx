@@ -308,7 +308,7 @@ function FlagsTab({ scope, scopeKey }: { scope: ConfigScope; scopeKey: string })
         <EmptyState
           icon={Flag}
           title="No feature flags yet"
-          description="Gate features per organization, project, or environment — flip them without a deploy."
+          description="Gate features per organization, repo, or environment — flip them without a deploy."
           primaryAction={{ label: "New flag", onClick: () => setCreateOpen(true) }}
         />
       ) : (

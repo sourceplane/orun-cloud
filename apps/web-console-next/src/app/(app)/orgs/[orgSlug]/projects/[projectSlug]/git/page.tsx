@@ -161,7 +161,7 @@ function Inner({ orgId, orgSlug, projectSlug }: { orgId: string; orgSlug: string
         <EmptyState
           icon={Github}
           title="No GitHub connection"
-          description="Connect GitHub for this organization first — then link repositories to projects here."
+          description="Connect GitHub for this organization first — then link repositories to repos here."
           primaryAction={{
             label: "Open Integrations settings",
             href: `/orgs/${orgSlug}/settings/integrations`,
@@ -171,7 +171,7 @@ function Inner({ orgId, orgSlug, projectSlug }: { orgId: string; orgSlug: string
         <EmptyState
           icon={GitBranch}
           title="No linked repositories"
-          description="Link a repository to start receiving project-scoped pushes and pull requests."
+          description="Link a repository to start receiving repo-scoped pushes and pull requests."
           primaryAction={{ label: "Link repository", onClick: () => setPickerOpen(true) }}
         />
       ) : (
@@ -230,7 +230,7 @@ function Inner({ orgId, orgSlug, projectSlug }: { orgId: string; orgSlug: string
           if (!open) setUnlinkTarget(null);
         }}
         title="Unlink repository?"
-        description="Project-scoped events for this repository stop immediately. The repository itself is untouched on GitHub."
+        description="Repo-scoped events for this repository stop immediately. The repository itself is untouched on GitHub."
         resourceName={unlinkTarget?.repoFullName}
         confirmLabel="Unlink"
         onConfirm={async () => {

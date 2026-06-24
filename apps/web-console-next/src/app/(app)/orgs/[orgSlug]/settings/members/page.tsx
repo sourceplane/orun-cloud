@@ -49,7 +49,7 @@ function Inner({ orgId }: { orgId: string }) {
         open={pendingRemove !== null}
         onOpenChange={(open) => !open && setPendingRemove(null)}
         title="Remove member"
-        description="They immediately lose access to this organization and all of its projects. You can re-invite them later."
+        description="They immediately lose access to this organization and all of its repos. You can re-invite them later."
         resourceName={pendingRemove?.subjectId}
         confirmLabel="Remove member"
         onConfirm={() => (pendingRemove ? removeMember(pendingRemove.id) : undefined)}

@@ -107,7 +107,7 @@ export default function OrgsPage() {
         <EmptyState
           icon={Building2}
           title="No organizations yet"
-          description="Create your first organization to start provisioning projects and environments."
+          description="Create your first organization to start provisioning repos and environments."
           primaryAction={{ label: "Create your organization", href: "/onboarding" }}
         />
       ) : (

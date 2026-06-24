@@ -57,7 +57,7 @@ function Inner({ org }: { org: { id: string; name: string; slug: string } }) {
       <SettingsCard
         tone="danger"
         title="Delete Organization"
-        description="Permanently remove this organization along with its projects, members, and data. This action cannot be undone."
+        description="Permanently remove this organization along with its repos, members, and data. This action cannot be undone."
         footerHint="Org deletion is handled by support to protect against accidental, irreversible data loss."
         footerAction={
           <Button variant="outline" size="sm" disabled>

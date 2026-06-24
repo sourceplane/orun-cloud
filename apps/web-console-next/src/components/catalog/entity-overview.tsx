@@ -20,8 +20,8 @@ export function EntityOverview({
       <dl className="grid grid-cols-1 gap-x-8 gap-y-2 text-sm sm:grid-cols-2">
         <Pair label="Owner" value={e.owner ?? "—"} />
         <Pair label="Lifecycle" value={e.lifecycle ?? "—"} />
-        <Pair label="Project" value={projectLabel(e.sourceProjectId)} />
-        <Pair label="Environment" value={e.sourceEnvironment ?? "project-wide"} />
+        <Pair label="Repo" value={projectLabel(e.sourceProjectId)} />
+        <Pair label="Environment" value={e.sourceEnvironment ?? "repo-wide"} />
         <Pair label="Commit" value={e.sourceCommit ? e.sourceCommit.slice(0, 12) : "—"} mono />
         <Pair label="Snapshot" value={e.headDigest.slice(0, 19)} mono />
       </dl>
