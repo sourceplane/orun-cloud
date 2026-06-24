@@ -6,9 +6,12 @@
 // which alone holds the App key. state-worker never calls GitHub and never sees
 // the App credential.
 //
-// Decoupled by design: it consumes the same run lifecycle EVENTS the sweep and
-// the run-job handler already emit (via emitRunLifecycle), so there is exactly
-// one funnel and the hot path is never coupled to an outbound HTTP call.
+// Decoupled by design: it consumes run lifecycle EVENTS
+// (state.run.completed / state.run.failed) from the event stream, so the hot
+// path is never coupled to an outbound HTTP call. NOTE (v2 cutover): the v2
+// coordination path emits these run-terminal signals to the DO event log, not
+// to this Postgres event stream — wiring that into the integrations drain is a
+// separate BM7 follow-up. (This driver is dormant until integrations-worker.)
 //
 // At-most-once posting: a Check Run create is NOT idempotent on GitHub's side,
 // so the cursor advances PER EVENT after the attempt — a crash resumes strictly

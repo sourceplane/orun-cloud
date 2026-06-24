@@ -5,13 +5,10 @@
 // mirroring links.test.ts.
 
 import {
-  handleClaimJob,
   handleCreateRun,
   handleGetRun,
-  handleHeartbeatJob,
   handleListRuns,
   handleRunnableJobs,
-  handleUpdateJob,
 } from "@state-worker/handlers/runs";
 import type { Env } from "@state-worker/env";
 import type { SqlExecutor, SqlExecutorResult, SqlRow } from "@saas/db/hyperdrive";
@@ -26,7 +23,6 @@ const ULID = "01J0000000000000000000ABCD";
 const PLAN = "sha256:" + "a".repeat(64);
 const ACTOR = { subjectId: "usr_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", subjectType: "user" };
 const NOW = new Date("2026-06-14T10:00:00.000Z");
-const LEASE_AT = new Date("2026-06-14T10:01:00.000Z");
 
 function membershipFetcher(): Fetcher {
   return {
@@ -338,103 +334,6 @@ describe("GET …/state/runs/{runId} + list", () => {
     expect(body.data.runs).toHaveLength(1);
     expect(body.data.nextCursor).toBeNull();
     expect(body.meta.cursor).toBeNull();
-  });
-});
-
-describe("claim / heartbeat / update", () => {
-  it("claim returns {claimed:true, leaseExpiresAt, attempt, leaseSeconds, heartbeatIntervalSeconds}", async () => {
-    const { executor } = fakeExecutor((text) => {
-      if (text.includes("run_ulid")) return [runRow({ status: "running" })];
-      if (text.includes("SET status = 'claimed'")) {
-        return [jobRow({ status: "claimed", runner_id: "host-abc", lease_expires_at: LEASE_AT.toISOString(), attempt: 1 })];
-      }
-      if (text.includes("COUNT(*) AS total")) return [{ total: 1, terminal: 0, active: 1, failed: 0 }];
-      if (text.includes("UPDATE state.runs") && text.includes("SET status = $4")) return [runRow({ status: "running" })];
-      return [{ _event: {} }];
-    });
-    const req = new Request("https://state.test/.../claim", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ runnerId: "host-abc" }),
-    });
-    const res = await handleClaimJob(req, createEnv(), "req_1", ACTOR, asUuid(ORG), asUuid(PROJECT), ULID, "build", { executor });
-    expect(res.status).toBe(200);
-    const body = (await res.json()) as { data: { claim: Record<string, unknown> } };
-    expect(body.data.claim.claimed).toBe(true);
-    expect(body.data.claim.leaseExpiresAt).toBe(LEASE_AT.toISOString());
-    expect(body.data.claim.attempt).toBe(1);
-    expect(body.data.claim.leaseSeconds).toBe(60);
-    expect(body.data.claim.heartbeatIntervalSeconds).toBe(20);
-  });
-
-  it("claim returns {claimed:false, reason:'already_claimed'} when the row is held", async () => {
-    const { executor } = fakeExecutor((text) => {
-      if (text.includes("run_ulid")) return [runRow({ status: "running" })];
-      if (text.includes("SET status = 'claimed'")) return []; // lost
-      if ((text.includes("SELECT * FROM state.run_jobs") && text.includes("AND job_id = $4"))) {
-        return [jobRow({ status: "claimed", runner_id: "other" })];
-      }
-      return [];
-    });
-    const req = new Request("https://state.test/.../claim", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ runnerId: "host-abc" }),
-    });
-    const res = await handleClaimJob(req, createEnv(), "req_1", ACTOR, asUuid(ORG), asUuid(PROJECT), ULID, "build", { executor });
-    expect(res.status).toBe(200);
-    const body = (await res.json()) as { data: { claim: { claimed: boolean; reason: string } } };
-    expect(body.data.claim.claimed).toBe(false);
-    expect(body.data.claim.reason).toBe("already_claimed");
-  });
-
-  it("heartbeat returns {leaseExpiresAt,...}; 409 lease_lost when lapsed", async () => {
-    const ok = fakeExecutor((text) => {
-      if (text.includes("run_ulid")) return [runRow({ status: "running" })];
-      if (text.includes("status = CASE WHEN status = 'claimed'")) {
-        return [jobRow({ status: "running", runner_id: "host-abc", lease_expires_at: LEASE_AT.toISOString() })];
-      }
-      return [];
-    });
-    const req = (b: Record<string, unknown>) =>
-      new Request("https://state.test/.../heartbeat", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(b) });
-    const res = await handleHeartbeatJob(req({ runnerId: "host-abc" }), createEnv(), "req_1", ACTOR, asUuid(ORG), asUuid(PROJECT), ULID, "build", { executor: ok.executor });
-    expect(res.status).toBe(200);
-    const body = (await res.json()) as { data: { leaseExpiresAt: string; heartbeatIntervalSeconds: number } };
-    expect(body.data.leaseExpiresAt).toBe(LEASE_AT.toISOString());
-    expect(body.data.heartbeatIntervalSeconds).toBe(20);
-
-    const lost = fakeExecutor((text) => {
-      if (text.includes("run_ulid")) return [runRow({ status: "running" })];
-      if (text.includes("status = CASE WHEN status = 'claimed'")) return []; // lapsed
-      return [];
-    });
-    const res2 = await handleHeartbeatJob(req({ runnerId: "host-abc" }), createEnv(), "req_1", ACTOR, asUuid(ORG), asUuid(PROJECT), ULID, "build", { executor: lost.executor });
-    expect(res2.status).toBe(409);
-    const body2 = (await res2.json()) as { error: { code: string } };
-    expect(body2.error.code).toBe("lease_lost");
-  });
-
-  it("update returns 200 {} on a fresh transition", async () => {
-    const { executor } = fakeExecutor((text) => {
-      if (text.includes("run_ulid")) return [runRow({ status: "running" })];
-      if ((text.includes("SET status = $6") && text.includes("error_text = $7"))) {
-        return [jobRow({ status: "succeeded", runner_id: "host-abc" })];
-      }
-      if (text.includes("COUNT(*) AS total")) return [{ total: 1, terminal: 1, active: 0, failed: 0 }];
-      if (text.includes("UPDATE state.runs") && text.includes("SET status = $4")) return [runRow({ status: "succeeded" })];
-      return [{ _event: {}, _audit: {} }];
-    });
-    const req = new Request("https://state.test/.../update", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ runnerId: "host-abc", status: "succeeded" }),
-    });
-    const res = await handleUpdateJob(req, createEnv(), "req_1", ACTOR, asUuid(ORG), asUuid(PROJECT), ULID, "build", { executor });
-    expect(res.status).toBe(200);
-    const body = (await res.json()) as { data: Record<string, unknown>; meta: { requestId: string } };
-    expect(body.data).toEqual({});
-    expect(body.meta.requestId).toBe("req_1");
   });
 });
 
