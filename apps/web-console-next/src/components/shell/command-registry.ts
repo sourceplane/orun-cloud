@@ -114,7 +114,7 @@ export function buildBaseCommands(ctx: CommandContext): CommandDescriptor[] {
   if (orgBase) {
     const settingsBase = `${orgBase}/settings`;
     out.push(
-      navItem("nav.projects", "Projects", `${orgBase}/projects`, "FolderKanban", ["project"]),
+      navItem("nav.projects", "Repos", `${orgBase}/projects`, "FolderKanban", ["repo", "project"]),
       navItem("nav.usage", "Usage & quota", `${orgBase}/usage`, "Gauge", [
         "usage",
         "quota",
@@ -187,7 +187,7 @@ export function buildBaseCommands(ctx: CommandContext): CommandDescriptor[] {
   });
   if (orgBase) {
     out.push(
-      navItem("create.project", "Create project", `${orgBase}/projects?new=1`, "PlusCircle", ["new", "project"], "Create"),
+      navItem("create.project", "Create repo", `${orgBase}/projects?new=1`, "PlusCircle", ["new", "repo", "project"], "Create"),
       navItem("create.invitation", "Create invitation", `${orgBase}/settings/invitations?new=1`, "UserPlus", ["invite", "new"], "Create"),
       navItem("create.api-key", "Create API key", `${orgBase}/settings/api-keys?new=1`, "KeyRound", ["key", "new"], "Create"),
     );

@@ -142,7 +142,7 @@ function Inner({
         <EmptyState
           icon={Terminal}
           title="No linked workspaces"
-          description="Run orun cloud link in a clone of this project's repository to connect it."
+          description="Run orun auth login in a clone of this repo to connect it."
         />
       ) : (
         <Card>

@@ -104,13 +104,13 @@ export function planChangeAction(opts: {
 export function planFeatureLines(code: string): string[] {
   switch (code) {
     case "free":
-      return ["Up to 3 projects", "Up to 5 members", "GitHub integration", "Community support"];
+      return ["Up to 3 repos", "Up to 5 members", "GitHub integration", "Community support"];
     case "pro":
-      return ["Up to 25 projects", "Up to 20 members", "GitHub integration", "Custom domains", "Priority support"];
+      return ["Up to 25 repos", "Up to 20 members", "GitHub integration", "Custom domains", "Priority support"];
     case "business":
-      return ["Up to 100 projects", "Up to 50 members", "Multiple organizations", "Custom domains"];
+      return ["Up to 100 repos", "Up to 50 members", "Multiple organizations", "Custom domains"];
     case "enterprise":
-      return ["Unlimited projects & members", "SSO & advanced security", "Dedicated support"];
+      return ["Unlimited repos & members", "SSO & advanced security", "Dedicated support"];
     default:
       return [];
   }

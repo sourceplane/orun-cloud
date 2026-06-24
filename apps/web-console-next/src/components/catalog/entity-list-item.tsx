@@ -105,7 +105,7 @@ export function EntityListItem({
         <span className="flex flex-wrap items-center gap-x-2.5 gap-y-1 text-[11px] text-muted-foreground">
           <span className="truncate">{projectLabel(e.sourceProjectId)}</span>
           <Dot />
-          <span>{e.sourceEnvironment ? `env: ${e.sourceEnvironment}` : "project-wide"}</span>
+          <span>{e.sourceEnvironment ? `env: ${e.sourceEnvironment}` : "repo-wide"}</span>
           <Dot />
           <span>{e.owner ? `owner: ${e.owner}` : "unowned"}</span>
           {e.lifecycle ? (

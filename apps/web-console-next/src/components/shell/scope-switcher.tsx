@@ -110,12 +110,12 @@ export function ScopeSwitcher() {
           <Slash className="mx-0.5 h-3 w-3 text-muted-foreground/60 md:hidden" />
           <Crumb
             icon={<FolderKanban className="h-3.5 w-3.5" />}
-            label={currentProject?.name ?? projectSlug ?? "Select project"}
+            label={currentProject?.name ?? projectSlug ?? "Select repo"}
             muted={!projectSlug}
           >
             {projects?.length ? (
               <>
-                <DropdownMenuLabel>Projects</DropdownMenuLabel>
+                <DropdownMenuLabel>Repos</DropdownMenuLabel>
                 {projects.map((p) => (
                   <DropdownMenuItem
                     key={p.id}

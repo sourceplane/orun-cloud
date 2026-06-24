@@ -202,7 +202,7 @@ export function CreateOrgFlow({
         </h1>
         <p className="mt-1 text-sm text-muted-foreground">
           {mode === "parent"
-            ? "An organization is your tenant — it owns projects, members, and billing. You need one to use the console."
+            ? "An organization is your tenant — it owns repos, members, and billing. You need one to use the console."
             : "Another tenant under your account — its billing rolls up to your parent organization."}
         </p>
       </header>
@@ -484,7 +484,7 @@ function ReviewStep({
   } else if (isGithub) {
     nextSteps.push("You're taken to Integrations to install the GitHub App.");
   } else {
-    nextSteps.push("You land on your new dashboard, ready to create projects.");
+    nextSteps.push("You land on your new dashboard, ready to connect repos.");
   }
 
   return (

@@ -111,7 +111,7 @@ function Inner({ orgId, projectSlug }: { orgId: string; projectSlug: string }) {
     return <Skeleton className="h-64 w-full" />;
   }
   if (projectsList.data && !project) {
-    return <EmptyState icon={AlertTriangle} title="Project not found" description="No project matches this URL." />;
+    return <EmptyState icon={AlertTriangle} title="Repo not found" description="No repo matches this URL." />;
   }
   if (report.error) {
     // The GC report is best-effort (needs the R2 binding + DB); a dormant env 503s.

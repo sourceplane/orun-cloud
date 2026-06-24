@@ -55,7 +55,7 @@ export function buildNavSections(scope: NavScope): NavSection[] {
       id: "org",
       label: orgSlug ? `Org · ${orgSlug}` : "Organization",
       links: [
-        { href: `${orgBase}/projects`, label: "Projects", icon: "FolderKanban" },
+        { href: `${orgBase}/projects`, label: "Repos", icon: "FolderKanban" },
         { href: `${orgBase}/catalog`, label: "Catalog", icon: "Boxes" },
         { href: `${orgBase}/usage`, label: "Usage & quota", icon: "Gauge" },
         // Opens the dedicated settings panel — flagged so the renderer shows a ›.
@@ -67,7 +67,7 @@ export function buildNavSections(scope: NavScope): NavSection[] {
   if (projectBase) {
     sections.push({
       id: "project",
-      label: projectSlug ? `Project · ${projectSlug}` : "Project",
+      label: projectSlug ? `Repo · ${projectSlug}` : "Repo",
       links: [
         { href: `${projectBase}/runs`, label: "Runs", icon: "Play" },
         { href: `${projectBase}/environments`, label: "Environments", icon: "Boxes" },

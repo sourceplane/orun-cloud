@@ -216,7 +216,7 @@ function Inner({
               value={new Date(endpoint.createdAt).toLocaleString()}
             />
             <Field
-              label="Project"
+              label="Repo"
               value={endpoint.projectId ?? <span className="text-muted-foreground">org-scoped</span>}
             />
             {endpoint.disabledAt && (

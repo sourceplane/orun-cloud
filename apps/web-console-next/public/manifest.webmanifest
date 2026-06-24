@@ -1,7 +1,7 @@
 {
   "name": "Orun Console",
   "short_name": "Orun",
-  "description": "Control plane for your projects, environments, and entitlements.",
+  "description": "Control plane for your repos, environments, and entitlements.",
   "start_url": "/orgs",
   "scope": "/",
   "display": "standalone",

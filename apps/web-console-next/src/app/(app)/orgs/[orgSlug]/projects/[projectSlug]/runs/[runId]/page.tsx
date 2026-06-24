@@ -129,7 +129,7 @@ function Inner({
     return (
       <div className="space-y-5">
         {backLink}
-        <EmptyState icon={Play} title="Run not found" description={`No project "${projectSlug}" in this organization.`} />
+        <EmptyState icon={Play} title="Run not found" description={`No repo "${projectSlug}" in this organization.`} />
       </div>
     );
   }

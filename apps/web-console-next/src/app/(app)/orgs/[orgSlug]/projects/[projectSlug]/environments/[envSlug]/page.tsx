@@ -72,12 +72,12 @@ function Inner({
         </CardHeader>
         <CardContent>
           <dl className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
-            <Pair k="Project" v={project.name} />
-            <Pair k="Project slug" v={project.slug} />
+            <Pair k="Repo" v={project.name} />
+            <Pair k="Repo slug" v={project.slug} />
             <Pair k="Environment" v={env.name} />
             <Pair k="Environment slug" v={env.slug} />
             <Pair k="Environment ID" v={env.id} mono />
-            <Pair k="Project ID" v={env.projectId} mono />
+            <Pair k="Repo ID" v={env.projectId} mono />
             <Pair k="Created" v={new Date(env.createdAt).toLocaleString()} />
             <Pair k="Updated" v={new Date(env.updatedAt).toLocaleString()} />
           </dl>
