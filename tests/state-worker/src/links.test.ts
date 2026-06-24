@@ -196,6 +196,114 @@ describe("POST /v1/organizations/{orgId}/cli/links", () => {
     expect(queries.some((q) => q.text.includes("events.event_log"))).toBe(true);
   });
 
+  // UO1 (saas-unified-onboarding): link-on-login is safe to drive automatically.
+  // The CLI calls resolve→create right after `orun auth login`, and again
+  // lazily on first `orun run`, so a second create for the same (org, remote)
+  // must be idempotent rather than a 409 the client has to special-case.
+  it("is idempotent: re-linking an already-linked (org, remote) returns the existing link (UO1)", async () => {
+    const { executor } = fakeExecutor((text) => {
+      if (text.includes("INSERT INTO state.workspace_links")) {
+        // Unique violation on the active (org_id, remote_url) index.
+        throw { code: "23505" };
+      }
+      if (text.includes("FROM state.workspace_links")) {
+        // listActiveWorkspaceLinksForRemote → the pre-existing active link.
+        return [workspaceLinkRow()];
+      }
+      return [{ _event: {}, _audit: {} }];
+    });
+    const env = createEnv({
+      MEMBERSHIP_WORKER: membershipFetcher({ allow: true, orgs: [ORG_ENTRY] }),
+      POLICY_WORKER: policyFetcher(true),
+      PROJECTS_WORKER: projectsFetcher({
+        resolveSlug: { id: PROJECT_PUBLIC, slug: "platform", name: "platform", status: "active" },
+      }),
+    });
+    const res = await handleCreateWorkspaceLink(
+      // No projectSlug — the lazy auto-link path supplies none.
+      createRequest({ remoteUrl: "git@github.com:acme/platform.git" }),
+      env,
+      "req_dup",
+      ACTOR,
+      asUuid(ORG_UUID),
+      { executor },
+    );
+    // Idempotent: the existing link comes back (201), not a 409.
+    expect(res.status).toBe(201);
+    const body = (await res.json()) as { data: { link: { projectId: string; remoteUrl: string } } };
+    expect(body.data.link.projectId).toBe(PROJECT_PUBLIC);
+    expect(body.data.link.remoteUrl).toBe("github.com/acme/platform");
+  });
+
+  // UO1: "a project is a repo" — with no projectSlug the project is named after
+  // the repo, and every spelling of the same remote (https/.git, ssh, bare)
+  // normalizes to one identity so the CLI links the same project everywhere.
+  it("names the project after the repo and normalizes remote spellings identically (UO1)", async () => {
+    const forms = [
+      "https://github.com/Acme/My-App.git",
+      "git@github.com:Acme/My-App.git",
+      "https://github.com/Acme/My-App",
+    ];
+    for (const remoteUrl of forms) {
+      let resolvedSlug: string | null = null;
+      let createdSlug: string | null = null;
+      const projects = {
+        fetch: (input: RequestInfo | URL, init?: RequestInit) => {
+          const url = new URL(String(input));
+          if (url.pathname === "/v1/internal/projects/resolve") {
+            resolvedSlug = url.searchParams.get("slug");
+            // Miss → the handler creates the project on demand.
+            return Promise.resolve(Response.json({ data: { project: null } }));
+          }
+          if (url.pathname.endsWith("/projects") && init?.method === "POST") {
+            const parsed = JSON.parse(String(init?.body ?? "{}")) as { slug?: string };
+            createdSlug = parsed.slug ?? null;
+            return Promise.resolve(
+              Response.json(
+                { data: { project: { id: PROJECT_PUBLIC, slug: createdSlug ?? "my-app", name: "My-App", status: "active" } } },
+                { status: 201 },
+              ),
+            );
+          }
+          return Promise.resolve(new Response(null, { status: 404 }));
+        },
+        connect() {
+          throw new Error("not implemented");
+        },
+      } as unknown as Fetcher;
+
+      const { executor } = fakeExecutor((text) => {
+        if (text.includes("INSERT INTO state.workspace_links")) {
+          return [workspaceLinkRow({ remote_url: "github.com/acme/my-app" })];
+        }
+        return [{ _event: {}, _audit: {} }];
+      });
+      const res = await handleCreateWorkspaceLink(
+        createRequest({ remoteUrl }), // no projectSlug → derive from the repo
+        createEnv({
+          MEMBERSHIP_WORKER: membershipFetcher({ allow: true, orgs: [ORG_ENTRY] }),
+          POLICY_WORKER: policyFetcher(true),
+          PROJECTS_WORKER: projects,
+        }),
+        "req_form",
+        ACTOR,
+        asUuid(ORG_UUID),
+        { executor },
+      );
+      // Per-form context: surface which spelling failed via the row label.
+      expect({ remoteUrl, status: res.status }).toEqual({ remoteUrl, status: 201 });
+      const body = (await res.json()) as { data: { link: { remoteUrl: string } } };
+      // All spellings collapse to one canonical remote identity…
+      expect({ remoteUrl, normalized: body.data.link.remoteUrl }).toEqual({
+        remoteUrl,
+        normalized: "github.com/acme/my-app",
+      });
+      // …and the project is named after the repo (no slug supplied by the CLI).
+      expect({ remoteUrl, resolvedSlug }).toEqual({ remoteUrl, resolvedSlug: "my-app" });
+      expect({ remoteUrl, createdSlug }).toEqual({ remoteUrl, createdSlug: "my-app" });
+    }
+  });
+
   it("persists and surfaces rename-stable provider identity (OV2.1)", async () => {
     const { executor, queries } = fakeExecutor((text) => {
       if (text.includes("INSERT INTO state.workspace_links")) {
