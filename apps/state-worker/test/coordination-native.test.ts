@@ -410,7 +410,7 @@ describe("native v2 coordination wire over the real DO", () => {
     expect(f1.jobs).toEqual(["b"]);
   });
 
-  it("cancel terminates the run", async () => {
+  it("cancel terminates the run and emits a run.canceled signal", async () => {
     const run = "native-3";
     await initRun(run, LINEAR);
     await handleNativeClaim(post({ runnerId: "r1" }), env, "req", ACTOR, ORG, PROJ, run, "a");
@@ -419,6 +419,13 @@ describe("native v2 coordination wire over the real DO", () => {
     // A canceled run exposes no runnable frontier.
     const f = (await (await handleNativeFrontier(env, "req", ACTOR, ORG, PROJ, run)).json()) as { jobs: string[] };
     expect(f.jobs).toEqual([]);
+    // The run-terminal signal is appended (run-level, actor-stamped).
+    const logRes = await handleNativeLog(new Request("https://x/log?from=0"), env, "req", ACTOR, ORG, PROJ, run);
+    const { events } = (await logRes.json()) as { events: Array<{ kind: string; jobId?: string; actor: { id: string; type: string } }> };
+    const canceled = events.find((e) => e.kind === "state.run.canceled");
+    expect(canceled).toBeDefined();
+    expect(canceled!.jobId).toBeUndefined();
+    expect(canceled!.actor).toEqual({ id: "wf-runner-1", type: "workflow" });
   });
 
   it("hides cross-tenant and non-DO-backed runs as 404 (after deny-by-default authz)", async () => {

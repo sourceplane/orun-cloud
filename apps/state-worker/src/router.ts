@@ -7,15 +7,11 @@ import {
   handleUnlinkWorkspaceLink,
 } from "./handlers/links.js";
 import {
-  handleCancelRun,
-  handleClaimJob,
   handleCreateRun,
   handleGetRun,
-  handleHeartbeatJob,
   handleListJobs,
   handleListRuns,
   handleRunnableJobs,
-  handleUpdateJob,
 } from "./handlers/runs.js";
 import { handleAppendLog, handleReadLog } from "./handlers/logs.js";
 import {
@@ -111,10 +107,6 @@ const RUNS_RE = new RegExp(`^${STATE_BASE}/runs$`);
 const RUN_RE = new RegExp(`^${STATE_BASE}/runs/([^/]+)$`);
 const RUN_JOBS_RE = new RegExp(`^${STATE_BASE}/runs/([^/]+)/jobs$`);
 const RUN_RUNNABLE_RE = new RegExp(`^${STATE_BASE}/runs/([^/]+)/runnable$`);
-const RUN_CANCEL_RE = new RegExp(`^${STATE_BASE}/runs/([^/]+)/cancel$`);
-const RUN_JOB_CLAIM_RE = new RegExp(`^${STATE_BASE}/runs/([^/]+)/jobs/([^/]+)/claim$`);
-const RUN_JOB_HEARTBEAT_RE = new RegExp(`^${STATE_BASE}/runs/([^/]+)/jobs/([^/]+)/heartbeat$`);
-const RUN_JOB_UPDATE_RE = new RegExp(`^${STATE_BASE}/runs/([^/]+)/jobs/([^/]+)/update$`);
 const RUN_LOGS_RE = new RegExp(`^${STATE_BASE}/runs/([^/]+)/logs/([^/]+)$`);
 
 // Native v2 coordination wire (coordination-api.md §2/§3) — colon-verbs + the
@@ -330,33 +322,6 @@ async function routeRun(
     return handleNativeFrontier(env, requestId, actor, scope.orgId, scope.projectId, m[3]!);
   }
 
-  // POST …/runs/{runId}/jobs/{jobId}/claim
-  m = pathname.match(RUN_JOB_CLAIM_RE);
-  if (m) {
-    const scope = parseScope(m[1]!, m[2]!);
-    if (!scope || !isRunUlid(m[3]!)) return notFound(requestId, pathname);
-    if (request.method !== "POST") return methodNotAllowed(requestId);
-    return handleClaimJob(request, env, requestId, actor, scope.orgId, scope.projectId, m[3]!, m[4]!, undefined, ctx);
-  }
-
-  // POST …/runs/{runId}/jobs/{jobId}/heartbeat
-  m = pathname.match(RUN_JOB_HEARTBEAT_RE);
-  if (m) {
-    const scope = parseScope(m[1]!, m[2]!);
-    if (!scope || !isRunUlid(m[3]!)) return notFound(requestId, pathname);
-    if (request.method !== "POST") return methodNotAllowed(requestId);
-    return handleHeartbeatJob(request, env, requestId, actor, scope.orgId, scope.projectId, m[3]!, m[4]!);
-  }
-
-  // POST …/runs/{runId}/jobs/{jobId}/update
-  m = pathname.match(RUN_JOB_UPDATE_RE);
-  if (m) {
-    const scope = parseScope(m[1]!, m[2]!);
-    if (!scope || !isRunUlid(m[3]!)) return notFound(requestId, pathname);
-    if (request.method !== "POST") return methodNotAllowed(requestId);
-    return handleUpdateJob(request, env, requestId, actor, scope.orgId, scope.projectId, m[3]!, m[4]!, undefined, ctx);
-  }
-
   // GET …/runs/{runId}/jobs
   m = pathname.match(RUN_JOBS_RE);
   if (m) {
@@ -373,15 +338,6 @@ async function routeRun(
     if (!scope || !isRunUlid(m[3]!)) return notFound(requestId, pathname);
     if (request.method !== "GET") return methodNotAllowed(requestId);
     return handleRunnableJobs(env, requestId, actor, scope.orgId, scope.projectId, m[3]!);
-  }
-
-  // POST …/runs/{runId}/cancel
-  m = pathname.match(RUN_CANCEL_RE);
-  if (m) {
-    const scope = parseScope(m[1]!, m[2]!);
-    if (!scope || !isRunUlid(m[3]!)) return notFound(requestId, pathname);
-    if (request.method !== "POST") return methodNotAllowed(requestId);
-    return handleCancelRun(env, requestId, actor, scope.orgId, scope.projectId, m[3]!, undefined, ctx);
   }
 
   // POST/GET …/runs/{runId}/logs/{jobId} (OP3 — §2.3).
