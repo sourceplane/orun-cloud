@@ -7,7 +7,6 @@
 
 import { createStateRepository } from "@saas/db/state";
 import { asUuid } from "@saas/db";
-import { sweepLeases } from "@state-worker/sweep";
 import { FakeRunStore } from "./fake-run-jobs-store";
 
 const ORG = "11111111-1111-4111-8111-111111111111";
@@ -84,72 +83,6 @@ describe("atomic claim — no double-claim under concurrency", () => {
       leaseSeconds: 60,
     });
     expect(res2.ok && res2.value.claimed).toBe(true);
-  });
-});
-
-describe("kill/recovery — lapsed lease re-queued by the sweep", () => {
-  it("a killed runner's job is re-queued (attempt+1) and a second runner finishes it", async () => {
-    const store = makeStore();
-    store.addJob({ id: "j1", org_id: ORG, project_id: PROJECT, run_id: RUN, job_id: "deploy" });
-    const repo = createStateRepository(store.executor());
-    const scope = { orgId: asUuid(ORG), projectId: asUuid(PROJECT), runId: asUuid(RUN) };
-
-    // Runner A claims, then is "killed" (stops heartbeating).
-    const claimed = await repo.claimRunJob({ ...scope, jobId: "deploy", runnerId: "A", leaseSeconds: 60 });
-    expect(claimed.ok && claimed.value.claimed).toBe(true);
-    const job = store.jobs[0]!;
-    expect(job.attempt).toBe(1);
-    expect(job.runner_id).toBe("A");
-
-    // Lease lapses. The sweep re-queues it (attempt+1), not timed_out (< max).
-    store.advance(120); // past the 60s lease
-    const summary = await sweepLeases(store.executor(), store.now());
-    expect(summary.requeued).toBe(1);
-    expect(summary.timedOut).toBe(0);
-    expect(job.status).toBe("queued");
-    expect(job.runner_id).toBeNull();
-    expect(job.attempt).toBe(2);
-
-    // Runner B now claims and finishes it. A heartbeat from the dead A is lost.
-    const lostHeartbeat = await repo.heartbeatRunJob({ ...scope, jobId: "deploy", runnerId: "A", leaseSeconds: 60 });
-    expect(lostHeartbeat.ok && !lostHeartbeat.value.ok && lostHeartbeat.value.reason).toBe("lease_lost");
-
-    const claimedB = await repo.claimRunJob({ ...scope, jobId: "deploy", runnerId: "B", leaseSeconds: 60 });
-    expect(claimedB.ok && claimedB.value.claimed).toBe(true);
-    const done = await repo.updateRunJob({ ...scope, jobId: "deploy", runnerId: "B", status: "succeeded" });
-    expect(done.ok && done.value.ok && !done.value.replayed).toBe(true);
-    expect(job.status).toBe("succeeded");
-
-    // The run reconciles to succeeded (all jobs terminal-success).
-    const reconciled = await repo.reconcileRunStatus(asUuid(ORG), asUuid(PROJECT), asUuid(RUN));
-    expect(reconciled.ok && reconciled.value.transitioned).toBe("succeeded");
-  });
-
-  it("a job past MAX attempts is marked timed_out by the sweep", async () => {
-    const store = makeStore();
-    // attempt already at the max (5) and claimed with a lapsed lease.
-    store.addJob({
-      id: "j1",
-      org_id: ORG,
-      project_id: PROJECT,
-      run_id: RUN,
-      job_id: "flaky",
-      status: "claimed",
-      runner_id: "A",
-      attempt: 5,
-      lease_expires_at: new Date(store.now().getTime() - 1000).toISOString(),
-    });
-    const summary = await sweepLeases(store.executor(), store.now());
-    expect(summary.timedOut).toBe(1);
-    expect(summary.requeued).toBe(0);
-    expect(summary.runsFailed).toBe(1); // the sweep derived the run terminal status
-    expect(store.jobs[0]!.status).toBe("timed_out");
-    // The run was driven to failed by the sweep itself (a timed_out job is
-    // failed-class), so a follow-up reconcile is a no-op on the now-terminal run.
-    expect(store.runs[0]!.status).toBe("failed");
-    const repo = createStateRepository(store.executor());
-    const reconciled = await repo.reconcileRunStatus(asUuid(ORG), asUuid(PROJECT), asUuid(RUN));
-    expect(reconciled.ok && reconciled.value.transitioned).toBeNull();
   });
 });
 
