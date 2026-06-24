@@ -8,7 +8,9 @@ metadata:
 
 execution:
   state:
-    backendUrl: https://orun-api.sourceplane.ai
+    # v2 plane (api-edge → state-worker DO coordination). The legacy standalone
+    # orun-backend (orun-api.sourceplane.ai) is decommissioned.
+    backendUrl: https://api-edge-prod.oruncloud.workers.dev
 
 compositions:
   sources:
