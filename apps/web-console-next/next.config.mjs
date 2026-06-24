@@ -39,6 +39,25 @@ const nextConfig = {
   env: {
     NEXT_PUBLIC_DEPLOY_ENV: process.env.NEXT_PUBLIC_DEPLOY_ENV ?? "",
   },
+  // Repo-vocabulary URL alias (UO5): a project is a repo, so `/repos/…` URLs
+  // resolve to the repo (project) pages. The rendered routes stay under
+  // `/projects/…` so internal links and the `/v1/.../projects/...` wire path are
+  // untouched; `/repos/…` 308-redirects onto them. Both the index and the
+  // per-repo subtree are covered.
+  async redirects() {
+    return [
+      {
+        source: "/orgs/:orgSlug/repos",
+        destination: "/orgs/:orgSlug/projects",
+        permanent: true,
+      },
+      {
+        source: "/orgs/:orgSlug/repos/:path*",
+        destination: "/orgs/:orgSlug/projects/:path*",
+        permanent: true,
+      },
+    ];
+  },
 };
 
 export default nextConfig;

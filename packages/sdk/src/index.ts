@@ -30,6 +30,12 @@ import { Transport, type ClientOptions } from "./transport.js";
 
 export class OrunCloud {
   readonly organizations: OrganizationsClient;
+  /**
+   * Repos resource client — the canonical name (a project is a git repo).
+   * Same surface as {@link projects}.
+   */
+  readonly repos: ProjectsClient;
+  /** @deprecated Use {@link repos}. Retained as an alias for one minor. */
   readonly projects: ProjectsClient;
   readonly environments: EnvironmentsClient;
   readonly memberships: MembershipsClient;
@@ -52,6 +58,8 @@ export class OrunCloud {
     this.transport = new Transport(options);
     this.organizations = new OrganizationsClient(this.transport);
     this.projects = new ProjectsClient(this.transport);
+    // `repos` is the canonical accessor; `projects` stays as a deprecated alias.
+    this.repos = this.projects;
     this.environments = new EnvironmentsClient(this.transport);
     this.memberships = new MembershipsClient(this.transport);
     this.apiKeys = new ApiKeysClient(this.transport);

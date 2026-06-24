@@ -68,6 +68,17 @@ describe("Transport — success path", () => {
     expect(calls[0]!.url).toBe("https://api.test/v1/organizations");
   });
 
+  it("exposes `repos` as a canonical alias of `projects` (UO5)", async () => {
+    const { fetch, calls } = captureFetch(
+      jsonResponse({ data: { projects: [] }, meta: { requestId: "r", cursor: null } }),
+    );
+    const client = new OrunCloud({ baseUrl: "https://api.test", fetch });
+    // Same client instance — `projects` is the deprecated alias.
+    expect(client.repos).toBe(client.projects);
+    await client.repos.list("org_1");
+    expect(calls[0]!.url).toBe("https://api.test/v1/organizations/org_1/projects");
+  });
+
   it("returns 204 as undefined", async () => {
     const { fetch } = captureFetch(new Response(null, { status: 204 }));
     const transport = new Transport({ baseUrl: "https://api.test", fetch });
