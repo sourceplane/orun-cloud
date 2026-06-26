@@ -21,11 +21,11 @@
   //
   // CLI session auth (OP1):
   //   - CLI_JWT_SIGNING_KEY is the HS256 key for the ~15min CLI access JWT. It is
-  //     a SECRET — set it with `wrangler secret put CLI_JWT_SIGNING_KEY --env <env>`
-  //     (>=32 chars). It is OPTIONAL at boot: the worker only fails when it
-  //     actually mints/verifies a CLI token, so a missing secret never breaks the
-  //     deploy verify (mirrors OAUTH_STATE_SECRET). Set it before exercising the
-  //     CLI login flows on stage/prod.
+  //     a SECRET, managed via secrets-sync: it lives in the platform-secrets/<env>
+  //     document and the deploy lane's secrets-live step pushes it here (>=32
+  //     chars). Do NOT `wrangler secret put` it by hand. It is OPTIONAL at boot:
+  //     the worker only fails when it actually mints/verifies a CLI token, so a
+  //     missing secret never breaks the deploy verify (mirrors OAUTH_STATE_SECRET).
   //   - CLI_CONSOLE_BASE_URL (non-secret) is the console origin used to build the
   //     CLI approval page URL; defaults to the first OAUTH_ALLOWED_CONSOLE_ORIGINS
   //     entry when blank.
