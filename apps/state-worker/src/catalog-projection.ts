@@ -188,17 +188,47 @@ export async function projectCatalogSnapshot(
   scope: CatalogProjectionScope,
   deps?: CatalogProjectionDeps,
 ): Promise<CatalogProjectionSummary | null> {
+  // Structured, greppable diagnostics. The projection runs off the response
+  // path (ctx.waitUntil) and used to surface no outcome at all, so a push could
+  // advance the head yet leave the org-global read model empty with zero
+  // signal. Log the result (and any failure) under one scope so an empty
+  // console is diagnosable from `wrangler tail state-worker`.
+  const base = {
+    scope: "state.catalog.projection",
+    digest: scope.digest,
+    orgPublic: scope.orgPublic,
+    projectPublic: scope.projectPublic,
+    environment: scope.environment,
+  };
+
   let fetcher = deps?.fetcher;
   if (!fetcher) {
     const bucket = requireBucket(env);
-    if (!bucket.ok) return null; // no R2 binding (dev) — dormant no-op
+    if (!bucket.ok) {
+      // Dormant on dev (no R2); on stage/prod this means storage is misbound.
+      console.warn(JSON.stringify({ level: "warn", reason: "r2_unbound", ...base }));
+      return null; // no R2 binding (dev) — dormant no-op
+    }
     fetcher = (digest: string) =>
       bucket.bucket
         .get(objectKey(scope.orgPublic, scope.projectPublic, digest))
         .then(async (o) => (o ? new Uint8Array(await o.arrayBuffer()) : null));
   }
 
-  const entities = await collectEntities(fetcher, scope.digest);
+  let entities: ProjectedEntity[];
+  try {
+    entities = await collectEntities(fetcher, scope.digest);
+  } catch (err) {
+    // Snapshot unreadable (R2 miss / bad bytes) or a parse error walking the
+    // tree. Surface it, then rethrow so caller behavior is unchanged.
+    console.error(JSON.stringify({ level: "error", reason: "collect_failed", error: String(err), ...base }));
+    throw err;
+  }
+  if (entities.length === 0) {
+    // Root unreadable (readTree → null) or a snapshot carrying no components/
+    // entities. Either way the console stays empty for this scope.
+    console.warn(JSON.stringify({ level: "warn", reason: "zero_entities", ...base }));
+  }
 
   if (!deps?.executor && !env.PLATFORM_DB) return null;
   const executor = deps?.executor ?? (await import("@saas/db/hyperdrive")).createSqlExecutor(env.PLATFORM_DB!);
@@ -226,7 +256,13 @@ export async function projectCatalogSnapshot(
       const up = await repo.upsertOrgCatalogEntity(input);
       if (up.ok) projected++;
     }
+    // No success log: the diagnostic signal lives in the warn/error paths
+    // above (zero_entities / collect_failed / write_failed). A clean run with
+    // entities projected leaves no log and a populated console.
     return { deleted: deleted.ok ? deleted.value : 0, projected };
+  } catch (err) {
+    console.error(JSON.stringify({ level: "error", reason: "write_failed", error: String(err), ...base }));
+    throw err;
   } finally {
     if (owned && "dispose" in executor && typeof (executor as { dispose?: unknown }).dispose === "function") {
       await (executor as unknown as { dispose: () => Promise<void> }).dispose();
