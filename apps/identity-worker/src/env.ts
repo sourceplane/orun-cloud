@@ -30,10 +30,13 @@ export interface Env {
 
   // --- CLI session auth (OP1) ---
   /**
-   * HS256 signing key for the CLI access-token JWT (~15 min). Set with
-   * `wrangler secret put CLI_JWT_SIGNING_KEY --env <env>`. OPTIONAL at boot —
-   * the worker only fails when it actually mints/verifies a CLI token, so a
-   * missing secret never breaks the deploy verify. Provide ≥32 chars.
+   * HS256 signing key for the CLI access-token JWT (~15 min). Managed via
+   * secrets-sync: it lives in the `platform-secrets/<env>` document
+   * (`tooling/secrets-sync/integrations.manifest.json`) and the deploy lane's
+   * `secrets-live` step pushes it to this worker — do NOT `wrangler secret put`
+   * it by hand. OPTIONAL at boot — the worker only fails when it actually
+   * mints/verifies a CLI token, so a missing secret never breaks the deploy
+   * verify. Value is ≥32 chars.
    */
   CLI_JWT_SIGNING_KEY?: string;
   /**
