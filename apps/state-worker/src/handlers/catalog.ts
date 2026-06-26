@@ -216,7 +216,23 @@ export async function handleAdvanceCatalogHead(
       commit: head.commit,
     };
     if (ctx) {
-      ctx.waitUntil(projectCatalogSnapshot(env, scope).catch(() => undefined));
+      ctx.waitUntil(
+        projectCatalogSnapshot(env, scope).catch((e) =>
+          // The advance already succeeded; the projection is best-effort, so we
+          // never fail the response — but DO log so an empty org-global console
+          // is diagnosable (projectCatalogSnapshot logs the specifics).
+          console.error(
+            JSON.stringify({
+              level: "error",
+              scope: "state.catalog.projection",
+              reason: "waituntil_failed",
+              requestId,
+              digest: scope.digest,
+              error: String(e),
+            }),
+          ),
+        ),
+      );
     } else {
       // No execution context (unit tests / non-Worker callers): project inline.
       // Dormant without R2, so this is a fast no-op there.
