@@ -11,6 +11,7 @@ import {
   handleGetRun,
   handleListJobs,
   handleListRuns,
+  handleListOrgRuns,
   handleRunnableJobs,
 } from "./handlers/runs.js";
 import { handleAppendLog, handleReadLog } from "./handlers/logs.js";
@@ -141,6 +142,10 @@ const GC_COLLECT_RE = new RegExp(`^${STATE_BASE}/gc/collect$`);
 const ORG_CATALOG_ENTITIES_RE = /^\/v1\/organizations\/([^/]+)\/catalog\/entities$/;
 // OV9 — org state-plane storage footprint (no project scope): the STOCK gauge.
 const ORG_STATE_USAGE_RE = /^\/v1\/organizations\/([^/]+)\/state\/usage$/;
+// Org-global runs feed (no project scope): the console "Activities" surface, the
+// merged run history across every project. Distinct from the project-scoped
+// /projects/{id}/state/runs below (no project segment ⇒ disjoint paths).
+const ORG_RUNS_RE = /^\/v1\/organizations\/([^/]+)\/state\/runs$/;
 
 // OV1 — hosted RefStore (design-v2 §2). Ref names carry slashes
 // (catalogs/current, executions/by-id/<id>), so the name is a greedy tail.
@@ -230,6 +235,17 @@ export async function route(request: Request, env: Env, ctx?: ExecutionContext):
     if (!orgId) return notFound(requestId, pathname);
     if (request.method !== "GET") return methodNotAllowed(requestId);
     return handleGetOrgStateStorage(request, env, requestId, actor, orgId);
+  }
+
+  // GET /v1/organizations/{orgId}/state/runs — org-global runs feed (Activities).
+  // Org-scoped (no project segment); dispatched here at the top level BEFORE the
+  // `/state/`-gated project plane below, since this path also contains `/state/`.
+  m = pathname.match(ORG_RUNS_RE);
+  if (m) {
+    const orgId = parseOrgPublicId(m[1]!);
+    if (!orgId) return notFound(requestId, pathname);
+    if (request.method !== "GET") return methodNotAllowed(requestId);
+    return handleListOrgRuns(request, env, requestId, actor, orgId);
   }
 
   // ── OP2 — Run coordination plane (§2). ──

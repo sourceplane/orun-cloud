@@ -8,6 +8,7 @@ import {
   handleCreateRun,
   handleGetRun,
   handleListRuns,
+  handleListOrgRuns,
   handleRunnableJobs,
 } from "@state-worker/handlers/runs";
 import type { Env } from "@state-worker/env";
@@ -334,6 +335,68 @@ describe("GET …/state/runs/{runId} + list", () => {
     expect(body.data.runs).toHaveLength(1);
     expect(body.data.nextCursor).toBeNull();
     expect(body.meta.cursor).toBeNull();
+  });
+});
+
+describe("GET /v1/organizations/{orgId}/state/runs — org-global Activities feed", () => {
+  // The org feed has no project segment; its repository query is org-scoped
+  // (no `project_id = $2`) unless the `project` facet narrows it.
+  const isOrgRunsQuery = (text: string) =>
+    text.startsWith("SELECT * FROM state.runs WHERE org_id = $1") &&
+    !text.includes("project_id = $2") &&
+    !text.includes("run_ulid") &&
+    !text.includes("id = $3");
+
+  it("lists runs merged across the org with a cursor in meta", async () => {
+    const { executor, queries } = fakeExecutor((text) => {
+      if (isOrgRunsQuery(text)) return [runRow({ project_id: PROJECT }), runRow({ id: "44444444-4444-4444-8444-444444444444", project_id: "55555555-5555-4555-8555-555555555555" })];
+      if (text.includes("COUNT(*) FILTER")) return [COUNTS];
+      return [];
+    });
+    const req = new Request(`https://state.test/v1/organizations/${ORG_PUBLIC}/state/runs`, { method: "GET" });
+    const res = await handleListOrgRuns(req, createEnv(), "req_1", ACTOR, asUuid(ORG), { executor });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { data: { runs: { projectId: string }[]; nextCursor: unknown } };
+    expect(body.data.runs).toHaveLength(2);
+    // Per-run job counts are scoped to each run's OWN project.
+    expect(queries.some((q) => q.text.includes("COUNT(*) FILTER"))).toBe(true);
+  });
+
+  it("applies the branch facet via a refs/heads-normalized git_ref match", async () => {
+    const { queries, executor } = fakeExecutor((text) => {
+      if (isOrgRunsQuery(text)) return [runRow()];
+      if (text.includes("COUNT(*) FILTER")) return [COUNTS];
+      return [];
+    });
+    const req = new Request(`https://state.test/v1/organizations/${ORG_PUBLIC}/state/runs?branch=main&source=ci`, { method: "GET" });
+    const res = await handleListOrgRuns(req, createEnv(), "req_1", ACTOR, asUuid(ORG), { executor });
+    expect(res.status).toBe(200);
+    const listQuery = queries.find((q) => isOrgRunsQuery(q.text));
+    expect(listQuery?.text).toContain("regexp_replace");
+    expect(listQuery?.text).toContain("source =");
+    expect(listQuery?.params).toContain("main");
+    expect(listQuery?.params).toContain("ci");
+  });
+
+  it("rejects a malformed project facet with 400", async () => {
+    const { executor } = fakeExecutor(() => []);
+    const req = new Request(`https://state.test/v1/organizations/${ORG_PUBLIC}/state/runs?project=not-a-project`, { method: "GET" });
+    const res = await handleListOrgRuns(req, createEnv(), "req_1", ACTOR, asUuid(ORG), { executor });
+    expect(res.status).toBe(422);
+  });
+
+  it("rejects an invalid source facet with 400", async () => {
+    const { executor } = fakeExecutor(() => []);
+    const req = new Request(`https://state.test/v1/organizations/${ORG_PUBLIC}/state/runs?source=robot`, { method: "GET" });
+    const res = await handleListOrgRuns(req, createEnv(), "req_1", ACTOR, asUuid(ORG), { executor });
+    expect(res.status).toBe(422);
+  });
+
+  it("resource-hides (404) when org policy denies state.run.read", async () => {
+    const { executor } = fakeExecutor(() => []);
+    const req = new Request(`https://state.test/v1/organizations/${ORG_PUBLIC}/state/runs`, { method: "GET" });
+    const res = await handleListOrgRuns(req, createEnv(false), "req_1", ACTOR, asUuid(ORG), { executor });
+    expect(res.status).toBe(404);
   });
 });
 

@@ -53,6 +53,27 @@ export interface RunsQuery {
 }
 
 /**
+ * Filters for the ORG-GLOBAL runs feed (the console "Activities" surface). The
+ * merged run history across the org's projects; `project` narrows to a repo,
+ * `branch` filters by source branch (git ref, refs/heads/ normalized away), and
+ * `source` by initiator (cli|ci). All optional.
+ */
+export interface OrgRunsQuery {
+  /** Provenance filter: a project public id (prj_…). */
+  project?: string;
+  environment?: string;
+  status?: string;
+  /** Source branch (e.g. 'main'); matches git_ref with refs/heads/ stripped. */
+  branch?: string;
+  /** Run initiator. */
+  source?: "cli" | "ci";
+  /** Keyset cursor from a prior page. */
+  cursor?: string;
+  /** Page size. */
+  limit?: number;
+}
+
+/**
  * State resource client — workspace links + tenancy resolution (OP4).
  *
  * Maps to `apps/state-worker` via the api-edge `state-facade`. The CLI uses
@@ -226,6 +247,37 @@ export class StateClient {
         query: {
           environment: query.environment,
           status: query.status,
+          cursor: query.cursor,
+          limit: query.limit,
+        },
+      },
+      opts,
+    );
+  }
+
+  /**
+   * GET /v1/organizations/:orgId/state/runs — the org-global runs feed (the
+   * console "Activities" surface). The merged run history across every project
+   * in the org, newest first, each row carrying its provenance (project,
+   * environment, git ref). `project` narrows to a single repo; `environment`,
+   * `status`, `branch`, and `source` are facets over the merged feed. Policy:
+   * state.run.read at the organization scope.
+   */
+  listOrgRuns(
+    orgId: string,
+    query: OrgRunsQuery = {},
+    opts: RequestOptions = {},
+  ): Promise<ListRunsResponse> {
+    return this.transport.request<ListRunsResponse>(
+      {
+        method: "GET",
+        path: `/v1/organizations/${encodeURIComponent(orgId)}/state/runs`,
+        query: {
+          project: query.project,
+          environment: query.environment,
+          status: query.status,
+          branch: query.branch,
+          source: query.source,
           cursor: query.cursor,
           limit: query.limit,
         },

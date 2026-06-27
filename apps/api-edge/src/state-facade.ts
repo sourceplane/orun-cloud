@@ -23,6 +23,9 @@ const STATE_PLANE_RE = /^\/v1\/organizations\/[^/]+\/projects\/[^/]+\/state\//;
 const ORG_CATALOG_ENTITIES_RE = /^\/v1\/organizations\/[^/]+\/catalog\/entities$/;
 // OV9 — org state-plane storage footprint: org-scoped (no project) STOCK gauge.
 const ORG_STATE_USAGE_RE = /^\/v1\/organizations\/[^/]+\/state\/usage$/;
+// Org-global runs feed: org-scoped (no project) — the console "Activities"
+// surface. Distinct from the project-scoped /projects/{id}/state/runs.
+const ORG_RUNS_RE = /^\/v1\/organizations\/[^/]+\/state\/runs$/;
 
 // `orun-contract-version` is forwarded so state-worker enforces the major and
 // rejects unsupported skew with 409 contract_version_unsupported. `orun-object-
@@ -45,6 +48,7 @@ export function isStateRoute(pathname: string): boolean {
     ORG_PROJECT_CLI_LINKS_RE.test(pathname) ||
     ORG_CATALOG_ENTITIES_RE.test(pathname) ||
     ORG_STATE_USAGE_RE.test(pathname) ||
+    ORG_RUNS_RE.test(pathname) ||
     STATE_PLANE_RE.test(pathname)
   );
 }

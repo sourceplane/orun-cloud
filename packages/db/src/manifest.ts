@@ -327,5 +327,14 @@ export const manifest: MigrationManifest = {
       description:
         "Projector high-water mark (saas-orun-backend-merge BM3) — adds state.runs.last_seq (BIGINT, default 0), the per-run seq the projector guards its writes on so projecting the RunCoordinator DO's fold into Postgres is idempotent under replay/out-of-order delivery. Dormant until the projector runs on the DO backend.",
     },
+    {
+      id: "360_state_runs_org_index",
+      context: "state",
+      path: "360_state_runs_org_index/up.sql",
+      checksum:
+        "e347d6f2d5b6ab661b064282ea2821147db0a1039ac86bb978ba5232664df373",
+      description:
+        "Org-global runs feed keyset index (console Activities surface) — adds idx_state_runs_org (org_id, created_at DESC, id DESC), the org-scoped twin of idx_state_runs_project, so the all-repos run history merged across every project is index-ordered for keyset pagination. The project-narrowed feed keeps using idx_state_runs_project.",
+    },
   ],
 };

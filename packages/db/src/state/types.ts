@@ -98,6 +98,21 @@ export interface ListRunsQuery {
   status?: RunStatus;
 }
 
+/**
+ * Filters for the ORG-GLOBAL runs feed (the console "Activities" surface). Like
+ * the org catalog projection, runs are merged across every project in the org;
+ * `projectId` narrows to one repo, the rest are facets over the merged feed.
+ * `branch` matches `git_ref` with the `refs/heads/` prefix normalized away, so
+ * `main` matches both `main` and `refs/heads/main`.
+ */
+export interface ListOrgRunsQuery {
+  projectId?: Uuid;
+  environment?: string;
+  status?: RunStatus;
+  branch?: string;
+  source?: RunSource;
+}
+
 /** Per-status job tallies for the run projection (jobCounts in the contract). */
 export interface RunJobCounts {
   queued: number;
@@ -495,6 +510,16 @@ export interface StateRepository {
     projectId: Uuid,
     params: PageQueryParams,
     query?: ListRunsQuery,
+  ): Promise<StateResult<PagedResult<Run>>>;
+  /**
+   * Org-global runs feed across every project (the console "Activities"
+   * surface), newest first. `query.projectId` narrows to a single repo; the
+   * remaining filters are facets over the merged feed.
+   */
+  listOrgRuns(
+    orgId: Uuid,
+    params: PageQueryParams,
+    query?: ListOrgRunsQuery,
   ): Promise<StateResult<PagedResult<Run>>>;
 
   // Run jobs

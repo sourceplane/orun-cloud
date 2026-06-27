@@ -36,14 +36,14 @@ import { emitUsage, STATE_METRICS } from "../metering.js";
 import { asUuid, type Uuid } from "@saas/db/ids";
 import { errorResponse, listResponse, successResponse, validationError } from "../http.js";
 import { generateUuid, isRunUlid } from "../ids.js";
-import { authorizeRun } from "../authz.js";
+import { authorizeRun, authorizeOrg } from "../authz.js";
 import {
   DEFAULT_PAGE_LIMIT,
   MAX_JOBS_PER_RUN,
   MAX_PAGE_LIMIT,
 } from "../constants.js";
 import { ensureEnvironmentRegistered } from "../env-registration.js";
-import { orgPublicId, projectPublicId } from "../ids.js";
+import { orgPublicId, projectPublicId, parseProjectPublicId } from "../ids.js";
 import {
   initCoordinator,
   projectorReady,
@@ -522,6 +522,94 @@ export async function handleListRuns(
     const runs: PublicRun[] = [];
     for (const run of result.value.items) {
       const counts = await repo.getRunJobCounts(orgId, projectId, asUuid(run.id));
+      runs.push(toPublicRun(run, counts.ok ? counts.value : zeroCounts()));
+    }
+    const nextCursor = result.value.nextCursor
+      ? { createdAt: result.value.nextCursor.createdAt, id: result.value.nextCursor.id }
+      : null;
+    const payload: ListRunsResponse = { runs, nextCursor };
+    const cursorStr = nextCursor ? `${nextCursor.createdAt}|${nextCursor.id}` : null;
+    return listResponse(payload, requestId, cursorStr);
+  } catch {
+    return errorResponse("internal_error", "Service unavailable", 503, requestId);
+  } finally {
+    if (owned) await dispose(executor);
+  }
+}
+
+// ── GET /v1/organizations/{orgId}/state/runs?project=&environment=&status=&branch=&source=&cursor= ──
+//
+// The ORG-GLOBAL runs feed (the console "Activities" surface). Mirrors the
+// org-global catalog browser: one merged feed across every project in the org,
+// each row carrying its provenance (project, environment, git ref). `project`
+// narrows to a single repo; the rest are facets. Org-scoped policy
+// (state.run.read on the organization); no project segment in the path.
+
+export async function handleListOrgRuns(
+  request: Request,
+  env: Env,
+  requestId: string,
+  actor: ActorContext,
+  orgId: Uuid,
+  deps?: RunHandlerDeps,
+): Promise<Response> {
+  const authz = await authorizeOrg(env, requestId, actor, orgId, STATE_POLICY_ACTIONS.RUN_READ);
+  if (!authz.ok) return authz.response;
+
+  const url = new URL(request.url);
+  const projectParam = url.searchParams.get("project") ?? undefined;
+  const environment = url.searchParams.get("environment") ?? undefined;
+  const statusParam = url.searchParams.get("status") ?? undefined;
+  const branch = url.searchParams.get("branch") ?? undefined;
+  const sourceParam = url.searchParams.get("source") ?? undefined;
+  const cursorParam = url.searchParams.get("cursor");
+
+  const validStatuses = new Set(["pending", "running", "succeeded", "failed", "canceled"]);
+  if (statusParam && !validStatuses.has(statusParam)) {
+    return validationError(requestId, { status: ["Invalid run status"] });
+  }
+  if (sourceParam && !VALID_SOURCES.has(sourceParam)) {
+    return validationError(requestId, { source: ["Invalid run source"] });
+  }
+  // The `project` filter is an opaque public id (prj_…); a malformed one is a
+  // validation error, an unknown-but-well-formed one simply matches no rows.
+  let projectId: Uuid | undefined;
+  if (projectParam) {
+    const parsed = parseProjectPublicId(projectParam);
+    if (!parsed) return validationError(requestId, { project: ["Invalid project id"] });
+    projectId = parsed;
+  }
+  let cursor: { createdAt: string; id: string } | null = null;
+  if (cursorParam) {
+    const idx = cursorParam.indexOf("|");
+    if (idx <= 0) return validationError(requestId, { cursor: ["Malformed cursor"] });
+    cursor = { createdAt: cursorParam.slice(0, idx), id: cursorParam.slice(idx + 1) };
+  }
+
+  const executor = deps?.executor ?? createSqlExecutor(env.PLATFORM_DB!);
+  const owned = !deps?.executor;
+  try {
+    const repo = createStateRepository(executor);
+    const query: {
+      projectId?: Uuid;
+      environment?: string;
+      status?: RunStatus;
+      branch?: string;
+      source?: "cli" | "ci";
+    } = {};
+    if (projectId) query.projectId = projectId;
+    if (environment) query.environment = environment;
+    if (statusParam) query.status = statusParam as RunStatus;
+    if (branch) query.branch = branch;
+    if (sourceParam) query.source = sourceParam as "cli" | "ci";
+    const result = await repo.listOrgRuns(orgId, { limit: DEFAULT_PAGE_LIMIT, cursor }, query);
+    if (!result.ok) return errorResponse("internal_error", "Service unavailable", 503, requestId);
+
+    const runs: PublicRun[] = [];
+    for (const run of result.value.items) {
+      // Job counts are scoped per (org, project) — use the run's own project,
+      // since this feed spans every repo in the org.
+      const counts = await repo.getRunJobCounts(orgId, asUuid(run.projectId), asUuid(run.id));
       runs.push(toPublicRun(run, counts.ok ? counts.value : zeroCounts()));
     }
     const nextCursor = result.value.nextCursor
