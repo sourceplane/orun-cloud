@@ -151,8 +151,9 @@ function Inner({ orgId, orgSlug }: { orgId: string; orgSlug: string }) {
         <EmptyState
           icon={FolderKanban}
           title="No repos yet"
-          description="Group your environments and configuration by creating your first repo."
+          description="Create your first repo, or connect GitHub to link repositories automatically."
           primaryAction={{ label: "New repo", onClick: () => setOpen(true) }}
+          secondaryAction={{ label: "Connect GitHub", href: `/orgs/${orgSlug}/integrations` }}
         />
       ) : (
         <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">

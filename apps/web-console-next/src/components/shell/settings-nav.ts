@@ -106,12 +106,6 @@ export function buildSettingsNav(orgSlug: string): SettingsNavGroup[] {
           description: "Signed event deliveries",
         },
         {
-          href: `${base}/integrations`,
-          label: "Integrations",
-          icon: "Plug",
-          description: "Connected providers (GitHub)",
-        },
-        {
           href: `${base}/config`,
           label: "Config",
           icon: "SlidersHorizontal",

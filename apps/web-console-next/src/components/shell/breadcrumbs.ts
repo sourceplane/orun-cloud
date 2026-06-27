@@ -18,6 +18,7 @@ export interface Crumb {
 const SEGMENT_LABELS: Record<string, string> = {
   projects: "Git Repos",
   activities: "Activities",
+  integrations: "Integrations",
   environments: "Environments",
   git: "Git",
   cli: "CLI",
