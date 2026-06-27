@@ -60,6 +60,20 @@ function gate(link: WorkspaceLink, claims: GitHubOidcClaims): string | null {
   return null;
 }
 
+// Denial-shape contract the CLI relies on (specs/oidc-ci-tenancy §2.2/§5,
+// decisions D1/D4). Kept stable on purpose:
+//   401 not_found? no — 401 unauthenticated  → bad/expired/wrong-aud OIDC token.
+//   404 not_found                            → repo not linked, or declared org
+//        matches no authorized link. Resource-hiding: existence/membership
+//        collapse to one Not-Found (same shape as the state-worker push gate and
+//        the link APIs). The exchange NEVER auto-creates here (D1).
+//   409 conflict                             → repo linked to MULTIPLE orgs and
+//        no org hint. Not a denial: a disambiguation prompt for a repo the
+//        caller provably controls (declare execution.state.org). Safe to reveal.
+//   403 forbidden + details.reason           → per-link CI gate (oidc_disabled /
+//        ref_not_allowed / environment_not_allowed) on a KNOWN, allow-listed
+//        link. The owner can fix the toggle, so the actionable reason is kept
+//        rather than hidden — the caller already proved control of the repo.
 export async function handleOidcExchange(
   request: Request,
   env: Env,
@@ -105,11 +119,17 @@ export async function handleOidcExchange(
     }
     const links = linksResult.value;
     if (links.length === 0) {
-      // Repo not bound to any org — fail closed, no auto-claim of unsolicited repos.
+      // Repo not bound to any org — fail closed, no auto-claim of unsolicited
+      // repos (decision D1: the exchange NEVER auto-creates a link/project on the
+      // workflow path). The denial is a 404 resource-hiding "not found" — the
+      // same shape the state-worker push gate (requireWorkflowRepoAllowed) and
+      // the link APIs use — so "not linked" and "not a member" collapse to one
+      // Not-Found and the CLI keys on a single, stable denial code
+      // (specs/oidc-ci-tenancy §2.2/§5; the CLI must not infer "forbidden").
       return errorResponse(
-        "forbidden",
-        `Repository ${claims.repository} is not linked to an Orun org`,
-        403,
+        "not_found",
+        "Not found",
+        404,
         requestId,
       );
     }
@@ -129,10 +149,14 @@ export async function handleOidcExchange(
       }
       const matches = links.filter((l) => orgPublicId(l.orgId) === orgHint);
       if (matches.length !== 1) {
+        // The declared org names no authorized link for this repo. Hide whether
+        // the org exists / the repo is linked elsewhere behind the same 404
+        // resource-hiding shape as the "no link" case above
+        // (specs/oidc-ci-tenancy §2.2/§5, decision D4).
         return errorResponse(
-          "forbidden",
-          "Declared org does not match an authorized link for this repository",
-          403,
+          "not_found",
+          "Not found",
+          404,
           requestId,
         );
       }

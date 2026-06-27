@@ -172,14 +172,56 @@ describe("POST /v1/auth/oidc/exchange (OV3)", () => {
     expect(body.data.actor.orgId).toBe(ORG_PUBLIC);
   });
 
-  it("denies (403) a repository not linked to any org", async () => {
+  it("denies (404, resource-hiding) a repository not linked to any org", async () => {
+    // specs/oidc-ci-tenancy §2.2/§5: "not linked" hides as a 404 not_found — the
+    // same shape as the state-worker push gate — so the CLI keys on one stable
+    // denial code and never infers "forbidden". Was 403; pinned at 404 here.
     const { token, jwks } = await forgeOidc();
     const res = await handleOidcExchange(exchangeReq(token), env(), "req_1", {
       executor: stateExecutor([]),
       fetchJwks: () => Promise.resolve(jwks),
       now: () => NOW,
     });
-    expect(res.status).toBe(403);
+    expect(res.status).toBe(404);
+    const body = (await res.json()) as { error: { code: string } };
+    expect(body.error.code).toBe("not_found");
+  });
+
+  it("denies (404, resource-hiding) when the declared org matches no link", async () => {
+    // A repo linked across two orgs, but the org hint names neither: collapse to
+    // the same 404 Not-Found so existence/membership never leak (decision D4).
+    const { token, jwks } = await forgeOidc();
+    const links = [linkRow(), linkRow({ org_id: ORG2_UUID, id: "66666666-6666-4666-8666-666666666666" })];
+    const res = await handleOidcExchange(exchangeReq(token, "org_doesnotmatch"), env(), "req_1", {
+      executor: stateExecutor(links),
+      fetchJwks: () => Promise.resolve(jwks),
+      now: () => NOW,
+    });
+    expect(res.status).toBe(404);
+    const body = (await res.json()) as { error: { code: string } };
+    expect(body.error.code).toBe("not_found");
+  });
+
+  it("never auto-creates a link/project on the workflow path (D1)", async () => {
+    // Decision D1: the OIDC exchange is read-only w.r.t. links/projects. On an
+    // unlinked repo it must deny, not provision. Assert the handler issues NO
+    // write SQL (only the workspace_links SELECT) before returning 404.
+    const { token, jwks } = await forgeOidc();
+    const statements: string[] = [];
+    const trackingExecutor = {
+      execute(text: string) {
+        statements.push(text);
+        return Promise.resolve({ rows: [], rowCount: 0 });
+      },
+    } as unknown as SqlExecutor;
+    const res = await handleOidcExchange(exchangeReq(token), env(), "req_1", {
+      executor: trackingExecutor,
+      fetchJwks: () => Promise.resolve(jwks),
+      now: () => NOW,
+    });
+    expect(res.status).toBe(404);
+    const mutating = statements.filter((s) => /\b(INSERT|UPDATE|DELETE)\b/i.test(s));
+    expect(mutating).toEqual([]);
   });
 
   it("denies (403) when oidc is disabled on the link", async () => {
