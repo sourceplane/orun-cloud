@@ -121,7 +121,7 @@ export function buildBaseCommands(ctx: CommandContext): CommandDescriptor[] {
         "history",
         "feed",
       ]),
-      navItem("nav.projects", "Repos", `${orgBase}/projects`, "FolderKanban", ["repo", "project"]),
+      navItem("nav.projects", "Git Repos", `${orgBase}/projects`, "FolderKanban", ["repo", "project", "git"]),
       navItem("nav.usage", "Usage & quota", `${orgBase}/usage`, "Gauge", [
         "usage",
         "quota",

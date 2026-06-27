@@ -78,7 +78,8 @@ function Inner({
   runId: string;
 }) {
   const { client } = useSession();
-  const runsHref = `/orgs/${orgSlug}/projects/${projectSlug}/runs`;
+  // Runs are browsed from the org-level Activities feed now; return there.
+  const runsHref = `/orgs/${orgSlug}/activities`;
   const [openJob, setOpenJob] = React.useState<string | null>(null);
 
   const projectsList = useApiQuery(qk.projects(orgId), () =>
@@ -107,7 +108,7 @@ function Inner({
       className="inline-flex items-center gap-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
     >
       <ArrowLeft className="h-3.5 w-3.5" />
-      Back to runs
+      Back to activities
     </Link>
   );
 
