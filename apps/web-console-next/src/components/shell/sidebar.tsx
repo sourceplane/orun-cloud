@@ -104,7 +104,7 @@ export function NavContent({
   }, [mode]);
 
   return (
-    <div key={mode} className={anim}>
+    <div key={mode} className={cn("flex min-h-full flex-col", anim)}>
       {inSettings && orgSlug && pathname ? (
         <SettingsNavContent orgSlug={orgSlug} pathname={pathname} onNavigate={onNavigate} mobile={mobile} />
       ) : (
@@ -134,28 +134,43 @@ function ProductNav({
   mobile: boolean;
 }) {
   const sections = buildNavSections({ orgSlug, projectSlug });
+  const primary = sections.filter((s) => !s.footer);
+  const footer = sections.filter((s) => s.footer);
+
+  const renderLink = (link: (typeof sections)[number]["links"][number]) => {
+    const Icon = ICONS[link.icon] ?? Settings;
+    return (
+      <SidebarLink
+        key={link.href}
+        href={link.href}
+        icon={Icon}
+        active={isLinkActive(link.href, pathname)}
+        onClick={onNavigate}
+        mobile={mobile}
+        chevron={!!link.subPanel}
+      >
+        {link.label}
+      </SidebarLink>
+    );
+  };
+
   return (
-    <nav className={cn("px-2 pb-4 pt-3", mobile ? "space-y-5" : "space-y-6")}>
-      {sections.map((section) => (
-        <Section key={section.id} label={section.label} mobile={mobile}>
-          {section.links.map((link) => {
-            const Icon = ICONS[link.icon] ?? Settings;
-            return (
-              <SidebarLink
-                key={link.href}
-                href={link.href}
-                icon={Icon}
-                active={isLinkActive(link.href, pathname)}
-                onClick={onNavigate}
-                mobile={mobile}
-                chevron={!!link.subPanel}
-              >
-                {link.label}
-              </SidebarLink>
-            );
-          })}
-        </Section>
-      ))}
+    <nav className="flex flex-1 flex-col px-2 pb-4 pt-3">
+      <div className={mobile ? "space-y-5" : "space-y-6"}>
+        {primary.map((section) => (
+          <Section key={section.id} label={section.label} mobile={mobile}>
+            {section.links.map(renderLink)}
+          </Section>
+        ))}
+      </div>
+
+      {/* "Manage" surfaces pinned to the bottom (mt-auto), above the account
+          chip. A divider separates them from the product nav above. */}
+      {footer.length > 0 ? (
+        <div className="mt-auto space-y-0.5 border-t pt-3">
+          {footer.flatMap((s) => s.links).map(renderLink)}
+        </div>
+      ) : null}
     </nav>
   );
 }
