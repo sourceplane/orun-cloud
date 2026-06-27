@@ -63,6 +63,9 @@ export function buildNavSections(scope: NavScope): NavSection[] {
         { href: `${orgBase}/catalog`, label: "Catalog", icon: "Boxes" },
         { href: `${orgBase}/activities`, label: "Activities", icon: "Activity" },
         { href: `${orgBase}/projects`, label: "Git Repos", icon: "FolderKanban" },
+        // Integrations is a first-class connections hub (GitHub today; Supabase,
+        // Cloudflare, Slack on the roadmap), promoted out of Settings.
+        { href: `${orgBase}/integrations`, label: "Integrations", icon: "Plug" },
       ],
     });
 

@@ -36,6 +36,11 @@ describe("buildSettingsNav", () => {
       ]),
     );
   });
+
+  it("no longer lists Integrations — promoted to the top-level connections hub", () => {
+    const hrefs = flattenSettingsNav(buildSettingsNav("acme")).map((l) => l.href);
+    expect(hrefs).not.toContain("/orgs/acme/settings/integrations");
+  });
 });
 
 describe("isSettingsLinkActive", () => {
