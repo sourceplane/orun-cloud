@@ -19,6 +19,12 @@ export interface NavSection {
   id: string;
   label: string;
   links: NavLink[];
+  /**
+   * When true the section is the rail's "manage" footer (Usage, Settings) — the
+   * renderer pins it to the bottom, separated from the product surfaces above.
+   * The split keeps the top of the rail to the day-to-day work surfaces.
+   */
+  footer?: boolean;
 }
 
 export interface NavScope {
@@ -49,6 +55,7 @@ export function buildNavSections(scope: NavScope): NavSection[] {
     // keys, webhooks, config, audit, identity) lives behind a single Settings
     // entry, which opens the dedicated `/settings` surface with its own
     // secondary navigation (see `settings-nav.ts`).
+    // Product surfaces — the day-to-day work, at the top of the rail.
     sections.push({
       id: "org",
       label: orgSlug ? `Org · ${orgSlug}` : "Organization",
@@ -56,6 +63,17 @@ export function buildNavSections(scope: NavScope): NavSection[] {
         { href: `${orgBase}/catalog`, label: "Catalog", icon: "Boxes" },
         { href: `${orgBase}/activities`, label: "Activities", icon: "Activity" },
         { href: `${orgBase}/projects`, label: "Git Repos", icon: "FolderKanban" },
+      ],
+    });
+
+    // "Manage" surfaces — pinned to the bottom of the rail (above the account
+    // chip). Usage and Settings are visited occasionally, not day-to-day, so
+    // they sit out of the way of the product nav rather than interleaved with it.
+    sections.push({
+      id: "org-manage",
+      label: "Manage",
+      footer: true,
+      links: [
         { href: `${orgBase}/usage`, label: "Usage & quota", icon: "Gauge" },
         // Opens the dedicated settings panel — flagged so the renderer shows a ›.
         { href: `${orgBase}/settings`, label: "Settings", icon: "Settings", subPanel: true },

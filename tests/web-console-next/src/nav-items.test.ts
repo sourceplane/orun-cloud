@@ -12,9 +12,10 @@ describe("buildNavSections", () => {
   });
 
   it("flags the Settings link as a sub-panel (renderer shows a chevron)", () => {
-    const org = buildNavSections({ orgSlug: "acme" }).find((s) => s.id === "org")!;
-    const settings = org.links.find((l) => l.href === "/orgs/acme/settings")!;
+    const manage = buildNavSections({ orgSlug: "acme" }).find((s) => s.id === "org-manage")!;
+    const settings = manage.links.find((l) => l.href === "/orgs/acme/settings")!;
     expect(settings.subPanel).toBe(true);
+    const org = buildNavSections({ orgSlug: "acme" }).find((s) => s.id === "org")!;
     const projects = org.links.find((l) => l.href === "/orgs/acme/projects")!;
     expect(projects.subPanel ?? false).toBe(false);
   });
@@ -29,15 +30,29 @@ describe("buildNavSections", () => {
     expect(ids).not.toContain("project");
   });
 
-  it("adds a product-focused org section when orgSlug is present", () => {
+  it("adds a product-focused org section (work surfaces only) at the top", () => {
     const org = buildNavSections({ orgSlug: "acme" }).find((s) => s.id === "org")!;
     const hrefs = org.links.map((l) => l.href);
     expect(hrefs).toContain("/orgs/acme/projects");
     expect(hrefs).toContain("/orgs/acme/catalog");
     expect(hrefs).toContain("/orgs/acme/activities");
-    expect(hrefs).toContain("/orgs/acme/usage");
-    expect(hrefs).toContain("/orgs/acme/settings");
+    expect(org.footer ?? false).toBe(false);
     expect(org.label).toBe("Org · acme");
+    // The "manage" surfaces moved to the pinned footer group, not this section.
+    expect(hrefs).not.toContain("/orgs/acme/usage");
+    expect(hrefs).not.toContain("/orgs/acme/settings");
+  });
+
+  it("pins Usage & Settings to a footer group (bottom of the rail)", () => {
+    const sections = buildNavSections({ orgSlug: "acme" });
+    const manage = sections.find((s) => s.id === "org-manage")!;
+    expect(manage.footer).toBe(true);
+    const hrefs = manage.links.map((l) => l.href);
+    expect(hrefs).toEqual(["/orgs/acme/usage", "/orgs/acme/settings"]);
+    // It is ordered after the product section so it renders below it.
+    expect(sections.findIndex((s) => s.id === "org-manage")).toBeGreaterThan(
+      sections.findIndex((s) => s.id === "org"),
+    );
   });
 
   it("surfaces Activities as an always-available org-level run feed (like Catalog)", () => {
