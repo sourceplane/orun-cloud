@@ -1359,6 +1359,20 @@ export function createStateRepository(executor: SqlExecutor): StateRepository {
       return pagedList(executor, sql, values, params.limit, params.cursor, mapWorkspaceLink);
     },
 
+    async hasActiveWorkspaceLink(orgId: Uuid, projectId: Uuid): Promise<StateResult<boolean>> {
+      try {
+        const result = await executor.execute<Record<string, unknown>>(
+          `SELECT 1 FROM state.workspace_links
+             WHERE org_id = $1 AND project_id = $2 AND status = 'active'
+             LIMIT 1`,
+          [orgId, projectId],
+        );
+        return { ok: true, value: result.rowCount > 0 };
+      } catch {
+        return safeError("Failed to check workspace link");
+      }
+    },
+
     async listActiveWorkspaceLinksForRemote(
       remoteUrl: string,
     ): Promise<StateResult<WorkspaceLink[]>> {

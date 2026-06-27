@@ -659,6 +659,12 @@ export interface StateRepository {
     projectId: Uuid,
     params: PageQueryParams,
   ): Promise<StateResult<PagedResult<WorkspaceLink>>>;
+  /**
+   * Allow-list probe: whether an ACTIVE workspace link (the repo allow-list
+   * entry) exists for the (org, project). Gates OIDC-CI state-object pushes —
+   * removing/unlinking the repo immediately revokes CI's ability to push.
+   */
+  hasActiveWorkspaceLink(orgId: Uuid, projectId: Uuid): Promise<StateResult<boolean>>;
   /** Resolve scan: active links for a normalized remote across the actor's orgs. */
   listActiveWorkspaceLinksForRemote(remoteUrl: string): Promise<StateResult<WorkspaceLink[]>>;
   /** Federation scan: active links for a rename-stable (provider, repo id). */

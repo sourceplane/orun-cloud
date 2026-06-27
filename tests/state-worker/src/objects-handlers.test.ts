@@ -28,6 +28,13 @@ const ORG_PUBLIC = `org_${ORG.replace(/-/g, "")}`;
 const PROJECT_PUBLIC = `prj_${PROJECT.replace(/-/g, "")}`;
 const ULID = "01J0000000000000000000ABCD";
 const ACTOR = { subjectId: "usr_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", subjectType: "user" };
+// An OIDC-CI (workflow) actor, bound to (ORG, PROJECT) by the minted token.
+const WORKFLOW_ACTOR = {
+  subjectId: "wf_github_oidc",
+  subjectType: "workflow",
+  boundOrgId: asUuid(ORG),
+  boundProjectId: asUuid(PROJECT),
+};
 const NOW = new Date("2026-06-14T10:00:00.000Z");
 
 // sha256 of the bytes "hello" — computed once, used as the canonical digest.
@@ -446,6 +453,73 @@ describe("GET …/state/objects/{digest} — blob bytes", () => {
 });
 
 // ── Multipart upload trio ───────────────────────────────────
+
+describe("OIDC-CI allow-list gate — a workspace link is required to push objects", () => {
+  const putReq = () =>
+    new Request(`https://s/.../objects/${HELLO_DIGEST}`, {
+      method: "PUT",
+      headers: { "Orun-Object-Kind": "plan" },
+      body: HELLO,
+    });
+
+  it("lets a workflow push when its repo has an active workspace link (allow-listed)", async () => {
+    const bucket = new FakeBucket();
+    const { executor } = fakeExecutor((text) => {
+      if (text.includes("state.workspace_links")) return [{ "?column?": 1 }]; // active link
+      if (text.includes("INSERT INTO state.objects")) return [objectRow()];
+      return [];
+    });
+    const res = await handlePutObject(putReq(), createEnv(bucket), "req_1", WORKFLOW_ACTOR, asUuid(ORG), asUuid(PROJECT), HELLO_DIGEST, { executor });
+    expect(res.status).toBe(201);
+    expect(bucket.store.has(`state/${ORG_PUBLIC}/${PROJECT_PUBLIC}/objects/${HELLO_DIGEST}`)).toBe(true);
+  });
+
+  it("denies a workflow push (404) when no active workspace link exists — before any write", async () => {
+    const bucket = new FakeBucket();
+    const { executor, queries } = fakeExecutor((text) => {
+      if (text.includes("state.workspace_links")) return []; // no allow-list entry
+      if (text.includes("INSERT INTO state.objects")) return [objectRow()];
+      return [];
+    });
+    const res = await handlePutObject(putReq(), createEnv(bucket), "req_1", WORKFLOW_ACTOR, asUuid(ORG), asUuid(PROJECT), HELLO_DIGEST, { executor });
+    expect(res.status).toBe(404);
+    // The gate runs before the index upsert and the R2 write.
+    expect(queries.some((q) => q.text.includes("INSERT INTO state.objects"))).toBe(false);
+    expect(bucket.store.has(`state/${ORG_PUBLIC}/${PROJECT_PUBLIC}/objects/${HELLO_DIGEST}`)).toBe(false);
+  });
+
+  it("does NOT gate a human/CLI actor on the allow-list (pushes even with no link)", async () => {
+    const bucket = new FakeBucket();
+    const { executor, queries } = fakeExecutor((text) => {
+      if (text.includes("INSERT INTO state.objects")) return [objectRow()];
+      return []; // workspace_links would be empty, but it is never queried for a user
+    });
+    const res = await handlePutObject(putReq(), createEnv(bucket), "req_1", ACTOR, asUuid(ORG), asUuid(PROJECT), HELLO_DIGEST, { executor });
+    expect(res.status).toBe(201);
+    // The allow-list probe is workflow-only — never runs for a human actor.
+    expect(queries.some((q) => q.text.includes("state.workspace_links"))).toBe(false);
+  });
+
+  it("denies a workflow multipart finalize (404) without an active link, before assembling", async () => {
+    const bucket = new FakeBucket();
+    const { executor } = fakeExecutor((text) => {
+      if (text.includes("state.workspace_links")) return []; // no link
+      if (text.includes("INSERT INTO state.objects")) return [objectRow()];
+      return [];
+    });
+    const env = createEnv(bucket);
+    // start + parts are not gated (no object committed yet) — use the workflow actor.
+    const startRes = await handleStartUpload(env, "req_1", WORKFLOW_ACTOR, asUuid(ORG), asUuid(PROJECT), HELLO_DIGEST);
+    const uploadId = ((await startRes.json()) as { data: { uploadId: string } }).data.uploadId;
+    await handleUploadPart(new Request("https://s/p1", { method: "PUT", body: "hel" }), env, "req_1", WORKFLOW_ACTOR, asUuid(ORG), asUuid(PROJECT), HELLO_DIGEST, uploadId, 1);
+    await handleUploadPart(new Request("https://s/p2", { method: "PUT", body: "lo" }), env, "req_1", WORKFLOW_ACTOR, asUuid(ORG), asUuid(PROJECT), HELLO_DIGEST, uploadId, 2);
+    const cReq = new Request("https://s/complete", { method: "POST", headers: { "Orun-Object-Kind": "plan" } });
+    const cRes = await handleCompleteUpload(cReq, env, "req_1", WORKFLOW_ACTOR, asUuid(ORG), asUuid(PROJECT), HELLO_DIGEST, uploadId, { executor });
+    expect(cRes.status).toBe(404);
+    // Finalize is gated before the assembled object lands at its CAS key.
+    expect(bucket.store.has(`state/${ORG_PUBLIC}/${PROJECT_PUBLIC}/objects/${HELLO_DIGEST}`)).toBe(false);
+  });
+});
 
 describe("chunked upload (R2 multipart) — start/part/complete", () => {
   it("round-trips a blob over multiple parts and verifies the assembled digest", async () => {

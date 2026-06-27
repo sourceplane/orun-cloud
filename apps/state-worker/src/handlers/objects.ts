@@ -27,7 +27,7 @@ import {
 import { createSqlExecutor, type SqlExecutor } from "@saas/db/hyperdrive";
 import type { Uuid } from "@saas/db/ids";
 import { errorResponse, successResponse, listResponse, validationError } from "../http.js";
-import { authorizeRun } from "../authz.js";
+import { authorizeRun, requireWorkflowRepoAllowed } from "../authz.js";
 import { generateUuid, orgPublicId, projectPublicId } from "../ids.js";
 import { DEFAULT_PAGE_LIMIT } from "../constants.js";
 import {
@@ -200,6 +200,11 @@ export async function handlePutObject(
   const owned = !deps?.executor;
   try {
     const repo = createStateRepository(executor);
+
+    // Allow-list gate: an OIDC CI may commit objects only while its repo has an
+    // active workspace link. No-op for human/CLI actors (governed by authz above).
+    const allowed = await requireWorkflowRepoAllowed(repo, requestId, actor, orgId, projectId);
+    if (!allowed.ok) return allowed.response;
 
     // Idempotent index upsert first: if the digest already exists, this is a
     // verified no-op (200). The content is immutable so we skip the R2 write.
@@ -522,6 +527,15 @@ export async function handleCompleteUpload(
   const executor = deps?.executor ?? createSqlExecutor(env.PLATFORM_DB!);
   const owned = !deps?.executor;
   try {
+    const repo = createStateRepository(executor);
+
+    // Allow-list gate (see handlePutObject): an OIDC CI may finalize an object
+    // only while its repo has an active workspace link. Checked before the R2
+    // assemble so an unlinked workflow is denied without doing the work. No-op
+    // for human actors (governed by authz above).
+    const allowed = await requireWorkflowRepoAllowed(repo, requestId, actor, orgId, projectId);
+    if (!allowed.ok) return allowed.response;
+
     // Gather the recorded part etags (ordered by part number).
     const parts: { partNumber: number; etag: string }[] = [];
     let cursor: string | undefined;
@@ -573,7 +587,6 @@ export async function handleCompleteUpload(
     }
     void assembled;
 
-    const repo = createStateRepository(executor);
     const upsert = await repo.upsertObject({
       id: generateUuid(),
       orgId,
