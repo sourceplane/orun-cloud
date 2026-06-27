@@ -1,5 +1,6 @@
 import {
   handleCreateWorkspaceLink,
+  handleListOrgWorkspaceLinks,
   handleResolveWorkspaceLinks,
 } from "@state-worker/handlers/links";
 import type { Env } from "@state-worker/env";
@@ -586,6 +587,60 @@ describe("POST /v1/organizations/{orgId}/cli/links", () => {
       { executor },
     );
     expect(res.status).toBe(404);
+  });
+});
+
+describe("GET /v1/organizations/{orgId}/cli/links — org allow-list", () => {
+  const getReq = () =>
+    new Request("https://state.test/v1/organizations/x/cli/links", { method: "GET" });
+
+  it("lists every active workspace link across the org, with project slugs resolved", async () => {
+    const { executor } = fakeExecutor((text) => {
+      if (text.includes("FROM state.workspace_links")) {
+        return [workspaceLinkRow({ provider: "github", provider_repo_id: "123", provider_owner_login: "acme" })];
+      }
+      return [];
+    });
+    const res = await handleListOrgWorkspaceLinks(
+      getReq(),
+      createEnv({
+        MEMBERSHIP_WORKER: membershipFetcher({ allow: true, orgs: [ORG_ENTRY] }),
+        POLICY_WORKER: policyFetcher(true),
+        PROJECTS_WORKER: projectsFetcher({ resolveById: { id: PROJECT_PUBLIC, slug: "platform", name: "platform", status: "active" } }),
+      }),
+      "req_1",
+      ACTOR,
+      asUuid(ORG_UUID),
+      { executor },
+    );
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      data: { links: { projectSlug: string; remoteUrl: string; providerRepoId: string | null }[]; nextCursor: unknown };
+      meta: { cursor: null };
+    };
+    expect(body.data.links).toHaveLength(1);
+    expect(body.data.links[0]!.projectSlug).toBe("platform");
+    expect(body.data.links[0]!.remoteUrl).toBe("github.com/acme/platform");
+    expect(body.data.links[0]!.providerRepoId).toBe("123");
+    expect(body.data.nextCursor).toBeNull();
+  });
+
+  it("returns a safe 404 when policy denies org.cli.link (resource hiding)", async () => {
+    const { executor, queries } = fakeExecutor(() => []);
+    const res = await handleListOrgWorkspaceLinks(
+      getReq(),
+      createEnv({
+        MEMBERSHIP_WORKER: membershipFetcher({ orgs: [ORG_ENTRY] }),
+        POLICY_WORKER: policyFetcher(false),
+        PROJECTS_WORKER: projectsFetcher({}),
+      }),
+      "req_1",
+      ACTOR,
+      asUuid(ORG_UUID),
+      { executor },
+    );
+    expect(res.status).toBe(404);
+    expect(queries).toHaveLength(0); // denied before any DB read
   });
 });
 

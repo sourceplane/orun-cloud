@@ -3,6 +3,7 @@ import { handleHealth } from "./handlers/health.js";
 import {
   handleCreateWorkspaceLink,
   handleListWorkspaceLinks,
+  handleListOrgWorkspaceLinks,
   handleResolveWorkspaceLinks,
   handleUnlinkWorkspaceLink,
 } from "./handlers/links.js";
@@ -185,13 +186,19 @@ export async function route(request: Request, env: Env, ctx?: ExecutionContext):
     return handleResolveWorkspaceLinks(request, env, requestId, actor);
   }
 
-  // POST /v1/organizations/{orgId}/cli/links — create (policy org.cli.link).
+  // /v1/organizations/{orgId}/cli/links — POST creates a link (policy
+  // org.cli.link); GET lists the org-wide allow-list (every active repo link).
   let m = pathname.match(ORG_CLI_LINKS_RE);
   if (m) {
     const orgId = parseOrgPublicId(m[1]!);
     if (!orgId) return notFound(requestId, pathname);
-    if (request.method !== "POST") return methodNotAllowed(requestId);
-    return handleCreateWorkspaceLink(request, env, requestId, actor, orgId);
+    if (request.method === "POST") {
+      return handleCreateWorkspaceLink(request, env, requestId, actor, orgId);
+    }
+    if (request.method === "GET") {
+      return handleListOrgWorkspaceLinks(request, env, requestId, actor, orgId);
+    }
+    return methodNotAllowed(requestId);
   }
 
   // GET .../projects/{projectId}/cli/links — console list.

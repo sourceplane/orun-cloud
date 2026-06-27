@@ -37,6 +37,7 @@ import {
 } from "../ids.js";
 import { fetchAuthorizationContext, fetchSubjectOrgs } from "../membership-client.js";
 import { authorizeViaPolicy } from "../policy-client.js";
+import { authorizeOrg } from "../authz.js";
 import { createProject, resolveProject, type ResolvedProject } from "../projects-client.js";
 import { githubFullNameFromNormalized, normalizeRemoteUrl } from "../remote-url.js";
 
@@ -497,6 +498,73 @@ export async function handleListWorkspaceLinks(
       ? `${result.value.nextCursor.createdAt}|${result.value.nextCursor.id}`
       : null;
     return listResponse(payload, requestId, cursor);
+  } catch {
+    return errorResponse("internal_error", "Service unavailable", 503, requestId);
+  } finally {
+    if (owned) await dispose(executor);
+  }
+}
+
+// ── Org-wide allow-list (GET /v1/organizations/{orgId}/cli/links) ───────────
+//
+// Every active workspace link across the org — the console's repo allow-list
+// view. Read is gated on the same org.cli.link grant as the project-scoped list.
+
+export async function handleListOrgWorkspaceLinks(
+  request: Request,
+  env: Env,
+  requestId: string,
+  actor: ActorContext,
+  orgId: Uuid,
+  deps?: WorkspaceLinkDeps,
+): Promise<Response> {
+  const authz = await authorizeOrg(env, requestId, actor, orgId, STATE_POLICY_ACTIONS.CLI_LINK);
+  if (!authz.ok) return authz.response;
+
+  const url = new URL(request.url);
+  const cursorParam = url.searchParams.get("cursor");
+  let cursor: { createdAt: string; id: string } | null = null;
+  if (cursorParam) {
+    const idx = cursorParam.indexOf("|");
+    if (idx <= 0) return validationError(requestId, { cursor: ["Malformed cursor"] });
+    cursor = { createdAt: cursorParam.slice(0, idx), id: cursorParam.slice(idx + 1) };
+  }
+
+  const orgsResult = await fetchSubjectOrgs(env.MEMBERSHIP_WORKER!, actor.subjectId, actor.subjectType, requestId);
+  const orgSlug = orgsResult.ok
+    ? orgsResult.orgs.find((o) => o.id === orgPublicId(orgId))?.slug ?? ""
+    : "";
+
+  const executor = deps?.executor ?? createSqlExecutor(env.PLATFORM_DB!);
+  const owned = !deps?.executor;
+  try {
+    const repo = createStateRepository(executor);
+    const result = await repo.listOrgWorkspaceLinks(orgId, { limit: 100, cursor });
+    if (!result.ok) return errorResponse("internal_error", "Service unavailable", 503, requestId);
+
+    // Resolve each link's project slug (links are 1:1 with projects, so the set
+    // is small). Best-effort: an unresolved slug falls back to "" — the console
+    // joins on projectId anyway.
+    const slugByProject = new Map<string, string>();
+    if (env.PROJECTS_WORKER) {
+      const uniqueProjectIds = [...new Set(result.value.items.map((l) => l.projectId))];
+      await Promise.all(
+        uniqueProjectIds.map(async (pid) => {
+          const resolved = await resolveProject(env.PROJECTS_WORKER!, orgId, { projectId: pid as Uuid }, requestId);
+          if (resolved.ok && resolved.project) slugByProject.set(pid, resolved.project.slug);
+        }),
+      );
+    }
+
+    const links = result.value.items.map((l) =>
+      toPublicLink(l, orgSlug, slugByProject.get(l.projectId) ?? "", actorKindOf(actor.subjectType)),
+    );
+    const nextCursor = result.value.nextCursor
+      ? { createdAt: result.value.nextCursor.createdAt, id: result.value.nextCursor.id }
+      : null;
+    const payload = { links, nextCursor };
+    const cursorStr = nextCursor ? `${nextCursor.createdAt}|${nextCursor.id}` : null;
+    return listResponse(payload, requestId, cursorStr);
   } catch {
     return errorResponse("internal_error", "Service unavailable", 503, requestId);
   } finally {

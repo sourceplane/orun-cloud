@@ -665,6 +665,14 @@ export interface StateRepository {
    * removing/unlinking the repo immediately revokes CI's ability to push.
    */
   hasActiveWorkspaceLink(orgId: Uuid, projectId: Uuid): Promise<StateResult<boolean>>;
+  /**
+   * Org-wide allow-list: the active workspace links across every project in the
+   * org (the console's repo allow-list view), newest first, keyset-paginated.
+   */
+  listOrgWorkspaceLinks(
+    orgId: Uuid,
+    params: PageQueryParams,
+  ): Promise<StateResult<PagedResult<WorkspaceLink>>>;
   /** Resolve scan: active links for a normalized remote across the actor's orgs. */
   listActiveWorkspaceLinksForRemote(remoteUrl: string): Promise<StateResult<WorkspaceLink[]>>;
   /** Federation scan: active links for a rename-stable (provider, repo id). */

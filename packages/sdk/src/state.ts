@@ -12,6 +12,7 @@ import type {
   GetRunResponse,
   ListJobsResponse,
   ReadLogResponse,
+  StateCursor,
 } from "@saas/contracts/state";
 
 import type { Transport, RequestOptions } from "./transport.js";
@@ -19,6 +20,18 @@ import type { Transport, RequestOptions } from "./transport.js";
 /** Console list response (project Settings → CLI page). */
 export interface ListWorkspaceLinksResponse {
   links: WorkspaceLink[];
+}
+
+/** Org-wide allow-list response (console repo allow-list view), keyset-paged. */
+export interface ListOrgWorkspaceLinksResponse {
+  links: WorkspaceLink[];
+  nextCursor: StateCursor | null;
+}
+
+/** Filters for the org-wide workspace-link (allow-list) listing. */
+export interface OrgLinksQuery {
+  cursor?: string;
+  limit?: number;
 }
 
 /** DELETE .../cli/links/:linkId response. */
@@ -111,6 +124,26 @@ export class StateClient {
         method: "GET",
         path: `/v1/cli/links/resolve`,
         query: { remoteUrl },
+      },
+      opts,
+    );
+  }
+
+  /**
+   * GET /v1/organizations/:orgId/cli/links — the org-wide repo allow-list: every
+   * active workspace link across the org's projects, keyset-paginated. Powers the
+   * console's "Git Repos → Settings" allow-list view. Policy: org.cli.link.
+   */
+  listOrgLinks(
+    orgId: string,
+    query: OrgLinksQuery = {},
+    opts: RequestOptions = {},
+  ): Promise<ListOrgWorkspaceLinksResponse> {
+    return this.transport.request<ListOrgWorkspaceLinksResponse>(
+      {
+        method: "GET",
+        path: `/v1/organizations/${encodeURIComponent(orgId)}/cli/links`,
+        query: { cursor: query.cursor, limit: query.limit },
       },
       opts,
     );

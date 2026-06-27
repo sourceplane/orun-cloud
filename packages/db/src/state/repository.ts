@@ -1373,6 +1373,14 @@ export function createStateRepository(executor: SqlExecutor): StateRepository {
       }
     },
 
+    async listOrgWorkspaceLinks(
+      orgId: Uuid,
+      params: PageQueryParams,
+    ): Promise<StateResult<PagedResult<WorkspaceLink>>> {
+      const sql = `SELECT * FROM state.workspace_links WHERE org_id = $1 AND status = 'active'`;
+      return pagedList(executor, sql, [orgId], params.limit, params.cursor, mapWorkspaceLink);
+    },
+
     async listActiveWorkspaceLinksForRemote(
       remoteUrl: string,
     ): Promise<StateResult<WorkspaceLink[]>> {
