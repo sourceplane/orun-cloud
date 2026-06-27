@@ -27,6 +27,7 @@ import {
   Terminal,
   Play,
   HardDrive,
+  Activity,
   type LucideIcon,
 } from "lucide-react";
 import { cn } from "@/lib/cn";
@@ -58,6 +59,7 @@ const ICONS: Record<string, LucideIcon> = {
   Terminal,
   Play,
   HardDrive,
+  Activity,
 };
 
 /**
