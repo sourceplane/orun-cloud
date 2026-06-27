@@ -34,9 +34,19 @@ describe("buildNavSections", () => {
     const hrefs = org.links.map((l) => l.href);
     expect(hrefs).toContain("/orgs/acme/projects");
     expect(hrefs).toContain("/orgs/acme/catalog");
+    expect(hrefs).toContain("/orgs/acme/activities");
     expect(hrefs).toContain("/orgs/acme/usage");
     expect(hrefs).toContain("/orgs/acme/settings");
     expect(org.label).toBe("Org · acme");
+  });
+
+  it("surfaces Activities as an always-available org-level run feed (like Catalog)", () => {
+    const org = buildNavSections({ orgSlug: "acme" }).find((s) => s.id === "org")!;
+    const activities = org.links.find((l) => l.href === "/orgs/acme/activities")!;
+    expect(activities).toBeDefined();
+    expect(activities.label).toBe("Activities");
+    // It is a top-level surface, not a sub-panel.
+    expect(activities.subPanel ?? false).toBe(false);
   });
 
   it("keeps org administration out of the primary sidebar (moved under Settings)", () => {

@@ -35,6 +35,7 @@ import {
   User2,
   Webhook,
   HardDrive,
+  Activity,
   type LucideIcon,
 } from "lucide-react";
 import {
@@ -68,6 +69,7 @@ const ICONS: Record<string, LucideIcon> = {
   User2,
   Webhook,
   HardDrive,
+  Activity,
 };
 
 // --- Registration context --------------------------------------------------
