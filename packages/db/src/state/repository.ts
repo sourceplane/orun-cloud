@@ -24,6 +24,7 @@ import type {
   StateStorageUsage,
   UpsertOrgCatalogEntityInput,
   ListRunsQuery,
+  ListOrgRunsQuery,
   LogChunk,
   PagedResult,
   PageQueryParams,
@@ -408,6 +409,39 @@ export function createStateRepository(executor: SqlExecutor): StateRepository {
       if (query?.status) {
         values.push(query.status);
         sql += ` AND status = $${values.length}`;
+      }
+      return pagedList(executor, sql, values, params.limit, params.cursor, mapRun);
+    },
+
+    async listOrgRuns(
+      orgId: Uuid,
+      params: PageQueryParams,
+      query?: ListOrgRunsQuery,
+    ): Promise<StateResult<PagedResult<Run>>> {
+      const values: unknown[] = [orgId];
+      let sql = `SELECT * FROM state.runs WHERE org_id = $1`;
+      if (query?.projectId) {
+        values.push(query.projectId);
+        sql += ` AND project_id = $${values.length}`;
+      }
+      if (query?.environment) {
+        values.push(query.environment);
+        sql += ` AND environment = $${values.length}`;
+      }
+      if (query?.status) {
+        values.push(query.status);
+        sql += ` AND status = $${values.length}`;
+      }
+      if (query?.source) {
+        values.push(query.source);
+        sql += ` AND source = $${values.length}`;
+      }
+      if (query?.branch) {
+        // Branch filter over git_ref, normalizing the refs/heads/ prefix so
+        // 'main' matches both a bare 'main' and a fully-qualified
+        // 'refs/heads/main' (CLI vs CI provenance differ).
+        values.push(query.branch);
+        sql += ` AND regexp_replace(COALESCE(git_ref, ''), '^refs/heads/', '') = $${values.length}`;
       }
       return pagedList(executor, sql, values, params.limit, params.cursor, mapRun);
     },
