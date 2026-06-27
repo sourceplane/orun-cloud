@@ -11,6 +11,7 @@ import type { Env } from "./env.js";
 import type { ActorContext } from "./router.js";
 import type { PolicyResource } from "@saas/contracts/policy";
 import type { Uuid } from "@saas/db/ids";
+import type { StateRepository } from "@saas/db/state";
 import { errorResponse } from "./http.js";
 import { fetchAuthorizationContext } from "./membership-client.js";
 import { authorizeViaPolicy } from "./policy-client.js";
@@ -151,5 +152,41 @@ export async function authorizeOrg(
     return { ok: false, response: errorResponse("not_found", "Not found", 404, requestId) };
   }
 
+  return { ok: true };
+}
+
+/**
+ * Repo allow-list gate for OIDC-CI state-object pushes.
+ *
+ * The OIDC token was minted only because the repo had an active workspace link
+ * (the allow-list entry), but that was checked at MINT time. This re-checks at
+ * PUSH time so unlinking a repo immediately revokes a workflow's ability to
+ * commit objects — even with a token minted earlier (defense-in-depth). The
+ * gate is workflow-only: human / CLI / service-principal actors are governed by
+ * role policy in `authorizeRun` and are unaffected. A missing allow-list entry
+ * hides as a 404, like every other denial.
+ *
+ * Callers must have already passed `authorizeRun(..., OBJECT_WRITE)`; this is the
+ * second, allow-list gate layered on top, run when an object is about to be
+ * committed (single-request PUT and multipart complete).
+ */
+export async function requireWorkflowRepoAllowed(
+  repo: Pick<StateRepository, "hasActiveWorkspaceLink">,
+  requestId: string,
+  actor: ActorContext,
+  orgId: Uuid,
+  projectId: Uuid,
+): Promise<AuthzResult> {
+  if (actor.subjectType !== "workflow") return { ok: true };
+  const linked = await repo.hasActiveWorkspaceLink(orgId, projectId);
+  if (!linked.ok) {
+    return {
+      ok: false,
+      response: errorResponse("internal_error", "Service unavailable", 503, requestId),
+    };
+  }
+  if (!linked.value) {
+    return { ok: false, response: errorResponse("not_found", "Not found", 404, requestId) };
+  }
   return { ok: true };
 }
