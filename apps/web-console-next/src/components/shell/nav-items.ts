@@ -34,9 +34,7 @@ export interface NavScope {
 export function buildNavSections(scope: NavScope): NavSection[] {
   const sections: NavSection[] = [];
   const orgSlug = scope.orgSlug ?? null;
-  const projectSlug = scope.projectSlug ?? null;
   const orgBase = orgSlug ? `/orgs/${orgSlug}` : null;
-  const projectBase = orgSlug && projectSlug ? `/orgs/${orgSlug}/projects/${projectSlug}` : null;
 
   // The Workspace/Organizations section is intentionally omitted: the org
   // switcher at the top of the sidebar is the home for org selection (and links
@@ -57,7 +55,7 @@ export function buildNavSections(scope: NavScope): NavSection[] {
       links: [
         { href: `${orgBase}/catalog`, label: "Catalog", icon: "Boxes" },
         { href: `${orgBase}/activities`, label: "Activities", icon: "Activity" },
-        { href: `${orgBase}/projects`, label: "Repos", icon: "FolderKanban" },
+        { href: `${orgBase}/projects`, label: "Git Repos", icon: "FolderKanban" },
         { href: `${orgBase}/usage`, label: "Usage & quota", icon: "Gauge" },
         // Opens the dedicated settings panel — flagged so the renderer shows a ›.
         { href: `${orgBase}/settings`, label: "Settings", icon: "Settings", subPanel: true },
@@ -65,20 +63,11 @@ export function buildNavSections(scope: NavScope): NavSection[] {
     });
   }
 
-  if (projectBase) {
-    sections.push({
-      id: "project",
-      label: projectSlug ? `Repo · ${projectSlug}` : "Repo",
-      links: [
-        { href: `${projectBase}/runs`, label: "Runs", icon: "Play" },
-        { href: `${projectBase}/environments`, label: "Environments", icon: "Boxes" },
-        { href: `${projectBase}/git`, label: "Git", icon: "GitBranch" },
-        { href: `${projectBase}/cli`, label: "CLI", icon: "Terminal" },
-        { href: `${projectBase}/storage`, label: "Storage", icon: "HardDrive" },
-        { href: `${projectBase}/config`, label: "Config", icon: "SlidersHorizontal" },
-      ],
-    });
-  }
+  // The per-repo section is intentionally omitted from the sidebar: selecting a
+  // repo under "Git Repos" opens a settings-style page whose sections
+  // (Environments, Git, CLI, Storage, Config) live in a horizontal tab bar
+  // (see `repo-tabs.ts` / the repo layout). Runs moved out to the org-level
+  // Activities feed. The sidebar stays a flat, org-scoped product nav.
 
   return sections;
 }

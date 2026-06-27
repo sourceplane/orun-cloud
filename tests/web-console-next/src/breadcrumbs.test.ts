@@ -28,7 +28,7 @@ describe("buildBreadcrumbs", () => {
     });
     expect(crumbs).toEqual([
       { label: "Acme Inc", href: "/orgs/acme/projects" },
-      { label: "Repos", href: "/orgs/acme/projects" },
+      { label: "Git Repos", href: "/orgs/acme/projects" },
       { label: "demo-app", href: "/orgs/acme/projects/demo-app/environments" },
       { label: "Environments" },
     ]);

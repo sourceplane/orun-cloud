@@ -64,12 +64,15 @@ describe("buildNavSections", () => {
     expect(isLinkActive("/orgs/acme/settings", "/orgs/acme/settings/members")).toBe(true);
   });
 
-  it("adds the project section only when both slugs are present", () => {
-    expect(buildNavSections({ orgSlug: "acme" }).find((s) => s.id === "project")).toBeUndefined();
-    const project = buildNavSections({ orgSlug: "acme", projectSlug: "web" }).find((s) => s.id === "project")!;
-    const hrefs = project.links.map((l) => l.href);
-    expect(project.links[0]!.href).toBe("/orgs/acme/projects/web/runs");
-    expect(hrefs).toContain("/orgs/acme/projects/web/environments");
+  it("no longer renders a per-repo sidebar section — repo settings live in tabs", () => {
+    // Selecting a repo opens a settings-style page whose sections (Environments,
+    // Git, CLI, Storage, Config) are horizontal tabs, not a sidebar section.
+    expect(buildNavSections({ orgSlug: "acme", projectSlug: "web" }).find((s) => s.id === "project")).toBeUndefined();
+    const allHrefs = buildNavSections({ orgSlug: "acme", projectSlug: "web" }).flatMap((s) =>
+      s.links.map((l) => l.href),
+    );
+    expect(allHrefs).not.toContain("/orgs/acme/projects/web/runs");
+    expect(allHrefs).not.toContain("/orgs/acme/projects/web/git");
   });
 });
 

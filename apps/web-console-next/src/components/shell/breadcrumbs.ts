@@ -16,8 +16,11 @@ export interface Crumb {
 
 /** Page labels for org-scoped leaf segments. */
 const SEGMENT_LABELS: Record<string, string> = {
-  projects: "Repos",
+  projects: "Git Repos",
+  activities: "Activities",
   environments: "Environments",
+  git: "Git",
+  cli: "CLI",
   usage: "Usage & quota",
   settings: "Settings",
   members: "Members",

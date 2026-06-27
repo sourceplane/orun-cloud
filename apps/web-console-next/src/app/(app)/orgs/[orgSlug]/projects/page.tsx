@@ -72,8 +72,10 @@ function Inner({ orgId, orgSlug }: { orgId: string; orgSlug: string }) {
     <div className="space-y-5">
       <header className="flex items-end justify-between gap-4">
         <div>
-          <h1 className="text-xl font-semibold tracking-tight">Repos</h1>
-          <p className="text-sm text-muted-foreground">Each repo is a project: its environments and configuration.</p>
+          <h1 className="text-xl font-semibold tracking-tight">Git Repos</h1>
+          <p className="text-sm text-muted-foreground">
+            Each repo is a project. Select one to manage its environments, git, CLI, storage, and config.
+          </p>
         </div>
         <Dialog open={open} onOpenChange={setOpen}>
           <DialogTrigger asChild>
