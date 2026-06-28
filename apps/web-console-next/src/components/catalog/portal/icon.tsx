@@ -14,11 +14,13 @@ export function PathIcon({
   size = 16,
   strokeWidth = 1.8,
   className,
+  style,
 }: {
   d: string;
   size?: number;
   strokeWidth?: number;
   className?: string;
+  style?: React.CSSProperties;
 }) {
   return (
     <svg
@@ -31,6 +33,7 @@ export function PathIcon({
       strokeLinecap="round"
       strokeLinejoin="round"
       className={className}
+      style={style}
       aria-hidden="true"
     >
       <path d={d} />

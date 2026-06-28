@@ -83,6 +83,28 @@ description/system/language and a server-computed scorecard + deploy recency;
 the client engine remains the documented fallback; gates green (worker tests +
 console typecheck).
 
+## CP5 — Dedicated service page
+
+- `lib/catalog-portal/markdown.ts` — a pure CommonMark-subset parser (the
+  design's `parseInline` / `parseMd`); typed blocks/spans, unit-tested.
+- `lib/catalog-portal/page.ts` — `buildPage` extends `buildSelected` into the
+  design's `isPage` shape: the large readiness ring, the service-definition
+  documents (README · ARCHITECTURE · RUNBOOK · API · PROVISIONING) composed only
+  from the entity's own git-derived facts, and a provenance-only activity feed.
+- `components/catalog/portal/{service-page,markdown-view,service-page-loader}.tsx`
+  — the full-width page: breadcrumb, identity hero, runtime-gated ops strip,
+  Overview / Docs / Dependencies / Activity / Scorecard tabs over a two-column
+  body with the Ownership / About / quick-links rail. The loader shares the
+  index's `qk.orgCatalog` cache so the whole neighborhood resolves.
+- `detail-drawer.tsx` — adds the design's "Open full service page" action and
+  aligns the sheet geometry (512px, full-height flush) to the contract.
+- `app/(app)/orgs/[orgSlug]/catalog/[entityKey]/page.tsx` renders the portal
+  page; the superseded `catalog-workbench` / `entity-page` surfaces are removed.
+
+**Done when:** drilling into any entity (row "open", drawer button, or deep
+link) renders the designed page, every data-less section degrades honestly
+(§4), and gates are green (console typecheck + lint + Jest).
+
 ## Verification notes
 
 - The Cloudflare/OpenNext production build is not exercised in CI here; the gate

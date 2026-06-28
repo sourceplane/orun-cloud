@@ -54,11 +54,13 @@ export function DetailDrawer({
   onClose,
   onSelectRef,
   onViewMap,
+  onOpenPage,
 }: {
   sel: SelectedService;
   onClose: () => void;
   onSelectRef: (key: string) => void;
   onViewMap: () => void;
+  onOpenPage: () => void;
 }) {
   const ringOffset = RING_CIRC * (1 - (sel.score ?? 0) / 100);
   return (
@@ -67,9 +69,9 @@ export function DetailDrawer({
         type="button"
         aria-label="Close detail"
         onClick={onClose}
-        className="absolute inset-x-0 bottom-[22px] top-0 z-[5] animate-fade-in bg-[rgba(6,6,8,.5)]"
+        className="absolute inset-0 z-[5] animate-fade-in bg-[rgba(6,6,8,.5)]"
       />
-      <aside className="absolute bottom-[22px] right-0 top-0 z-[6] flex w-[412px] max-w-[92vw] animate-slide-in-right flex-col overflow-hidden rounded-[13px] border border-[#26262b] bg-[#0c0c0f] shadow-[-20px_0_60px_rgba(0,0,0,.55)]">
+      <aside className="absolute inset-y-0 right-0 z-[6] flex w-[512px] max-w-[92vw] animate-slide-in-right flex-col overflow-hidden border-l border-l-[#1f1f23] bg-[#0c0c0f] shadow-[-28px_0_90px_rgba(0,0,0,.6)]">
         <div className="min-h-0 flex-1 overflow-y-auto">
           {/* identity */}
           <div className={`px-[18px] pb-4 pt-[18px] ${SECTION}`}>
@@ -112,6 +114,14 @@ export function DetailDrawer({
               {sel.language ? <Chip>{sel.language}</Chip> : null}
               <Chip>{sel.system}</Chip>
             </div>
+            <button
+              type="button"
+              onClick={onOpenPage}
+              className="mt-3.5 flex h-[34px] w-full items-center justify-center gap-[7px] rounded-[8px] border-none bg-[#f59e0b] text-[12.5px] font-semibold text-[#1a1206] hover:brightness-110"
+            >
+              Open full service page
+              <ArrowUpRight className="h-3.5 w-3.5" strokeWidth={2.4} />
+            </button>
           </div>
 
           {/* operational stats */}
