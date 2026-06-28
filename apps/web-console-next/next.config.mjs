@@ -6,6 +6,24 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
+  experimental: {
+    // Tree-shake barrel imports (PERF G2): rewrite `import { X } from "pkg"` to
+    // the specific submodule so unused icons/primitives don't ship. lucide-react
+    // and the Radix packages are large barrels; cmdk is not in Next's default
+    // optimize list, so name them explicitly.
+    optimizePackageImports: [
+      "lucide-react",
+      "cmdk",
+      "@radix-ui/react-dialog",
+      "@radix-ui/react-dropdown-menu",
+      "@radix-ui/react-label",
+      "@radix-ui/react-select",
+      "@radix-ui/react-slot",
+      "@radix-ui/react-tabs",
+      "@radix-ui/react-toast",
+      "@radix-ui/react-tooltip",
+    ],
+  },
   // `@saas/sdk` is a workspace-source package: its `package.json` exports
   // point at `./src/index.ts` and the file uses TS NodeNext-style `./*.js`
   // import specifiers that resolve to the sibling `.ts` source. Next's
