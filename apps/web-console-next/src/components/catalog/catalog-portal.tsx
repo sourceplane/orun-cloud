@@ -12,9 +12,10 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
 import { useSession } from "@/lib/session";
 import { wrap } from "@/lib/api";
-import { useApiQuery, qk } from "@/lib/query";
+import { useApiQuery, usePrefetch, qk } from "@/lib/query";
 import { useDebounced } from "@/lib/use-debounced";
 import { collectOrgCatalog } from "@/lib/catalog-portal/fetch";
+import { decodeEntityKey, parseEntityRef } from "@/lib/catalog-entity-key";
 import { cn } from "@/lib/cn";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
@@ -138,15 +139,37 @@ export function CatalogPortal({ orgId, orgSlug }: { orgId: string; orgSlug: stri
     [selectedService, ctx],
   );
 
+  // Warm the deep entity route's narrowed query on intent (PERF C7). Selecting a
+  // row is a strong signal the user may drill in (double-click / ↵), so prefetch
+  // the exact query `EntityWorkbench` will run — drilling in then has no spinner
+  // even for the authoritative fetch (the seed already covers the first paint).
+  const prefetch = usePrefetch();
+  const warmEntity = React.useCallback(
+    (key: string) => {
+      const id = decodeEntityKey(key);
+      if (!id) return;
+      prefetch(qk.catalogEntity(orgId, key), () =>
+        wrap(() =>
+          client.state.listOrgCatalogEntities(orgId, {
+            project: id.sourceProjectId,
+            q: parseEntityRef(id.entityRef).name || id.entityRef,
+          }),
+        ),
+      );
+    },
+    [prefetch, client, orgId],
+  );
+
   const setSelectedKey = React.useCallback(
     (key: string | null) => {
+      if (key) warmEntity(key);
       const sp = new URLSearchParams(searchParams?.toString() ?? "");
       if (key) sp.set("entity", key);
       else sp.delete("entity");
       const qs = sp.toString();
       router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
     },
-    [router, pathname, searchParams],
+    [router, pathname, searchParams, warmEntity],
   );
   const openFull = React.useCallback((key: string) => router.push(`${catalogHref}/${key}`), [router, catalogHref]);
 
