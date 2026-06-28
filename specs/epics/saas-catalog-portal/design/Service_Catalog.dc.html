@@ -1,0 +1,1006 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;background:#08080a;}
+  ::-webkit-scrollbar{width:10px;height:10px;}
+  ::-webkit-scrollbar-thumb{background:#26262b;border-radius:6px;border:2px solid #08080a;}
+  ::-webkit-scrollbar-thumb:hover{background:#34343a;}
+  ::-webkit-scrollbar-track{background:transparent;}
+  ::selection{background:rgba(245,158,11,.32);}
+  select option{background:#141417;color:#e4e4e7;}
+  [data-row]:hover{background:rgba(255,255,255,.022) !important;}
+  [data-navrow]:hover{background:rgba(255,255,255,.04);color:#e4e4e7;}
+  [data-chip]:hover{border-color:#3a3a40;color:#e4e4e7;}
+  [data-card]:hover{border-color:#33333a;background:#121215;}
+  [data-gnode]:hover{filter:brightness(1.25);}
+  @keyframes drawerIn{from{opacity:.5;transform:translateX(26px);}to{opacity:1;transform:translateX(0);}}
+  @keyframes scrimIn{from{opacity:0;}to{opacity:1;}}
+</style>
+</helmet>
+
+<div data-screen-label="Catalog" style="display:flex; height:100vh; width:100%; background:#08080a; color:#e4e4e7; font-family:ui-sans-serif,system-ui,-apple-system,'Segoe UI',Roboto,'Helvetica Neue',Arial,sans-serif; font-size:14px; -webkit-font-smoothing:antialiased; overflow:hidden;">
+
+  <!-- ── Sidebar ───────────────────────────────────────── -->
+  <aside style="width:236px; flex-shrink:0; display:flex; flex-direction:column; background:#0b0b0e; border-right:1px solid #18181b;">
+    <div style="padding:10px; border-bottom:1px solid #161619; display:flex; flex-direction:column; gap:8px;">
+      <button style="display:flex; align-items:center; gap:9px; width:100%; padding:7px 8px; background:#121215; border:1px solid #1f1f23; border-radius:8px; color:#e4e4e7; cursor:pointer; text-align:left;">
+        <span style="width:24px; height:24px; border-radius:6px; background:linear-gradient(135deg,#f59e0b,#b45309); display:grid; place-items:center; font-weight:700; font-size:12px; color:#1a1206; flex-shrink:0;">N</span>
+        <span style="display:flex; flex-direction:column; line-height:1.15; min-width:0;">
+          <span style="font-size:13px; font-weight:600; color:#fafafa; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">Northwind</span>
+          <span style="font-size:11px; color:#71717a;">Pro · org</span>
+        </span>
+        <span style="margin-left:auto; color:#52525b; font-size:11px;">▾</span>
+      </button>
+      <div style="display:flex; align-items:center; gap:8px; padding:6px 8px; background:#0e0e11; border:1px solid #1c1c20; border-radius:8px; color:#71717a; font-size:12.5px;">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><path d="m21 21-4.3-4.3"></path></svg>
+        <span>Search</span>
+        <span style="margin-left:auto; font-family:ui-monospace,monospace; font-size:10px; border:1px solid #26262b; border-radius:4px; padding:1px 5px; color:#52525b;">⌘K</span>
+      </div>
+    </div>
+
+    <nav style="flex:1; overflow-y:auto; padding:14px 8px;">
+      <div style="font-size:11px; font-weight:600; text-transform:uppercase; letter-spacing:.08em; color:#52525b; padding:0 8px 8px;">Org · northwind</div>
+      <div style="display:flex; flex-direction:column; gap:1px;">
+        <a data-navrow style="display:flex; align-items:center; gap:9px; padding:7px 8px; border-radius:7px; color:#a1a1aa; text-decoration:none; font-size:13.5px; cursor:pointer; transition:background .12s;">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 7.5 12 3l10 4.5"></path><path d="M2 7.5v9L12 21l10-4.5v-9"></path><path d="M12 12v9"></path></svg>
+          Repos
+        </a>
+        <a data-navrow style="display:flex; align-items:center; gap:9px; padding:7px 8px; border-radius:7px; color:#f59e0b; background:rgba(245,158,11,.1); text-decoration:none; font-size:13.5px; font-weight:500; cursor:pointer;">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83Z"></path><path d="m22 17.65-9.17 4.16a2 2 0 0 1-1.66 0L2 17.65"></path><path d="m22 12.65-9.17 4.16a2 2 0 0 1-1.66 0L2 12.65"></path></svg>
+          Catalog
+        </a>
+        <a data-navrow style="display:flex; align-items:center; gap:9px; padding:7px 8px; border-radius:7px; color:#a1a1aa; text-decoration:none; font-size:13.5px; cursor:pointer; transition:background .12s;">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v4"></path><path d="M5.2 5.2 8 8"></path><path d="M2 12h4"></path><path d="M12 12 8.5 8.5"></path><circle cx="12" cy="12" r="2"></circle></svg>
+          Usage &amp; quota
+        </a>
+        <a data-navrow style="display:flex; align-items:center; gap:9px; padding:7px 8px; border-radius:7px; color:#a1a1aa; text-decoration:none; font-size:13.5px; cursor:pointer; transition:background .12s;">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2Z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+          Settings
+          <span style="margin-left:auto; color:#3f3f46;">›</span>
+        </a>
+      </div>
+    </nav>
+
+    <div style="padding:10px; border-top:1px solid #161619;">
+      <div style="display:flex; align-items:center; gap:9px; padding:6px 8px; border-radius:8px;">
+        <span style="width:26px; height:26px; border-radius:50%; background:#27272a; display:grid; place-items:center; font-size:11px; font-weight:600; color:#d4d4d8;">EB</span>
+        <span style="display:flex; flex-direction:column; line-height:1.2; min-width:0;">
+          <span style="font-size:12.5px; color:#e4e4e7; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">Elena Brandt</span>
+          <span style="font-size:11px; color:#71717a;">elena@northwind.io</span>
+        </span>
+      </div>
+    </div>
+  </aside>
+
+  <!-- ── Main ──────────────────────────────────────────── -->
+  <div style="flex:1; min-width:0; display:flex; flex-direction:column; overflow:hidden;">
+
+    <!-- Topbar -->
+    <div style="height:50px; flex-shrink:0; border-bottom:1px solid #18181b; display:flex; align-items:center; gap:10px; padding:0 20px; background:rgba(10,10,12,.7);">
+      <span style="font-size:13px; color:#71717a;">northwind</span>
+      <span style="color:#3f3f46;">/</span>
+      <span style="font-size:13px; color:#e4e4e7; font-weight:500;">Catalog</span>
+      <div style="margin-left:auto; display:flex; align-items:center; gap:10px;">
+        <button style="display:flex; align-items:center; gap:6px; height:30px; padding:0 11px; background:transparent; border:1px solid #232327; border-radius:7px; color:#a1a1aa; font-size:12.5px; cursor:pointer;">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14z"></path></svg>
+          Docs
+        </button>
+        <span style="width:26px; height:26px; border-radius:50%; background:#27272a; display:grid; place-items:center; font-size:11px; font-weight:600; color:#d4d4d8;">EB</span>
+      </div>
+    </div>
+
+    <!-- Scrolling content -->
+    <div style="flex:1; min-height:0; display:flex; flex-direction:column; padding:22px 26px 0; gap:18px; overflow:hidden;">
+
+      <!-- Title + metrics -->
+      <div style="flex-shrink:0; display:flex; flex-direction:column; gap:16px;">
+        <div style="display:flex; align-items:flex-end; gap:16px;">
+          <div style="min-width:0;">
+            <div style="font-family:ui-monospace,'SF Mono',Menlo,monospace; font-size:11px; letter-spacing:.14em; text-transform:uppercase; color:#f59e0b; margin-bottom:6px;">Service catalog</div>
+            <h1 style="margin:0; font-size:22px; font-weight:600; letter-spacing:-.01em; color:#fafafa;">All services</h1>
+            <p style="margin:5px 0 0; font-size:13px; color:#71717a; max-width:560px;">The org-wide component graph merged across every repo — ownership, production-readiness and live health in one place.</p>
+          </div>
+          <div style="margin-left:auto; display:flex; gap:9px; flex-shrink:0;">
+            <button style="display:flex; align-items:center; gap:7px; height:34px; padding:0 13px; background:transparent; border:1px solid #232327; border-radius:8px; color:#d4d4d8; font-size:13px; font-weight:500; cursor:pointer;">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"></path><path d="m8 11 4 4 4-4"></path><path d="M20 21H4"></path></svg>
+              Import
+            </button>
+            <button style="display:flex; align-items:center; gap:7px; height:34px; padding:0 14px; background:#f59e0b; border:1px solid #f59e0b; border-radius:8px; color:#1a1206; font-size:13px; font-weight:600; cursor:pointer;">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"></path><path d="M12 5v14"></path></svg>
+              Register service
+            </button>
+          </div>
+        </div>
+
+        <!-- Metric tiles -->
+        <div style="display:grid; grid-template-columns:repeat(4,1fr); gap:12px;">
+          <div style="background:#0d0d10; border:1px solid #1c1c20; border-radius:12px; padding:14px 16px;">
+            <div style="font-family:ui-monospace,monospace; font-size:10.5px; letter-spacing:.1em; text-transform:uppercase; color:#71717a;">Services</div>
+            <div style="display:flex; align-items:baseline; gap:8px; margin-top:7px;">
+              <span style="font-size:27px; font-weight:600; color:#fafafa; line-height:1;">{{ totalCount }}</span>
+              <span style="font-size:12px; color:#71717a;">across {{ systemsCount }} systems</span>
+            </div>
+          </div>
+          <div style="background:#0d0d10; border:1px solid #1c1c20; border-radius:12px; padding:14px 16px;">
+            <div style="font-family:ui-monospace,monospace; font-size:10.5px; letter-spacing:.1em; text-transform:uppercase; color:#71717a;">Ownership</div>
+            <div style="display:flex; align-items:baseline; gap:8px; margin-top:7px;">
+              <span style="font-size:27px; font-weight:600; color:{{ ownedColor }}; line-height:1;">{{ ownedPct }}%</span>
+              <span style="font-size:12px; color:#71717a;">{{ ownedSub }}</span>
+            </div>
+            <div style="margin-top:9px; height:4px; border-radius:3px; background:#1c1c20; overflow:hidden;">
+              <div style="height:100%; border-radius:3px; background:{{ ownedColor }}; width:{{ ownedPct }}%;"></div>
+            </div>
+          </div>
+          <div style="background:#0d0d10; border:1px solid #1c1c20; border-radius:12px; padding:14px 16px;">
+            <div style="font-family:ui-monospace,monospace; font-size:10.5px; letter-spacing:.1em; text-transform:uppercase; color:#71717a;">Production-ready</div>
+            <div style="display:flex; align-items:baseline; gap:8px; margin-top:7px;">
+              <span style="font-size:27px; font-weight:600; color:#fafafa; line-height:1;">{{ readyPct }}%</span>
+              <span style="font-size:12px; color:#71717a;">{{ readySub }}</span>
+            </div>
+            <div style="margin-top:9px; height:4px; border-radius:3px; background:#1c1c20; overflow:hidden;">
+              <div style="height:100%; border-radius:3px; background:#34d399; width:{{ readyPct }}%;"></div>
+            </div>
+          </div>
+          <button data-card onClick="{{ toggleAttention }}" style="text-align:left; background:{{ attBg }}; border:1px solid {{ attBorder }}; border-radius:12px; padding:14px 16px; cursor:pointer; transition:background .12s,border-color .12s;">
+            <div style="font-family:ui-monospace,monospace; font-size:10.5px; letter-spacing:.1em; text-transform:uppercase; color:{{ attLabel }}; display:flex; align-items:center; gap:6px;">Needs attention <span style="font-size:9px;">{{ attCaret }}</span></div>
+            <div style="display:flex; align-items:baseline; gap:8px; margin-top:7px;">
+              <span style="font-size:27px; font-weight:600; color:#fafafa; line-height:1;">{{ attentionCount }}</span>
+              <span style="font-size:12px; color:#71717a;">{{ attSub }}</span>
+            </div>
+          </button>
+        </div>
+      </div>
+
+      <!-- Toolbar -->
+      <div style="flex-shrink:0; display:flex; align-items:center; gap:9px; flex-wrap:wrap;">
+        <div style="position:relative; display:flex; align-items:center;">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#71717a" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="position:absolute; left:10px; pointer-events:none;"><circle cx="11" cy="11" r="8"></circle><path d="m21 21-4.3-4.3"></path></svg>
+          <input value="{{ query }}" onInput="{{ onQuery }}" placeholder="Search services, refs, owners…" style="height:34px; width:260px; padding:0 11px 0 30px; background:#0d0d10; border:1px solid #232327; border-radius:8px; color:#e4e4e7; font-size:13px; outline:none; font-family:inherit;" />
+        </div>
+
+        <span style="position:relative;">
+          <select value="{{ kindVal }}" onChange="{{ onKind }}" style="appearance:none; height:34px; padding:0 26px 0 11px; background:#0d0d10; border:1px solid #232327; border-radius:8px; color:#d4d4d8; font-size:12.5px; cursor:pointer; font-family:inherit;">
+            <option value="all">All kinds</option>
+            <option value="Component">Component</option>
+            <option value="API">API</option>
+            <option value="Resource">Resource</option>
+          </select>
+          <span style="position:absolute; right:10px; top:50%; transform:translateY(-50%); color:#52525b; font-size:10px; pointer-events:none;">▾</span>
+        </span>
+
+        <span style="position:relative;">
+          <select value="{{ lifeVal }}" onChange="{{ onLife }}" style="appearance:none; height:34px; padding:0 26px 0 11px; background:#0d0d10; border:1px solid #232327; border-radius:8px; color:#d4d4d8; font-size:12.5px; cursor:pointer; font-family:inherit;">
+            <option value="all">Any lifecycle</option>
+            <option value="production">Production</option>
+            <option value="experimental">Experimental</option>
+            <option value="deprecated">Deprecated</option>
+          </select>
+          <span style="position:absolute; right:10px; top:50%; transform:translateY(-50%); color:#52525b; font-size:10px; pointer-events:none;">▾</span>
+        </span>
+
+        <span style="position:relative;">
+          <select value="{{ healthVal }}" onChange="{{ onHealth }}" style="appearance:none; height:34px; padding:0 26px 0 11px; background:#0d0d10; border:1px solid #232327; border-radius:8px; color:#d4d4d8; font-size:12.5px; cursor:pointer; font-family:inherit;">
+            <option value="all">Any health</option>
+            <option value="healthy">Healthy</option>
+            <option value="degraded">Degraded</option>
+            <option value="down">Down</option>
+          </select>
+          <span style="position:absolute; right:10px; top:50%; transform:translateY(-50%); color:#52525b; font-size:10px; pointer-events:none;">▾</span>
+        </span>
+
+        <span style="width:1px; height:22px; background:#232327; margin:0 2px;"></span>
+
+        <span style="position:relative;">
+          <select value="{{ groupVal }}" onChange="{{ onGroup }}" style="appearance:none; height:34px; padding:0 26px 0 32px; background:#0d0d10; border:1px solid #232327; border-radius:8px; color:#d4d4d8; font-size:12.5px; cursor:pointer; font-family:inherit;">
+            <option value="none">No grouping</option>
+            <option value="team">Group by team</option>
+            <option value="system">Group by system</option>
+            <option value="lifecycle">Group by lifecycle</option>
+          </select>
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#71717a" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="position:absolute; left:11px; top:50%; transform:translateY(-50%); pointer-events:none;"><path d="M3 6h18"></path><path d="M7 12h10"></path><path d="M11 18h2"></path></svg>
+          <span style="position:absolute; right:10px; top:50%; transform:translateY(-50%); color:#52525b; font-size:10px; pointer-events:none;">▾</span>
+        </span>
+
+        <div style="margin-left:auto; display:inline-flex; background:#0d0d10; border:1px solid #232327; border-radius:8px; padding:2px;">
+          <button onClick="{{ setList }}" style="display:flex; align-items:center; gap:6px; height:28px; padding:0 11px; border:none; border-radius:6px; background:{{ tabListBg }}; color:{{ tabListFg }}; font-size:12.5px; font-weight:500; cursor:pointer; font-family:inherit;">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 6h13"></path><path d="M8 12h13"></path><path d="M8 18h13"></path><path d="M3 6h.01"></path><path d="M3 12h.01"></path><path d="M3 18h.01"></path></svg>
+            Table
+          </button>
+          <button onClick="{{ setBoard }}" style="display:flex; align-items:center; gap:6px; height:28px; padding:0 11px; border:none; border-radius:6px; background:{{ tabBoardBg }}; color:{{ tabBoardFg }}; font-size:12.5px; font-weight:500; cursor:pointer; font-family:inherit;">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="18" rx="1"></rect><rect x="14" y="3" width="7" height="10" rx="1"></rect></svg>
+            Board
+          </button>
+          <button onClick="{{ setGraph }}" style="display:flex; align-items:center; gap:6px; height:28px; padding:0 11px; border:none; border-radius:6px; background:{{ tabGraphBg }}; color:{{ tabGraphFg }}; font-size:12.5px; font-weight:500; cursor:pointer; font-family:inherit;">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="5" r="2"></circle><circle cx="5" cy="19" r="2"></circle><circle cx="19" cy="19" r="2"></circle><path d="M11.5 6.5 6 17"></path><path d="m12.5 6.5 5.5 10.5"></path></svg>
+            Map
+          </button>
+        </div>
+      </div>
+
+      <!-- Active filter chips -->
+      <sc-if value="{{ hasChips }}" hint-placeholder-val="{{ false }}">
+        <div style="flex-shrink:0; display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-top:-6px;">
+          <span style="font-size:11.5px; color:#71717a;">{{ resultCount }} of {{ totalCount }}</span>
+          <sc-for list="{{ chips }}" as="chip" hint-placeholder-count="0">
+            <button data-chip onClick="{{ chip.onRemove }}" style="display:flex; align-items:center; gap:6px; height:24px; padding:0 7px 0 9px; background:#121215; border:1px solid #26262b; border-radius:6px; color:#a1a1aa; font-size:11.5px; cursor:pointer;">
+              <span style="color:#52525b;">{{ chip.kind }}</span>{{ chip.label }}
+              <span style="color:#52525b; font-size:13px; line-height:1;">×</span>
+            </button>
+          </sc-for>
+          <button onClick="{{ clearAll }}" style="background:none; border:none; color:#71717a; font-size:11.5px; cursor:pointer; text-decoration:underline; text-underline-offset:2px;">Clear all</button>
+        </div>
+      </sc-if>
+
+      <!-- Incident banner -->
+      <sc-if value="{{ hasIncidents }}" hint-placeholder-val="{{ false }}">
+        <div style="flex-shrink:0; display:flex; align-items:center; gap:10px; padding:9px 14px; background:rgba(248,113,113,.07); border:1px solid rgba(248,113,113,.22); border-radius:9px; margin-top:-4px;">
+          <span style="width:7px; height:7px; border-radius:50%; background:#f87171; box-shadow:0 0 0 3px rgba(248,113,113,.18); flex-shrink:0;"></span>
+          <span style="font-size:12.5px; color:#fca5a5;">{{ incidentText }}</span>
+          <span style="margin-left:auto; font-size:11.5px; color:#71717a; font-family:ui-monospace,monospace;">live</span>
+        </div>
+      </sc-if>
+
+      <!-- ── BODY · table hero + overlay drawer ─────────── -->
+      <div style="flex:1; min-height:0; position:relative; display:flex; padding-bottom:22px;">
+
+        <!-- Center (full width; detail opens as an overlay drawer) -->
+        <div style="flex:1; min-width:0; display:flex; flex-direction:column; min-height:0;">
+
+          <!-- TABLE VIEW -->
+          <sc-if value="{{ isList }}" hint-placeholder-val="{{ true }}">
+            <div style="flex:1; min-height:0; display:flex; flex-direction:column; background:#0c0c0f; border:1px solid #1a1a1e; border-radius:13px; overflow:hidden;">
+             <div style="flex:1; min-height:0; overflow-x:auto; display:flex; flex-direction:column;">
+              <div style="min-width:900px; flex:1; min-height:0; display:flex; flex-direction:column;">
+              <!-- header -->
+              <div style="display:grid; grid-template-columns:minmax(200px,2.3fr) 132px 104px 116px minmax(132px,1.5fr) 56px 88px; align-items:center; gap:10px; padding:10px 16px; border-bottom:1px solid #1a1a1e; background:#0e0e12;">
+                <button onClick="{{ sortName }}" style="display:flex; align-items:center; gap:5px; background:none; border:none; padding:0; color:#a1a1aa; font-size:11px; font-weight:600; text-transform:uppercase; letter-spacing:.05em; cursor:pointer; font-family:inherit; text-align:left;">Service <span style="color:#f59e0b; font-size:10px;">{{ sortArrow.name }}</span></button>
+                <span style="font-size:11px; font-weight:600; text-transform:uppercase; letter-spacing:.05em; color:#71717a;">Owner</span>
+                <span style="font-size:11px; font-weight:600; text-transform:uppercase; letter-spacing:.05em; color:#71717a;">Lifecycle</span>
+                <button onClick="{{ sortHealth }}" style="display:flex; align-items:center; gap:5px; background:none; border:none; padding:0; color:#a1a1aa; font-size:11px; font-weight:600; text-transform:uppercase; letter-spacing:.05em; cursor:pointer; font-family:inherit; text-align:left;">Health <span style="color:#f59e0b; font-size:10px;">{{ sortArrow.health }}</span></button>
+                <button onClick="{{ sortReady }}" style="display:flex; align-items:center; gap:5px; background:none; border:none; padding:0; color:#a1a1aa; font-size:11px; font-weight:600; text-transform:uppercase; letter-spacing:.05em; cursor:pointer; font-family:inherit; text-align:left;">Readiness <span style="color:#f59e0b; font-size:10px;">{{ sortArrow.readiness }}</span></button>
+                <span style="font-size:11px; font-weight:600; text-transform:uppercase; letter-spacing:.05em; color:#71717a;">Deps</span>
+                <button onClick="{{ sortDeploy }}" style="display:flex; align-items:center; gap:5px; background:none; border:none; padding:0; color:#a1a1aa; font-size:11px; font-weight:600; text-transform:uppercase; letter-spacing:.05em; cursor:pointer; font-family:inherit; text-align:left;">Updated <span style="color:#f59e0b; font-size:10px;">{{ sortArrow.deploy }}</span></button>
+              </div>
+              <!-- rows -->
+              <div style="flex:1; min-height:0; overflow-y:auto;">
+                <sc-for list="{{ rows }}" as="item" hint-placeholder-count="8">
+                  <sc-if value="{{ item.isGroup }}" hint-placeholder-val="{{ false }}">
+                    <div style="display:flex; align-items:center; gap:10px; padding:9px 16px; background:#0a0a0d; border-bottom:1px solid #1a1a1e; position:sticky; top:0;">
+                      <span style="font-size:12px; font-weight:600; color:#d4d4d8;">{{ item.label }}</span>
+                      <span style="font-size:11px; color:#52525b; font-family:ui-monospace,monospace;">{{ item.count }}</span>
+                      <span style="margin-left:auto; font-size:11px; color:#71717a;">{{ item.sub }}</span>
+                    </div>
+                  </sc-if>
+                  <sc-if value="{{ item.isRow }}" hint-placeholder-val="{{ true }}">
+                    <button data-row onClick="{{ item.onSelect }}" style="display:grid; grid-template-columns:minmax(200px,2.3fr) 132px 104px 116px minmax(132px,1.5fr) 56px 88px; align-items:center; gap:10px; width:100%; text-align:left; padding:{{ rowPadY }} 16px; padding-left:14px; min-height:{{ rowH }}; border:none; border-bottom:1px solid #141417; background:{{ item.rowBg }}; cursor:pointer; position:relative; font-family:inherit;">
+                      <span style="position:absolute; left:0; top:8px; bottom:8px; width:2px; border-radius:2px; background:{{ item.selBar }};"></span>
+                      <!-- service -->
+                      <span style="display:flex; align-items:center; gap:11px; min-width:0;">
+                        <span style="width:34px; height:34px; border-radius:9px; background:#161619; border:1px solid #232327; display:grid; place-items:center; color:#a1a1aa; flex-shrink:0;">
+                          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="{{ item.iconD }}"></path></svg>
+                        </span>
+                        <span style="display:flex; flex-direction:column; min-width:0; gap:2px;">
+                          <span style="display:flex; align-items:center; gap:7px; min-width:0;">
+                            <span style="font-size:13.5px; font-weight:500; color:#fafafa; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">{{ item.name }}</span>
+                            <span style="font-size:10px; color:#71717a; border:1px solid #26262b; border-radius:4px; padding:0 5px; flex-shrink:0;">{{ item.kindLabel }}</span>
+                          </span>
+                          <sc-if value="{{ showRefs }}" hint-placeholder-val="{{ true }}">
+                            <span style="font-size:11px; color:#52525b; font-family:ui-monospace,monospace; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">{{ item.ref }}</span>
+                          </sc-if>
+                        </span>
+                      </span>
+                      <!-- owner -->
+                      <span style="display:flex; align-items:center; gap:7px; min-width:0;">
+                        <span style="width:20px; height:20px; border-radius:5px; background:{{ item.ownerBg }}; border:{{ item.ownerBorder }}; display:grid; place-items:center; font-size:9px; font-weight:600; color:{{ item.ownerFg }}; flex-shrink:0;">{{ item.ownerInitials }}</span>
+                        <span style="font-size:12.5px; color:{{ item.ownerNameColor }}; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">{{ item.ownerName }}</span>
+                      </span>
+                      <!-- lifecycle -->
+                      <span>
+                        <sc-if value="{{ item.lifeShow }}" hint-placeholder-val="{{ true }}">
+                          <span style="display:inline-flex; align-items:center; gap:6px; height:21px; padding:0 8px; border:1px solid #26262b; border-radius:6px;">
+                            <span style="width:6px; height:6px; border-radius:50%; background:{{ item.lifeColor }};"></span>
+                            <span style="font-size:11.5px; color:{{ item.lifeText }}; text-transform:capitalize;">{{ item.lifeLabel }}</span>
+                          </span>
+                        </sc-if>
+                        <sc-if value="{{ item.lifeMissing }}" hint-placeholder-val="{{ false }}">
+                          <span style="font-size:12px; color:#3f3f46;">—</span>
+                        </sc-if>
+                      </span>
+                      <!-- health -->
+                      <span style="display:flex; align-items:center; gap:7px;">
+                        <span style="width:7px; height:7px; border-radius:50%; background:{{ item.healthColor }}; box-shadow:{{ item.healthGlow }}; flex-shrink:0;"></span>
+                        <span style="font-size:12.5px; color:{{ item.healthText }};">{{ item.healthLabel }}</span>
+                      </span>
+                      <!-- readiness -->
+                      <span>
+                        <sc-if value="{{ item.hasScore }}" hint-placeholder-val="{{ true }}">
+                          <span style="display:flex; align-items:center; gap:9px;">
+                            <span style="display:inline-flex; align-items:center; gap:5px; height:20px; padding:0 7px; border-radius:5px; background:{{ item.tierBg }}; border:1px solid {{ item.tierBorder }};">
+                              <span style="font-size:10.5px; font-weight:600; color:{{ item.tierColor }}; letter-spacing:.02em;">{{ item.tierLabel }}</span>
+                            </span>
+                            <span style="flex:1; min-width:34px; height:4px; border-radius:3px; background:#1c1c20; overflow:hidden;">
+                              <span style="display:block; height:100%; border-radius:3px; background:{{ item.tierColor }}; width:{{ item.scorePct }}%;"></span>
+                            </span>
+                            <span style="font-size:11px; color:#71717a; font-family:ui-monospace,monospace; width:20px; text-align:right;">{{ item.scoreNum }}</span>
+                          </span>
+                        </sc-if>
+                        <sc-if value="{{ item.noScore }}" hint-placeholder-val="{{ false }}">
+                          <span style="font-size:12px; color:#3f3f46;">—</span>
+                        </sc-if>
+                      </span>
+                      <!-- deps -->
+                      <span style="display:flex; align-items:center; gap:5px; color:#71717a;">
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="18" r="3"></circle><circle cx="6" cy="6" r="3"></circle><path d="M18 6a9 9 0 0 1-9 9"></path><path d="M6 9v3"></path></svg>
+                        <span style="font-size:12.5px; font-family:ui-monospace,monospace;">{{ item.depsLabel }}</span>
+                      </span>
+                      <!-- updated -->
+                      <span style="font-size:12px; color:#71717a;">{{ item.deployLabel }}</span>
+                    </button>
+                  </sc-if>
+                </sc-for>
+                <sc-if value="{{ emptyShow }}" hint-placeholder-val="{{ false }}">
+                  <div style="display:flex; flex-direction:column; align-items:center; justify-content:center; gap:10px; padding:60px 20px; text-align:center;">
+                    <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="#3f3f46" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><path d="m21 21-4.3-4.3"></path></svg>
+                    <span style="font-size:14px; color:#d4d4d8; font-weight:500;">No services match these filters</span>
+                    <button onClick="{{ clearAll }}" style="font-size:12.5px; color:#f59e0b; background:none; border:none; cursor:pointer;">Clear filters</button>
+                  </div>
+                </sc-if>
+              </div>
+              </div>
+             </div>
+            </div>
+          </sc-if>
+
+          <!-- BOARD VIEW -->
+          <sc-if value="{{ isBoard }}" hint-placeholder-val="{{ false }}">
+            <div style="flex:1; min-height:0; display:grid; grid-template-columns:repeat({{ boardColCount }},1fr); gap:12px;">
+              <sc-for list="{{ boardCols }}" as="col" hint-placeholder-count="4">
+                <div style="display:flex; flex-direction:column; min-height:0; background:#0a0a0d; border:1px solid #18181b; border-radius:12px; overflow:hidden;">
+                  <div style="display:flex; align-items:center; gap:8px; padding:11px 13px; border-bottom:1px solid #18181b;">
+                    <span style="width:7px; height:7px; border-radius:50%; background:{{ col.color }};"></span>
+                    <span style="font-size:12.5px; font-weight:600; color:#e4e4e7;">{{ col.title }}</span>
+                    <span style="margin-left:auto; font-size:11px; color:#52525b; font-family:ui-monospace,monospace; background:#161619; border-radius:5px; padding:1px 7px;">{{ col.count }}</span>
+                  </div>
+                  <div style="flex:1; min-height:0; overflow-y:auto; padding:10px; display:flex; flex-direction:column; gap:8px;">
+                    <sc-for list="{{ col.cards }}" as="c" hint-placeholder-count="3">
+                      <button data-card onClick="{{ c.onSelect }}" style="text-align:left; display:flex; flex-direction:column; gap:9px; padding:11px; background:{{ c.bg }}; border:1px solid {{ c.border }}; border-radius:10px; cursor:pointer; font-family:inherit; transition:background .12s,border-color .12s;">
+                        <span style="display:flex; align-items:center; gap:9px; min-width:0;">
+                          <span style="width:28px; height:28px; border-radius:8px; background:#161619; border:1px solid #232327; display:grid; place-items:center; color:#a1a1aa; flex-shrink:0;">
+                            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="{{ c.iconD }}"></path></svg>
+                          </span>
+                          <span style="display:flex; flex-direction:column; min-width:0; gap:1px;">
+                            <span style="font-size:13px; font-weight:500; color:#fafafa; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">{{ c.name }}</span>
+                            <span style="font-size:10.5px; color:#52525b; font-family:ui-monospace,monospace;">{{ c.ownerName }}</span>
+                          </span>
+                          <span style="margin-left:auto; width:7px; height:7px; border-radius:50%; background:{{ c.healthColor }}; flex-shrink:0;"></span>
+                        </span>
+                        <span style="display:flex; align-items:center; gap:8px;">
+                          <sc-if value="{{ c.hasScore }}" hint-placeholder-val="{{ true }}">
+                            <span style="display:inline-flex; align-items:center; height:18px; padding:0 6px; border-radius:5px; background:{{ c.tierBg }}; border:1px solid {{ c.tierBorder }}; font-size:10px; font-weight:600; color:{{ c.tierColor }};">{{ c.tierLabel }} {{ c.scoreNum }}</span>
+                          </sc-if>
+                          <span style="font-size:10.5px; color:#52525b;">{{ c.kindLabel }}</span>
+                        </span>
+                      </button>
+                    </sc-for>
+                  </div>
+                </div>
+              </sc-for>
+            </div>
+          </sc-if>
+
+          <!-- MAP VIEW -->
+          <sc-if value="{{ isGraph }}" hint-placeholder-val="{{ false }}">
+            <div style="flex:1; min-height:0; display:flex; flex-direction:column; background:#0a0a0d; border:1px solid #1a1a1e; border-radius:13px; overflow:hidden;">
+              <div style="display:flex; align-items:center; gap:16px; padding:11px 16px; border-bottom:1px solid #18181b;">
+                <span style="font-size:12.5px; font-weight:600; color:#e4e4e7;">Dependency map</span>
+                <span style="font-size:11.5px; color:#71717a;">{{ graphCount }} services · grouped by system</span>
+                <div style="margin-left:auto; display:flex; align-items:center; gap:14px;">
+                  <span style="display:flex; align-items:center; gap:6px; font-size:11px; color:#71717a;"><span style="width:7px;height:7px;border-radius:50%;background:#34d399;"></span>Healthy</span>
+                  <span style="display:flex; align-items:center; gap:6px; font-size:11px; color:#71717a;"><span style="width:7px;height:7px;border-radius:50%;background:#fbbf24;"></span>Degraded</span>
+                  <span style="display:flex; align-items:center; gap:6px; font-size:11px; color:#71717a;"><span style="width:7px;height:7px;border-radius:50%;background:#f87171;"></span>Down</span>
+                </div>
+              </div>
+              <div style="flex:1; min-height:0; position:relative;">
+                <div style="position:absolute; inset:0; display:grid; grid-template-columns:repeat({{ graphColCount }},1fr); pointer-events:none;">
+                  <sc-for list="{{ graphHeaders }}" as="h" hint-placeholder-count="4">
+                    <div style="text-align:center; padding-top:12px; font-family:ui-monospace,monospace; font-size:10.5px; letter-spacing:.1em; text-transform:uppercase; color:#3f3f46; border-left:1px solid #141417;">{{ h.label }}</div>
+                  </sc-for>
+                </div>
+                <svg viewBox="0 0 100 100" preserveAspectRatio="none" style="position:absolute; inset:0; width:100%; height:100%;">
+                  <sc-for list="{{ graphEdges }}" as="e" hint-placeholder-count="0">
+                    <line x1="{{ e.x1 }}" y1="{{ e.y1 }}" x2="{{ e.x2 }}" y2="{{ e.y2 }}" stroke="{{ e.color }}" stroke-width="1" vector-effect="non-scaling-stroke"></line>
+                  </sc-for>
+                </svg>
+                <sc-for list="{{ graphNodes }}" as="n" hint-placeholder-count="0">
+                  <button data-gnode onClick="{{ n.onSelect }}" style="position:absolute; left:{{ n.x }}%; top:{{ n.y }}%; transform:translate(-50%,-50%); display:flex; align-items:center; gap:7px; padding:5px 9px 5px 7px; background:{{ n.bg }}; border:1px solid {{ n.border }}; border-radius:8px; cursor:pointer; font-family:inherit; box-shadow:0 2px 8px rgba(0,0,0,.4); transition:filter .12s;">
+                    <span style="width:6px; height:6px; border-radius:50%; background:{{ n.healthColor }}; flex-shrink:0;"></span>
+                    <span style="color:#a1a1aa; display:grid; place-items:center;"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="{{ n.iconD }}"></path></svg></span>
+                    <span style="font-size:11.5px; font-weight:500; color:{{ n.nameColor }}; white-space:nowrap;">{{ n.name }}</span>
+                  </button>
+                </sc-for>
+              </div>
+            </div>
+          </sc-if>
+        </div>
+
+        <!-- ── DETAIL DRAWER ──────────────────────────────── -->
+        <sc-if value="{{ hasSel }}" hint-placeholder-val="{{ false }}">
+          <div onClick="{{ closePanel }}" style="position:absolute; inset:0 0 22px 0; background:rgba(6,6,8,.5); z-index:5; animation:scrimIn .2s ease;"></div>
+          <aside style="position:absolute; top:0; right:0; bottom:22px; width:412px; z-index:6; display:flex; flex-direction:column; background:#0c0c0f; border:1px solid #26262b; border-radius:13px; overflow:hidden; box-shadow:-20px 0 60px rgba(0,0,0,.55); animation:drawerIn .26s cubic-bezier(.32,.72,0,1);">
+            <div style="flex:1; min-height:0; overflow-y:auto;">
+              <!-- identity -->
+              <div style="padding:18px 18px 16px; border-bottom:1px solid #18181b;">
+                <div style="display:flex; align-items:flex-start; gap:12px;">
+                  <span style="width:42px; height:42px; border-radius:11px; background:#161619; border:1px solid #232327; display:grid; place-items:center; color:#d4d4d8; flex-shrink:0;">
+                    <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="{{ sel.iconD }}"></path></svg>
+                  </span>
+                  <div style="min-width:0; flex:1;">
+                    <div style="display:flex; align-items:center; gap:8px;">
+                      <h2 style="margin:0; font-size:16px; font-weight:600; color:#fafafa; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">{{ sel.name }}</h2>
+                      <span style="font-size:10px; color:#71717a; border:1px solid #26262b; border-radius:4px; padding:1px 5px; flex-shrink:0;">{{ sel.kindLabel }}</span>
+                    </div>
+                    <div style="margin-top:4px; font-size:11px; color:#52525b; font-family:ui-monospace,monospace; word-break:break-all;">{{ sel.ref }}</div>
+                  </div>
+                  <button onClick="{{ closePanel }}" aria-label="Close" style="width:28px; height:28px; border-radius:7px; background:transparent; border:1px solid #232327; color:#71717a; display:grid; place-items:center; cursor:pointer; flex-shrink:0;">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"></path><path d="M6 6l12 12"></path></svg>
+                  </button>
+                </div>
+                <p style="margin:13px 0 0; font-size:12.5px; line-height:1.55; color:#a1a1aa;">{{ sel.desc }}</p>
+                <div style="display:flex; flex-wrap:wrap; gap:7px; margin-top:13px;">
+                  <sc-if value="{{ sel.lifeShow }}" hint-placeholder-val="{{ true }}">
+                    <span style="display:inline-flex; align-items:center; gap:6px; height:23px; padding:0 9px; border:1px solid #26262b; border-radius:6px; font-size:11.5px; color:{{ sel.lifeText }}; text-transform:capitalize;"><span style="width:6px; height:6px; border-radius:50%; background:{{ sel.lifeColor }};"></span>{{ sel.lifeLabel }}</span>
+                  </sc-if>
+                  <span style="display:inline-flex; align-items:center; gap:6px; height:23px; padding:0 9px; border:1px solid #26262b; border-radius:6px; font-size:11.5px; color:{{ sel.healthText }};"><span style="width:6px; height:6px; border-radius:50%; background:{{ sel.healthColor }};"></span>{{ sel.healthLabel }}</span>
+                  <span style="display:inline-flex; align-items:center; gap:6px; height:23px; padding:0 9px; border:1px solid #26262b; border-radius:6px; font-size:11.5px; color:#a1a1aa;">{{ sel.lang }}</span>
+                  <span style="display:inline-flex; align-items:center; gap:6px; height:23px; padding:0 9px; border:1px solid #26262b; border-radius:6px; font-size:11.5px; color:#a1a1aa;">{{ sel.system }}</span>
+                </div>
+              </div>
+
+              <!-- operational stats -->
+              <sc-if value="{{ sel.hasOps }}" hint-placeholder-val="{{ true }}">
+                <div style="display:grid; grid-template-columns:repeat(3,1fr); border-bottom:1px solid #18181b;">
+                  <div style="padding:14px 16px; border-right:1px solid #18181b;">
+                    <div style="font-family:ui-monospace,monospace; font-size:9.5px; letter-spacing:.08em; text-transform:uppercase; color:#71717a;">SLO</div>
+                    <div style="margin-top:6px; font-size:16px; font-weight:600; color:{{ sel.sloColor }};">{{ sel.sloCur }}%</div>
+                    <div style="font-size:10.5px; color:#52525b; margin-top:2px;">target {{ sel.sloTarget }}%</div>
+                  </div>
+                  <div style="padding:14px 16px; border-right:1px solid #18181b;">
+                    <div style="font-family:ui-monospace,monospace; font-size:9.5px; letter-spacing:.08em; text-transform:uppercase; color:#71717a;">Incidents</div>
+                    <div style="margin-top:6px; font-size:16px; font-weight:600; color:{{ sel.incColor }};">{{ sel.incidents }}</div>
+                    <div style="font-size:10.5px; color:#52525b; margin-top:2px;">open now</div>
+                  </div>
+                  <div style="padding:14px 16px;">
+                    <div style="font-family:ui-monospace,monospace; font-size:9.5px; letter-spacing:.08em; text-transform:uppercase; color:#71717a;">Deploys</div>
+                    <div style="margin-top:6px; font-size:16px; font-weight:600; color:#e4e4e7;">{{ sel.deploysWeek }}</div>
+                    <div style="font-size:10.5px; color:#52525b; margin-top:2px;">last {{ sel.deployLabel }}</div>
+                  </div>
+                </div>
+              </sc-if>
+
+              <!-- scorecard -->
+              <sc-if value="{{ sel.hasScore }}" hint-placeholder-val="{{ true }}">
+                <div style="padding:16px 18px; border-bottom:1px solid #18181b;">
+                  <div style="display:flex; align-items:center; gap:8px; margin-bottom:14px;">
+                    <span style="font-family:ui-monospace,monospace; font-size:10.5px; letter-spacing:.1em; text-transform:uppercase; color:#71717a;">Production readiness</span>
+                  </div>
+                  <div style="display:flex; align-items:center; gap:16px;">
+                    <div style="position:relative; width:64px; height:64px; flex-shrink:0;">
+                      <svg width="64" height="64" viewBox="0 0 64 64" style="transform:rotate(-90deg);">
+                        <circle cx="32" cy="32" r="27" fill="none" stroke="#1c1c20" stroke-width="6"></circle>
+                        <circle cx="32" cy="32" r="27" fill="none" stroke="{{ sel.tierColor }}" stroke-width="6" stroke-linecap="round" stroke-dasharray="{{ sel.ringCirc }}" stroke-dashoffset="{{ sel.ringOffset }}"></circle>
+                      </svg>
+                      <div style="position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center;">
+                        <span style="font-size:18px; font-weight:700; color:#fafafa; line-height:1;">{{ sel.scoreNum }}</span>
+                      </div>
+                    </div>
+                    <div style="flex:1; min-width:0;">
+                      <div style="display:inline-flex; align-items:center; gap:6px; height:22px; padding:0 9px; border-radius:6px; background:{{ sel.tierBg }}; border:1px solid {{ sel.tierBorder }}; font-size:12px; font-weight:600; color:{{ sel.tierColor }};">{{ sel.tierLabel }} tier</div>
+                      <div style="margin-top:8px; display:flex; gap:12px; font-size:11.5px; color:#71717a;">
+                        <span><span style="color:#34d399; font-weight:600;">{{ sel.passCount }}</span> pass</span>
+                        <span><span style="color:#fbbf24; font-weight:600;">{{ sel.warnCount }}</span> warn</span>
+                        <span><span style="color:#f87171; font-weight:600;">{{ sel.failCount }}</span> fail</span>
+                      </div>
+                    </div>
+                  </div>
+                  <div style="margin-top:15px; display:flex; flex-direction:column; gap:1px;">
+                    <sc-for list="{{ sel.checks }}" as="ck" hint-placeholder-count="8">
+                      <div style="display:flex; align-items:center; gap:10px; padding:6px 0;">
+                        <span style="width:16px; height:16px; border-radius:5px; background:{{ ck.bg }}; display:grid; place-items:center; flex-shrink:0;">
+                          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="{{ ck.color }}" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="{{ ck.mark }}"></path></svg>
+                        </span>
+                        <span style="font-size:12.5px; color:#d4d4d8; flex:1;">{{ ck.label }}</span>
+                        <span style="font-size:11px; color:{{ ck.color }}; text-transform:capitalize;">{{ ck.status }}</span>
+                      </div>
+                    </sc-for>
+                  </div>
+                </div>
+              </sc-if>
+
+              <!-- ownership -->
+              <div style="padding:16px 18px; border-bottom:1px solid #18181b;">
+                <div style="font-family:ui-monospace,monospace; font-size:10.5px; letter-spacing:.1em; text-transform:uppercase; color:#71717a; margin-bottom:12px;">Ownership</div>
+                <div style="display:flex; align-items:center; gap:11px;">
+                  <span style="width:34px; height:34px; border-radius:9px; background:{{ sel.ownerBg }}; border:{{ sel.ownerBorder }}; display:grid; place-items:center; font-size:12px; font-weight:600; color:{{ sel.ownerFg }}; flex-shrink:0;">{{ sel.ownerInitials }}</span>
+                  <div style="min-width:0;">
+                    <div style="font-size:13px; font-weight:500; color:{{ sel.ownerNameColor }};">{{ sel.ownerName }}</div>
+                    <div style="font-size:11px; color:#52525b;">{{ sel.ownerSub }}</div>
+                  </div>
+                </div>
+                <sc-if value="{{ sel.hasOnCall }}" hint-placeholder-val="{{ true }}">
+                  <div style="display:flex; align-items:center; gap:10px; margin-top:12px; padding-top:12px; border-top:1px dashed #1f1f23;">
+                    <span style="width:8px; height:8px; border-radius:50%; background:#34d399; box-shadow:0 0 0 3px rgba(52,211,153,.15); flex-shrink:0;"></span>
+                    <span style="font-size:12.5px; color:#d4d4d8;">{{ sel.onCall }}</span>
+                    <span style="font-size:11px; color:#52525b;">on-call</span>
+                  </div>
+                </sc-if>
+              </div>
+
+              <!-- dependencies -->
+              <div style="padding:16px 18px;">
+                <div style="display:flex; align-items:center; gap:8px; margin-bottom:12px;">
+                  <span style="font-family:ui-monospace,monospace; font-size:10.5px; letter-spacing:.1em; text-transform:uppercase; color:#71717a;">Dependencies</span>
+                  <button onClick="{{ setGraph }}" style="margin-left:auto; font-size:11px; color:#f59e0b; background:none; border:none; cursor:pointer; display:flex; align-items:center; gap:4px;">View map
+                    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M7 7h10v10"></path><path d="M7 17 17 7"></path></svg>
+                  </button>
+                </div>
+                <sc-if value="{{ sel.hasDeps }}" hint-placeholder-val="{{ true }}">
+                  <div style="margin-bottom:4px; font-size:11px; color:#52525b;">Depends on {{ sel.dependsCount }}</div>
+                  <div style="display:flex; flex-direction:column; gap:1px; margin-bottom:14px;">
+                    <sc-for list="{{ sel.dependsOn }}" as="d" hint-placeholder-count="2">
+                      <button onClick="{{ d.onSelect }}" data-row style="display:flex; align-items:center; gap:9px; width:100%; text-align:left; padding:7px 8px; border:none; border-radius:7px; background:transparent; cursor:pointer; font-family:inherit;">
+                        <span style="color:#71717a; display:grid; place-items:center; flex-shrink:0;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="{{ d.iconD }}"></path></svg></span>
+                        <span style="font-size:12.5px; color:#d4d4d8; flex:1; min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">{{ d.name }}</span>
+                        <span style="width:6px; height:6px; border-radius:50%; background:{{ d.healthColor }}; flex-shrink:0;"></span>
+                      </button>
+                    </sc-for>
+                  </div>
+                </sc-if>
+                <sc-if value="{{ sel.hasUsedBy }}" hint-placeholder-val="{{ false }}">
+                  <div style="margin-bottom:4px; font-size:11px; color:#52525b;">Used by {{ sel.usedByCount }}</div>
+                  <div style="display:flex; flex-direction:column; gap:1px;">
+                    <sc-for list="{{ sel.usedBy }}" as="u" hint-placeholder-count="2">
+                      <button onClick="{{ u.onSelect }}" data-row style="display:flex; align-items:center; gap:9px; width:100%; text-align:left; padding:7px 8px; border:none; border-radius:7px; background:transparent; cursor:pointer; font-family:inherit;">
+                        <span style="color:#71717a; display:grid; place-items:center; flex-shrink:0;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="{{ u.iconD }}"></path></svg></span>
+                        <span style="font-size:12.5px; color:#d4d4d8; flex:1; min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">{{ u.name }}</span>
+                        <span style="width:6px; height:6px; border-radius:50%; background:{{ u.healthColor }}; flex-shrink:0;"></span>
+                      </button>
+                    </sc-for>
+                  </div>
+                </sc-if>
+                <sc-if value="{{ sel.noRelations }}" hint-placeholder-val="{{ false }}">
+                  <p style="margin:0; font-size:12.5px; color:#52525b;">No relations declared.</p>
+                </sc-if>
+              </div>
+            </div>
+
+            <!-- panel footer: quick links -->
+            <div style="flex-shrink:0; display:flex; gap:8px; padding:12px 16px; border-top:1px solid #18181b; background:#0a0a0d;">
+              <button style="flex:1; display:flex; align-items:center; justify-content:center; gap:6px; height:32px; background:#161619; border:1px solid #232327; border-radius:7px; color:#d4d4d8; font-size:12px; cursor:pointer; font-family:inherit;">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 22v-4a4.8 4.8 0 0 0-1-3.5c3 0 6-2 6-5.5.08-1.25-.27-2.48-1-3.5.28-1.15.28-2.35 0-3.5 0 0-1 0-3 1.5-2.64-.5-5.36-.5-8 0C6 .5 5 .5 5 .5c-.3 1.15-.3 2.35 0 3.5A5.4 5.4 0 0 0 4 7.5c0 3.5 3 5.5 6 5.5-.39.49-.68 1.05-.85 1.65-.17.6-.22 1.23-.15 1.85v4"></path></svg>
+                Repo
+              </button>
+              <button style="flex:1; display:flex; align-items:center; justify-content:center; gap:6px; height:32px; background:#161619; border:1px solid #232327; border-radius:7px; color:#d4d4d8; font-size:12px; cursor:pointer; font-family:inherit;">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v16a2 2 0 0 0 2 2h16"></path><path d="m19 9-5 5-4-4-3 3"></path></svg>
+                Dashboards
+              </button>
+              <button style="flex:1; display:flex; align-items:center; justify-content:center; gap:6px; height:32px; background:#161619; border:1px solid #232327; border-radius:7px; color:{{ sel.runbookColor }}; font-size:12px; cursor:pointer; font-family:inherit;">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"></path><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"></path></svg>
+                Runbook
+              </button>
+            </div>
+          </aside>
+        </sc-if>
+      </div>
+    </div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{
+  &quot;density&quot;: { &quot;editor&quot;: &quot;enum&quot;, &quot;options&quot;: [&quot;comfortable&quot;, &quot;compact&quot;], &quot;default&quot;: &quot;comfortable&quot;, &quot;tsType&quot;: &quot;string&quot;, &quot;section&quot;: &quot;Layout&quot; },
+  &quot;showRefs&quot;: { &quot;editor&quot;: &quot;boolean&quot;, &quot;default&quot;: true, &quot;tsType&quot;: &quot;boolean&quot;, &quot;section&quot;: &quot;Layout&quot; },
+  &quot;includeResources&quot;: { &quot;editor&quot;: &quot;boolean&quot;, &quot;default&quot;: true, &quot;tsType&quot;: &quot;boolean&quot;, &quot;section&quot;: &quot;Data&quot; },
+  &quot;defaultView&quot;: { &quot;editor&quot;: &quot;enum&quot;, &quot;options&quot;: [&quot;list&quot;, &quot;board&quot;, &quot;graph&quot;], &quot;default&quot;: &quot;list&quot;, &quot;tsType&quot;: &quot;string&quot;, &quot;section&quot;: &quot;Layout&quot; }
+}">
+class Component extends DCLogic {
+  ICON = {
+    Component: "M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z M3.3 7l8.7 5 8.7-5 M12 22V12",
+    API: "M18 16.98h-5.99c-1.1 0-1.95.94-2.48 1.9A4 4 0 0 1 2 17c.01-.7.2-1.4.57-2 M6 17l3.13-5.78c.53-.97.1-2.18-.5-3.1a4 4 0 1 1 6.89-4.06 M12 6l3.13 5.73C15.66 12.7 16.9 13 18 13a4 4 0 0 1 0 8",
+    Resource: "M12 2C7.58 2 4 3.34 4 5s3.58 3 8 3 8-1.34 8-3-3.58-3-8-3Z M4 5v14c0 1.66 3.58 3 8 3s8-1.34 8-3V5 M4 12c0 1.66 3.58 3 8 3s8-1.34 8-3",
+  };
+  TEAMS = {
+    payments: { name: "Payments", initials: "PA", oncall: "Dana Whitfield" },
+    risk: { name: "Risk", initials: "RK", oncall: "Marcus Lin" },
+    web: { name: "Web", initials: "WB", oncall: "Priya Anand" },
+    mobile: { name: "Mobile", initials: "MO", oncall: "Tom Becker" },
+    ml: { name: "ML Platform", initials: "ML", oncall: "Sara Okonkwo" },
+    search: { name: "Search", initials: "SR", oncall: "Lena Vogt" },
+    identity: { name: "Identity", initials: "ID", oncall: "Raj Patel" },
+    platform: { name: "Platform", initials: "PL", oncall: "Chris Hahn" },
+    data: { name: "Data", initials: "DA", oncall: "Yuki Tanaka" },
+  };
+  CHECKS = [
+    { id: "owner", label: "Ownership defined" },
+    { id: "oncall", label: "On-call configured" },
+    { id: "slo", label: "SLO defined" },
+    { id: "runbook", label: "Runbook linked" },
+    { id: "tests", label: "CI tests passing" },
+    { id: "vulns", label: "No critical CVEs" },
+    { id: "docs", label: "Docs published" },
+    { id: "pipeline", label: "Deploys via pipeline" },
+  ];
+  HEALTH = {
+    healthy: { c: "#34d399", t: "Healthy", l: "#86efac" },
+    degraded: { c: "#fbbf24", t: "Degraded", l: "#fcd34d" },
+    down: { c: "#f87171", t: "Down", l: "#fca5a5" },
+    managed: { c: "#52525b", t: "Managed", l: "#a1a1aa" },
+  };
+  LIFE = {
+    production: { c: "#34d399", t: "#d4d4d8" },
+    experimental: { c: "#fbbf24", t: "#d4d4d8" },
+    deprecated: { c: "#71717a", t: "#71717a" },
+  };
+  TIER = {
+    Gold: { c: "#f59e0b", bg: "rgba(245,158,11,.1)", b: "rgba(245,158,11,.25)" },
+    Silver: { c: "#9ca3af", bg: "rgba(156,163,175,.1)", b: "rgba(156,163,175,.22)" },
+    Bronze: { c: "#c2855b", bg: "rgba(194,133,91,.1)", b: "rgba(194,133,91,.25)" },
+  };
+  SYSTEMS = ["Checkout", "Growth", "Identity", "Platform"];
+
+  SERVICES = [
+    { id: "checkout-api", kind: "Component", system: "Checkout", team: "payments", lang: "TypeScript", life: "production", health: "healthy", slo: 99.97, sloT: 99.9, inc: 0, dh: 2, dpw: 14, deps: ["payments-gateway", "ledger-service", "fraud-detector", "cart-store"], fails: [], warns: ["docs"], desc: "Public checkout orchestration API. Owns the cart→order state machine and coordinates payment, ledger and fraud calls." },
+    { id: "payments-gateway", kind: "Component", system: "Checkout", team: "payments", lang: "Go", life: "production", health: "degraded", slo: 99.91, sloT: 99.95, inc: 1, dh: 5, dpw: 9, deps: ["ledger-service"], fails: [], warns: ["runbook", "docs"], desc: "PSP abstraction layer. Routes authorizations and captures across Stripe and Adyen with idempotent retries." },
+    { id: "ledger-service", kind: "Component", system: "Checkout", team: "payments", lang: "Rust", life: "production", health: "healthy", slo: 99.99, sloT: 99.95, inc: 0, dh: 26, dpw: 4, deps: ["postgres-ledger"], fails: [], warns: [], desc: "Double-entry ledger. The source of truth for balances, settlements and reconciliation." },
+    { id: "fraud-detector", kind: "Component", system: "Checkout", team: "risk", lang: "Python", life: "production", health: "healthy", slo: 99.92, sloT: 99.9, inc: 0, dh: 8, dpw: 6, deps: ["feature-store", "ml-scoring-api"], fails: ["docs"], warns: ["oncall"], desc: "Real-time risk scoring on the authorization path. Blocks, challenges or allows transactions in under 40ms." },
+    { id: "web-storefront", kind: "Component", system: "Growth", team: "web", lang: "TypeScript", life: "production", health: "healthy", slo: 99.95, sloT: 99.9, inc: 0, dh: 0.5, dpw: 31, deps: ["checkout-api", "search-api", "recommendations", "user-profile"], fails: [], warns: ["vulns", "docs"], desc: "Customer-facing storefront. Next.js application rendering catalog, cart and checkout flows." },
+    { id: "mobile-bff", kind: "Component", system: "Growth", team: "mobile", lang: "TypeScript", life: "production", health: "degraded", slo: 99.85, sloT: 99.9, inc: 0, dh: 4, dpw: 11, deps: ["checkout-api", "user-profile", "recommendations"], fails: ["runbook"], warns: ["docs", "oncall"], desc: "Backend-for-frontend aggregating APIs for the iOS and Android apps." },
+    { id: "recommendations", kind: "Component", system: "Growth", team: "ml", lang: "Python", life: "experimental", health: "healthy", slo: 99.7, sloT: 99.5, inc: 0, dh: 30, dpw: 5, deps: ["feature-store", "ml-scoring-api"], fails: ["slo", "runbook", "docs"], warns: ["oncall"], desc: "Personalized product recommendations. Serves ranked candidates from the feature store." },
+    { id: "search-api", kind: "API", system: "Growth", team: "search", lang: "Go", life: "production", health: "healthy", slo: 99.96, sloT: 99.9, inc: 0, dh: 12, dpw: 7, deps: ["search-indexer"], fails: [], warns: ["docs"], desc: "Query API for full-text and faceted catalog search." },
+    { id: "search-indexer", kind: "Component", system: "Growth", team: "search", lang: "Go", life: "production", health: "healthy", slo: 99.94, sloT: 99.9, inc: 0, dh: 50, dpw: 3, deps: ["kafka-events"], fails: ["docs"], warns: ["runbook"], desc: "Streams catalog mutations into the search cluster from the event bus." },
+    { id: "user-profile", kind: "Component", system: "Identity", team: "identity", lang: "Java", life: "production", health: "down", slo: 97.4, sloT: 99.5, inc: 1, dh: 72, dpw: 2, deps: ["auth-service", "postgres-users"], fails: ["slo", "docs"], warns: ["vulns", "runbook"], desc: "User profile and preferences service. Currently in a major incident — elevated 5xx on the read path." },
+    { id: "auth-service", kind: "Component", system: "Identity", team: "identity", lang: "Go", life: "production", health: "healthy", slo: 99.99, sloT: 99.95, inc: 0, dh: 20, dpw: 9, deps: ["postgres-users"], fails: [], warns: ["docs"], desc: "OAuth2 / OIDC authorization server and session issuance." },
+    { id: "notifications", kind: "Component", system: "Platform", team: "platform", lang: "TypeScript", life: "production", health: "healthy", slo: 99.93, sloT: 99.9, inc: 0, dh: 6, dpw: 8, deps: ["kafka-events", "email-worker"], fails: ["runbook"], warns: ["docs"], desc: "Fan-out notification service for email, push and in-app channels." },
+    { id: "email-worker", kind: "Component", system: "Platform", team: null, lang: "Ruby", life: "deprecated", health: "healthy", slo: 99.5, sloT: 99, inc: 0, dh: 800, dpw: 0, deps: ["kafka-events"], fails: ["oncall", "slo", "runbook", "docs"], warns: ["vulns"], desc: "Legacy email delivery worker. Superseded by notifications — scheduled for decommission in Q3." },
+    { id: "ml-scoring-api", kind: "API", system: "Growth", team: null, lang: "Python", life: "experimental", health: "degraded", slo: 99.6, sloT: 99.5, inc: 0, dh: 3, dpw: 6, deps: ["feature-store"], fails: ["runbook", "docs", "slo"], warns: ["tests"], desc: "Low-latency model inference endpoint. No clear owner since the ML reorg." },
+    { id: "analytics-pipeline", kind: "Component", system: "Platform", team: "data", lang: "Python", life: "experimental", health: "healthy", slo: 99.4, sloT: 99, inc: 0, dh: 48, dpw: 4, deps: ["kafka-events"], fails: ["oncall", "slo", "runbook", "docs"], warns: ["vulns"], desc: "Batch and streaming analytics ETL feeding the warehouse." },
+    { id: "cart-store", kind: "Resource", system: "Checkout", team: null, lang: "Redis", life: null, health: "healthy", slo: 0, sloT: 0, inc: 0, dh: null, dpw: 0, deps: [], fails: [], warns: [], desc: "Redis cluster backing ephemeral cart state." },
+    { id: "postgres-ledger", kind: "Resource", system: "Checkout", team: "payments", lang: "Postgres", life: null, health: "healthy", slo: 0, sloT: 0, inc: 0, dh: null, dpw: 0, deps: [], fails: [], warns: [], desc: "Primary Postgres instance for the ledger." },
+    { id: "feature-store", kind: "Resource", system: "Growth", team: "ml", lang: "Feast", life: null, health: "healthy", slo: 0, sloT: 0, inc: 0, dh: null, dpw: 0, deps: [], fails: [], warns: [], desc: "Online/offline feature store for ML models." },
+    { id: "kafka-events", kind: "Resource", system: "Platform", team: null, lang: "Kafka", life: null, health: "healthy", slo: 0, sloT: 0, inc: 0, dh: null, dpw: 0, deps: [], fails: [], warns: [], desc: "Org-wide event bus." },
+    { id: "postgres-users", kind: "Resource", system: "Identity", team: "identity", lang: "Postgres", life: null, health: "healthy", slo: 0, sloT: 0, inc: 0, dh: null, dpw: 0, deps: [], fails: [], warns: [], desc: "Postgres instance for identity data." },
+  ];
+
+  state = {
+    selectedId: null,
+    view: this.props.defaultView || "list",
+    query: "",
+    kind: "all",
+    life: "all",
+    health: "all",
+    group: "none",
+    attention: false,
+    sortKey: "name",
+    sortDir: "asc",
+  };
+
+  // ── helpers ──────────────────────────────────────────
+  byId(id) { return this.SERVICES.find((s) => s.id === id); }
+  ref(s) { return `${s.kind.toLowerCase()}:${s.system.toLowerCase()}/${s.id}`; }
+  isResource(s) { return s.kind === "Resource"; }
+
+  computeChecks(s) {
+    return this.CHECKS.map((c) => {
+      let status = "pass";
+      if (c.id === "owner" && !s.team) status = "fail";
+      else if (s.fails.includes(c.id)) status = "fail";
+      else if (s.warns.includes(c.id)) status = "warn";
+      return { id: c.id, label: c.label, status };
+    });
+  }
+  scoreOf(s) {
+    if (this.isResource(s)) return null;
+    const ck = this.computeChecks(s);
+    const v = ck.reduce((a, c) => a + (c.status === "pass" ? 1 : c.status === "warn" ? 0.5 : 0), 0);
+    return Math.round((v / ck.length) * 100);
+  }
+  tierOf(score) { return score == null ? null : score >= 85 ? "Gold" : score >= 70 ? "Silver" : "Bronze"; }
+  needsAttention(s) { return !this.isResource(s) && (s.health !== "healthy" || !s.team); }
+  fmtDeploy(h) {
+    if (h == null) return "—";
+    if (h < 1) return Math.round(h * 60) + "m ago";
+    if (h < 24) return Math.round(h) + "h ago";
+    return Math.round(h / 24) + "d ago";
+  }
+  usedByOf(id) { return this.SERVICES.filter((x) => x.deps.includes(id)); }
+
+  base() {
+    const inc = this.props.includeResources ?? true;
+    return inc ? this.SERVICES : this.SERVICES.filter((s) => !this.isResource(s));
+  }
+
+  filtered() {
+    const st = this.state;
+    const q = st.query.trim().toLowerCase();
+    return this.base().filter((s) => {
+      if (st.kind !== "all" && s.kind !== st.kind) return false;
+      if (st.life !== "all" && s.life !== st.life) return false;
+      if (st.health !== "all" && s.health !== st.health) return false;
+      if (st.attention && !this.needsAttention(s)) return false;
+      if (q) {
+        const team = s.team ? this.TEAMS[s.team].name.toLowerCase() : "unowned";
+        const hay = `${s.id} ${this.ref(s)} ${team} ${s.lang} ${s.system}`.toLowerCase();
+        if (!hay.includes(q)) return false;
+      }
+      return true;
+    });
+  }
+
+  sortList(list) {
+    const { sortKey, sortDir } = this.state;
+    const hrank = { down: 3, degraded: 2, healthy: 1, managed: 0 };
+    const cmp = (a, b) => {
+      if (sortKey === "name") return a.id.localeCompare(b.id);
+      if (sortKey === "health") return (hrank[this.isResource(b) ? "managed" : b.health] - hrank[this.isResource(a) ? "managed" : a.health]);
+      if (sortKey === "readiness") return (this.scoreOf(b) ?? -1) - (this.scoreOf(a) ?? -1);
+      if (sortKey === "deploy") return (a.dh ?? 1e9) - (b.dh ?? 1e9);
+      return 0;
+    };
+    const out = [...list].sort(cmp);
+    if (sortDir === "desc") out.reverse();
+    return out;
+  }
+
+  decorate(s) {
+    const team = s.team ? this.TEAMS[s.team] : null;
+    const res = this.isResource(s);
+    const score = this.scoreOf(s);
+    const tier = this.tierOf(score);
+    const t = tier ? this.TIER[tier] : null;
+    const h = res ? this.HEALTH.managed : this.HEALTH[s.health];
+    const life = s.life ? this.LIFE[s.life] : null;
+    const ub = this.usedByOf(s.id);
+    return {
+      id: s.id, name: s.id, ref: this.ref(s), kindLabel: s.kind, iconD: this.ICON[s.kind], lang: s.lang, system: s.system,
+      ownerName: team ? team.name : "Unowned",
+      ownerInitials: team ? team.initials : "?",
+      ownerNameColor: team ? "#d4d4d8" : "#71717a",
+      ownerBg: team ? "#1f1f23" : "transparent",
+      ownerBorder: team ? "1px solid #2a2a2e" : "1px dashed #3a3a40",
+      ownerFg: team ? "#d4d4d8" : "#52525b",
+      lifeShow: !!life, lifeMissing: !life,
+      lifeLabel: s.life || "", lifeColor: life ? life.c : "transparent", lifeText: life ? life.t : "#3f3f46",
+      healthColor: h.c, healthText: h.l, healthLabel: h.t,
+      healthGlow: s.health !== "healthy" && !res ? `0 0 0 3px ${h.c}28` : "none",
+      hasScore: score != null, noScore: score == null,
+      scoreNum: score == null ? "" : score, tierLabel: tier || "", tierColor: t ? t.c : "#52525b", tierBg: t ? t.bg : "transparent", tierBorder: t ? t.b : "#26262b",
+      scorePct: score == null ? 0 : score,
+      depsLabel: `${s.deps.length}/${ub.length}`,
+      deployLabel: this.fmtDeploy(s.dh),
+      _svc: s,
+    };
+  }
+
+  mini(id) {
+    const s = this.byId(id);
+    if (!s) return { name: id, iconD: this.ICON.Component, healthColor: "#3f3f46", onSelect: () => {} };
+    const h = this.isResource(s) ? this.HEALTH.managed : this.HEALTH[s.health];
+    return { id, name: s.id, iconD: this.ICON[s.kind], healthColor: h.c, onSelect: () => this.setState({ selectedId: id }) };
+  }
+
+  buildSelected(s) {
+    const d = this.decorate(s);
+    const res = this.isResource(s);
+    const team = s.team ? this.TEAMS[s.team] : null;
+    const checks = this.computeChecks(s);
+    const score = this.scoreOf(s);
+    const pass = checks.filter((c) => c.status === "pass").length;
+    const warn = checks.filter((c) => c.status === "warn").length;
+    const fail = checks.filter((c) => c.status === "fail").length;
+    const MARK = { pass: "M20 6 9 17l-5-5", warn: "M12 8v5 M12 17h.01", fail: "M18 6 6 18 M6 6l12 12" };
+    const CKC = { pass: { c: "#34d399", bg: "rgba(52,211,153,.14)" }, warn: { c: "#fbbf24", bg: "rgba(251,191,36,.14)" }, fail: { c: "#f87171", bg: "rgba(248,113,113,.14)" } };
+    const circ = 2 * Math.PI * 27;
+    const sloBreach = !res && s.slo < s.sloT;
+    const ub = this.usedByOf(s.id);
+    return {
+      ...d,
+      desc: s.desc,
+      hasOps: !res,
+      sloCur: s.slo, sloTarget: s.sloT, sloColor: sloBreach ? "#f87171" : "#34d399",
+      incidents: s.inc, incColor: s.inc > 0 ? "#f87171" : "#e4e4e7",
+      deploysWeek: s.dpw + "/wk",
+      passCount: pass, warnCount: warn, failCount: fail,
+      ringCirc: circ.toFixed(1), ringOffset: (circ * (1 - (score || 0) / 100)).toFixed(1),
+      checks: checks.map((c) => ({ label: c.label, status: c.status, color: CKC[c.status].c, bg: CKC[c.status].bg, mark: MARK[c.status] })),
+      ownerSub: team ? "team · github" : "no owner declared",
+      hasOnCall: !!team, onCall: team ? team.oncall : "",
+      dependsOn: s.deps.map((id) => this.mini(id)), dependsCount: s.deps.length, hasDeps: s.deps.length > 0,
+      usedBy: ub.map((x) => this.mini(x.id)), usedByCount: ub.length, hasUsedBy: ub.length > 0,
+      noRelations: s.deps.length === 0 && ub.length === 0,
+      runbookColor: s.fails.includes("runbook") || res ? "#52525b" : "#d4d4d8",
+    };
+  }
+
+  // ── render ───────────────────────────────────────────
+  renderVals() {
+    const st = this.state;
+    const dense = (this.props.density ?? "comfortable") === "compact";
+    const base = this.base();
+    const comps = base.filter((s) => !this.isResource(s));
+
+    // metrics
+    const owned = base.filter((s) => s.team).length;
+    const ownedPct = base.length ? Math.round((owned / base.length) * 100) : 0;
+    const scored = comps.length;
+    const ready = comps.filter((s) => (this.scoreOf(s) ?? 0) >= 70).length;
+    const readyPct = scored ? Math.round((ready / scored) * 100) : 0;
+    const attention = base.filter((s) => this.needsAttention(s)).length;
+    const incidents = base.reduce((a, s) => a + s.inc, 0);
+    const incSvcs = base.filter((s) => s.inc > 0).map((s) => s.id);
+    const systems = new Set(base.map((s) => s.system)).size;
+    const ownedColor = ownedPct >= 90 ? "#34d399" : ownedPct >= 75 ? "#fbbf24" : "#f87171";
+
+    // filtering + sorting
+    const filtered = this.sortList(this.filtered());
+    const selSvc = st.selectedId ? this.byId(st.selectedId) : null;
+    const hasSel = !!selSvc;
+
+    // group → flat rows
+    const rows = [];
+    const pushRow = (s) => {
+      const d = this.decorate(s);
+      const isSel = s.id === st.selectedId;
+      rows.push({
+        ...d, isRow: true, isGroup: false,
+        onSelect: () => this.setState({ selectedId: s.id }),
+        rowBg: isSel ? "rgba(245,158,11,.07)" : "transparent",
+        selBar: isSel ? "#f59e0b" : "transparent",
+      });
+    };
+    if (st.group === "none") {
+      filtered.forEach(pushRow);
+    } else {
+      const keyOf = (s) => st.group === "team" ? (s.team ? this.TEAMS[s.team].name : "Unowned") : st.group === "system" ? s.system : (s.life ? s.life[0].toUpperCase() + s.life.slice(1) : "No lifecycle");
+      const groups = {};
+      const order = [];
+      filtered.forEach((s) => { const k = keyOf(s); if (!groups[k]) { groups[k] = []; order.push(k); } groups[k].push(s); });
+      order.sort((a, b) => (a === "Unowned" || a === "No lifecycle" ? 1 : 0) - (b === "Unowned" || b === "No lifecycle" ? 1 : 0));
+      order.forEach((k) => {
+        const list = groups[k];
+        const att = list.filter((s) => this.needsAttention(s)).length;
+        rows.push({ isGroup: true, isRow: false, label: k, count: list.length, sub: att > 0 ? `${att} need attention` : "all healthy" });
+        list.forEach(pushRow);
+      });
+    }
+
+    // chips
+    const chips = [];
+    if (st.kind !== "all") chips.push({ kind: "kind", label: st.kind, onRemove: () => this.setState({ kind: "all" }) });
+    if (st.life !== "all") chips.push({ kind: "lifecycle", label: st.life, onRemove: () => this.setState({ life: "all" }) });
+    if (st.health !== "all") chips.push({ kind: "health", label: st.health, onRemove: () => this.setState({ health: "all" }) });
+    if (st.attention) chips.push({ kind: "", label: "Needs attention", onRemove: () => this.setState({ attention: false }) });
+    if (st.query.trim()) chips.push({ kind: "search", label: `“${st.query.trim()}”`, onRemove: () => this.setState({ query: "" }) });
+
+    // sort arrows
+    const arrow = (k) => st.sortKey === k ? (st.sortDir === "asc" ? "↑" : "↓") : "";
+    const toggleSort = (k) => this.setState((s) => s.sortKey === k ? { sortDir: s.sortDir === "asc" ? "desc" : "asc" } : { sortKey: k, sortDir: k === "name" ? "asc" : "asc" });
+
+    // view tabs
+    const tabBg = (v) => st.view === v ? "#26262b" : "transparent";
+    const tabFg = (v) => st.view === v ? "#fafafa" : "#a1a1aa";
+
+    // board columns (by lifecycle + infra)
+    const colDefs = [
+      { key: "production", title: "Production", color: "#34d399" },
+      { key: "experimental", title: "Experimental", color: "#fbbf24" },
+      { key: "deprecated", title: "Deprecated", color: "#71717a" },
+      { key: "infra", title: "Infrastructure", color: "#52525b" },
+    ];
+    const cardOf = (s) => {
+      const d = this.decorate(s);
+      const isSel = s.id === st.selectedId;
+      return { ...d, onSelect: () => this.setState({ selectedId: s.id }), bg: isSel ? "rgba(245,158,11,.06)" : "#0e0e12", border: isSel ? "rgba(245,158,11,.35)" : "#1f1f23" };
+    };
+    const boardCols = colDefs.map((c) => {
+      const list = filtered.filter((s) => c.key === "infra" ? this.isResource(s) : (!this.isResource(s) && s.life === c.key));
+      return { title: c.title, color: c.color, count: list.length, cards: list.map(cardOf) };
+    }).filter((c) => c.count > 0 || st.group === "none");
+
+    // dependency map (components/apis only for clarity) — laid out by system columns
+    const mapList = filtered.filter((s) => !this.isResource(s));
+    const cols = this.SYSTEMS.filter((sy) => mapList.some((s) => s.system === sy));
+    const colCount = Math.max(cols.length, 1);
+    const pos = {};
+    const nodes = [];
+    cols.forEach((sy, ci) => {
+      const inCol = mapList.filter((s) => s.system === sy);
+      const cx = ((ci + 0.5) / cols.length) * 100;
+      inCol.forEach((s, ri) => {
+        const cy = inCol.length === 1 ? 50 : 14 + (ri / (inCol.length - 1)) * 72;
+        pos[s.id] = { x: cx, y: cy };
+        const isSel = s.id === st.selectedId;
+        const h = this.HEALTH[s.health];
+        nodes.push({
+          id: s.id, name: s.id, iconD: this.ICON[s.kind], healthColor: h.c,
+          x: cx.toFixed(2), y: cy.toFixed(2),
+          bg: isSel ? "rgba(245,158,11,.14)" : "#141417",
+          border: isSel ? "#f59e0b" : "#26262b",
+          nameColor: isSel ? "#fde68a" : "#d4d4d8",
+          onSelect: () => this.setState({ selectedId: s.id }),
+        });
+      });
+    });
+    const edges = [];
+    mapList.forEach((s) => {
+      const a = pos[s.id]; if (!a) return;
+      s.deps.forEach((dep) => {
+        const b = pos[dep]; if (!b) return;
+        const sel = s.id === st.selectedId || dep === st.selectedId;
+        edges.push({ x1: a.x.toFixed(2), y1: a.y.toFixed(2), x2: b.x.toFixed(2), y2: b.y.toFixed(2), color: sel ? "rgba(245,158,11,.55)" : "rgba(255,255,255,.07)" });
+      });
+    });
+
+    return {
+      // metrics
+      totalCount: base.length, systemsCount: systems,
+      ownedPct, ownedColor, ownedSub: `${owned} of ${base.length} owned`,
+      readyPct, readySub: `${ready} of ${scored} services`,
+      attentionCount: attention, attSub: "unowned · degraded · down",
+      attBg: st.attention ? "rgba(245,158,11,.08)" : "#0d0d10",
+      attBorder: st.attention ? "rgba(245,158,11,.4)" : "#1c1c20",
+      attLabel: st.attention ? "#f59e0b" : "#71717a",
+      attCaret: st.attention ? "● filtering" : "›",
+      toggleAttention: () => this.setState((s) => ({ attention: !s.attention })),
+      hasIncidents: incidents > 0,
+      incidentText: `${incidents} open incident${incidents === 1 ? "" : "s"} — affecting ${incSvcs.join(", ")}`,
+
+      // toolbar
+      query: st.query,
+      onQuery: (e) => this.setState({ query: e.target.value }),
+      kindVal: st.kind, onKind: (e) => this.setState({ kind: e.target.value }),
+      lifeVal: st.life, onLife: (e) => this.setState({ life: e.target.value }),
+      healthVal: st.health, onHealth: (e) => this.setState({ health: e.target.value }),
+      groupVal: st.group, onGroup: (e) => this.setState({ group: e.target.value }),
+      setList: () => this.setState({ view: "list" }),
+      setBoard: () => this.setState({ view: "board" }),
+      setGraph: () => this.setState({ view: "graph" }),
+      tabListBg: tabBg("list"), tabListFg: tabFg("list"),
+      tabBoardBg: tabBg("board"), tabBoardFg: tabFg("board"),
+      tabGraphBg: tabBg("graph"), tabGraphFg: tabFg("graph"),
+
+      // chips
+      chips, hasChips: chips.length > 0, resultCount: filtered.length, clearAll: () => this.setState({ kind: "all", life: "all", health: "all", attention: false, query: "" }),
+
+      // views
+      isList: st.view === "list", isBoard: st.view === "board", isGraph: st.view === "graph",
+      hasSel, closePanel: () => this.setState({ selectedId: null }),
+
+      // table
+      rows, emptyShow: filtered.length === 0,
+      sortArrow: { name: arrow("name"), health: arrow("health"), readiness: arrow("readiness"), deploy: arrow("deploy") },
+      sortName: () => toggleSort("name"), sortHealth: () => toggleSort("health"), sortReady: () => toggleSort("readiness"), sortDeploy: () => toggleSort("deploy"),
+      rowH: dense ? "44px" : "56px", rowPadY: dense ? "6px" : "9px",
+      showRefs: this.props.showRefs ?? true,
+
+      // board
+      boardCols, boardColCount: boardCols.length || 1,
+
+      // map
+      graphNodes: nodes, graphEdges: edges, graphCount: mapList.length,
+      graphHeaders: cols.map((c) => ({ label: c })), graphColCount: colCount,
+
+      // panel
+      sel: hasSel ? this.buildSelected(selSvc) : {},
+    };
+  }
+}
+</script>
+</body>
+</html>
