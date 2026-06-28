@@ -206,8 +206,23 @@ function checkStatus(id: string, s: CatalogService): CheckStatus {
   }
 }
 
+// Readiness scoring runs the 8-check scorecard and is hit on every sort
+// comparison, every decoration, and the metric rollup. The inputs are the
+// service's own immutable fields, so memoize per service object (PERF C3):
+// `toServices` produces stable objects, so the cache survives filter / sort /
+// selection / typing re-renders and the scorecard is computed once per entity.
+const scoreCache = new WeakMap<CatalogService, number | null>();
+
 /** 0–100 readiness score, or null for resources (which are not scored). */
 export function scoreOf(s: CatalogService): number | null {
+  const cached = scoreCache.get(s);
+  if (cached !== undefined) return cached;
+  const v = computeScore(s);
+  scoreCache.set(s, v);
+  return v;
+}
+
+function computeScore(s: CatalogService): number | null {
   if (isResource(s)) return null;
   const checks = computeChecks(s);
   const v = checks.reduce((a, c) => a + (c.status === "pass" ? 1 : c.status === "warn" ? 0.5 : 0), 0);
