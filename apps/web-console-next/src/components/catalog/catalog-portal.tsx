@@ -63,8 +63,10 @@ const MapView = dynamic(() => import("./portal/map-view").then((m) => m.MapView)
 });
 const DetailDrawer = dynamic(() => import("./portal/detail-drawer").then((m) => m.DetailDrawer));
 
-// Frame height = viewport minus the app shell chrome (topbar 3rem + main pad 3rem).
-const FRAME = "h-[calc(100dvh-6rem)]";
+// Frame height = viewport minus the app shell chrome. On mobile that's the top
+// bar (3rem) + main padding (3rem); on desktop (md+) the top bar is gone, so the
+// frame reclaims it and only subtracts the main padding (3rem).
+const FRAME = "h-[calc(100dvh-6rem)] md:h-[calc(100dvh-3rem)]";
 
 export function CatalogPortal({ orgId, orgSlug }: { orgId: string; orgSlug: string }) {
   const { client } = useSession();
