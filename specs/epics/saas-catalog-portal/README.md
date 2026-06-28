@@ -17,7 +17,7 @@ designed experience on top of them* and pulling the supporting data through.
 
 | Field | Value |
 |-------|-------|
-| Status | **In progress** — CP0 (view-model + scorecards) → CP1 (index) → CP2 (board/map) → CP3 (drawer) → CP4 (data wiring) merged incrementally |
+| Status | **✅ Shipped** — CP0–CP4 merged (PRs #190–#194). The design-faithful catalog index (header · tiles · toolbar · chips · incident banner · Table/Board/Map) + entity drawer is live, with the git-authored fields wired end to end. Server-side scorecard/insights endpoints remain a documented later increment (the console computes both client-side today). |
 | Cluster | **CP** (catalog portal — the design-faithful console surface) |
 | Owner(s) | `apps/web-console-next` (primary) · `packages/contracts` + `packages/sdk` (additive enrichment fields, scorecard/insights reads) · `apps/state-worker` (projection enrichment, scorecard compute) |
 | Target branch | `claude/orun-cloud-catalog-2ailwz` (PRs merged incrementally) |
@@ -68,11 +68,11 @@ computable and degrading honestly where a runtime signal has no source yet.
 
 | ID | Milestone | Status |
 |----|-----------|--------|
-| CP0 | **Catalog view-model + scorecard engine** — a pure, unit-tested layer mapping `OrgCatalogEntity[]` (+ optional enrichment + runtime signals) into the design's service / row / card / node / drawer shapes; computes readiness checks → score → tier, "needs attention", metric rollups. Additive optional contract/SDK fields. | 🚧 |
-| CP1 | **Index surface** — header (eyebrow · title · Import / Register actions), the four metric tiles (Services · Ownership · Production-ready · Needs-attention toggle), the toolbar (search · kind / lifecycle / health / group selects · Table/Board/Map tabs), active-filter chips, incident banner, and the sortable + groupable **Table** view. Matches the design. | 🗓️ |
-| CP2 | **Board + Map views** — the Kanban board (by lifecycle + infrastructure) and the system-columned dependency **Map** (SVG edges + positioned nodes), both wired to the same filter state. | 🗓️ |
-| CP3 | **Entity detail drawer** — the overlay drawer: identity, ops stats (SLO · incidents · deploys), the production-readiness scorecard (progress ring + checks), ownership + on-call, dependency neighborhood (depends-on / used-by), footer quick links. | 🗓️ |
-| CP4 | **Data wiring** — surface the git-authored enrichment (description · system · language) end to end; compute the scorecard projection + deploy-recency join in `apps/state-worker`; expose `getCatalogInsights` / `getEntityScorecard` per `saas-service-catalog/design.md §4`. | 🗓️ |
+| CP0 | **Catalog view-model + scorecard engine** — a pure, unit-tested layer mapping `OrgCatalogEntity[]` (+ optional enrichment + runtime signals) into the design's service / row / card / node / drawer shapes; computes readiness checks → score → tier, "needs attention", metric rollups. Additive optional contract fields. | ✅ (PR #190) |
+| CP1 | **Index surface** — header (eyebrow · title · Import / Register actions), the four metric tiles (Services · Ownership · Production-ready · Needs-attention toggle), the toolbar (search · kind / lifecycle / health / group selects · Table/Board/Map tabs), active-filter chips, incident banner, and the sortable + groupable **Table** view. Matches the design. | ✅ (PR #191) |
+| CP2 | **Board + Map views** — the Kanban board (by lifecycle + infrastructure) and the system-columned dependency **Map** (SVG edges + positioned nodes), both wired to the same filter state. | ✅ (PR #192) |
+| CP3 | **Entity detail drawer** — the overlay drawer: identity, ops stats (SLO · incidents · deploys), the production-readiness scorecard (progress ring + checks), ownership + on-call, dependency neighborhood (depends-on / used-by), footer quick links. | ✅ (PR #193) |
+| CP4 | **Data wiring** — git-authored enrichment (description · system · language · tags) surfaced end to end through the `state-worker` projection + DB (migration 370). Server-computed scorecard projection + deploy-recency join + `getCatalogInsights`/`getEntityScorecard` endpoints are a later increment (console computes them client-side today). | ✅ (PR #194, partial — endpoints deferred) |
 
 ## Scope boundary
 
