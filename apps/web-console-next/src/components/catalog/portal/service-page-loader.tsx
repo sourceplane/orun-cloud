@@ -63,7 +63,7 @@ export function ServicePageLoader({
 
   if (page) {
     return (
-      <div className="h-[calc(100dvh-6rem)] overflow-hidden">
+      <div className="h-[calc(100dvh-6rem)] overflow-hidden md:h-[calc(100dvh-3rem)]">
         <ServicePage page={page} orgLabel={orgSlug} onBack={onBack} onViewMap={onViewMap} onSelectRef={onSelectRef} />
       </div>
     );
@@ -71,7 +71,7 @@ export function ServicePageLoader({
 
   if (loading && !entities) {
     return (
-      <div className="flex h-[calc(100dvh-6rem)] flex-col gap-4 overflow-hidden p-1">
+      <div className="flex h-[calc(100dvh-6rem)] flex-col gap-4 overflow-hidden p-1 md:h-[calc(100dvh-3rem)]">
         <div className="flex items-start gap-4">
           <Skeleton className="h-[54px] w-[54px] rounded-[14px] bg-[#161619]" />
           <div className="flex-1 space-y-2">

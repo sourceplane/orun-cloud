@@ -7,7 +7,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 
 export default function CatalogLoading() {
   return (
-    <div className="flex h-[calc(100dvh-6rem)] flex-col gap-[18px] overflow-hidden" aria-hidden>
+    <div className="flex h-[calc(100dvh-6rem)] flex-col gap-[18px] overflow-hidden md:h-[calc(100dvh-3rem)]" aria-hidden>
       {/* title + metric tiles */}
       <div className="flex shrink-0 flex-col gap-4">
         <div className="space-y-2">

@@ -33,7 +33,10 @@ export function Topbar() {
   const onCatalog = !!pathname && /\/orgs\/[^/]+\/catalog(\/|$)/.test(pathname);
 
   return (
-    <header className="sticky top-0 z-30 border-b bg-background/80 backdrop-blur-md pt-safe">
+    // Desktop (md+) has the sidebar + breadcrumb for scope/search/account, so the
+    // top bar is an empty redundant strip there — render it only on small screens,
+    // where it carries the sole navigation (hamburger drawer, search, account).
+    <header className="sticky top-0 z-30 border-b bg-background/80 backdrop-blur-md pt-safe md:hidden">
       <div className="flex h-12 items-center gap-2 px-3 sm:gap-3 sm:px-4">
         <MobileNav />
         <ScopeSwitcher />
