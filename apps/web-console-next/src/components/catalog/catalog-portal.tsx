@@ -207,6 +207,15 @@ export function CatalogPortal({ orgId, orgSlug }: { orgId: string; orgSlug: stri
   );
   const openFull = React.useCallback((key: string) => router.push(`${catalogHref}/${key}`), [router, catalogHref]);
 
+  // Tapping an item: on desktop it peeks the entity in the side drawer; on
+  // mobile there is no drawer — a tap goes straight to the full service page
+  // (the drawer's small-screen bottom sheet was an extra hop the phone flow
+  // doesn't want).
+  const onActivate = React.useCallback(
+    (key: string) => (isDesktop ? setSelectedKey(key) : openFull(key)),
+    [isDesktop, setSelectedKey, openFull],
+  );
+
   // Escape closes the drawer.
   React.useEffect(() => {
     if (!selectedKey) return;
@@ -327,7 +336,7 @@ export function CatalogPortal({ orgId, orgSlug }: { orgId: string; orgSlug: stri
               sortDir={sortDir}
               onSort={onSort}
               selectedKey={selectedKey}
-              onSelect={setSelectedKey}
+              onSelect={onActivate}
               onOpen={openFull}
               onIntent={warmEntity}
               showRefs
@@ -340,12 +349,12 @@ export function CatalogPortal({ orgId, orgSlug }: { orgId: string; orgSlug: stri
               columns={board}
               decorate={decorate}
               selectedKey={selectedKey}
-              onSelect={setSelectedKey}
+              onSelect={onActivate}
               onOpen={openFull}
               isDesktop={isDesktop}
             />
           ) : (
-            <MapView model={map} selectedKey={selectedKey} onSelect={setSelectedKey} onOpen={openFull} />
+            <MapView model={map} selectedKey={selectedKey} onSelect={onActivate} onOpen={openFull} />
           )}
         </div>
       </div>
@@ -353,14 +362,13 @@ export function CatalogPortal({ orgId, orgSlug }: { orgId: string; orgSlug: stri
       {/* Entity detail drawer — anchored to the catalog frame so it spans the
           full height (over the header, tiles and toolbar), matching the design's
           full-height sheet, with the scrim dimming the whole surface. */}
-      {selected ? (
+      {selected && isDesktop ? (
         <DetailDrawer
           sel={selected}
           onClose={() => setSelectedKey(null)}
           onSelectRef={setSelectedKey}
           onViewMap={() => setView("graph")}
           onOpenPage={() => selectedKey && openFull(selectedKey)}
-          isDesktop={isDesktop}
         />
       ) : null}
 
