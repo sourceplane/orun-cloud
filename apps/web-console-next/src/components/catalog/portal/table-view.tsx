@@ -37,7 +37,11 @@ function SortHeader({
   );
 }
 
-function Row({
+// Memoized so moving the selection (or typing in search) only re-renders the
+// rows whose props actually change — not the whole list (PERF C3). This relies
+// on `d` being referentially stable (the portal memoizes decoration per
+// dataset) and on the `onSelect`/`onOpen` callbacks being stable identities.
+const Row = React.memo(function Row({
   d,
   selected,
   showRefs,
@@ -49,16 +53,16 @@ function Row({
   selected: boolean;
   showRefs: boolean;
   dense: boolean;
-  onSelect: () => void;
-  onOpen: () => void;
+  onSelect: (key: string) => void;
+  onOpen: (key: string) => void;
 }) {
   return (
     <button
       type="button"
       data-row
       data-entitykey={d.key}
-      onClick={onSelect}
-      onDoubleClick={onOpen}
+      onClick={() => onSelect(d.key)}
+      onDoubleClick={() => onOpen(d.key)}
       className={`relative grid w-full ${GRID} items-center gap-2.5 border-none border-b border-b-[#141417] pl-3.5 pr-4 text-left transition-colors hover:bg-white/[0.022]`}
       style={{
         ...(selected ? { background: "rgba(245,158,11,.07)" } : {}),
@@ -158,7 +162,7 @@ function Row({
       <span className="text-[12px] text-[#71717a]">{d.deployLabel}</span>
     </button>
   );
-}
+});
 
 export function TableView({
   groups,
@@ -199,8 +203,8 @@ export function TableView({
           selected={selectedKey === d.key}
           showRefs={showRefs}
           dense={dense}
-          onSelect={() => onSelect(d.key)}
-          onOpen={() => onOpen(d.key)}
+          onSelect={onSelect}
+          onOpen={onOpen}
         />
       );
     });

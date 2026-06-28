@@ -9,9 +9,11 @@
 
 import * as React from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import type { OrgCatalogEntity, StateCursor } from "@saas/contracts/state";
 import { useSession } from "@/lib/session";
 import { wrap } from "@/lib/api";
+import { useApiQuery, qk } from "@/lib/query";
+import { useDebounced } from "@/lib/use-debounced";
+import { collectOrgCatalog } from "@/lib/catalog-portal/fetch";
 import { cn } from "@/lib/cn";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
@@ -21,6 +23,7 @@ import {
   rollup,
   toServices,
   type CatalogService,
+  type DecoratedService,
 } from "@/lib/catalog-portal/model";
 import {
   EMPTY_FILTERS,
@@ -54,9 +57,18 @@ export function CatalogPortal({ orgId, orgSlug }: { orgId: string; orgSlug: stri
   const catalogHref = `/orgs/${orgSlug}/catalog`;
   const selectedKey = searchParams?.get("entity") ?? null;
 
-  const [entities, setEntities] = React.useState<OrgCatalogEntity[]>([]);
-  const [loading, setLoading] = React.useState(true);
-  const [error, setError] = React.useState<{ code: string; message: string } | null>(null);
+  // The portal filters/sorts/groups client-side, so it loads the full org graph
+  // through the shared query cache (PERF C1): revisiting the catalog now paints
+  // instantly from cache and revalidates in the background instead of re-walking
+  // every page behind a skeleton on each mount. `collectOrgCatalog` pages the
+  // keyset endpoint to completion (bounded for very large orgs).
+  const {
+    data: entities,
+    loading,
+    error,
+  } = useApiQuery(qk.orgCatalog(orgId), () =>
+    wrap(() => collectOrgCatalog((query) => client.state.listOrgCatalogEntities(orgId, query))),
+  );
 
   const [filters, setFiltersState] = React.useState<CatalogFilters>(EMPTY_FILTERS);
   const [group, setGroup] = React.useState<GroupKey>("none");
@@ -68,55 +80,43 @@ export function CatalogPortal({ orgId, orgSlug }: { orgId: string; orgSlug: stri
     setFiltersState((f) => ({ ...f, ...patch }));
   }, []);
 
-  const load = React.useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    // The portal filters/sorts/groups client-side, so it loads the full org
-    // graph by paging the keyset endpoint at the server's max page size
-    // (MAX_PAGE_LIMIT = 100; a larger `limit` is rejected as validation_failed).
-    // A page cap bounds the worst case for very large orgs.
-    const PAGE = 100;
-    const MAX_PAGES = 50;
-    const all: OrgCatalogEntity[] = [];
-    let cursor: StateCursor | null = null;
-    for (let page = 0; page < MAX_PAGES; page++) {
-      const query: { limit: number; cursor?: string } = { limit: PAGE };
-      if (cursor) query.cursor = `${cursor.createdAt}|${cursor.id}`;
-      const res = await wrap(() => client.state.listOrgCatalogEntities(orgId, query));
-      if (!res.ok) {
-        setError({ code: res.error.code, message: res.error.message });
-        setEntities([]);
-        setLoading(false);
-        return;
-      }
-      all.push(...res.data.entities);
-      cursor = res.data.nextCursor;
-      if (!cursor) break;
-    }
-    setEntities(all);
-    setLoading(false);
-  }, [client, orgId]);
+  // Debounce the free-text query before it drives the (whole-catalog) filter →
+  // sort → group → layout → decorate pipeline (PERF C4): the input stays
+  // controlled at full speed via `filters.query`, but the heavy derived work
+  // runs at most a few times per second instead of on every keystroke.
+  const debouncedQuery = useDebounced(filters.query, 200);
+  const effectiveFilters = React.useMemo(
+    () => (filters.query === debouncedQuery ? filters : { ...filters, query: debouncedQuery }),
+    [filters, debouncedQuery],
+  );
 
-  React.useEffect(() => {
-    void load();
-  }, [load]);
-
-  const services = React.useMemo(() => toServices(entities), [entities]);
+  const services = React.useMemo(() => toServices(entities ?? []), [entities]);
   const ctx = React.useMemo(() => buildContext(services), [services]);
   const metrics = React.useMemo(() => rollup(services), [services]);
 
-  const filtered = React.useMemo(() => sortServices(filterServices(services, filters), sortKey, sortDir), [
-    services,
-    filters,
-    sortKey,
-    sortDir,
-  ]);
+  const filtered = React.useMemo(
+    () => sortServices(filterServices(services, effectiveFilters), sortKey, sortDir),
+    [services, effectiveFilters, sortKey, sortDir],
+  );
   const grouped = React.useMemo(() => groupServices(filtered, group), [filtered, group]);
   const board = React.useMemo(() => buildBoard(filtered), [filtered]);
   const map = React.useMemo(() => buildMap(filtered), [filtered]);
   const chips = React.useMemo(() => activeChips(filters), [filters]);
 
-  const decorate = React.useCallback((s: CatalogService) => decorateService(s, ctx), [ctx]);
+  // Decorate every service once per dataset into a key→row map (PERF C3). The
+  // map is keyed by the stable service objects, so it survives filter / sort /
+  // selection / typing re-renders; `decorate` becomes an O(1) lookup and the
+  // 8-check scorecard is never recomputed per render. Memoized rows also let
+  // the views' `React.memo` rows skip re-rendering when only the selection moves.
+  const decoratedByKey = React.useMemo(() => {
+    const m = new Map<string, DecoratedService>();
+    for (const s of services) m.set(s.key, decorateService(s, ctx));
+    return m;
+  }, [services, ctx]);
+  const decorate = React.useCallback(
+    (s: CatalogService) => decoratedByKey.get(s.key) ?? decorateService(s, ctx),
+    [decoratedByKey, ctx],
+  );
   const selectedService = React.useMemo(
     () => (selectedKey ? (services.find((s) => s.key === selectedKey) ?? null) : null),
     [services, selectedKey],
