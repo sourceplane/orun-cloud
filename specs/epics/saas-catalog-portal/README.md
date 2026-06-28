@@ -17,7 +17,7 @@ designed experience on top of them* and pulling the supporting data through.
 
 | Field | Value |
 |-------|-------|
-| Status | **✅ Shipped** — CP0–CP4 merged (PRs #190–#194). The design-faithful catalog index (header · tiles · toolbar · chips · incident banner · Table/Board/Map) + entity drawer is live, with the git-authored fields wired end to end. Server-side scorecard/insights endpoints remain a documented later increment (the console computes both client-side today). |
+| Status | **✅ Shipped** — CP0–CP5 merged (PRs #190–#194 + the dedicated page). The design-faithful catalog index (header · tiles · toolbar · chips · incident banner · Table/Board/Map), the entity drawer, and the drilled-in dedicated service page are live, with the git-authored fields wired end to end. Server-side scorecard/insights endpoints remain a documented later increment (the console computes both client-side today). |
 | Cluster | **CP** (catalog portal — the design-faithful console surface) |
 | Owner(s) | `apps/web-console-next` (primary) · `packages/contracts` + `packages/sdk` (additive enrichment fields, scorecard/insights reads) · `apps/state-worker` (projection enrichment, scorecard compute) |
 | Target branch | `claude/orun-cloud-catalog-2ailwz` (PRs merged incrementally) |
@@ -73,12 +73,13 @@ computable and degrading honestly where a runtime signal has no source yet.
 | CP2 | **Board + Map views** — the Kanban board (by lifecycle + infrastructure) and the system-columned dependency **Map** (SVG edges + positioned nodes), both wired to the same filter state. | ✅ (PR #192) |
 | CP3 | **Entity detail drawer** — the overlay drawer: identity, ops stats (SLO · incidents · deploys), the production-readiness scorecard (progress ring + checks), ownership + on-call, dependency neighborhood (depends-on / used-by), footer quick links. | ✅ (PR #193) |
 | CP4 | **Data wiring** — git-authored enrichment (description · system · language · tags) surfaced end to end through the `state-worker` projection + DB (migration 370). Server-computed scorecard projection + deploy-recency join + `getCatalogInsights`/`getEntityScorecard` endpoints are a later increment (console computes them client-side today). | ✅ (PR #194, partial — endpoints deferred) |
+| CP5 | **Dedicated service page** — the design's drilled-in `isPage` surface: breadcrumb · identity hero · runtime-gated ops strip · Overview / Docs / Dependencies / Activity / Scorecard tabs · Ownership / About / quick-links rail. A pure markdown layer + `buildPage` view-model render the service-definition docs (README · ARCHITECTURE · RUNBOOK · API · PROVISIONING) and a provenance activity feed from real git-derived facts; the index drawer gains the "Open full service page" bridge. Supersedes the legacy workbench / entity-page. | ✅ |
 
 ## Scope boundary
 
 | In scope | Out of scope |
 |----------|--------------|
-| The catalog **page** matching the design: header, metric tiles, toolbar, chips, incident banner, Table / Board / Map views, the entity detail drawer, and the view-model + scorecard engine that feeds them; additive contract/SDK enrichment fields; the supporting `state-worker` projection/scorecard compute (CP4) | The app **shell** (sidebar / topbar / org-switcher — owned by `saas-console-ux`; the design's chrome is reference only); authoring catalog content in the console (forbidden by `18-state.md`); the golden-path scaffolder and on-call *authoring* UX (owned by `saas-service-catalog` SC6/SC7); incident management / paging delivery; real APM/SLO ingestion (a monitoring-integration concern — surfaced when a source exists, degraded until then) |
+| The catalog **page** matching the design: header, metric tiles, toolbar, chips, incident banner, Table / Board / Map views, the entity detail drawer, the drilled-in dedicated service page (CP5), and the view-model + scorecard engine that feeds them; additive contract/SDK enrichment fields; the supporting `state-worker` projection/scorecard compute (CP4) | The app **shell** (sidebar / topbar / org-switcher — owned by `saas-console-ux`; the design's chrome is reference only); authoring catalog content in the console (forbidden by `18-state.md`); the golden-path scaffolder and on-call *authoring* UX (owned by `saas-service-catalog` SC6/SC7); incident management / paging delivery; real APM/SLO ingestion (a monitoring-integration concern — surfaced when a source exists, degraded until then) |
 
 ## Relationship to existing work
 

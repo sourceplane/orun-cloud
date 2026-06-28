@@ -344,6 +344,7 @@ export function CatalogPortal({ orgId, orgSlug }: { orgId: string; orgSlug: stri
             onClose={() => setSelectedKey(null)}
             onSelectRef={setSelectedKey}
             onViewMap={() => setView("graph")}
+            onOpenPage={() => selectedKey && openFull(selectedKey)}
           />
         ) : null}
       </div>

@@ -35,6 +35,8 @@ export interface CatalogService {
   // provenance
   sourceProjectId: string;
   sourceEnvironment: string | null;
+  /** Git commit the snapshot was resolved at, when known (activity provenance). */
+  sourceCommit: string | null;
   // git-authored
   /** Grouping system; derived from `system`, a System relation, or namespace. */
   system: string;
@@ -136,6 +138,7 @@ export function toService(e: OrgCatalogEntity): CatalogService {
     kind: parseEntityRef(e.entityRef).kind || e.kind,
     sourceProjectId: e.sourceProjectId,
     sourceEnvironment: e.sourceEnvironment,
+    sourceCommit: e.sourceCommit ?? null,
     system: deriveSystem(e),
     owner: e.owner,
     language: e.language ?? null,
