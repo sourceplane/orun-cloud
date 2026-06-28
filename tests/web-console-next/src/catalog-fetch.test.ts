@@ -92,6 +92,28 @@ describe("collectOrgCatalog", () => {
     expect(snapshots).toEqual([1, 2]);
   });
 
+  it("emits independent snapshot copies on each onPage (safe to stream into a cache)", async () => {
+    const pages: CatalogPage[] = [
+      { entities: [entity("a")], nextCursor: cursor("a") },
+      { entities: [entity("b")], nextCursor: null },
+    ];
+    let i = 0;
+    const snapshots: OrgCatalogEntity[][] = [];
+
+    const out = await collectOrgCatalog(async () => pages[i++]!, {
+      onPage: (soFar) => snapshots.push(soFar),
+    });
+
+    // Distinct references per page, and the earlier snapshot is not mutated as
+    // the walk continues — so each can be handed to setQueryData as fresh state.
+    expect(snapshots[0]).not.toBe(snapshots[1]);
+    expect(snapshots[0]).toHaveLength(1);
+    expect(snapshots[1]).toHaveLength(2);
+    // The final return is also a distinct array from the streamed snapshots.
+    expect(out).not.toBe(snapshots[1]);
+    expect(out.map((e) => e.entityRef)).toEqual(["a", "b"]);
+  });
+
   it("propagates a fetch error", async () => {
     const fetchPage = async (): Promise<CatalogPage> => {
       throw new Error("boom");

@@ -9,6 +9,7 @@
 
 import * as React from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { useQueryClient } from "@tanstack/react-query";
 import { useSession } from "@/lib/session";
 import { wrap } from "@/lib/api";
 import { useApiQuery, qk } from "@/lib/query";
@@ -62,12 +63,23 @@ export function CatalogPortal({ orgId, orgSlug }: { orgId: string; orgSlug: stri
   // instantly from cache and revalidates in the background instead of re-walking
   // every page behind a skeleton on each mount. `collectOrgCatalog` pages the
   // keyset endpoint to completion (bounded for very large orgs).
+  //
+  // PERF C2: instead of blocking first paint until the whole walk finishes, each
+  // page is streamed into the cache via `setQueryData` as it arrives. The first
+  // page (~100 rows) flips the query to success and renders immediately while the
+  // remaining pages fill in behind it; the queryFn still resolves with the full
+  // list, which is identical to the last streamed snapshot.
+  const qc = useQueryClient();
   const {
     data: entities,
     loading,
     error,
   } = useApiQuery(qk.orgCatalog(orgId), () =>
-    wrap(() => collectOrgCatalog((query) => client.state.listOrgCatalogEntities(orgId, query))),
+    wrap(() =>
+      collectOrgCatalog((query) => client.state.listOrgCatalogEntities(orgId, query), {
+        onPage: (soFar) => qc.setQueryData(qk.orgCatalog(orgId), soFar),
+      }),
+    ),
   );
 
   const [filters, setFiltersState] = React.useState<CatalogFilters>(EMPTY_FILTERS);
