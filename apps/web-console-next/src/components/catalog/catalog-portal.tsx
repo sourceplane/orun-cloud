@@ -231,9 +231,9 @@ export function CatalogPortal({ orgId, orgSlug }: { orgId: string; orgSlug: stri
   }, []);
 
   return (
-    <div className={cn("flex flex-col gap-[18px] overflow-hidden", FRAME)}>
+    <div className={cn("relative flex flex-col gap-[18px] overflow-hidden", FRAME)}>
       {/* title + metrics */}
-      <div className="flex shrink-0 flex-col gap-4">
+      <div className="flex shrink-0 flex-col gap-3">
         <CatalogHeader />
         <MetricTiles
           rollup={metrics}
@@ -295,7 +295,7 @@ export function CatalogPortal({ orgId, orgSlug }: { orgId: string; orgSlug: stri
       ) : null}
 
       {/* body */}
-      <div className="relative flex min-h-0 flex-1 pb-[22px]">
+      <div className="flex min-h-0 flex-1 pb-[22px]">
         <div className="flex min-w-0 flex-1 flex-col">
           {loading ? (
             <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-hidden rounded-[13px] border border-[#1a1a1e] bg-[#0c0c0f] p-3">
@@ -336,18 +336,20 @@ export function CatalogPortal({ orgId, orgSlug }: { orgId: string; orgSlug: stri
             <MapView model={map} selectedKey={selectedKey} onSelect={setSelectedKey} onOpen={openFull} />
           )}
         </div>
-
-        {/* entity detail drawer */}
-        {selected ? (
-          <DetailDrawer
-            sel={selected}
-            onClose={() => setSelectedKey(null)}
-            onSelectRef={setSelectedKey}
-            onViewMap={() => setView("graph")}
-            onOpenPage={() => selectedKey && openFull(selectedKey)}
-          />
-        ) : null}
       </div>
+
+      {/* Entity detail drawer — anchored to the catalog frame so it spans the
+          full height (over the header, tiles and toolbar), matching the design's
+          full-height sheet, with the scrim dimming the whole surface. */}
+      {selected ? (
+        <DetailDrawer
+          sel={selected}
+          onClose={() => setSelectedKey(null)}
+          onSelectRef={setSelectedKey}
+          onViewMap={() => setView("graph")}
+          onOpenPage={() => selectedKey && openFull(selectedKey)}
+        />
+      ) : null}
 
       {/* filters-active hint for empty assistive state (a11y) */}
       <span className="sr-only">{hasActiveFilters(filters) ? "Filters active" : "No filters"}</span>
