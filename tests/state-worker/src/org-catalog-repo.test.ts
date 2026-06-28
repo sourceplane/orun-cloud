@@ -29,12 +29,12 @@ function orgCatalogExecutor(): { executor: SqlExecutor; rows: Map<string, Record
 
   function run(text: string, p: unknown[]): { rows: Record<string, unknown>[]; rowCount: number } {
     if (text.includes("INSERT INTO state.org_catalog_entities")) {
-      const [id, orgId, entityRef, kind, name, owner, lifecycle, relations, sourceProjectId, sourceEnv, sourceCommit, headDigest] =
-        p as [string, string, string, string, string, string | null, string | null, string, string, string | null, string | null, string];
+      const [id, orgId, entityRef, kind, name, owner, lifecycle, relations, description, system, language, tags, sourceProjectId, sourceEnv, sourceCommit, headDigest] =
+        p as [string, string, string, string, string, string | null, string | null, string, string | null, string | null, string | null, string, string, string | null, string | null, string];
       const key = scopeKey(orgId, sourceProjectId, sourceEnv ?? null, entityRef);
       const existing = rows.get(key);
       const row: Record<string, unknown> = existing
-        ? { ...existing, kind, name, owner: owner ?? null, lifecycle: lifecycle ?? null, relations, source_commit: sourceCommit ?? null, head_digest: headDigest, updated_at: new Date().toISOString() }
+        ? { ...existing, kind, name, owner: owner ?? null, lifecycle: lifecycle ?? null, relations, description: description ?? null, system: system ?? null, language: language ?? null, tags, source_commit: sourceCommit ?? null, head_digest: headDigest, updated_at: new Date().toISOString() }
         : {
             id,
             org_id: orgId,
@@ -44,6 +44,10 @@ function orgCatalogExecutor(): { executor: SqlExecutor; rows: Map<string, Record
             owner: owner ?? null,
             lifecycle: lifecycle ?? null,
             relations,
+            description: description ?? null,
+            system: system ?? null,
+            language: language ?? null,
+            tags,
             source_project_id: sourceProjectId,
             source_environment: sourceEnv ?? null,
             source_commit: sourceCommit ?? null,

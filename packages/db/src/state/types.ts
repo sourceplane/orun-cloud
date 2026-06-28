@@ -335,6 +335,11 @@ export interface OrgCatalogEntity {
   owner: string | null;
   lifecycle: string | null;
   relations: CatalogEntityRelation[];
+  /** Git-authored portal fields (CP4); null/[] when the snapshot omits them. */
+  description: string | null;
+  system: string | null;
+  language: string | null;
+  tags: string[];
   sourceProjectId: string;
   sourceEnvironment: string | null;
   sourceCommit: string | null;
@@ -354,6 +359,10 @@ export interface UpsertOrgCatalogEntityInput {
   owner?: string | null;
   lifecycle?: string | null;
   relations?: CatalogEntityRelation[];
+  description?: string | null;
+  system?: string | null;
+  language?: string | null;
+  tags?: string[];
   sourceEnvironment?: string | null;
   sourceCommit?: string | null;
 }
