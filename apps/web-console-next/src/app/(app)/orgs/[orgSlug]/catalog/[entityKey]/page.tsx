@@ -15,8 +15,11 @@ export default function CatalogEntityPage() {
   const params = useParams<{ orgSlug: string; entityKey: string }>();
   const slug = params?.orgSlug ?? "";
   const entityKey = params?.entityKey ?? "";
+  // `bare`: the service page renders its own breadcrumb bar (org / Catalog /
+  // name), so suppress the shared OrgScope breadcrumb to avoid showing the path
+  // twice (and the raw encoded entity key).
   return (
-    <OrgScope slug={slug}>
+    <OrgScope slug={slug} bare>
       {(org) => <ServicePageLoader orgId={org.id} orgSlug={slug} entityKey={entityKey} />}
     </OrgScope>
   );
