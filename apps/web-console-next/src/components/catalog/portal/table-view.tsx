@@ -4,11 +4,18 @@
  */
 
 import * as React from "react";
+import { useVirtualizer } from "@tanstack/react-virtual";
 import { Search, Workflow } from "lucide-react";
 import type { CatalogService } from "@/lib/catalog-portal/model";
 import type { DecoratedService } from "@/lib/catalog-portal/model";
 import type { CatalogGroup, SortDir, SortKey } from "@/lib/catalog-portal/filter";
 import { PathIcon } from "./icon";
+
+// Above this many ungrouped rows, the flat list is windowed (PERF C5) so only
+// the visible rows (plus a small overscan) are in the DOM. Smaller lists and the
+// grouped view keep the plain render path unchanged — virtualization only earns
+// its keep once the row count is large enough to hurt layout/scroll.
+const VIRTUALIZE_AT = 80;
 
 const GRID =
   "grid-cols-[minmax(200px,2.3fr)_132px_104px_116px_minmax(132px,1.5fr)_56px_88px]";
@@ -168,6 +175,64 @@ const Row = React.memo(function Row({
   );
 });
 
+// Windowed flat list (PERF C5). Rows are absolutely positioned inside a spacer
+// sized to the full list height; `measureElement` records each row's real height
+// so positioning stays exact even though rows are a fixed ~56px by design.
+function VirtualFlatRows({
+  scrollRef,
+  flat,
+  decorate,
+  selectedKey,
+  showRefs,
+  dense,
+  onSelect,
+  onOpen,
+  onIntent,
+}: {
+  scrollRef: React.RefObject<HTMLDivElement | null>;
+  flat: CatalogService[];
+  decorate: (s: CatalogService) => DecoratedService;
+  selectedKey: string | null;
+  showRefs: boolean;
+  dense: boolean;
+  onSelect: (key: string) => void;
+  onOpen: (key: string) => void;
+  onIntent?: ((key: string) => void) | undefined;
+}) {
+  const virtualizer = useVirtualizer({
+    count: flat.length,
+    getScrollElement: () => scrollRef.current,
+    estimateSize: () => (dense ? 44 : 56),
+    overscan: 12,
+  });
+  return (
+    <div style={{ height: virtualizer.getTotalSize(), position: "relative", width: "100%" }}>
+      {virtualizer.getVirtualItems().map((vi) => {
+        const s = flat[vi.index]!;
+        const d = decorate(s);
+        return (
+          <div
+            key={d.key}
+            data-index={vi.index}
+            ref={virtualizer.measureElement}
+            style={{ position: "absolute", top: 0, left: 0, width: "100%", transform: `translateY(${vi.start}px)` }}
+          >
+            <Row
+              d={d}
+              selected={selectedKey === d.key}
+              showRefs={showRefs}
+              dense={dense}
+              onSelect={onSelect}
+              onOpen={onOpen}
+              onIntent={onIntent}
+            />
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 export function TableView({
   groups,
   flat,
@@ -199,6 +264,8 @@ export function TableView({
   onClearFilters: () => void;
 }) {
   const isEmpty = (groups ? groups.length === 0 : flat.length === 0);
+  const scrollRef = React.useRef<HTMLDivElement>(null);
+  const virtualizeFlat = groups === null && flat.length > VIRTUALIZE_AT;
 
   const renderRows = (list: CatalogService[]) =>
     list.map((s) => {
@@ -237,7 +304,7 @@ export function TableView({
             <SortHeader label="Updated" active={sortKey === "deploy"} dir={sortDir} onClick={() => onSort("deploy")} />
           </div>
           {/* rows */}
-          <div className="min-h-0 flex-1 overflow-y-auto">
+          <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto">
             {isEmpty ? (
               <div className="flex flex-col items-center justify-center gap-2.5 px-5 py-[60px] text-center">
                 <Search className="h-[34px] w-[34px] text-[#3f3f46]" strokeWidth={1.6} />
@@ -257,6 +324,18 @@ export function TableView({
                   {renderRows(g.services)}
                 </React.Fragment>
               ))
+            ) : virtualizeFlat ? (
+              <VirtualFlatRows
+                scrollRef={scrollRef}
+                flat={flat}
+                decorate={decorate}
+                selectedKey={selectedKey}
+                showRefs={showRefs}
+                dense={dense}
+                onSelect={onSelect}
+                onOpen={onOpen}
+                onIntent={onIntent}
+              />
             ) : (
               renderRows(flat)
             )}
