@@ -23,9 +23,9 @@ export default function CatalogLoading() {
       {/* toolbar */}
       <Skeleton className="h-11 w-full shrink-0 rounded-lg md:h-[34px] md:max-w-2xl" />
       {/* table frame */}
-      <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-hidden rounded-[13px] border border-[#1a1a1e] bg-[#0c0c0f] p-3">
+      <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-hidden rounded-[13px] border border-border bg-card p-3">
         {Array.from({ length: 8 }).map((_, i) => (
-          <Skeleton key={i} className="h-12 w-full rounded-lg bg-[#161619]" />
+          <Skeleton key={i} className="h-12 w-full rounded-lg bg-muted" />
         ))}
       </div>
     </div>

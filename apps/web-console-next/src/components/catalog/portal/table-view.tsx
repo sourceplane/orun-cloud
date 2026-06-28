@@ -12,7 +12,7 @@ import { PathIcon } from "./icon";
 
 const GRID =
   "grid-cols-[minmax(200px,2.3fr)_132px_104px_116px_minmax(132px,1.5fr)_56px_88px]";
-const HEAD_CELL = "text-[11px] font-semibold uppercase tracking-[0.05em] text-[#71717a]";
+const HEAD_CELL = "text-[11px] font-semibold uppercase tracking-[0.05em] text-muted-foreground/80";
 
 function SortHeader({
   label,
@@ -29,10 +29,10 @@ function SortHeader({
     <button
       type="button"
       onClick={onClick}
-      className="flex items-center gap-1.5 border-none bg-transparent p-0 text-left text-[11px] font-semibold uppercase tracking-[0.05em] text-[#a1a1aa]"
+      className="flex items-center gap-1.5 border-none bg-transparent p-0 text-left text-[11px] font-semibold uppercase tracking-[0.05em] text-muted-foreground"
     >
       {label}
-      <span className="text-[10px] text-[#f59e0b]">{active ? (dir === "asc" ? "↑" : "↓") : ""}</span>
+      <span className="text-[10px] text-primary">{active ? (dir === "asc" ? "↑" : "↓") : ""}</span>
     </button>
   );
 }
@@ -67,9 +67,9 @@ const Row = React.memo(function Row({
       onFocus={onIntent ? () => onIntent(d.key) : undefined}
       onClick={() => onSelect(d.key)}
       onDoubleClick={() => onOpen(d.key)}
-      className={`relative grid w-full ${GRID} items-center gap-2.5 border-none border-b border-b-[#141417] pl-3.5 pr-4 text-left transition-colors hover:bg-white/[0.022]`}
+      className={`relative grid w-full ${GRID} items-center gap-2.5 border-none border-b border-b-border pl-3.5 pr-4 text-left transition-colors hover:bg-foreground/[0.022]`}
       style={{
-        ...(selected ? { background: "rgba(245,158,11,.07)" } : {}),
+        ...(selected ? { background: "hsl(var(--primary) / 0.07)" } : {}),
         minHeight: dense ? "44px" : "56px",
         paddingTop: dense ? "6px" : "9px",
         paddingBottom: dense ? "6px" : "9px",
@@ -77,21 +77,21 @@ const Row = React.memo(function Row({
     >
       <span
         className="absolute bottom-2 left-0 top-2 w-0.5 rounded-[2px]"
-        style={{ background: selected ? "#f59e0b" : "transparent" }}
+        style={{ background: selected ? "hsl(var(--primary))" : "transparent" }}
       />
       {/* service */}
       <span className="flex min-w-0 items-center gap-[11px]">
-        <span className="grid h-[34px] w-[34px] shrink-0 place-items-center rounded-[9px] border border-[#232327] bg-[#161619] text-[#a1a1aa]">
+        <span className="grid h-[34px] w-[34px] shrink-0 place-items-center rounded-[9px] border border-border bg-muted text-muted-foreground">
           <PathIcon d={d.iconD} size={17} />
         </span>
         <span className="flex min-w-0 flex-col gap-0.5">
           <span className="flex min-w-0 items-center gap-[7px]">
-            <span className="truncate text-[13.5px] font-medium text-[#fafafa]">{d.name}</span>
-            <span className="shrink-0 rounded border border-[#26262b] px-[5px] text-[10px] text-[#71717a]">
+            <span className="truncate text-[13.5px] font-medium text-foreground">{d.name}</span>
+            <span className="shrink-0 rounded border border-input px-[5px] text-[10px] text-muted-foreground/80">
               {d.kindLabel}
             </span>
           </span>
-          {showRefs ? <span className="truncate font-mono text-[11px] text-[#52525b]">{d.ref}</span> : null}
+          {showRefs ? <span className="truncate font-mono text-[11px] text-muted-foreground/60">{d.ref}</span> : null}
         </span>
       </span>
       {/* owner */}
@@ -99,28 +99,28 @@ const Row = React.memo(function Row({
         <span
           className="grid h-5 w-5 shrink-0 place-items-center rounded-[5px] text-[9px] font-semibold"
           style={{
-            background: d.owned ? "#1f1f23" : "transparent",
-            border: d.owned ? "1px solid #2a2a2e" : "1px dashed #3a3a40",
-            color: d.owned ? "#d4d4d8" : "#52525b",
+            background: d.owned ? "hsl(var(--accent))" : "transparent",
+            border: d.owned ? "1px solid hsl(var(--input))" : "1px dashed hsl(var(--input))",
+            color: d.owned ? "hsl(var(--foreground) / 0.9)" : "hsl(var(--muted-foreground) / 0.6)",
           }}
         >
           {d.ownerInitials}
         </span>
-        <span className="truncate text-[12.5px]" style={{ color: d.owned ? "#d4d4d8" : "#71717a" }}>
+        <span className="truncate text-[12.5px]" style={{ color: d.owned ? "hsl(var(--foreground) / 0.9)" : "hsl(var(--muted-foreground) / 0.8)" }}>
           {d.ownerName}
         </span>
       </span>
       {/* lifecycle */}
       <span>
         {d.lifeShow ? (
-          <span className="inline-flex h-[21px] items-center gap-1.5 rounded-md border border-[#26262b] px-2">
+          <span className="inline-flex h-[21px] items-center gap-1.5 rounded-md border border-input px-2">
             <span className="h-1.5 w-1.5 rounded-full" style={{ background: d.lifeColor }} />
             <span className="text-[11.5px] capitalize" style={{ color: d.lifeText }}>
               {d.lifeLabel}
             </span>
           </span>
         ) : (
-          <span className="text-[12px] text-[#3f3f46]">—</span>
+          <span className="text-[12px] text-muted-foreground/45">—</span>
         )}
       </span>
       {/* health */}
@@ -145,25 +145,25 @@ const Row = React.memo(function Row({
                 {d.tierLabel}
               </span>
             </span>
-            <span className="h-1 min-w-[34px] flex-1 overflow-hidden rounded-[3px] bg-[#1c1c20]">
+            <span className="h-1 min-w-[34px] flex-1 overflow-hidden rounded-[3px] bg-accent">
               <span
                 className="block h-full rounded-[3px]"
                 style={{ width: `${d.scorePct}%`, background: d.tierColor }}
               />
             </span>
-            <span className="w-5 text-right font-mono text-[11px] text-[#71717a]">{d.scoreNum}</span>
+            <span className="w-5 text-right font-mono text-[11px] text-muted-foreground/80">{d.scoreNum}</span>
           </span>
         ) : (
-          <span className="text-[12px] text-[#3f3f46]">—</span>
+          <span className="text-[12px] text-muted-foreground/45">—</span>
         )}
       </span>
       {/* deps */}
-      <span className="flex items-center gap-[5px] text-[#71717a]">
+      <span className="flex items-center gap-[5px] text-muted-foreground/80">
         <Workflow className="h-[13px] w-[13px]" />
         <span className="font-mono text-[12.5px]">{d.depsLabel}</span>
       </span>
       {/* updated */}
-      <span className="text-[12px] text-[#71717a]">{d.deployLabel}</span>
+      <span className="text-[12px] text-muted-foreground/80">{d.deployLabel}</span>
     </button>
   );
 });
@@ -191,32 +191,32 @@ const MobileCard = React.memo(function MobileCard({
       data-entitykey={d.key}
       onPointerDown={onIntent ? () => onIntent(d.key) : undefined}
       onClick={() => onSelect(d.key)}
-      className="relative flex w-full flex-col gap-2.5 border-b border-b-[#141417] px-4 py-3.5 text-left transition-colors active:bg-white/[0.03]"
-      style={selected ? { background: "rgba(245,158,11,.07)" } : undefined}
+      className="relative flex w-full flex-col gap-2.5 border-b border-b-border px-4 py-3.5 text-left transition-colors active:bg-foreground/[0.03]"
+      style={selected ? { background: "hsl(var(--primary) / 0.07)" } : undefined}
     >
       <span
         className="absolute inset-y-2 left-0 w-0.5 rounded-[2px]"
-        style={{ background: selected ? "#f59e0b" : "transparent" }}
+        style={{ background: selected ? "hsl(var(--primary))" : "transparent" }}
       />
       {/* header: icon · name + kind · health */}
       <span className="flex min-w-0 items-center gap-3">
-        <span className="grid h-9 w-9 shrink-0 place-items-center rounded-[10px] border border-[#232327] bg-[#161619] text-[#a1a1aa]">
+        <span className="grid h-9 w-9 shrink-0 place-items-center rounded-[10px] border border-border bg-muted text-muted-foreground">
           <PathIcon d={d.iconD} size={18} />
         </span>
         <span className="flex min-w-0 flex-1 flex-col gap-0.5">
           <span className="flex min-w-0 items-center gap-2">
-            <span className="truncate text-[15px] font-medium text-[#fafafa]">{d.name}</span>
-            <span className="shrink-0 rounded border border-[#26262b] px-[5px] py-px text-[10px] text-[#71717a]">
+            <span className="truncate text-[15px] font-medium text-foreground">{d.name}</span>
+            <span className="shrink-0 rounded border border-input px-[5px] py-px text-[10px] text-muted-foreground/80">
               {d.kindLabel}
             </span>
           </span>
-          <span className="truncate font-mono text-[11.5px] text-[#52525b]">{d.ref}</span>
+          <span className="truncate font-mono text-[11.5px] text-muted-foreground/60">{d.ref}</span>
         </span>
         <span
           className="h-2 w-2 shrink-0 rounded-full"
           style={{ background: d.healthColor, boxShadow: d.healthKnown ? `0 0 0 3px ${d.healthColor}28` : "none" }}
         />
-        <ChevronRight className="h-4 w-4 shrink-0 text-[#3f3f46]" />
+        <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground/45" />
       </span>
       {/* meta strip */}
       <span className="flex flex-wrap items-center gap-x-3 gap-y-1.5 pl-12 text-[11.5px]">
@@ -224,14 +224,14 @@ const MobileCard = React.memo(function MobileCard({
           <span
             className="grid h-[18px] w-[18px] shrink-0 place-items-center rounded-[5px] text-[8.5px] font-semibold"
             style={{
-              background: d.owned ? "#1f1f23" : "transparent",
-              border: d.owned ? "1px solid #2a2a2e" : "1px dashed #3a3a40",
-              color: d.owned ? "#d4d4d8" : "#52525b",
+              background: d.owned ? "hsl(var(--accent))" : "transparent",
+              border: d.owned ? "1px solid hsl(var(--input))" : "1px dashed hsl(var(--input))",
+              color: d.owned ? "hsl(var(--foreground) / 0.9)" : "hsl(var(--muted-foreground) / 0.6)",
             }}
           >
             {d.ownerInitials}
           </span>
-          <span className="truncate" style={{ color: d.owned ? "#a1a1aa" : "#71717a", maxWidth: "9rem" }}>
+          <span className="truncate" style={{ color: d.owned ? "hsl(var(--muted-foreground))" : "hsl(var(--muted-foreground) / 0.8)", maxWidth: "9rem" }}>
             {d.ownerName}
           </span>
         </span>
@@ -251,11 +251,11 @@ const MobileCard = React.memo(function MobileCard({
             {d.tierLabel} {d.scoreNum}
           </span>
         ) : null}
-        <span className="flex items-center gap-1 text-[#71717a]">
+        <span className="flex items-center gap-1 text-muted-foreground/80">
           <Workflow className="h-3 w-3" />
           <span className="font-mono">{d.depsLabel}</span>
         </span>
-        <span className="text-[#71717a]">{d.deployLabel}</span>
+        <span className="text-muted-foreground/80">{d.deployLabel}</span>
       </span>
     </button>
   );
@@ -328,9 +328,9 @@ export function TableView({
 
   const empty = (
     <div className="flex flex-col items-center justify-center gap-2.5 px-5 py-[60px] text-center">
-      <Search className="h-[34px] w-[34px] text-[#3f3f46]" strokeWidth={1.6} />
-      <span className="text-[14px] font-medium text-[#d4d4d8]">No services match these filters</span>
-      <button type="button" onClick={onClearFilters} className="border-none bg-transparent text-[13px] text-[#f59e0b]">
+      <Search className="h-[34px] w-[34px] text-muted-foreground/45" strokeWidth={1.6} />
+      <span className="text-[14px] font-medium text-foreground/90">No services match these filters</span>
+      <button type="button" onClick={onClearFilters} className="border-none bg-transparent text-[13px] text-primary">
         Clear filters
       </button>
     </div>
@@ -339,16 +339,16 @@ export function TableView({
   // ── Mobile: stacked card list, naturally scrolling within the page ──────────
   if (!isDesktop) {
     return (
-      <div className="overflow-hidden rounded-[13px] border border-[#1a1a1e] bg-[#0c0c0f]">
+      <div className="overflow-hidden rounded-[13px] border border-border bg-card">
         {isEmpty ? (
           empty
         ) : groups ? (
           groups.map((g) => (
             <React.Fragment key={g.key}>
-              <div className="flex items-center gap-2.5 border-b border-b-[#1a1a1e] bg-[#0a0a0d] px-4 py-2.5">
-                <span className="text-[12px] font-semibold text-[#d4d4d8]">{g.label}</span>
-                <span className="font-mono text-[11px] text-[#52525b]">{g.count}</span>
-                <span className="ml-auto text-[11px] text-[#71717a]">{g.sub}</span>
+              <div className="flex items-center gap-2.5 border-b border-b-border bg-background px-4 py-2.5">
+                <span className="text-[12px] font-semibold text-foreground/90">{g.label}</span>
+                <span className="font-mono text-[11px] text-muted-foreground/60">{g.count}</span>
+                <span className="ml-auto text-[11px] text-muted-foreground/80">{g.sub}</span>
               </div>
               {renderCards(g.services)}
             </React.Fragment>
@@ -361,11 +361,11 @@ export function TableView({
   }
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-[13px] border border-[#1a1a1e] bg-[#0c0c0f]">
+    <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-[13px] border border-border bg-card">
       <div className="flex min-h-0 flex-1 flex-col overflow-x-auto">
         <div className="flex min-h-0 min-w-[900px] flex-1 flex-col">
           {/* header */}
-          <div className={`grid ${GRID} items-center gap-2.5 border-b border-b-[#1a1a1e] bg-[#0e0e12] px-4 py-2.5`}>
+          <div className={`grid ${GRID} items-center gap-2.5 border-b border-b-border bg-popover px-4 py-2.5`}>
             <SortHeader label="Service" active={sortKey === "name"} dir={sortDir} onClick={() => onSort("name")} />
             <span className={HEAD_CELL}>Owner</span>
             <span className={HEAD_CELL}>Lifecycle</span>
@@ -386,10 +386,10 @@ export function TableView({
             ) : groups ? (
               groups.map((g) => (
                 <React.Fragment key={g.key}>
-                  <div className="sticky top-0 flex items-center gap-2.5 border-b border-b-[#1a1a1e] bg-[#0a0a0d] px-4 py-[9px]">
-                    <span className="text-[12px] font-semibold text-[#d4d4d8]">{g.label}</span>
-                    <span className="font-mono text-[11px] text-[#52525b]">{g.count}</span>
-                    <span className="ml-auto text-[11px] text-[#71717a]">{g.sub}</span>
+                  <div className="sticky top-0 flex items-center gap-2.5 border-b border-b-border bg-background px-4 py-[9px]">
+                    <span className="text-[12px] font-semibold text-foreground/90">{g.label}</span>
+                    <span className="font-mono text-[11px] text-muted-foreground/60">{g.count}</span>
+                    <span className="ml-auto text-[11px] text-muted-foreground/80">{g.sub}</span>
                   </div>
                   {renderRows(g.services)}
                 </React.Fragment>

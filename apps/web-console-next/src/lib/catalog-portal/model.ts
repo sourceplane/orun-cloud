@@ -340,7 +340,7 @@ export function decorateService(s: CatalogService, ctx: CatalogContext): Decorat
     lifeShow: !!life,
     lifeLabel: s.lifecycle ?? "",
     lifeColor: life ? life.c : "transparent",
-    lifeText: life ? life.t : "#3f3f46",
+    lifeText: life ? life.t : "hsl(var(--muted-foreground) / 0.45)",
     healthKey: hk,
     healthColor: h.c,
     healthText: h.l,
@@ -352,9 +352,9 @@ export function decorateService(s: CatalogService, ctx: CatalogContext): Decorat
     scorePct: score ?? 0,
     tier,
     tierLabel: tier ?? "",
-    tierColor: t ? t.c : "#52525b",
+    tierColor: t ? t.c : "hsl(var(--muted-foreground) / 0.6)",
     tierBg: t ? t.bg : "transparent",
-    tierBorder: t ? t.b : "#26262b",
+    tierBorder: t ? t.b : "hsl(var(--input))",
     depsCount: s.deps.length,
     usedByCount,
     depsLabel: `${s.deps.length}/${usedByCount}`,
@@ -436,7 +436,7 @@ function miniOf(ref: string, ctx: CatalogContext): MiniRef {
   const svc = ctx.byRef.get(ref);
   if (!svc) {
     const { kind, name } = parseEntityRef(ref);
-    return { key: null, name: name || ref, iconD: iconForKind(kind), healthColor: "#3f3f46" };
+    return { key: null, name: name || ref, iconD: iconForKind(kind), healthColor: "hsl(var(--muted-foreground) / 0.45)" };
   }
   const hk = isResource(svc) ? "managed" : healthOf(svc);
   return { key: svc.key, name: svc.name, iconD: iconForKind(svc.kind), healthColor: HEALTH[hk].c };
@@ -457,9 +457,9 @@ export function buildSelected(s: CatalogService, ctx: CatalogContext): SelectedS
     hasOps: !res && (s.slo != null || s.incidents != null || s.deploysPerWeek != null),
     sloCur: s.slo ?? null,
     sloTarget: s.sloTarget ?? null,
-    sloColor: sloBreach ? "#f87171" : "#34d399",
+    sloColor: sloBreach ? "hsl(var(--destructive))" : "hsl(var(--success))",
     incidents: s.incidents ?? 0,
-    incColor: (s.incidents ?? 0) > 0 ? "#f87171" : "#e4e4e7",
+    incColor: (s.incidents ?? 0) > 0 ? "hsl(var(--destructive))" : "hsl(var(--foreground))",
     deploysWeek: s.deploysPerWeek != null ? `${s.deploysPerWeek}/wk` : "—",
     passCount: pass,
     warnCount: warn,

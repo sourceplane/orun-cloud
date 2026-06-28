@@ -301,7 +301,7 @@ function pageRef(ref: string, ctx: CatalogContext): PageRef {
   const svc = ctx.byRef.get(ref);
   if (!svc) {
     const { kind, name } = parseEntityRef(ref);
-    return { key: null, name: name || ref, iconD: iconForKind(kind), healthColor: "#3f3f46" };
+    return { key: null, name: name || ref, iconD: iconForKind(kind), healthColor: "hsl(var(--muted-foreground) / 0.45)" };
   }
   const hk = isResource(svc) ? "managed" : healthOf(svc);
   return { key: svc.key, name: svc.name, iconD: iconForKind(svc.kind), healthColor: HEALTH[hk].c };
