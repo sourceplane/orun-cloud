@@ -16,6 +16,7 @@ import { cn } from "@/lib/cn";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   buildContext,
+  buildSelected,
   decorateService,
   rollup,
   toServices,
@@ -40,6 +41,7 @@ import { CatalogToolbar, type PortalView } from "./portal/toolbar";
 import { TableView } from "./portal/table-view";
 import { BoardView } from "./portal/board-view";
 import { MapView } from "./portal/map-view";
+import { DetailDrawer } from "./portal/detail-drawer";
 
 // Frame height = viewport minus the app shell chrome (topbar 3rem + main pad 3rem).
 const FRAME = "h-[calc(100dvh-6rem)]";
@@ -101,6 +103,14 @@ export function CatalogPortal({ orgId, orgSlug }: { orgId: string; orgSlug: stri
   const chips = React.useMemo(() => activeChips(filters), [filters]);
 
   const decorate = React.useCallback((s: CatalogService) => decorateService(s, ctx), [ctx]);
+  const selectedService = React.useMemo(
+    () => (selectedKey ? (services.find((s) => s.key === selectedKey) ?? null) : null),
+    [services, selectedKey],
+  );
+  const selected = React.useMemo(
+    () => (selectedService ? buildSelected(selectedService, ctx) : null),
+    [selectedService, ctx],
+  );
 
   const setSelectedKey = React.useCallback(
     (key: string | null) => {
@@ -113,6 +123,16 @@ export function CatalogPortal({ orgId, orgSlug }: { orgId: string; orgSlug: stri
     [router, pathname, searchParams],
   );
   const openFull = React.useCallback((key: string) => router.push(`${catalogHref}/${key}`), [router, catalogHref]);
+
+  // Escape closes the drawer.
+  React.useEffect(() => {
+    if (!selectedKey) return;
+    const onKey = (ev: KeyboardEvent) => {
+      if (ev.key === "Escape") setSelectedKey(null);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [selectedKey, setSelectedKey]);
 
   const onSort = React.useCallback((k: SortKey) => {
     setSortKey((prevKey) => {
@@ -238,6 +258,16 @@ export function CatalogPortal({ orgId, orgSlug }: { orgId: string; orgSlug: stri
             <MapView model={map} selectedKey={selectedKey} onSelect={setSelectedKey} onOpen={openFull} />
           )}
         </div>
+
+        {/* entity detail drawer */}
+        {selected ? (
+          <DetailDrawer
+            sel={selected}
+            onClose={() => setSelectedKey(null)}
+            onSelectRef={setSelectedKey}
+            onViewMap={() => setView("graph")}
+          />
+        ) : null}
       </div>
 
       {/* filters-active hint for empty assistive state (a11y) */}
