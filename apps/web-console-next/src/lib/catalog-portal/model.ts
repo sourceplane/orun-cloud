@@ -77,8 +77,8 @@ export function lifecycleKey(lifecycle: string | null | undefined): LifecycleKey
   return null;
 }
 
-/** A health string → a canonical key, or null if absent/unknown. */
-function healthKeyOf(s: CatalogService): HealthKey {
+/** A service's canonical health key — resources and unknown signals → managed. */
+export function healthOf(s: CatalogService): HealthKey {
   if (isResource(s)) return "managed";
   const h = s.health;
   if (h === "healthy" || h === "degraded" || h === "down" || h === "managed") return h;
@@ -223,7 +223,7 @@ export function tierOf(score: number | null): TierKey | null {
 /** Non-resource AND (unhealthy OR unowned) — the design's attention rule. */
 export function needsAttention(s: CatalogService): boolean {
   if (isResource(s)) return false;
-  const h = healthKeyOf(s);
+  const h = healthOf(s);
   return h === "degraded" || h === "down" || !s.owner;
 }
 
@@ -301,7 +301,7 @@ export function decorateService(s: CatalogService, ctx: CatalogContext): Decorat
   const score = scoreOf(s);
   const tier = tierOf(score);
   const t = tier ? TIER[tier] : null;
-  const hk = healthKeyOf(s);
+  const hk = healthOf(s);
   const h = HEALTH[hk];
   const lk = lifecycleKey(s.lifecycle);
   const life = lk ? LIFE[lk] : null;
@@ -420,7 +420,7 @@ function miniOf(ref: string, ctx: CatalogContext): MiniRef {
     const { kind, name } = parseEntityRef(ref);
     return { key: null, name: name || ref, iconD: iconForKind(kind), healthColor: "#3f3f46" };
   }
-  const hk = isResource(svc) ? "managed" : healthKeyOf(svc);
+  const hk = isResource(svc) ? "managed" : healthOf(svc);
   return { key: svc.key, name: svc.name, iconD: iconForKind(svc.kind), healthColor: HEALTH[hk].c };
 }
 
