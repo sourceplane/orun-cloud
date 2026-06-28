@@ -14,6 +14,7 @@ import { useSession } from "@/lib/session";
 import { wrap } from "@/lib/api";
 import { useApiQuery, usePrefetch, qk } from "@/lib/query";
 import { useDebounced } from "@/lib/use-debounced";
+import { useMediaQuery } from "@/lib/use-media-query";
 import { collectOrgCatalog } from "@/lib/catalog-portal/fetch";
 import { decodeEntityKey, parseEntityRef } from "@/lib/catalog-entity-key";
 import { cn } from "@/lib/cn";
@@ -63,12 +64,15 @@ const MapView = dynamic(() => import("./portal/map-view").then((m) => m.MapView)
 });
 const DetailDrawer = dynamic(() => import("./portal/detail-drawer").then((m) => m.DetailDrawer));
 
-// Frame height = viewport minus the app shell chrome. On mobile that's the top
-// bar (3rem) + main padding (3rem); on desktop (md+) the top bar is gone, so the
-// frame reclaims it and only subtracts the main padding (3rem).
-const FRAME = "h-[calc(100dvh-6rem)] md:h-[calc(100dvh-3rem)]";
+// On mobile the catalog is a *naturally scrolling page* (the window scrolls),
+// so the fixed-height frame — which would slide under the bottom tab bar and
+// trap the list in a tiny inner scroller — is desktop-only. On desktop (md+)
+// the top bar is gone (#212), so the frame only subtracts the main padding
+// (3rem).
+const FRAME_DESKTOP = "md:h-[calc(100dvh-3rem)] md:overflow-hidden";
 
 export function CatalogPortal({ orgId, orgSlug }: { orgId: string; orgSlug: string }) {
+  const isDesktop = useMediaQuery("(min-width: 768px)");
   const { client } = useSession();
   const router = useRouter();
   const pathname = usePathname();
@@ -233,7 +237,7 @@ export function CatalogPortal({ orgId, orgSlug }: { orgId: string; orgSlug: stri
   }, []);
 
   return (
-    <div className={cn("relative flex flex-col gap-[18px] overflow-hidden", FRAME)}>
+    <div className={cn("relative flex flex-col gap-4 md:gap-[18px]", FRAME_DESKTOP)}>
       {/* title + metrics */}
       <div className="flex shrink-0 flex-col gap-3">
         <CatalogHeader />
@@ -253,6 +257,10 @@ export function CatalogPortal({ orgId, orgSlug }: { orgId: string; orgSlug: stri
           setGroup={setGroup}
           view={view}
           setView={setView}
+          sortKey={sortKey}
+          sortDir={sortDir}
+          onSort={onSort}
+          isDesktop={isDesktop}
         />
       </div>
 
@@ -297,7 +305,7 @@ export function CatalogPortal({ orgId, orgSlug }: { orgId: string; orgSlug: stri
       ) : null}
 
       {/* body */}
-      <div className="flex min-h-0 flex-1 pb-[22px]">
+      <div className="flex md:min-h-0 md:flex-1 md:pb-[22px]">
         <div className="flex min-w-0 flex-1 flex-col">
           {loading ? (
             <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-hidden rounded-[13px] border border-[#1a1a1e] bg-[#0c0c0f] p-3">
@@ -325,6 +333,7 @@ export function CatalogPortal({ orgId, orgSlug }: { orgId: string; orgSlug: stri
               showRefs
               dense={false}
               onClearFilters={clearFilters}
+              isDesktop={isDesktop}
             />
           ) : view === "board" ? (
             <BoardView
@@ -333,6 +342,7 @@ export function CatalogPortal({ orgId, orgSlug }: { orgId: string; orgSlug: stri
               selectedKey={selectedKey}
               onSelect={setSelectedKey}
               onOpen={openFull}
+              isDesktop={isDesktop}
             />
           ) : (
             <MapView model={map} selectedKey={selectedKey} onSelect={setSelectedKey} onOpen={openFull} />
@@ -350,6 +360,7 @@ export function CatalogPortal({ orgId, orgSlug }: { orgId: string; orgSlug: stri
           onSelectRef={setSelectedKey}
           onViewMap={() => setView("graph")}
           onOpenPage={() => selectedKey && openFull(selectedKey)}
+          isDesktop={isDesktop}
         />
       ) : null}
 

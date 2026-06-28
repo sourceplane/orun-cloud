@@ -55,12 +55,14 @@ export function DetailDrawer({
   onSelectRef,
   onViewMap,
   onOpenPage,
+  isDesktop = true,
 }: {
   sel: SelectedService;
   onClose: () => void;
   onSelectRef: (key: string) => void;
   onViewMap: () => void;
   onOpenPage: () => void;
+  isDesktop?: boolean;
 }) {
   const ringOffset = RING_CIRC * (1 - (sel.score ?? 0) / 100);
   return (
@@ -69,9 +71,25 @@ export function DetailDrawer({
         type="button"
         aria-label="Close detail"
         onClick={onClose}
-        className="absolute inset-0 z-[5] animate-fade-in bg-[rgba(6,6,8,.5)]"
+        className={
+          isDesktop
+            ? "absolute inset-0 z-[5] animate-fade-in bg-[rgba(6,6,8,.5)]"
+            : "fixed inset-0 z-40 animate-fade-in bg-[rgba(6,6,8,.6)]"
+        }
       />
-      <aside className="absolute inset-y-0 right-0 z-[6] flex w-[512px] max-w-[92vw] animate-slide-in-right flex-col overflow-hidden border-l border-l-[#1f1f23] bg-[#0c0c0f] shadow-[-28px_0_90px_rgba(0,0,0,.6)]">
+      {/* Desktop: right-anchored sheet within the catalog frame. Mobile: a
+          full-width bottom sheet that rises over the page (with a grab handle),
+          the native pattern for a detail peek on a phone. */}
+      <aside
+        className={
+          isDesktop
+            ? "absolute inset-y-0 right-0 z-[6] flex w-[512px] max-w-[92vw] animate-slide-in-right flex-col overflow-hidden border-l border-l-[#1f1f23] bg-[#0c0c0f] shadow-[-28px_0_90px_rgba(0,0,0,.6)]"
+            : "fixed inset-x-0 bottom-0 top-[7%] z-50 flex animate-slide-in-bottom flex-col overflow-hidden rounded-t-[18px] border-t border-t-[#1f1f23] bg-[#0c0c0f] shadow-[0_-20px_60px_rgba(0,0,0,.6)]"
+        }
+      >
+        {!isDesktop ? (
+          <div className="mx-auto mt-2 h-1 w-9 shrink-0 rounded-full bg-[#3a3a40]" aria-hidden />
+        ) : null}
         <div className="min-h-0 flex-1 overflow-y-auto">
           {/* identity */}
           <div className={`px-[18px] pb-4 pt-[18px] ${SECTION}`}>
@@ -287,7 +305,7 @@ export function DetailDrawer({
         </div>
 
         {/* footer quick links */}
-        <div className="flex shrink-0 gap-2 border-t border-t-[#18181b] bg-[#0a0a0d] px-4 py-3">
+        <div className="flex shrink-0 gap-2 border-t border-t-[#18181b] bg-[#0a0a0d] px-4 py-3 pb-[max(env(safe-area-inset-bottom),0.75rem)]">
           <FooterLink icon={<Github className="h-[13px] w-[13px]" />} label="Repo" />
           <FooterLink icon={<AreaChart className="h-[13px] w-[13px]" />} label="Dashboards" />
           <FooterLink icon={<BookText className="h-[13px] w-[13px]" />} label="Runbook" />

@@ -29,7 +29,7 @@ export function MapView({
   onOpen: (key: string) => void;
 }) {
   return (
-    <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-[13px] border border-[#1a1a1e] bg-[#0a0a0d]">
+    <div className="flex min-h-[68dvh] flex-col overflow-hidden rounded-[13px] border border-[#1a1a1e] bg-[#0a0a0d] md:min-h-0 md:flex-1">
       <div className="flex items-center gap-4 border-b border-b-[#18181b] px-4 py-[11px]">
         <span className="text-[12.5px] font-semibold text-[#e4e4e7]">Dependency map</span>
         <span className="text-[11.5px] text-[#71717a]">{model.count} services · grouped by system</span>

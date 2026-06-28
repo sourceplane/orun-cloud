@@ -55,20 +55,32 @@ export function ServicePage({
   const activeDoc = page.docs.find((d) => d.id === docId) ?? page.docs[0]!;
 
   return (
-    <div className="flex h-full min-h-0 flex-col">
+    <div className="flex flex-col md:h-full md:min-h-0">
       {/* breadcrumb bar */}
-      <div className="flex h-[50px] shrink-0 items-center gap-2.5 border-b border-b-[#18181b] bg-[rgba(10,10,12,.7)] px-5">
-        <span className="text-[13px] text-[#71717a]">{orgLabel}</span>
-        <span className="text-[#3f3f46]">/</span>
-        <button type="button" onClick={onBack} className="bg-transparent p-0 text-[13px] text-[#71717a] hover:text-[#e4e4e7]">
+      <div className="flex h-[50px] shrink-0 items-center gap-2.5 border-b border-b-[#18181b] bg-[rgba(10,10,12,.7)] px-4 md:px-5">
+        <button
+          type="button"
+          onClick={onBack}
+          aria-label="Back to catalog"
+          className="-ml-1 grid h-8 w-8 shrink-0 place-items-center rounded-[7px] text-[#a1a1aa] hover:text-[#e4e4e7] sm:hidden"
+        >
+          <ArrowLeft className="h-[18px] w-[18px]" />
+        </button>
+        <span className="hidden text-[13px] text-[#71717a] sm:inline">{orgLabel}</span>
+        <span className="hidden text-[#3f3f46] sm:inline">/</span>
+        <button
+          type="button"
+          onClick={onBack}
+          className="hidden bg-transparent p-0 text-[13px] text-[#71717a] hover:text-[#e4e4e7] sm:inline"
+        >
           Catalog
         </button>
-        <span className="text-[#3f3f46]">/</span>
+        <span className="hidden text-[#3f3f46] sm:inline">/</span>
         <span className="truncate font-mono text-[13px] font-medium text-[#e4e4e7]">{page.name}</span>
         <button
           type="button"
           onClick={onBack}
-          className="ml-auto flex h-[30px] items-center gap-1.5 rounded-[7px] border border-[#232327] bg-transparent px-[11px] text-[12.5px] text-[#a1a1aa] hover:text-[#e4e4e7]"
+          className="ml-auto hidden h-[30px] items-center gap-1.5 rounded-[7px] border border-[#232327] bg-transparent px-[11px] text-[12.5px] text-[#a1a1aa] hover:text-[#e4e4e7] sm:flex"
         >
           <ArrowLeft className="h-[13px] w-[13px]" />
           Catalog
@@ -76,13 +88,13 @@ export function ServicePage({
       </div>
 
       {/* scroll body */}
-      <div className="min-h-0 flex-1 overflow-y-auto">
-        <div className="mx-auto flex max-w-[1200px] flex-col gap-[22px] px-[30px] pb-12 pt-[26px]">
+      <div className="md:min-h-0 md:flex-1 md:overflow-y-auto">
+        <div className="mx-auto flex max-w-[1200px] flex-col gap-5 px-4 pb-10 pt-5 md:gap-[22px] md:px-[30px] md:pb-12 md:pt-[26px]">
           <Hero page={page} />
           {page.hasOps ? <OpsStrip page={page} /> : null}
 
-          {/* tabs */}
-          <div className="flex gap-0.5 border-b border-b-[#1a1a1e]">
+          {/* tabs — horizontally scrollable so all five stay reachable on a phone */}
+          <div className="-mx-4 flex gap-0.5 overflow-x-auto border-b border-b-[#1a1a1e] px-4 md:mx-0 md:px-0 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
             {TABS.map((t) => {
               const active = tab === t.key;
               return (
@@ -90,7 +102,7 @@ export function ServicePage({
                   key={t.key}
                   type="button"
                   onClick={() => setTab(t.key)}
-                  className="relative bg-transparent px-3.5 py-[9px] text-[13px]"
+                  className="relative shrink-0 bg-transparent px-3.5 py-[11px] text-[13.5px] md:py-[9px] md:text-[13px]"
                   style={{ color: active ? "#fafafa" : "#a1a1aa", fontWeight: active ? 600 : 500 }}
                 >
                   {t.label}
@@ -126,8 +138,9 @@ export function ServicePage({
 
 function Hero({ page }: { page: ServicePage }) {
   return (
-    <div className="flex items-start gap-4">
-      <span className="grid h-[54px] w-[54px] shrink-0 place-items-center rounded-[14px] border border-[#232327] bg-[#161619] text-[#d4d4d8]">
+    <div className="flex flex-col gap-4 md:flex-row md:items-start">
+      <div className="flex min-w-0 items-start gap-4">
+      <span className="grid h-[46px] w-[46px] shrink-0 place-items-center rounded-[13px] border border-[#232327] bg-[#161619] text-[#d4d4d8] md:h-[54px] md:w-[54px]">
         <PathIcon d={page.iconD} size={26} strokeWidth={1.6} />
       </span>
       <div className="min-w-0 flex-1">
@@ -156,17 +169,18 @@ function Hero({ page }: { page: ServicePage }) {
           <HeroChip>{page.system}</HeroChip>
         </div>
       </div>
-      <div className="flex shrink-0 gap-2">
+      </div>
+      <div className="flex w-full gap-2 md:w-auto md:shrink-0">
         <button
           type="button"
-          className="flex h-[34px] items-center gap-[7px] rounded-[8px] border border-[#232327] bg-transparent px-[13px] text-[12.5px] font-medium text-[#d4d4d8] hover:border-[#3a3a40]"
+          className="flex h-10 flex-1 items-center justify-center gap-[7px] rounded-[8px] border border-[#232327] bg-transparent px-[13px] text-[13px] font-medium text-[#d4d4d8] hover:border-[#3a3a40] md:h-[34px] md:flex-none md:text-[12.5px]"
         >
           <Github className="h-3.5 w-3.5" />
           Repo
         </button>
         <button
           type="button"
-          className="flex h-[34px] items-center gap-[7px] rounded-[8px] border border-[#f59e0b] bg-[#f59e0b] px-3.5 text-[12.5px] font-semibold text-[#1a1206]"
+          className="flex h-10 flex-1 items-center justify-center gap-[7px] rounded-[8px] border border-[#f59e0b] bg-[#f59e0b] px-3.5 text-[13px] font-semibold text-[#1a1206] md:h-[34px] md:flex-none md:text-[12.5px]"
         >
           <AreaChart className="h-3.5 w-3.5" />
           Dashboards
