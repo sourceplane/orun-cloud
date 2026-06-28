@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { Search, Sun, Moon, LogOut, User2, Building2, Command as CommandIcon } from "lucide-react";
 import { useTheme } from "next-themes";
 import { ScopeSwitcher } from "./scope-switcher";
@@ -23,8 +23,14 @@ export function Topbar() {
   const { token, target, isLocked, setToken } = useSession();
   const palette = usePalette();
   const router = useRouter();
+  const pathname = usePathname();
   const { theme, setTheme } = useTheme();
   const toggleTheme = () => setTheme(theme === "dark" ? "light" : "dark");
+
+  // The catalog is an org-global surface with its own clean chrome; the
+  // target/lock scope badge doesn't belong there (it tracks repo/env scope,
+  // which the catalog ignores).
+  const onCatalog = !!pathname && /\/orgs\/[^/]+\/catalog(\/|$)/.test(pathname);
 
   return (
     <header className="sticky top-0 z-30 border-b bg-background/80 backdrop-blur-md pt-safe">
@@ -49,9 +55,11 @@ export function Topbar() {
             </kbd>
           </Button>
 
-          <Badge variant={isLocked ? "secondary" : "outline"} className="hidden lg:inline-flex">
-            {isLocked ? `locked · ${target.name}` : `target · ${target.name}`}
-          </Badge>
+          {!onCatalog ? (
+            <Badge variant={isLocked ? "secondary" : "outline"} className="hidden lg:inline-flex">
+              {isLocked ? `locked · ${target.name}` : `target · ${target.name}`}
+            </Badge>
+          ) : null}
 
           {/* Theme toggle lives in the profile menu (sidebar account chip on
               desktop; account menu / drawer on mobile), not the topbar. */}
