@@ -38,6 +38,8 @@ import { cn } from "@/lib/cn";
 import { wrap } from "@/lib/api";
 import { useSession } from "@/lib/session";
 import { useApiQuery, qk } from "@/lib/query";
+import { useDebounced } from "@/lib/use-debounced";
+import { useMediaQuery } from "@/lib/use-media-query";
 import { decodeEntityKey, encodeEntityKey, parseEntityRef, type EntityIdentity } from "@/lib/catalog-entity-key";
 import { buildOrgGraph } from "@/lib/catalog-graph";
 import { computeInsights, filterByInsight, INSIGHT_LABEL, type InsightId } from "@/lib/catalog-insights";
@@ -48,29 +50,6 @@ const KIND_OPTIONS = ["Component", "API", "Resource", "System", "Domain", "Group
 // Frame height = viewport minus the app shell's chrome (topbar h-12 = 3rem,
 // main pt-6 + pb-6 = 3rem). Only applied ≥ xl, where the 3-panel frame is fixed.
 const FRAME = "h-[calc(100dvh-6rem)] overflow-hidden";
-
-/** Debounce a fast-changing text value before it drives refetches. */
-function useDebounced<T>(value: T, delayMs = 400): T {
-  const [debounced, setDebounced] = React.useState(value);
-  React.useEffect(() => {
-    const t = setTimeout(() => setDebounced(value), delayMs);
-    return () => clearTimeout(t);
-  }, [value, delayMs]);
-  return debounced;
-}
-
-/** Track a media query (client-only); drives the fixed-frame ⇄ flow switch. */
-function useMediaQuery(query: string): boolean {
-  const [matches, setMatches] = React.useState(false);
-  React.useEffect(() => {
-    const m = window.matchMedia(query);
-    const on = () => setMatches(m.matches);
-    on();
-    m.addEventListener("change", on);
-    return () => m.removeEventListener("change", on);
-  }, [query]);
-  return matches;
-}
 
 /** Stable list/dedup key: the (project, environment, ref) scope is unique. */
 function entityKeyOf(e: OrgCatalogEntity): string {
@@ -139,9 +118,11 @@ function CatalogIndex({ orgId, orgSlug }: { orgId: string; orgSlug: string }) {
   const [ownerInput, setOwnerInput] = React.useState("");
   const [envInput, setEnvInput] = React.useState("");
   const [qInput, setQInput] = React.useState("");
-  const owner = useDebounced(ownerInput);
-  const environment = useDebounced(envInput);
-  const q = useDebounced(qInput);
+  // 400ms: these debounced values drive network refetches, so wait a touch
+  // longer than the in-memory portal search (the shared hook defaults to 200ms).
+  const owner = useDebounced(ownerInput, 400);
+  const environment = useDebounced(envInput, 400);
+  const q = useDebounced(qInput, 400);
 
   const applied = React.useMemo(() => {
     const a: { project?: string; kind?: string; owner?: string; environment?: string; q?: string } = {};
