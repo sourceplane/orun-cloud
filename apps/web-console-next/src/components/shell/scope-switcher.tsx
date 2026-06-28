@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { useParams, useRouter } from "next/navigation";
+import { useParams, usePathname, useRouter } from "next/navigation";
 import { ChevronsUpDown, Slash, Building2, FolderKanban, Boxes, Check } from "lucide-react";
 import {
   DropdownMenu,
@@ -29,12 +29,18 @@ import { useEffectiveOrgSlug } from "./use-effective-org";
  */
 export function ScopeSwitcher() {
   const params = useParams<{ orgSlug?: string; projectSlug?: string; envSlug?: string }>();
+  const pathname = usePathname();
   const router = useRouter();
   const { client, token } = useSession();
 
   const orgSlug = params?.orgSlug ?? null;
   const projectSlug = params?.projectSlug ?? null;
   const envSlug = params?.envSlug ?? null;
+
+  // The catalog is an org-global surface (it merges every repo), so the
+  // repo/environment scope selectors don't apply there — hide them on the
+  // catalog index and the service page.
+  const onCatalog = !!pathname && /\/orgs\/[^/]+\/catalog(\/|$)/.test(pathname);
 
   // PERF11: the org/project/env lists are read through react-query so the topbar
   // reuses the page caches (no uncached refetch on every mount), with each level
@@ -104,7 +110,7 @@ export function ScopeSwitcher() {
         </Crumb>
       </div>
 
-      {orgSlug && (
+      {orgSlug && !onCatalog && (
         <div className="hidden min-w-0 items-center md:flex">
           {/* Separator only needed to the org crumb, which is mobile-only. */}
           <Slash className="mx-0.5 h-3 w-3 text-muted-foreground/60 md:hidden" />
@@ -137,7 +143,7 @@ export function ScopeSwitcher() {
         </div>
       )}
 
-      {orgSlug && projectSlug && (
+      {orgSlug && projectSlug && !onCatalog && (
         <div className="hidden min-w-0 items-center md:flex">
           <Slash className="h-3 w-3 text-muted-foreground/60 mx-0.5" />
           <Crumb

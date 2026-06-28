@@ -21,6 +21,14 @@ describe("buildBreadcrumbs", () => {
     ]);
   });
 
+  it("labels the org-global catalog index", () => {
+    const crumbs = buildBreadcrumbs({ ...org, pathname: "/orgs/acme/catalog" });
+    expect(crumbs).toEqual([
+      { label: "Acme Inc", href: "/orgs/acme/projects" },
+      { label: "Catalog" },
+    ]);
+  });
+
   it("links a project crumb onward to its environments list", () => {
     const crumbs = buildBreadcrumbs({
       ...org,

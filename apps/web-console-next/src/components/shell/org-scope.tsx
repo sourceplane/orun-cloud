@@ -19,9 +19,16 @@ import { AlertTriangle, ChevronRight } from "lucide-react";
 export function OrgScope({
   slug,
   children,
+  bare = false,
 }: {
   slug: string;
   children: (org: { id: string; name: string; slug: string }) => React.ReactNode;
+  /**
+   * Skip the shared breadcrumb + vertical rhythm wrapper. For full-bleed routes
+   * that own their own chrome (e.g. the catalog service page, which renders its
+   * own breadcrumb bar) so the path isn't shown twice.
+   */
+  bare?: boolean;
 }) {
   const { org, loading, error } = useOrgBySlug(slug);
 
@@ -78,6 +85,8 @@ export function OrgScope({
       />
     );
   }
+
+  if (bare) return <>{children(org)}</>;
 
   return (
     <div className="space-y-6">
