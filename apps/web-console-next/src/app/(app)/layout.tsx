@@ -40,7 +40,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           <Topbar />
         ) : (
           <header
-            className="sticky top-0 z-30 h-12 border-b bg-background/80 backdrop-blur-md pt-safe"
+            className="sticky top-0 z-30 h-12 border-b bg-background/80 backdrop-blur-md pt-safe md:hidden"
             aria-hidden
           />
         )}

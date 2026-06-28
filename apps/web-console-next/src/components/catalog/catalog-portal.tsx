@@ -64,11 +64,12 @@ const MapView = dynamic(() => import("./portal/map-view").then((m) => m.MapView)
 });
 const DetailDrawer = dynamic(() => import("./portal/detail-drawer").then((m) => m.DetailDrawer));
 
-// Desktop frame height = viewport minus the app shell chrome (topbar 3rem +
-// main pad 3rem). On mobile the catalog is a *naturally scrolling page* instead
-// (the window scrolls), so the fixed-height frame — which would slide under the
-// bottom tab bar and trap the list in a tiny inner scroller — is desktop-only.
-const FRAME_DESKTOP = "md:h-[calc(100dvh-6rem)] md:overflow-hidden";
+// On mobile the catalog is a *naturally scrolling page* (the window scrolls),
+// so the fixed-height frame — which would slide under the bottom tab bar and
+// trap the list in a tiny inner scroller — is desktop-only. On desktop (md+)
+// the top bar is gone (#212), so the frame only subtracts the main padding
+// (3rem).
+const FRAME_DESKTOP = "md:h-[calc(100dvh-3rem)] md:overflow-hidden";
 
 export function CatalogPortal({ orgId, orgSlug }: { orgId: string; orgSlug: string }) {
   const isDesktop = useMediaQuery("(min-width: 768px)");

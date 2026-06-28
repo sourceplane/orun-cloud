@@ -7,7 +7,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 
 export default function CatalogLoading() {
   return (
-    <div className="flex flex-col gap-4 md:h-[calc(100dvh-6rem)] md:gap-[18px] md:overflow-hidden" aria-hidden>
+    <div className="flex flex-col gap-4 md:h-[calc(100dvh-3rem)] md:gap-[18px] md:overflow-hidden" aria-hidden>
       {/* title + metric tiles */}
       <div className="flex shrink-0 flex-col gap-3">
         <div className="flex items-center justify-between gap-3">
