@@ -302,6 +302,84 @@ export interface OrgCatalogEntity {
   sourceCommit: string | null;
   /** The catalog snapshot digest this row was projected from. */
   headDigest: string;
+
+  // ── Git-authored portal fields (saas-catalog-portal CP / orun CPF) ──
+  // Additive and optional: carried from the component source through
+  // `orun catalog push`, never authored downstream. Absent on older
+  // snapshots; the console degrades gracefully when they are missing.
+
+  /** One-line "what is this" summary; powers the drawer + the docs check. */
+  description?: string | null;
+  /** The system this entity is part of (the design's group-by-system key). */
+  system?: string | null;
+  /** Implementation language / runtime (display chip). */
+  language?: string | null;
+  /** Free-form tags declared in the component source. */
+  tags?: string[];
+}
+
+// ── Catalog scorecards & insights (computed overlay; SC4/SC5) ─────────
+// The Cortex/OpsLevel differentiator, made invariant-safe by being a
+// *computed overlay* over signals the platform already has — never authored
+// catalog content. The console computes these client-side today and prefers
+// the server projection (these shapes) once `apps/state-worker` exposes it.
+
+/** Outcome of one readiness check. `warn` = signal weak or not yet wired. */
+export type ScorecardCheckStatus = "pass" | "warn" | "fail";
+
+/** Maturity tier derived from the score (Gold ≥85 · Silver ≥70 · Bronze). */
+export type ScorecardTier = "Gold" | "Silver" | "Bronze";
+
+/** One evaluated production-readiness check. */
+export interface ScorecardCheck {
+  /** Stable check id (e.g. `owner`, `slo`, `runbook`). */
+  id: string;
+  /** Human label for the check row. */
+  label: string;
+  status: ScorecardCheckStatus;
+}
+
+/** A single entity's production-readiness scorecard. */
+export interface EntityScorecard {
+  /** The entity this scorecard scores. */
+  entityRef: string;
+  /** 0–100 readiness score: Σ(pass:1, warn:.5, fail:0) / checks · 100. */
+  score: number;
+  /** Maturity tier, or null for entities that are not scored (resources). */
+  tier: ScorecardTier | null;
+  checks: ScorecardCheck[];
+  /** When the overlay was computed; absent for client-computed scores. */
+  computedAt?: string;
+}
+
+/** GET …/catalog/entities/{key}/scorecard — per-entity readiness. */
+export interface GetEntityScorecardResponse {
+  scorecard: EntityScorecard;
+}
+
+/**
+ * GET /v1/organizations/{orgId}/catalog/insights — the computed coverage
+ * rollup behind the index metric tiles (SC4). Counts only; no authored state.
+ */
+export interface CatalogInsightsSummary {
+  /** Entities considered (the design's `base()` set). */
+  total: number;
+  /** Distinct systems represented. */
+  systems: number;
+  /** Percent of entities that declare an owner (0–100). */
+  ownedPct: number;
+  /** Percent of scored components at Silver+ (0–100). */
+  readyPct: number;
+  /** Entities needing attention (unowned · degraded · down). */
+  attentionCount: number;
+  /** Open incidents across the set, when a runtime source exists. */
+  openIncidents: number;
+  /** Per-insight offender counts (missing-owner, dangling-deps, …). */
+  counts: Record<string, number>;
+}
+
+export interface GetCatalogInsightsResponse {
+  insights: CatalogInsightsSummary;
 }
 
 // ── Workspace links (design §2; state-api-contract §5) ──────
