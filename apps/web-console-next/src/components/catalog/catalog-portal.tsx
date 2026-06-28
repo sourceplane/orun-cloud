@@ -319,6 +319,7 @@ export function CatalogPortal({ orgId, orgSlug }: { orgId: string; orgSlug: stri
               selectedKey={selectedKey}
               onSelect={setSelectedKey}
               onOpen={openFull}
+              onIntent={warmEntity}
               showRefs
               dense={false}
               onClearFilters={clearFilters}

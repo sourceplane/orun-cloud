@@ -48,6 +48,7 @@ const Row = React.memo(function Row({
   dense,
   onSelect,
   onOpen,
+  onIntent,
 }: {
   d: DecoratedService;
   selected: boolean;
@@ -55,12 +56,15 @@ const Row = React.memo(function Row({
   dense: boolean;
   onSelect: (key: string) => void;
   onOpen: (key: string) => void;
+  onIntent?: ((key: string) => void) | undefined;
 }) {
   return (
     <button
       type="button"
       data-row
       data-entitykey={d.key}
+      onMouseEnter={onIntent ? () => onIntent(d.key) : undefined}
+      onFocus={onIntent ? () => onIntent(d.key) : undefined}
       onClick={() => onSelect(d.key)}
       onDoubleClick={() => onOpen(d.key)}
       className={`relative grid w-full ${GRID} items-center gap-2.5 border-none border-b border-b-[#141417] pl-3.5 pr-4 text-left transition-colors hover:bg-white/[0.022]`}
@@ -174,6 +178,7 @@ export function TableView({
   selectedKey,
   onSelect,
   onOpen,
+  onIntent,
   showRefs,
   dense,
   onClearFilters,
@@ -187,6 +192,8 @@ export function TableView({
   selectedKey: string | null;
   onSelect: (key: string) => void;
   onOpen: (key: string) => void;
+  /** Warm the entity route's data on hover/focus (PERF G3) — optional. */
+  onIntent?: (key: string) => void;
   showRefs: boolean;
   dense: boolean;
   onClearFilters: () => void;
@@ -205,6 +212,7 @@ export function TableView({
           dense={dense}
           onSelect={onSelect}
           onOpen={onOpen}
+          onIntent={onIntent}
         />
       );
     });
