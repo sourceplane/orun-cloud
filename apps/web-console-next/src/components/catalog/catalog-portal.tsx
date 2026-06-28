@@ -39,14 +39,29 @@ import {
   type SortDir,
   type SortKey,
 } from "@/lib/catalog-portal/filter";
+import dynamic from "next/dynamic";
 import { buildBoard, buildMap } from "@/lib/catalog-portal/layout";
 import { CatalogHeader } from "./portal/header";
 import { MetricTiles } from "./portal/metric-tiles";
 import { CatalogToolbar, type PortalView } from "./portal/toolbar";
 import { TableView } from "./portal/table-view";
-import { BoardView } from "./portal/board-view";
-import { MapView } from "./portal/map-view";
-import { DetailDrawer } from "./portal/detail-drawer";
+
+// Only the Table view and drawer-less list paint on first load. The Board and
+// Map views and the detail drawer are split into their own chunks (PERF C8) and
+// fetched on demand — most catalog visits never leave the table, so their code
+// (incl. the SVG map layout) no longer ships in the route's initial JS.
+const ViewLoading = () => (
+  <div className="flex min-h-0 flex-1 items-center justify-center rounded-[13px] border border-[#1a1a1e] bg-[#0c0c0f]">
+    <Skeleton className="h-8 w-40 rounded-md bg-[#161619]" />
+  </div>
+);
+const BoardView = dynamic(() => import("./portal/board-view").then((m) => m.BoardView), {
+  loading: ViewLoading,
+});
+const MapView = dynamic(() => import("./portal/map-view").then((m) => m.MapView), {
+  loading: ViewLoading,
+});
+const DetailDrawer = dynamic(() => import("./portal/detail-drawer").then((m) => m.DetailDrawer));
 
 // Frame height = viewport minus the app shell chrome (topbar 3rem + main pad 3rem).
 const FRAME = "h-[calc(100dvh-6rem)]";
