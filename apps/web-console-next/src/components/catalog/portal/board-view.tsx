@@ -62,13 +62,53 @@ export function BoardView({
   selectedKey,
   onSelect,
   onOpen,
+  isDesktop = true,
 }: {
   columns: BoardColumn[];
   decorate: (s: CatalogService) => DecoratedService;
   selectedKey: string | null;
   onSelect: (key: string) => void;
   onOpen: (key: string) => void;
+  isDesktop?: boolean;
 }) {
+  // Desktop: equal-fraction columns filling the frame. Mobile: a real
+  // horizontally swiped board — fixed-width, snap-aligned columns capped to the
+  // viewport — instead of N columns crushed into a phone's width.
+  if (!isDesktop) {
+    return (
+      <div className="-mx-4 flex snap-x snap-mandatory gap-3 overflow-x-auto px-4 pb-2">
+        {columns.map((col) => (
+          <div
+            key={col.key}
+            className="flex max-h-[68dvh] w-[80vw] max-w-[300px] shrink-0 snap-start flex-col overflow-hidden rounded-xl border border-[#18181b] bg-[#0a0a0d]"
+          >
+            <div className="flex items-center gap-2 border-b border-b-[#18181b] px-[13px] py-[11px]">
+              <span className="h-[7px] w-[7px] rounded-full" style={{ background: col.color }} />
+              <span className="text-[12.5px] font-semibold text-[#e4e4e7]">{col.title}</span>
+              <span className="ml-auto rounded-[5px] bg-[#161619] px-[7px] py-px font-mono text-[11px] text-[#52525b]">
+                {col.count}
+              </span>
+            </div>
+            <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto p-2.5">
+              {col.services.map((s) => {
+                const d = decorate(s);
+                return (
+                  <Card
+                    key={d.key}
+                    d={d}
+                    selected={selectedKey === d.key}
+                    onSelect={() => onSelect(d.key)}
+                    onOpen={() => onOpen(d.key)}
+                  />
+                );
+              })}
+            </div>
+          </div>
+        ))}
+      </div>
+    );
+  }
+
   return (
     <div
       className="grid min-h-0 flex-1 gap-3"
