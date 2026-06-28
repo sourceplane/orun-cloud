@@ -51,6 +51,7 @@ function buildSnapshot(): { rootDigest: string; store: Record<string, Uint8Array
       ownership: { owner: "team-platform" },
       lifecycle: { stage: "production" },
       relations: [{ type: "dependsOn", to: "ns/repo/db", toKind: "Component" }],
+      spec: { system: "Checkout", description: "The checkout API.", language: "Go", tags: ["public", "tier1"] },
     }),
   );
   const entityBlob = frame(
@@ -61,6 +62,7 @@ function buildSnapshot(): { rootDigest: string; store: Record<string, Uint8Array
       identity: { entityKey: "ns/repo/identity", kind: "System", name: "identity" },
       ownership: { owner: "team-identity" },
       lifecycle: { stage: "experimental" },
+      spec: { description: "The identity system." },
     }),
   );
 
@@ -98,8 +100,10 @@ function captureExecutor(): Capture {
         cap.upserts.push(params);
         const row = {
           id: params[0], org_id: params[1], entity_ref: params[2], kind: params[3], name: params[4],
-          owner: params[5], lifecycle: params[6], relations: params[7], source_project_id: params[8],
-          source_environment: params[9], source_commit: params[10], head_digest: params[11],
+          owner: params[5], lifecycle: params[6], relations: params[7],
+          description: params[8], system: params[9], language: params[10], tags: params[11],
+          source_project_id: params[12], source_environment: params[13], source_commit: params[14],
+          head_digest: params[15],
           created_at: "2026-06-18T00:00:00.000Z", updated_at: "2026-06-18T00:00:00.000Z",
         };
         return Promise.resolve({ rows: [row] as unknown as T[], rowCount: 1 });
@@ -137,6 +141,7 @@ describe("projectCatalogSnapshot (OV6.2b)", () => {
     expect(cap.upserts).toHaveLength(2);
 
     // params: [id, orgId, entityRef, kind, name, owner, lifecycle, relations(json),
+    //          description, system, language, tags(json),
     //          sourceProjectId, sourceEnv, sourceCommit, headDigest]
     const byRef = new Map(cap.upserts.map((p) => [p[2] as string, p]));
     const comp = byRef.get("ns/repo/api")!;
@@ -145,16 +150,22 @@ describe("projectCatalogSnapshot (OV6.2b)", () => {
     expect(comp[5]).toBe("team-platform"); // owner from ownership.owner
     expect(comp[6]).toBe("production"); // lifecycle from lifecycle.stage
     expect(JSON.parse(comp[7] as string)).toEqual([{ type: "dependsOn", targetRef: "ns/repo/db" }]);
+    // Git-authored portal fields (CP4).
+    expect(comp[8]).toBe("The checkout API."); // description from spec
+    expect(comp[9]).toBe("Checkout"); // system from spec
+    expect(comp[10]).toBe("Go"); // language from spec
+    expect(JSON.parse(comp[11] as string)).toEqual(["public", "tier1"]); // tags
     // Provenance.
-    expect(comp[8]).toBe(PROJECT);
-    expect(comp[9]).toBeNull(); // project-wide head
-    expect(comp[10]).toBe("abc123");
-    expect(comp[11]).toBe(rootDigest);
+    expect(comp[12]).toBe(PROJECT);
+    expect(comp[13]).toBeNull(); // project-wide head
+    expect(comp[14]).toBe("abc123");
+    expect(comp[15]).toBe(rootDigest);
 
     const sys = byRef.get("ns/repo/identity")!;
     expect(sys[3]).toBe("System"); // derived entity kind
     expect(sys[5]).toBe("team-identity");
     expect(sys[6]).toBe("experimental");
+    expect(sys[8]).toBe("The identity system."); // derived-entity description from spec
   });
 
   it("clears the scope even when the snapshot root is unreadable (head points at a gone object)", async () => {

@@ -240,6 +240,10 @@ function mapOrgCatalogEntity(row: Record<string, unknown>): OrgCatalogEntity {
     owner: (row.owner as string) ?? null,
     lifecycle: (row.lifecycle as string) ?? null,
     relations: parseJson<CatalogEntityRelation[]>(row.relations) ?? [],
+    description: (row.description as string) ?? null,
+    system: (row.system as string) ?? null,
+    language: (row.language as string) ?? null,
+    tags: parseJson<string[]>(row.tags) ?? [],
     sourceProjectId: row.source_project_id as string,
     sourceEnvironment: (row.source_environment as string) ?? null,
     sourceCommit: (row.source_commit as string) ?? null,
@@ -938,9 +942,10 @@ export function createStateRepository(executor: SqlExecutor): StateRepository {
         const result = await executor.execute<Record<string, unknown>>(
           `INSERT INTO state.org_catalog_entities
              (id, org_id, entity_ref, kind, name, owner, lifecycle, relations,
+              description, system, language, tags,
               source_project_id, source_environment, source_commit, head_digest,
               created_at, updated_at)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, now(), now())
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, now(), now())
            ON CONFLICT (org_id, source_project_id, COALESCE(source_environment, ''), entity_ref)
              DO UPDATE SET
                kind = EXCLUDED.kind,
@@ -948,6 +953,10 @@ export function createStateRepository(executor: SqlExecutor): StateRepository {
                owner = EXCLUDED.owner,
                lifecycle = EXCLUDED.lifecycle,
                relations = EXCLUDED.relations,
+               description = EXCLUDED.description,
+               system = EXCLUDED.system,
+               language = EXCLUDED.language,
+               tags = EXCLUDED.tags,
                source_commit = EXCLUDED.source_commit,
                head_digest = EXCLUDED.head_digest,
                updated_at = now()
@@ -961,6 +970,10 @@ export function createStateRepository(executor: SqlExecutor): StateRepository {
             input.owner ?? null,
             input.lifecycle ?? null,
             JSON.stringify(input.relations ?? []),
+            input.description ?? null,
+            input.system ?? null,
+            input.language ?? null,
+            JSON.stringify(input.tags ?? []),
             input.sourceProjectId,
             input.sourceEnvironment ?? null,
             input.sourceCommit ?? null,

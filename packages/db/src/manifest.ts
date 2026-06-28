@@ -336,5 +336,14 @@ export const manifest: MigrationManifest = {
       description:
         "Org-global runs feed keyset index (console Activities surface) — adds idx_state_runs_org (org_id, created_at DESC, id DESC), the org-scoped twin of idx_state_runs_project, so the all-repos run history merged across every project is index-ordered for keyset pagination. The project-narrowed feed keeps using idx_state_runs_project.",
     },
+    {
+      id: "370_state_catalog_portal_fields",
+      context: "state",
+      path: "370_state_catalog_portal_fields/up.sql",
+      checksum:
+        "d7b077f3a3b3d1db062199891a99f5acf1281761574467cb53ab2b258ead84d2",
+      description:
+        "Git-authored portal fields on the org catalog projection (saas-catalog-portal CP4) — adds nullable description / system / language and a tags JSONB to state.org_catalog_entities, plus idx_state_org_catalog_entities_system. Projected from the snapshot (orun objcatalog CPF0), derived never authored; additive so older rows read null and the console degrades.",
+    },
   ],
 };

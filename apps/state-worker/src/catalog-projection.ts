@@ -66,6 +66,9 @@ interface ComponentManifestJson {
   ownership?: Record<string, unknown>;
   lifecycle?: Record<string, unknown>;
   relations?: EntityRelationJson[];
+  spec?: Record<string, unknown>;
+  metadata?: Record<string, unknown>;
+  docs?: Record<string, unknown>;
 }
 interface EntityIdentity {
   entityKey?: string;
@@ -77,6 +80,7 @@ interface EntityJson {
   identity?: EntityIdentity;
   ownership?: Record<string, unknown>;
   lifecycle?: Record<string, unknown>;
+  spec?: Record<string, unknown>;
 }
 
 function pickString(obj: Record<string, unknown> | undefined, ...keys: string[]): string | null {
@@ -86,6 +90,27 @@ function pickString(obj: Record<string, unknown> | undefined, ...keys: string[])
     if (typeof v === "string" && v.length > 0) return v;
   }
   return null;
+}
+
+/** A []string field from a generic []any (drops non-strings). */
+function stringArray(obj: Record<string, unknown> | undefined, key: string): string[] {
+  const raw = obj?.[key];
+  if (!Array.isArray(raw)) return [];
+  return raw.filter((v): v is string => typeof v === "string" && v.length > 0);
+}
+
+/** The git-authored portal fields, mirroring orun objcatalog's CPF precedence. */
+function portalFields(spec?: Record<string, unknown>, metadata?: Record<string, unknown>, docs?: Record<string, unknown>) {
+  const description =
+    pickString(spec, "description") ?? pickString(metadata, "description") ?? pickString(docs, "summary");
+  let language = pickString(spec, "language") ?? pickString(metadata, "language");
+  if (!language) {
+    const langs = stringArray(spec, "languages");
+    language = langs[0] ?? null;
+  }
+  const tags = stringArray(spec, "tags").length ? stringArray(spec, "tags") : stringArray(metadata, "tags");
+  const system = pickString(spec, "system");
+  return { description, language, tags, system };
 }
 
 function relationsOf(rels: EntityRelationJson[] | undefined): CatalogEntityRelation[] {
@@ -109,11 +134,17 @@ export interface ProjectedEntity {
   owner: string | null;
   lifecycle: string | null;
   relations: CatalogEntityRelation[];
+  /** Git-authored portal fields (CP4); null/[] when the snapshot omits them. */
+  description: string | null;
+  system: string | null;
+  language: string | null;
+  tags: string[];
 }
 
 function componentEntity(m: ComponentManifestJson): ProjectedEntity | null {
   const entityRef = pickString(m.identity as Record<string, unknown> | undefined, "componentKey");
   if (!entityRef) return null;
+  const portal = portalFields(m.spec, m.metadata, m.docs);
   return {
     entityRef,
     kind: "Component",
@@ -121,6 +152,7 @@ function componentEntity(m: ComponentManifestJson): ProjectedEntity | null {
     owner: pickString(m.ownership, "owner"),
     lifecycle: pickString(m.lifecycle, "stage", "lifecycle"),
     relations: relationsOf(m.relations),
+    ...portal,
   };
 }
 
@@ -137,6 +169,10 @@ function derivedEntity(e: EntityJson): ProjectedEntity | null {
     owner: pickString(e.ownership, "owner"),
     lifecycle: pickString(e.lifecycle, "stage", "lifecycle"),
     relations: [],
+    description: pickString(e.spec, "description"),
+    system: pickString(e.spec, "system"),
+    language: pickString(e.spec, "language"),
+    tags: stringArray(e.spec, "tags"),
   };
 }
 
@@ -250,6 +286,10 @@ export async function projectCatalogSnapshot(
         owner: e.owner,
         lifecycle: e.lifecycle,
         relations: e.relations,
+        description: e.description,
+        system: e.system,
+        language: e.language,
+        tags: e.tags,
         sourceEnvironment: scope.environment,
         sourceCommit: scope.commit,
       };
