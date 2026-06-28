@@ -19,6 +19,7 @@
 import * as React from "react";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { useQueryClient } from "@tanstack/react-query";
 import { Boxes, ChevronLeft } from "lucide-react";
 import type { OrgCatalogEntity, StateCursor } from "@saas/contracts/state";
 import { EntityListItem } from "@/components/catalog/entity-list-item";
@@ -513,9 +514,20 @@ function CatalogIndex({ orgId, orgSlug }: { orgId: string; orgSlug: string }) {
 
 function EntityWorkbench({ orgId, orgSlug, entityKey }: { orgId: string; orgSlug: string; entityKey: string }) {
   const { client } = useSession();
+  const qc = useQueryClient();
   const isWide = useMediaQuery("(min-width: 1280px)");
   const catalogHref = `/orgs/${orgSlug}/catalog`;
   const id = React.useMemo(() => decodeEntityKey(entityKey), [entityKey]);
+
+  // Seed from the org-catalog cache (PERF C7): if the user drilled in from the
+  // index, the whole graph is already cached, so resolve the entity synchronously
+  // and paint it instantly while the narrowed query below revalidates in the
+  // background — no skeleton flash for the common index → entity transition.
+  const seed = React.useMemo(() => {
+    if (!id) return null;
+    const all = qc.getQueryData<OrgCatalogEntity[]>(qk.orgCatalog(orgId));
+    return all?.find((e) => sameEntity(e, id)) ?? null;
+  }, [qc, id, orgId]);
 
   // The focused entity resolves over the narrowed list endpoint (provenance +
   // name), then the exact identity triple disambiguates same-named entities.
@@ -541,8 +553,8 @@ function EntityWorkbench({ orgId, orgSlug, entityKey }: { orgId: string; orgSlug
     [projects.data],
   );
   const entity = React.useMemo(
-    () => (id && focused.data ? (focused.data.entities.find((e) => sameEntity(e, id)) ?? null) : null),
-    [id, focused.data],
+    () => (id && focused.data ? (focused.data.entities.find((e) => sameEntity(e, id)) ?? null) : null) ?? seed,
+    [id, focused.data, seed],
   );
 
   const back = (
@@ -568,13 +580,15 @@ function EntityWorkbench({ orgId, orgSlug, entityKey }: { orgId: string; orgSlug
         />
       </div>
     );
-  } else if (focused.loading) {
+  } else if (focused.loading && !entity) {
+    // Only show the skeleton when there is nothing to paint yet; a cache seed
+    // (PERF C7) renders immediately and revalidates behind the scenes.
     body = (
       <div className={cn(flexArea, isWide && "overflow-y-auto")}>
         <ComponentPageSkeleton />
       </div>
     );
-  } else if (focused.error) {
+  } else if (focused.error && !entity) {
     body = (
       <div className={flexArea}>
         <Card>
