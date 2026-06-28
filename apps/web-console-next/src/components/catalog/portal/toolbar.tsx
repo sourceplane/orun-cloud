@@ -14,7 +14,7 @@ export type PortalView = "list" | "board" | "graph";
 
 function Caret() {
   return (
-    <span className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-[10px] text-[#52525b]">
+    <span className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-[10px] text-muted-foreground/60">
       ▾
     </span>
   );
@@ -39,14 +39,14 @@ function PortalSelect({
         aria-label={ariaLabel}
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        className={`h-[34px] appearance-none rounded-lg border border-[#232327] bg-[#0d0d10] py-0 pr-[26px] text-[12.5px] text-[#d4d4d8] outline-none ${
+        className={`h-[34px] appearance-none rounded-lg border border-border bg-card py-0 pr-[26px] text-[12.5px] text-foreground/90 outline-none ${
           leftIcon ? "pl-8" : "pl-[11px]"
         }`}
       >
         {children}
       </select>
       {leftIcon ? (
-        <ListFilter className="pointer-events-none absolute left-[11px] top-1/2 h-[13px] w-[13px] -translate-y-1/2 text-[#71717a]" />
+        <ListFilter className="pointer-events-none absolute left-[11px] top-1/2 h-[13px] w-[13px] -translate-y-1/2 text-muted-foreground/80" />
       ) : null}
       <Caret />
     </span>
@@ -71,7 +71,7 @@ function ViewToggle({
 }) {
   return (
     <div
-      className="inline-flex shrink-0 rounded-lg border border-[#232327] bg-[#0d0d10] p-0.5"
+      className="inline-flex shrink-0 rounded-lg border border-border bg-card p-0.5"
       role="group"
       aria-label="View"
     >
@@ -86,7 +86,7 @@ function ViewToggle({
             className={`flex items-center gap-1.5 rounded-md font-medium transition-colors ${
               size === "lg" ? "h-9 px-3 text-[13px]" : "h-7 px-[11px] text-[12.5px]"
             }`}
-            style={{ background: active ? "#26262b" : "transparent", color: active ? "#fafafa" : "#a1a1aa" }}
+            style={{ background: active ? "hsl(var(--input))" : "transparent", color: active ? "hsl(var(--foreground))" : "hsl(var(--muted-foreground))" }}
           >
             {TAB_ICON[v]}
             {TAB_LABEL[v]}
@@ -112,12 +112,12 @@ function SheetSelect({
 }) {
   return (
     <label className="flex flex-col gap-1.5">
-      <span className="font-mono text-[10.5px] uppercase tracking-[0.1em] text-[#71717a]">{label}</span>
+      <span className="font-mono text-[10.5px] uppercase tracking-[0.1em] text-muted-foreground/80">{label}</span>
       <span className="relative">
         <select
           value={value}
           onChange={(e) => onChange(e.target.value)}
-          className="h-11 w-full appearance-none rounded-lg border border-[#232327] bg-[#0d0d10] pl-3 pr-9 text-[14px] text-[#e4e4e7] outline-none"
+          className="h-11 w-full appearance-none rounded-lg border border-border bg-card pl-3 pr-9 text-[14px] text-foreground outline-none"
         >
           {children}
         </select>
@@ -169,25 +169,25 @@ export function CatalogToolbar({
     return (
       <div className="flex flex-col gap-2.5">
         <div className="relative flex items-center">
-          <Search className="pointer-events-none absolute left-3 h-4 w-4 text-[#71717a]" />
+          <Search className="pointer-events-none absolute left-3 h-4 w-4 text-muted-foreground/80" />
           <input
             value={filters.query}
             onChange={(e) => setFilters({ query: e.target.value })}
             placeholder="Search services, refs, owners…"
             aria-label="Search services"
-            className="h-11 w-full rounded-lg border border-[#232327] bg-[#0d0d10] pl-10 pr-3 text-[15px] text-[#e4e4e7] outline-none placeholder:text-[#52525b]"
+            className="h-11 w-full rounded-lg border border-border bg-card pl-10 pr-3 text-[15px] text-foreground outline-none placeholder:text-muted-foreground/60"
           />
         </div>
         <div className="flex items-center gap-2.5">
           <button
             type="button"
             onClick={() => setSheetOpen(true)}
-            className="flex h-9 items-center gap-2 rounded-lg border border-[#232327] bg-[#0d0d10] px-3 text-[13px] font-medium text-[#d4d4d8]"
+            className="flex h-9 items-center gap-2 rounded-lg border border-border bg-card px-3 text-[13px] font-medium text-foreground/90"
           >
-            <SlidersHorizontal className="h-3.5 w-3.5 text-[#71717a]" />
+            <SlidersHorizontal className="h-3.5 w-3.5 text-muted-foreground/80" />
             Filter &amp; sort
             {activeCount > 0 ? (
-              <span className="grid h-[18px] min-w-[18px] place-items-center rounded-full bg-[#f59e0b] px-1 text-[10.5px] font-semibold text-[#1a1206]">
+              <span className="grid h-[18px] min-w-[18px] place-items-center rounded-full bg-primary px-1 text-[10.5px] font-semibold text-primary-foreground">
                 {activeCount}
               </span>
             ) : null}
@@ -199,14 +199,14 @@ export function CatalogToolbar({
 
         <Sheet open={sheetOpen} onOpenChange={setSheetOpen}>
           <SheetContent side="bottom" className="max-h-[88dvh] gap-0 rounded-t-[18px] px-0 pb-0">
-            <div className="mx-auto mt-1 h-1 w-9 shrink-0 rounded-full bg-[#3a3a40]" aria-hidden />
+            <div className="mx-auto mt-1 h-1 w-9 shrink-0 rounded-full bg-input" aria-hidden />
             <div className="flex items-center justify-between px-4 pb-2 pt-3">
-              <SheetTitle className="text-[15px] font-semibold text-[#fafafa]">Filter &amp; sort</SheetTitle>
+              <SheetTitle className="text-[15px] font-semibold text-foreground">Filter &amp; sort</SheetTitle>
               <button
                 type="button"
                 onClick={() => setSheetOpen(false)}
                 aria-label="Close"
-                className="grid h-8 w-8 place-items-center rounded-md text-[#71717a]"
+                className="grid h-8 w-8 place-items-center rounded-md text-muted-foreground/80"
               >
                 <X className="h-4 w-4" />
               </button>
@@ -241,7 +241,7 @@ export function CatalogToolbar({
                 <option value="lifecycle">Group by lifecycle</option>
               </SheetSelect>
               <div className="flex flex-col gap-1.5">
-                <span className="font-mono text-[10.5px] uppercase tracking-[0.1em] text-[#71717a]">Sort by</span>
+                <span className="font-mono text-[10.5px] uppercase tracking-[0.1em] text-muted-foreground/80">Sort by</span>
                 <div className="flex gap-2">
                   <span className="relative flex-1">
                     <select
@@ -250,7 +250,7 @@ export function CatalogToolbar({
                         if (e.target.value !== sortKey) onSort(e.target.value as SortKey);
                       }}
                       aria-label="Sort by"
-                      className="h-11 w-full appearance-none rounded-lg border border-[#232327] bg-[#0d0d10] pl-3 pr-9 text-[14px] text-[#e4e4e7] outline-none"
+                      className="h-11 w-full appearance-none rounded-lg border border-border bg-card pl-3 pr-9 text-[14px] text-foreground outline-none"
                     >
                       {SORT_OPTIONS.map((o) => (
                         <option key={o.value} value={o.value}>
@@ -264,29 +264,29 @@ export function CatalogToolbar({
                     type="button"
                     onClick={() => onSort(sortKey)}
                     aria-label={sortDir === "asc" ? "Ascending" : "Descending"}
-                    className="flex h-11 items-center gap-2 rounded-lg border border-[#232327] bg-[#0d0d10] px-3.5 text-[13px] text-[#d4d4d8]"
+                    className="flex h-11 items-center gap-2 rounded-lg border border-border bg-card px-3.5 text-[13px] text-foreground/90"
                   >
-                    <ArrowUpDown className="h-3.5 w-3.5 text-[#71717a]" />
+                    <ArrowUpDown className="h-3.5 w-3.5 text-muted-foreground/80" />
                     {sortDir === "asc" ? "Asc" : "Desc"}
                   </button>
                 </div>
               </div>
             </div>
-            <div className="flex shrink-0 gap-2.5 border-t border-t-[#18181b] bg-[#0a0a0d] px-4 py-3 pb-[max(env(safe-area-inset-bottom),0.75rem)]">
+            <div className="flex shrink-0 gap-2.5 border-t border-t-border bg-background px-4 py-3 pb-[max(env(safe-area-inset-bottom),0.75rem)]">
               <button
                 type="button"
                 onClick={() => {
                   setFilters({ kind: "all", lifecycle: "all", health: "all" });
                   setGroup("none");
                 }}
-                className="h-11 flex-1 rounded-lg border border-[#232327] bg-transparent text-[14px] font-medium text-[#d4d4d8]"
+                className="h-11 flex-1 rounded-lg border border-border bg-transparent text-[14px] font-medium text-foreground/90"
               >
                 Reset
               </button>
               <button
                 type="button"
                 onClick={() => setSheetOpen(false)}
-                className="h-11 flex-[2] rounded-lg bg-[#f59e0b] text-[14px] font-semibold text-[#1a1206]"
+                className="h-11 flex-[2] rounded-lg bg-primary text-[14px] font-semibold text-primary-foreground"
               >
                 Show results
               </button>
@@ -300,13 +300,13 @@ export function CatalogToolbar({
   return (
     <div className="flex flex-wrap items-center gap-2.5">
       <div className="relative flex items-center">
-        <Search className="pointer-events-none absolute left-2.5 h-3.5 w-3.5 text-[#71717a]" />
+        <Search className="pointer-events-none absolute left-2.5 h-3.5 w-3.5 text-muted-foreground/80" />
         <input
           value={filters.query}
           onChange={(e) => setFilters({ query: e.target.value })}
           placeholder="Search services, refs, owners…"
           aria-label="Search services"
-          className="h-[34px] w-[260px] rounded-lg border border-[#232327] bg-[#0d0d10] pl-[30px] pr-[11px] text-[13px] text-[#e4e4e7] outline-none placeholder:text-[#52525b]"
+          className="h-[34px] w-[260px] rounded-lg border border-border bg-card pl-[30px] pr-[11px] text-[13px] text-foreground outline-none placeholder:text-muted-foreground/60"
         />
       </div>
 
@@ -331,7 +331,7 @@ export function CatalogToolbar({
         <option value="down">Down</option>
       </PortalSelect>
 
-      <span className="mx-0.5 h-[22px] w-px bg-[#232327]" />
+      <span className="mx-0.5 h-[22px] w-px bg-border" />
 
       <PortalSelect ariaLabel="Group by" value={group} onChange={(v) => setGroup(v as GroupKey)} leftIcon>
         <option value="none">No grouping</option>

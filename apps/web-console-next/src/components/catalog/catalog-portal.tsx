@@ -52,8 +52,8 @@ import { TableView } from "./portal/table-view";
 // fetched on demand — most catalog visits never leave the table, so their code
 // (incl. the SVG map layout) no longer ships in the route's initial JS.
 const ViewLoading = () => (
-  <div className="flex min-h-0 flex-1 items-center justify-center rounded-[13px] border border-[#1a1a1e] bg-[#0c0c0f]">
-    <Skeleton className="h-8 w-40 rounded-md bg-[#161619]" />
+  <div className="flex min-h-0 flex-1 items-center justify-center rounded-[13px] border border-border bg-card">
+    <Skeleton className="h-8 w-40 rounded-md bg-muted" />
   </div>
 );
 const BoardView = dynamic(() => import("./portal/board-view").then((m) => m.BoardView), {
@@ -276,7 +276,7 @@ export function CatalogPortal({ orgId, orgSlug }: { orgId: string; orgSlug: stri
       {/* active filter chips */}
       {chips.length > 0 ? (
         <div className="-mt-1.5 flex shrink-0 flex-wrap items-center gap-2">
-          <span className="text-[11.5px] text-[#71717a]">
+          <span className="text-[11.5px] text-muted-foreground/80">
             {filtered.length} of {metrics.total}
           </span>
           {chips.map((chip) => (
@@ -284,17 +284,17 @@ export function CatalogPortal({ orgId, orgSlug }: { orgId: string; orgSlug: stri
               key={`${chip.field}:${chip.label}`}
               type="button"
               onClick={() => removeChip(chip.field)}
-              className="flex h-6 items-center gap-1.5 rounded-md border border-[#26262b] bg-[#121215] py-0 pl-[9px] pr-[7px] text-[11.5px] text-[#a1a1aa]"
+              className="flex h-6 items-center gap-1.5 rounded-md border border-input bg-muted py-0 pl-[9px] pr-[7px] text-[11.5px] text-muted-foreground"
             >
-              {chip.kind ? <span className="text-[#52525b]">{chip.kind}</span> : null}
+              {chip.kind ? <span className="text-muted-foreground/60">{chip.kind}</span> : null}
               {chip.label}
-              <span className="text-[13px] leading-none text-[#52525b]">×</span>
+              <span className="text-[13px] leading-none text-muted-foreground/60">×</span>
             </button>
           ))}
           <button
             type="button"
             onClick={clearFilters}
-            className="border-none bg-transparent text-[11.5px] text-[#71717a] underline underline-offset-2"
+            className="border-none bg-transparent text-[11.5px] text-muted-foreground/80 underline underline-offset-2"
           >
             Clear all
           </button>
@@ -303,13 +303,13 @@ export function CatalogPortal({ orgId, orgSlug }: { orgId: string; orgSlug: stri
 
       {/* incident banner */}
       {metrics.incidents > 0 ? (
-        <div className="-mt-1 flex shrink-0 items-center gap-2.5 rounded-[9px] border border-[rgba(248,113,113,.22)] bg-[rgba(248,113,113,.07)] px-3.5 py-[9px]">
-          <span className="h-[7px] w-[7px] shrink-0 rounded-full bg-[#f87171] shadow-[0_0_0_3px_rgba(248,113,113,.18)]" />
-          <span className="text-[12.5px] text-[#fca5a5]">
+        <div className="-mt-1 flex shrink-0 items-center gap-2.5 rounded-[9px] border border-destructive/25 bg-destructive/[0.07] px-3.5 py-[9px]">
+          <span className="h-[7px] w-[7px] shrink-0 rounded-full bg-destructive shadow-[0_0_0_3px_hsl(var(--destructive)/0.18)]" />
+          <span className="text-[12.5px] text-destructive">
             {metrics.incidents} open incident{metrics.incidents === 1 ? "" : "s"} — affecting{" "}
             {metrics.incidentRefs.join(", ")}
           </span>
-          <span className="ml-auto font-mono text-[11.5px] text-[#71717a]">live</span>
+          <span className="ml-auto font-mono text-[11.5px] text-muted-foreground/80">live</span>
         </div>
       ) : null}
 
@@ -317,15 +317,15 @@ export function CatalogPortal({ orgId, orgSlug }: { orgId: string; orgSlug: stri
       <div className="flex md:min-h-0 md:flex-1 md:pb-[22px]">
         <div className="flex min-w-0 flex-1 flex-col">
           {loading ? (
-            <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-hidden rounded-[13px] border border-[#1a1a1e] bg-[#0c0c0f] p-3">
+            <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-hidden rounded-[13px] border border-border bg-card p-3">
               {Array.from({ length: 8 }).map((_, i) => (
-                <Skeleton key={i} className="h-12 w-full rounded-lg bg-[#161619]" />
+                <Skeleton key={i} className="h-12 w-full rounded-lg bg-muted" />
               ))}
             </div>
           ) : error ? (
-            <div className="rounded-[13px] border border-[#1a1a1e] bg-[#0c0c0f] p-8 text-center">
-              <div className="text-[14px] font-medium text-[#f87171]">{error.code}</div>
-              <div className="mt-1 text-[12.5px] text-[#71717a]">{error.message}</div>
+            <div className="rounded-[13px] border border-border bg-card p-8 text-center">
+              <div className="text-[14px] font-medium text-destructive">{error.code}</div>
+              <div className="mt-1 text-[12.5px] text-muted-foreground/80">{error.message}</div>
             </div>
           ) : view === "list" ? (
             <TableView

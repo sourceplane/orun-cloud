@@ -27,17 +27,17 @@ function Card({
       onDoubleClick={onOpen}
       className="flex flex-col gap-[9px] rounded-[10px] border p-[11px] text-left transition-colors hover:brightness-110"
       style={{
-        background: selected ? "rgba(245,158,11,.06)" : "#0e0e12",
-        borderColor: selected ? "rgba(245,158,11,.35)" : "#1f1f23",
+        background: selected ? "hsl(var(--primary) / 0.06)" : "hsl(var(--popover))",
+        borderColor: selected ? "hsl(var(--primary) / 0.35)" : "hsl(var(--accent))",
       }}
     >
       <span className="flex min-w-0 items-center gap-[9px]">
-        <span className="grid h-7 w-7 shrink-0 place-items-center rounded-lg border border-[#232327] bg-[#161619] text-[#a1a1aa]">
+        <span className="grid h-7 w-7 shrink-0 place-items-center rounded-lg border border-border bg-muted text-muted-foreground">
           <PathIcon d={d.iconD} size={15} />
         </span>
         <span className="flex min-w-0 flex-col gap-px">
-          <span className="truncate text-[13px] font-medium text-[#fafafa]">{d.name}</span>
-          <span className="truncate font-mono text-[10.5px] text-[#52525b]">{d.ownerName}</span>
+          <span className="truncate text-[13px] font-medium text-foreground">{d.name}</span>
+          <span className="truncate font-mono text-[10.5px] text-muted-foreground/60">{d.ownerName}</span>
         </span>
         <span className="ml-auto h-[7px] w-[7px] shrink-0 rounded-full" style={{ background: d.healthColor }} />
       </span>
@@ -50,7 +50,7 @@ function Card({
             {d.tierLabel} {d.scoreNum}
           </span>
         ) : null}
-        <span className="text-[10.5px] text-[#52525b]">{d.kindLabel}</span>
+        <span className="text-[10.5px] text-muted-foreground/60">{d.kindLabel}</span>
       </span>
     </button>
   );
@@ -80,12 +80,12 @@ export function BoardView({
         {columns.map((col) => (
           <div
             key={col.key}
-            className="flex max-h-[68dvh] w-[80vw] max-w-[300px] shrink-0 snap-start flex-col overflow-hidden rounded-xl border border-[#18181b] bg-[#0a0a0d]"
+            className="flex max-h-[68dvh] w-[80vw] max-w-[300px] shrink-0 snap-start flex-col overflow-hidden rounded-xl border border-border bg-background"
           >
-            <div className="flex items-center gap-2 border-b border-b-[#18181b] px-[13px] py-[11px]">
+            <div className="flex items-center gap-2 border-b border-b-border px-[13px] py-[11px]">
               <span className="h-[7px] w-[7px] rounded-full" style={{ background: col.color }} />
-              <span className="text-[12.5px] font-semibold text-[#e4e4e7]">{col.title}</span>
-              <span className="ml-auto rounded-[5px] bg-[#161619] px-[7px] py-px font-mono text-[11px] text-[#52525b]">
+              <span className="text-[12.5px] font-semibold text-foreground">{col.title}</span>
+              <span className="ml-auto rounded-[5px] bg-muted px-[7px] py-px font-mono text-[11px] text-muted-foreground/60">
                 {col.count}
               </span>
             </div>
@@ -117,12 +117,12 @@ export function BoardView({
       {columns.map((col) => (
         <div
           key={col.key}
-          className="flex min-h-0 flex-col overflow-hidden rounded-xl border border-[#18181b] bg-[#0a0a0d]"
+          className="flex min-h-0 flex-col overflow-hidden rounded-xl border border-border bg-background"
         >
-          <div className="flex items-center gap-2 border-b border-b-[#18181b] px-[13px] py-[11px]">
+          <div className="flex items-center gap-2 border-b border-b-border px-[13px] py-[11px]">
             <span className="h-[7px] w-[7px] rounded-full" style={{ background: col.color }} />
-            <span className="text-[12.5px] font-semibold text-[#e4e4e7]">{col.title}</span>
-            <span className="ml-auto rounded-[5px] bg-[#161619] px-[7px] py-px font-mono text-[11px] text-[#52525b]">
+            <span className="text-[12.5px] font-semibold text-foreground">{col.title}</span>
+            <span className="ml-auto rounded-[5px] bg-muted px-[7px] py-px font-mono text-[11px] text-muted-foreground/60">
               {col.count}
             </span>
           </div>

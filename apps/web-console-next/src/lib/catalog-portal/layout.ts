@@ -24,10 +24,10 @@ export interface BoardColumn {
 }
 
 const BOARD_DEFS: Array<{ key: string; title: string; color: string }> = [
-  { key: "production", title: "Production", color: "#34d399" },
-  { key: "experimental", title: "Experimental", color: "#fbbf24" },
-  { key: "deprecated", title: "Deprecated", color: "#71717a" },
-  { key: "infra", title: "Infrastructure", color: "#52525b" },
+  { key: "production", title: "Production", color: "hsl(var(--success))" },
+  { key: "experimental", title: "Experimental", color: "hsl(var(--warning))" },
+  { key: "deprecated", title: "Deprecated", color: "hsl(var(--muted-foreground) / 0.8)" },
+  { key: "infra", title: "Infrastructure", color: "hsl(var(--muted-foreground) / 0.6)" },
 ];
 
 /** Group the filtered services into the design's four board columns. */

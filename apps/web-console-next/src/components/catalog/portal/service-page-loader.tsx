@@ -73,14 +73,14 @@ export function ServicePageLoader({
     return (
       <div className="flex flex-col gap-4 p-1 md:h-[calc(100dvh-3rem)] md:overflow-hidden">
         <div className="flex items-start gap-4">
-          <Skeleton className="h-[54px] w-[54px] rounded-[14px] bg-[#161619]" />
+          <Skeleton className="h-[54px] w-[54px] rounded-[14px] bg-muted" />
           <div className="flex-1 space-y-2">
-            <Skeleton className="h-6 w-64 bg-[#161619]" />
-            <Skeleton className="h-3 w-80 bg-[#161619]" />
+            <Skeleton className="h-6 w-64 bg-muted" />
+            <Skeleton className="h-3 w-80 bg-muted" />
           </div>
         </div>
-        <Skeleton className="h-9 w-96 bg-[#161619]" />
-        <Skeleton className="h-72 w-full rounded-[13px] bg-[#161619]" />
+        <Skeleton className="h-9 w-96 bg-muted" />
+        <Skeleton className="h-72 w-full rounded-[13px] bg-muted" />
       </div>
     );
   }

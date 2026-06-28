@@ -13,8 +13,8 @@ import * as React from "react";
 import type { CatalogRollup } from "@/lib/catalog-portal/model";
 import { ownedColor } from "@/lib/catalog-portal/palette";
 
-const TILE = "rounded-xl border border-[#1c1c20] bg-[#0d0d10] px-4 py-[11px]";
-const LABEL = "font-mono text-[10.5px] uppercase tracking-[0.1em] text-[#71717a]";
+const TILE = "rounded-xl border border-border bg-card px-4 py-[11px]";
+const LABEL = "font-mono text-[10.5px] uppercase tracking-[0.1em] text-muted-foreground/80";
 const VALUE = "mt-1.5 text-[22px] font-semibold leading-none";
 
 export function MetricTiles({
@@ -32,7 +32,7 @@ export function MetricTiles({
       {/* Services */}
       <div className={TILE}>
         <div className={LABEL}>Services</div>
-        <div className={`${VALUE} text-[#fafafa]`} title={`across ${rollup.systems} systems`}>
+        <div className={`${VALUE} text-foreground`} title={`across ${rollup.systems} systems`}>
           {rollup.total}
         </div>
       </div>
@@ -48,7 +48,7 @@ export function MetricTiles({
       {/* Production-ready */}
       <div className={TILE}>
         <div className={LABEL}>Production-ready</div>
-        <div className={`${VALUE} text-[#fafafa]`} title={`${rollup.ready} of ${rollup.scored} services`}>
+        <div className={`${VALUE} text-foreground`} title={`${rollup.ready} of ${rollup.scored} services`}>
           {rollup.readyPct}%
         </div>
       </div>
@@ -61,17 +61,17 @@ export function MetricTiles({
         title="unowned · degraded · down"
         className="rounded-xl border px-4 py-[11px] text-left transition-colors"
         style={{
-          background: attention ? "rgba(245,158,11,.08)" : "#0d0d10",
-          borderColor: attention ? "rgba(245,158,11,.4)" : "#1c1c20",
+          background: attention ? "hsl(var(--primary) / 0.08)" : "hsl(var(--card))",
+          borderColor: attention ? "hsl(var(--primary) / 0.4)" : "hsl(var(--border))",
         }}
       >
         <div
           className="flex items-center gap-1.5 font-mono text-[10.5px] uppercase tracking-[0.1em]"
-          style={{ color: attention ? "#f59e0b" : "#71717a" }}
+          style={{ color: attention ? "hsl(var(--primary))" : "hsl(var(--muted-foreground) / 0.8)" }}
         >
           Needs attention <span className="text-[9px]">{attention ? "● filtering" : "›"}</span>
         </div>
-        <div className={`${VALUE} text-[#fafafa]`}>{rollup.attention}</div>
+        <div className={`${VALUE} text-foreground`}>{rollup.attention}</div>
       </button>
     </div>
   );
