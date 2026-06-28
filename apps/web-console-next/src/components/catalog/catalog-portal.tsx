@@ -55,7 +55,6 @@ export function CatalogPortal({ orgId, orgSlug }: { orgId: string; orgSlug: stri
   const selectedKey = searchParams?.get("entity") ?? null;
 
   const [entities, setEntities] = React.useState<OrgCatalogEntity[]>([]);
-  const [, setCursor] = React.useState<StateCursor | null>(null);
   const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState<{ code: string; message: string } | null>(null);
 
@@ -72,14 +71,29 @@ export function CatalogPortal({ orgId, orgSlug }: { orgId: string; orgSlug: stri
   const load = React.useCallback(async () => {
     setLoading(true);
     setError(null);
-    const res = await wrap(() => client.state.listOrgCatalogEntities(orgId, { limit: 200 }));
-    if (res.ok) {
-      setEntities(res.data.entities);
-      setCursor(res.data.nextCursor);
-    } else {
-      setError({ code: res.error.code, message: res.error.message });
-      setEntities([]);
+    // The portal filters/sorts/groups client-side, so it loads the full org
+    // graph by paging the keyset endpoint at the server's max page size
+    // (MAX_PAGE_LIMIT = 100; a larger `limit` is rejected as validation_failed).
+    // A page cap bounds the worst case for very large orgs.
+    const PAGE = 100;
+    const MAX_PAGES = 50;
+    const all: OrgCatalogEntity[] = [];
+    let cursor: StateCursor | null = null;
+    for (let page = 0; page < MAX_PAGES; page++) {
+      const query: { limit: number; cursor?: string } = { limit: PAGE };
+      if (cursor) query.cursor = `${cursor.createdAt}|${cursor.id}`;
+      const res = await wrap(() => client.state.listOrgCatalogEntities(orgId, query));
+      if (!res.ok) {
+        setError({ code: res.error.code, message: res.error.message });
+        setEntities([]);
+        setLoading(false);
+        return;
+      }
+      all.push(...res.data.entities);
+      cursor = res.data.nextCursor;
+      if (!cursor) break;
     }
+    setEntities(all);
     setLoading(false);
   }, [client, orgId]);
 
