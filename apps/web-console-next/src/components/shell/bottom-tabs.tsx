@@ -3,7 +3,7 @@
 import * as React from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { FolderKanban, Gauge, Settings, type LucideIcon } from "lucide-react";
+import { Boxes, Activity, FolderKanban, Settings, type LucideIcon } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { isLinkActive } from "./nav-items";
 import { useEffectiveOrgSlug } from "./use-effective-org";
@@ -23,8 +23,9 @@ interface Tab {
  * The organization is ambient context, not a destination: you're always *in* an
  * org (resolved via `useEffectiveOrgSlug` → URL → last-used → default) and you
  * switch it from the topbar workspace switcher, so there is deliberately no
- * "Organizations" tab. The tabs are the day-to-day surfaces — Projects (home),
- * Usage, Settings — and the hamburger drawer still owns the full/contextual nav.
+ * "Organizations" tab. The tabs are the day-to-day surfaces — Catalog,
+ * Activity, Repos, Settings — and the hamburger drawer still owns the
+ * full/contextual nav.
  *
  * Renders nothing only in the transient state where no org is resolvable yet
  * (a zero-org account, which the shell's OnboardingGate redirects to
@@ -37,8 +38,9 @@ export function BottomTabs() {
   if (!orgSlug) return null;
 
   const tabs: Tab[] = [
+    { href: `/orgs/${orgSlug}/catalog`, label: "Catalog", icon: Boxes },
+    { href: `/orgs/${orgSlug}/activities`, label: "Activity", icon: Activity },
     { href: `/orgs/${orgSlug}/projects`, label: "Repos", icon: FolderKanban },
-    { href: `/orgs/${orgSlug}/usage`, label: "Usage", icon: Gauge },
     { href: `/orgs/${orgSlug}/settings`, label: "Settings", icon: Settings },
   ];
 
