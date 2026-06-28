@@ -33,10 +33,13 @@ import {
   type SortDir,
   type SortKey,
 } from "@/lib/catalog-portal/filter";
+import { buildBoard, buildMap } from "@/lib/catalog-portal/layout";
 import { CatalogHeader } from "./portal/header";
 import { MetricTiles } from "./portal/metric-tiles";
 import { CatalogToolbar, type PortalView } from "./portal/toolbar";
 import { TableView } from "./portal/table-view";
+import { BoardView } from "./portal/board-view";
+import { MapView } from "./portal/map-view";
 
 // Frame height = viewport minus the app shell chrome (topbar 3rem + main pad 3rem).
 const FRAME = "h-[calc(100dvh-6rem)]";
@@ -93,6 +96,8 @@ export function CatalogPortal({ orgId, orgSlug }: { orgId: string; orgSlug: stri
     sortDir,
   ]);
   const grouped = React.useMemo(() => groupServices(filtered, group), [filtered, group]);
+  const board = React.useMemo(() => buildBoard(filtered), [filtered]);
+  const map = React.useMemo(() => buildMap(filtered), [filtered]);
   const chips = React.useMemo(() => activeChips(filters), [filters]);
 
   const decorate = React.useCallback((s: CatalogService) => decorateService(s, ctx), [ctx]);
@@ -221,10 +226,16 @@ export function CatalogPortal({ orgId, orgSlug }: { orgId: string; orgSlug: stri
               dense={false}
               onClearFilters={clearFilters}
             />
+          ) : view === "board" ? (
+            <BoardView
+              columns={board}
+              decorate={decorate}
+              selectedKey={selectedKey}
+              onSelect={setSelectedKey}
+              onOpen={openFull}
+            />
           ) : (
-            <div className="grid min-h-0 flex-1 place-items-center rounded-[13px] border border-[#1a1a1e] bg-[#0a0a0d] text-[13px] text-[#52525b]">
-              {view === "board" ? "Board view" : "Dependency map"} — coming in CP2
-            </div>
+            <MapView model={map} selectedKey={selectedKey} onSelect={setSelectedKey} onOpen={openFull} />
           )}
         </div>
       </div>

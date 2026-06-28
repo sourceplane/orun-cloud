@@ -8,7 +8,7 @@
 
 import {
   type CatalogService,
-  isResource,
+  healthOf,
   lifecycleKey,
   needsAttention,
   ownerLabel,
@@ -36,12 +36,6 @@ export const EMPTY_FILTERS: CatalogFilters = {
   health: "all",
   attention: false,
 };
-
-function healthOf(s: CatalogService): HealthKey {
-  if (isResource(s)) return "managed";
-  const h = s.health;
-  return h === "healthy" || h === "degraded" || h === "down" ? h : "managed";
-}
 
 /** Apply the toolbar filters, matching the design's `filtered()`. */
 export function filterServices(services: CatalogService[], f: CatalogFilters): CatalogService[] {
