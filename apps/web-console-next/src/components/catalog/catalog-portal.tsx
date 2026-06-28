@@ -57,7 +57,17 @@ export function CatalogPortal({ orgId, orgSlug }: { orgId: string; orgSlug: stri
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const catalogHref = `/orgs/${orgSlug}/catalog`;
-  const selectedKey = searchParams?.get("entity") ?? null;
+
+  // Selection is driven by local state for instant response (PERF C6): clicking
+  // or keyboard-scrubbing a row updates the drawer/highlight via setState rather
+  // than waiting on a router round-trip. The URL `?entity=` stays the shareable
+  // source of truth — we mirror selection into it (so deep links and back/forward
+  // still work), and sync local state back when the URL changes externally.
+  const urlEntity = searchParams?.get("entity") ?? null;
+  const [selectedKey, setSelectedKeyState] = React.useState<string | null>(urlEntity);
+  React.useEffect(() => {
+    setSelectedKeyState((prev) => (prev === urlEntity ? prev : urlEntity));
+  }, [urlEntity]);
 
   // The portal filters/sorts/groups client-side, so it loads the full org graph
   // through the shared query cache (PERF C1): revisiting the catalog now paints
@@ -162,7 +172,10 @@ export function CatalogPortal({ orgId, orgSlug }: { orgId: string; orgSlug: stri
 
   const setSelectedKey = React.useCallback(
     (key: string | null) => {
+      setSelectedKeyState(key); // instant; the UI no longer waits on the router
       if (key) warmEntity(key);
+      // Mirror into the URL so the peeked entity stays deep-linkable. This runs
+      // after the local update and never gates the selection paint.
       const sp = new URLSearchParams(searchParams?.toString() ?? "");
       if (key) sp.set("entity", key);
       else sp.delete("entity");
