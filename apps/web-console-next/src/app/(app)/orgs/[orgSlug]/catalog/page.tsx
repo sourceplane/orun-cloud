@@ -1,18 +1,17 @@
 "use client";
 
-// OV7 — the org-global catalog browser (index). A thin route wrapper around the
-// shared 3-panel workbench in "index" mode: selection is a fast `?entity=` peek,
-// double-click drills into the dedicated entity page (which renders the same
-// workbench). See `components/catalog/catalog-workbench.tsx`.
+// The org-global catalog index — the design-faithful internal-developer-portal
+// surface (saas-catalog-portal). A thin route wrapper around `CatalogPortal`:
+// header + metric tiles + toolbar + Table/Board/Map views, with a `?entity=`
+// peek that double-click drills into the dedicated entity page. The deep entity
+// route still renders the existing workbench until it adopts the portal drawer.
 
 import { useParams } from "next/navigation";
 import { OrgScope } from "@/components/shell/org-scope";
-import { CatalogWorkbench } from "@/components/catalog/catalog-workbench";
+import { CatalogPortal } from "@/components/catalog/catalog-portal";
 
 export default function CatalogPage() {
   const params = useParams<{ orgSlug: string }>();
   const slug = params?.orgSlug ?? "";
-  return (
-    <OrgScope slug={slug}>{(org) => <CatalogWorkbench orgId={org.id} orgSlug={slug} mode="index" />}</OrgScope>
-  );
+  return <OrgScope slug={slug}>{(org) => <CatalogPortal orgId={org.id} orgSlug={slug} />}</OrgScope>;
 }
