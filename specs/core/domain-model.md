@@ -5,10 +5,12 @@ Status: Normative
 ## Core Entities
 
 - `User`: interactive human account owned by identity.
-- `Organization`: tenant, billing, membership, and audit boundary.
+- `Organization`: tenant, billing, membership, and audit boundary. Surfaced
+  publicly as an **Account** (parent/standalone) or a **Workspace** (any org in the
+  account) — a label only; the entity is unchanged. See [`vocabulary.md`](./vocabulary.md).
 - `OrganizationMember`: membership fact connecting a user to an organization and role set.
 - `OrganizationInvitation`: invitation lifecycle record.
-- `Project`: operational workspace inside exactly one organization.
+- `Project`: operational work unit inside exactly one organization (Workspace).
 - `Environment`: optional project sub-scope for config, deployment, or lifecycle separation.
 - `RoleAssignment`: authorization fact consumed by policy.
 - `ApiKey`: credential owned by identity and backed by a service principal.

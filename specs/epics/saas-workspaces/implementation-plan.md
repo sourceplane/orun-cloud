@@ -6,7 +6,7 @@ surfaces; it layers Account/Workspace vocabulary over the shipped
 `saas-multi-org-billing` parent/child model. Status markers reflect that nothing
 here is built yet.
 
-## WS1 — Glossary + vocabulary decision — 🗓️ Planned
+## WS1 — Glossary + vocabulary decision — ✅ Shipped (`specs/core/vocabulary.md`)
 
 Lock the words before touching any surface.
 
