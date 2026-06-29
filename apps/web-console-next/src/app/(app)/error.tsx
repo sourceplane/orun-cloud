@@ -33,7 +33,7 @@ export default function AppError({
         <div className="space-y-1">
           <h1 className="text-lg font-semibold tracking-tight">Something went wrong</h1>
           <p className="text-sm text-muted-foreground">
-            This page hit an unexpected error. You can retry, or head back to your organizations.
+            This page hit an unexpected error. You can retry, or head back to your workspaces.
           </p>
           {error.digest && (
             <p className="pt-1 font-mono text-[11px] text-muted-foreground/70">ref: {error.digest}</p>
@@ -43,7 +43,7 @@ export default function AppError({
           <Button variant="outline" onClick={() => reset()}>
             Try again
           </Button>
-          <Button onClick={() => router.push("/orgs")}>Back to organizations</Button>
+          <Button onClick={() => router.push("/orgs")}>Back to workspaces</Button>
         </div>
       </div>
     </div>

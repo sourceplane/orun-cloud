@@ -69,7 +69,7 @@ Avoided on purpose: **"Product"** (collides with the Polar *product* SKU across
 | WS1 | Glossary + vocabulary decision (Account/Workspace) recorded in `core/`; no code/API change | ✅ Shipped (`specs/core/vocabulary.md`) |
 | WS2 | Public API aliasing: `/v1/workspaces/*` routes alias `/v1/organizations/*` at the edge; contracts add `workspaceId` aliases alongside `orgId`; old routes unchanged | ✅ Shipped (`apps/api-edge/src/workspace-facade.ts`) |
 | WS3 | SDK/CLI: expose a `workspaces` surface aliasing `organizations` across **both** CLIs (`@saas/cli` + the customer-facing Go `orun` CLI; lead with `execution.state.workspace`, retain `execution.state.org` as an alias — A4; coordinate with `saas-orun-platform` DV5); deprecation notes; both compile | ✅ Shipped (SDK `workspaces` + CLI `workspace`; orun CLI in sourceplane/orun#429) |
-| WS4 | Console rebrand: "Account" header + "Workspace" switcher (reuse `use-effective-org` + scope-switcher); parent surfaced as a selectable Workspace | 🗓️ Planned |
+| WS4 | Console rebrand: "Account" header + "Workspace" switcher (reuse `use-effective-org` + scope-switcher); parent surfaced as a selectable Workspace | ✅ Shipped (console copy relabel; switcher/nav/create/settings) |
 | WS5 | Docs + deprecation policy: public docs say Workspace/Account; decide whether `organization` terms in audit events/analytics are aliased or left internal | 🗓️ Planned |
 
 ## Scope boundary

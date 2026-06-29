@@ -67,7 +67,7 @@ export function OrgScope({
         <CardHeader>
           <CardTitle className="text-destructive flex items-center gap-2">
             <AlertTriangle className="h-4 w-4" />
-            Failed to load organization
+            Failed to load workspace
           </CardTitle>
           <CardDescription>{error.message}</CardDescription>
         </CardHeader>
@@ -79,9 +79,9 @@ export function OrgScope({
     return (
       <EmptyState
         icon={AlertTriangle}
-        title="Organization not found"
-        description={`No org matches slug “${slug}”. It may have been archived or you no longer have access.`}
-        primaryAction={{ label: "Back to organizations", href: "/orgs" }}
+        title="Workspace not found"
+        description={`No workspace matches slug “${slug}”. It may have been archived or you no longer have access.`}
+        primaryAction={{ label: "Back to workspaces", href: "/orgs" }}
       />
     );
   }

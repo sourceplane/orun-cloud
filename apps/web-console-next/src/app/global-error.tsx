@@ -70,7 +70,7 @@ export default function GlobalError({
                 textDecoration: "none",
               }}
             >
-              Back to organizations
+              Back to workspaces
             </a>
           </div>
         </div>

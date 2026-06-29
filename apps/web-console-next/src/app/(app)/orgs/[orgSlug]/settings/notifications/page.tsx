@@ -74,7 +74,7 @@ function Inner({ orgId }: { orgId: string }) {
           <h1 className="text-xl font-semibold tracking-tight">Notifications</h1>
         </div>
         <p className="text-sm text-muted-foreground">
-          Which categories of email you receive for this organization. Applies to your account
+          Which categories of email you receive for this workspace. Applies to your account
           only.
         </p>
       </header>

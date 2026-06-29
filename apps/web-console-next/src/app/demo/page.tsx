@@ -81,7 +81,7 @@ export default function DemoPage() {
                 resource="entitlement"
                 error={{
                   code: "precondition_failed",
-                  message: "No entitlement record found for this organization.",
+                  message: "No entitlement record found for this workspace.",
                   reason: "not_configured",
                   details: { entitlementKey: "feature.audit_export" },
                   requestId: "req_QkH3sLm0",
@@ -105,7 +105,7 @@ export default function DemoPage() {
           </TabsContent>
 
           <TabsContent value="lists" className="space-y-6 mt-6">
-            <Section title="Organizations grid">
+            <Section title="Workspaces grid">
               <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
                 {mockOrgs.map((o) => (
                   <Card key={o.slug}>
@@ -209,9 +209,9 @@ export default function DemoPage() {
               <div className="grid md:grid-cols-2 gap-4">
                 <EmptyState
                   icon={Building2}
-                  title="No organizations yet"
+                  title="No workspaces yet"
                   description="Create your first organization to start provisioning projects and environments."
-                  primaryAction={{ label: "New organization" }}
+                  primaryAction={{ label: "New workspace" }}
                 />
                 <EmptyState
                   icon={KeyRound}
@@ -231,7 +231,7 @@ export default function DemoPage() {
                     <kbd className="ml-auto rounded border bg-muted px-1.5 py-0.5 text-[10px]">⌘K</kbd>
                   </div>
                   <ul className="mt-3 space-y-1 text-sm">
-                    <PaletteRow icon={Building2} label="Switch organization" />
+                    <PaletteRow icon={Building2} label="Switch workspace" />
                     <PaletteRow icon={FolderKanban} label="Projects" />
                     <PaletteRow icon={Boxes} label="Environments" />
                     <PaletteRow icon={Mail} label="Invitations" />

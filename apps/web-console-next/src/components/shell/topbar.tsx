@@ -86,7 +86,7 @@ export function Topbar() {
                 <User2 className="h-4 w-4 opacity-70" /> Profile
               </DropdownMenuItem>
               <DropdownMenuItem onSelect={() => router.push("/orgs")}>
-                <Building2 className="h-4 w-4 opacity-70" /> Organizations
+                <Building2 className="h-4 w-4 opacity-70" /> Workspaces
               </DropdownMenuItem>
               {/* Theme toggle — this account menu is the mobile theme control. */}
               <DropdownMenuItem

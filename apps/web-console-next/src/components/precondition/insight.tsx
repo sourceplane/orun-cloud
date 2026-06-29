@@ -91,7 +91,7 @@ export function PreconditionInsight({
       title = `${capitalize(friendly(limitKey))} are disabled on your plan`;
       body = (
         <p className="text-sm text-muted-foreground">
-          Your organization doesn't currently have access to {friendly(limitKey)}. Contact your account
+          Your workspace doesn't currently have access to {friendly(limitKey)}. Contact your account
           team to enable this entitlement.
         </p>
       );
@@ -122,7 +122,7 @@ export function PreconditionInsight({
       body = (
         <p className="text-sm text-muted-foreground">
           We can't validate your {friendly(limitKey)} entitlement because billing hasn't been set up for
-          this organization. Finish setup in the Billing tab, then try again.
+          this workspace. Finish setup in the Billing tab, then try again.
         </p>
       );
       if (onUpgrade) primary = { label: "Open Billing", onClick: onUpgrade };

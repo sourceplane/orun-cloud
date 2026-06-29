@@ -67,7 +67,7 @@ function Inner({ orgId }: { orgId: string }) {
       <header>
         <h1 className="text-xl font-semibold tracking-tight">Usage &amp; quota</h1>
         <p className="text-sm text-muted-foreground">
-          Metered consumption and quota status for this organization.
+          Metered consumption and quota status for this workspace.
         </p>
       </header>
       <StatePlaneUsage orgId={orgId} />
@@ -149,7 +149,7 @@ function StatePlaneUsage({ orgId }: { orgId: string }) {
           <CardTitle className="text-base flex items-center gap-2">
             <Database className="h-4 w-4 text-muted-foreground" /> State plane
           </CardTitle>
-          <CardDescription>What this organization stores in remote state, and recent push volume.</CardDescription>
+          <CardDescription>What this workspace stores in remote state, and recent push volume.</CardDescription>
         </div>
         <Select value={range} onValueChange={(v) => setRange(v as RangePreset)}>
           <SelectTrigger className="h-8 w-[150px] text-xs"><SelectValue /></SelectTrigger>

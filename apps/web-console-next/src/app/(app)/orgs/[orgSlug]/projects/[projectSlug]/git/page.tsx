@@ -154,7 +154,7 @@ function Inner({ orgId, orgSlug, projectSlug }: { orgId: string; orgSlug: string
         <EmptyState
           icon={Github}
           title="No GitHub connection"
-          description="Connect GitHub for this organization first — then link repositories to repos here."
+          description="Connect GitHub for this workspace first — then link repositories to repos here."
           primaryAction={{
             label: "Open Integrations settings",
             href: `/orgs/${orgSlug}/settings/integrations`,

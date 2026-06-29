@@ -52,7 +52,7 @@ function Inner({ orgId }: { orgId: string }) {
       <header className="flex items-end justify-between gap-4">
         <div>
           <h1 className="text-xl font-semibold tracking-tight">Invitations</h1>
-          <p className="text-sm text-muted-foreground">Pending and historical invites for this organization.</p>
+          <p className="text-sm text-muted-foreground">Pending and historical invites for this workspace.</p>
         </div>
         <Dialog open={open} onOpenChange={setOpen}>
           <DialogTrigger asChild>
@@ -65,7 +65,7 @@ function Inner({ orgId }: { orgId: string }) {
             <DialogHeader>
               <DialogTitle>Send invitation</DialogTitle>
               <DialogDescription>
-                Invite a teammate by email to join this organization.
+                Invite a teammate by email to join this workspace.
               </DialogDescription>
             </DialogHeader>
             <ZodForm
@@ -122,7 +122,7 @@ function Inner({ orgId }: { orgId: string }) {
         <EmptyState
           icon={Mail}
           title="No invitations"
-          description="Invite teammates to collaborate in this organization."
+          description="Invite teammates to collaborate in this workspace."
           primaryAction={{ label: "Invite member", onClick: () => setOpen(true) }}
         />
       ) : (

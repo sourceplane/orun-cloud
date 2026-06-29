@@ -200,7 +200,7 @@ export function ActivityWorkbench({ orgId, orgSlug }: { orgId: string; orgSlug: 
       <header>
         <h1 className="text-xl font-semibold tracking-tight">Activities</h1>
         <p className="text-sm text-muted-foreground">
-          Run activity across the organization, newest first — merged from the state store over every repo.
+          Run activity across the workspace, newest first — merged from the state store over every repo.
         </p>
       </header>
 
@@ -297,7 +297,7 @@ export function ActivityWorkbench({ orgId, orgSlug }: { orgId: string; orgSlug: 
           description={
             filtersActive
               ? "No runs match the current selection. Widen the repo, environment, or source."
-              : "Runs appear here as the CLI or CI executes plans across the organization."
+              : "Runs appear here as the CLI or CI executes plans across the workspace."
           }
           {...(filtersActive ? { primaryAction: { label: "Reset filters", onClick: clearAll } } : {})}
         />

@@ -132,7 +132,7 @@ export function CreateOrgFlow({
       } else {
         toast({
           kind: "error",
-          title: "Could not create organization",
+          title: "Could not create workspace",
           description: r.error.message,
         });
       }
@@ -170,7 +170,7 @@ export function CreateOrgFlow({
       }
       toast({
         kind: "warning",
-        title: "Organization created — checkout unavailable",
+        title: "Workspace created — checkout unavailable",
         description: "You can upgrade anytime from Settings → Billing.",
       });
     }
@@ -192,18 +192,18 @@ export function CreateOrgFlow({
           className="inline-flex items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground"
         >
           <ArrowLeft className="h-4 w-4" />
-          Organizations
+          Workspaces
         </Link>
       )}
 
       <header className="mt-3">
         <h1 className="text-2xl font-semibold tracking-tight">
-          {mode === "parent" ? "Create your organization" : "Add a new organization"}
+          {mode === "parent" ? "Create your workspace" : "Add a new workspace"}
         </h1>
         <p className="mt-1 text-sm text-muted-foreground">
           {mode === "parent"
-            ? "An organization is your tenant — it owns repos, members, and billing. You need one to use the console."
-            : "Another tenant under your account — its billing rolls up to your parent organization."}
+            ? "A workspace is a tenant — it owns repos, members, and billing. You need one to use the console."
+            : "Another workspace under your account — its billing rolls up to your account's parent workspace."}
         </p>
       </header>
 
@@ -258,7 +258,7 @@ export function CreateOrgFlow({
             <section className="space-y-6">
               <StepHeading
                 title="Choose your plan"
-                subtitle="Start free and upgrade when you're ready — paid plans go through secure checkout after the organization is created."
+                subtitle="Start free and upgrade when you're ready — paid plans go through secure checkout after the workspace is created."
               />
               <PlanPicker value={planCode} onChange={setPlanCode} />
               <p className="text-xs text-muted-foreground">
@@ -271,7 +271,7 @@ export function CreateOrgFlow({
             <section className="space-y-6">
               <StepHeading
                 title="Pick a starting point"
-                subtitle="Connect a Git provider, clone a template, or start with an empty organization."
+                subtitle="Connect a Git provider, clone a template, or start with an empty workspace."
               />
               <SourcePicker value={source} onChange={setSource} />
             </section>
@@ -394,7 +394,7 @@ function DetailsStep({
 }) {
   return (
     <section className="space-y-6">
-      <StepHeading title="Organization details" subtitle="Name your organization and claim its URL." />
+      <StepHeading title="Workspace details" subtitle="Name your workspace and claim its URL." />
 
       {mode === "child" && billingParent && (
         <div className="flex items-start gap-3 rounded-lg border bg-muted/40 p-4 text-sm">
@@ -451,7 +451,7 @@ function DetailsStep({
         <div className="mt-3 flex items-center gap-3">
           <OrgAvatar name={name} />
           <div className="min-w-0">
-            <div className="truncate text-sm font-medium">{name.trim() || "Your organization"}</div>
+            <div className="truncate text-sm font-medium">{name.trim() || "Your workspace"}</div>
             <div className="truncate text-xs text-muted-foreground">/orgs/{slug || "your-org"}</div>
           </div>
         </div>
@@ -475,7 +475,7 @@ function ReviewStep({
   plan: (typeof PLAN_OPTIONS)[number];
   source: SourceChoice;
 }) {
-  const nextSteps: string[] = [`We create ${name || "your organization"} and make you its owner.`];
+  const nextSteps: string[] = [`We create ${name || "your workspace"} and make you its owner.`];
   const isGithub = source.kind === "git" && source.provider === "github";
   if (mode === "parent" && plan.contact) {
     nextSteps.push("We open an email to our sales team about Enterprise pricing.");
@@ -492,7 +492,7 @@ function ReviewStep({
       <StepHeading title="Review & create" subtitle="Double-check the details — most settings can be changed later." />
 
       <dl className="divide-y rounded-lg border bg-card">
-        <ReviewRow label="Organization">
+        <ReviewRow label="Workspace">
           <div className="flex items-center gap-3">
             <OrgAvatar name={name} />
             <div className="min-w-0">
@@ -504,14 +504,14 @@ function ReviewStep({
         <ReviewRow label="Type">
           {mode === "parent" ? (
             <span className="text-sm">
-              Parent organization{" "}
+              Parent workspace{" "}
               <span className="text-muted-foreground">— owns billing for your account</span>
             </span>
           ) : (
             <span className="text-sm">
-              Child organization{" "}
+              Child workspace{" "}
               <span className="text-muted-foreground">
-                — billing rolls up to {billingParent?.name ?? "your parent organization"}
+                — billing rolls up to {billingParent?.name ?? "your parent workspace"}
               </span>
             </span>
           )}
