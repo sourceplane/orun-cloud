@@ -93,3 +93,11 @@ installation — it just lives at the account, where billing already does.
 - **`saas-workspaces` (WS)**: orthogonal. The tenancy reframing here works
   identically whether the units are called "sub-orgs" or "Workspaces"; WS is the
   presentation/API vocabulary, IT is the mechanism. They can land in either order.
+- **`oidc-ci-tenancy` (CLI) / `saas-orun-platform`**: the Orun CLI's tenancy claim
+  (`intent.yaml execution.state.workspace`, aliasing the shipped
+  `execution.state.org`, orun #420 — see `saas-workspaces` A4) and the
+  `state.workspace_links` CI allow-list are a **separate subsystem** from the
+  GitHub connection this epic re-points. They stay **workspace-scoped** and are
+  *not* subject to `effectiveIntegrationOrg` (design.md §9). The two link tables —
+  `integrations.repo_links` (here) and `state.workspace_links` (CLI/state) — are
+  distinct and must not be conflated.

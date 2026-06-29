@@ -198,3 +198,18 @@ would re-introduce per-workspace claim walls and stricter fan-out.
   and *how access is authorized*.
 - No hierarchical RBAC — authorization stays exact-match; only resource
   *addressing* resolves to the account.
+- **No change to the CLI / state tenancy claim.** The Orun CLI's committed claim
+  (`intent.yaml execution.state.workspace`, aliasing the shipped
+  `execution.state.org`; `--workspace`/`--org`, `ORUN_WORKSPACE`/`ORUN_ORG` — see
+  `saas-workspaces` A4) and the state allow-list it gates on
+  (`state.workspace_links`, keyed `(org, project=repo)`) are the **workspace's own
+  org** and stay so. `effectiveIntegrationOrg` resolves *only* the GitHub
+  **connection** up to the account — it must **not** be applied to the CLI claim or
+  to `state.workspace_links`. Two different "links" live in two subsystems and
+  must not be conflated: `integrations.repo_links` (this epic — a workspace's repo
+  claims against the **account** connection) versus `state.workspace_links` (the
+  CLI/CI allow-list — workspace-local, never resolved up). Resolving the CLI claim
+  up would be a split-brain in the wrong direction (it would let one workspace's CI
+  claim land in a sibling's or the account's state scope). The IT6 split-brain
+  suite (§ implementation-plan) asserts the seam is applied to the *connection*
+  path only.

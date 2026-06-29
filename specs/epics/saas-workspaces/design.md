@@ -16,6 +16,16 @@ MO1+ shipped; the console already has `useEffectiveOrgSlug` + a scope-switcher;
 | **Workspace** | **any `organizations` row in the account** — a child org, **and** the parent's own direct org surfaced as a Workspace | A Workspace *is* an org; it keeps its own `org_id`, projects, environments, members, audit. |
 | Project | unchanged (`project_id` under an org/Workspace) | Not renamed. The `Workspace → Project → Environment` hierarchy reads cleanly. |
 
+One internal-name collision to keep in view: the state subsystem already ships a
+table named **`state.workspace_links`** (the CLI/CI repo allow-list, keyed
+`(org, project)`), which predates this rebrand and has nothing to do with the new
+"Workspace" noun. After the rename "workspace links" is ambiguous between (a) that
+state table, (b) a Workspace's `integrations.repo_links`
+(`saas-integration-tenancy`), and (c) the public `…/cli/links` endpoint. The
+glossary (WS1) must record that `workspace_links` is a **legacy internal name**,
+left as-is per the relabel-not-remodel rule (§2), and is **not** the Workspace
+unit. Do not rename the table; do disambiguate it in docs.
+
 Two names we explicitly reject:
 
 - **"Product"** — already means the **Polar product** (the billing SKU) across
@@ -95,11 +105,37 @@ This is a **synthetic UI affordance** over the existing org list + scope-switche
 
 ## 6. SDK / CLI (WS3)
 
-- SDK exposes a `workspaces` namespace that aliases `organizations` (same client,
-  same ids); `organizations` is retained and marked deprecated-in-favor-of in
-  docs, not removed.
-- CLI gains `workspace` subcommands aliasing `org`/`organization`; `--org` flags
-  accept a `--workspace` alias. Help text leads with Workspace.
+There are **two** CLIs, and they sit at very different distances from the
+customer — the rename has to name both:
+
+- **`@saas/cli` (`orun-cloud`, TS, `packages/cli`)** — the internal control-plane
+  CLI that wraps `@saas/sdk`. It gains a `workspace` namespace aliasing
+  `organizations`, exactly as the SDK does.
+- **`orun` (Go, `sourceplane/orun`)** — the **customer-facing** CLI that runs in
+  CI and on dev machines. It is the primary surface where the `org` vocabulary is
+  visible today: the `--org` flag, the `ORUN_ORG` env var, and — since
+  `oidc-ci-tenancy` shipped (orun #420) — the **committed `intent.yaml` field
+  `execution.state.org`** (with `requireOrg`). `execution.state.org` is the
+  declared, reviewable tenancy *claim* sent on every remote op. This CLI is owned
+  by `saas-orun-platform` (DV5), so WS3 here is a *coordination* item, not a
+  unilateral one: the rename must be planned with that epic, not landed only in
+  `packages/cli`.
+
+CLI surface plan:
+
+- **SDK** exposes a `workspaces` namespace that aliases `organizations` (same
+  client, same ids); `organizations` is retained and marked deprecated-in-favor-of
+  in docs, not removed.
+- **CLIs** gain a `workspace`/`--workspace` alias for `org`/`--org`
+  (and `ORUN_WORKSPACE` aliasing `ORUN_ORG`). Help text leads with Workspace.
+- **`intent.yaml`** is the one committed, customer-authored surface. Decision
+  (risks **A4**): **lead with `execution.state.workspace`** and retain
+  `execution.state.org` (shipped by `oidc-ci-tenancy`, orun #420) as an accepted
+  alias — read either, prefer `workspace`, so existing configs keep working
+  untouched. The **value** a customer declares is always their **Workspace** org —
+  never the Account; the integration connection that resolves *up* to the Account
+  (`saas-integration-tenancy`) is a server-side resolution the CLI claim never
+  restates.
 
 ## 7. Back-compat & deprecation (WS5)
 
