@@ -178,7 +178,7 @@ describe("POST .../integrations/github/token (the broker)", () => {
     const ghCalls: Array<{ url: string; body: unknown }> = [];
     const { executor, queries } = fakeExecutor((text) => {
       if (text.includes("FROM integrations.repo_links")) return [linkRow()];
-      if (text.includes("FROM integrations.connections WHERE org_id")) return [connectionRow()];
+      if (text.includes("FROM integrations.connections WHERE id")) return [connectionRow()];
       if (text.includes("FROM integrations.github_installations"))
         return [installationRow({ checks: "write", contents: "read" })];
       return [{ _event: {}, _audit: {} }];
@@ -211,6 +211,39 @@ describe("POST .../integrations/github/token (the broker)", () => {
     expect(queries.some((q) => q.text.includes("installation_tokens"))).toBe(false);
   });
 
+  it("mints against an ACCOUNT-shared connection the actor's workspace does not own (IT4)", async () => {
+    // The connection lives at the account (a different org than the actor's
+    // workspace). Authorization is by the workspace's repo-link ownership, so
+    // the broker must resolve the connection BY ID (not org-scoped) and still
+    // mint. The link is workspace-owned; the connection is account-owned.
+    const ACCOUNT_UUID = "99999999-9999-4999-8999-999999999999";
+    const ghCalls: Array<{ url: string; body: unknown }> = [];
+    const { executor, queries } = fakeExecutor((text) => {
+      if (text.includes("FROM integrations.repo_links")) return [linkRow()]; // workspace owns the link
+      if (text.includes("FROM integrations.connections WHERE id"))
+        return [{ ...connectionRow(), org_id: ACCOUNT_UUID }]; // connection at the account
+      if (text.includes("FROM integrations.connections WHERE org_id"))
+        throw new Error("broker must not look up the connection org-scoped");
+      if (text.includes("FROM integrations.github_installations"))
+        return [installationRow({ checks: "write", contents: "read" })];
+      return [{ _event: {}, _audit: {} }];
+    });
+
+    const res = await handleIssueGithubToken(
+      tokenRequest({ repositories: ["777001"], permissions: { checks: "write" } }),
+      createEnv(),
+      "req_1",
+      ACTOR,
+      asUuid(ORG_UUID), // actor's workspace, NOT the account
+      { executor, fetchImpl: githubFetch(ghCalls) },
+    );
+    expect(res.status).toBe(201);
+    // Still scoped down to exactly the requested repo.
+    expect(ghCalls[0]!.body).toEqual({ repository_ids: [777001], permissions: { checks: "write" } });
+    // The connection was resolved by id, never org-scoped.
+    expect(queries.some((q) => q.text.includes("FROM integrations.connections WHERE id"))).toBe(true);
+  });
+
   it("denies unlinked repositories with a safe 412", async () => {
     const { executor } = fakeExecutor((text) => {
       if (text.includes("FROM integrations.repo_links")) return [];
@@ -232,7 +265,7 @@ describe("POST .../integrations/github/token (the broker)", () => {
   it("denies permissions exceeding the App grant", async () => {
     const { executor } = fakeExecutor((text) => {
       if (text.includes("FROM integrations.repo_links")) return [linkRow()];
-      if (text.includes("FROM integrations.connections WHERE org_id")) return [connectionRow()];
+      if (text.includes("FROM integrations.connections WHERE id")) return [connectionRow()];
       if (text.includes("FROM integrations.github_installations"))
         return [installationRow({ contents: "read" })];
       return [];
