@@ -40,6 +40,13 @@ function isUniqueViolation(err: unknown): boolean {
   );
 }
 
+/** The Postgres constraint name behind a unique violation, when available. */
+function uniqueViolationConstraint(err: unknown): string | null {
+  if (!isUniqueViolation(err)) return null;
+  const c = (err as { constraint?: unknown }).constraint;
+  return typeof c === "string" ? c : null;
+}
+
 function toDate(v: unknown): Date {
   return v instanceof Date ? v : new Date(v as string);
 }
@@ -467,7 +474,14 @@ export function createIntegrationsRepository(executor: SqlExecutor): Integration
         return { ok: true, value: mapRepoLink(result.rows[0]!) };
       } catch (err) {
         if (isUniqueViolation(err)) {
-          return { ok: false, error: { kind: "conflict", entity: "repo_link" } };
+          // Distinguish the connection-scoped single-claim (IT2: another
+          // workspace already claimed this repo under the shared connection)
+          // from the per-project unique (the same project re-linking the repo).
+          const entity =
+            uniqueViolationConstraint(err) === "uq_integrations_repo_claim"
+              ? "repo_claim"
+              : "repo_link";
+          return { ok: false, error: { kind: "conflict", entity } };
         }
         return safeError("Failed to create repo link");
       }

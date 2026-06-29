@@ -289,11 +289,24 @@ export async function handleCreateRepoLink(
     });
     if (!created.ok) {
       if (created.error.kind === "conflict") {
+        // IT2: a repo is claimable by at most one workspace under a shared
+        // connection. Distinguish that cross-workspace claim from the same
+        // project re-linking the repo, so the console can guide the user.
+        if (created.error.entity === "repo_claim") {
+          return errorResponse(
+            "conflict",
+            "This repository is already linked by another workspace on this connection",
+            409,
+            requestId,
+            { reason: "repository_claimed_by_another_workspace" },
+          );
+        }
         return errorResponse(
           "conflict",
           "This repository is already linked to the project",
           409,
           requestId,
+          { reason: "repository_already_linked_to_project" },
         );
       }
       return errorResponse("internal_error", "Service unavailable", 503, requestId);

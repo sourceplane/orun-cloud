@@ -34,7 +34,11 @@ describe("Integrations Migration Verification", () => {
   });
 
   it("manifest checksums match the on-disk up.sql files", () => {
-    for (const id of ["180_integrations_foundation", "190_integrations_delivery_attribution"]) {
+    for (const id of [
+      "180_integrations_foundation",
+      "190_integrations_delivery_attribution",
+      "380_integrations_repo_single_claim",
+    ]) {
       const entry = manifest.migrations.find((m) => m.id === id)!;
       const content = readFileSync(resolve(MIGRATIONS_ROOT, entry.path));
       const checksum = createHash("sha256").update(content).digest("hex");
@@ -50,6 +54,18 @@ describe("Integrations Migration Verification", () => {
     expect(sql).toContain("ADD COLUMN IF NOT EXISTS connection_id UUID");
     expect(sql).toContain("idx_integrations_inbound_deliveries_connection");
     expect(sql).toContain("WHERE connection_id IS NOT NULL");
+  });
+
+  it("380 adds the connection-scoped single-claim guard (IT2), additively", () => {
+    const sql = readFileSync(
+      resolve(MIGRATIONS_ROOT, "380_integrations_repo_single_claim/up.sql"),
+      "utf-8",
+    );
+    expect(sql).toContain("CREATE UNIQUE INDEX IF NOT EXISTS uq_integrations_repo_claim");
+    expect(sql).toMatch(/ON integrations\.repo_links \(connection_id, repo_external_id\)/);
+    expect(sql).toContain("WHERE status = 'active'");
+    // The existing per-project guard must NOT be dropped/altered here.
+    expect(sql).not.toMatch(/DROP\s+INDEX/i);
   });
 
   describe("integrations SQL schema validation", () => {
