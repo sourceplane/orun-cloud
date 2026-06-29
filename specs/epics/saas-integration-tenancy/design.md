@@ -57,6 +57,23 @@ export function effectiveIntegrationOrg(
   are not relaxing a constraint — we are choosing *which org* owns the single
   connection (the account, not an arbitrary workspace).
 
+The seam is **scope-aware**, not unconditional. A connection carries
+`scope ∈ {account, workspace}` (IT7, §10). The resolution rule applies **only to
+`account`-scoped connections**; a `workspace`-scoped (private) connection is owned
+by the workspace and is never resolved up. Concretely the read path is:
+
+```ts
+// integrations-worker connection read (IT7)
+function owningOrgFor(conn: Connection, actorOrg: Organization): string {
+  return conn.scope === "workspace"
+    ? conn.orgId                          // private: stays at the workspace
+    : effectiveIntegrationOrg(actorOrg);  // shared: resolves up to the account
+}
+```
+
+For every standalone org this still collapses to `org.id` regardless of scope, so
+the dormant-by-default property (IT1) is untouched.
+
 ## 3. What resolves UP vs what fans DOWN
 
 The billing epic uses two complementary moves; integrations uses the same split,
@@ -72,6 +89,14 @@ and the split matters:
 **Rule of thumb:** the *credential* resolves up; the *entitlement* fans down; the
 *events* project down. Do not attempt to fan out the connection — that is the one
 place the billing analogy inverts.
+
+This table describes **`account`-scoped** connections. A **workspace-private**
+connection (§10) short-circuits every row: it is owned at the workspace, so there
+is nothing to resolve up, nothing to project down, and no sibling to isolate from —
+it behaves exactly like a standalone single-org connection, because that is what it
+is. Admission (§11) sits *above* this table for shared connections: it decides
+*whether* a workspace reaches the resolved connection at all, before repo-link
+ownership decides *which repos* it may use.
 
 ## 4. Repo links and single-claim (IT2)
 
@@ -120,6 +145,20 @@ billing's "parent usage view sums children's rollups," read in the opposite
 direction. No cross-tenant fan-out, because there is only one tenant (the
 account).
 
+**Implementation correctness note — the accessor must be connection-wide, not
+org-scoped.** Today `drain.ts` resolves links with the workspace-scoped
+`listActiveRepoLinksForRepo(connection.orgId, repoExternalId)`. Under a shared
+connection `connection.orgId` is the **account**, but the link is owned by a
+**workspace**, so that helper would find nothing and the event would silently fail
+to route. IT3 must introduce a connection-keyed accessor —
+`findActiveRepoLinkByConnectionAndRepo(connectionId, repoExternalId)` — that
+returns the single active link regardless of which workspace owns it (single-claim
+guarantees ≤1). The emit path must then thread the **link's `org_id`** through the
+`targets` array (it currently carries only `projectId` + `environment`) and append
+the event with `orgId = link.orgId`, not the hardcoded `connection.orgId`. Reusing
+the org-scoped helper with the account org is the most likely way to reintroduce
+the very misrouting this milestone fixes.
+
 ## 6. Token broker at the account (IT4)
 
 The broker (`apps/integrations-worker/src/handlers/token-broker.ts`) already does
@@ -144,6 +183,12 @@ logged — unchanged. The **maximum** scope (all account-selected repos) is shar
 so "never mint unscoped" becomes a cross-workspace invariant with its own tests
 (§ risks): a scoping regression that previously leaked within one org would now
 leak across workspaces of the same account.
+
+When admission control (§11) is in force (`share_mode = 'granted'`), the broker
+adds one check **before** repo-link ownership: the actor's workspace must hold an
+active grant on the connection. This is a cheap allow-list lookup, not a policy
+change — it fails closed (no grant ⇒ `403`, identical to an unauthorized repo) and
+collapses to a no-op under the `auto` default.
 
 ## 7. Authorization (the key non-hole)
 
@@ -186,6 +231,17 @@ would re-introduce per-workspace claim walls and stricter fan-out.
   plainly ("uninstalling removes GitHub for this account and all its workspaces").
 - **Promotion**: a standalone org "becomes an account" the moment it gains a child
   — no integration row rewrite, exactly as billing promotion needs none.
+- **Workspace-private connections are unaffected by account-level events.** A
+  parent-side uninstall/suspend cascades only to the **account-shared** connection
+  and its consumers; a workspace's private connection (its own GitHub account) is a
+  separate installation and keeps working. Symmetrically, detaching a workspace
+  does not touch its private connection — only its links *against the account*
+  connection follow the detach rule above. This is a feature: a team can keep its
+  own integration through an account reorganization.
+- **Grant revocation** (§11, `granted` mode): when the account revokes a
+  workspace's admission, that workspace's active `repo_links` against the shared
+  connection must be revoked (or revocation blocked while links exist) — the same
+  block-then-unlink shape chosen for detach (D2), surfaced in the console.
 
 ## 9. What deliberately does NOT change
 
@@ -197,7 +253,12 @@ would re-introduce per-workspace claim walls and stricter fan-out.
 - No change to the scoped-token mint path — only *which connection* it resolves
   and *how access is authorized*.
 - No hierarchical RBAC — authorization stays exact-match; only resource
-  *addressing* resolves to the account.
+  *addressing* resolves to the account. Admission (§11) is a resolution-layer
+  allow-list, not a role: it gates *whether* a workspace reaches the shared
+  connection, never granting it a role in the parent.
+- The resolution seam stays **scope-aware** — applied to `account`-scoped
+  connections only. A handler that resolves a `workspace`-scoped connection up
+  would be a split-brain bug; the IT6 suite asserts against it (§ implementation).
 - **No change to the CLI / state tenancy claim.** The Orun CLI's committed claim
   (`intent.yaml execution.state.workspace`, aliasing the shipped
   `execution.state.org`; `--workspace`/`--org`, `ORUN_WORKSPACE`/`ORUN_ORG` — see
@@ -213,3 +274,103 @@ would re-introduce per-workspace claim walls and stricter fan-out.
   claim land in a sibling's or the account's state scope). The IT6 split-brain
   suite (§ implementation-plan) asserts the seam is applied to the *connection*
   path only.
+
+## 10. Workspace-private connections (IT7)
+
+The blanket "every connection resolves up" rule of the original draft answered the
+shared case but quietly foreclosed a legitimate one: a workspace that wants its
+**own** GitHub integration — a distinct GitHub account it alone cares about,
+independent of whatever the account connected. There is no technical reason to
+forbid it. A different GitHub account is a different `installation_id`, hence a
+different connection; the UNIQUE keystone is untouched. The single-org
+`saas-integrations` already supported exactly this shape (one org, one connection,
+one GitHub account). IT7 simply *preserves* it for a workspace instead of erasing
+it under resolution.
+
+**Mechanism.** Add `connections.scope ∈ {account, workspace}` (default `account`,
+so every existing row is back-compatible). Ownership and resolution become
+scope-aware (§2):
+
+- `scope = 'account'` → owned at `effectiveIntegrationOrg(org)`; shared; resolves
+  up. (Standalone orgs are this scope and collapse to themselves — no change.)
+- `scope = 'workspace'` → owned at `connection.orgId` (the workspace); **never**
+  resolved up; invisible to siblings and to the account.
+
+**Where scope is decided — the surface, not a flag the user toggles.** Connecting
+from the **account** Integrations page creates an `account`-scoped connection;
+connecting from a **workspace** Integrations page creates a `workspace`-scoped one.
+The signed connect state (`payload.o` = the initiating org) already carries enough
+to set scope at setup time; IT7 records it on the row.
+
+**Keystone collision is a helpful redirect, not a dead end.** If a workspace tries
+to connect a GitHub account the account already holds as shared, the
+`installation_id` UNIQUE refuses — but the console must read the existing
+connection's scope and say *"This GitHub account is already connected at the
+account level; link its repos from your Git tab"* rather than the bare "Already
+connected". The reverse (an account trying to absorb an account already held
+privately by a workspace) surfaces the symmetric message. No installation ever
+flips scope silently — changing scope is an explicit, audited operation (out of
+scope for IT7; record as D5 if demanded).
+
+**Why this is low-risk.** A private connection re-uses the *exact* pre-tenancy code
+paths (owner org = the connection's org); it adds no projection, no fan-out, no
+cross-org resolution. The only new surface is the workspace-level connect entry
+point and the scope column. It is, deliberately, the smallest possible departure.
+
+## 11. Admission control & share mode (IT8)
+
+Sharing in the original draft was implicit and total: being a child of the account
+meant automatic, ungoverned access to the account's connection, gated only by
+repo-link ownership. That is the right *default* (least friction, mirrors pooled
+billing) but the wrong *only option* — an account with semi-independent teams needs
+to say "this connection is for workspaces A and C, not everyone." IT8 makes sharing
+**governed without making it RBAC**.
+
+**Share mode** — a column on the connection:
+
+- `auto` (**default**) — every workspace under the account is implicitly admitted.
+  This is exactly today's soft behavior; existing connections need no migration.
+- `granted` — a workspace may consume the connection only if it holds an active
+  **admission grant**.
+
+**Admission grants** — `integrations.connection_grants (connection_id, org_id,
+granted_by, granted_at, status)`, one row per admitted workspace. Under `auto` the
+table is unused (admission is implicit); under `granted` it is the gate. Membership
+in the account is still required — a grant can only name a workspace that is a child
+of the connection's owning account (enforced at write, asserted by the split-brain
+suite).
+
+**Two stacked gates, both fail-closed.** A workspace consuming a shared connection
+must pass, in order:
+
+1. **Admission** — `share_mode = 'auto'` OR an active grant exists. (New, §11.)
+2. **Repo-link ownership** — the workspace owns an active `repo_link` for the repo
+   under that connection. (Existing, §4/§6.)
+
+Both are checked at the three live touchpoints — **repo-link create** (you cannot
+claim a repo on a connection you are not admitted to), the **token broker** (§6),
+and **inbound projection** (§5; an event for a repo whose owning workspace lost
+admission is treated as unlinked → account-scoped or skipped, never leaked). This is
+defense in depth: admission is enforced at claim time, so the broker/projection
+checks are belt-and-suspenders, but they keep the system correct across a
+mid-flight grant revocation.
+
+**Relationship to D1 (soft/hard sibling isolation).** Admission and visibility are
+**orthogonal axes**, and keeping them separate is the point:
+
+- *Admission* (§11) = **who may consume** the connection. `auto` vs `granted`.
+- *Visibility* (D1) = **what an admitted workspace sees** of its siblings' links.
+  Soft (default) = sees its own links + account connection status; hard = siblings'
+  links invisible.
+
+The common postures compose cleanly: `auto` + soft = today's frictionless default;
+`granted` + soft = curated access, shared visibility within the admitted set;
+`granted` + hard = the strictest "need-to-know" posture for regulated accounts.
+Build the stricter combinations on explicit demand (D1, D5) — the schema supports
+all four from day one because the two columns are independent.
+
+**Authorization stays exact-match (A4).** A grant is a row in an allow-list read at
+resolution time, *not* a role in the parent and *not* a hierarchical-RBAC edge. The
+workspace member is still authorized against their own workspace membership; the
+grant only decides whether the resolution seam will hand them the account's
+connection. This is the same trust shape as the seam itself.

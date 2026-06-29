@@ -11,6 +11,18 @@ repo links and events. The `installation_id ↔ connection ↔ org` keystone fro
 `saas-integrations` is preserved untouched — there is still exactly one
 connection per installation, owned by the account.
 
+A connection now carries an explicit **ownership scope** — *account-shared* (the
+case above) or *workspace-private* (a workspace's own GitHub account, owned at the
+workspace and **never** resolved up). And every account-shared connection carries
+a **share mode** — `auto` (default; every workspace under the account may consume
+it, today's soft behavior) or `granted` (the account admits workspaces one by one).
+Both are additive: the seam resolves *up* only for `account`-scoped connections,
+and `auto` is the back-compatible default, so nothing about the headline case
+changes. These two refinements answer the two questions the original draft left
+implicit — *"can a workspace bring its own integration?"* (yes, workspace-private)
+and *"can the account govern who shares the connection?"* (yes, share mode +
+admission grants).
+
 ## Status
 
 | Field | Value |
@@ -20,8 +32,8 @@ connection per installation, owned by the account.
 | Owner(s) | `apps/integrations-worker` + `packages/db` + `apps/api-edge` + `apps/web-console-next` (+ `packages/contracts`/`sdk`) |
 | Target branch | `main` (PRs merged incrementally) |
 | Builds on | `saas-integrations/design.md` §4 (tenancy keystone) + §6 (inbound pipeline) + §7 (token broker); `saas-multi-org-billing/design.md` §4 (`effectiveBillingOrg` resolution seam) + §5 (fan-out); `packages/db/.../180_integrations_foundation`; `packages/db/src/membership/billing-scope.ts` |
-| Decisions locked | Structural: (1) the **integration tenant boundary is the parent (account) org**, resolved by a new `effectiveIntegrationOrg(org) = parentOrgId ?? org.id` seam (twin of `effectiveBillingOrg`); (2) the **credential is resolved UP, never fanned out** — you cannot copy a live installation, so the connection is owned at the parent and read through the seam (entitlements still fan **down** unchanged); (3) the `installation_id` UNIQUE → one-connection keystone is **preserved** — no constraint is relaxed; (4) sibling isolation defaults to **soft** — workspaces share the account's connection and what each sees is scoped by project/policy, mirroring how children already share a billing customer. |
-| Gate | IT1 (the dormant resolution seam) is human-independent and back-compatible. IT2+ live paths need `saas-integrations` IG1/IG2/IG4 landed (connect, inbound, broker) and a registered GitHub App per env. The one product decision — **soft vs hard sibling isolation** — is registered in `risks-and-open-questions.md` (default: soft). |
+| Decisions locked | Structural: (1) the **integration tenant boundary is the parent (account) org** for *account-shared* connections, resolved by a new `effectiveIntegrationOrg(org) = parentOrgId ?? org.id` seam (twin of `effectiveBillingOrg`); (2) the **credential is resolved UP, never fanned out** — you cannot copy a live installation, so the connection is owned at the parent and read through the seam (entitlements still fan **down** unchanged); (3) the `installation_id` UNIQUE → one-connection keystone is **preserved** — no constraint is relaxed; (4) sibling isolation defaults to **soft** — workspaces share the account's connection and what each sees is scoped by project/policy, mirroring how children already share a billing customer; (5) a connection carries an **ownership scope** (`account` \| `workspace`) — the seam resolves up *only* for `account`-scoped connections, so a **workspace-private** connection stays at the workspace (A5); (6) account-shared connections carry a **share mode** (`auto` default \| `granted`) plus an **admission grant** list, so the account governs which workspaces may consume the connection (A6). |
+| Gate | IT1 (the dormant resolution seam) is human-independent and back-compatible. IT2+ live paths need `saas-integrations` IG1/IG2/IG4 landed (connect, inbound, broker) and a registered GitHub App per env. The open product decision — **soft vs hard sibling isolation** (D1) — is registered in `risks-and-open-questions.md` (default: soft). Ownership scope (A5) and share mode (A6) are decided with back-compatible defaults; their finer knobs (grant granularity D5) stay open there. |
 
 ## Thesis
 
@@ -57,12 +69,39 @@ installation — it just lives at the account, where billing already does.
 
 ## Read order
 
-1. `README.md` (this file) — status + thesis + milestones-at-a-glance.
+1. `README.md` (this file) — status + thesis + the connection ownership model +
+   milestones-at-a-glance.
 2. `design.md` — the resolution seam, what resolves up vs down, repo single-claim,
-   webhook projection, the token broker change, authorization, lifecycle.
-3. `implementation-plan.md` — IT1–IT6, each with "done when".
+   webhook projection, the token broker change, authorization, lifecycle,
+   workspace-private connections (§10), admission control & share mode (§11).
+3. `implementation-plan.md` — IT1–IT8, each with "done when".
 4. `risks-and-open-questions.md` — soft-vs-hard sibling isolation, detach
-   behavior, the split-brain-tenancy guard.
+   behavior, the split-brain-tenancy guard, and the ownership-scope / share-mode
+   decisions (A5/A6) with their open sub-questions.
+
+## Connection ownership model (the one diagram to hold in your head)
+
+Every connection answers one question — *which org owns this credential, and who
+may consume it?* There are exactly three shapes, and the keystone
+(`installation_id` UNIQUE) guarantees they never collide on the same GitHub
+account:
+
+| Shape | `connection.scope` | Owner org | Resolved by `effectiveIntegrationOrg`? | Who may consume |
+|-------|--------------------|-----------|----------------------------------------|-----------------|
+| **Standalone** (today) | `account`¹ | the org itself (`parentOrgId` is NULL) | yes, collapses to `org.id` | the org |
+| **Account-shared** | `account` | the parent (account) org | **yes**, resolves up to the parent | workspaces per **share mode** (`auto`: all; `granted`: admitted only) — §11 |
+| **Workspace-private** | `workspace` | the workspace itself | **no** — stays at the workspace, invisible to siblings & the account | that workspace only |
+
+¹ A standalone org and an account both use `scope = 'account'`; the difference is
+purely whether `parentOrgId` is set, exactly as billing already distinguishes them.
+The scope value only ever reads `workspace` for a deliberately private connection.
+
+**Decision rule at connect time:** *where you click decides ownership.* Connecting
+from the **account** Integrations page mints an `account`-scoped connection (shared);
+connecting from a **workspace** Integrations page mints a `workspace`-scoped one
+(private). If a workspace tries to connect a GitHub account the account already
+holds, the keystone refuses — but with a helpful "already connected at the account;
+use the shared connection" instead of a dead end (§10).
 
 ## Milestones at a glance
 
@@ -73,13 +112,15 @@ installation — it just lives at the account, where billing already does.
 | IT3 | Inbound projection: `drain.ts` attributes `installation → account connection → owning workspace org`, exactly-once per workspace | 🗓️ Planned |
 | IT4 | Token broker at the account: resolve the connection via `effectiveIntegrationOrg`, authorize by workspace repo-link ownership, scope token per repo (unchanged scope-down) | 🗓️ Planned |
 | IT5 | Console: connection lives on the **account**; each workspace's Git tab links repos against it; sibling visibility scoping (soft default) | 🗓️ Planned |
-| IT6 | Lifecycle: detach (`clear parent_org_id`) repo-link rule, parent-side uninstall cascade, audit + the split-brain invariant test suite | 🗓️ Planned |
+| IT6 | Lifecycle: detach (`clear parent_org_id`) repo-link rule, parent-side uninstall cascade, audit + the split-brain invariant test suite (now asserts scope-aware resolution) | 🗓️ Planned |
+| IT7 | Workspace-private connections: `connection.scope` column; the seam resolves up only for `account` scope; workspace Integrations surface; keystone-collision UX | 🗓️ Planned |
+| IT8 | Admission control & share mode: `share_mode` (`auto`\|`granted`) + `connection_grants` allow-list; admission gate stacked under repo-link ownership at link/broker/projection; account grant console | 🗓️ Planned |
 
 ## Scope boundary
 
 | In scope | Out of scope |
 |----------|--------------|
-| The `effectiveIntegrationOrg` resolution seam; connection ownership at the account; repo single-claim; webhook projection to workspaces; the token-broker resolution + authorization change; the console surfaces; the detach/uninstall lifecycle rules; the split-brain guard | The base connect/inbound/broker mechanics (owned by `saas-integrations` IG1/IG2/IG4 — consumed as-is); the parent/child org primitive + entitlement fan-out (owned by `saas-multi-org-billing` — consumed as-is); the **Workspace** rebrand of the noun (→ `saas-workspaces`); hard cross-workspace RBAC (a `components/04` follow-up); pooled quotas |
+| The `effectiveIntegrationOrg` resolution seam; connection ownership scope (`account` \| `workspace`); workspace-private connections (IT7); repo single-claim; webhook projection to workspaces; the token-broker resolution + authorization change; **admission control & share mode** (IT8); the console surfaces; the detach/uninstall lifecycle rules; the split-brain guard | The base connect/inbound/broker mechanics (owned by `saas-integrations` IG1/IG2/IG4 — consumed as-is); the parent/child org primitive + entitlement fan-out (owned by `saas-multi-org-billing` — consumed as-is); the **Workspace** rebrand of the noun (→ `saas-workspaces`); **hard, role-based** cross-workspace RBAC (a `components/04` follow-up — admission here is a resolution-layer grant list, not hierarchical roles, A4); pooled quotas |
 
 ## Relationship to existing work
 

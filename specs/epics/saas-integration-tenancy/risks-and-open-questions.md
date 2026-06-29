@@ -2,9 +2,12 @@
 
 Live register of the architecture/product decisions for the epic. IT1 (the
 dormant resolution seam) is safe to build now; the live multi-org paths (IT2+) are
-gated on `saas-integrations` IG1/IG2/IG4 landing and on the one product decision
+gated on `saas-integrations` IG1/IG2/IG4 landing and on the open product decisions
 below. Defaults are chosen to be least-surprising and reversible; **do not
-silently flip a default without recording it here**.
+silently flip a default without recording it here**. The two capabilities the first
+draft left implicit — **workspace-private connections** and **parent admission
+control / share mode** — are now scoped, decided with back-compatible defaults
+(A5/A6), and designed in `design.md` §10–§11; their finer knobs stay open as D5.
 
 ## ⛔ Still open — product decision (do NOT auto-pick the non-default)
 
@@ -17,6 +20,7 @@ silently flip a default without recording it here**.
 | # | Decision | Options | Leaning |
 |---|----------|---------|---------|
 | D2 | **Detach** (`clear parent_org_id`) effect on the workspace's repo links against the account connection | (a) **revoke** the workspace's active links on detach; (b) **block** detach while active links exist (force unlink first) | (b) block-then-unlink — least destructive, symmetric with billing's reversible detach; surface the blocker in the console. |
+| D5 | **Grant granularity & scope-change** (IT8/IT7 follow-ups) | (a) admission grant is whole-connection only vs per-repo; (b) whether an existing connection may **change scope** (account↔workspace) as an explicit audited op, or scope is fixed at connect time | (a) **whole-connection grant** first — per-repo admission is repo-link ownership's job already; add per-repo only on demand. (b) **scope fixed at connect** for v1 — a scope change is a disconnect+reconnect; revisit if customers hit it. |
 
 ## ✅ Decisions made
 
@@ -26,6 +30,8 @@ silently flip a default without recording it here**.
 | A2 | Credential direction | **Resolve up, never fan out.** One connection per installation, owned by the account; entitlements still fan down (MO3, unchanged). |
 | A3 | Keystone | **Preserved.** `installation_id` stays globally `UNIQUE`; no constraint relaxed. |
 | A4 | Authorization model | **Resolution, not hierarchical RBAC.** Exact-match policy (`scope.orgId === orgId`) is untouched; only integration *resource addressing* resolves to the account, gated by the workspace's own repo-link ownership. |
+| A5 | **Connection ownership scope** (workspace-private integrations, IT7) | A connection carries `scope ∈ {account, workspace}`, default `account`. The seam resolves **up only for `account` scope**; a `workspace`-scoped (private) connection is owned at the workspace and never resolved — it reuses the pre-tenancy single-org paths. Scope is set by the connect surface (account vs workspace Integrations page). Keystone unchanged: a given GitHub account still backs exactly one connection of either scope. Answers *"can a workspace bring its own integration?"* — **yes**. |
+| A6 | **Share mode + admission** (parent governance, IT8) | Account-shared connections carry `share_mode ∈ {auto, granted}`, default **`auto`** (= today's soft, ungoverned sharing — back-compatible). `granted` requires an active row in `integrations.connection_grants (connection_id, org_id)`. Admission is a **resolution-layer allow-list**, stacked *before* repo-link ownership at link-create/broker/projection — **not** hierarchical RBAC (A4 holds). Orthogonal to D1 (admission = *who may consume*; D1 = *what siblings see*); all four combinations are schema-supported. Answers *"can the account govern who shares?"* — **yes**. |
 
 ## Security / correctness risks
 
@@ -36,6 +42,9 @@ silently flip a default without recording it here**.
 | **Split-brain tenancy** — some handlers address the connection at the account, others at the raw workspace org | The IT6 invariant suite asserts every read/write resolves through `effectiveIntegrationOrg`; mirror billing's discipline of routing *all* reads through one seam. |
 | **Uninstall blast radius** — a parent-side uninstall removes GitHub for every workspace | Disclosed in the console danger-zone + connection detail; reconciled through the existing lifecycle path with per-org audit. |
 | **Unsolicited / orphaned installs** unchanged | Still recorded as orphaned and surfaced to admin-worker; never auto-bound (fail closed, `saas-integrations` §4). |
+| **Mis-scoped resolution** — a handler resolves a `workspace`-private connection up to the account (leaking a private integration), or fails to resolve an `account`-shared one (misrouting) | The IT6 split-brain suite is **scope-aware**: it asserts shared connections always resolve through `effectiveIntegrationOrg` and private ones never do (design §2/§9, IT7). |
+| **Admission bypass** — a non-admitted workspace claims a repo / mints a token / receives events under `granted` mode | The admission gate is enforced **before** repo-link ownership at all three touchpoints (link-create, broker, projection) and fails closed; grants may only name a child of the owning account; mid-flight revocation block-then-unlinks (design §8/§11, IT8). |
+| **Keystone-collision dead-end** — a workspace tries to privately connect a GitHub account the account already holds (or vice-versa) | The UNIQUE keystone refuses (correct), but the console reads the existing connection's scope and returns a **helpful redirect** ("already connected at the account; link from your Git tab"), not the bare "Already connected" (design §10, IT7). |
 
 ## Dependencies
 
@@ -49,7 +58,10 @@ silently flip a default without recording it here**.
 
 - **No live-data migration risk:** every existing org is standalone
   (`parent_org_id NULL`) and resolves to itself; the seam is dormant until a
-  customer owns an account with workspaces.
+  customer owns an account with workspaces. The IT7/IT8 columns default to today's
+  behavior — `connections.scope = 'account'` and `share_mode = 'auto'` — so the
+  backfill is a no-op and every existing connection behaves exactly as before;
+  workspace-private and `granted` are net-new opt-ins.
 - **Isolation invariant holds:** the exact-match policy boundary is unchanged;
   this epic changes *which org owns the connection*, not how membership is checked.
 - **Orthogonal to `saas-workspaces`:** the mechanism here is independent of what
