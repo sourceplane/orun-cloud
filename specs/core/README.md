@@ -11,6 +11,7 @@ they describe ships** — they remain the authoritative description of the platf
 | [`constitution.md`](./constitution.md) | The non-negotiable platform rules + Definition of Done + change control. |
 | [`product-overview.md`](./product-overview.md) | Product goal, baseline scope, UX baseline. |
 | [`domain-model.md`](./domain-model.md) | Canonical entities and their relationships. |
+| [`vocabulary.md`](./vocabulary.md) | Public **Account / Workspace** vocabulary over the unchanged `organizations` model (the `saas-workspaces` glossary). |
 | [`repo.md`](./repo.md) | Monorepo shape, repo rules, deployment/state model, CI model. |
 | [`access-and-infra.md`](./access-and-infra.md) | Access, Terraform, remote-state, and secret-storage model. |
 | [`orun-golden-path.md`](./orun-golden-path.md) | In-repo Orun composition/CI context. |
