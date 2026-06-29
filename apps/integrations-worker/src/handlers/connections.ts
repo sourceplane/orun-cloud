@@ -139,14 +139,22 @@ export async function handleConnectIntegration(
   }
 
   let displayName: string | null = null;
+  // IT7: the connect surface chooses ownership scope — an account Integrations
+  // page connects 'account' (shared, the default); a workspace Integrations page
+  // connects 'workspace' (private to this org, never resolved up). Default to
+  // 'account' for back-compat when the field is absent.
+  let scope: "account" | "workspace" = "account";
   if (request.headers.get("content-length") !== "0" && request.body) {
     try {
       const body = (await request.json()) as Record<string, unknown>;
       if (typeof body.displayName === "string" && body.displayName.trim()) {
         displayName = body.displayName.trim().slice(0, 200);
       }
+      if (body.scope === "workspace") {
+        scope = "workspace";
+      }
     } catch {
-      // Empty/absent body is fine — displayName is optional.
+      // Empty/absent body is fine — displayName + scope are optional.
     }
   }
 
@@ -167,6 +175,7 @@ export async function handleConnectIntegration(
       id: connectionId,
       orgId,
       provider: "github",
+      scope,
       displayName,
       createdBy: createdByUuid,
       stateNonceHash: nonceHash,

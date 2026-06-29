@@ -36,11 +36,16 @@ export interface PagedResult<T> {
 
 export type ConnectionStatus = "pending" | "active" | "suspended" | "revoked";
 
+/** Ownership scope (IT7): account-shared (resolves up) vs workspace-private. */
+export type ConnectionScope = "account" | "workspace";
+
 export interface IntegrationConnection {
   id: string;
   orgId: string;
   provider: string;
   status: ConnectionStatus;
+  /** Ownership scope (IT7); 'account' for every pre-IT7 / standalone row. */
+  scope: ConnectionScope;
   displayName: string | null;
   externalAccountLogin: string | null;
   externalAccountId: string | null;
@@ -58,6 +63,8 @@ export interface CreateConnectionInput {
   id: string;
   orgId: Uuid;
   provider: string;
+  /** Ownership scope (IT7); defaults to 'account' when omitted. */
+  scope?: ConnectionScope;
   displayName?: string | null;
   createdBy?: string | null;
   /** SHA-256 hex of the single-use signed-state nonce (write-only). */

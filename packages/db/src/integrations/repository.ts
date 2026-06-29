@@ -2,6 +2,7 @@ import type { SqlExecutor } from "../hyperdrive/executor.js";
 import type { Uuid } from "../ids/index.js";
 import type {
   ActivateConnectionInput,
+  ConnectionScope,
   ConnectionStatus,
   CreateConnectionInput,
   CreateRepoLinkInput,
@@ -83,6 +84,8 @@ function mapConnection(row: Record<string, unknown>): IntegrationConnection {
     orgId: row.org_id as string,
     provider: row.provider as string,
     status: row.status as ConnectionStatus,
+    // Pre-IT7 rows (and any executor fake without the column) read 'account'.
+    scope: (row.scope as ConnectionScope) ?? "account",
     displayName: (row.display_name as string) ?? null,
     externalAccountLogin: (row.external_account_login as string) ?? null,
     externalAccountId: (row.external_account_id as string) ?? null,
@@ -219,14 +222,15 @@ export function createIntegrationsRepository(executor: SqlExecutor): Integration
       try {
         const result = await executor.execute<Record<string, unknown>>(
           `INSERT INTO integrations.connections
-             (id, org_id, provider, status, display_name, created_by,
+             (id, org_id, provider, status, scope, display_name, created_by,
               state_nonce_hash, state_expires_at, created_at, updated_at)
-           VALUES ($1, $2, $3, 'pending', $4, $5, $6, $7, now(), now())
+           VALUES ($1, $2, $3, 'pending', $4, $5, $6, $7, $8, now(), now())
            RETURNING *`,
           [
             input.id,
             input.orgId,
             input.provider,
+            input.scope ?? "account",
             input.displayName ?? null,
             input.createdBy ?? null,
             input.stateNonceHash ?? null,

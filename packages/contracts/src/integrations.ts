@@ -25,6 +25,15 @@ export type IntegrationConnectionStatus =
   | "revoked";
 
 /**
+ * Ownership scope of a connection (saas-integration-tenancy IT7):
+ * - "account": shared, owned at the parent account and resolved up to it by
+ *   every workspace under the account (the default and the epic's core case).
+ * - "workspace": private to the owning org, never resolved up — a workspace's
+ *   own GitHub account, invisible to siblings and the account.
+ */
+export type IntegrationConnectionScope = "account" | "workspace";
+
+/**
  * Safe projection of an org ↔ provider connection (a GitHub App
  * installation bound to an organization). Never carries installation ids,
  * tokens, or state nonces.
@@ -36,6 +45,12 @@ export interface PublicConnection {
   orgId: string;
   provider: IntegrationProviderId;
   status: IntegrationConnectionStatus;
+  /**
+   * Ownership scope (IT7): "account" = shared across the parent account's
+   * workspaces (resolves up); "workspace" = private to the owning org, never
+   * resolved up. Defaults to "account".
+   */
+  scope: IntegrationConnectionScope;
   /** Operator-facing label, defaults to the provider account login. */
   displayName: string | null;
   /** Provider-side account login (e.g. GitHub org login). */
