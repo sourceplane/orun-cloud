@@ -38,6 +38,7 @@ describe("Integrations Migration Verification", () => {
       "180_integrations_foundation",
       "190_integrations_delivery_attribution",
       "380_integrations_repo_single_claim",
+      "390_integrations_connection_scope",
     ]) {
       const entry = manifest.migrations.find((m) => m.id === id)!;
       const content = readFileSync(resolve(MIGRATIONS_ROOT, entry.path));
@@ -66,6 +67,17 @@ describe("Integrations Migration Verification", () => {
     expect(sql).toContain("WHERE status = 'active'");
     // The existing per-project guard must NOT be dropped/altered here.
     expect(sql).not.toMatch(/DROP\s+INDEX/i);
+  });
+
+  it("390 adds connection.scope additively with a CHECK (IT7)", () => {
+    const sql = readFileSync(
+      resolve(MIGRATIONS_ROOT, "390_integrations_connection_scope/up.sql"),
+      "utf-8",
+    );
+    expect(sql).toContain("ADD COLUMN IF NOT EXISTS scope TEXT NOT NULL DEFAULT 'account'");
+    expect(sql).toContain("chk_integrations_connections_scope");
+    expect(sql).toMatch(/CHECK \(scope IN \('account', 'workspace'\)\)/);
+    expect(sql).not.toMatch(/DROP\s+(COLUMN|TABLE)/i);
   });
 
   describe("integrations SQL schema validation", () => {

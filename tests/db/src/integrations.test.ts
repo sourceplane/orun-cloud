@@ -122,11 +122,30 @@ describe("IntegrationsRepository — connections", () => {
     if (result.ok) {
       expect(result.value.status).toBe("pending");
       expect(result.value.orgId).toBe(ORG_ID);
+      expect(result.value.scope).toBe("account"); // IT7: default ownership scope
     }
     expect(queries).toHaveLength(1);
     expect(queries[0]!.text).toContain("integrations.connections");
     expect(queries[0]!.text).toContain("'pending'");
     expect(queries[0]!.params).toContain("abc123hash");
+    expect(queries[0]!.params).toContain("account"); // scope param
+  });
+
+  it("creates a workspace-private connection when scope is given (IT7)", async () => {
+    const { executor, queries } = createFakeExecutor({
+      rows: [{ ...SAMPLE_CONNECTION_ROW, scope: "workspace" }],
+    });
+    const repo = createIntegrationsRepository(executor);
+    const result = await repo.createConnection({
+      id: CONNECTION_ID,
+      orgId: ORG_ID,
+      provider: "github",
+      scope: "workspace",
+    });
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.value.scope).toBe("workspace");
+    expect(queries[0]!.text).toContain("scope");
+    expect(queries[0]!.params).toContain("workspace");
   });
 
   it("maps a unique violation to a conflict error", async () => {

@@ -354,5 +354,14 @@ export const manifest: MigrationManifest = {
       description:
         "One active claim per repo per connection (saas-integration-tenancy IT2) — adds the partial unique uq_integrations_repo_claim (connection_id, repo_external_id) WHERE status='active' so two workspaces under one shared (account-owned) connection cannot both hold an active link to the same repo. Complements the existing per-project unique; additive + idempotent; back-compatible since every existing org is standalone.",
     },
+    {
+      id: "390_integrations_connection_scope",
+      context: "integrations",
+      path: "390_integrations_connection_scope/up.sql",
+      checksum:
+        "2223f09c944e563965e543eea406699664d022a88d60dab3a39bda71c08b2d10",
+      description:
+        "Connection ownership scope (saas-integration-tenancy IT7) — adds connections.scope ('account'|'workspace') default 'account' with a CHECK. 'account' is the shared, resolve-up connection; 'workspace' is a workspace's own GitHub account, owned at the workspace and never resolved up. Additive + idempotent; the backfill is a no-op so existing rows are unchanged.",
+    },
   ],
 };

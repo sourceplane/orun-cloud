@@ -208,9 +208,36 @@ describe("POST .../integrations/github/connect", () => {
     expect(state).toBeTruthy();
 
     // The DB stores the SHA-256 of the nonce, never the raw nonce or state.
-    const storedNonceHash = insertedParams[5] as string;
+    // Param order: id, orgId, provider, scope, displayName, createdBy,
+    // stateNonceHash, stateExpiresAt — the nonce hash is index 6 (IT7 inserted
+    // `scope` at index 3).
+    expect(insertedParams[3]).toBe("account"); // default ownership scope
+    const storedNonceHash = insertedParams[6] as string;
     expect(storedNonceHash).toMatch(/^[0-9a-f]{64}$/);
     expect(state).not.toContain(storedNonceHash);
+  });
+
+  it("records a workspace-private connection when the surface asks for it (IT7)", async () => {
+    const env = createEnv();
+    let insertedParams: unknown[] = [];
+    const { executor } = fakeExecutor((text, params) => {
+      if (text.includes("INSERT INTO integrations.connections")) {
+        insertedParams = params;
+        return [pendingRow({ id: params[0] as string, scope: "workspace" })];
+      }
+      return [];
+    });
+
+    const req = new Request("https://worker.test/v1/organizations/x/integrations/github/connect", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ scope: "workspace" }),
+    });
+    const res = await handleConnectIntegration(req, env, "req_1", ACTOR, ORG_ID, { executor });
+    expect(res.status).toBe(201);
+    expect(insertedParams[3]).toBe("workspace"); // recorded from the request
+    const data = (await json(res)).data as Record<string, unknown>;
+    expect((data.connection as Record<string, unknown>).scope).toBe("workspace");
   });
 });
 

@@ -20,6 +20,7 @@ export function toPublicConnection(connection: IntegrationConnection): PublicCon
     orgId: orgPublicId(connection.orgId),
     provider: connection.provider as IntegrationProviderId,
     status: connection.status,
+    scope: connection.scope,
     displayName: connection.displayName,
     externalAccountLogin: connection.externalAccountLogin,
     externalAccountType: connection.externalAccountType,
