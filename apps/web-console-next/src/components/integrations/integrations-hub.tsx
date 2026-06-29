@@ -30,8 +30,11 @@ import { useSession } from "@/lib/session";
 import { useApiQuery, qk } from "@/lib/query";
 import {
   connectionDisplayName,
+  connectionScopeMeta,
+  connectionShareModeMeta,
   connectionStatusMeta,
   hasPendingConnection,
+  uninstallDisclosure,
   visibleConnections,
 } from "@/components/integrations/connections";
 import { roadmapProviders } from "@/components/integrations/providers";
@@ -175,17 +178,22 @@ export function IntegrationsHub({ orgId, orgSlug }: { orgId: string; orgSlug: st
             <ul className="divide-y divide-border">
               {visible.map((connection) => {
                 const meta = connectionStatusMeta(connection.status);
+                const scopeMeta = connectionScopeMeta(connection.scope);
+                const shareMeta = connectionShareModeMeta(connection);
                 return (
                   <li key={connection.id} className="flex items-center justify-between gap-4 py-3">
                     <div className="min-w-0">
-                      <div className="flex items-center gap-2">
+                      <div className="flex flex-wrap items-center gap-2">
                         <span className="truncate text-sm font-medium">
                           {connectionDisplayName(connection)}
                         </span>
                         <Badge variant={meta.tone === "default" ? "secondary" : meta.tone}>
                           {meta.label}
                         </Badge>
+                        <Badge variant="outline">{scopeMeta.label}</Badge>
+                        {shareMeta ? <Badge variant="outline">{shareMeta.label}</Badge> : null}
                       </div>
+                      <div className="text-xs text-muted-foreground">{scopeMeta.description}</div>
                       <div className="text-xs text-muted-foreground">
                         {connection.externalAccountType ?? "GitHub"}
                         {connection.connectedAt
@@ -246,7 +254,11 @@ export function IntegrationsHub({ orgId, orgSlug }: { orgId: string; orgSlug: st
           if (!open) setRevokeTarget(null);
         }}
         title="Revoke GitHub connection?"
-        description="The platform stops receiving events for this installation and any linked repositories stop updating. This also uninstalls the App from GitHub when possible."
+        description={
+          revokeTarget
+            ? uninstallDisclosure(revokeTarget)
+            : "The platform stops receiving events for this installation and any linked repositories stop updating. This also uninstalls the App from GitHub when possible."
+        }
         resourceName={revokeTarget ? connectionDisplayName(revokeTarget) : undefined}
         confirmLabel="Revoke connection"
         onConfirm={async () => {
