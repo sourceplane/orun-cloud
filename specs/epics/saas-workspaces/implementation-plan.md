@@ -3,8 +3,8 @@
 Each milestone is a candidate scope for one coherent PR-sized task. The whole
 epic is additive and back-compatible — nothing here removes `organization`
 surfaces; it layers Account/Workspace vocabulary over the shipped
-`saas-multi-org-billing` parent/child model. Status markers reflect that nothing
-here is built yet.
+`saas-multi-org-billing` parent/child model. **All milestones (WS1–WS5) have
+shipped** across `sourceplane/orun-cloud` and the Go CLI in `sourceplane/orun`.
 
 ## WS1 — Glossary + vocabulary decision — ✅ Shipped (`specs/core/vocabulary.md`)
 
@@ -78,7 +78,7 @@ Serve `/v1/workspaces/*` as aliases without forking handlers.
   usable both as the Account and as a Workspace; no billing/gating behavior
   changed.
 
-## WS5 — Docs + deprecation policy — 🗓️ Planned
+## WS5 — Docs + deprecation policy — ✅ Shipped
 
 - Public docs adopt Account/Workspace; map them to the legacy `organization` term.
 - Decide + record the coexistence window for `/v1/organizations/*` and the

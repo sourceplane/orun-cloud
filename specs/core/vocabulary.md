@@ -51,9 +51,17 @@ disambiguate them:
   (`effectiveIntegrationOrg`, `saas-integration-tenancy`). That is a server-side
   resolution; the CLI claim and `state.workspace_links` stay workspace-local.
 
-## Back-compat
+## Back-compat & deprecation policy (published — WS5)
 
 Nothing is removed. `/v1/organizations/*`, the `orgId` field, the SDK
 `organizations` namespace, and `--org`/`execution.state.org` all keep working
-indefinitely within the deprecation window (`saas-workspaces` WS5 / risk D4). The
-Workspace surface is purely additive.
+**indefinitely** — there is no removal date (decision D4). The Workspace surface
+is purely additive.
+
+- **Legacy surface coexistence:** indefinite; removing it is a breaking change
+  that requires a separate, announced migration with customer notice.
+- **Event/audit taxonomy:** stays `org.*` internally and on the wire (decision
+  D3) — event names are a stable contract and are **not** forked to `workspace.*`.
+- The normative statement of this policy lives in
+  [`contracts/api-guidelines.md`](./contracts/api-guidelines.md) (§ Public
+  vocabulary / § Deprecation & coexistence policy).
