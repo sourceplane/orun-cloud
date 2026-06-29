@@ -71,9 +71,9 @@ export function DetailDrawer({
         type="button"
         aria-label="Close detail"
         onClick={onClose}
-        className="absolute inset-0 z-[5] animate-fade-in bg-black/50"
+        className="absolute inset-0 z-[5] animate-fade-in bg-foreground/10 backdrop-blur-[2px]"
       />
-      <aside className="absolute inset-y-0 right-0 z-[6] flex w-[512px] max-w-[92vw] animate-slide-in-right flex-col overflow-hidden border-l border-l-border bg-card shadow-[-28px_0_90px_hsl(0_0%_0%/0.6)]">
+      <aside className="absolute inset-y-0 right-0 z-[6] flex w-[512px] max-w-[92vw] animate-slide-in-right flex-col overflow-hidden border-l border-l-border bg-card shadow-[-16px_0_48px_hsl(0_0%_0%/0.18)]">
         <div className="min-h-0 flex-1 overflow-y-auto">
           {/* identity */}
           <div className={`px-[18px] pb-4 pt-[18px] ${SECTION}`}>
@@ -119,10 +119,10 @@ export function DetailDrawer({
             <button
               type="button"
               onClick={onOpenPage}
-              className="mt-3.5 flex h-[34px] w-full items-center justify-center gap-[7px] rounded-[8px] border-none bg-primary text-[12.5px] font-semibold text-primary-foreground hover:brightness-110"
+              className="mt-3.5 flex h-[34px] w-full items-center justify-center gap-[7px] rounded-[8px] border border-border bg-foreground/[0.04] text-[12.5px] font-medium text-foreground transition-colors hover:bg-foreground/[0.07]"
             >
               Open full service page
-              <ArrowUpRight className="h-3.5 w-3.5" strokeWidth={2.4} />
+              <ArrowUpRight className="h-3.5 w-3.5 text-muted-foreground" strokeWidth={2} />
             </button>
           </div>
 
@@ -258,10 +258,10 @@ export function DetailDrawer({
               <button
                 type="button"
                 onClick={onViewMap}
-                className="ml-auto flex items-center gap-1 bg-transparent text-[11px] text-primary"
+                className="ml-auto flex items-center gap-1 bg-transparent text-[11px] text-muted-foreground transition-colors hover:text-foreground"
               >
                 View map
-                <ArrowUpRight className="h-[11px] w-[11px]" strokeWidth={2.4} />
+                <ArrowUpRight className="h-[11px] w-[11px]" strokeWidth={2} />
               </button>
             </div>
             {sel.hasDeps ? (

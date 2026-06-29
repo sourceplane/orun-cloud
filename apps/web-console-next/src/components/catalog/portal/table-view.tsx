@@ -4,15 +4,34 @@
  */
 
 import * as React from "react";
-import { Search, Workflow, ChevronRight } from "lucide-react";
+import { Search, Workflow, ChevronRight, PanelRight } from "lucide-react";
 import type { CatalogService } from "@/lib/catalog-portal/model";
 import type { DecoratedService } from "@/lib/catalog-portal/model";
 import type { CatalogGroup, SortDir, SortKey } from "@/lib/catalog-portal/filter";
 import { PathIcon } from "./icon";
 
+// A trailing 44px lane reserves room at the right edge of every row for the
+// (hover-revealed) quick-view button, so it never overlaps the "Updated" cell.
 const GRID =
-  "grid-cols-[minmax(200px,2.3fr)_132px_104px_116px_minmax(132px,1.5fr)_56px_88px]";
+  "grid-cols-[minmax(200px,2.3fr)_132px_104px_116px_minmax(132px,1.5fr)_56px_88px_44px]";
 const HEAD_CELL = "text-[11px] font-semibold uppercase tracking-[0.05em] text-muted-foreground/80";
+
+// Quick-view affordance shared by the row and card. Calm by default: it stays
+// out of the way (invisible until the row is hovered or keyboard-focused), and
+// reads as a quiet neutral control rather than a coloured call-to-action.
+function QuickViewButton({ onClick }: { onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      aria-label="Quick view"
+      title="Quick view"
+      onClick={onClick}
+      className="absolute right-2 top-1/2 grid h-7 w-7 -translate-y-1/2 place-items-center rounded-[7px] border border-transparent bg-transparent text-muted-foreground/70 opacity-0 transition-[opacity,color,background-color,border-color] hover:border-border hover:bg-muted hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100 group-focus-within:opacity-100"
+    >
+      <PanelRight className="h-[15px] w-[15px]" strokeWidth={1.8} />
+    </button>
+  );
+}
 
 function SortHeader({
   label,
@@ -40,41 +59,46 @@ function SortHeader({
 // Memoized so moving the selection (or typing in search) only re-renders the
 // rows whose props actually change — not the whole list (PERF C3). This relies
 // on `d` being referentially stable (the portal memoizes decoration per
-// dataset) and on the `onSelect`/`onOpen` callbacks being stable identities.
+// dataset) and on the `onOpen`/`onQuickView` callbacks being stable identities.
+//
+// A single click opens the full service page (the primary action). The
+// quick-view drawer is opt-in via the trailing button, which is rendered as a
+// sibling (not nested inside this row button — that would be invalid markup)
+// and overlaid on the reserved trailing lane.
 const Row = React.memo(function Row({
   d,
   selected,
   showRefs,
   dense,
-  onSelect,
   onOpen,
+  onQuickView,
   onIntent,
 }: {
   d: DecoratedService;
   selected: boolean;
   showRefs: boolean;
   dense: boolean;
-  onSelect: (key: string) => void;
   onOpen: (key: string) => void;
+  onQuickView?: ((key: string) => void) | undefined;
   onIntent?: ((key: string) => void) | undefined;
 }) {
   return (
-    <button
-      type="button"
-      data-row
-      data-entitykey={d.key}
-      onMouseEnter={onIntent ? () => onIntent(d.key) : undefined}
-      onFocus={onIntent ? () => onIntent(d.key) : undefined}
-      onClick={() => onSelect(d.key)}
-      onDoubleClick={() => onOpen(d.key)}
-      className={`relative grid w-full ${GRID} items-center gap-2.5 border-none border-b border-b-border pl-3.5 pr-4 text-left transition-colors hover:bg-foreground/[0.022]`}
-      style={{
-        ...(selected ? { background: "hsl(var(--primary) / 0.07)" } : {}),
-        minHeight: dense ? "44px" : "56px",
-        paddingTop: dense ? "6px" : "9px",
-        paddingBottom: dense ? "6px" : "9px",
-      }}
-    >
+    <div className="group relative">
+      <button
+        type="button"
+        data-row
+        data-entitykey={d.key}
+        onMouseEnter={onIntent ? () => onIntent(d.key) : undefined}
+        onFocus={onIntent ? () => onIntent(d.key) : undefined}
+        onClick={() => onOpen(d.key)}
+        className={`relative grid w-full ${GRID} items-center gap-2.5 border-none border-b border-b-border pl-3.5 pr-4 text-left transition-colors hover:bg-foreground/[0.022]`}
+        style={{
+          ...(selected ? { background: "hsl(var(--primary) / 0.07)" } : {}),
+          minHeight: dense ? "44px" : "56px",
+          paddingTop: dense ? "6px" : "9px",
+          paddingBottom: dense ? "6px" : "9px",
+        }}
+      >
       <span
         className="absolute bottom-2 left-0 top-2 w-0.5 rounded-[2px]"
         style={{ background: selected ? "hsl(var(--primary))" : "transparent" }}
@@ -164,24 +188,27 @@ const Row = React.memo(function Row({
       </span>
       {/* updated */}
       <span className="text-[12px] text-muted-foreground/80">{d.deployLabel}</span>
-    </button>
+      </button>
+      {onQuickView ? <QuickViewButton onClick={() => onQuickView(d.key)} /> : null}
+    </div>
   );
 });
 
 // Mobile card — the table collapses to a stacked, thumb-friendly card on small
 // screens (the 7-column grid is unreadable below ~900px and forced an awful
-// horizontal scroll). A single tap selects the service and opens the detail
-// sheet, mirroring the desktop single-click. Everything the row showed survives,
-// re-flowed into a scannable header + meta strip.
+// horizontal scroll). A single tap opens the full service page (there is no
+// peek drawer on phones, so the tap goes straight to the destination — hence
+// the trailing chevron). Everything the row showed survives, re-flowed into a
+// scannable header + meta strip.
 const MobileCard = React.memo(function MobileCard({
   d,
   selected,
-  onSelect,
+  onOpen,
   onIntent,
 }: {
   d: DecoratedService;
   selected: boolean;
-  onSelect: (key: string) => void;
+  onOpen: (key: string) => void;
   onIntent?: ((key: string) => void) | undefined;
 }) {
   return (
@@ -190,7 +217,7 @@ const MobileCard = React.memo(function MobileCard({
       data-row
       data-entitykey={d.key}
       onPointerDown={onIntent ? () => onIntent(d.key) : undefined}
-      onClick={() => onSelect(d.key)}
+      onClick={() => onOpen(d.key)}
       className="relative flex w-full flex-col gap-2.5 border-b border-b-border px-4 py-3.5 text-left transition-colors active:bg-foreground/[0.03]"
       style={selected ? { background: "hsl(var(--primary) / 0.07)" } : undefined}
     >
@@ -269,8 +296,8 @@ export function TableView({
   sortDir,
   onSort,
   selectedKey,
-  onSelect,
   onOpen,
+  onQuickView,
   onIntent,
   showRefs,
   dense,
@@ -284,8 +311,10 @@ export function TableView({
   sortDir: SortDir;
   onSort: (k: SortKey) => void;
   selectedKey: string | null;
-  onSelect: (key: string) => void;
+  /** Open the full service page — the primary single-click/tap action. */
   onOpen: (key: string) => void;
+  /** Open the quick-view drawer (desktop only) — omitted hides the button. */
+  onQuickView?: ((key: string) => void) | undefined;
   /** Warm the entity route's data on hover/focus (PERF G3) — optional. */
   onIntent?: (key: string) => void;
   showRefs: boolean;
@@ -305,8 +334,8 @@ export function TableView({
           selected={selectedKey === d.key}
           showRefs={showRefs}
           dense={dense}
-          onSelect={onSelect}
           onOpen={onOpen}
+          onQuickView={onQuickView}
           onIntent={onIntent}
         />
       );
@@ -320,7 +349,7 @@ export function TableView({
           key={d.key}
           d={d}
           selected={selectedKey === d.key}
-          onSelect={onSelect}
+          onOpen={onOpen}
           onIntent={onIntent}
         />
       );
@@ -378,6 +407,8 @@ export function TableView({
             />
             <span className={HEAD_CELL}>Deps</span>
             <SortHeader label="Updated" active={sortKey === "deploy"} dir={sortDir} onClick={() => onSort("deploy")} />
+            {/* trailing lane for the per-row quick-view button */}
+            <span aria-hidden />
           </div>
           {/* rows */}
           <div className="min-h-0 flex-1 overflow-y-auto">
