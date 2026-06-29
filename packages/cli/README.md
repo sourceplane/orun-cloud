@@ -27,16 +27,20 @@ orun-cloud whoami
 Reads (Task 0100):
 
 ```
-orun-cloud org list
-orun-cloud org use <org-id>
-orun-cloud org members
+orun-cloud workspace list
+orun-cloud workspace use <workspace-id>
+orun-cloud workspace members
 orun-cloud project list
 ```
+
+> **Workspace vocabulary (saas-workspaces WS3).** `workspace` is the leading
+> spelling; `org` is retained as an alias (`orun-cloud org list`, `--org=ID`).
+> A Workspace is any organization in your account; ids are unchanged (`org_*`).
 
 Writes (Task 0101):
 
 ```
-orun-cloud org invite <email> [--role=ROLE] [--idempotency-key=KEY] [--org=ORG_ID]
+orun-cloud workspace invite <email> [--role=ROLE] [--idempotency-key=KEY] [--workspace=ID]
 orun-cloud project create <name> [--idempotency-key=KEY]
 orun-cloud env create <project-id> <name> [--idempotency-key=KEY]
 orun-cloud api-key create <name> [--scope=SCOPE] [--idempotency-key=KEY]

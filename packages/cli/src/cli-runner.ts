@@ -166,6 +166,12 @@ function buildRouter(opts: RunOptions): Router {
   r.register(["org", "use"], "Set the active organization", orgUseCommand);
   r.register(["org", "members"], "List members of the active organization", orgMembersCommand);
   r.register(["org", "invite"], "Invite a member to an organization", orgInviteCommand);
+  // Workspaces — public alias of `org` (saas-workspaces WS3). Same handlers; a
+  // Workspace is any org in the account. `org` stays as the legacy spelling.
+  r.register(["workspace", "list"], "List workspaces the actor belongs to", orgListCommand);
+  r.register(["workspace", "use"], "Set the active workspace", orgUseCommand);
+  r.register(["workspace", "members"], "List members of the active workspace", orgMembersCommand);
+  r.register(["workspace", "invite"], "Invite a member to a workspace", orgInviteCommand);
   // Projects
   r.register(["project", "list"], "List projects in the active organization", projectListCommand);
   r.register(["project", "create"], "Create a project in the active organization", projectCreateCommand);
@@ -208,11 +214,12 @@ function printHelp(stdout: (line: string) => void): void {
       `  ${CLI_BIN} logout`,
       `  ${CLI_BIN} whoami`,
       "",
-      "ORGANIZATIONS:",
-      `  ${CLI_BIN} org list`,
-      `  ${CLI_BIN} org use <org-id>`,
-      `  ${CLI_BIN} org members`,
-      `  ${CLI_BIN} org invite <email> [--role=ROLE] [--idempotency-key=KEY] [--org=ORG_ID]`,
+      "WORKSPACES:",
+      `  ${CLI_BIN} workspace list`,
+      `  ${CLI_BIN} workspace use <workspace-id>`,
+      `  ${CLI_BIN} workspace members`,
+      `  ${CLI_BIN} workspace invite <email> [--role=ROLE] [--idempotency-key=KEY] [--workspace=ID]`,
+      `  (aliased as ${CLI_BIN} org … / --org=ID — the legacy spelling)`,
       "",
       "PROJECTS / ENVIRONMENTS:",
       `  ${CLI_BIN} project list`,

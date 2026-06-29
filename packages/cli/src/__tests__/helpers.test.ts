@@ -133,6 +133,36 @@ describe("resolveOrgId", () => {
       },
     );
   });
+
+  // saas-workspaces WS3/A4: `--workspace` is the leading spelling of `--org`.
+  it("returns the --workspace flag value when allowOverride=true", async () => {
+    await withCtx(
+      { workspace: "org_ws" },
+      { activeOrgId: "org_persisted" },
+      async (ctx) => {
+        expect(await resolveOrgId(ctx, true)).toBe("org_ws");
+      },
+    );
+  });
+
+  it("prefers --workspace over the legacy --org when both are passed (A4)", async () => {
+    await withCtx({ workspace: "org_ws", org: "org_legacy" }, {}, async (ctx) => {
+      expect(await resolveOrgId(ctx, true)).toBe("org_ws");
+    });
+  });
+
+  it("still honours the legacy --org when --workspace is absent or empty", async () => {
+    await withCtx({ org: "org_legacy" }, {}, async (ctx) => {
+      expect(await resolveOrgId(ctx, true)).toBe("org_legacy");
+    });
+    await withCtx(
+      { workspace: "", org: "org_legacy" },
+      {},
+      async (ctx) => {
+        expect(await resolveOrgId(ctx, true)).toBe("org_legacy");
+      },
+    );
+  });
 });
 
 // ---- readIdempotencyKey --------------------------------------------------

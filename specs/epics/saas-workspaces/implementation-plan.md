@@ -35,7 +35,11 @@ Serve `/v1/workspaces/*` as aliases without forking handlers.
   alias returning identical results; old routes/fields are unchanged; contract
   tests cover both spellings.
 
-## WS3 — SDK / CLI vocabulary — 🗓️ Planned
+## WS3 — SDK / CLI vocabulary — ✅ Shipped
+
+> SDK `workspaces` namespace + `@saas/cli` `workspace` commands (this repo); the
+> customer-facing Go `orun` CLI shipped in `sourceplane/orun#429`.
+
 
 - `packages/sdk`: add a `workspaces` namespace aliasing `organizations` (same ids,
   same client); retain `organizations` with a deprecation note.

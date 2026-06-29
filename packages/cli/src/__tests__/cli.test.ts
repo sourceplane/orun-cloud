@@ -34,7 +34,7 @@ describe("cli — argv routing", () => {
     });
     expect(result.exitCode).toBe(0);
     expect(out.stdout.join("\n")).toContain("USAGE:");
-    expect(out.stdout.join("\n")).toContain("orun-cloud org list");
+    expect(out.stdout.join("\n")).toContain("orun-cloud workspace list");
   });
 
   it("no argv prints help and exits 0", async () => {
