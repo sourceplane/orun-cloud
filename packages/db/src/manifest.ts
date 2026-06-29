@@ -345,5 +345,14 @@ export const manifest: MigrationManifest = {
       description:
         "Git-authored portal fields on the org catalog projection (saas-catalog-portal CP4) — adds nullable description / system / language and a tags JSONB to state.org_catalog_entities, plus idx_state_org_catalog_entities_system. Projected from the snapshot (orun objcatalog CPF0), derived never authored; additive so older rows read null and the console degrades.",
     },
+    {
+      id: "380_integrations_repo_single_claim",
+      context: "integrations",
+      path: "380_integrations_repo_single_claim/up.sql",
+      checksum:
+        "2614b9526786ad93b1633df862b79d6cb9f71d0ba61ab082a87badbf955ddb81",
+      description:
+        "One active claim per repo per connection (saas-integration-tenancy IT2) — adds the partial unique uq_integrations_repo_claim (connection_id, repo_external_id) WHERE status='active' so two workspaces under one shared (account-owned) connection cannot both hold an active link to the same repo. Complements the existing per-project unique; additive + idempotent; back-compatible since every existing org is standalone.",
+    },
   ],
 };

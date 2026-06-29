@@ -302,7 +302,9 @@ describe("IntegrationsRepository — repo links", () => {
     expect(queries[0]!.params[2]).toBe(PROJECT_ID);
   });
 
-  it("maps duplicate active links to conflict", async () => {
+  it("maps a same-project duplicate to a repo_link conflict", async () => {
+    // Per-project unique (uq_integrations_repo_link_project_repo) or an
+    // unnamed unique violation falls back to the project-scoped reason.
     const { executor } = createFakeExecutor({ error: { code: "23505" } });
     const repo = createIntegrationsRepository(executor);
     const result = await repo.createRepoLink({
@@ -316,6 +318,27 @@ describe("IntegrationsRepository — repo links", () => {
     expect(result.ok).toBe(false);
     if (!result.ok) {
       expect(result.error).toEqual({ kind: "conflict", entity: "repo_link" });
+    }
+  });
+
+  it("maps a cross-workspace claim (IT2) to a repo_claim conflict", async () => {
+    // The connection-scoped single-claim (uq_integrations_repo_claim) means
+    // another workspace already claimed this repo under the shared connection.
+    const { executor } = createFakeExecutor({
+      error: { code: "23505", constraint: "uq_integrations_repo_claim" },
+    });
+    const repo = createIntegrationsRepository(executor);
+    const result = await repo.createRepoLink({
+      id: LINK_ID,
+      orgId: ORG_ID,
+      projectId: PROJECT_ID,
+      connectionId: CONNECTION_ID,
+      repoExternalId: "777",
+      repoFullName: "acme/storefront",
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error).toEqual({ kind: "conflict", entity: "repo_claim" });
     }
   });
 

@@ -210,7 +210,7 @@ describe("POST .../projects/{id}/repo-links", () => {
     expect(res.status).toBe(404);
   });
 
-  it("maps duplicate active links to 409", async () => {
+  it("maps a same-project duplicate to 409 (project reason)", async () => {
     const { executor } = fakeExecutor((text) => {
       if (text.includes("FROM integrations.connections WHERE org_id")) return [connectionRow()];
       if (text.includes("COUNT(*)::int")) return [{ count: 0 }];
@@ -227,6 +227,30 @@ describe("POST .../projects/{id}/repo-links", () => {
       { executor },
     );
     expect(res.status).toBe(409);
+    const body = (await res.json()) as { error: { details?: { reason?: string } } };
+    expect(body.error.details?.reason).toBe("repository_already_linked_to_project");
+  });
+
+  it("maps a cross-workspace claim (IT2) to 409 with the claimed reason", async () => {
+    const { executor } = fakeExecutor((text) => {
+      if (text.includes("FROM integrations.connections WHERE org_id")) return [connectionRow()];
+      if (text.includes("COUNT(*)::int")) return [{ count: 0 }];
+      if (text.includes("INSERT INTO integrations.repo_links"))
+        throw { code: "23505", constraint: "uq_integrations_repo_claim" };
+      return [];
+    });
+    const res = await handleCreateRepoLink(
+      createRequest(VALID_BODY),
+      createEnv(),
+      "req_1",
+      ACTOR,
+      asUuid(ORG_UUID),
+      asUuid(PROJECT_UUID),
+      { executor },
+    );
+    expect(res.status).toBe(409);
+    const body = (await res.json()) as { error: { details?: { reason?: string } } };
+    expect(body.error.details?.reason).toBe("repository_claimed_by_another_workspace");
   });
 });
 
