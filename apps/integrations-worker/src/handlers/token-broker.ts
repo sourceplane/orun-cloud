@@ -2,8 +2,11 @@
 // credential for a short-lived, repo-scoped GitHub installation token.
 //
 // Invariants (R4):
-//   - requested repositories must each match an ACTIVE repo link in the org,
-//     and all resolve to one connection
+//   - requested repositories must each match an ACTIVE repo link OWNED BY the
+//     actor's workspace, and all resolve to one connection. Authorization is by
+//     repo-link ownership (IT4): the connection may be account-shared (its org
+//     the parent account, not the actor's workspace), but a workspace can only
+//     mint for repos IT claimed — a sibling's repo has no link here and is denied.
 //   - requested permissions must be ⊆ the App's granted permissions
 //     (deny-by-default; write requires granted write)
 //   - the token is minted fresh, scoped down by GitHub itself, returned
@@ -187,7 +190,15 @@ export async function handleIssueGithubToken(
       repositoryIds.push(numeric);
     }
 
-    const connection = await repo.getConnection(orgId, asUuid(connectionId!));
+    // IT4: authorize by repo-link OWNERSHIP, not connection-org equality. The
+    // connectionId came from this workspace's own active links (the loop above
+    // is workspace-scoped), so the workspace has already proven it owns links on
+    // this connection. Resolve the connection by id — under an account-shared
+    // connection its org is the account, not the actor's workspace, so the old
+    // org-scoped getConnection(orgId, …) would wrongly 412. A sibling's repo is
+    // denied earlier ("repository_not_linked") because it is not in this
+    // workspace's links. design §6.
+    const connection = await repo.getConnectionById(asUuid(connectionId!));
     if (!connection.ok || connection.value.status !== "active") {
       return errorResponse(
         "precondition_failed",
@@ -210,6 +221,14 @@ export async function handleIssueGithubToken(
         requestId,
         { reason: "permissions_exceed_grant" },
       );
+    }
+
+    // IT4 hard invariant — NEVER mint unscoped. The max scope (all account-
+    // selected repos) is shared across workspaces, so a regression that elided
+    // the repo scope would leak across the whole account, not just one org.
+    // repositoryIds is validated non-empty above; this is the last-line guard.
+    if (repositoryIds.length === 0 || repositoryIds.length !== repositories.length) {
+      return errorResponse("internal_error", "Refusing to mint an unscoped token", 500, requestId);
     }
 
     const jwt = await mintAppJwt(env.GITHUB_APP_ID, env.GITHUB_APP_PRIVATE_KEY, Date.now());
