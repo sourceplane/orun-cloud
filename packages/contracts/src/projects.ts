@@ -1,6 +1,12 @@
 export interface PublicProject {
   id: string;
   orgId: string;
+  /**
+   * Public Workspace alias of `orgId` (same opaque `org_*` id). Present on the
+   * `/v1/workspaces/*` surface; omitted on the legacy `/v1/organizations/*`
+   * surface. See `specs/core/vocabulary.md` (saas-workspaces WS2).
+   */
+  workspaceId?: string;
   name: string;
   slug: string;
   status: string;
@@ -33,6 +39,11 @@ export interface ArchiveProjectResponse {
 export interface PublicEnvironment {
   id: string;
   orgId: string;
+  /**
+   * Public Workspace alias of `orgId` (same opaque `org_*` id). Present on the
+   * `/v1/workspaces/*` surface only. See `specs/core/vocabulary.md`.
+   */
+  workspaceId?: string;
   projectId: string;
   name: string;
   slug: string;

@@ -19,7 +19,7 @@ Lock the words before touching any surface.
 - **Done when:** the glossary is merged and referenced by WS2–WS5; no code or API
   has changed yet.
 
-## WS2 — Public API aliasing — 🗓️ Planned
+## WS2 — Public API aliasing — ✅ Shipped (`apps/api-edge/src/workspace-facade.ts`)
 
 Serve `/v1/workspaces/*` as aliases without forking handlers.
 
