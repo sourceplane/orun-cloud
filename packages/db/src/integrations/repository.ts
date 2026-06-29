@@ -2,8 +2,12 @@ import type { SqlExecutor } from "../hyperdrive/executor.js";
 import type { Uuid } from "../ids/index.js";
 import type {
   ActivateConnectionInput,
+  ConnectionGrant,
+  ConnectionGrantStatus,
   ConnectionScope,
+  ConnectionShareMode,
   ConnectionStatus,
+  CreateConnectionGrantInput,
   CreateConnectionInput,
   CreateRepoLinkInput,
   CursorPosition,
@@ -86,6 +90,8 @@ function mapConnection(row: Record<string, unknown>): IntegrationConnection {
     status: row.status as ConnectionStatus,
     // Pre-IT7 rows (and any executor fake without the column) read 'account'.
     scope: (row.scope as ConnectionScope) ?? "account",
+    // Pre-IT8 rows read 'auto' (implicit sharing).
+    shareMode: (row.share_mode as ConnectionShareMode) ?? "auto",
     displayName: (row.display_name as string) ?? null,
     externalAccountLogin: (row.external_account_login as string) ?? null,
     externalAccountId: (row.external_account_id as string) ?? null,
@@ -94,6 +100,20 @@ function mapConnection(row: Record<string, unknown>): IntegrationConnection {
     stateExpiresAt: dateOrNull(row.state_expires_at),
     connectedAt: dateOrNull(row.connected_at),
     suspendedAt: dateOrNull(row.suspended_at),
+    revokedAt: dateOrNull(row.revoked_at),
+    createdAt: toDate(row.created_at),
+    updatedAt: toDate(row.updated_at),
+  };
+}
+
+function mapConnectionGrant(row: Record<string, unknown>): ConnectionGrant {
+  return {
+    id: row.id as string,
+    connectionId: row.connection_id as string,
+    orgId: row.org_id as string,
+    grantedBy: (row.granted_by as string) ?? null,
+    status: row.status as ConnectionGrantStatus,
+    grantedAt: toDate(row.granted_at),
     revokedAt: dateOrNull(row.revoked_at),
     createdAt: toDate(row.created_at),
     updatedAt: toDate(row.updated_at),
@@ -222,15 +242,16 @@ export function createIntegrationsRepository(executor: SqlExecutor): Integration
       try {
         const result = await executor.execute<Record<string, unknown>>(
           `INSERT INTO integrations.connections
-             (id, org_id, provider, status, scope, display_name, created_by,
-              state_nonce_hash, state_expires_at, created_at, updated_at)
-           VALUES ($1, $2, $3, 'pending', $4, $5, $6, $7, $8, now(), now())
+             (id, org_id, provider, status, scope, share_mode, display_name,
+              created_by, state_nonce_hash, state_expires_at, created_at, updated_at)
+           VALUES ($1, $2, $3, 'pending', $4, $5, $6, $7, $8, $9, now(), now())
            RETURNING *`,
           [
             input.id,
             input.orgId,
             input.provider,
             input.scope ?? "account",
+            input.shareMode ?? "auto",
             input.displayName ?? null,
             input.createdBy ?? null,
             input.stateNonceHash ?? null,
@@ -374,6 +395,88 @@ export function createIntegrationsRepository(executor: SqlExecutor): Integration
         return { ok: true, value: mapConnection(result.rows[0]!) };
       } catch {
         return safeError("Failed to update connection status");
+      }
+    },
+
+    // ── Admission grants (IT8) ───────────────────────────────
+
+    async createConnectionGrant(
+      input: CreateConnectionGrantInput,
+    ): Promise<IntegrationsResult<ConnectionGrant>> {
+      try {
+        const result = await executor.execute<Record<string, unknown>>(
+          `INSERT INTO integrations.connection_grants
+             (id, connection_id, org_id, granted_by, status, granted_at, created_at, updated_at)
+           VALUES ($1, $2, $3, $4, 'active', now(), now(), now())
+           RETURNING *`,
+          [input.id, input.connectionId, input.orgId, input.grantedBy ?? null],
+        );
+        return { ok: true, value: mapConnectionGrant(result.rows[0]!) };
+      } catch (err) {
+        if (isUniqueViolation(err)) {
+          return { ok: false, error: { kind: "conflict", entity: "connection_grant" } };
+        }
+        return safeError("Failed to create connection grant");
+      }
+    },
+
+    async revokeConnectionGrant(
+      connectionId: Uuid,
+      orgId: Uuid,
+    ): Promise<IntegrationsResult<ConnectionGrant>> {
+      try {
+        const result = await executor.execute<Record<string, unknown>>(
+          `UPDATE integrations.connection_grants
+              SET status = 'revoked', revoked_at = now(), updated_at = now()
+            WHERE connection_id = $1 AND org_id = $2 AND status = 'active'
+            RETURNING *`,
+          [connectionId, orgId],
+        );
+        if (result.rowCount === 0) return { ok: false, error: { kind: "not_found" } };
+        return { ok: true, value: mapConnectionGrant(result.rows[0]!) };
+      } catch {
+        return safeError("Failed to revoke connection grant");
+      }
+    },
+
+    async listConnectionGrants(
+      connectionId: Uuid,
+    ): Promise<IntegrationsResult<ConnectionGrant[]>> {
+      try {
+        const result = await executor.execute<Record<string, unknown>>(
+          `SELECT * FROM integrations.connection_grants
+            WHERE connection_id = $1
+            ORDER BY created_at DESC, id DESC`,
+          [connectionId],
+        );
+        return { ok: true, value: result.rows.map(mapConnectionGrant) };
+      } catch {
+        return safeError("Failed to list connection grants");
+      }
+    },
+
+    async isWorkspaceAdmitted(
+      connectionId: Uuid,
+      orgId: Uuid,
+    ): Promise<IntegrationsResult<boolean>> {
+      try {
+        // Admitted when share_mode='auto' OR an active grant exists. One query,
+        // fail-closed: 'granted' with no active grant denies.
+        const result = await executor.execute<Record<string, unknown>>(
+          `SELECT
+             c.share_mode = 'auto'
+             OR EXISTS (
+               SELECT 1 FROM integrations.connection_grants g
+                WHERE g.connection_id = c.id AND g.org_id = $2 AND g.status = 'active'
+             ) AS admitted
+           FROM integrations.connections c
+           WHERE c.id = $1`,
+          [connectionId, orgId],
+        );
+        if (result.rowCount === 0) return { ok: true, value: false };
+        return { ok: true, value: result.rows[0]!.admitted === true };
+      } catch {
+        return safeError("Failed to evaluate admission");
       }
     },
 

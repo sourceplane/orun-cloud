@@ -208,11 +208,12 @@ describe("POST .../integrations/github/connect", () => {
     expect(state).toBeTruthy();
 
     // The DB stores the SHA-256 of the nonce, never the raw nonce or state.
-    // Param order: id, orgId, provider, scope, displayName, createdBy,
-    // stateNonceHash, stateExpiresAt — the nonce hash is index 6 (IT7 inserted
-    // `scope` at index 3).
+    // Param order: id, orgId, provider, scope, shareMode, displayName,
+    // createdBy, stateNonceHash, stateExpiresAt — the nonce hash is index 7
+    // (IT7 inserted `scope` at index 3, IT8 inserted `shareMode` at index 4).
     expect(insertedParams[3]).toBe("account"); // default ownership scope
-    const storedNonceHash = insertedParams[6] as string;
+    expect(insertedParams[4]).toBe("auto"); // default admission posture
+    const storedNonceHash = insertedParams[7] as string;
     expect(storedNonceHash).toMatch(/^[0-9a-f]{64}$/);
     expect(state).not.toContain(storedNonceHash);
   });

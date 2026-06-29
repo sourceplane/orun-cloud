@@ -178,6 +178,7 @@ describe("POST .../integrations/github/token (the broker)", () => {
     const ghCalls: Array<{ url: string; body: unknown }> = [];
     const { executor, queries } = fakeExecutor((text) => {
       if (text.includes("FROM integrations.repo_links")) return [linkRow()];
+      if (text.includes("AS admitted")) return [{ admitted: true }];
       if (text.includes("FROM integrations.connections WHERE id")) return [connectionRow()];
       if (text.includes("FROM integrations.github_installations"))
         return [installationRow({ checks: "write", contents: "read" })];
@@ -220,6 +221,7 @@ describe("POST .../integrations/github/token (the broker)", () => {
     const ghCalls: Array<{ url: string; body: unknown }> = [];
     const { executor, queries } = fakeExecutor((text) => {
       if (text.includes("FROM integrations.repo_links")) return [linkRow()]; // workspace owns the link
+      if (text.includes("AS admitted")) return [{ admitted: true }];
       if (text.includes("FROM integrations.connections WHERE id"))
         return [{ ...connectionRow(), org_id: ACCOUNT_UUID }]; // connection at the account
       if (text.includes("FROM integrations.connections WHERE org_id"))
@@ -244,6 +246,33 @@ describe("POST .../integrations/github/token (the broker)", () => {
     expect(queries.some((q) => q.text.includes("FROM integrations.connections WHERE id"))).toBe(true);
   });
 
+  it("denies a non-admitted workspace under share_mode='granted' with 403 (IT8)", async () => {
+    // The repo is linked (ownership ok), but the connection is 'granted' and the
+    // workspace has no active grant → admission returns false → 403, before any
+    // token is minted.
+    const ghCalls: Array<{ url: string; body: unknown }> = [];
+    const { executor } = fakeExecutor((text) => {
+      if (text.includes("FROM integrations.repo_links")) return [linkRow()];
+      if (text.includes("AS admitted")) return [{ admitted: false }];
+      if (text.includes("FROM integrations.connections WHERE id")) return [connectionRow()];
+      if (text.includes("FROM integrations.github_installations"))
+        return [installationRow({ checks: "write" })];
+      return [];
+    });
+    const res = await handleIssueGithubToken(
+      tokenRequest({ repositories: ["777001"], permissions: { checks: "write" } }),
+      createEnv(),
+      "req_1",
+      ACTOR,
+      asUuid(ORG_UUID),
+      { executor, fetchImpl: githubFetch(ghCalls) },
+    );
+    expect(res.status).toBe(403);
+    const body = (await res.json()) as { error: { details: Record<string, unknown> } };
+    expect(body.error.details.reason).toBe("not_admitted");
+    expect(ghCalls).toHaveLength(0); // never reached GitHub — no token minted
+  });
+
   it("denies unlinked repositories with a safe 412", async () => {
     const { executor } = fakeExecutor((text) => {
       if (text.includes("FROM integrations.repo_links")) return [];
@@ -265,6 +294,7 @@ describe("POST .../integrations/github/token (the broker)", () => {
   it("denies permissions exceeding the App grant", async () => {
     const { executor } = fakeExecutor((text) => {
       if (text.includes("FROM integrations.repo_links")) return [linkRow()];
+      if (text.includes("AS admitted")) return [{ admitted: true }];
       if (text.includes("FROM integrations.connections WHERE id")) return [connectionRow()];
       if (text.includes("FROM integrations.github_installations"))
         return [installationRow({ contents: "read" })];

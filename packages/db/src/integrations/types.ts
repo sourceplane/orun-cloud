@@ -39,6 +39,9 @@ export type ConnectionStatus = "pending" | "active" | "suspended" | "revoked";
 /** Ownership scope (IT7): account-shared (resolves up) vs workspace-private. */
 export type ConnectionScope = "account" | "workspace";
 
+/** Admission posture (IT8): implicit sharing vs explicit grant allow-list. */
+export type ConnectionShareMode = "auto" | "granted";
+
 export interface IntegrationConnection {
   id: string;
   orgId: string;
@@ -46,6 +49,8 @@ export interface IntegrationConnection {
   status: ConnectionStatus;
   /** Ownership scope (IT7); 'account' for every pre-IT7 / standalone row. */
   scope: ConnectionScope;
+  /** Admission posture (IT8); 'auto' for every pre-IT8 row. */
+  shareMode: ConnectionShareMode;
   displayName: string | null;
   externalAccountLogin: string | null;
   externalAccountId: string | null;
@@ -65,6 +70,8 @@ export interface CreateConnectionInput {
   provider: string;
   /** Ownership scope (IT7); defaults to 'account' when omitted. */
   scope?: ConnectionScope;
+  /** Admission posture (IT8); defaults to 'auto' when omitted. */
+  shareMode?: ConnectionShareMode;
   displayName?: string | null;
   createdBy?: string | null;
   /** SHA-256 hex of the single-use signed-state nonce (write-only). */
@@ -237,6 +244,30 @@ export interface UpsertInstallationTokenInput {
   expiresAt: Date;
 }
 
+// ── Admission grants (IT8) ──────────────────────────────────
+
+export type ConnectionGrantStatus = "active" | "revoked";
+
+/** An admission grant: a workspace org the account admitted to a connection. */
+export interface ConnectionGrant {
+  id: string;
+  connectionId: string;
+  orgId: string;
+  grantedBy: string | null;
+  status: ConnectionGrantStatus;
+  grantedAt: Date;
+  revokedAt: Date | null;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface CreateConnectionGrantInput {
+  id: string;
+  connectionId: Uuid;
+  orgId: Uuid;
+  grantedBy?: string | null;
+}
+
 // ── Repository interface ────────────────────────────────────
 
 export interface IntegrationsRepository {
@@ -272,6 +303,27 @@ export interface IntegrationsRepository {
     id: Uuid,
     status: ConnectionStatus,
   ): Promise<IntegrationsResult<IntegrationConnection>>;
+
+  // Admission grants (IT8)
+  createConnectionGrant(
+    input: CreateConnectionGrantInput,
+  ): Promise<IntegrationsResult<ConnectionGrant>>;
+  revokeConnectionGrant(
+    connectionId: Uuid,
+    orgId: Uuid,
+  ): Promise<IntegrationsResult<ConnectionGrant>>;
+  listConnectionGrants(
+    connectionId: Uuid,
+  ): Promise<IntegrationsResult<ConnectionGrant[]>>;
+  /**
+   * Admission decision (IT8): true when the workspace org may consume the
+   * connection — share_mode 'auto' (implicit) OR an active grant exists. Fails
+   * closed: returns false on any error so 'granted' connections never leak.
+   */
+  isWorkspaceAdmitted(
+    connectionId: Uuid,
+    orgId: Uuid,
+  ): Promise<IntegrationsResult<boolean>>;
 
   // GitHub installations
   upsertGithubInstallation(

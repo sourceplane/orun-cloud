@@ -39,6 +39,7 @@ describe("Integrations Migration Verification", () => {
       "190_integrations_delivery_attribution",
       "380_integrations_repo_single_claim",
       "390_integrations_connection_scope",
+      "400_integrations_admission",
     ]) {
       const entry = manifest.migrations.find((m) => m.id === id)!;
       const content = readFileSync(resolve(MIGRATIONS_ROOT, entry.path));
@@ -77,6 +78,20 @@ describe("Integrations Migration Verification", () => {
     expect(sql).toContain("ADD COLUMN IF NOT EXISTS scope TEXT NOT NULL DEFAULT 'account'");
     expect(sql).toContain("chk_integrations_connections_scope");
     expect(sql).toMatch(/CHECK \(scope IN \('account', 'workspace'\)\)/);
+    expect(sql).not.toMatch(/DROP\s+(COLUMN|TABLE)/i);
+  });
+
+  it("400 adds share_mode + the connection_grants allow-list (IT8), additively", () => {
+    const sql = readFileSync(
+      resolve(MIGRATIONS_ROOT, "400_integrations_admission/up.sql"),
+      "utf-8",
+    );
+    expect(sql).toContain("ADD COLUMN IF NOT EXISTS share_mode TEXT NOT NULL DEFAULT 'auto'");
+    expect(sql).toMatch(/CHECK \(share_mode IN \('auto', 'granted'\)\)/);
+    expect(sql).toContain("CREATE TABLE IF NOT EXISTS integrations.connection_grants");
+    expect(sql).toContain("uq_integrations_connection_grant_active");
+    expect(sql).toMatch(/ON integrations\.connection_grants \(connection_id, org_id\)/);
+    expect(sql).toContain("WHERE status = 'active'");
     expect(sql).not.toMatch(/DROP\s+(COLUMN|TABLE)/i);
   });
 

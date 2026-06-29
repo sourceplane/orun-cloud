@@ -413,6 +413,78 @@ describe("IntegrationsRepository — repo links", () => {
   });
 });
 
+describe("IntegrationsRepository — admission grants (IT8)", () => {
+  const GRANT_ROW = {
+    id: "grant1",
+    connection_id: CONNECTION_ID,
+    org_id: OTHER_ID,
+    granted_by: "usr_admin",
+    status: "active",
+    granted_at: NOW.toISOString(),
+    revoked_at: null,
+    created_at: NOW.toISOString(),
+    updated_at: NOW.toISOString(),
+  };
+
+  it("creates an active grant for a workspace", async () => {
+    const { executor, queries } = createFakeExecutor({ rows: [GRANT_ROW] });
+    const repo = createIntegrationsRepository(executor);
+    const result = await repo.createConnectionGrant({
+      id: "grant1",
+      connectionId: CONNECTION_ID,
+      orgId: OTHER_ID,
+      grantedBy: "usr_admin",
+    });
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value.status).toBe("active");
+      expect(result.value.orgId).toBe(OTHER_ID);
+    }
+    expect(queries[0]!.text).toContain("integrations.connection_grants");
+    expect(queries[0]!.text).toContain("'active'");
+  });
+
+  it("maps a duplicate active grant to a conflict", async () => {
+    const { executor } = createFakeExecutor({ error: { code: "23505" } });
+    const repo = createIntegrationsRepository(executor);
+    const result = await repo.createConnectionGrant({
+      id: "grant1",
+      connectionId: CONNECTION_ID,
+      orgId: OTHER_ID,
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toEqual({ kind: "conflict", entity: "connection_grant" });
+  });
+
+  it("revokes only an active grant, returns not_found otherwise", async () => {
+    const { executor, queries } = createFakeExecutor({ rows: [], rowCount: 0 });
+    const repo = createIntegrationsRepository(executor);
+    const result = await repo.revokeConnectionGrant(CONNECTION_ID, OTHER_ID);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.kind).toBe("not_found");
+    expect(queries[0]!.text).toContain("status = 'revoked'");
+    expect(queries[0]!.text).toContain("status = 'active'");
+  });
+
+  it("admits when the admission query returns true (auto or active grant)", async () => {
+    const { executor, queries } = createFakeExecutor({ rows: [{ admitted: true }] });
+    const repo = createIntegrationsRepository(executor);
+    const result = await repo.isWorkspaceAdmitted(CONNECTION_ID, OTHER_ID);
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.value).toBe(true);
+    expect(queries[0]!.text).toContain("AS admitted");
+    expect(queries[0]!.text).toContain("share_mode = 'auto'");
+  });
+
+  it("fails closed: denies when the connection is missing", async () => {
+    const { executor } = createFakeExecutor({ rows: [], rowCount: 0 });
+    const repo = createIntegrationsRepository(executor);
+    const result = await repo.isWorkspaceAdmitted(CONNECTION_ID, OTHER_ID);
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.value).toBe(false);
+  });
+});
+
 describe("IntegrationsRepository — inbound deliveries (durable inbox)", () => {
   it("inserts a new delivery with created=true", async () => {
     const { executor, queries } = createFakeExecutor({ rows: [SAMPLE_DELIVERY_ROW] });

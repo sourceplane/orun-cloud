@@ -21,6 +21,7 @@ export function toPublicConnection(connection: IntegrationConnection): PublicCon
     provider: connection.provider as IntegrationProviderId,
     status: connection.status,
     scope: connection.scope,
+    shareMode: connection.shareMode,
     displayName: connection.displayName,
     externalAccountLogin: connection.externalAccountLogin,
     externalAccountType: connection.externalAccountType,

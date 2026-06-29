@@ -363,5 +363,14 @@ export const manifest: MigrationManifest = {
       description:
         "Connection ownership scope (saas-integration-tenancy IT7) — adds connections.scope ('account'|'workspace') default 'account' with a CHECK. 'account' is the shared, resolve-up connection; 'workspace' is a workspace's own GitHub account, owned at the workspace and never resolved up. Additive + idempotent; the backfill is a no-op so existing rows are unchanged.",
     },
+    {
+      id: "400_integrations_admission",
+      context: "integrations",
+      path: "400_integrations_admission/up.sql",
+      checksum:
+        "67b0152ecc65d48e8dc23faa71873b8ee0dc9fd68a4cca4ce9d3fe6707037091",
+      description:
+        "Admission control & share mode (saas-integration-tenancy IT8) — adds connections.share_mode ('auto'|'granted') default 'auto' with a CHECK, plus the integrations.connection_grants allow-list (one active grant per connection+workspace). 'auto' is today's implicit sharing; 'granted' requires an active grant. Additive + idempotent; back-compatible since the default is 'auto'.",
+    },
   ],
 };

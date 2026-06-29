@@ -34,6 +34,15 @@ export type IntegrationConnectionStatus =
 export type IntegrationConnectionScope = "account" | "workspace";
 
 /**
+ * Admission posture for a shared connection (saas-integration-tenancy IT8):
+ * - "auto": every workspace under the account is implicitly admitted (default,
+ *   today's soft sharing).
+ * - "granted": a workspace may consume the connection only if the account has
+ *   granted it admission.
+ */
+export type IntegrationConnectionShareMode = "auto" | "granted";
+
+/**
  * Safe projection of an org ↔ provider connection (a GitHub App
  * installation bound to an organization). Never carries installation ids,
  * tokens, or state nonces.
@@ -51,6 +60,12 @@ export interface PublicConnection {
    * resolved up. Defaults to "account".
    */
   scope: IntegrationConnectionScope;
+  /**
+   * Admission posture (IT8): "auto" = all workspaces under the account may
+   * consume it (default); "granted" = only granted workspaces. Meaningful only
+   * for account-shared connections.
+   */
+  shareMode: IntegrationConnectionShareMode;
   /** Operator-facing label, defaults to the provider account login. */
   displayName: string | null;
   /** Provider-side account login (e.g. GitHub org login). */
