@@ -3,6 +3,7 @@ export * from "./timing.js";
 export * from "./errors.js";
 export * from "./idempotency.js";
 export * from "./tenancy.js";
+export * from "./workspace.js";
 export * from "./auth.js";
 export * from "./membership.js";
 export * from "./policy.js";
