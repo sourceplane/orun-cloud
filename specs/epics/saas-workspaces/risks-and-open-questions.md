@@ -13,6 +13,7 @@ the open items before the corresponding milestone lands.
 | D2 | **Aliasing depth** | **Label + public API aliasing** (decided) | Not label-only (brand/impl mismatch) and not a full model rename (huge, no gain). Confirm appetite for maintaining dual public routes. |
 | D3 | **Audit / analytics event terminology** | Keep `org.*` internally; document the mapping; do **not** fork the taxonomy | Forking event names to `workspace.*` doubles the audit contract surface for cosmetic gain. Revisit only if a customer-facing audit log must read "Workspace". |
 | D4 | **`/v1/organizations/*` deprecation window** | **Indefinite coexistence** initially; no removal date | Removing the legacy surface is a breaking change; set a sunset only with a migration story and customer notice. |
+| D5 | **`intent.yaml` tenancy field spelling** (the Go `orun` CLI) | **Hold `execution.state.org`; document "this org is your Workspace"** (lean) | `oidc-ci-tenancy` (orun #420) committed `execution.state.org`/`requireOrg` into customer repos. Aliasing to `execution.state.workspace` is the most on-brand but mutates a freshly-shipped, version-controlled field across customer CI configs; holding `org` as the durable key (read `workspace` if present) avoids churn. Decide **with `saas-orun-platform` (DV5)** before WS3 touches the Go CLI. Whichever spelling wins, the value is the **Workspace** org, never the Account. |
 
 ## ✅ Decisions made
 
@@ -29,6 +30,7 @@ the open items before the corresponding milestone lands.
 | **Brand/impl drift** — UI says Workspace, API docs say organization | The chosen depth (label + API alias) keeps both surfaces in sync; WS2 lands the alias before WS4 ships the UI name. |
 | **Dual-route maintenance** — `/v1/workspaces/*` and `/v1/organizations/*` to keep in lockstep | Implement the alias as a pure path-rewrite into the **same** facade/handlers (no fork); contract tests assert byte-identical results for both spellings. |
 | **Term sprawl** — "Workspace" leaking into internal code where `org` is the model | Keep the rename strictly at the public surface (edge alias, contracts projection, console copy, SDK/CLI). Internal services, DB, policy, audit stay `org`. |
+| **Reverse collision** — `state.workspace_links` already uses "workspace" internally for the CLI/CI allow-list, unrelated to the new Workspace noun | Glossary (WS1) flags `workspace_links` as a legacy internal name, left as-is (relabel-not-remodel); docs disambiguate it from the Workspace unit, the `integrations.repo_links`, and the `…/cli/links` endpoint. Do not rename the table. |
 | **Confusion with `project`** | Glossary (WS1) fixes `Workspace → Project → Environment` as three distinct levels; docs lead with the hierarchy diagram. |
 
 ## Non-blocking notes

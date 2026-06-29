@@ -39,11 +39,24 @@ Serve `/v1/workspaces/*` as aliases without forking handlers.
 
 - `packages/sdk`: add a `workspaces` namespace aliasing `organizations` (same ids,
   same client); retain `organizations` with a deprecation note.
-- `packages/cli`: add `workspace` subcommands aliasing `org`; accept `--workspace`
-  alongside `--org`; lead help text with Workspace.
-- Owner: `packages/sdk` + `packages/cli`.
-- **Done when:** SDK and CLI expose Workspace surfaces that pass through to the org
-  endpoints; existing `organizations`/`org` usage still compiles and works.
+- `packages/cli` (`@saas/cli`, internal control-plane CLI): add `workspace`
+  subcommands aliasing `org`; accept `--workspace` alongside `--org`; lead help
+  text with Workspace.
+- **`sourceplane/orun` (the customer-facing Go CLI)**: this is where the `org`
+  vocabulary is most visible — `--org`, `ORUN_ORG`, and the committed
+  `intent.yaml` field `execution.state.org` (+ `requireOrg`), shipped by
+  `oidc-ci-tenancy` (orun #420). Add `--workspace` (and `ORUN_WORKSPACE`) aliases
+  and lead help with Workspace; resolve the `intent.yaml` spelling per **D5**
+  (alias `execution.state.workspace` vs hold `execution.state.org`). This is a
+  cross-repo change owned by `saas-orun-platform` (DV5) — plan it there, do not
+  fork the org-tenancy precedence chain. The declared value is always the
+  **Workspace** org, never the Account.
+- Owner: `packages/sdk` + `packages/cli` + **`sourceplane/orun`** (via
+  `saas-orun-platform`).
+- **Done when:** the SDK and both CLIs expose Workspace surfaces that pass through
+  to the org endpoints; existing `organizations`/`org`/`--org`/`execution.state.org`
+  usage still compiles and works; the `intent.yaml` spelling decision (D5) is
+  recorded and implemented.
 
 ## WS4 — Console rebrand + parent-as-workspace — 🗓️ Planned
 
