@@ -207,11 +207,13 @@ export function CatalogPortal({ orgId, orgSlug }: { orgId: string; orgSlug: stri
   );
   const openFull = React.useCallback((key: string) => router.push(`${catalogHref}/${key}`), [router, catalogHref]);
 
-  // Tapping an item: on desktop it peeks the entity in the side drawer; on
-  // mobile there is no drawer — a tap goes straight to the full service page
-  // (the drawer's small-screen bottom sheet was an extra hop the phone flow
-  // doesn't want).
-  const onActivate = React.useCallback(
+  // Opening an item now goes straight to its full service page — the primary,
+  // least-surprising action for a single click or tap. The quick-view drawer is
+  // no longer the default landing; it's an explicit opt-in surfaced by a button
+  // on each list item (`quickView`). The drawer is desktop-only, so on a phone a
+  // quick-view request simply falls through to the full page (there is nowhere
+  // to dock the peek sheet).
+  const quickView = React.useCallback(
     (key: string) => (isDesktop ? setSelectedKey(key) : openFull(key)),
     [isDesktop, setSelectedKey, openFull],
   );
@@ -336,8 +338,8 @@ export function CatalogPortal({ orgId, orgSlug }: { orgId: string; orgSlug: stri
               sortDir={sortDir}
               onSort={onSort}
               selectedKey={selectedKey}
-              onSelect={onActivate}
               onOpen={openFull}
+              onQuickView={isDesktop ? quickView : undefined}
               onIntent={warmEntity}
               showRefs
               dense={false}
@@ -349,12 +351,12 @@ export function CatalogPortal({ orgId, orgSlug }: { orgId: string; orgSlug: stri
               columns={board}
               decorate={decorate}
               selectedKey={selectedKey}
-              onSelect={onActivate}
               onOpen={openFull}
+              onQuickView={isDesktop ? quickView : undefined}
               isDesktop={isDesktop}
             />
           ) : (
-            <MapView model={map} selectedKey={selectedKey} onSelect={onActivate} onOpen={openFull} />
+            <MapView model={map} selectedKey={selectedKey} onSelect={quickView} onOpen={openFull} />
           )}
         </div>
       </div>
