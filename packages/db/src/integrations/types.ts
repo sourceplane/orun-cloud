@@ -297,6 +297,16 @@ export interface IntegrationsRepository {
     orgId: Uuid,
     repoExternalId: string,
   ): Promise<IntegrationsResult<RepoLink[]>>;
+  /**
+   * Inbound projection (IT3): the single active link for a repo under a given
+   * connection, regardless of which workspace owns it. Single-claim (IT2)
+   * guarantees ≤1, so this attributes a delivery to the owning workspace's org
+   * even when the connection is account-shared. Returns null when unlinked.
+   */
+  findActiveRepoLinkByConnectionAndRepo(
+    connectionId: Uuid,
+    repoExternalId: string,
+  ): Promise<IntegrationsResult<RepoLink | null>>;
   /** Entitlement gating: count of active links in the organization. */
   countActiveRepoLinks(orgId: Uuid): Promise<IntegrationsResult<number>>;
 

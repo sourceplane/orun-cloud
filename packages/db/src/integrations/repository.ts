@@ -578,6 +578,28 @@ export function createIntegrationsRepository(executor: SqlExecutor): Integration
       }
     },
 
+    async findActiveRepoLinkByConnectionAndRepo(
+      connectionId: Uuid,
+      repoExternalId: string,
+    ): Promise<IntegrationsResult<RepoLink | null>> {
+      try {
+        // Connection-keyed, NOT org-scoped: under an account-shared connection
+        // the link is owned by a workspace whose org differs from the
+        // connection's. Single-claim (uq_integrations_repo_claim) guarantees at
+        // most one active row; LIMIT 1 is belt-and-suspenders.
+        const result = await executor.execute<Record<string, unknown>>(
+          `SELECT * FROM integrations.repo_links
+            WHERE connection_id = $1 AND repo_external_id = $2 AND status = 'active'
+            ORDER BY created_at ASC, id ASC
+            LIMIT 1`,
+          [connectionId, repoExternalId],
+        );
+        return { ok: true, value: result.rows[0] ? mapRepoLink(result.rows[0]) : null };
+      } catch {
+        return safeError("Failed to find repo link by connection");
+      }
+    },
+
     async countActiveRepoLinks(orgId: Uuid): Promise<IntegrationsResult<number>> {
       try {
         const result = await executor.execute<Record<string, unknown>>(

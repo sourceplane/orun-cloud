@@ -347,6 +347,78 @@ describe("inbox drain — attribute, lifecycle, normalize, emit", () => {
     expect(payload.environment).toBe("prod"); // branch "main" resolved via map
   });
 
+  it("projects the event to the OWNING WORKSPACE's org, not the account connection's (IT3)", async () => {
+    // The connection is owned by the account (ORG_UUID); the repo's active link
+    // is owned by a workspace under it (WORKSPACE_UUID). The normalized event
+    // must land in the workspace's org, while the delivery row stays attributed
+    // to the account connection.
+    const WORKSPACE_UUID = "55555555-5555-4555-8555-555555555555";
+    const PROJECT_UUID = "44444444-4444-4444-8444-444444444444";
+    const { ctx, queries } = drainCtx((text) => {
+      if (text.includes("FROM integrations.github_installations WHERE installation_id"))
+        return [installationRow()];
+      if (text.includes("FROM integrations.connections WHERE id = $1")) return [connectionRow()];
+      if (text.includes("FROM integrations.repo_links"))
+        return [
+          {
+            id: "ln2",
+            org_id: WORKSPACE_UUID, // workspace owns the link, not the account
+            project_id: PROJECT_UUID,
+            connection_id: CONNECTION_UUID,
+            repo_external_id: "777001",
+            repo_full_name: "acme/storefront",
+            default_branch: "main",
+            branch_env_map: {},
+            status: "active",
+            created_by: null,
+            created_at: NOW.toISOString(),
+            updated_at: NOW.toISOString(),
+          },
+        ];
+      if (text.includes("events.event_log")) return [EVENT_ROW];
+      if (text.includes("UPDATE integrations.inbound_deliveries"))
+        return [deliveryRow({ status: "emitted" })];
+      return [];
+    });
+
+    const outcome = await processDelivery(ctx, mapDelivery(deliveryRow()));
+    expect(outcome).toEqual({ kind: "emitted", eventType: "scm.push" });
+
+    // The link lookup is connection-keyed (not org-scoped).
+    const linkQuery = queries.find((q) => q.text.includes("FROM integrations.repo_links"));
+    expect(linkQuery!.text).toContain("connection_id = $1");
+    expect(linkQuery!.params[0]).toBe(CONNECTION_UUID);
+
+    // Event emitted to the WORKSPACE org…
+    const eventInsert = queries.find((q) => q.text.includes("events.event_log"));
+    expect(eventInsert!.params[9]).toBe(WORKSPACE_UUID);
+    expect(eventInsert!.params[10]).toBe(PROJECT_UUID);
+
+    // …while the delivery row stays attributed to the account connection's org.
+    const mark = queries.find((q) => q.text.includes("UPDATE integrations.inbound_deliveries"));
+    expect(mark!.params).toContain(ORG_UUID);
+  });
+
+  it("emits account-org-scoped only for an unlinked repo (fail closed, IT3)", async () => {
+    const { ctx, queries } = drainCtx((text) => {
+      if (text.includes("FROM integrations.github_installations WHERE installation_id"))
+        return [installationRow()];
+      if (text.includes("FROM integrations.connections WHERE id = $1")) return [connectionRow()];
+      if (text.includes("FROM integrations.repo_links")) return []; // no active link
+      if (text.includes("events.event_log")) return [EVENT_ROW];
+      if (text.includes("UPDATE integrations.inbound_deliveries"))
+        return [deliveryRow({ status: "emitted" })];
+      return [];
+    });
+
+    const outcome = await processDelivery(ctx, mapDelivery(deliveryRow()));
+    expect(outcome).toEqual({ kind: "emitted", eventType: "scm.push" });
+
+    const eventInsert = queries.find((q) => q.text.includes("events.event_log"));
+    expect(eventInsert!.params[9]).toBe(ORG_UUID); // account org, never a workspace
+    expect(eventInsert!.params[10]).toBeNull(); // no project — org-scoped only
+  });
+
   it("skips unattributed installations and records them as orphaned", async () => {
     const { ctx, queries } = drainCtx((text) => {
       if (text.includes("FROM integrations.github_installations WHERE installation_id")) return [];

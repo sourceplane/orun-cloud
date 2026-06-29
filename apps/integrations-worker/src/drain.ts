@@ -336,20 +336,27 @@ export async function processDelivery(
     });
   }
 
-  // IG3 enrichment: a repo matching active links emits per linked project
-  // with projectId + the environment resolved from the branch map; an
-  // unlinked repo emits org-scoped only (design §6).
-  const links = await ctx.repo.listActiveRepoLinksForRepo(
-    asUuid(connection.value.orgId),
+  // IT3 inbound projection: resolve the repo's active link by CONNECTION (not
+  // the connection's org), because under an account-shared connection the link
+  // is owned by a workspace whose org differs from the account. Single-claim
+  // (IT2) guarantees ≤1 link, so the delivery attributes to exactly one owning
+  // workspace. The normalized event is emitted to the LINK's org with its
+  // projectId + environment; an unlinked repo emits account-org-scoped only
+  // (fail closed — never leaks into a workspace). design §5.
+  const link = await ctx.repo.findActiveRepoLinkByConnectionAndRepo(
+    asUuid(connection.value.id),
     normalized.repo.externalId,
   );
-  const targets: Array<{ projectId: string | null; environment: string | null }> =
-    links.ok && links.value.length > 0
-      ? links.value.map((link) => ({
-          projectId: link.projectId,
-          environment: resolveEnvironment(link.branchEnvMap, normalized.payload),
-        }))
-      : [{ projectId: null, environment: null }];
+  const targets: Array<{ orgId: string; projectId: string | null; environment: string | null }> =
+    link.ok && link.value
+      ? [
+          {
+            orgId: link.value.orgId,
+            projectId: link.value.projectId,
+            environment: resolveEnvironment(link.value.branchEnvMap, normalized.payload),
+          },
+        ]
+      : [{ orgId: connection.value.orgId, projectId: null, environment: null }];
 
   return emitScmEvents(ctx, delivery, connection.value, normalized, targets);
 }
@@ -381,7 +388,7 @@ async function emitScmEvents(
   delivery: InboundDelivery,
   connection: IntegrationConnection,
   normalized: { type: ScmEventType; payload: Record<string, unknown>; repo: { externalId: string; fullName: string } },
-  targets: Array<{ projectId: string | null; environment: string | null }>,
+  targets: Array<{ orgId: string; projectId: string | null; environment: string | null }>,
 ): Promise<DeliveryOutcome> {
   const firstEventId = generateUuid();
   const build = async (events: EventsRepository, repo: IntegrationsRepository): Promise<void> => {
@@ -396,7 +403,7 @@ async function emitScmEvents(
           occurredAt: ctx.now(),
           actorType: "system",
           actorId: "integrations-worker",
-          orgId: connection.orgId,
+          orgId: target.orgId,
           projectId: target.projectId,
           subjectKind: "repository",
           subjectId: normalized.repo.externalId,

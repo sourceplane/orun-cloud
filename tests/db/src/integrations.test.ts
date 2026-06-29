@@ -342,6 +342,27 @@ describe("IntegrationsRepository — repo links", () => {
     }
   });
 
+  it("finds the active link by connection + repo (IT3), connection-keyed not org-scoped", async () => {
+    const { executor, queries } = createFakeExecutor({ rows: [SAMPLE_REPO_LINK_ROW] });
+    const repo = createIntegrationsRepository(executor);
+    const result = await repo.findActiveRepoLinkByConnectionAndRepo(CONNECTION_ID, "777");
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.value?.id).toBe(LINK_ID);
+    const sql = queries[0]!.text;
+    expect(sql).toContain("connection_id = $1");
+    expect(sql).toContain("status = 'active'");
+    expect(sql).toContain("LIMIT 1");
+    expect(queries[0]!.params[0]).toBe(CONNECTION_ID);
+  });
+
+  it("returns null when no active link exists for the repo under the connection", async () => {
+    const { executor } = createFakeExecutor({ rows: [], rowCount: 0 });
+    const repo = createIntegrationsRepository(executor);
+    const result = await repo.findActiveRepoLinkByConnectionAndRepo(CONNECTION_ID, "does-not-exist");
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.value).toBeNull();
+  });
+
   it("filters list by project when given", async () => {
     const { executor, queries } = createFakeExecutor({ rows: [SAMPLE_REPO_LINK_ROW] });
     const repo = createIntegrationsRepository(executor);
