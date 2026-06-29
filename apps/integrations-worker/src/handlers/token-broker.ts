@@ -209,6 +209,22 @@ export async function handleIssueGithubToken(
       );
     }
 
+    // IT8 admission gate — stacked BEFORE token minting. Under share_mode='auto'
+    // (default) every workspace under the account is admitted; under 'granted'
+    // the actor's workspace must hold an active grant. Fails closed: any error
+    // or missing grant denies, so a 'granted' connection never leaks a token to
+    // a non-admitted workspace. design §11.
+    const admitted = await repo.isWorkspaceAdmitted(asUuid(connectionId!), orgId);
+    if (!admitted.ok || !admitted.value) {
+      return errorResponse(
+        "forbidden",
+        "This workspace is not admitted to the connection",
+        403,
+        requestId,
+        { reason: "not_admitted" },
+      );
+    }
+
     const installation = await repo.getGithubInstallationByConnectionId(asUuid(connectionId!));
     if (!installation.ok) return errorResponse("not_found", "Not found", 404, requestId);
 
