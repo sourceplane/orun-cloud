@@ -7,17 +7,16 @@ the open items before the corresponding milestone lands.
 
 ## ⛔ Still open — confirm before building
 
-| # | Decision | Default / leaning | Notes |
-|---|----------|-------------------|-------|
-| D1 | **Final nouns** | **Account** (tenant/parent) + **Workspace** (unit) | "Workspace" has no product-domain collision; "Account" matches Datadog. Alternatives if a stakeholder prefers: "Team" (Vercel) for the unit, or keep "Organization" for the Account. Lock in WS1. |
-| D2 | **Aliasing depth** | **Label + public API aliasing** (decided) | Not label-only (brand/impl mismatch) and not a full model rename (huge, no gain). Confirm appetite for maintaining dual public routes. |
-| D3 | **Audit / analytics event terminology** | Keep `org.*` internally; document the mapping; do **not** fork the taxonomy | Forking event names to `workspace.*` doubles the audit contract surface for cosmetic gain. Revisit only if a customer-facing audit log must read "Workspace". |
-| D4 | **`/v1/organizations/*` deprecation window** | **Indefinite coexistence** initially; no removal date | Removing the legacy surface is a breaking change; set a sunset only with a migration story and customer notice. |
+None — all decisions below are locked and the epic (WS1–WS5) has shipped.
 
 ## ✅ Decisions made
 
 | # | Decision | Resolution |
 |---|----------|------------|
+| D1 | **Final nouns** | **Account** (tenant/parent) + **Workspace** (unit). Locked in WS1; recorded in `specs/core/vocabulary.md`. |
+| D2 | **Aliasing depth** | **Label + public API aliasing** — not label-only, not a full model rename. Shipped: `/v1/workspaces/*` edge alias + `workspaceId` projection (WS2). |
+| D3 | **Audit / analytics event terminology** | **Keep `org.*`** internally and on the wire; document the mapping; do **not** fork the taxonomy. Published in `contracts/api-guidelines.md` (WS5). |
+| D4 | **`/v1/organizations/*` deprecation window** | **Indefinite coexistence; no removal date.** Removing the legacy surface is a breaking change requiring a separate announced migration. Published in `contracts/api-guidelines.md` (WS5). |
 | A1 | Relabel vs remodel | **Relabel.** No new entity; a Workspace is an `organizations` row; `org_id`-everywhere is untouched. |
 | A2 | Parent representation | The parent is **both** the Account and one selectable Workspace (its own direct org) — a synthetic UI affordance, no schema change. |
 | A3 | "Product" as the unit name | **Rejected** — collides with the Polar *product* (billing SKU). |
