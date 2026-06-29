@@ -68,7 +68,6 @@ function SortHeader({
 const Row = React.memo(function Row({
   d,
   selected,
-  showRefs,
   dense,
   onOpen,
   onQuickView,
@@ -76,7 +75,6 @@ const Row = React.memo(function Row({
 }: {
   d: DecoratedService;
   selected: boolean;
-  showRefs: boolean;
   dense: boolean;
   onOpen: (key: string) => void;
   onQuickView?: ((key: string) => void) | undefined;
@@ -94,29 +92,22 @@ const Row = React.memo(function Row({
         className={`relative grid w-full ${GRID} items-center gap-2.5 border-none border-b border-b-border pl-3.5 pr-4 text-left transition-colors hover:bg-foreground/[0.022]`}
         style={{
           ...(selected ? { background: "hsl(var(--primary) / 0.07)" } : {}),
-          minHeight: dense ? "44px" : "56px",
-          paddingTop: dense ? "6px" : "9px",
-          paddingBottom: dense ? "6px" : "9px",
+          minHeight: dense ? "44px" : "64px",
+          paddingTop: dense ? "6px" : "11px",
+          paddingBottom: dense ? "6px" : "11px",
         }}
       >
       <span
         className="absolute bottom-2 left-0 top-2 w-0.5 rounded-[2px]"
         style={{ background: selected ? "hsl(var(--primary))" : "transparent" }}
       />
-      {/* service */}
-      <span className="flex min-w-0 items-center gap-[11px]">
+      {/* service — a single, calm, slightly heavier name, no kind chip or ref
+          subline (kept the row uncluttered to match the design). */}
+      <span className="flex min-w-0 items-center gap-3">
         <span className="grid h-[34px] w-[34px] shrink-0 place-items-center rounded-[9px] border border-border bg-muted text-muted-foreground">
           <PathIcon d={d.iconD} size={17} />
         </span>
-        <span className="flex min-w-0 flex-col gap-0.5">
-          <span className="flex min-w-0 items-center gap-[7px]">
-            <span className="truncate text-[13.5px] font-medium text-foreground">{d.name}</span>
-            <span className="shrink-0 rounded border border-input px-[5px] text-[10px] text-muted-foreground/80">
-              {d.kindLabel}
-            </span>
-          </span>
-          {showRefs ? <span className="truncate font-mono text-[11px] text-muted-foreground/60">{d.ref}</span> : null}
-        </span>
+        <span className="truncate text-[14.5px] font-semibold tracking-[-0.01em] text-foreground">{d.name}</span>
       </span>
       {/* owner */}
       <span className="flex min-w-0 items-center gap-[7px]">
@@ -299,7 +290,6 @@ export function TableView({
   onOpen,
   onQuickView,
   onIntent,
-  showRefs,
   dense,
   onClearFilters,
   isDesktop,
@@ -317,7 +307,6 @@ export function TableView({
   onQuickView?: ((key: string) => void) | undefined;
   /** Warm the entity route's data on hover/focus (PERF G3) — optional. */
   onIntent?: (key: string) => void;
-  showRefs: boolean;
   dense: boolean;
   onClearFilters: () => void;
   isDesktop: boolean;
@@ -332,7 +321,6 @@ export function TableView({
           key={d.key}
           d={d}
           selected={selectedKey === d.key}
-          showRefs={showRefs}
           dense={dense}
           onOpen={onOpen}
           onQuickView={onQuickView}

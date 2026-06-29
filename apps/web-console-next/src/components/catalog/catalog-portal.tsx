@@ -341,7 +341,6 @@ export function CatalogPortal({ orgId, orgSlug }: { orgId: string; orgSlug: stri
               onOpen={openFull}
               onQuickView={isDesktop ? quickView : undefined}
               onIntent={warmEntity}
-              showRefs
               dense={false}
               onClearFilters={clearFilters}
               isDesktop={isDesktop}
