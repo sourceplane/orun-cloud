@@ -84,7 +84,7 @@ export function CreateEndpointDialog({
           <DialogHeader>
             <DialogTitle>New webhook endpoint</DialogTitle>
             <DialogDescription>
-              Endpoints receive signed event deliveries from this organization.
+              Endpoints receive signed event deliveries from this workspace.
               The signing secret is shown exactly once after creation, on the
               endpoint detail page.
             </DialogDescription>

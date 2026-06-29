@@ -211,7 +211,7 @@ export function ActivityWorkbench({ orgId, orgSlug }: { orgId: string; orgSlug: 
           <div className="mb-1.5 font-mono text-[11px] uppercase tracking-[0.14em] text-primary">Runs</div>
           <h1 className="m-0 text-[22px] font-semibold tracking-[-0.01em] text-foreground">Activity</h1>
           <p className="mt-[5px] max-w-[620px] text-[13px] text-muted-foreground">
-            Run activity across the organization, newest first — merged from the state store over every repo.
+            Run activity across the workspace, newest first — merged from the state store over every repo.
           </p>
         </div>
         <span

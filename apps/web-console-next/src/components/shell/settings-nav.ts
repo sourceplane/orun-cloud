@@ -1,5 +1,5 @@
 /**
- * Pure navigation model for the organization Settings surface.
+ * Pure navigation model for the workspace Settings surface.
  *
  * Dependency-free (no React, no icons) so the group/link composition is
  * unit-testable and shared by the settings layout's secondary nav rail (desktop)
@@ -42,7 +42,7 @@ export function buildSettingsNav(orgSlug: string): SettingsNavGroup[] {
   return [
     {
       id: "organization",
-      label: "Organization",
+      label: "Workspace",
       links: [
         {
           href: base,

@@ -108,7 +108,7 @@ export function planFeatureLines(code: string): string[] {
     case "pro":
       return ["Up to 25 repos", "Up to 20 members", "GitHub integration", "Custom domains", "Priority support"];
     case "business":
-      return ["Up to 100 repos", "Up to 50 members", "Multiple organizations", "Custom domains"];
+      return ["Up to 100 repos", "Up to 50 members", "Multiple workspaces", "Custom domains"];
     case "enterprise":
       return ["Unlimited repos & members", "SSO & advanced security", "Dedicated support"];
     default:

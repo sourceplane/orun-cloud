@@ -270,7 +270,7 @@ function Inner({ orgId }: { orgId: string }) {
         <div>
           <h1 className="text-xl font-semibold tracking-tight">Audit log</h1>
           <p className="text-sm text-muted-foreground">
-            Immutable record of everything that happened in this organization.
+            Immutable record of everything that happened in this workspace.
           </p>
         </div>
         <div className="flex items-center gap-2">

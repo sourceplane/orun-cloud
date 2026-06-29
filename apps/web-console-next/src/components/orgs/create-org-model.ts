@@ -22,7 +22,7 @@ export interface StepDef {
   description: string;
 }
 
-const STEP_DETAILS: StepDef = { id: "details", label: "Organization", description: "Name and URL" };
+const STEP_DETAILS: StepDef = { id: "details", label: "Workspace", description: "Name and URL" };
 const STEP_PLAN: StepDef = { id: "plan", label: "Plan", description: "Pick your pricing tier" };
 const STEP_SOURCE: StepDef = { id: "source", label: "Starting point", description: "Import or start fresh" };
 const STEP_REVIEW: StepDef = { id: "review", label: "Review", description: "Confirm and create" };
@@ -57,10 +57,10 @@ export interface PlanOption {
 }
 
 /**
- * Display catalog for the plan step. It runs before the organization (and
+ * Display catalog for the plan step. It runs before the workspace (and
  * therefore its org-scoped `/billing/plans` surface) exists, so the cards
  * render from this catalog; the selected `code` is what drives the real
- * checkout once the organization has been created.
+ * checkout once the workspace has been created.
  */
 export const PLAN_OPTIONS: PlanOption[] = [
   {
@@ -119,7 +119,7 @@ export const GIT_PROVIDERS: GitProviderDef[] = [
     id: "github",
     name: "Continue with GitHub",
     available: true,
-    note: "Install the GitHub App right after the organization is created.",
+    note: "Install the GitHub App right after the workspace is created.",
   },
   {
     id: "gitlab",
@@ -196,7 +196,7 @@ export function createButtonLabel(
   if (source.kind === "git" && source.provider === "github") {
     return "Create & connect GitHub";
   }
-  return "Create organization";
+  return "Create workspace";
 }
 
 /**

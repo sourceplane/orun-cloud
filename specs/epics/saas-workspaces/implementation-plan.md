@@ -62,7 +62,15 @@ Serve `/v1/workspaces/*` as aliases without forking handlers.
   usage still compiles and works; the `intent.yaml` spelling decision (D5) is
   recorded and implemented.
 
-## WS4 — Console rebrand + parent-as-workspace — 🗓️ Planned
+## WS4 — Console rebrand + parent-as-workspace — ✅ Shipped (copy relabel)
+
+> Relabel-not-remodel: user-facing copy across the switcher, command palette,
+> nav, create-workspace flow, the Workspaces list, and Workspace settings now
+> speak Account/Workspace. Routes (`/orgs/*`), hooks (`useEffectiveOrgSlug`),
+> internal ids, and the data layer (`client.organizations`) are unchanged. The
+> deeper parent-as-selectable-Workspace affordance can layer on later without
+> re-modelling.
+
 
 - Relabel the scope-switcher as the **Workspace switcher** grouped under the
   **Account**; update copy, empty states, Cmd-K ("Switch/Create workspace"),

@@ -84,12 +84,12 @@ export function buildBaseCommands(ctx: CommandContext): CommandDescriptor[] {
   // --- Navigation -----------------------------------------------------------
   out.push({
     id: "nav.orgs",
-    label: "Switch organization",
+    label: "Switch workspace",
     group: "Navigation",
     kind: "navigate",
     to: "/orgs",
     icon: "Building2",
-    keywords: ["org", "organization", "switch", "tenant"],
+    keywords: ["workspace", "org", "organization", "switch", "tenant"],
     shortcut: "O",
   });
   out.push({
@@ -138,8 +138,9 @@ export function buildBaseCommands(ctx: CommandContext): CommandDescriptor[] {
         "limit",
         "consumption",
       ]),
-      navItem("nav.org-settings", "Organization settings", settingsBase, "SlidersHorizontal", [
+      navItem("nav.org-settings", "Workspace settings", settingsBase, "SlidersHorizontal", [
         "settings",
+        "workspace",
         "org",
         "general",
         "danger",
@@ -194,12 +195,12 @@ export function buildBaseCommands(ctx: CommandContext): CommandDescriptor[] {
   // --- Create ---------------------------------------------------------------
   out.push({
     id: "create.org",
-    label: "Create organization",
+    label: "Create workspace",
     group: "Create",
     kind: "navigate",
     to: "/orgs?new=1",
     icon: "PlusCircle",
-    keywords: ["new", "create", "org"],
+    keywords: ["new", "create", "workspace", "org"],
   });
   if (orgBase) {
     out.push(

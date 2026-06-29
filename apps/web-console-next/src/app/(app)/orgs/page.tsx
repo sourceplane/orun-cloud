@@ -52,15 +52,15 @@ export default function OrgsPage() {
     <div className="space-y-6">
       <header className="flex items-end justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Organizations</h1>
+          <h1 className="text-2xl font-semibold tracking-tight">Workspaces</h1>
           <p className="text-sm text-muted-foreground">
-            Tenant root. Pick an org or create a new one.
+            The workspaces in your account. Pick one or create a new one.
           </p>
         </div>
         <Button asChild>
           <Link href="/orgs/new">
             <Plus className="h-4 w-4 mr-1.5" />
-            New organization
+            New workspace
           </Link>
         </Button>
       </header>
@@ -68,10 +68,10 @@ export default function OrgsPage() {
       {(orgs.data ?? []).some((o) => o.status === "suspended") && (
         <Card className="border-warning/40 bg-warning/5">
           <CardHeader>
-            <CardTitle className="text-base">Some organizations are suspended</CardTitle>
+            <CardTitle className="text-base">Some workspaces are suspended</CardTitle>
             <CardDescription>
-              One or more organizations are frozen because your account plan no longer includes
-              multiple organizations. Upgrade to restore access to them.
+              One or more workspaces are frozen because your account plan no longer includes
+              multiple workspaces. Upgrade to restore access to them.
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -97,7 +97,7 @@ export default function OrgsPage() {
       ) : orgs.error ? (
         <Card>
           <CardHeader>
-            <CardTitle className="text-destructive">Failed to load organizations</CardTitle>
+            <CardTitle className="text-destructive">Failed to load workspaces</CardTitle>
             <CardDescription>{orgs.error.message}</CardDescription>
           </CardHeader>
         </Card>
@@ -106,9 +106,9 @@ export default function OrgsPage() {
         // /onboarding; this renders only for the moment before it fires.
         <EmptyState
           icon={Building2}
-          title="No organizations yet"
-          description="Create your first organization to start provisioning repos and environments."
-          primaryAction={{ label: "Create your organization", href: "/onboarding" }}
+          title="No workspaces yet"
+          description="Create your first workspace to start provisioning repos and environments."
+          primaryAction={{ label: "Create your workspace", href: "/onboarding" }}
         />
       ) : (
         <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">

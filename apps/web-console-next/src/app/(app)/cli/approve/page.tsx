@@ -92,7 +92,7 @@ export default function CliApprovePage() {
           {!grant.loading && !grant.error && grant.data && (
             <CardDescription>
               Approving signs the Orun CLI into your account on this device. It will be able to act
-              as you within your organizations until you revoke it in Settings &rarr; Sessions &amp;
+              as you within your workspaces until you revoke it in Settings &rarr; Sessions &amp;
               devices.
             </CardDescription>
           )}

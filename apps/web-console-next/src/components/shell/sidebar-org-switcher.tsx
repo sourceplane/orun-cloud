@@ -47,7 +47,7 @@ export function SidebarOrgSwitcher({ onNavigate }: { onNavigate?: () => void } =
   };
 
   const current = orgs?.find((o) => o.slug === orgSlug) ?? null;
-  const label = current?.name ?? orgSlug ?? "Select organization";
+  const label = current?.name ?? orgSlug ?? "Select workspace";
   const seed = (label.trim()[0] ?? "S").toUpperCase();
 
   return (
@@ -60,7 +60,7 @@ export function SidebarOrgSwitcher({ onNavigate }: { onNavigate?: () => void } =
         <ChevronsUpDown className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" className="min-w-[240px]">
-        <DropdownMenuLabel>Organizations</DropdownMenuLabel>
+        <DropdownMenuLabel>Workspaces</DropdownMenuLabel>
         {orgs?.map((o) => (
           <DropdownMenuItem key={o.id} onSelect={() => go(`/orgs/${o.slug}/projects`)}>
             <Building2 className="h-4 w-4 opacity-70" />
@@ -70,10 +70,10 @@ export function SidebarOrgSwitcher({ onNavigate }: { onNavigate?: () => void } =
         ))}
         <DropdownMenuSeparator />
         <DropdownMenuItem onSelect={() => go("/orgs")}>
-          View all organizations…
+          View all workspaces…
         </DropdownMenuItem>
         <DropdownMenuItem onSelect={() => go("/orgs")}>
-          <Plus className="h-4 w-4 opacity-70" /> Create organization
+          <Plus className="h-4 w-4 opacity-70" /> Create workspace
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>

@@ -23,7 +23,7 @@ export default function ChangePlanPage() {
             </Link>
             <h1 className="text-xl font-semibold tracking-tight">Change plan</h1>
             <p className="text-sm text-muted-foreground">
-              Pick a new plan for this organization. You can change again at any time.
+              Pick a new plan for this workspace. You can change again at any time.
             </p>
           </header>
           <ChangePlanCards orgId={org.id} orgSlug={slug} />

@@ -47,7 +47,7 @@ function Inner({ orgId, orgSlug }: { orgId: string; orgSlug: string }) {
         <div>
           <h1 className="text-xl font-semibold tracking-tight">Webhooks</h1>
           <p className="text-sm text-muted-foreground">
-            Endpoints that receive signed event deliveries from this organization.
+            Endpoints that receive signed event deliveries from this workspace.
             Open an endpoint to inspect its signing-secret version or rotate it.
           </p>
         </div>
@@ -76,7 +76,7 @@ function Inner({ orgId, orgSlug }: { orgId: string; orgSlug: string }) {
         <EmptyState
           icon={Webhook}
           title="No webhook endpoints"
-          description="Create your first endpoint to start receiving signed event deliveries from this organization."
+          description="Create your first endpoint to start receiving signed event deliveries from this workspace."
           primaryAction={{ label: "Create endpoint", onClick: () => setCreateOpen(true) }}
         />
       ) : (

@@ -26,7 +26,7 @@ export default function RootError({
       <div className="w-full max-w-md space-y-4 text-center">
         <h1 className="text-lg font-semibold tracking-tight">Something went wrong</h1>
         <p className="text-sm text-muted-foreground">
-          The console hit an unexpected error. Retry, or return to your organizations.
+          The console hit an unexpected error. Retry, or return to your workspaces.
         </p>
         {error.digest && (
           <p className="font-mono text-[11px] text-muted-foreground/70">ref: {error.digest}</p>
@@ -44,7 +44,7 @@ export default function RootError({
             onClick={() => router.push("/orgs")}
             className="inline-flex h-9 items-center rounded-md bg-primary px-4 text-sm text-primary-foreground hover:bg-primary/90"
           >
-            Back to organizations
+            Back to workspaces
           </button>
         </div>
       </div>

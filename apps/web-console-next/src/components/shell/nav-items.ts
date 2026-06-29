@@ -58,7 +58,7 @@ export function buildNavSections(scope: NavScope): NavSection[] {
     // Product surfaces — the day-to-day work, at the top of the rail.
     sections.push({
       id: "org",
-      label: orgSlug ? `Org · ${orgSlug}` : "Organization",
+      label: orgSlug ? `Workspace · ${orgSlug}` : "Workspace",
       links: [
         { href: `${orgBase}/catalog`, label: "Catalog", icon: "Boxes" },
         { href: `${orgBase}/activities`, label: "Activities", icon: "Activity" },

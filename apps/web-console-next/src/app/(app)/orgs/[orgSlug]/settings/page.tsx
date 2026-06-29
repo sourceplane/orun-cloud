@@ -19,16 +19,16 @@ function Inner({ org }: { org: { id: string; name: string; slug: string } }) {
   return (
     <div className="space-y-6">
       <SettingsCard
-        title="Organization Name"
-        description={`This is your organization's visible name within ${PRODUCT_NAME}. For example, the name of your company or department.`}
-        footerHint="Renaming an organization isn't available from the console yet."
+        title="Workspace Name"
+        description={`This is your workspace's visible name within ${PRODUCT_NAME}. For example, the name of your company or department.`}
+        footerHint="Renaming a workspace isn't available from the console yet."
       >
-        <Input value={org.name} disabled className="max-w-md" aria-label="Organization name" />
+        <Input value={org.name} disabled className="max-w-md" aria-label="Workspace name" />
       </SettingsCard>
 
       <SettingsCard
-        title="Organization Slug"
-        description={`This is your organization's URL namespace on ${PRODUCT_NAME}. It identifies your organization across the console and the API.`}
+        title="Workspace Slug"
+        description={`This is your workspace's URL namespace on ${PRODUCT_NAME}. It identifies your workspace across the console and the API.`}
         footerHint="Used in console URLs and API requests."
         footerAction={<CopyButton value={org.slug} />}
       >
@@ -39,26 +39,26 @@ function Inner({ org }: { org: { id: string; name: string; slug: string } }) {
           <input
             value={org.slug}
             disabled
-            aria-label="Organization slug"
+            aria-label="Workspace slug"
             className="w-full bg-transparent px-3 py-2 text-sm text-foreground outline-none"
           />
         </div>
       </SettingsCard>
 
       <SettingsCard
-        title="Organization ID"
-        description="Use this identifier when contacting support or making API requests on behalf of this organization."
-        footerHint="A unique, stable identifier for this organization."
+        title="Workspace ID"
+        description="Use this identifier when contacting support or making API requests on behalf of this workspace."
+        footerHint="A unique, stable identifier for this workspace."
         footerAction={<CopyButton value={org.id} />}
       >
-        <Input value={org.id} disabled className="max-w-md font-mono text-xs" aria-label="Organization ID" />
+        <Input value={org.id} disabled className="max-w-md font-mono text-xs" aria-label="Workspace ID" />
       </SettingsCard>
 
       <SettingsCard
         tone="danger"
-        title="Delete Organization"
-        description="Permanently remove this organization along with its repos, members, and data. This action cannot be undone."
-        footerHint="Org deletion is handled by support to protect against accidental, irreversible data loss."
+        title="Delete Workspace"
+        description="Permanently remove this workspace along with its repos, members, and data. This action cannot be undone."
+        footerHint="Workspace deletion is handled by support to protect against accidental, irreversible data loss."
         footerAction={
           <Button variant="outline" size="sm" disabled>
             Delete…

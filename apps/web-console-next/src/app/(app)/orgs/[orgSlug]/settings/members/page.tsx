@@ -49,14 +49,14 @@ function Inner({ orgId }: { orgId: string }) {
         open={pendingRemove !== null}
         onOpenChange={(open) => !open && setPendingRemove(null)}
         title="Remove member"
-        description="They immediately lose access to this organization and all of its repos. You can re-invite them later."
+        description="They immediately lose access to this workspace and all of its repos. You can re-invite them later."
         resourceName={pendingRemove?.subjectId}
         confirmLabel="Remove member"
         onConfirm={() => (pendingRemove ? removeMember(pendingRemove.id) : undefined)}
       />
       <header>
         <h1 className="text-xl font-semibold tracking-tight">Members</h1>
-        <p className="text-sm text-muted-foreground">Users and service principals attached to this organization.</p>
+        <p className="text-sm text-muted-foreground">Users and service principals attached to this workspace.</p>
       </header>
 
       {members.loading ? (

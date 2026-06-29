@@ -87,12 +87,12 @@ export function ScopeSwitcher() {
       <div className="flex min-w-0 md:hidden">
         <Crumb
           icon={<Building2 className="h-3.5 w-3.5" />}
-          label={mobileOrg?.name ?? effectiveOrgSlug ?? "Select organization"}
+          label={mobileOrg?.name ?? effectiveOrgSlug ?? "Select workspace"}
           muted={!effectiveOrgSlug}
         >
           {orgs?.length ? (
             <>
-              <DropdownMenuLabel>Organizations</DropdownMenuLabel>
+              <DropdownMenuLabel>Workspaces</DropdownMenuLabel>
               {orgs.map((o) => (
                 <DropdownMenuItem key={o.id} onSelect={() => router.push(`/orgs/${o.slug}/projects`)}>
                   <Building2 className="h-4 w-4 opacity-70" /> {o.name}
@@ -106,7 +106,7 @@ export function ScopeSwitcher() {
               <DropdownMenuSeparator />
             </>
           ) : null}
-          <DropdownMenuItem onSelect={() => router.push("/orgs")}>View all organizations…</DropdownMenuItem>
+          <DropdownMenuItem onSelect={() => router.push("/orgs")}>View all workspaces…</DropdownMenuItem>
         </Crumb>
       </div>
 
