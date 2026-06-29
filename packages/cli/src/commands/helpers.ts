@@ -24,8 +24,10 @@ import { MissingOrgContextError } from "../errors.js";
 
 /**
  * Resolve the org id for a write/rotate command. Order:
- *   1. Explicit `--org=ORG_ID` flag (only honoured when `allowOverride`
- *      is true — currently `org invite` is the sole consumer).
+ *   1. Explicit `--workspace=ID` flag (or the legacy `--org=ID` alias), only
+ *      honoured when `allowOverride` is true — currently `org`/`workspace
+ *      invite` is the sole consumer. When both are passed, `--workspace` wins
+ *      (saas-workspaces A4).
  *   2. Persisted `activeOrgId` from `~/.config/orun-cloud/config.json`.
  *
  * Throws `MissingOrgContextError` when neither is available. The CLI
@@ -37,6 +39,9 @@ export async function resolveOrgId(
   allowOverride: boolean,
 ): Promise<string> {
   if (allowOverride) {
+    // `--workspace` is the leading spelling; `--org` is the retained alias.
+    const workspaceFlag = ctx.flags["workspace"];
+    if (typeof workspaceFlag === "string" && workspaceFlag.length > 0) return workspaceFlag;
     const flag = ctx.flags["org"];
     if (typeof flag === "string" && flag.length > 0) return flag;
   }

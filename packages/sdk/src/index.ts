@@ -23,12 +23,23 @@ import { MembershipsClient } from "./memberships.js";
 import { MeteringClient } from "./metering.js";
 import { NotificationsClient } from "./notifications.js";
 import { OrganizationsClient } from "./organizations.js";
+import { WorkspacesClient } from "./workspaces.js";
 import { ProjectsClient } from "./projects.js";
 import { SecurityEventsClient } from "./securityEvents.js";
 import { WebhooksClient } from "./webhooks.js";
 import { Transport, type ClientOptions } from "./transport.js";
 
 export class OrunCloud {
+  /**
+   * Workspaces resource — the public Account/Workspace vocabulary
+   * (saas-workspaces). Same ids and surface as {@link organizations}, served via
+   * the `/v1/workspaces` alias.
+   */
+  readonly workspaces: WorkspacesClient;
+  /**
+   * Organizations resource — the legacy spelling of {@link workspaces}. Retained
+   * and fully supported; new code should prefer `workspaces`.
+   */
   readonly organizations: OrganizationsClient;
   /**
    * Repos resource client — the canonical name (a project is a git repo).
@@ -57,6 +68,7 @@ export class OrunCloud {
   constructor(options: ClientOptions) {
     this.transport = new Transport(options);
     this.organizations = new OrganizationsClient(this.transport);
+    this.workspaces = new WorkspacesClient(this.transport);
     this.projects = new ProjectsClient(this.transport);
     // `repos` is the canonical accessor; `projects` stays as a deprecated alias.
     this.repos = this.projects;
@@ -79,6 +91,7 @@ export class OrunCloud {
 
 // Resource clients (also reachable via `client.<resource>`).
 export { OrganizationsClient } from "./organizations.js";
+export { WorkspacesClient } from "./workspaces.js";
 export { ProjectsClient } from "./projects.js";
 export { EnvironmentsClient } from "./environments.js";
 export { MembershipsClient } from "./memberships.js";
