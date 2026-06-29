@@ -20,3 +20,4 @@ export type {
 
 export { createMembershipRepository } from "./repository.js";
 export { effectiveBillingOrgId } from "./billing-scope.js";
+export { effectiveIntegrationOrg } from "./integration-scope.js";
