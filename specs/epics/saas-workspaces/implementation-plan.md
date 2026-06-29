@@ -46,11 +46,11 @@ Serve `/v1/workspaces/*` as aliases without forking handlers.
   vocabulary is most visible — `--org`, `ORUN_ORG`, and the committed
   `intent.yaml` field `execution.state.org` (+ `requireOrg`), shipped by
   `oidc-ci-tenancy` (orun #420). Add `--workspace` (and `ORUN_WORKSPACE`) aliases
-  and lead help with Workspace; resolve the `intent.yaml` spelling per **D5**
-  (alias `execution.state.workspace` vs hold `execution.state.org`). This is a
-  cross-repo change owned by `saas-orun-platform` (DV5) — plan it there, do not
-  fork the org-tenancy precedence chain. The declared value is always the
-  **Workspace** org, never the Account.
+  and lead help with Workspace; per **A4**, lead with `execution.state.workspace`
+  and retain `execution.state.org` as an accepted alias (read either, prefer
+  `workspace`). This is a cross-repo change owned by `saas-orun-platform` (DV5) —
+  plan it there, do not fork the org-tenancy precedence chain. The declared value
+  is always the **Workspace** org, never the Account.
 - Owner: `packages/sdk` + `packages/cli` + **`sourceplane/orun`** (via
   `saas-orun-platform`).
 - **Done when:** the SDK and both CLIs expose Workspace surfaces that pass through

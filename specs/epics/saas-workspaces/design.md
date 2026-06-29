@@ -128,14 +128,14 @@ CLI surface plan:
   in docs, not removed.
 - **CLIs** gain a `workspace`/`--workspace` alias for `org`/`--org`
   (and `ORUN_WORKSPACE` aliasing `ORUN_ORG`). Help text leads with Workspace.
-- **`intent.yaml`** is the one committed, customer-authored surface, so it needs
-  an explicit decision (see risks **D5**): either alias
-  `execution.state.workspace` to `execution.state.org` (read either, prefer the
-  newer), or hold `execution.state.org` as the durable spelling and document
-  "this org *is* your Workspace." Either way the **value** a customer declares is
-  their **Workspace** org — never the Account; the integration connection that
-  resolves *up* to the Account (`saas-integration-tenancy`) is a server-side
-  resolution the CLI claim never restates.
+- **`intent.yaml`** is the one committed, customer-authored surface. Decision
+  (risks **A4**): **lead with `execution.state.workspace`** and retain
+  `execution.state.org` (shipped by `oidc-ci-tenancy`, orun #420) as an accepted
+  alias — read either, prefer `workspace`, so existing configs keep working
+  untouched. The **value** a customer declares is always their **Workspace** org —
+  never the Account; the integration connection that resolves *up* to the Account
+  (`saas-integration-tenancy`) is a server-side resolution the CLI claim never
+  restates.
 
 ## 7. Back-compat & deprecation (WS5)
 

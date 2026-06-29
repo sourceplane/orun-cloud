@@ -13,7 +13,6 @@ the open items before the corresponding milestone lands.
 | D2 | **Aliasing depth** | **Label + public API aliasing** (decided) | Not label-only (brand/impl mismatch) and not a full model rename (huge, no gain). Confirm appetite for maintaining dual public routes. |
 | D3 | **Audit / analytics event terminology** | Keep `org.*` internally; document the mapping; do **not** fork the taxonomy | Forking event names to `workspace.*` doubles the audit contract surface for cosmetic gain. Revisit only if a customer-facing audit log must read "Workspace". |
 | D4 | **`/v1/organizations/*` deprecation window** | **Indefinite coexistence** initially; no removal date | Removing the legacy surface is a breaking change; set a sunset only with a migration story and customer notice. |
-| D5 | **`intent.yaml` tenancy field spelling** (the Go `orun` CLI) | **Hold `execution.state.org`; document "this org is your Workspace"** (lean) | `oidc-ci-tenancy` (orun #420) committed `execution.state.org`/`requireOrg` into customer repos. Aliasing to `execution.state.workspace` is the most on-brand but mutates a freshly-shipped, version-controlled field across customer CI configs; holding `org` as the durable key (read `workspace` if present) avoids churn. Decide **with `saas-orun-platform` (DV5)** before WS3 touches the Go CLI. Whichever spelling wins, the value is the **Workspace** org, never the Account. |
 
 ## ✅ Decisions made
 
@@ -22,6 +21,7 @@ the open items before the corresponding milestone lands.
 | A1 | Relabel vs remodel | **Relabel.** No new entity; a Workspace is an `organizations` row; `org_id`-everywhere is untouched. |
 | A2 | Parent representation | The parent is **both** the Account and one selectable Workspace (its own direct org) — a synthetic UI affordance, no schema change. |
 | A3 | "Product" as the unit name | **Rejected** — collides with the Polar *product* (billing SKU). |
+| A4 | **`intent.yaml` tenancy field spelling** (the Go `orun` CLI) | **Alias `execution.state.workspace`** as the leading/preferred spelling; retain `execution.state.org` (shipped by `oidc-ci-tenancy`, orun #420) as an accepted alias — read either, prefer `workspace`. Same for `--workspace`/`--org` and `ORUN_WORKSPACE`/`ORUN_ORG`. The declared **value** is always the **Workspace** org, never the Account. Implement **with `saas-orun-platform` (DV5)**; back-compat keeps existing `execution.state.org` configs working unchanged. |
 
 ## Risks
 
