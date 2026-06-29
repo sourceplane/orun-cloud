@@ -1,19 +1,24 @@
 "use client";
 
-// OV7 — the run detail view. One run's projection (status, provenance, timings)
-// plus its plan-DAG jobs (status, component, deps, attempt, failure summary).
-// Read-only; consumes getRun + listRunJobs (OV7.4 SDK). Project-scoped like the
-// runs list (resolves projectSlug → projectId via the projects list).
+// The run detail view (OV7), redesigned to the visual contract
+// (`specs/epics/saas-catalog-portal/design/Service_Catalog.dc.html` → run
+// detail): a status hero (identity + provenance + actor), a jobs rail, and a
+// terminal-style log panel for the selected job with live-tail.
+//
+// One run's projection (status, provenance, timings, job counts) plus its
+// plan-DAG jobs (status, component, deps, attempt, failure summary, logs).
+// Read-only; consumes getRun + listRunJobs + readRunJobLogs (OV7.4 SDK).
+// Project-scoped like the runs list (resolves projectSlug → projectId via the
+// projects list). The design's per-step logs are substituted with each JOB's
+// real assembled log stream — we don't fabricate steps the projection lacks.
 
 import * as React from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import { ArrowLeft, Play } from "lucide-react";
-import type { Run, RunStatus, RunJob, RunJobStatus } from "@saas/contracts/state";
+import type { Run, RunJob } from "@saas/contracts/state";
 import { OrgScope } from "@/components/shell/org-scope";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { Table, TableHeader, TableRow, TableHead, TableBody, TableCell } from "@/components/ui/table";
-import { Badge } from "@/components/ui/badge";
+import { Card, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -21,38 +26,10 @@ import { wrap } from "@/lib/api";
 import { formatTimestamp } from "@/lib/format";
 import { useSession } from "@/lib/session";
 import { useApiQuery, qk } from "@/lib/query";
+import { buildRunDetail, type JobView } from "@/lib/runs-portal/model";
+import { StatusMark, ActorChip } from "@/components/activity/run-status-icon";
 
-function runStatusVariant(status: RunStatus): "success" | "destructive" | "warning" | "secondary" {
-  switch (status) {
-    case "succeeded":
-      return "success";
-    case "failed":
-      return "destructive";
-    case "running":
-    case "pending":
-      return "warning";
-    case "canceled":
-      return "secondary";
-  }
-}
-
-function jobStatusVariant(status: RunJobStatus): "success" | "destructive" | "warning" | "secondary" {
-  switch (status) {
-    case "succeeded":
-      return "success";
-    case "failed":
-    case "timed_out":
-      return "destructive";
-    case "running":
-    case "claimed":
-      return "warning";
-    case "queued":
-    case "canceled":
-      return "secondary";
-  }
-}
-
-const fmt = formatTimestamp;
+const CLOCK_TICK_MS = 5_000;
 
 export default function RunDetailPage() {
   const params = useParams<{ orgSlug: string; projectSlug: string; runId: string }>();
@@ -80,7 +57,13 @@ function Inner({
   const { client } = useSession();
   // Runs are browsed from the org-level Activities feed now; return there.
   const runsHref = `/orgs/${orgSlug}/activities`;
-  const [openJob, setOpenJob] = React.useState<string | null>(null);
+
+  // A ticking clock so live durations / relative time stay current.
+  const [now, setNow] = React.useState(() => Date.now());
+  React.useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), CLOCK_TICK_MS);
+    return () => clearInterval(id);
+  }, []);
 
   const projectsList = useApiQuery(qk.projects(orgId), () =>
     wrap(async () => (await client.projects.list(orgId)).projects),
@@ -90,6 +73,7 @@ function Inner({
     [projectsList.data, projectSlug],
   );
   const projectId = project?.id ?? "pending";
+  const repoLabel = project?.name ?? project?.slug ?? projectSlug;
 
   const run = useApiQuery(
     qk.run(orgId, projectId, runId),
@@ -102,27 +86,36 @@ function Inner({
     { enabled: !!project },
   );
 
+  const [selectedJob, setSelectedJob] = React.useState<string | null>(null);
+
   const backLink = (
-    <Link
-      href={runsHref}
-      className="inline-flex items-center gap-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
-    >
-      <ArrowLeft className="h-3.5 w-3.5" />
-      Back to activities
-    </Link>
+    <div className="flex h-[34px] items-center gap-2.5 text-[13px] text-muted-foreground">
+      <span className="text-muted-foreground/80">{orgSlug}</span>
+      <span className="text-muted-foreground/40">/</span>
+      <Link href={runsHref} className="transition-colors hover:text-foreground">
+        Activity
+      </Link>
+      <span className="text-muted-foreground/40">/</span>
+      <span className="truncate font-mono text-foreground">{runId}</span>
+      <Link
+        href={runsHref}
+        className="ml-auto inline-flex items-center gap-1.5 rounded-[7px] border border-border px-[11px] py-1.5 text-[12.5px] text-muted-foreground transition-colors hover:text-foreground"
+      >
+        <ArrowLeft className="h-3.5 w-3.5" />
+        All runs
+      </Link>
+    </div>
   );
 
   if (projectsList.loading || (project && run.loading)) {
     return (
       <div className="space-y-5">
         {backLink}
-        <Card>
-          <CardContent className="space-y-2 pt-6">
-            {Array.from({ length: 5 }).map((_, i) => (
-              <Skeleton key={i} className="h-9 w-full" />
-            ))}
-          </CardContent>
-        </Card>
+        <Skeleton className="h-[68px] w-full rounded-xl" />
+        <div className="grid grid-cols-1 gap-[18px] md:grid-cols-[248px_minmax(0,1fr)]">
+          <Skeleton className="h-[260px] w-full rounded-[13px]" />
+          <Skeleton className="h-[260px] w-full rounded-[13px]" />
+        </div>
       </div>
     );
   }
@@ -149,138 +142,138 @@ function Inner({
   }
 
   const r: Run = run.data;
+  const jobList: RunJob[] = jobs.data ?? [];
+  const detail = buildRunDetail(r, jobList, repoLabel, now);
+  const activeJobId = selectedJob ?? detail.defaultJobId;
+  const activeJob = detail.jobs.find((j) => j.jobId === activeJobId) ?? detail.jobs[0] ?? null;
+
   return (
     <div className="space-y-5">
       {backLink}
 
-      <header className="flex flex-wrap items-center justify-between gap-3">
-        <div className="min-w-0">
-          <h1 className="truncate font-mono text-lg font-semibold tracking-tight">{r.runId}</h1>
-          <p className="text-sm text-muted-foreground">{r.source === "ci" ? "CI run" : "CLI run"}</p>
+      {/* HERO */}
+      <div className="flex items-start gap-[15px]">
+        <StatusMark vis={detail.hero.vis} box={42} glyph={20} radius={11} strokeWidth={2.2} />
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-2.5">
+            <h1 className="m-0 truncate text-[19px] font-semibold tracking-[-0.01em] text-foreground">
+              {detail.hero.title}
+            </h1>
+            <span className="text-[12.5px]" style={{ color: detail.hero.vis.color }}>
+              {detail.hero.statusLabel}
+            </span>
+          </div>
+          <div className="mt-[9px] flex flex-wrap items-center gap-2 font-mono text-[12px] text-muted-foreground/70">
+            <span className="text-muted-foreground">{detail.hero.repo}</span>
+            <Dot />
+            <span>{detail.hero.runId}</span>
+            <Dot />
+            <span>{detail.hero.provenance}</span>
+            <span className="inline-flex h-[19px] items-center rounded-[5px] border border-border bg-muted px-[7px] text-muted-foreground">
+              {detail.hero.envLabel}
+            </span>
+          </div>
+          <div className="mt-[10px] flex flex-wrap items-center gap-2">
+            <ActorChip actor={detail.hero.actor} box={18} />
+            <span className="text-[12px] text-muted-foreground">
+              {detail.hero.actor.name} triggered via {detail.hero.sourceLabel}
+            </span>
+            <span className="font-mono text-[12px] text-muted-foreground/70" title={formatTimestamp(r.createdAt)}>
+              · {detail.hero.rel} · {detail.hero.duration}
+            </span>
+          </div>
         </div>
-        <Badge variant={runStatusVariant(r.status)}>{r.status}</Badge>
-      </header>
+      </div>
 
-      <Card>
-        <CardContent className="pt-6">
-          <dl className="grid grid-cols-1 gap-x-8 gap-y-2 text-sm sm:grid-cols-2">
-            <Pair label="Environment" value={r.environment ?? "—"} />
-            <Pair label="Commit" value={r.git.commit ? r.git.commit.slice(0, 12) : "—"} mono />
-            <Pair label="Ref" value={r.git.ref ?? "—"} mono />
-            <Pair label="Plan digest" value={r.planDigest.slice(0, 19)} mono />
-            <Pair label="Created" value={fmt(r.createdAt)} />
-            <Pair label="Started" value={fmt(r.startedAt)} />
-            <Pair label="Finished" value={fmt(r.finishedAt)} />
-            <Pair
-              label="Jobs"
-              value={`${r.jobCounts.succeeded}✓ ${r.jobCounts.failed}✗ ${r.jobCounts.running + r.jobCounts.queued}⋯`}
+      {/* JOBS + LOGS */}
+      {jobs.loading ? (
+        <div className="grid grid-cols-1 gap-[18px] md:grid-cols-[248px_minmax(0,1fr)]">
+          <Skeleton className="h-[260px] w-full rounded-[13px]" />
+          <Skeleton className="h-[260px] w-full rounded-[13px]" />
+        </div>
+      ) : jobs.error ? (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-destructive">{jobs.error.code}</CardTitle>
+            <CardDescription>{jobs.error.message}</CardDescription>
+          </CardHeader>
+        </Card>
+      ) : detail.jobs.length === 0 ? (
+        <EmptyState icon={Play} title="No jobs" description="This run has no jobs in its plan DAG." />
+      ) : (
+        <div className="grid grid-cols-1 items-start gap-[18px] md:grid-cols-[248px_minmax(0,1fr)]">
+          {/* jobs rail */}
+          <div className="rounded-[13px] border border-border bg-card p-2">
+            <div className="flex items-center gap-[7px] px-[9px] pb-[9px] pt-[7px]">
+              <span className="text-[11px] font-semibold uppercase tracking-[0.07em] text-muted-foreground">Jobs</span>
+              <span className="font-mono text-[11px] text-muted-foreground/70">{detail.jobs.length}</span>
+            </div>
+            {detail.jobs.map((j) => {
+              const active = j.jobId === activeJob?.jobId;
+              return (
+                <button
+                  key={j.jobId}
+                  type="button"
+                  onClick={() => setSelectedJob(j.jobId)}
+                  className="mb-0.5 flex w-full items-center gap-2.5 rounded-[9px] border px-2.5 py-[9px] text-left transition-colors"
+                  style={{
+                    borderColor: active ? "hsl(var(--border))" : "transparent",
+                    background: active ? "hsl(var(--primary) / 0.07)" : "transparent",
+                  }}
+                >
+                  <StatusMark vis={j.vis} box={18} glyph={13} radius={5} strokeWidth={2.2} />
+                  <span
+                    className="min-w-0 flex-1 truncate font-mono text-[13px]"
+                    style={{ color: active ? "hsl(var(--foreground))" : "hsl(var(--foreground) / 0.85)" }}
+                  >
+                    {j.name}
+                  </span>
+                  <span className="shrink-0 font-mono text-[11px] text-muted-foreground/70">{j.dur}</span>
+                </button>
+              );
+            })}
+          </div>
+
+          {/* selected job: header + log stream */}
+          {activeJob ? (
+            <JobLogPanel
+              key={activeJob.jobId}
+              job={activeJob}
+              orgId={orgId}
+              projectId={projectId}
+              runId={runId}
             />
-          </dl>
-        </CardContent>
-      </Card>
-
-      <section className="space-y-2">
-        <h2 className="text-sm font-medium">Jobs</h2>
-        {jobs.loading ? (
-          <Card>
-            <CardContent className="space-y-2 pt-6">
-              {Array.from({ length: 3 }).map((_, i) => (
-                <Skeleton key={i} className="h-8 w-full" />
-              ))}
-            </CardContent>
-          </Card>
-        ) : jobs.error ? (
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-destructive">{jobs.error.code}</CardTitle>
-              <CardDescription>{jobs.error.message}</CardDescription>
-            </CardHeader>
-          </Card>
-        ) : !jobs.data || jobs.data.length === 0 ? (
-          <EmptyState icon={Play} title="No jobs" description="This run has no jobs in its plan DAG." />
-        ) : (
-          <Card>
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Job</TableHead>
-                  <TableHead>Component</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead>Deps</TableHead>
-                  <TableHead>Attempt</TableHead>
-                  <TableHead>Finished</TableHead>
-                  <TableHead className="text-right">Logs</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {jobs.data.map((j: RunJob) => (
-                  <TableRow key={j.jobId}>
-                    <TableCell className="font-mono text-xs">{j.jobId}</TableCell>
-                    <TableCell className="text-sm">
-                      {j.component ?? <span className="text-muted-foreground">—</span>}
-                    </TableCell>
-                    <TableCell>
-                      <Badge variant={jobStatusVariant(j.status)}>{j.status}</Badge>
-                      {j.errorText ? (
-                        <span className="ml-2 text-xs text-muted-foreground" title={j.errorText}>
-                          {j.errorText.length > 48 ? `${j.errorText.slice(0, 48)}…` : j.errorText}
-                        </span>
-                      ) : null}
-                    </TableCell>
-                    <TableCell className="text-xs text-muted-foreground">{j.deps.length > 0 ? j.deps.join(", ") : "—"}</TableCell>
-                    <TableCell className="text-xs text-muted-foreground">{j.attempt}</TableCell>
-                    <TableCell className="text-xs text-muted-foreground">{fmt(j.finishedAt)}</TableCell>
-                    <TableCell className="text-right">
-                      <Button
-                        size="sm"
-                        variant={openJob === j.jobId ? "secondary" : "ghost"}
-                        onClick={() => setOpenJob((cur) => (cur === j.jobId ? null : j.jobId))}
-                      >
-                        Logs
-                      </Button>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </Card>
-        )}
-
-        {openJob ? (
-          <JobLogs
-            orgId={orgId}
-            projectId={projectId}
-            runId={runId}
-            jobId={openJob}
-            onClose={() => setOpenJob(null)}
-          />
-        ) : null}
-      </section>
+          ) : null}
+        </div>
+      )}
     </div>
   );
+}
+
+function Dot() {
+  return <span className="text-muted-foreground/40">·</span>;
 }
 
 /** How often live-tail polls the log tail while a job is still producing output. */
 const LOG_TAIL_INTERVAL_MS = 3000;
 
 /**
- * A job's assembled logs with live-tail. The initial load replaces; subsequent
- * fetches append from the server's nextSeq cursor. While the log is incomplete
- * and auto-tail is on, it polls the tail every few seconds (silently, so the
- * panel doesn't flicker); it stops the moment the server reports `complete`.
+ * The selected job's header + assembled logs with live-tail, rendered in the
+ * design's terminal panel. The initial load replaces; subsequent fetches append
+ * from the server's nextSeq cursor. While the log is incomplete and auto-tail is
+ * on, it polls the tail every few seconds (silently, so the panel doesn't
+ * flicker); it stops the moment the server reports `complete`.
  */
-function JobLogs({
+function JobLogPanel({
+  job,
   orgId,
   projectId,
   runId,
-  jobId,
-  onClose,
 }: {
+  job: JobView;
   orgId: string;
   projectId: string;
   runId: string;
-  jobId: string;
-  onClose: () => void;
 }) {
   const { client } = useSession();
   const [content, setContent] = React.useState("");
@@ -292,14 +285,12 @@ function JobLogs({
   // Guards against overlapping fetches if one tick's request outlives the interval.
   const inFlight = React.useRef(false);
 
-  // Fetch from `seq`; reset replaces (initial load), else append (tail). `silent`
-  // skips the loading flag so the periodic tail doesn't visibly flicker.
   const fetchFrom = React.useCallback(
     async (seq: number, reset: boolean, silent = false) => {
       if (inFlight.current) return;
       inFlight.current = true;
       if (!silent) setLoading(true);
-      const res = await wrap(() => client.state.readRunJobLogs(orgId, projectId, runId, jobId, seq));
+      const res = await wrap(() => client.state.readRunJobLogs(orgId, projectId, runId, job.jobId, seq));
       if (res.ok) {
         setContent((prev) => (reset ? res.data.content : prev + res.data.content));
         setNextSeq(res.data.nextSeq);
@@ -311,10 +302,11 @@ function JobLogs({
       if (!silent) setLoading(false);
       inFlight.current = false;
     },
-    [client, orgId, projectId, runId, jobId],
+    [client, orgId, projectId, runId, job.jobId],
   );
 
-  // Reload from the start whenever the selected job changes.
+  // Reload from the start whenever the selected job changes (keyed remount also
+  // resets local state, but this drives the initial fetch).
   React.useEffect(() => {
     setContent("");
     setComplete(false);
@@ -329,13 +321,28 @@ function JobLogs({
     return () => clearInterval(id);
   }, [autoTail, complete, nextSeq, fetchFrom]);
 
+  const lines = React.useMemo(() => (content ? content.replace(/\n$/, "").split("\n") : []), [content]);
+
   return (
-    <Card>
-      <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0">
-        <CardTitle className="font-mono text-sm">{jobId} · logs</CardTitle>
-        <div className="flex items-center gap-2">
+    <div className="overflow-hidden rounded-[13px] border border-border bg-card">
+      {/* panel header */}
+      <div className="flex items-center gap-2.5 border-b border-border bg-muted/40 px-4 py-[13px]">
+        <StatusMark vis={job.vis} box={20} glyph={14} radius={5} strokeWidth={2.2} />
+        <span className="font-mono text-[13.5px] font-semibold text-foreground">{job.name}</span>
+        {job.attempt > 1 ? (
+          <span className="font-mono text-[11.5px] text-muted-foreground/70">attempt {job.attempt}</span>
+        ) : null}
+        {job.deps.length > 0 ? (
+          <span className="hidden font-mono text-[11.5px] text-muted-foreground/70 sm:inline" title={job.deps.join(", ")}>
+            needs {job.deps.length}
+          </span>
+        ) : null}
+        <div className="ml-auto flex items-center gap-2">
+          <span className="font-mono text-[12px] text-muted-foreground/70">{job.dur}</span>
           {complete ? (
-            <Badge variant="secondary">complete</Badge>
+            <span className="rounded-md border border-border bg-muted px-2 py-0.5 text-[11px] text-muted-foreground">
+              complete
+            </span>
           ) : (
             <>
               <Button
@@ -343,7 +350,6 @@ function JobLogs({
                 variant={autoTail ? "secondary" : "outline"}
                 onClick={() => setAutoTail((on) => !on)}
                 title={autoTail ? "Pause live tail" : "Resume live tail"}
-                aria-label="Live-tail logs"
                 aria-pressed={autoTail}
               >
                 {autoTail ? "Live" : "Paused"}
@@ -353,35 +359,38 @@ function JobLogs({
               </Button>
             </>
           )}
-          <Button size="sm" variant="ghost" onClick={onClose}>
-            Close
-          </Button>
         </div>
-      </CardHeader>
-      <CardContent>
+      </div>
+
+      {/* failure summary banner */}
+      {job.errorText ? (
+        <div
+          className="border-b border-border px-4 py-2.5 font-mono text-[12px]"
+          style={{ background: "hsl(var(--destructive) / 0.08)", color: "hsl(var(--destructive))" }}
+        >
+          {job.errorText}
+        </div>
+      ) : null}
+
+      {/* terminal log body */}
+      <div className="bg-background px-4 py-3 font-mono text-[12px] leading-[1.7]">
         {error ? (
-          <p className="text-sm text-destructive">
+          <p className="text-destructive">
             {error.code}: {error.message}
           </p>
-        ) : content.length === 0 ? (
-          <p className="text-sm text-muted-foreground">{loading ? "Loading…" : "No log output for this job."}</p>
+        ) : lines.length === 0 ? (
+          <p className="text-muted-foreground/60">{loading ? "Loading…" : "No log output for this job."}</p>
         ) : (
-          <pre className="max-h-96 overflow-auto whitespace-pre-wrap rounded-md border bg-background p-3 font-mono text-[11px] leading-relaxed">
-            {content}
-          </pre>
+          <div className="max-h-[60vh] overflow-auto">
+            {lines.map((ln, i) => (
+              <div key={i} className="flex gap-3.5">
+                <span className="shrink-0 select-none text-muted-foreground/30">{String(i + 1).padStart(3, " ")}</span>
+                <span className="min-w-0 whitespace-pre-wrap break-words text-foreground/80">{ln || " "}</span>
+              </div>
+            ))}
+          </div>
         )}
-      </CardContent>
-    </Card>
-  );
-}
-
-function Pair({ label, value, mono = false }: { label: string; value: string; mono?: boolean }) {
-  return (
-    <div className="flex min-w-0 items-center justify-between gap-3 border-b border-dashed py-1 last:border-0">
-      <dt className="shrink-0 text-muted-foreground">{label}</dt>
-      <dd className={mono ? "truncate font-mono text-xs" : "truncate"} title={value}>
-        {value}
-      </dd>
+      </div>
     </div>
   );
 }

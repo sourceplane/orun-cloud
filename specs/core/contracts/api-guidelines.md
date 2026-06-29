@@ -31,6 +31,36 @@ This document defines the public HTTP contract style and the internal service-bo
 - Avoid verb-heavy routes unless the action is truly non-CRUD:
   - acceptable: `/v1/organizations/{orgId}/projects/{projectId}/deployments/{deploymentId}/cancel`
 
+### Public vocabulary: Account / Workspace (aliases)
+
+The public surface speaks **Account** (the tenant/parent) and **Workspace** (any
+organization in the account). These are a *vocabulary layer* over the unchanged
+`organizations` model — see [`../vocabulary.md`](../vocabulary.md). Concretely:
+
+- **Route alias.** `/v1/workspaces/{workspaceId}/…` is a 1:1 alias of
+  `/v1/organizations/{orgId}/…`, served by the same handlers with identical
+  results. `{workspaceId}` is the **same opaque `org_*` id** as `{orgId}`.
+- **Field alias.** Responses on the `/v1/workspaces/*` surface include
+  `workspaceId` alongside `orgId` (same value). Request bodies accept either
+  spelling; the server normalizes to `orgId`, preferring `workspaceId` when both
+  are present.
+- **`orgId` is the durable id.** It is never removed; `workspaceId` is the
+  additive alias. New clients SHOULD prefer the Workspace spelling.
+- **Internal stays `org`.** Service-to-service routes, DB columns, policy scope
+  (`scope.orgId`), and the audit/event taxonomy keep `org`/`org_id`. The alias is
+  a public-surface projection only.
+
+### Deprecation & coexistence policy (saas-workspaces WS5)
+
+- **`/v1/organizations/*` and the `orgId` field coexist indefinitely** with the
+  Workspace surface (decision D4). There is **no removal date**; removing the
+  legacy surface would be a breaking change and requires a separate, announced
+  migration with customer notice.
+- **The audit/analytics event taxonomy stays `org.*`** internally and on the wire
+  (decision D3). Event names are a stable contract and are **not** forked to
+  `workspace.*`; the Account/Workspace mapping is documented, not duplicated in
+  the taxonomy.
+
 ### Request and response encoding
 
 - JSON is the default wire format.

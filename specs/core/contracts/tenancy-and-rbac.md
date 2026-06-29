@@ -8,6 +8,8 @@ Every meaningful entity belongs to an organization. Authorization starts with te
 
 Organization is the tenant and billing boundary. Project is the operational boundary. Project-scoped authorization must always include both `orgId` and `projectId`.
 
+Publicly, an organization is surfaced as an **Account** (parent/tenant) or a **Workspace** (any org in the account) — a vocabulary layer only; tenancy, scope, and `orgId` are unchanged. See [`../vocabulary.md`](../vocabulary.md) and the Account/Workspace section of [`api-guidelines.md`](./api-guidelines.md).
+
 ## Canonical Actors
 
 - `user`: an interactive human account
