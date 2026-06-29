@@ -3,6 +3,8 @@
  * Dependency-free (no React) so the status/labels logic is unit-testable.
  */
 import type {
+  IntegrationConnectionScope,
+  IntegrationConnectionShareMode,
   IntegrationConnectionStatus,
   PublicConnection,
 } from "@saas/contracts/integrations";
@@ -48,4 +50,65 @@ export function visibleConnections(connections: PublicConnection[]): PublicConne
 /** True while a connect popup flow should keep polling the list. */
 export function hasPendingConnection(connections: PublicConnection[]): boolean {
   return connections.some((c) => c.status === "pending");
+}
+
+// ── Tenancy surfacing (saas-integration-tenancy IT5) ────────
+// Make the connection's ownership scope and admission posture legible, and
+// disclose the uninstall blast radius — so an account admin understands that one
+// shared connection serves every workspace under the account.
+
+export interface ConnectionScopeMeta {
+  label: string;
+  /** One-line explanation shown under the connection row. */
+  description: string;
+}
+
+export function connectionScopeMeta(scope: IntegrationConnectionScope): ConnectionScopeMeta {
+  return scope === "workspace"
+    ? {
+        label: "Workspace-private",
+        description: "Private to this workspace — its own GitHub account, not shared with the rest of the account.",
+      }
+    : {
+        label: "Account-shared",
+        description: "Serves the whole account — every workspace under it can link repos against this connection.",
+      };
+}
+
+export interface ConnectionShareModeMeta {
+  label: string;
+  description: string;
+}
+
+/**
+ * Admission posture, meaningful only for account-shared connections. Returns
+ * null for workspace-private connections (admission does not apply).
+ */
+export function connectionShareModeMeta(
+  connection: Pick<PublicConnection, "scope" | "shareMode">,
+): ConnectionShareModeMeta | null {
+  if (connection.scope !== "account") return null;
+  const mode: IntegrationConnectionShareMode = connection.shareMode;
+  return mode === "granted"
+    ? {
+        label: "By invitation",
+        description: "Only workspaces the account has granted may use this connection.",
+      }
+    : {
+        label: "Open to all workspaces",
+        description: "Every workspace under the account may use this connection.",
+      };
+}
+
+/**
+ * Blast-radius disclosure for the revoke/uninstall confirmation. An
+ * account-shared connection removes GitHub for the whole account; a
+ * workspace-private one affects only that workspace.
+ */
+export function uninstallDisclosure(
+  connection: Pick<PublicConnection, "scope">,
+): string {
+  return connection.scope === "account"
+    ? "This connection serves the whole account. Revoking it uninstalls the GitHub App for this account and stops events and token issuance for every workspace's linked repositories."
+    : "The platform stops receiving events for this installation and any linked repositories stop updating. This also uninstalls the App from GitHub when possible.";
 }
