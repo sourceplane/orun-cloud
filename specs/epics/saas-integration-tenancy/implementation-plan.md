@@ -1,4 +1,4 @@
-# saas-integration-tenancy — Implementation Plan (IT1–IT8)
+# saas-integration-tenancy — Implementation Plan (IT1–IT8, + ITX IT9–IT12)
 
 Each milestone is a candidate scope for one coherent PR-sized task. The hard
 dependency is **IT1 → everything** (the dormant resolution seam), and the whole
@@ -169,3 +169,72 @@ paths for `workspace` scope; it can ship any time after IT1. IT8 (admission)
 scope-aware assertions into the IT6 split-brain suite. Both default to today's
 behavior (`scope = account`, `share_mode = auto`), so neither blocks the core
 rollout — they are the governance/flexibility layer on top of it.
+
+---
+
+# Extended scope (ITX) — IT9–IT12
+
+Builds on shipped IT1–IT8 (design §12). No keystone/scope/tenancy change — a
+consumer-side + governance-surface layer. The one new live wiring is routing the
+**connection list read** through the resolver. Sequence: IT9 (identity) →
+IT10 (visibility) → IT11 (account-only) → IT12 (picker); IT11 may land with or
+just after IT10, and IT12 is a UX refinement of IT5b.
+
+## IT9 — Account-workspace identity — 🗓️ Planned
+
+- Membership: derive `kind` (`account`\|`workspace`\|`standalone`, design §12.0)
+  on the org-list reads (`subject-orgs`, `list-organizations`) — `account` needs a
+  child `COUNT`; expose the **parent display name** on a child. Derived, not
+  stored.
+- Contracts/SDK: `kind` (+ optional `parentName`) on the public org shape.
+- Console: an "Account" chip in `sidebar-org-switcher.tsx` + the org list; a child
+  optionally reads "in «Account»".
+- Owner: `apps/membership-worker` + `packages/contracts`/`sdk` + `apps/web-console-next`.
+- **Done when:** accounts/workspaces/standalone are labelled on every org-list
+  surface; a child can name its account; standalone orgs look unchanged.
+
+## IT10 — Inherited shared connections — 🗓️ Planned
+
+- Worker: add the worker-side resolver `resolveIntegrationParent` (twin of
+  `resolveBillingParent`). `handleListIntegrations(orgId)` returns own connections
+  PLUS — when the org is a child — the account's `account`-scoped connections at
+  `effectiveIntegrationOrg(orgId)`, flagged `inherited` with `sharedByOrgId` +
+  `sharedByOrgName`. Under `granted`, include an inherited connection only if the
+  child holds an active grant (or mark it; D7).
+- Contracts: optional `inherited` + `sharedByOrgName` on `PublicConnection`
+  (null/false for owned rows — back-compatible).
+- Console: render inherited rows **read-only** with the *"Shared by «account»"*
+  attribution and the repo-link entry point only.
+- Owner: `apps/integrations-worker` + `packages/contracts` + `apps/web-console-next`
+  (+ membership endpoint for parent resolution).
+- **Done when:** a child sees the account's shared connection read-only and
+  attributed; a standalone org's list is unchanged; `granted` hides/marks
+  unadmitted connections; the broker/projection are untouched.
+
+## IT11 — Sharing is account-only — 🗓️ Planned
+
+- Worker: connect from a **child** (`parentOrgId != null`) is forced to
+  `workspace` scope server-side (hardening IT7's surface rule); the IT8b
+  grant/share-mode handlers add an explicit **top-level-owner** guard → `403` from
+  a child. IT6 split-brain suite asserts *no `account`-scoped connection is owned
+  by a child*.
+- Console: gate `ConnectionAdmission` (IT5b) on `orgKind === "account"` **and** an
+  **owned** (non-inherited) connection; child UI shows no share/grant/revoke
+  affordance.
+- Owner: `apps/integrations-worker` + `apps/web-console-next` (+ the membership
+  `kind` from IT9).
+- **Done when:** a child cannot create a shareable connection or call a
+  share/grant endpoint (server-enforced); the child UI exposes no sharing control;
+  an account is unchanged.
+
+## IT12 — Grant by workspace picker — 🗓️ Planned
+
+- Read: list the account's children (`membership.listChildOrganizations`,
+  already in the repo) → `{ orgId, name }`; SDK `workspaces.listChildren(account)`.
+- Console: `ConnectionAdmission` fetches the child list, filters out
+  already-admitted (and the account), and presents a select; revoke unchanged.
+- Guard: the IT8 write rule (a grant names only a child of the owning account)
+  stays as the server check behind the picker.
+- Owner: `packages/sdk` + `apps/web-console-next` (+ membership children read).
+- **Done when:** an account admits a workspace by selecting it; admitted ones drop
+  from the list; a non-child id is rejected server-side.

@@ -374,3 +374,157 @@ resolution time, *not* a role in the parent and *not* a hierarchical-RBAC edge. 
 workspace member is still authorized against their own workspace membership; the
 grant only decides whether the resolution seam will hand them the account's
 connection. This is the same trust shape as the seam itself.
+
+## 12. Extended scope (ITX) — shared-integration visibility & governance
+
+Status: Draft (extends the shipped IT1–IT8; normative once IT9 lands).
+
+IT1–IT8 made one GitHub App serve a whole account and let the account *govern*
+who consumes it. They left the **consumer's view** thin (a child workspace
+consumes the connection but barely *sees* it) and the **governance gate** implicit
+(any org could in principle hold an `account`-scoped connection; sharing was never
+explicitly reserved to the account). This wave closes both: the shared connection
+becomes **visible and attributed** inside each child, and **sharing is reserved to
+the Account workspace** — surfaced as a one-directional, legible relationship.
+
+It is a pure consumer-side + surface layer. **No keystone, scope, or tenancy
+mechanic changes.** The one new live wiring is finally routing the *connection
+list read* through the resolver (the read IT1 planned for and IT2–IT4 deferred).
+
+### 12.0 Vocabulary: the **Account workspace**
+
+An **Account workspace** is a top-level org (`parentOrgId == null`) that owns one
+or more child workspaces — the integration (and billing) parent. A **child
+workspace** is an org with `parentOrgId == account.id`. A top-level org with *no*
+children is a plain **standalone** org (it is only *potentially* an account). The
+three org kinds are a pure function of the existing `parent_org_id` column — no
+new state:
+
+```ts
+type OrgKind = "account" | "workspace" | "standalone";
+function orgKind(org, childCount): OrgKind {
+  if (org.parentOrgId != null) return "workspace";   // has a parent
+  return childCount > 0 ? "account" : "standalone";  // top-level: account iff it has children
+}
+```
+
+This matches `saas-multi-org-billing`'s parent/child model exactly and the
+`saas-workspaces` noun (Account = the org that owns Workspaces). "Account
+workspace" is the user-facing label for the `account` kind.
+
+### 12.1 Account-workspace identity (IT9)
+
+*Make the hierarchy legible before anything depends on it.*
+
+- **Membership** projects `kind` (`orgKind` above) onto the org-list reads
+  (`subject-orgs`, `list-organizations`) — derived, never stored; `account`
+  requires a `COUNT` of children (or the already-maintained child set). It also
+  exposes the **parent's display name** on a child (cheap join on
+  `parent_org_id`) so a child can say who shares with it.
+- **Console** badges the **Account workspace** in the org switcher
+  (`sidebar-org-switcher.tsx`) and org list — a small "Account" chip next to the
+  org name; child workspaces read plainly (optionally "in «Account»").
+- **Done when:** every org-list surface labels accounts vs workspaces vs
+  standalone; a child can name its account; standalone orgs are visually
+  unchanged.
+
+### 12.2 Inherited shared connections — read *up* with provenance (IT10)
+
+*A child workspace should SEE the connection it consumes, not just consume it.*
+
+Today `handleListIntegrations(orgId)` lists only the org's **own** connections, so
+a child workspace's Integrations page looks empty even though it links repos
+against the account's connection. IT10 makes the list **scope-aware**:
+
+1. List the workspace's **own** connections (unchanged) — these include any
+   `workspace`-private ones (IT7).
+2. If the org is a **child** (`parentOrgId != null`), also fetch the account's
+   **`account`-scoped** connections at `effectiveIntegrationOrg(orgId)` and append
+   them flagged **`inherited: true`**, carrying `sharedByOrgId` + `sharedByOrgName`
+   (the account). This is the first live use of the worker-side resolver
+   (`resolveIntegrationParent`, the integration twin of `resolveBillingParent`).
+3. Honor **share mode** (§11): under `granted`, a child sees the inherited
+   connection **only if it holds an active grant** (or sees it greyed as
+   "available on request" — D7). Under `auto`, all children see it.
+
+Inherited rows are **read-only** in the child: status + the attribution *"Shared
+by «Account workspace»"*, the repo-link entry point, and **nothing else** — no
+revoke, no share controls (§12.3). The contract gains, on `PublicConnection`, an
+optional `inherited` flag and `sharedByOrgName` (null for owned rows). This is the
+**soft-visibility** default (D1) made concrete: the child sees the *connection it
+depends on*, never a sibling's links.
+
+- **Done when:** a child workspace's Integrations page shows the account's shared
+  connection read-only, attributed to the account by name; a standalone org's page
+  is unchanged; `granted` mode hides (or marks) connections the child isn't
+  admitted to.
+
+### 12.3 Sharing is account-only (IT11)
+
+*One control point. Never offer a control that can't be exercised.*
+
+Two enforcement layers, mechanism then surface:
+
+- **Mechanism (mint + manage).** Creating an `account`-scoped (shareable)
+  connection is reserved to an **Account-or-standalone top-level org**
+  (`parentOrgId == null`); a connect initiated from a **child** is always forced
+  to `workspace` scope regardless of the requested scope (hardening IT7's
+  surface-decides rule into a server check). The IT8b grant/share-mode handlers
+  already authorize against the connection's **owning** org; IT11 adds the
+  explicit guard that the owner is **top-level** (a child can never own an
+  `account`-scoped connection, so this is belt-and-suspenders + a clear `403`).
+- **Surface (no dead affordances).** The child-workspace Integrations UI renders
+  **no** share controls at all — no `share_mode` toggle, no grant manager, no
+  "revoke" on inherited rows. `ConnectionAdmission` (IT5b) is gated on
+  `orgKind === "account"` **and** the connection being **owned** (not inherited).
+  A standalone org sees its own connection with the admission panel appearing the
+  moment it gains a child (promotion, §8) — no row rewrite.
+
+This keeps A4 intact: it is **not** new RBAC, it is a **capability gated by org
+position** (top-level owner), exactly as IT8b already gates management on
+ownership. The split-brain suite (IT6) gains an assertion: *no `account`-scoped
+connection is ever owned by a child org.*
+
+- **Done when:** a child cannot create a shareable connection or call any
+  share/grant endpoint (server-enforced `403`/forced-`workspace`); the child UI
+  exposes no sharing affordance; an account manages sharing exactly as in IT5b.
+
+### 12.4 Grant by workspace picker (IT12)
+
+*Admit a workspace by choosing it, not by pasting an id.*
+
+IT5b's grant input is a free-text `org_…` id — correct but unfriendly and
+error-prone. IT12 replaces it with a **picker over the account's child
+workspaces**:
+
+- **Read.** A new account-scoped read lists the account's children
+  (`membership.listChildOrganizations(accountOrgId)` — already in the repo),
+  projected to `{ orgId, name }`. Exposed either as a membership endpoint the
+  console calls directly, or surfaced through the integrations facade for
+  symmetry; the SDK gets `workspaces.listChildren(accountOrgId)` (aligns with
+  `saas-workspaces`).
+- **UX.** `ConnectionAdmission` (shown only on the account, §12.3) fetches the
+  child list, **filters out already-admitted** workspaces (and the account
+  itself), and presents a select/combobox. Revoke stays keyed by workspace org.
+  Empty state: "No workspaces yet — create one to share this connection."
+- **Guard.** Server-side, a grant may still only name a **child of the owning
+  account** (IT8's write rule); the picker makes the happy path unambiguous, the
+  guard keeps a hand-crafted request honest.
+
+- **Done when:** an account admits a workspace by selecting it from its own
+  workspaces; admitted ones don't reappear in the list; a non-child org id is
+  rejected server-side.
+
+### 12.5 What §12 deliberately does NOT change
+
+- No keystone / scope / single-claim / projection / broker change — IT10 only adds
+  a **second read** (own + inherited) and IT11 a **position guard**; the credential
+  still resolves up exactly as IT1–IT8 do.
+- No new tenancy state — `orgKind` and "inherited" are **derived** from
+  `parent_org_id` + `connection.org_id`; nothing is stored.
+- No hierarchical RBAC — account-only sharing is an org-position capability gate
+  (A4 holds).
+- No detach behavior — still gated on a platform detach operation (#239).
+- Inherited visibility is **read-only and one-directional** (account → child); a
+  child never gains write over the account's connection, and siblings' links stay
+  invisible (D1 soft).
