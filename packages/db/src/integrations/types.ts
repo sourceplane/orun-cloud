@@ -303,6 +303,12 @@ export interface IntegrationsRepository {
     id: Uuid,
     status: ConnectionStatus,
   ): Promise<IntegrationsResult<IntegrationConnection>>;
+  /** Set the admission posture (IT8b); org-scoped to the connection owner. */
+  updateConnectionShareMode(
+    orgId: Uuid,
+    id: Uuid,
+    shareMode: ConnectionShareMode,
+  ): Promise<IntegrationsResult<IntegrationConnection>>;
 
   // Admission grants (IT8)
   createConnectionGrant(

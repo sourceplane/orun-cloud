@@ -192,6 +192,54 @@ export interface RevokeIntegrationResponse {
   revoked: true;
 }
 
+// ── Admission grants & share mode (IT8b) ────────────────────
+// Account-admin management of which workspaces may consume an account-shared
+// connection. Authorized as organization.integration.manage against the
+// connection's owning (account) org. A grant is identified by the admitted
+// workspace org, the natural key for admission.
+
+export interface PublicConnectionGrant {
+  /** Public id of the account-shared connection (`int_<32hex>`). */
+  connectionId: string;
+  /** Public id of the admitted workspace org (`org_<32hex>`). */
+  workspaceOrgId: string;
+  /** Opaque id of the actor that granted admission. */
+  grantedBy: string | null;
+  status: "active" | "revoked";
+  grantedAt: string;
+  revokedAt: string | null;
+}
+
+/** GET /v1/organizations/{orgId}/integrations/{connectionId}/grants */
+export interface ListConnectionGrantsResponse {
+  grants: PublicConnectionGrant[];
+}
+
+/** POST /v1/organizations/{orgId}/integrations/{connectionId}/grants */
+export interface CreateConnectionGrantRequest {
+  /** Public id of the workspace org to admit (`org_<32hex>`). */
+  workspaceOrgId: string;
+}
+
+export interface CreateConnectionGrantResponse {
+  grant: PublicConnectionGrant;
+}
+
+/** DELETE /v1/organizations/{orgId}/integrations/{connectionId}/grants/{workspaceOrgId} */
+export interface RevokeConnectionGrantResponse {
+  revoked: true;
+}
+
+/** PATCH /v1/organizations/{orgId}/integrations/{connectionId} */
+export interface UpdateConnectionRequest {
+  /** Switch the admission posture of an account-shared connection. */
+  shareMode?: IntegrationConnectionShareMode;
+}
+
+export interface UpdateConnectionResponse {
+  connection: PublicConnection;
+}
+
 // ── Repository browsing (IG3) ───────────────────────────────
 
 /** Safe projection of a provider repository visible to an installation. */

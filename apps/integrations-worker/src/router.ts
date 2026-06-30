@@ -19,6 +19,12 @@ import {
   handleRevokeIntegration,
 } from "./handlers/connections.js";
 import {
+  handleCreateConnectionGrant,
+  handleListConnectionGrants,
+  handleRevokeConnectionGrant,
+  handleUpdateConnection,
+} from "./handlers/grants.js";
+import {
   generateRequestId,
   parseConnectionPublicId,
   parseInboundDeliveryPublicId,
@@ -76,6 +82,10 @@ const ORG_DELIVERY_REPLAY_RE =
 const ORG_GITHUB_TOKEN_RE = /^\/v1\/organizations\/([^/]+)\/integrations\/github\/token$/;
 const ORG_CONNECTION_REPOSITORIES_RE =
   /^\/v1\/organizations\/([^/]+)\/integrations\/([^/]+)\/repositories$/;
+const ORG_CONNECTION_GRANTS_RE =
+  /^\/v1\/organizations\/([^/]+)\/integrations\/([^/]+)\/grants$/;
+const ORG_CONNECTION_GRANT_RE =
+  /^\/v1\/organizations\/([^/]+)\/integrations\/([^/]+)\/grants\/([^/]+)$/;
 const PROJECT_REPO_LINKS_RE =
   /^\/v1\/organizations\/([^/]+)\/projects\/([^/]+)\/repo-links$/;
 const PROJECT_REPO_LINK_RE =
@@ -178,6 +188,38 @@ export async function route(request: Request, env: Env): Promise<Response> {
     return handleListRepositories(request, env, requestId, actor, orgId, asUuid(connectionUuid));
   }
 
+  m = pathname.match(ORG_CONNECTION_GRANTS_RE);
+  if (m) {
+    const orgId = parseOrgPublicId(m[1]!);
+    const connectionUuid = parseConnectionPublicId(m[2]!);
+    if (!orgId || !connectionUuid) return notFound(requestId, pathname);
+    switch (request.method) {
+      case "GET":
+        return handleListConnectionGrants(env, requestId, actor, orgId, asUuid(connectionUuid));
+      case "POST":
+        return handleCreateConnectionGrant(request, env, requestId, actor, orgId, asUuid(connectionUuid));
+      default:
+        return methodNotAllowed(requestId);
+    }
+  }
+
+  m = pathname.match(ORG_CONNECTION_GRANT_RE);
+  if (m) {
+    const orgId = parseOrgPublicId(m[1]!);
+    const connectionUuid = parseConnectionPublicId(m[2]!);
+    const workspaceOrgUuid = parseOrgPublicId(m[3]!);
+    if (!orgId || !connectionUuid || !workspaceOrgUuid) return notFound(requestId, pathname);
+    if (request.method !== "DELETE") return methodNotAllowed(requestId);
+    return handleRevokeConnectionGrant(
+      env,
+      requestId,
+      actor,
+      orgId,
+      asUuid(connectionUuid),
+      asUuid(workspaceOrgUuid),
+    );
+  }
+
   m = pathname.match(PROJECT_REPO_LINKS_RE);
   if (m) {
     const orgId = parseOrgPublicId(m[1]!);
@@ -246,6 +288,8 @@ export async function route(request: Request, env: Env): Promise<Response> {
     switch (request.method) {
       case "GET":
         return handleGetIntegration(env, requestId, actor, orgId, asUuid(connectionUuid));
+      case "PATCH":
+        return handleUpdateConnection(request, env, requestId, actor, orgId, asUuid(connectionUuid));
       case "DELETE":
         return handleRevokeIntegration(env, requestId, actor, orgId, asUuid(connectionUuid));
       default:
