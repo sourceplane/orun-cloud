@@ -27,7 +27,7 @@ admission grants).
 
 | Field | Value |
 |-------|-------|
-| Status | **Draft** — not started; depends on `saas-integrations` IG1+ live paths and the shipped `saas-multi-org-billing` MO1 parent/child seam |
+| Status | **IT1–IT8 shipped** (core tenancy mechanism + admission live; detach guard tracked in #239). **Extended scope (IT9–IT12) — Draft**: shared-integration visibility & account-only governance. |
 | Cluster | **IT** (integration tenancy — bridges **IG** `saas-integrations` and **MO** `saas-multi-org-billing`) |
 | Owner(s) | `apps/integrations-worker` + `packages/db` + `apps/api-edge` + `apps/web-console-next` (+ `packages/contracts`/`sdk`) |
 | Target branch | `main` (PRs merged incrementally) |
@@ -78,6 +78,8 @@ installation — it just lives at the account, where billing already does.
 4. `risks-and-open-questions.md` — soft-vs-hard sibling isolation, detach
    behavior, the split-brain-tenancy guard, and the ownership-scope / share-mode
    decisions (A5/A6) with their open sub-questions.
+5. `design.md` §12 — **Extended scope (ITX)**: account-workspace identity,
+   inherited shared connections, account-only sharing, the workspace picker.
 
 ## Connection ownership model (the one diagram to hold in your head)
 
@@ -107,20 +109,35 @@ use the shared connection" instead of a dead end (§10).
 
 | ID | Milestone | Status |
 |----|-----------|--------|
-| IT1 | Resolution seam (dormant): `effectiveIntegrationOrg` + route connection reads through it — collapses to `org.id` for standalone orgs, **no behavior change** | 🗓️ Planned |
-| IT2 | Repo single-claim: a repo under a shared connection is claimable by one workspace/project; workspace links repos against the account's connection | 🗓️ Planned |
-| IT3 | Inbound projection: `drain.ts` attributes `installation → account connection → owning workspace org`, exactly-once per workspace | 🗓️ Planned |
-| IT4 | Token broker at the account: resolve the connection via `effectiveIntegrationOrg`, authorize by workspace repo-link ownership, scope token per repo (unchanged scope-down) | 🗓️ Planned |
-| IT5 | Console: connection lives on the **account**; each workspace's Git tab links repos against it; sibling visibility scoping (soft default) | 🗓️ Planned |
-| IT6 | Lifecycle: detach (`clear parent_org_id`) repo-link rule, parent-side uninstall cascade, audit + the split-brain invariant test suite (now asserts scope-aware resolution) | 🗓️ Planned |
-| IT7 | Workspace-private connections: `connection.scope` column; the seam resolves up only for `account` scope; workspace Integrations surface; keystone-collision UX | 🗓️ Planned |
-| IT8 | Admission control & share mode: `share_mode` (`auto`\|`granted`) + `connection_grants` allow-list; admission gate stacked under repo-link ownership at link/broker/projection; account grant console | 🗓️ Planned |
+| IT1 | Resolution seam (dormant): `effectiveIntegrationOrg` + route connection reads through it — collapses to `org.id` for standalone orgs, **no behavior change** | ✅ Shipped |
+| IT2 | Repo single-claim: a repo under a shared connection is claimable by one workspace/project; workspace links repos against the account's connection | ✅ Shipped |
+| IT3 | Inbound projection: `drain.ts` attributes `installation → account connection → owning workspace org`, exactly-once per workspace | ✅ Shipped |
+| IT4 | Token broker at the account: resolve the connection via `effectiveIntegrationOrg`, authorize by workspace repo-link ownership, scope token per repo (unchanged scope-down) | ✅ Shipped |
+| IT5 | Console: connection lives on the **account**; scope / admission / uninstall blast-radius legible on the Integrations surface | ✅ Shipped |
+| IT6 | Lifecycle: scope-aware split-brain invariant suite + uninstall cascade; detach data primitive (`countActiveSharedRepoLinks`) | ✅ Shipped (detach *guard* wiring tracked in #239) |
+| IT7 | Workspace-private connections: `connection.scope` column; the seam resolves up only for `account` scope; workspace Integrations surface; keystone-collision UX | ✅ Shipped |
+| IT8 | Admission control & share mode: `share_mode` (`auto`\|`granted`) + `connection_grants` allow-list; admission gate at the broker; grant-management API (IT8b) + account grant UI (IT5b) | ✅ Shipped |
+
+### Extended scope — shared-integration visibility & governance (ITX)
+
+A second wave that makes the account/workspace hierarchy **legible** and the
+sharing relationship **one-directional and well-attributed**: a workspace *sees*
+the connection it inherits (read-only, with provenance), and only the **account
+workspace** can *share* it. Builds entirely on IT1–IT8; no keystone or tenancy
+change — this is the consumer-side and governance-surface layer.
+
+| ID | Milestone | Status |
+|----|-----------|--------|
+| IT9 | **Account-workspace identity**: surface org *kind* (`account` \| `workspace` \| `standalone`) on the org list + resolve the parent's name; the console badges the **Account workspace** in the org switcher | 🗓️ Planned |
+| IT10 | **Inherited shared connections**: a child workspace's Integrations list resolves *up* and shows the account's `account`-scoped connections **read-only**, attributed *"Shared by «Account workspace»"* | 🗓️ Planned |
+| IT11 | **Sharing is account-only**: only an Account workspace can create `account`-scoped connections and manage `share_mode`/grants; the child-workspace UI shows **no** share controls (inherited connections are read-only) | 🗓️ Planned |
+| IT12 | **Grant by workspace picker**: the account admits workspaces by selecting from its **child-workspace list** (not a free-text org id), filtered to the not-yet-admitted | 🗓️ Planned |
 
 ## Scope boundary
 
 | In scope | Out of scope |
 |----------|--------------|
-| The `effectiveIntegrationOrg` resolution seam; connection ownership scope (`account` \| `workspace`); workspace-private connections (IT7); repo single-claim; webhook projection to workspaces; the token-broker resolution + authorization change; **admission control & share mode** (IT8); the console surfaces; the detach/uninstall lifecycle rules; the split-brain guard | The base connect/inbound/broker mechanics (owned by `saas-integrations` IG1/IG2/IG4 — consumed as-is); the parent/child org primitive + entitlement fan-out (owned by `saas-multi-org-billing` — consumed as-is); the **Workspace** rebrand of the noun (→ `saas-workspaces`); **hard, role-based** cross-workspace RBAC (a `components/04` follow-up — admission here is a resolution-layer grant list, not hierarchical roles, A4); pooled quotas |
+| The `effectiveIntegrationOrg` resolution seam; connection ownership scope (`account` \| `workspace`); workspace-private connections (IT7); repo single-claim; webhook projection to workspaces; the token-broker resolution + authorization change; **admission control & share mode** (IT8); the console surfaces; the detach/uninstall lifecycle rules; the split-brain guard. **Extended (ITX):** account-workspace identity on the org list; inherited (read-only) shared connections with provenance; account-only sharing; the workspace-picker grant surface | The base connect/inbound/broker mechanics (owned by `saas-integrations` IG1/IG2/IG4 — consumed as-is); the parent/child org primitive + entitlement fan-out (owned by `saas-multi-org-billing` — consumed as-is); the **Workspace** rebrand of the noun (→ `saas-workspaces`); **hard, role-based** cross-workspace RBAC (a `components/04` follow-up — admission here is a resolution-layer grant list, not hierarchical roles, A4); pooled quotas; a **detach** operation (none exists yet — #239); cross-workspace *transfer/move* of a connection |
 
 ## Relationship to existing work
 
