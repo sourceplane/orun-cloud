@@ -127,6 +127,15 @@ function createFakeRepository(): MembershipRepository & { _orgs: Map<string, Org
       return { ok: true, value: org };
     },
 
+    async getOrganizationsByIds(ids) {
+      const out: Array<{ id: string; publicRef: string }> = [];
+      for (const id of ids) {
+        const org = _orgs.get(id);
+        if (org) out.push({ id: org.id, publicRef: org.publicRef });
+      }
+      return { ok: true, value: out };
+    },
+
     async getOrganizationBySlug(slugLower) {
       const org = [..._orgs.values()].find((o) => o.slugLower === slugLower);
       if (!org) return { ok: false, error: { kind: "not_found" } };
@@ -229,6 +238,46 @@ describe("membership-worker organization service", () => {
       if (!result.ok) return;
       expect(result.value.organization.name).toBe("My Org");
       expect(result.value.organization.id).toMatch(/^org_[0-9a-f]{32}$/);
+      // WID4: durable workspace id + role-discovery fields on a standalone org.
+      expect(result.value.organization.workspaceRef).toBe("ws_3KF9TQ2P");
+      expect(result.value.organization.isAccountRoot).toBe(true);
+      expect(result.value.organization.kind).toBe("account");
+      // Account-root invariant: accountId === workspaceRef.
+      expect(result.value.organization.accountId).toBe("ws_3KF9TQ2P");
+    });
+
+    it("projects accountId as the parent's workspaceRef for a child org (WID4)", async () => {
+      const repo = createFakeRepository();
+      const service = createOrganizationService({ repo, now: () => fixedNow });
+
+      // Parent (account root).
+      const parentResult = await bootstrapOrg(repo, "usr_owner", "Parent", "parent");
+      expect(parentResult.ok).toBe(true);
+      if (!parentResult.ok) return;
+      const parentUuid = parentResult.value.org.id;
+      // Give the parent a distinct ws_ ref so the assertions are unambiguous.
+      repo._orgs.set(parentUuid, { ...repo._orgs.get(parentUuid)!, publicRef: "ws_9QM2X7BD" });
+
+      // Child whose billing parent is the account root.
+      const childUuid = asUuid(crypto.randomUUID());
+      const childCreate = await repo.bootstrapOrganization({
+        org: { id: childUuid, name: "Child", slug: "child", slugLower: "child", publicRef: "ws_CHILD001", createdAt: fixedNow },
+        member: { id: crypto.randomUUID(), orgId: childUuid, subjectId: "usr_owner", subjectType: "user", createdAt: fixedNow },
+        roleAssignment: { id: crypto.randomUUID(), orgId: childUuid, subjectId: "usr_owner", subjectType: "user", role: "owner", scopeKind: "organization", scopeRef: null, createdAt: fixedNow },
+      });
+      expect(childCreate.ok).toBe(true);
+      // bootstrap forces parentOrgId=null; set the parent link to model a child.
+      repo._orgs.set(childUuid, { ...repo._orgs.get(childUuid)!, parentOrgId: parentUuid });
+
+      const result = await service.getOrganization({ subjectId: "usr_owner", subjectType: "user" }, asUuid(childUuid), allowAuthorizer);
+
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.value.organization.workspaceRef).toBe("ws_CHILD001");
+      expect(result.value.organization.isAccountRoot).toBe(false);
+      expect(result.value.organization.kind).toBe("workspace");
+      // accountId is the PARENT's workspaceRef, not the child's.
+      expect(result.value.organization.accountId).toBe("ws_9QM2X7BD");
     });
 
     it("returns not_found when policy denies without leaking existence", async () => {

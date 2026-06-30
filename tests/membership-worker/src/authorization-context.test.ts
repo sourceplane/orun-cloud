@@ -19,6 +19,7 @@ function createFakeRepo(roleAssignments: RoleAssignment[] = []): MembershipRepos
     async bootstrapOrganization() { return { ok: false, error: { kind: "internal" as const, message: "not implemented" } }; },
     async createOrganization() { return { ok: false, error: { kind: "internal" as const, message: "not implemented" } }; },
     async getOrganizationById() { return { ok: false, error: { kind: "not_found" as const } }; },
+    async getOrganizationsByIds() { return { ok: true, value: [] }; },
     async getOrganizationBySlug() { return { ok: false, error: { kind: "not_found" as const } }; },
     async getOrganizationByPublicRef() { return { ok: false, error: { kind: "not_found" as const } }; },
     async listOrganizationsForSubject() { return { ok: true, value: [] }; },

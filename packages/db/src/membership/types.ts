@@ -161,6 +161,13 @@ export interface AcceptInvitationInput {
 export interface MembershipRepository {
   createOrganization(input: CreateOrganizationInput): Promise<MembershipResult<Organization>>;
   getOrganizationById(id: string): Promise<MembershipResult<Organization>>;
+  /**
+   * Batched lookup of organizations by id, returning just `{ id, publicRef }`
+   * for each found row (missing ids are simply absent). Used to resolve the
+   * parent (account) `public_ref` for a page of orgs in one query, avoiding the
+   * per-row N+1 of `getOrganizationById` when projecting `accountId` (WID4).
+   */
+  getOrganizationsByIds(ids: string[]): Promise<MembershipResult<Array<{ id: string; publicRef: string }>>>;
   getOrganizationBySlug(slugLower: string): Promise<MembershipResult<Organization>>;
   /**
    * Look up an org by its immutable public Workspace ID (`ws_…`, WID2) stored in

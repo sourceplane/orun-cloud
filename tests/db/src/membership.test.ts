@@ -253,6 +253,54 @@ describe("MembershipRepository", () => {
     });
   });
 
+  describe("getOrganizationsByIds (WID4 batch parent lookup)", () => {
+    it("returns empty without querying when ids is empty", async () => {
+      const { executor, queries } = createFakeExecutor({ rows: [] });
+      const repo = createMembershipRepository(executor);
+
+      const result = await repo.getOrganizationsByIds([]);
+
+      expect(result.ok).toBe(true);
+      if (result.ok) expect(result.value).toEqual([]);
+      expect(queries).toHaveLength(0);
+    });
+
+    it("builds one IN query and returns {id, publicRef} rows", async () => {
+      const { executor, queries } = createFakeExecutor({
+        rows: [
+          { id: ORG1, public_ref: "ws_AAAAAAAA" },
+          { id: ORG2, public_ref: "ws_BBBBBBBB" },
+        ],
+      });
+      const repo = createMembershipRepository(executor);
+
+      const result = await repo.getOrganizationsByIds([ORG1, ORG2]);
+
+      expect(queries).toHaveLength(1);
+      expect(queries[0]!.params).toEqual([ORG1, ORG2]);
+      expect(queries[0]!.text).toContain("$1");
+      expect(queries[0]!.text).toContain("$2");
+      expect(queries[0]!.text).toContain("public_ref");
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.value).toEqual([
+          { id: ORG1, publicRef: "ws_AAAAAAAA" },
+          { id: ORG2, publicRef: "ws_BBBBBBBB" },
+        ]);
+      }
+    });
+
+    it("surfaces an internal error when the query throws", async () => {
+      const { executor } = createFakeExecutor({ error: new Error("boom") });
+      const repo = createMembershipRepository(executor);
+
+      const result = await repo.getOrganizationsByIds([ORG1]);
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.error.kind).toBe("internal");
+    });
+  });
+
   describe("getOrganizationBySlug", () => {
     it("uses normalized slug in parameterized query", async () => {
       const { executor, queries } = createFakeExecutor({ rows: [SAMPLE_ORG_ROW] });

@@ -1,4 +1,5 @@
 import type { MembershipRepository, RoleAssignment } from "@saas/db/membership";
+import { effectiveBillingOrgId } from "@saas/db/membership";
 import type { Uuid } from "@saas/db/ids";
 import { orgPublicId } from "../ids.js";
 
@@ -20,7 +21,21 @@ export interface OrganizationServiceDeps {
 }
 
 export type GetOrgResult =
-  | { ok: true; value: { organization: { id: string; name: string; slug: string; createdAt: string } } }
+  | {
+      ok: true;
+      value: {
+        organization: {
+          id: string;
+          name: string;
+          slug: string;
+          workspaceRef: string;
+          accountId: string;
+          kind: "account" | "workspace";
+          isAccountRoot: boolean;
+          createdAt: string;
+        };
+      };
+    }
   | { ok: false; code: string; message: string; status: number };
 
 export function createOrganizationService(deps: OrganizationServiceDeps) {
@@ -51,6 +66,21 @@ export function createOrganizationService(deps: OrganizationServiceDeps) {
       }
 
       const org = orgResult.value;
+
+      // Account (`ws_…`) id (WID4). The account UUID is `effectiveBillingOrgId`
+      // (= parentOrgId ?? id); for a root it is the org itself (publicRef known
+      // locally), for a child it is the parent's publicRef (one lookup).
+      const isAccountRoot = org.parentOrgId == null;
+      let accountId = org.publicRef;
+      if (!isAccountRoot) {
+        const accountUuid = effectiveBillingOrgId(org);
+        const parentResult = await repo.getOrganizationById(accountUuid);
+        if (!parentResult.ok) {
+          return { ok: false, code: "not_found", message: "Organization not found", status: 404 };
+        }
+        accountId = parentResult.value.publicRef;
+      }
+
       return {
         ok: true,
         value: {
@@ -58,6 +88,10 @@ export function createOrganizationService(deps: OrganizationServiceDeps) {
             id: orgPublicId(org.id),
             name: org.name,
             slug: org.slug,
+            workspaceRef: org.publicRef,
+            accountId,
+            kind: isAccountRoot ? "account" : "workspace",
+            isAccountRoot,
             createdAt: org.createdAt.toISOString(),
           },
         },
