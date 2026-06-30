@@ -194,8 +194,17 @@ export function IntegrationsHub({ orgId, orgSlug }: { orgId: string; orgSlug: st
                           </Badge>
                           <Badge variant="outline">{scopeMeta.label}</Badge>
                           {shareMeta ? <Badge variant="outline">{shareMeta.label}</Badge> : null}
+                          {connection.inherited ? <Badge variant="secondary">Inherited</Badge> : null}
                         </div>
-                        <div className="text-xs text-muted-foreground">{scopeMeta.description}</div>
+                        <div className="text-xs text-muted-foreground">
+                          {connection.inherited
+                            ? `Shared by ${connection.sharedByName ?? "your account"}${
+                                connection.sharedByWorkspaceRef
+                                  ? ` (${connection.sharedByWorkspaceRef})`
+                                  : ""
+                              } — link repos from a project's Git tab`
+                            : scopeMeta.description}
+                        </div>
                         <div className="text-xs text-muted-foreground">
                           {connection.externalAccountType ?? "GitHub"}
                           {connection.connectedAt
@@ -205,7 +214,8 @@ export function IntegrationsHub({ orgId, orgSlug }: { orgId: string; orgSlug: st
                               : ""}
                         </div>
                       </div>
-                      {connection.status !== "revoked" ? (
+                      {/* Inherited connections are read-only in a child workspace. */}
+                      {connection.status !== "revoked" && !connection.inherited ? (
                         <Button
                           variant="outline"
                           size="sm"
@@ -215,7 +225,9 @@ export function IntegrationsHub({ orgId, orgSlug }: { orgId: string; orgSlug: st
                         </Button>
                       ) : null}
                     </div>
-                    {connection.status === "active" && connection.scope === "account" ? (
+                    {connection.status === "active" &&
+                    connection.scope === "account" &&
+                    !connection.inherited ? (
                       <ConnectionAdmission
                         orgId={orgId}
                         connection={connection}

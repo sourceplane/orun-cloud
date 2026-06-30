@@ -44,6 +44,22 @@ export function toPublicConnectionWithSelection(
   return { ...toPublicConnection(connection), repositorySelection };
 }
 
+/**
+ * Project an Account's `account`-scoped connection as **inherited** for a child
+ * workspace (IT10): read-only, attributed to the owning Account by `ws_…` + name.
+ */
+export function toInheritedPublicConnection(
+  connection: IntegrationConnection,
+  account: { workspaceRef: string; name: string },
+): PublicConnection {
+  return {
+    ...toPublicConnection(connection),
+    inherited: true,
+    sharedByWorkspaceRef: account.workspaceRef,
+    sharedByName: account.name,
+  };
+}
+
 export function toPublicConnectionGrant(grant: ConnectionGrant): PublicConnectionGrant {
   return {
     connectionId: connectionPublicId(grant.connectionId),
