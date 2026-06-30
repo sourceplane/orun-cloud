@@ -13,6 +13,7 @@ spec:
     - component: membership-worker
     - component: policy-worker
     - component: projects-worker
+    - component: integrations-worker
     - component: cloudflare-hyperdrive
     - component: cloudflare-r2
   subscribe:
