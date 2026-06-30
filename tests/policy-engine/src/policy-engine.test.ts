@@ -1073,3 +1073,79 @@ describe("state-plane actions (saas-orun-platform OP0)", () => {
     ).toBe(false);
   });
 });
+
+// ── Account-scoped RBAC cascade (saas-workspace-id WID6 — design §8.2) ──
+function accountFact(role: string, orgId: string): MembershipFact {
+  return { kind: "role_assignment", role: role as TenancyRole, scope: { kind: "account", orgId } };
+}
+
+describe("account-scoped RBAC cascade", () => {
+  // By the time the engine sees an account fact, authorization-context assembly
+  // has remapped scope.orgId to the TARGET org id, so these facts carry org X.
+  const ORG_X = "org_x";
+
+  describe("account_admin", () => {
+    const facts = [accountFact("account_admin", ORG_X)];
+
+    it("grants an org-level action on the remapped org", () => {
+      const result = authorize(authReq("organization.read", ORG_X, facts));
+      expect(result.allow).toBe(true);
+      expect(result.reason).toBe("account_account_admin");
+    });
+
+    it("grants member management (admin authority)", () => {
+      expect(authorize(authReq("organization.member.update_role", ORG_X, facts)).allow).toBe(true);
+      expect(authorize(authReq("organization.member.remove", ORG_X, facts)).allow).toBe(true);
+    });
+
+    it("does NOT grant billing (admin has no billing)", () => {
+      expect(authorize(authReq("billing.read", ORG_X, facts)).allow).toBe(false);
+      expect(authorize(authReq("billing.manage", ORG_X, facts)).allow).toBe(false);
+    });
+
+    it("grants a project-scoped action when narrowed by projectId", () => {
+      const result = authorize(authReq("project.read", ORG_X, facts, "prj_1"));
+      expect(result.allow).toBe(true);
+      expect(result.reason).toBe("account_account_admin");
+    });
+  });
+
+  describe("account_billing_admin", () => {
+    const facts = [accountFact("account_billing_admin", ORG_X)];
+
+    it("grants billing read/manage and org read", () => {
+      expect(authorize(authReq("billing.read", ORG_X, facts)).allow).toBe(true);
+      expect(authorize(authReq("billing.manage", ORG_X, facts)).allow).toBe(true);
+      expect(authorize(authReq("organization.read", ORG_X, facts)).allow).toBe(true);
+    });
+
+    it("does NOT grant member management", () => {
+      expect(authorize(authReq("organization.member.update_role", ORG_X, facts)).allow).toBe(false);
+      expect(authorize(authReq("organization.member.remove", ORG_X, facts)).allow).toBe(false);
+    });
+  });
+
+  describe("account_owner", () => {
+    const facts = [accountFact("account_owner", ORG_X)];
+
+    it("grants full owner authority including billing and member management", () => {
+      expect(authorize(authReq("organization.read", ORG_X, facts)).allow).toBe(true);
+      expect(authorize(authReq("organization.member.update_role", ORG_X, facts)).allow).toBe(true);
+      expect(authorize(authReq("billing.manage", ORG_X, facts)).allow).toBe(true);
+    });
+  });
+
+  it("denies a non-account-member (deny-by-default)", () => {
+    const result = authorize(authReq("organization.read", ORG_X, []));
+    expect(result.allow).toBe(false);
+    expect(result.reason).toBe("no_matching_role");
+  });
+
+  it("does NOT grant on an org outside its account", () => {
+    // An account fact remapped to ORG_X confers nothing on a different org.
+    const facts = [accountFact("account_owner", ORG_X)];
+    const result = authorize(authReq("organization.read", "org_other", facts));
+    expect(result.allow).toBe(false);
+    expect(result.reason).toBe("no_matching_role");
+  });
+});

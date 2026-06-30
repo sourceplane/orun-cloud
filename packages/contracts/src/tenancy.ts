@@ -28,9 +28,19 @@ export type ProjectRole =
   | "project_builder"
   | "project_viewer";
 
-export type TenancyRole = OrganizationRole | ProjectRole;
+/**
+ * Account-scoped roles (epic `saas-workspace-id`, WID6 — design §8.2). Granted
+ * at `scope_kind = 'account'` on an Account (the parent org), they cascade to
+ * authority on every workspace under that account without per-workspace rows.
+ */
+export type AccountRole =
+  | "account_owner"
+  | "account_admin"
+  | "account_billing_admin";
 
-export type RoleScopeKind = "organization" | "project";
+export type TenancyRole = OrganizationRole | ProjectRole | AccountRole;
+
+export type RoleScopeKind = "organization" | "project" | "account";
 
 export interface RoleAssignmentFact {
   role: TenancyRole;

@@ -5,6 +5,7 @@ import { handleListOrganizations } from "./handlers/list-organizations.js";
 import { handleGetOrganization } from "./handlers/get-organization.js";
 import { handleListMembers } from "./handlers/list-members.js";
 import { handleUpdateMemberRole } from "./handlers/update-member-role.js";
+import { handleGrantAccountRole } from "./handlers/grant-account-role.js";
 import { handleRemoveMember } from "./handlers/remove-member.js";
 import { handleCreateInvitation } from "./handlers/create-invitation.js";
 import { handleListInvitations } from "./handlers/list-invitations.js";
@@ -45,6 +46,7 @@ const ORG_MEMBER_ID_RE = /^\/v1\/organizations\/([^/]+)\/members\/([^/]+)$/;
 const ORG_INVITATIONS_ACCEPT_RE = /^\/v1\/organizations\/([^/]+)\/invitations\/accept$/;
 const ORG_INVITATIONS_RE = /^\/v1\/organizations\/([^/]+)\/invitations$/;
 const ORG_INVITATION_ID_RE = /^\/v1\/organizations\/([^/]+)\/invitations\/([^/]+)$/;
+const ORG_ACCOUNT_ROLES_RE = /^\/v1\/organizations\/([^/]+)\/account-roles$/;
 const SP_BINDINGS_PATH = "/v1/internal/membership/service-principal-bindings";
 const SP_BINDING_ID_RE = /^\/v1\/internal\/membership\/service-principal-bindings\/([^/]+)$/;
 
@@ -179,6 +181,20 @@ export async function route(request: Request, env: Env): Promise<Response> {
           return errorResponse("unauthenticated", "Authentication required", 401, requestId);
         }
         return handleListInvitations(env, requestId, actor, invitationsMatch[1]!, url);
+      }
+      return methodNotAllowed(requestId);
+    }
+
+    // Account-scoped RBAC grant (saas-workspace-id WID6). Writes a
+    // scope_kind='account' role on the account org; cascades to all workspaces.
+    const accountRolesMatch = url.pathname.match(ORG_ACCOUNT_ROLES_RE);
+    if (accountRolesMatch) {
+      const actor = resolveActor(request);
+      if (!actor) {
+        return errorResponse("unauthenticated", "Authentication required", 401, requestId);
+      }
+      if (request.method === "POST") {
+        return handleGrantAccountRole(request, env, requestId, actor, accountRolesMatch[1]!);
       }
       return methodNotAllowed(requestId);
     }

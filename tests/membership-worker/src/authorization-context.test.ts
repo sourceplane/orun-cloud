@@ -334,3 +334,163 @@ describe("membership-facts: mapRoleAssignmentsToFacts", () => {
     expect(facts[0]!.scope.projectId).toBeUndefined();
   });
 });
+
+// ── Account-scoped RBAC cascade assembly (saas-workspace-id WID6 §8.2) ──
+describe("authorization-context: account-scoped RBAC cascade", () => {
+  const ACCOUNT_UUID = "00000000-0000-0000-0000-0000000000a1";
+  const CHILD_UUID = "00000000-0000-0000-0000-0000000000c1";
+  const UNRELATED_ACCOUNT_UUID = "00000000-0000-0000-0000-0000000000b2";
+
+  function org(id: string, parentOrgId: string | null): import("@saas/db/membership").Organization {
+    return {
+      id,
+      name: "n",
+      slug: "s",
+      slugLower: "s",
+      publicRef: "ws_TESTREF1",
+      status: "active",
+      parentOrgId,
+      createdAt: new Date("2026-01-01"),
+      updatedAt: new Date("2026-01-01"),
+    };
+  }
+
+  function makeRoleRepo(opts: {
+    orgs: Record<string, import("@saas/db/membership").Organization>;
+    roles: Record<string, RoleAssignment[]>; // key: orgUuid
+  }): MembershipRepository {
+    return {
+      ...createFakeRepo(),
+      async getOrganizationById(id: string) {
+        const found = opts.orgs[id];
+        return found ? { ok: true as const, value: found } : { ok: false as const, error: { kind: "not_found" as const } };
+      },
+      async listRoleAssignments(orgId: string) {
+        return { ok: true as const, value: opts.roles[orgId] ?? [] };
+      },
+    };
+  }
+
+  function accountAssignment(orgUuid: string): RoleAssignment {
+    return {
+      id: "ra-acct-1",
+      orgId: orgUuid,
+      subjectId: SUBJECT_ID,
+      subjectType: "user",
+      role: "account_admin",
+      scopeKind: "account",
+      scopeRef: null,
+      createdAt: new Date("2026-01-01"),
+      revokedAt: null,
+    };
+  }
+
+  it("cascades account_admin onto a child workspace whose account the actor manages", async () => {
+    const repo = makeRoleRepo({
+      orgs: {
+        [CHILD_UUID]: org(CHILD_UUID, ACCOUNT_UUID),
+        [ACCOUNT_UUID]: org(ACCOUNT_UUID, null),
+      },
+      roles: {
+        [CHILD_UUID]: [], // actor is NOT a direct member of the child
+        [ACCOUNT_UUID]: [accountAssignment(ACCOUNT_UUID)],
+      },
+    });
+    const req = makeRequest({ subject: { type: "user", id: SUBJECT_ID }, orgId: CHILD_UUID });
+    const res = await handleAuthorizationContext(req, createFakeEnv(), "req-casc-1", { repo });
+    expect(res.status).toBe(200);
+
+    const json = (await res.json()) as { data: { memberships: unknown[] } };
+    expect(json.data.memberships).toContainEqual({
+      kind: "role_assignment",
+      role: "account_admin",
+      scope: { kind: "account", orgId: CHILD_UUID }, // remapped onto the child
+    });
+  });
+
+  it("does NOT cascade an account role from an unrelated account", async () => {
+    const repo = makeRoleRepo({
+      orgs: {
+        [CHILD_UUID]: org(CHILD_UUID, ACCOUNT_UUID),
+        [ACCOUNT_UUID]: org(ACCOUNT_UUID, null),
+      },
+      roles: {
+        [CHILD_UUID]: [],
+        [ACCOUNT_UUID]: [], // actor holds no account role here
+        [UNRELATED_ACCOUNT_UUID]: [accountAssignment(UNRELATED_ACCOUNT_UUID)],
+      },
+    });
+    const req = makeRequest({ subject: { type: "user", id: SUBJECT_ID }, orgId: CHILD_UUID });
+    const res = await handleAuthorizationContext(req, createFakeEnv(), "req-casc-2", { repo });
+    expect(res.status).toBe(200);
+
+    const json = (await res.json()) as { data: { memberships: unknown[] } };
+    expect(json.data.memberships).toHaveLength(0);
+  });
+
+  it("preserves account-scope rows when the target IS the account root", async () => {
+    const repo = makeRoleRepo({
+      orgs: { [ACCOUNT_UUID]: org(ACCOUNT_UUID, null) },
+      roles: { [ACCOUNT_UUID]: [accountAssignment(ACCOUNT_UUID)] },
+    });
+    const req = makeRequest({ subject: { type: "user", id: SUBJECT_ID }, orgId: ACCOUNT_UUID });
+    const res = await handleAuthorizationContext(req, createFakeEnv(), "req-casc-3", { repo });
+    expect(res.status).toBe(200);
+
+    const json = (await res.json()) as { data: { memberships: unknown[] } };
+    // exactly one fact, account-scoped, stamped with the account org id (no dup)
+    expect(json.data.memberships).toEqual([
+      { kind: "role_assignment", role: "account_admin", scope: { kind: "account", orgId: ACCOUNT_UUID } },
+    ]);
+  });
+
+  it("fails soft to org/project facts when the org fetch fails", async () => {
+    const orgRole: RoleAssignment = {
+      id: "ra-org-1",
+      orgId: CHILD_UUID,
+      subjectId: SUBJECT_ID,
+      subjectType: "user",
+      role: "viewer",
+      scopeKind: "organization",
+      scopeRef: null,
+      createdAt: new Date("2026-01-01"),
+      revokedAt: null,
+    };
+    const repo: MembershipRepository = {
+      ...createFakeRepo([orgRole]),
+      async getOrganizationById() {
+        return { ok: false as const, error: { kind: "not_found" as const } };
+      },
+    };
+    const req = makeRequest({ subject: { type: "user", id: SUBJECT_ID }, orgId: CHILD_UUID });
+    const res = await handleAuthorizationContext(req, createFakeEnv(), "req-casc-4", { repo });
+    expect(res.status).toBe(200);
+
+    const json = (await res.json()) as { data: { memberships: unknown[] } };
+    expect(json.data.memberships).toEqual([
+      { kind: "role_assignment", role: "viewer", scope: { kind: "organization", orgId: CHILD_UUID } },
+    ]);
+  });
+});
+
+describe("membership-facts: account-scoped assignments (WID6)", () => {
+  it("preserves account scope kind, stamped with the target orgId", () => {
+    const assignments: RoleAssignment[] = [
+      {
+        id: "ra-a",
+        orgId: "account-org",
+        subjectId: "usr-1",
+        subjectType: "user",
+        role: "account_admin",
+        scopeKind: "account",
+        scopeRef: null,
+        createdAt: new Date(),
+        revokedAt: null,
+      },
+    ];
+    const facts = mapRoleAssignmentsToFacts("target-org", assignments);
+    expect(facts).toEqual([
+      { kind: "role_assignment", role: "account_admin", scope: { kind: "account", orgId: "target-org" } },
+    ]);
+  });
+});

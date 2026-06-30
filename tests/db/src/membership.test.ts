@@ -1183,6 +1183,30 @@ describe("MembershipRepository", () => {
       expect(queries[0]!.params[6]).toBe("prj-001");
     });
 
+    it("supports account-scoped role assignments (saas-workspace-id WID6)", async () => {
+      const accountRole = { ...SAMPLE_ROLE_ASSIGNMENT_ROW, role: "account_admin", scope_kind: "account", scope_ref: null };
+      const { executor, queries } = createFakeExecutor({ rows: [accountRole] });
+      const repo = createMembershipRepository(executor);
+
+      const result = await repo.createRoleAssignment({
+        id: "ra-acct",
+        orgId: ORG1,
+        subjectId: "usr-001",
+        subjectType: "user",
+        role: "account_admin",
+        scopeKind: "account",
+        createdAt: NOW,
+      });
+
+      expect(queries[0]!.params[4]).toBe("account_admin");
+      expect(queries[0]!.params[5]).toBe("account");
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.value.role).toBe("account_admin");
+        expect(result.value.scopeKind).toBe("account");
+      }
+    });
+
     it("returns conflict on duplicate active role assignment", async () => {
       const { executor } = createFakeExecutor({
         error: Object.assign(new Error("unique_violation"), { code: "23505" }),
@@ -1223,6 +1247,21 @@ describe("MembershipRepository", () => {
 
       expect(result.ok).toBe(true);
       if (result.ok) expect(result.value).toEqual([]);
+    });
+
+    it("returns account-scope rows (saas-workspace-id WID6)", async () => {
+      const accountRow = { ...SAMPLE_ROLE_ASSIGNMENT_ROW, role: "account_owner", scope_kind: "account", scope_ref: null };
+      const { executor } = createFakeExecutor({ rows: [accountRow] });
+      const repo = createMembershipRepository(executor);
+
+      const result = await repo.listRoleAssignments(ORG1, "usr-001");
+
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.value).toHaveLength(1);
+        expect(result.value[0]!.scopeKind).toBe("account");
+        expect(result.value[0]!.role).toBe("account_owner");
+      }
     });
   });
 

@@ -990,6 +990,9 @@ importers:
       '@saas/db':
         specifier: workspace:*
         version: link:../../packages/db
+      '@saas/policy-engine':
+        specifier: workspace:*
+        version: link:../../packages/policy-engine
     devDependencies:
       '@cloudflare/workers-types':
         specifier: ^4.20260612.1

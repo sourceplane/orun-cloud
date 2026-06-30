@@ -11,6 +11,7 @@
     "paths": {
       "@saas/contracts": ["../../packages/contracts/src/index.ts"],
       "@saas/contracts/*": ["../../packages/contracts/src/*.ts"],
+      "@saas/policy-engine": ["../../packages/policy-engine/src/index.ts"],
       "@saas/db/hyperdrive": ["../../packages/db/src/hyperdrive/index.ts"],
       "@saas/db/membership": ["../../packages/db/src/membership/index.ts"],
       "@membership-worker/*": ["../../apps/membership-worker/src/*.ts"]

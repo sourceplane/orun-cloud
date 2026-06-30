@@ -81,7 +81,7 @@ Make `ws_…` the id customers see and commit.
 - **Done when:** SDK/CLI/console lead with `ws_…`, tokens carry it, `intent.yaml`
   accepts it; all legacy spellings still work; the console shows account-vs-workspace.
 
-## WID6 — Account layer Stage 1a: account-scoped RBAC
+## WID6 — Account layer Stage 1a: account-scoped RBAC — ✅ Shipped (`420_membership_account_rbac`)
 
 Authority to administer workspaces from the Account (admin-portal prerequisite).
 

@@ -9,6 +9,7 @@ import type {
   MembershipFact,
   OrganizationRole,
   ProjectRole,
+  AccountRole,
 } from "@saas/contracts/policy";
 
 export { POLICY_VERSION } from "@saas/contracts/policy";
@@ -168,6 +169,32 @@ const ORG_ROLE_PERMISSIONS: Record<OrganizationRole, readonly string[]> = {
     "billing.manage",
   ],
 };
+
+// Account-scoped role permissions (saas-workspace-id WID6 — design §8.2).
+// A role granted at scope_kind='account' on an Account cascades to authority on
+// every workspace under that account. The cascade is assembled in
+// membership-worker's authorization-context (account facts are remapped onto the
+// target org id, so the engine's scope.orgId filter matches them); the engine
+// only needs the permission catalog for the account roles. Each account role
+// mirrors an existing org-role permission set:
+//   * account_owner         = the full org `owner` set (account-wide incl. billing)
+//   * account_admin         = the org `admin` set (no billing)
+//   * account_billing_admin = the org `billing_admin` set (billing + org read)
+const ACCOUNT_ROLE_PERMISSIONS: Record<AccountRole, readonly string[]> = {
+  account_owner: ORG_ROLE_PERMISSIONS.owner,
+  account_admin: ORG_ROLE_PERMISSIONS.admin,
+  account_billing_admin: ORG_ROLE_PERMISSIONS.billing_admin,
+};
+
+const VALID_ACCOUNT_ROLES: ReadonlySet<string> = new Set([
+  "account_owner",
+  "account_admin",
+  "account_billing_admin",
+]);
+
+function isAccountRole(role: string): role is AccountRole {
+  return VALID_ACCOUNT_ROLES.has(role);
+}
 
 const PROJECT_ROLE_PERMISSIONS: Record<ProjectRole, readonly string[]> = {
   project_admin: [
@@ -367,6 +394,24 @@ export function authorize(input: AuthorizationRequest): AuthorizationResponse {
       }
     }
 
+    // Account-scoped facts (WID6): authority cascaded from the Account. By the
+    // time the engine sees them, authorization-context assembly has already
+    // remapped scope.orgId to the target org, so the scope.orgId filter above
+    // matched. They confer org-level authority on the target, so they resolve
+    // exactly like an organization fact does (incl. project-scoped actions when
+    // a projectId narrows the request).
+    if (fact.scope.kind === "account" && isAccountRole(fact.role)) {
+      const permissions = ACCOUNT_ROLE_PERMISSIONS[fact.role];
+      if (permissions.includes(action)) {
+        if (PROJECT_SCOPED_ACTIONS.has(action) && projectId) {
+          return allow(`account_${fact.role}`, orgId, projectId);
+        }
+        if (!PROJECT_SCOPED_ACTIONS.has(action) || !projectId) {
+          return allow(`account_${fact.role}`, orgId, projectId);
+        }
+      }
+    }
+
     if (
       fact.scope.kind === "project" &&
       isProjectRole(fact.role) &&
@@ -444,6 +489,13 @@ export function validateRoleAssignment(
       return { valid: false, reason: "invalid_role_for_scope", policyVersion: POLICY_VERSION };
     }
     return { valid: true, reason: "valid_project_role", policyVersion: POLICY_VERSION };
+  }
+
+  if (scope.kind === "account") {
+    if (!VALID_ACCOUNT_ROLES.has(role)) {
+      return { valid: false, reason: "invalid_role_for_scope", policyVersion: POLICY_VERSION };
+    }
+    return { valid: true, reason: "valid_account_role", policyVersion: POLICY_VERSION };
   }
 
   return { valid: false, reason: "unknown_scope_kind", policyVersion: POLICY_VERSION };
