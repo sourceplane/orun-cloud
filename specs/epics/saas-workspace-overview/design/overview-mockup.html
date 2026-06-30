@@ -1,0 +1,291 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Workspace Overview — design mockup (saas-workspace-overview)</title>
+<!--
+  Static, token-faithful mockup of the Workspace Overview landing.
+  Mirrors the saas-catalog-portal/design/*.html convention. No build step,
+  no data — hand-laid HTML using the console's real design tokens
+  (apps/web-console-next/src/styles/globals.css, light theme). Example
+  product: "lumen". This is a design artifact, not shipped code.
+-->
+<style>
+  :root{
+    --background:40 33% 99%; --foreground:240 10% 8%;
+    --card:0 0% 100%; --card-foreground:240 10% 8%;
+    --primary:30 94% 43%; --primary-foreground:40 60% 98%;
+    --muted:40 16% 95%; --muted-foreground:240 4% 42%;
+    --accent:40 38% 93%; --border:40 14% 90%; --ring:30 94% 43%;
+    --radius:0.625rem;
+    --healthy:142 71% 38%; --warn:38 92% 50%; --down:0 72% 51%;
+    --gold:42 88% 50%; --silver:220 9% 60%; --bronze:25 60% 48%;
+    --font-sans:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+    --font-mono:ui-monospace,"SF Mono","JetBrains Mono",monospace;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{
+    font-family:var(--font-sans); color:hsl(var(--foreground));
+    background:
+      radial-gradient(1200px 480px at 78% -8%, hsl(var(--primary)/0.10), transparent 60%),
+      linear-gradient(hsl(var(--foreground)/0.022) 1px, transparent 1px),
+      linear-gradient(90deg, hsl(var(--foreground)/0.022) 1px, transparent 1px),
+      hsl(var(--background));
+    background-size:auto, 32px 32px, 32px 32px, auto;
+    -webkit-font-smoothing:antialiased; line-height:1.5;
+  }
+  .app{display:grid; grid-template-columns:248px 1fr; min-height:100vh}
+
+  /* ── Sidebar ─────────────────────────────────────────── */
+  .rail{border-right:1px solid hsl(var(--border)); padding:18px 12px; display:flex; flex-direction:column; gap:18px; background:hsl(var(--card)/0.5)}
+  .brand{display:flex; align-items:center; gap:9px; padding:4px 8px}
+  .brand .mark{width:26px;height:26px;border-radius:8px;background:hsl(var(--primary));display:grid;place-items:center;color:hsl(var(--primary-foreground));font-weight:700;font-size:14px}
+  .switcher{font-size:13px}
+  .switcher .acct{color:hsl(var(--muted-foreground));font-size:11px;font-family:var(--font-mono)}
+  .switcher .ws{font-weight:600; display:flex; align-items:center; gap:5px}
+  .navlabel{font-family:var(--font-mono);font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:hsl(var(--muted-foreground)/.8);padding:0 8px;margin-bottom:4px}
+  nav{display:flex;flex-direction:column;gap:2px}
+  .nav-a{display:flex;align-items:center;gap:9px;padding:7px 10px;border-radius:8px;font-size:13.5px;color:hsl(var(--muted-foreground));text-decoration:none}
+  .nav-a:hover{background:hsl(var(--accent));color:hsl(var(--foreground))}
+  .nav-a.active{background:hsl(var(--primary)/.10);color:hsl(var(--foreground));font-weight:600;box-shadow:inset 2px 0 0 hsl(var(--primary))}
+  .nav-a svg{width:16px;height:16px;opacity:.85}
+  .spacer{flex:1}
+  .acct-chip{display:flex;align-items:center;gap:8px;padding:8px;border-top:1px solid hsl(var(--border));font-size:12.5px;color:hsl(var(--muted-foreground))}
+  .acct-chip .av{width:24px;height:24px;border-radius:50%;background:hsl(var(--accent));display:grid;place-items:center;font-size:11px;color:hsl(var(--foreground))}
+
+  /* ── Main ────────────────────────────────────────────── */
+  main{padding:28px 34px 56px; max-width:1180px}
+  .crumb{font-size:12px;color:hsl(var(--muted-foreground));font-family:var(--font-mono);margin-bottom:14px}
+  .crumb b{color:hsl(var(--foreground));font-weight:600}
+
+  /* Identity band */
+  .id{display:flex;justify-content:space-between;align-items:flex-start;gap:24px;
+     border:1px solid hsl(var(--border));border-radius:14px;background:
+       radial-gradient(620px 200px at 92% -40%, hsl(var(--primary)/0.12), transparent 65%),
+       hsl(var(--card)); padding:22px 24px}
+  .id h1{font-size:25px;letter-spacing:-.01em;display:flex;align-items:center;gap:11px}
+  .ns{font-family:var(--font-mono);font-size:11px;color:hsl(var(--primary));background:hsl(var(--primary)/.10);border:1px solid hsl(var(--primary)/.25);padding:2px 8px;border-radius:999px;font-weight:500}
+  .id p{color:hsl(var(--muted-foreground));font-size:14px;margin-top:7px;max-width:62ch}
+  .facts{display:flex;gap:16px;margin-top:14px;flex-wrap:wrap}
+  .fact{display:flex;align-items:center;gap:6px;font-size:12.5px;color:hsl(var(--muted-foreground))}
+  .fact b{color:hsl(var(--foreground));font-weight:600}
+  .dot{width:7px;height:7px;border-radius:50%}
+  .actions{display:flex;flex-direction:column;gap:9px;white-space:nowrap}
+  .btn{display:inline-flex;align-items:center;gap:7px;padding:8px 14px;border-radius:9px;font-size:13px;font-weight:600;cursor:pointer;text-decoration:none;border:1px solid transparent}
+  .btn.primary{background:hsl(var(--primary));color:hsl(var(--primary-foreground))}
+  .btn.ghost{background:hsl(var(--card));border-color:hsl(var(--border));color:hsl(var(--foreground))}
+
+  /* Signal tiles */
+  .tiles{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-top:18px}
+  .tile{border:1px solid hsl(var(--border));border-radius:13px;background:hsl(var(--card));padding:13px 16px}
+  .tile .l{font-family:var(--font-mono);font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;color:hsl(var(--muted-foreground)/.85);display:flex;align-items:center;gap:6px}
+  .tile .v{font-size:23px;font-weight:600;margin-top:8px;line-height:1}
+  .tile .sub{font-size:11.5px;color:hsl(var(--muted-foreground));margin-top:7px}
+  .bar{height:6px;border-radius:999px;background:hsl(var(--muted));margin-top:9px;overflow:hidden;display:flex}
+  .bar i{display:block;height:100%}
+  .attn{border-color:hsl(var(--down)/.4);background:hsl(var(--down)/.05)}
+  .attn .v{color:hsl(var(--down))}
+
+  /* Body */
+  .body{display:grid;grid-template-columns:1fr 350px;gap:20px;margin-top:20px;align-items:start}
+  .panel{border:1px solid hsl(var(--border));border-radius:14px;background:hsl(var(--card))}
+  .prov{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:11px 18px;border-bottom:1px solid hsl(var(--border));font-family:var(--font-mono);font-size:11.5px;color:hsl(var(--muted-foreground))}
+  .prov a{color:hsl(var(--primary));text-decoration:none;font-weight:500}
+  .prose{padding:8px 26px 26px}
+  .prose h2{font-size:17px;margin-top:22px;letter-spacing:-.01em}
+  .prose h3{font-size:14px;margin-top:18px;color:hsl(var(--foreground))}
+  .prose p{font-size:14px;color:hsl(240 6% 22%);margin-top:10px}
+  .prose ul{margin:10px 0 0 18px}
+  .prose li{font-size:14px;color:hsl(240 6% 22%);margin-top:6px}
+  .prose code{font-family:var(--font-mono);font-size:12.5px;background:hsl(var(--muted));padding:1.5px 5px;border-radius:5px;color:hsl(var(--primary))}
+  .prose .lead{font-size:15px;color:hsl(var(--foreground))}
+
+  /* Right rail cards */
+  .rail-col{display:flex;flex-direction:column;gap:16px}
+  .card .hd{display:flex;align-items:center;justify-content:space-between;padding:12px 15px;border-bottom:1px solid hsl(var(--border))}
+  .card .hd .t{font-size:13px;font-weight:600;display:flex;align-items:center;gap:7px}
+  .card .hd a{font-size:11.5px;color:hsl(var(--primary));text-decoration:none;font-family:var(--font-mono)}
+  .row{display:flex;align-items:center;gap:10px;padding:9px 15px;font-size:13px;border-bottom:1px solid hsl(var(--border)/.6)}
+  .row:last-child{border-bottom:0}
+  .row .meta{margin-left:auto;font-size:11px;color:hsl(var(--muted-foreground));font-family:var(--font-mono)}
+  .pill{font-size:10.5px;font-family:var(--font-mono);padding:1px 7px;border-radius:999px;border:1px solid hsl(var(--border))}
+  .st{width:16px;height:16px;border-radius:50%;display:grid;place-items:center;flex:none}
+  .st svg{width:11px;height:11px;color:#fff}
+  .tier{font-family:var(--font-mono);font-size:10px;font-weight:700;padding:1px 6px;border-radius:5px}
+  .muted{color:hsl(var(--muted-foreground))}
+  .docrow{display:flex;align-items:center;gap:9px;padding:9px 15px;font-size:13px;border-bottom:1px solid hsl(var(--border)/.6);text-decoration:none;color:hsl(var(--foreground))}
+  .docrow:hover{background:hsl(var(--accent))}
+  .note{margin-top:26px;border:1px dashed hsl(var(--border));border-radius:12px;background:hsl(var(--muted)/.4);padding:14px 18px;font-size:12.5px;color:hsl(var(--muted-foreground))}
+  .note b{color:hsl(var(--foreground))}
+  svg.ic{width:16px;height:16px;vertical-align:-3px}
+</style>
+</head>
+<body>
+<div class="app">
+  <!-- Sidebar -->
+  <aside class="rail">
+    <div class="brand">
+      <div class="mark">o</div>
+      <div class="switcher">
+        <div class="acct">ACME ACCOUNT</div>
+        <div class="ws">lumen ▾</div>
+      </div>
+    </div>
+    <div>
+      <div class="navlabel">Workspace · lumen</div>
+      <nav>
+        <a class="nav-a active" href="#">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="9"/><rect x="14" y="3" width="7" height="5"/><rect x="14" y="12" width="7" height="9"/><rect x="3" y="16" width="7" height="5"/></svg>
+          Overview
+        </a>
+        <a class="nav-a" href="#"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 0 0-1-1.7l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.7l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg>Catalog</a>
+        <a class="nav-a" href="#"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>Activities</a>
+        <a class="nav-a" href="#"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.7-.9L9.6 3.9A2 2 0 0 0 7.9 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2z"/></svg>Git Repos</a>
+        <a class="nav-a" href="#"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 2v6M15 2v6M12 17v5M7 8h10a2 2 0 0 1 2 2v2a7 7 0 0 1-14 0v-2a2 2 0 0 1 2-2z"/></svg>Integrations</a>
+      </nav>
+    </div>
+    <div class="spacer"></div>
+    <div>
+      <div class="navlabel">Manage</div>
+      <nav>
+        <a class="nav-a" href="#"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20V10M18 20V4M6 20v-4"/></svg>Usage &amp; quota</a>
+        <a class="nav-a" href="#"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-2.82 1.17V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 8 19.4l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.6 15"/></svg>Settings ›</a>
+      </nav>
+    </div>
+    <div class="acct-chip"><span class="av">RV</span> rahul · ACME</div>
+  </aside>
+
+  <!-- Main -->
+  <main>
+    <div class="crumb">ACME Account &nbsp;›&nbsp; <b>lumen</b> &nbsp;›&nbsp; Overview</div>
+
+    <!-- Band 1: Identity -->
+    <section class="id">
+      <div>
+        <h1>lumen <span class="ns">sourceplane / lumen</span></h1>
+        <p>Reusable Cloudflare + Supabase multi-tenant SaaS starter, built as an Orun
+           component-native desired-state repo — identity, billing, metering, webhooks
+           and notifications as bounded-context Workers behind one edge API.</p>
+        <div class="facts">
+          <span class="fact"><span class="dot" style="background:hsl(var(--healthy))"></span> <b>Operational</b></span>
+          <span class="fact">🧩 <b>14</b> components</span>
+          <span class="fact">🌱 <b>2</b> environments · stage, prod</span>
+          <span class="fact">📦 primary repo <b>sourceplane/lumen</b></span>
+        </div>
+      </div>
+      <div class="actions">
+        <a class="btn primary" href="#">Open catalog →</a>
+        <a class="btn ghost" href="#">View activity</a>
+      </div>
+    </section>
+
+    <!-- Band 2: Signal tiles -->
+    <section class="tiles">
+      <div class="tile">
+        <div class="l">🧩 Components</div>
+        <div class="v">14</div>
+        <div class="sub">across 4 systems</div>
+      </div>
+      <div class="tile">
+        <div class="l">❤ Health</div>
+        <div class="v" style="color:hsl(var(--healthy))">93%</div>
+        <div class="sub">13 healthy · 1 degraded</div>
+        <div class="bar"><i style="width:93%;background:hsl(var(--healthy))"></i><i style="width:7%;background:hsl(var(--warn))"></i></div>
+      </div>
+      <div class="tile">
+        <div class="l">🏅 Production-ready</div>
+        <div class="v">71%</div>
+        <div class="sub">Gold 6 · Silver 4 · Bronze 4</div>
+        <div class="bar"><i style="width:43%;background:hsl(var(--gold))"></i><i style="width:28%;background:hsl(var(--silver))"></i><i style="width:29%;background:hsl(var(--bronze))"></i></div>
+      </div>
+      <div class="tile attn">
+        <div class="l" style="color:hsl(var(--down))">⚡ Needs attention</div>
+        <div class="v">2</div>
+        <div class="sub">1 unowned · 1 degraded</div>
+      </div>
+    </section>
+
+    <!-- Band 3: Body -->
+    <section class="body">
+      <!-- Left: narrative -->
+      <div class="panel">
+        <div class="prov">
+          <span>Synced from <b style="color:hsl(var(--foreground))">sourceplane/lumen</b>@<b style="color:hsl(var(--foreground))">a16286e</b> · 6 min ago · <code>overview.md</code></span>
+          <a href="#">Edit on GitHub ↗</a>
+        </div>
+        <div class="prose">
+          <p class="lead">lumen is a production SaaS baseline — fork it, rebrand in one script,
+            and grow it a few components at a time. Every Worker, Terraform stack, and
+            migration declares its own <code>component.yaml</code>; the repo as a whole is
+            platform intent.</p>
+          <h2>What this workspace manages</h2>
+          <p>The lumen platform: a multi-tenant SaaS control plane on Cloudflare Workers +
+             Supabase. CI never runs a raw <code>pnpm</code>, <code>wrangler</code>, or
+             <code>terraform</code> — it runs <code>orun plan</code> and <code>orun run</code>,
+             compiling the platform into deterministic state and converging deviation on
+             every commit.</p>
+          <h3>Bounded contexts</h3>
+          <ul>
+            <li>Identity, organizations &amp; membership, projects/environments</li>
+            <li>RBAC &amp; policy, audit &amp; observability</li>
+            <li>Metering, billing (Polar), webhooks, notifications</li>
+          </ul>
+          <h2>Important information</h2>
+          <ul>
+            <li><b>Runtime is live</b> on <code>stage</code> and <code>prod</code> via <code>orun run</code>.</li>
+            <li>Data plane provisioned by Terraform; credentials in AWS Secrets Manager.</li>
+            <li>Migrations run through the <code>db-migrate</code> component (plan on PRs, apply on merge).</li>
+          </ul>
+        </div>
+      </div>
+
+      <!-- Right: live summary cards -->
+      <div class="rail-col">
+        <!-- Components -->
+        <div class="panel card">
+          <div class="hd"><span class="t">🧩 Components at a glance</span><a href="#">Catalog →</a></div>
+          <div class="row"><span class="tier" style="background:hsl(var(--down)/.12);color:hsl(var(--down))">!</span> billing-worker <span class="meta">degraded</span></div>
+          <div class="row"><span class="tier" style="background:hsl(var(--warn)/.14);color:hsl(var(--bronze))">?</span> events-worker <span class="meta">unowned</span></div>
+          <div class="row"><span class="tier" style="background:hsl(var(--gold)/.16);color:hsl(var(--bronze))">G</span> api-edge <span class="meta">gold</span></div>
+        </div>
+        <!-- Activity -->
+        <div class="panel card">
+          <div class="hd"><span class="t">📈 Recent activity</span><a href="#">All runs →</a></div>
+          <div class="row"><span class="st" style="background:hsl(var(--healthy))"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M20 6 9 17l-5-5"/></svg></span> orun run · prod <span class="meta">6m</span></div>
+          <div class="row"><span class="st" style="background:hsl(var(--healthy))"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M20 6 9 17l-5-5"/></svg></span> orun plan · PR #243 <span class="meta">1h</span></div>
+          <div class="row"><span class="st" style="background:hsl(var(--down))"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M18 6 6 18M6 6l12 12"/></svg></span> orun run · stage <span class="meta">3h</span></div>
+          <div class="row"><span class="st" style="background:hsl(var(--healthy))"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M20 6 9 17l-5-5"/></svg></span> db-migrate · prod <span class="meta">5h</span></div>
+        </div>
+        <!-- Repos -->
+        <div class="panel card">
+          <div class="hd"><span class="t">📦 Repositories</span><a href="#">Git Repos →</a></div>
+          <div class="row">sourceplane/lumen <span class="pill" style="color:hsl(var(--healthy));border-color:hsl(var(--healthy)/.4)">primary</span><span class="meta">main · 6m</span></div>
+        </div>
+        <!-- Integrations -->
+        <div class="panel card">
+          <div class="hd"><span class="t">🔌 Integrations</span><a href="#">Manage →</a></div>
+          <div class="row"><span class="dot" style="background:hsl(var(--healthy))"></span> GitHub <span class="meta">connected · ACME</span></div>
+        </div>
+        <!-- Pinned docs -->
+        <div class="panel card">
+          <div class="hd"><span class="t">📌 Pinned docs</span></div>
+          <a class="docrow" href="#">📄 FORKING.md <span class="meta" style="margin-left:auto">repo</span></a>
+          <a class="docrow" href="#">📄 Runbook: incident response <span class="meta" style="margin-left:auto">repo</span></a>
+        </div>
+      </div>
+    </section>
+
+    <div class="note">
+      <b>Empty-state behaviour (not shown above).</b> No repo connected → a centered
+      “Connect a repository to bring this Workspace to life” CTA. Repo but no plan →
+      identity renders, tiles read “—”, hint to run <code>orun plan</code>. Repo + plan
+      but no <code>overview.md</code> → render the intent <code>description</code> and nudge
+      the team to add one (copy-paste template + “Create on GitHub”). The narrative is
+      always repo-sourced; a console override is the only escape hatch for not-yet-connected
+      Workspaces.
+    </div>
+  </main>
+</div>
+</body>
+</html>
