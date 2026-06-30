@@ -5,7 +5,7 @@ Each milestone is a candidate scope for one coherent PR-sized task. The epic is
 `/v1/organizations/*`, or the `org.*` taxonomy; `ws_…` is layered on and led-with.
 WID1–WID5 deliver the durable id; WID6–WID8 are the Stage-gated Account layer.
 
-## WID1 — ID design + glossary
+## WID1 — ID design + glossary — ✅ Shipped (`specs/core/vocabulary.md`)
 
 Lock the id before minting it.
 

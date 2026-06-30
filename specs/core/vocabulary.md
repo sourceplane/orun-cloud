@@ -65,3 +65,49 @@ is purely additive.
 - The normative statement of this policy lives in
   [`contracts/api-guidelines.md`](./contracts/api-guidelines.md) (§ Public
   vocabulary / § Deprecation & coexistence policy).
+
+## Workspace ID — the durable public handle (WID1)
+
+Status: Normative (the public identifier format; see `epics/saas-workspace-id`).
+
+The **Workspace ID** is the short, immutable, public handle for a Workspace — the
+id a human quotes to support, pastes into the CLI, and commits into `intent.yaml`.
+It is the AWS-account-id analog the platform previously lacked: `org_<hex>` is
+stable but a 36-char hex blob, and the `slug` is friendly but **mutable** (so it is
+unsafe as a durable reference). The Workspace ID is the third, distinct identifier.
+
+### The three identifiers (do not conflate)
+
+| Identifier | Role | Mutable? | Where it appears |
+|------------|------|----------|------------------|
+| **Workspace ID** `ws_…` | durable public handle | **no** | API paths + bodies (led), SDK/CLI, tokens, console "copy id", `intent.yaml` |
+| **`slug`** | vanity / URL label | yes | console URL (`/orgs/{slug}/…`), sign-in |
+| **`org_<hex>` / UUID** | internal primary key + legacy public id | no | DB columns, internal service-to-service, legacy `/v1/organizations/*`, `org.*` audit, in-flight tokens |
+
+An optional **`acct_…`** Account handle may later surface the Account (parent) with
+the same value as the parent's `ws_…` until the Account becomes a first-class entity
+(`saas-workspace-id` Stage 2); it is not minted at WID1.
+
+### Format
+
+- **`ws_`** prefix + **Crockford base32** body (uppercase `A–Z`/`2–9`, excluding
+  `I L O U`), e.g. `ws_3KF9TQ2P`. Prefixed — *not* a bare AWS-style number — to keep
+  the platform's `usr_`/`prj_`/`org_` convention and to preserve id-kind
+  discrimination (audit envelopes, webhook payloads, `parseSubjectUuid`).
+- **Immutable.** Generated once at creation (the `create-organization` transaction),
+  stored in a dedicated `membership.organizations.public_ref` column — never a
+  re-encoded UUID and never the mutable slug. Safe to commit and to quote forever.
+
+### Rules
+
+- **`org_<hex>` is retained indefinitely** as an accepted/returned alias (extends WS
+  decision D4). `ws_…` is led-with on public surfaces; `org_<hex>`,
+  `/v1/organizations/*`, the UUID PKs, and the `org.*` taxonomy are never removed.
+- **Role is never encoded in the id.** Account-vs-Workspace is *mutable, relational*
+  state (an org becomes an Account on its first child, and the parent is *both*).
+  Discover it via the `accountId` field (`= effectiveBillingOrgId(org) =
+  parentOrgId ?? id`) and the derived `kind`/`isAccountRoot`; the invariant is
+  **`accountId === workspaceId` ⟺ Account root**. Never branch security or routing
+  logic on a parsed id prefix — authority comes from the resolved record.
+- The normative id/account-layer design lives in
+  [`../epics/saas-workspace-id/design.md`](../epics/saas-workspace-id/design.md).
