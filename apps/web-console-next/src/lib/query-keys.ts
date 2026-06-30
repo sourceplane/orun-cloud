@@ -23,6 +23,8 @@ export const qk = {
     ["webhookEndpoint", orgId, endpointId] as const,
   notificationPrefs: (orgId: string) => ["notificationPrefs", orgId] as const,
   integrations: (orgId: string) => ["integrations", orgId] as const,
+  connectionGrants: (orgId: string, connectionId: string) =>
+    ["connectionGrants", orgId, connectionId] as const,
   repoLinks: (orgId: string, projectId: string) => ["repoLinks", orgId, projectId] as const,
   workspaceLinks: (orgId: string, projectId: string) =>
     ["workspaceLinks", orgId, projectId] as const,
