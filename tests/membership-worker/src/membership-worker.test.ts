@@ -133,6 +133,12 @@ function createFakeRepository(): MembershipRepository & { _orgs: Map<string, Org
       return { ok: true, value: org };
     },
 
+    async getOrganizationByPublicRef(publicRef) {
+      const org = [..._orgs.values()].find((o) => o.publicRef === publicRef);
+      if (!org) return { ok: false, error: { kind: "not_found" } };
+      return { ok: true, value: org };
+    },
+
     async listOrganizationsForSubject(subjectId) {
       const orgIds = new Set<string>();
       for (const [key, roles] of _roles.entries()) {

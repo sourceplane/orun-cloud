@@ -277,6 +277,37 @@ describe("POST /v1/auth/oidc/exchange (OV3)", () => {
     expect(res.status).toBe(401);
   });
 
+  it("resolves a ws_ org hint to the right link (WID3)", async () => {
+    // A repo linked across two orgs; the hint is a `ws_` ref that the injected
+    // resolver maps to ORG2's canonical `org_<hex>`, so the second link is chosen.
+    const { token, jwks } = await forgeOidc();
+    const links = [linkRow(), linkRow({ org_id: ORG2_UUID, id: "66666666-6666-4666-8666-666666666666" })];
+    const ORG2_PUBLIC = `org_${ORG2_UUID.replace(/-/g, "")}`;
+    const res = await handleOidcExchange(exchangeReq(token, "ws_9QM2X7BD"), env(), "req_1", {
+      executor: stateExecutor(links),
+      fetchJwks: () => Promise.resolve(jwks),
+      now: () => NOW,
+      resolveOrgRef: async (ref) => (ref === "ws_9QM2X7BD" ? ORG2_PUBLIC : null),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { data: { orgId: string } };
+    expect(body.data.orgId).toBe(ORG2_PUBLIC);
+  });
+
+  it("resolves a slug org hint to the right link (WID3)", async () => {
+    const { token, jwks } = await forgeOidc();
+    const links = [linkRow(), linkRow({ org_id: ORG2_UUID, id: "66666666-6666-4666-8666-666666666666" })];
+    const res = await handleOidcExchange(exchangeReq(token, "acme"), env(), "req_1", {
+      executor: stateExecutor(links),
+      fetchJwks: () => Promise.resolve(jwks),
+      now: () => NOW,
+      resolveOrgRef: async (ref) => (ref === "acme" ? ORG_PUBLIC : null),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { data: { orgId: string } };
+    expect(body.data.orgId).toBe(ORG_PUBLIC);
+  });
+
   it("requires the org claim to disambiguate a repo linked across orgs (409 → 200)", async () => {
     const { token, jwks } = await forgeOidc();
     const links = [linkRow(), linkRow({ org_id: ORG2_UUID, id: "66666666-6666-4666-8666-666666666666" })];

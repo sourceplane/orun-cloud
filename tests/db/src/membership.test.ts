@@ -275,6 +275,33 @@ describe("MembershipRepository", () => {
     });
   });
 
+  describe("getOrganizationByPublicRef", () => {
+    it("looks up by public_ref and maps the org (WID3)", async () => {
+      const { executor, queries } = createFakeExecutor({ rows: [SAMPLE_ORG_ROW] });
+      const repo = createMembershipRepository(executor);
+
+      const result = await repo.getOrganizationByPublicRef("ws_3KF9TQ2P");
+
+      expect(queries[0]!.params).toEqual(["ws_3KF9TQ2P"]);
+      expect(queries[0]!.text).toContain("public_ref");
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.value.id).toBe(ORG1);
+        expect(result.value.publicRef).toBe("ws_3KF9TQ2P");
+      }
+    });
+
+    it("returns not_found for an unknown public ref", async () => {
+      const { executor } = createFakeExecutor({ rows: [] });
+      const repo = createMembershipRepository(executor);
+
+      const result = await repo.getOrganizationByPublicRef("ws_UNKNOWN1");
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.error.kind).toBe("not_found");
+    });
+  });
+
   describe("listOrganizationsForSubject", () => {
     it("uses parameterized query with subject_id", async () => {
       const { executor, queries } = createFakeExecutor({ rows: [SAMPLE_ORG_ROW] });

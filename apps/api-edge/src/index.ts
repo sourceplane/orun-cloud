@@ -26,6 +26,7 @@ import {
   rewriteToOrgRequest,
   projectWorkspaceAlias,
 } from "./workspace-facade";
+import { resolveOrgRefInPath, ORG_REF_NOT_FOUND } from "./org-ref-facade";
 
 // Durable Object class backing the PERF5 Stage B rate-limit counters. Must be
 // exported from the Worker entry so the runtime can instantiate it for the
@@ -45,10 +46,24 @@ export default {
     // every org-scoped facade serves it unchanged, then project `workspaceId`
     // into the JSON response. The legacy org surface is untouched.
     const workspaceAlias = isWorkspaceAliasRoute(url.pathname);
-    const routedRequest = workspaceAlias
+    const aliasedRequest = workspaceAlias
       ? rewriteToOrgRequest(request, rewriteWorkspacePath(url.pathname))
       : request;
-    const pathname = workspaceAlias ? rewriteWorkspacePath(url.pathname) : url.pathname;
+    const aliasedPathname = workspaceAlias ? rewriteWorkspacePath(url.pathname) : url.pathname;
+
+    // Org-ref resolution (saas-workspace-id WID3): on the resulting
+    // `/v1/organizations/{seg}` path, resolve a `ws_`/slug segment to the
+    // canonical `org_<hex>` and rewrite ONLY that segment, so downstream workers
+    // keep receiving the opaque id they already decode. Runs AFTER the workspace
+    // rewrite so `/v1/workspaces/ws_…` resolves end-to-end. An already-`org_`
+    // segment (all existing traffic) is a zero-overhead pass-through; an
+    // unresolvable ref yields a 404 instead of being forwarded.
+    const resolved = await resolveOrgRefInPath(aliasedPathname, aliasedRequest, env, requestId);
+    if (resolved === ORG_REF_NOT_FOUND) {
+      return applyCorsHeaders(notFound(requestId, url.pathname), request, env);
+    }
+    const routedRequest = resolved.request;
+    const pathname = resolved.pathname;
 
     let response: Response;
 

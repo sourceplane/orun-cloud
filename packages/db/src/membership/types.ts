@@ -162,6 +162,12 @@ export interface MembershipRepository {
   createOrganization(input: CreateOrganizationInput): Promise<MembershipResult<Organization>>;
   getOrganizationById(id: string): Promise<MembershipResult<Organization>>;
   getOrganizationBySlug(slugLower: string): Promise<MembershipResult<Organization>>;
+  /**
+   * Look up an org by its immutable public Workspace ID (`ws_…`, WID2) stored in
+   * the `public_ref` column. Backs the api-edge org-ref resolver (WID3), which
+   * rewrites a `ws_`/slug path segment to the canonical `org_<hex>` at the edge.
+   */
+  getOrganizationByPublicRef(publicRef: string): Promise<MembershipResult<Organization>>;
   /** Child orgs whose billing parent is `parentOrgId` (MO3), oldest first. */
   listChildOrganizations(parentOrgId: string): Promise<MembershipResult<Organization[]>>;
   /** Set an org's lifecycle status (e.g. freeze a child to 'suspended', MO3). */
