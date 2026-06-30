@@ -740,6 +740,26 @@ export function createIntegrationsRepository(executor: SqlExecutor): Integration
       }
     },
 
+    async countActiveSharedRepoLinks(orgId: Uuid): Promise<IntegrationsResult<number>> {
+      try {
+        // Active links this org holds against a connection it does NOT own —
+        // i.e. claims against an account-shared connection. The detach guard
+        // (IT6, design §8) consults this: clearing parent_org_id must
+        // block-then-unlink (D2) while such links exist, since a detached
+        // workspace no longer resolves to the account's connection.
+        const result = await executor.execute<Record<string, unknown>>(
+          `SELECT COUNT(*)::int AS count
+             FROM integrations.repo_links rl
+             JOIN integrations.connections c ON c.id = rl.connection_id
+            WHERE rl.org_id = $1 AND rl.status = 'active' AND c.org_id <> $1`,
+          [orgId],
+        );
+        return { ok: true, value: Number(result.rows[0]?.count ?? 0) };
+      } catch {
+        return safeError("Failed to count shared repo links");
+      }
+    },
+
     // ── Inbound deliveries ──────────────────────────────────
 
     async insertInboundDelivery(

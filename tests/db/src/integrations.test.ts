@@ -361,6 +361,18 @@ describe("IntegrationsRepository — repo links", () => {
     }
   });
 
+  it("counts active links against a connection the org does not own (IT6 detach guard)", async () => {
+    const { executor, queries } = createFakeExecutor({ rows: [{ count: 2 }] });
+    const repo = createIntegrationsRepository(executor);
+    const result = await repo.countActiveSharedRepoLinks(ORG_ID);
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.value).toBe(2);
+    const sql = queries[0]!.text;
+    expect(sql).toContain("JOIN integrations.connections c ON c.id = rl.connection_id");
+    expect(sql).toContain("c.org_id <> $1"); // connection owned by a DIFFERENT org
+    expect(sql).toContain("rl.status = 'active'");
+  });
+
   it("finds the active link by connection + repo (IT3), connection-keyed not org-scoped", async () => {
     const { executor, queries } = createFakeExecutor({ rows: [SAMPLE_REPO_LINK_ROW] });
     const repo = createIntegrationsRepository(executor);
