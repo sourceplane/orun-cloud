@@ -374,6 +374,13 @@ export interface IntegrationsRepository {
   ): Promise<IntegrationsResult<RepoLink | null>>;
   /** Entitlement gating: count of active links in the organization. */
   countActiveRepoLinks(orgId: Uuid): Promise<IntegrationsResult<number>>;
+  /**
+   * Detach guard (IT6, design §8): count of this org's active links against a
+   * connection it does NOT own (an account-shared connection). The membership
+   * detach flow consults this to block-then-unlink (D2) before clearing
+   * parent_org_id. Zero for every standalone org (it owns its own connection).
+   */
+  countActiveSharedRepoLinks(orgId: Uuid): Promise<IntegrationsResult<number>>;
 
   // Inbound deliveries (durable inbox)
   insertInboundDelivery(

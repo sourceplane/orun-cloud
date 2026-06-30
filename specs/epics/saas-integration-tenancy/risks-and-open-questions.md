@@ -20,6 +20,18 @@ control / share mode** — are now scoped, decided with back-compatible defaults
 | # | Decision | Options | Leaning |
 |---|----------|---------|---------|
 | D2 | **Detach** (`clear parent_org_id`) effect on the workspace's repo links against the account connection | (a) **revoke** the workspace's active links on detach; (b) **block** detach while active links exist (force unlink first) | (b) block-then-unlink — least destructive, symmetric with billing's reversible detach; surface the blocker in the console. |
+
+**Wiring status (IT6b):** the integrations-side data primitive is shipped and
+tested — `IntegrationsRepository.countActiveSharedRepoLinks(orgId)` returns the
+count of a workspace's active links against a connection it does not own (an
+account-shared connection); it is zero for every standalone org. The detach
+*guard itself* cannot be wired yet: **the platform has no detach operation** —
+`membership.organizations.parent_org_id` is only ever *set* (at org creation /
+`sync-account-children`), never cleared, so there is no clear-parent flow to gate.
+When `saas-multi-org-billing` (or membership) introduces detach, the guard is a
+one-call check against this primitive, gated by the D2 decision above. Until then
+D2 stays open and the guard is intentionally unbuilt (no detach ⇒ nothing to
+block).
 | D5 | **Grant granularity & scope-change** (IT8/IT7 follow-ups) | (a) admission grant is whole-connection only vs per-repo; (b) whether an existing connection may **change scope** (account↔workspace) as an explicit audited op, or scope is fixed at connect time | (a) **whole-connection grant** first — per-repo admission is repo-link ownership's job already; add per-repo only on demand. (b) **scope fixed at connect** for v1 — a scope change is a disconnect+reconnect; revisit if customers hit it. |
 
 ## ✅ Decisions made
