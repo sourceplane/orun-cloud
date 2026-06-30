@@ -15,6 +15,12 @@ import type {
   ListInboundDeliveriesResponse,
   ReplayInboundDeliveryResponse,
   RevokeIntegrationResponse,
+  UpdateConnectionRequest,
+  UpdateConnectionResponse,
+  ListConnectionGrantsResponse,
+  CreateConnectionGrantRequest,
+  CreateConnectionGrantResponse,
+  RevokeConnectionGrantResponse,
 } from "@saas/contracts/integrations";
 
 import type { Transport, RequestOptions } from "./transport.js";
@@ -226,6 +232,73 @@ export class IntegrationsClient {
       {
         method: "DELETE",
         path: `/v1/organizations/${encodeURIComponent(orgId)}/integrations/${encodeURIComponent(connectionId)}`,
+      },
+      opts,
+    );
+  }
+
+  // ── Admission grants & share mode (IT8b) ──────────────────
+
+  /** PATCH /v1/organizations/:orgId/integrations/:connectionId — set share mode. */
+  update(
+    orgId: string,
+    connectionId: string,
+    body: UpdateConnectionRequest,
+    opts: RequestOptions = {},
+  ): Promise<UpdateConnectionResponse> {
+    return this.transport.request<UpdateConnectionResponse>(
+      {
+        method: "PATCH",
+        path: `/v1/organizations/${encodeURIComponent(orgId)}/integrations/${encodeURIComponent(connectionId)}`,
+        body,
+      },
+      opts,
+    );
+  }
+
+  /** GET /v1/organizations/:orgId/integrations/:connectionId/grants */
+  listGrants(
+    orgId: string,
+    connectionId: string,
+    opts: RequestOptions = {},
+  ): Promise<ListConnectionGrantsResponse> {
+    return this.transport.request<ListConnectionGrantsResponse>(
+      {
+        method: "GET",
+        path: `/v1/organizations/${encodeURIComponent(orgId)}/integrations/${encodeURIComponent(connectionId)}/grants`,
+      },
+      opts,
+    );
+  }
+
+  /** POST /v1/organizations/:orgId/integrations/:connectionId/grants — admit a workspace. */
+  grantWorkspace(
+    orgId: string,
+    connectionId: string,
+    body: CreateConnectionGrantRequest,
+    opts: RequestOptions = {},
+  ): Promise<CreateConnectionGrantResponse> {
+    return this.transport.request<CreateConnectionGrantResponse>(
+      {
+        method: "POST",
+        path: `/v1/organizations/${encodeURIComponent(orgId)}/integrations/${encodeURIComponent(connectionId)}/grants`,
+        body,
+      },
+      opts,
+    );
+  }
+
+  /** DELETE /v1/organizations/:orgId/integrations/:connectionId/grants/:workspaceOrgId */
+  revokeGrant(
+    orgId: string,
+    connectionId: string,
+    workspaceOrgId: string,
+    opts: RequestOptions = {},
+  ): Promise<RevokeConnectionGrantResponse> {
+    return this.transport.request<RevokeConnectionGrantResponse>(
+      {
+        method: "DELETE",
+        path: `/v1/organizations/${encodeURIComponent(orgId)}/integrations/${encodeURIComponent(connectionId)}/grants/${encodeURIComponent(workspaceOrgId)}`,
       },
       opts,
     );
