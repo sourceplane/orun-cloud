@@ -78,7 +78,7 @@ same value until the Account becomes a first-class entity (Stage 2).
 | WID4 | Public surface: lead with `ws_` in contracts/edge; add `accountId` + `kind`/`isAccountRoot`; accept `ws_` in requests; amend `api-guidelines` D2/D4 | — | ✅ Shipped |
 | WID5 | SDK / CLI / console / tokens: lead with `ws_`; `intent.yaml` accepts `ws_`; identity tokens carry `ws_` alongside the org claim | — | ✅ Shipped (orun-cloud; Go CLI `intent.yaml` → OP/DV5) |
 | WID6 | Account layer **Stage 1a** — account-scoped RBAC: `scope_kind='account'` + the policy-engine cascade (admin-portal authority) | 1 | ✅ Shipped |
-| WID7 | Account layer **Stage 1b** — the scope-resolution chain (env→project→workspace→account→default) + override-vs-locked account-wide config | 1 | Draft |
+| WID7 | Account layer **Stage 1b** — the scope-resolution chain (env→project→workspace→account→default) + override-vs-locked account-wide config | 1 | ✅ Shipped |
 | WID8 | Account layer **Stage 2 (deferred)** — promote Account to a first-class `accounts` entity; `acct_` becomes its real id | 2 | Draft (deferred) |
 
 ## Scope boundary

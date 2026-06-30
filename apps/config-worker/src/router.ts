@@ -2,6 +2,7 @@ import type { Env } from "./env.js";
 import type { Scope } from "@saas/db/config";
 import { handleHealth } from "./handlers/health.js";
 import { handleListSettings } from "./handlers/list-settings.js";
+import { handleResolveSetting } from "./handlers/resolve-setting.js";
 import { handleListFeatureFlags } from "./handlers/list-feature-flags.js";
 import { handleListSecrets } from "./handlers/list-secrets.js";
 import { handleCreateSetting } from "./handlers/create-setting.js";
@@ -49,6 +50,13 @@ const PRJ_SECRETS_RE = /^\/v1\/organizations\/([^/]+)\/projects\/([^/]+)\/config
 const ENV_SETTINGS_RE = /^\/v1\/organizations\/([^/]+)\/projects\/([^/]+)\/environments\/([^/]+)\/config\/settings$/;
 const ENV_FEATURE_FLAGS_RE = /^\/v1\/organizations\/([^/]+)\/projects\/([^/]+)\/environments\/([^/]+)\/config\/feature-flags$/;
 const ENV_SECRETS_RE = /^\/v1\/organizations\/([^/]+)\/projects\/([^/]+)\/environments\/([^/]+)\/config\/secrets$/;
+
+// Resolved settings read (WID7): GET .../config/settings/resolve?key=...
+// Walks the scope-resolution chain (env -> project -> workspace -> account ->
+// default) so a workspace inherits account-level values.
+const ORG_SETTINGS_RESOLVE_RE = /^\/v1\/organizations\/([^/]+)\/config\/settings\/resolve$/;
+const PRJ_SETTINGS_RESOLVE_RE = /^\/v1\/organizations\/([^/]+)\/projects\/([^/]+)\/config\/settings\/resolve$/;
+const ENV_SETTINGS_RESOLVE_RE = /^\/v1\/organizations\/([^/]+)\/projects\/([^/]+)\/environments\/([^/]+)\/config\/settings\/resolve$/;
 
 // Item-level routes (PATCH for settings/flags)
 const ORG_SETTING_ITEM_RE = /^\/v1\/organizations\/([^/]+)\/config\/settings\/([^/]+)$/;
@@ -150,6 +158,31 @@ function matchRoute(pathname: string): MatchedRoute | null {
     return { scope: { kind: "organization", orgId }, resource: "secrets" };
   }
 
+  return null;
+}
+
+function matchResolveRoute(pathname: string): { scope: Scope } | null {
+  let m = pathname.match(ENV_SETTINGS_RESOLVE_RE);
+  if (m) {
+    const orgId = parseOrgPublicId(m[1]!);
+    const projectId = parseProjectPublicId(m[2]!);
+    const environmentId = parseEnvironmentPublicId(m[3]!);
+    if (!orgId || !projectId || !environmentId) return null;
+    return { scope: { kind: "environment", orgId, projectId, environmentId } };
+  }
+  m = pathname.match(PRJ_SETTINGS_RESOLVE_RE);
+  if (m) {
+    const orgId = parseOrgPublicId(m[1]!);
+    const projectId = parseProjectPublicId(m[2]!);
+    if (!orgId || !projectId) return null;
+    return { scope: { kind: "project", orgId, projectId } };
+  }
+  m = pathname.match(ORG_SETTINGS_RESOLVE_RE);
+  if (m) {
+    const orgId = parseOrgPublicId(m[1]!);
+    if (!orgId) return null;
+    return { scope: { kind: "organization", orgId } };
+  }
   return null;
 }
 
@@ -295,17 +328,26 @@ export async function route(request: Request, env: Env): Promise<Response> {
       return handleHealth(env, requestId);
     }
 
-    const matched = matchRoute(url.pathname);
-    const matchedItem = matched ? null : matchItemRoute(url.pathname);
-    const matchedSecretItem = (matched || matchedItem) ? null : matchSecretItemRoute(url.pathname);
+    const matchedResolve = matchResolveRoute(url.pathname);
+    const matched = matchedResolve ? null : matchRoute(url.pathname);
+    const matchedItem = (matchedResolve || matched) ? null : matchItemRoute(url.pathname);
+    const matchedSecretItem = (matchedResolve || matched || matchedItem) ? null : matchSecretItemRoute(url.pathname);
 
-    if (!matched && !matchedItem && !matchedSecretItem) {
+    if (!matchedResolve && !matched && !matchedItem && !matchedSecretItem) {
       return notFound(requestId, url.pathname);
     }
 
     const actor = resolveActor(request);
     if (!actor) {
       return errorResponse("unauthenticated", "Authentication required", 401, requestId);
+    }
+
+    // Resolved settings read (WID7): GET only.
+    if (matchedResolve) {
+      if (request.method !== "GET") {
+        return methodNotAllowed(requestId);
+      }
+      return handleResolveSetting(request, env, requestId, actor, matchedResolve.scope);
     }
 
     // Secret item-level routes (rotate: POST, revoke: DELETE)

@@ -94,7 +94,7 @@ Authority to administer workspaces from the Account (admin-portal prerequisite).
 - **Done when:** an `account_admin` can act on every workspace in the account with no
   per-workspace role row; policy tests cover the cascade + the still-deny default.
 
-## WID7 — Account layer Stage 1b: resolution chain + account-wide config
+## WID7 — Account layer Stage 1b: resolution chain + account-wide config — ✅ Shipped (`430_config_account_scope`)
 
 Inheritance with override-vs-locked semantics.
 

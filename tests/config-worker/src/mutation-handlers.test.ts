@@ -17,6 +17,7 @@ import type {
   StoredEvent,
   StoredAuditEntry,
 } from "@saas/db/events";
+import type { MembershipRepository, Organization } from "@saas/db/membership";
 
 // ── Constants ──────────────────────────────────────────────
 const TEST_ORG_UUID = "11111111-1111-1111-1111-111111111111";
@@ -142,6 +143,7 @@ function fakeSetting(overrides?: Partial<Setting>): Setting {
     key: "max.users",
     value: 100,
     description: "Maximum users",
+    overridable: true,
     createdAt: FIXED_NOW,
     updatedAt: FIXED_NOW,
     ...overrides,
@@ -187,18 +189,44 @@ function fakeEventsRepo(): FakeEventsRepo {
   };
 }
 
+// ── Fake membership repo (WID7 account uuid resolution) ─────
+function fakeOrg(parentOrgId: string | null = null): Organization {
+  return {
+    id: TEST_ORG_UUID,
+    name: "Acme",
+    slug: "acme",
+    slugLower: "acme",
+    publicRef: "ws_TESTTEST",
+    status: "active",
+    parentOrgId,
+    createdAt: FIXED_NOW,
+    updatedAt: FIXED_NOW,
+  };
+}
+
+/** No locked account guardrail exists → writes are always allowed. */
+const membershipNoLock: Pick<MembershipRepository, "getOrganizationById"> = {
+  getOrganizationById: () => Promise.resolve({ ok: true as const, value: fakeOrg() }),
+};
+
+/** A config repo getSettingByScopeKey stub used when no account row should be found. */
+const noAccountSetting = () =>
+  Promise.resolve({ ok: false as const, error: { kind: "not_found" as const } });
+
 // ── createSetting tests ────────────────────────────────────
 describe("handleCreateSetting", () => {
   it("returns 400 for invalid JSON", async () => {
     const res = await handleCreateSetting(makeBadRequest(), FAKE_ENV, "req1", ACTOR, ORG_SCOPE, {
-      repo: { createSetting: () => unusedConfigFailure<Setting>() },
+      repo: { createSetting: () => unusedConfigFailure<Setting>(), getSettingByScopeKey: noAccountSetting },
+      membershipRepo: membershipNoLock,
     });
     expect(res.status).toBe(400);
   });
 
   it("returns validation error for missing key", async () => {
     const res = await handleCreateSetting(makeJsonRequest({ value: 42 }), FAKE_ENV, "req1", ACTOR, ORG_SCOPE, {
-      repo: { createSetting: () => unusedConfigFailure<Setting>() },
+      repo: { createSetting: () => unusedConfigFailure<Setting>(), getSettingByScopeKey: noAccountSetting },
+      membershipRepo: membershipNoLock,
     });
     expect(res.status).toBe(422);
     const body = (await res.json()) as JsonResp;
@@ -207,7 +235,8 @@ describe("handleCreateSetting", () => {
 
   it("returns validation error for invalid key pattern", async () => {
     const res = await handleCreateSetting(makeJsonRequest({ key: "123bad" }), FAKE_ENV, "req1", ACTOR, ORG_SCOPE, {
-      repo: { createSetting: () => unusedConfigFailure<Setting>() },
+      repo: { createSetting: () => unusedConfigFailure<Setting>(), getSettingByScopeKey: noAccountSetting },
+      membershipRepo: membershipNoLock,
     });
     expect(res.status).toBe(422);
   });
@@ -221,7 +250,9 @@ describe("handleCreateSetting", () => {
       {
         repo: {
           createSetting: () => Promise.resolve({ ok: true as const, value: setting }),
+          getSettingByScopeKey: noAccountSetting,
         },
+        membershipRepo: membershipNoLock,
         eventsRepo,
         generateId: () => FIXED_ID,
         now: () => FIXED_NOW,
@@ -241,12 +272,55 @@ describe("handleCreateSetting", () => {
       {
         repo: {
           createSetting: () => Promise.resolve({ ok: false as const, error: { kind: "conflict" as const, entity: "setting" } }),
+          getSettingByScopeKey: noAccountSetting,
         },
+        membershipRepo: membershipNoLock,
         generateId: () => FIXED_ID,
         now: () => FIXED_NOW,
       },
     );
     expect(res.status).toBe(409);
+  });
+
+  // ── WID7: locked account guardrail enforcement (create) ───
+  it("returns 409 when overriding a locked (overridable=false) account setting", async () => {
+    const lockedAccount = fakeSetting({ scopeKind: "account", overridable: false, orgId: "acct-uuid" });
+    const res = await handleCreateSetting(
+      makeJsonRequest({ key: "max.users", value: 999 }),
+      FAKE_ENV, "req1", ACTOR, ORG_SCOPE,
+      {
+        repo: {
+          // createSetting must never be reached when the write is rejected.
+          createSetting: () => unusedConfigFailure<Setting>(),
+          getSettingByScopeKey: () => Promise.resolve({ ok: true as const, value: lockedAccount }),
+        },
+        membershipRepo: membershipNoLock,
+        generateId: () => FIXED_ID,
+        now: () => FIXED_NOW,
+      },
+    );
+    expect(res.status).toBe(409);
+    const body = (await res.json()) as JsonResp;
+    expect(body.error.message).toContain("locked account setting");
+  });
+
+  it("allows overriding an overridable (overridable=true) account setting", async () => {
+    const overridableAccount = fakeSetting({ scopeKind: "account", overridable: true, orgId: "acct-uuid" });
+    const created = fakeSetting({ value: 999 });
+    const res = await handleCreateSetting(
+      makeJsonRequest({ key: "max.users", value: 999 }),
+      FAKE_ENV, "req1", ACTOR, ORG_SCOPE,
+      {
+        repo: {
+          createSetting: () => Promise.resolve({ ok: true as const, value: created }),
+          getSettingByScopeKey: () => Promise.resolve({ ok: true as const, value: overridableAccount }),
+        },
+        membershipRepo: membershipNoLock,
+        generateId: () => FIXED_ID,
+        now: () => FIXED_NOW,
+      },
+    );
+    expect(res.status).toBe(201);
   });
 });
 
@@ -259,7 +333,9 @@ describe("handleUpdateSetting", () => {
       repo: {
         getSetting: () => unusedConfigFailure<Setting>(),
         updateSetting: () => unusedConfigFailure<Setting>(),
+        getSettingByScopeKey: noAccountSetting,
       },
+      membershipRepo: membershipNoLock,
     });
     expect(res.status).toBe(400);
   });
@@ -269,7 +345,9 @@ describe("handleUpdateSetting", () => {
       repo: {
         getSetting: () => unusedConfigFailure<Setting>(),
         updateSetting: () => unusedConfigFailure<Setting>(),
+        getSettingByScopeKey: noAccountSetting,
       },
+      membershipRepo: membershipNoLock,
     });
     expect(res.status).toBe(422);
   });
@@ -284,7 +362,9 @@ describe("handleUpdateSetting", () => {
         repo: {
           getSetting: () => Promise.resolve({ ok: true as const, value: fakeSetting() }),
           updateSetting: () => Promise.resolve({ ok: true as const, value: updated }),
+          getSettingByScopeKey: noAccountSetting,
         },
+        membershipRepo: membershipNoLock,
         eventsRepo,
         generateId: () => FIXED_ID,
         now: () => FIXED_NOW,
@@ -304,7 +384,9 @@ describe("handleUpdateSetting", () => {
         repo: {
           getSetting: () => Promise.resolve({ ok: false as const, error: { kind: "not_found" as const } }),
           updateSetting: () => Promise.resolve({ ok: false as const, error: { kind: "not_found" as const } }),
+          getSettingByScopeKey: noAccountSetting,
         },
+        membershipRepo: membershipNoLock,
         generateId: () => FIXED_ID,
         now: () => FIXED_NOW,
       },
@@ -321,7 +403,9 @@ describe("handleUpdateSetting", () => {
         repo: {
           getSetting: () => Promise.resolve({ ok: true as const, value: projectSetting }),
           updateSetting: () => Promise.resolve({ ok: true as const, value: projectSetting }),
+          getSettingByScopeKey: noAccountSetting,
         },
+        membershipRepo: membershipNoLock,
         generateId: () => FIXED_ID,
         now: () => FIXED_NOW,
       },
@@ -338,7 +422,9 @@ describe("handleUpdateSetting", () => {
         repo: {
           getSetting: () => Promise.resolve({ ok: true as const, value: orgSetting }),
           updateSetting: () => Promise.resolve({ ok: true as const, value: orgSetting }),
+          getSettingByScopeKey: noAccountSetting,
         },
+        membershipRepo: membershipNoLock,
         generateId: () => FIXED_ID,
         now: () => FIXED_NOW,
       },
@@ -356,7 +442,9 @@ describe("handleUpdateSetting", () => {
         repo: {
           getSetting: () => Promise.resolve({ ok: true as const, value: projectSetting }),
           updateSetting: () => Promise.resolve({ ok: true as const, value: projectSetting }),
+          getSettingByScopeKey: noAccountSetting,
         },
+        membershipRepo: membershipNoLock,
         generateId: () => FIXED_ID,
         now: () => FIXED_NOW,
       },
@@ -374,7 +462,9 @@ describe("handleUpdateSetting", () => {
         repo: {
           getSetting: () => Promise.resolve({ ok: true as const, value: projectSetting }),
           updateSetting: () => Promise.resolve({ ok: true as const, value: { ...projectSetting, value: 200 } }),
+          getSettingByScopeKey: noAccountSetting,
         },
+        membershipRepo: membershipNoLock,
         eventsRepo,
         generateId: () => FIXED_ID,
         now: () => FIXED_NOW,
@@ -393,12 +483,58 @@ describe("handleUpdateSetting", () => {
         repo: {
           getSetting: () => Promise.resolve({ ok: true as const, value: projectSetting }),
           updateSetting: () => Promise.resolve({ ok: true as const, value: projectSetting }),
+          getSettingByScopeKey: noAccountSetting,
         },
+        membershipRepo: membershipNoLock,
         generateId: () => FIXED_ID,
         now: () => FIXED_NOW,
       },
     );
     expect(res.status).toBe(404);
+  });
+
+  // ── WID7: locked account guardrail enforcement (update) ───
+  it("returns 409 when updating a value that a locked account setting governs", async () => {
+    const existing = fakeSetting();
+    const lockedAccount = fakeSetting({ scopeKind: "account", overridable: false, orgId: "acct-uuid" });
+    const res = await handleUpdateSetting(
+      makeJsonRequest({ value: 999 }),
+      FAKE_ENV, "req1", ACTOR, ORG_SCOPE, SETTING_UUID,
+      {
+        repo: {
+          getSetting: () => Promise.resolve({ ok: true as const, value: existing }),
+          // updateSetting must never be reached.
+          updateSetting: () => unusedConfigFailure<Setting>(),
+          getSettingByScopeKey: () => Promise.resolve({ ok: true as const, value: lockedAccount }),
+        },
+        membershipRepo: membershipNoLock,
+        generateId: () => FIXED_ID,
+        now: () => FIXED_NOW,
+      },
+    );
+    expect(res.status).toBe(409);
+    const body = (await res.json()) as JsonResp;
+    expect(body.error.message).toContain("locked account setting");
+  });
+
+  it("allows the update when the account setting is overridable", async () => {
+    const existing = fakeSetting();
+    const overridableAccount = fakeSetting({ scopeKind: "account", overridable: true, orgId: "acct-uuid" });
+    const res = await handleUpdateSetting(
+      makeJsonRequest({ value: 999 }),
+      FAKE_ENV, "req1", ACTOR, ORG_SCOPE, SETTING_UUID,
+      {
+        repo: {
+          getSetting: () => Promise.resolve({ ok: true as const, value: existing }),
+          updateSetting: () => Promise.resolve({ ok: true as const, value: fakeSetting({ value: 999 }) }),
+          getSettingByScopeKey: () => Promise.resolve({ ok: true as const, value: overridableAccount }),
+        },
+        membershipRepo: membershipNoLock,
+        generateId: () => FIXED_ID,
+        now: () => FIXED_NOW,
+      },
+    );
+    expect(res.status).toBe(200);
   });
 });
 

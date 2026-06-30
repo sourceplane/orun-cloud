@@ -2,7 +2,9 @@ import type { Env } from "../env.js";
 import type { ActorContext } from "../router.js";
 import type { ConfigRepository, Scope } from "@saas/db/config";
 import type { EventsRepository } from "@saas/db/events";
+import type { MembershipRepository } from "@saas/db/membership";
 import { createConfigRepository } from "@saas/db/config";
+import { createMembershipRepository } from "@saas/db/membership";
 import { createEventsRepository } from "@saas/db/events";
 import { createSqlExecutor } from "@saas/db/hyperdrive";
 import { fetchAuthorizationContext } from "../membership-client.js";
@@ -10,10 +12,15 @@ import { authorizeViaPolicy } from "../policy-client.js";
 import { errorResponse, successResponse, validationError } from "../http.js";
 import { toPublicSetting } from "../mappers.js";
 import { scopeMatchesRequested } from "../scope-match.js";
+import { findLockedAccountSetting } from "../config-resolver.js";
 import type { PolicyResource } from "@saas/contracts/policy";
 
+/** A locked account guardrail blocked this write (WID7). */
+const LOCKED_MESSAGE = "Cannot override a locked account setting";
+
 export interface UpdateSettingDeps {
-  repo: Pick<ConfigRepository, "getSetting" | "updateSetting">;
+  repo: Pick<ConfigRepository, "getSetting" | "updateSetting" | "getSettingByScopeKey">;
+  membershipRepo: Pick<MembershipRepository, "getOrganizationById">;
   eventsRepo?: Pick<EventsRepository, "appendEventWithAudit">;
   generateId?: () => string;
   now?: () => Date;
@@ -126,6 +133,15 @@ export async function handleUpdateSetting(
           return { result: { ok: false as const, error: { kind: "not_found" as const } } };
         }
 
+        // Guardrail (WID7): a workspace/project/environment update may not override
+        // a locked account-scope value for this key. (The row scope is verified to
+        // match the requested route scope above, so requestedScope is correct.)
+        const txMembershipRepo = createMembershipRepository(txExec);
+        const locked = await findLockedAccountSetting(txRepo, txMembershipRepo, requestedScope, setting.key);
+        if (locked) {
+          return { result: { ok: false as const, error: { kind: "locked" as const } } };
+        }
+
         const result = await txRepo.updateSetting(orgId, settingId, {
           value,
           description: (description as string) ?? undefined,
@@ -174,6 +190,9 @@ export async function handleUpdateSetting(
 
       if (!txResult.result.ok) {
         const err = txResult.result.error;
+        if (err.kind === "locked") {
+          return errorResponse("conflict", LOCKED_MESSAGE, 409, requestId);
+        }
         if (err.kind === "not_found") {
           return errorResponse("not_found", "Setting not found", 404, requestId);
         }
@@ -197,6 +216,12 @@ export async function handleUpdateSetting(
 
       if (!scopeMatchesRequested(existing.value, requestedScope)) {
         return errorResponse("not_found", "Setting not found", 404, requestId);
+      }
+
+      // Guardrail (WID7): reject overriding a locked account-scope value.
+      const locked = await findLockedAccountSetting(deps.repo, deps.membershipRepo, requestedScope, existing.value.key);
+      if (locked) {
+        return errorResponse("conflict", LOCKED_MESSAGE, 409, requestId);
       }
 
       const result = await deps.repo.updateSetting(orgId, settingId, {

@@ -217,6 +217,7 @@ describe("mappers", () => {
       key: "max_users",
       value: 100,
       description: "Max users",
+      overridable: true,
       ...baseDates,
     };
     const pub = toPublicSetting(setting);
@@ -226,6 +227,7 @@ describe("mappers", () => {
     expect(pub.environmentId).toBeNull();
     expect(pub.key).toBe("max_users");
     expect(pub.value).toBe(100);
+    expect(pub.overridable).toBe(true);
     expect(pub.createdAt).toBe("2026-01-01T00:00:00.000Z");
   });
 
@@ -405,6 +407,30 @@ describe("config-worker router", () => {
     const res = await route(req, env);
     // Will get 503 because PLATFORM_DB is a fake object, but route matched (not 404)
     expect([200, 503]).toContain(res.status);
+  });
+
+  // WID7: resolved settings read route
+  it("matches the org settings resolve route (GET)", async () => {
+    const env = createFakeEnv();
+    const req = makeRequest("GET", `/v1/organizations/${TEST_ORG_PUBLIC}/config/settings/resolve?key=theme`);
+    const res = await route(req, env);
+    // route matched (not 404); 503 without a real DB, or a validation/200 path
+    expect([200, 422, 503]).toContain(res.status);
+    expect(res.status).not.toBe(404);
+  });
+
+  it("returns 405 for POST on the resolve route", async () => {
+    const env = createFakeEnv();
+    const req = makeRequest("POST", `/v1/organizations/${TEST_ORG_PUBLIC}/config/settings/resolve?key=theme`);
+    const res = await route(req, env);
+    expect(res.status).toBe(405);
+  });
+
+  it("returns 401 for missing actor on the resolve route", async () => {
+    const env = createFakeEnv();
+    const req = makeUnauthenticatedRequest("GET", `/v1/organizations/${TEST_ORG_PUBLIC}/config/settings/resolve?key=theme`);
+    const res = await route(req, env);
+    expect(res.status).toBe(401);
   });
 
   it("matches org feature-flags route", async () => {

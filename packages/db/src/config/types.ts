@@ -3,7 +3,19 @@ import type { Uuid } from "../ids/index.js";
 
 // ── Shared scope types ──────────────────────────────────────
 
-export type ScopeKind = "organization" | "project" | "environment";
+export type ScopeKind = "organization" | "project" | "environment" | "account";
+
+/**
+ * Account scope (saas-workspace-id WID7). The `accountId` is the effective
+ * billing/account org uuid — `effectiveBillingOrgId(org) = parentOrgId ?? id` —
+ * resolved by the caller (the config-resolver) from the org row. An account-scope
+ * row is the value every workspace under the account inherits via the
+ * scope-resolution chain.
+ */
+export interface AccountScope {
+  kind: "account";
+  accountId: string;
+}
 
 export interface OrgScope {
   kind: "organization";
@@ -24,6 +36,13 @@ export interface EnvironmentScope {
 }
 
 export type Scope = OrgScope | ProjectScope | EnvironmentScope;
+
+/**
+ * A scope usable for resolution / point lookups. Extends the writeable {@link Scope}
+ * union with the read-only {@link AccountScope} rung. Writes (create/list) still use
+ * {@link Scope}; only the resolver's account-rung lookup uses the account variant.
+ */
+export type ResolveScope = Scope | AccountScope;
 
 // ── Result type ─────────────────────────────────────────────
 
@@ -64,6 +83,13 @@ export interface Setting {
   key: string;
   value: unknown;
   description: string | null;
+  /**
+   * Inheritance mode for the scope-resolution chain (saas-workspace-id WID7).
+   * `true` (default) = a more-specific scope may override this value. `false` =
+   * a locked account-scope guardrail a workspace cannot override. Only account-
+   * scope rows may be `false` (DB CHECK enforces this).
+   */
+  overridable: boolean;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -74,6 +100,8 @@ export interface CreateSettingInput {
   key: string;
   value: unknown;
   description?: string;
+  /** Only meaningful for an account-scope value; defaults to true (overridable). */
+  overridable?: boolean;
 }
 
 export interface UpdateSettingInput {
@@ -157,6 +185,13 @@ export interface ConfigRepository {
   updateSetting(orgId: string, settingId: string, input: UpdateSettingInput): Promise<ConfigResult<Setting>>;
   getSetting(orgId: string, settingId: string): Promise<ConfigResult<Setting>>;
   listSettings(scope: Scope, params: PageQueryParams): Promise<ConfigResult<PagedResult<Setting>>>;
+  /**
+   * Point lookup of a single setting by its exact scope tuple + key (saas-workspace-id
+   * WID7). Backs the scope-resolution chain: the resolver probes each rung
+   * (environment -> project -> workspace -> account) with this. Returns `not_found`
+   * when no row exists at that exact scope for the key.
+   */
+  getSettingByScopeKey(scope: ResolveScope, key: string): Promise<ConfigResult<Setting>>;
 
   // Feature flags
   createFeatureFlag(input: CreateFeatureFlagInput): Promise<ConfigResult<FeatureFlag>>;

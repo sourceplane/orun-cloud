@@ -1,5 +1,6 @@
 import type { Setting, FeatureFlag, SecretMetadata } from "@saas/db/config";
 import type { PublicSetting, PublicFeatureFlag, PublicSecretMetadata } from "@saas/contracts/config";
+import type { ResolutionSource } from "./config-resolver.js";
 import {
   orgPublicId,
   settingPublicId,
@@ -35,8 +36,47 @@ export function toPublicSetting(s: Setting): PublicSetting {
     key: s.key,
     value: s.value,
     description: s.description,
+    overridable: s.overridable,
     createdAt: toISOString(s.createdAt),
     updatedAt: toISOString(s.updatedAt),
+  };
+}
+
+/**
+ * Map a resolved setting (scope-resolution chain, WID7) onto the public shape.
+ * Carries provenance (`inheritedFrom.scopeKind` = the rung the value was found at,
+ * or `default`) and the `overridable` flag of the winning value. When the value
+ * came from an actual row, the row's public fields are surfaced; for the `default`
+ * source there is no row, so only key/value/provenance are populated.
+ */
+export function toResolvedPublicSetting(resolved: {
+  source: ResolutionSource;
+  value: unknown;
+  overridable: boolean;
+  setting: Setting | null;
+}, key: string): PublicSetting {
+  const { setting, source, value, overridable } = resolved;
+  if (setting) {
+    return {
+      ...toPublicSetting(setting),
+      overridable,
+      inheritedFrom: { scopeKind: source },
+    };
+  }
+  // `default` source — no backing row.
+  return {
+    id: "",
+    orgId: "",
+    projectId: null,
+    environmentId: null,
+    scopeKind: source,
+    key,
+    value,
+    description: null,
+    overridable,
+    inheritedFrom: { scopeKind: source },
+    createdAt: "",
+    updatedAt: "",
   };
 }
 

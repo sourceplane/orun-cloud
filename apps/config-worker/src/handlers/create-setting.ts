@@ -3,19 +3,26 @@ import type { ActorContext } from "../router.js";
 import type { Scope } from "@saas/db/config";
 import type { EventsRepository } from "@saas/db/events";
 import type { ConfigRepository } from "@saas/db/config";
+import type { MembershipRepository } from "@saas/db/membership";
 import { createConfigRepository } from "@saas/db/config";
+import { createMembershipRepository } from "@saas/db/membership";
 import { createEventsRepository } from "@saas/db/events";
 import { createSqlExecutor } from "@saas/db/hyperdrive";
 import { fetchAuthorizationContext } from "../membership-client.js";
 import { authorizeViaPolicy } from "../policy-client.js";
 import { errorResponse, successResponse, validationError } from "../http.js";
 import { toPublicSetting } from "../mappers.js";
+import { findLockedAccountSetting } from "../config-resolver.js";
 import type { PolicyResource } from "@saas/contracts/policy";
 
 const KEY_RE = /^[a-zA-Z][a-zA-Z0-9._-]{0,127}$/;
 
+/** A locked account guardrail blocked this write (WID7). */
+const LOCKED_MESSAGE = "Cannot override a locked account setting";
+
 export interface CreateSettingDeps {
-  repo: Pick<ConfigRepository, "createSetting">;
+  repo: Pick<ConfigRepository, "createSetting" | "getSettingByScopeKey">;
+  membershipRepo: Pick<MembershipRepository, "getOrganizationById">;
   eventsRepo?: Pick<EventsRepository, "appendEventWithAudit">;
   generateId?: () => string;
   now?: () => Date;
@@ -119,6 +126,14 @@ export async function handleCreateSetting(
       const txResult = await executor.transaction(async (txExec) => {
         const txRepo = createConfigRepository(txExec);
         const txEventsRepo = createEventsRepository(txExec);
+        const txMembershipRepo = createMembershipRepository(txExec);
+
+        // Guardrail (WID7): a workspace/project/environment write may not override
+        // a locked (overridable=false) account-scope value for the same key.
+        const locked = await findLockedAccountSetting(txRepo, txMembershipRepo, scope, key as string);
+        if (locked) {
+          return { result: { ok: false as const, error: { kind: "locked" as const } } };
+        }
 
         const result = await txRepo.createSetting({
           id: settingId,
@@ -171,6 +186,9 @@ export async function handleCreateSetting(
 
       if (!txResult.result.ok) {
         const err = txResult.result.error;
+        if (err.kind === "locked") {
+          return errorResponse("conflict", LOCKED_MESSAGE, 409, requestId);
+        }
         if (err.kind === "conflict") {
           return errorResponse("conflict", "Setting already exists for this scope and key", 409, requestId);
         }
@@ -182,6 +200,12 @@ export async function handleCreateSetting(
 
     // Non-transactional path (deps injection for tests)
     if (deps) {
+      // Guardrail (WID7): reject overriding a locked account-scope value.
+      const locked = await findLockedAccountSetting(deps.repo, deps.membershipRepo, scope, key as string);
+      if (locked) {
+        return errorResponse("conflict", LOCKED_MESSAGE, 409, requestId);
+      }
+
       const result = await deps.repo.createSetting({
         id: settingId,
         scope,
