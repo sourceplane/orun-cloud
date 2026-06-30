@@ -31,7 +31,7 @@ admission grants).
 | Cluster | **IT** (integration tenancy — bridges **IG** `saas-integrations` and **MO** `saas-multi-org-billing`) |
 | Owner(s) | `apps/integrations-worker` + `packages/db` + `apps/api-edge` + `apps/web-console-next` (+ `packages/contracts`/`sdk`) |
 | Target branch | `main` (PRs merged incrementally) |
-| Builds on | `saas-integrations/design.md` §4 (tenancy keystone) + §6 (inbound pipeline) + §7 (token broker); `saas-multi-org-billing/design.md` §4 (`effectiveBillingOrg` resolution seam) + §5 (fan-out); `packages/db/.../180_integrations_foundation`; `packages/db/src/membership/billing-scope.ts` |
+| Builds on | `saas-integrations/design.md` §4 (tenancy keystone) + §6 (inbound pipeline) + §7 (token broker); `saas-multi-org-billing/design.md` §4 (`effectiveBillingOrg` resolution seam) + §5 (fan-out); `packages/db/.../180_integrations_foundation`; `packages/db/src/membership/billing-scope.ts`. **Extended scope (ITX) also builds on `saas-workspace-id` (WID):** `PublicOrganization.{workspaceRef, accountId, kind, isAccountRoot}` (WID4), account-scoped RBAC `account_admin`/`scope_kind='account'` (WID6), the `ws_…` led-with handle (WID2/WID5), and the account config scope-resolution chain (WID7, sibling of `effectiveIntegrationOrg`). |
 | Decisions locked | Structural: (1) the **integration tenant boundary is the parent (account) org** for *account-shared* connections, resolved by a new `effectiveIntegrationOrg(org) = parentOrgId ?? org.id` seam (twin of `effectiveBillingOrg`); (2) the **credential is resolved UP, never fanned out** — you cannot copy a live installation, so the connection is owned at the parent and read through the seam (entitlements still fan **down** unchanged); (3) the `installation_id` UNIQUE → one-connection keystone is **preserved** — no constraint is relaxed; (4) sibling isolation defaults to **soft** — workspaces share the account's connection and what each sees is scoped by project/policy, mirroring how children already share a billing customer; (5) a connection carries an **ownership scope** (`account` \| `workspace`) — the seam resolves up *only* for `account`-scoped connections, so a **workspace-private** connection stays at the workspace (A5); (6) account-shared connections carry a **share mode** (`auto` default \| `granted`) plus an **admission grant** list, so the account governs which workspaces may consume the connection (A6). |
 | Gate | IT1 (the dormant resolution seam) is human-independent and back-compatible. IT2+ live paths need `saas-integrations` IG1/IG2/IG4 landed (connect, inbound, broker) and a registered GitHub App per env. The open product decision — **soft vs hard sibling isolation** (D1) — is registered in `risks-and-open-questions.md` (default: soft). Ownership scope (A5) and share mode (A6) are decided with back-compatible defaults; their finer knobs (grant granularity D5) stay open there. |
 
@@ -126,12 +126,18 @@ the connection it inherits (read-only, with provenance), and only the **account
 workspace** can *share* it. Builds entirely on IT1–IT8; no keystone or tenancy
 change — this is the consumer-side and governance-surface layer.
 
+> **Reconciled with `saas-workspace-id` (WID), 2026-06-30.** WID4 already ships
+> `kind`/`isAccountRoot`/`accountId`/`workspaceRef` on `PublicOrganization`, and
+> WID6 ships account-scoped RBAC — so ITX **consumes** them: IT9 thins to a console
+> badge, IT11 rides on account RBAC, IT12 leads with `ws_…`. See design §12 (top
+> note).
+
 | ID | Milestone | Status |
 |----|-----------|--------|
-| IT9 | **Account-workspace identity**: surface org *kind* (`account` \| `workspace` \| `standalone`) on the org list + resolve the parent's name; the console badges the **Account workspace** in the org switcher | 🗓️ Planned |
-| IT10 | **Inherited shared connections**: a child workspace's Integrations list resolves *up* and shows the account's `account`-scoped connections **read-only**, attributed *"Shared by «Account workspace»"* | 🗓️ Planned |
-| IT11 | **Sharing is account-only**: only an Account workspace can create `account`-scoped connections and manage `share_mode`/grants; the child-workspace UI shows **no** share controls (inherited connections are read-only) | 🗓️ Planned |
-| IT12 | **Grant by workspace picker**: the account admits workspaces by selecting from its **child-workspace list** (not a free-text org id), filtered to the not-yet-admitted | 🗓️ Planned |
+| IT9 | **Account identity surface** (thin — consumes WID4): the console badges the **Account** in the org switcher from the existing `kind`/`isAccountRoot`; a child names its Account via `accountId`. No membership/derivation work (WID4 did it) | 🗓️ Planned |
+| IT10 | **Inherited shared connections**: a child workspace's Integrations list resolves *up* and shows the account's `account`-scoped connections **read-only**, attributed *"Shared by «Account» (`ws_…`)"*; sibling of WID7's config scope-resolution chain | 🗓️ Planned |
+| IT11 | **Sharing is account-only**: only an **Account root** can own an `account`-scoped connection (child connects forced to `workspace`); managing `share_mode`/grants requires an **account-scoped role** (WID6 `account_admin`); the child UI shows **no** share controls | 🗓️ Planned |
+| IT12 | **Grant by workspace picker**: the account admits workspaces by selecting from its **child workspaces** (`ws_…` + name), filtered to the not-yet-admitted — replacing IT5b's free-text id | 🗓️ Planned |
 
 ## Scope boundary
 
@@ -151,6 +157,17 @@ change — this is the consumer-side and governance-surface layer.
 - **`saas-workspaces` (WS)**: orthogonal. The tenancy reframing here works
   identically whether the units are called "sub-orgs" or "Workspaces"; WS is the
   presentation/API vocabulary, IT is the mechanism. They can land in either order.
+- **`saas-workspace-id` (WID)**: the **Extended scope (ITX) depends on it.** WID
+  shipped the identity substrate ITX consumes — `PublicOrganization.{workspaceRef,
+  accountId, kind, isAccountRoot}` (WID4), account-scoped RBAC (`account_admin`,
+  `scope_kind='account'`, cascade — WID6), the led-with `ws_…` handle (WID2/WID5),
+  and the account config scope-resolution chain (WID7). Net effect: **IT9's
+  derivation is already done by WID4** (IT9 reduces to a console badge), **IT11's
+  "account-only" rides on WID6 account RBAC** (not a bespoke gate), and **IT12 leads
+  with `ws_…`**. IT1–IT8 (shipped) predate WID and are unaffected — they use
+  `effectiveIntegrationOrg` over `parent_org_id` directly.
+- **`saas-teams` (TM)**: orthogonal. A grant currently names a **workspace**, not a
+  team principal; admitting a team is a deferred, additive option (design §12.5).
 - **`oidc-ci-tenancy` (CLI) / `saas-orun-platform`**: the Orun CLI's tenancy claim
   (`intent.yaml execution.state.workspace`, aliasing the shipped
   `execution.state.org`, orun #420 — see `saas-workspaces` A4) and the
