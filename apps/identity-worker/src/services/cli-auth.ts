@@ -145,6 +145,7 @@ export function createCliAuthService(deps: CliAuthServiceDeps) {
         sub: subPublic,
         sessionId: cliSessionPublicId(sessionUuid),
         orgIds: orgs.map((o) => o.id),
+        ...workspaceIdsOf(orgs),
         now: currentTime,
       });
     } catch {
@@ -206,6 +207,7 @@ export function createCliAuthService(deps: CliAuthServiceDeps) {
             sub: userPublicId(user.id),
             sessionId: cliSessionPublicId(session.replacedBy!),
             orgIds: orgs.map((o) => o.id),
+            ...workspaceIdsOf(orgs),
             now: now(),
           });
         } catch {
@@ -494,6 +496,7 @@ export function createCliAuthService(deps: CliAuthServiceDeps) {
           sub: userPublicId(user.id),
           sessionId: cliSessionPublicId(newSessionId),
           orgIds: orgs.map((o) => o.id),
+          ...workspaceIdsOf(orgs),
           now: currentTime,
         });
       } catch {
@@ -639,6 +642,20 @@ export function createCliAuthService(deps: CliAuthServiceDeps) {
       return refetch.ok ? refetch.value : session;
     },
   };
+}
+
+/**
+ * The durable Workspace IDs (`ws_…`) for a session's orgs, positionally aligned
+ * with `orgs.map(o => o.id)` so the `workspaceIds[]` token claim mirrors
+ * `orgIds[]` (WID5). Returns undefined when membership returned no `workspaceRef`
+ * at all (older payloads) so the optional claim is simply omitted; otherwise any
+ * individually-missing ref is filled with "" to preserve index alignment.
+ */
+function workspaceIdsOf(orgs: CliSessionOrg[]): { workspaceIds: string[] } | Record<string, never> {
+  if (!orgs.some((o) => typeof o.workspaceRef === "string" && o.workspaceRef.length > 0)) {
+    return {};
+  }
+  return { workspaceIds: orgs.map((o) => o.workspaceRef ?? "") };
 }
 
 /** approved_by is stored as the public user id (`usr_<hex>`); decode to UUID. */

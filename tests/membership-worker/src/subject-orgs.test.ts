@@ -49,9 +49,13 @@ describe("subject-orgs handler (OP1)", () => {
       repo: repoWith([org()]),
     });
     expect(res.status).toBe(200);
-    const body = (await res.json()) as { data: { orgs: Array<{ id: string; slug: string; name: string; role: string }> } };
+    const body = (await res.json()) as {
+      data: { orgs: Array<{ id: string; workspaceRef: string; slug: string; name: string; role: string }> };
+    };
     expect(body.data.orgs).toHaveLength(1);
     expect(body.data.orgs[0]!.id).toMatch(/^org_[0-9a-f]{32}$/);
+    // WID5: the durable Workspace ID is projected alongside the legacy id.
+    expect(body.data.orgs[0]!.workspaceRef).toBe("ws_3KF9TQ2P");
     expect(body.data.orgs[0]!.slug).toBe("acme");
     expect(body.data.orgs[0]!.role).toBe("admin");
   });

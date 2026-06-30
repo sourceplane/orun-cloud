@@ -39,7 +39,7 @@ describe("buildNavSections", () => {
     // Integrations is a first-class connections hub in the product nav.
     expect(hrefs).toContain("/orgs/acme/integrations");
     expect(org.footer ?? false).toBe(false);
-    expect(org.label).toBe("Org · acme");
+    expect(org.label).toBe("Workspace · acme");
     // The "manage" surfaces moved to the pinned footer group, not this section.
     expect(hrefs).not.toContain("/orgs/acme/usage");
     expect(hrefs).not.toContain("/orgs/acme/settings");

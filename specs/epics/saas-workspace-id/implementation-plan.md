@@ -64,7 +64,7 @@ Lead with `ws_…`; expose role; keep `org_<hex>` an alias.
   spellings accepted on input; `org_<hex>`/`/v1/organizations/*` unchanged; contract
   tests assert both spellings + the role fields; the guidelines amendment is published.
 
-## WID5 — SDK / CLI / console / tokens / intent.yaml
+## WID5 — SDK / CLI / console / tokens / intent.yaml — ✅ Shipped (orun-cloud surfaces; Go CLI deferred to OP/DV5)
 
 Make `ws_…` the id customers see and commit.
 

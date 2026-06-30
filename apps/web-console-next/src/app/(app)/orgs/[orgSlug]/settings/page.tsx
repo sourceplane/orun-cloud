@@ -7,7 +7,27 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { CopyButton } from "@/components/ui/copy-button";
 import { SettingsCard } from "@/components/settings/settings-card";
+import { workspaceIdCards } from "@/components/settings/workspace-id-cards";
 import { PRODUCT_NAME } from "@/lib/app-config";
+import type { PublicOrganization } from "@saas/contracts/membership";
+
+const ID_CARD_COPY: Record<
+  "durable" | "legacy",
+  { description: string; footerHint: string; ariaLabel: string }
+> = {
+  durable: {
+    description:
+      "Your durable, immutable Workspace ID. Safe to commit to intent.yaml, quote to support, and use in API requests — it never changes, even if you rename the workspace.",
+    footerHint: "The stable identifier to use everywhere.",
+    ariaLabel: "Workspace ID",
+  },
+  legacy: {
+    description:
+      "The legacy internal identifier for this workspace. Still accepted in API requests, but prefer the Workspace ID above for anything you store or share.",
+    footerHint: "Retained for back-compatibility.",
+    ariaLabel: "Legacy Workspace ID",
+  },
+};
 
 export default function OrgSettingsPage() {
   const params = useParams<{ orgSlug: string }>();
@@ -15,7 +35,7 @@ export default function OrgSettingsPage() {
   return <OrgScope slug={slug}>{(org) => <Inner org={org} />}</OrgScope>;
 }
 
-function Inner({ org }: { org: { id: string; name: string; slug: string } }) {
+function Inner({ org }: { org: PublicOrganization }) {
   return (
     <div className="space-y-6">
       <SettingsCard
@@ -45,14 +65,25 @@ function Inner({ org }: { org: { id: string; name: string; slug: string } }) {
         </div>
       </SettingsCard>
 
-      <SettingsCard
-        title="Workspace ID"
-        description="Use this identifier when contacting support or making API requests on behalf of this workspace."
-        footerHint="A unique, stable identifier for this workspace."
-        footerAction={<CopyButton value={org.id} />}
-      >
-        <Input value={org.id} disabled className="max-w-md font-mono text-xs" aria-label="Workspace ID" />
-      </SettingsCard>
+      {workspaceIdCards(org).map((card) => {
+        const copy = ID_CARD_COPY[card.kind];
+        return (
+          <SettingsCard
+            key={card.kind}
+            title={card.title}
+            description={copy.description}
+            footerHint={copy.footerHint}
+            footerAction={<CopyButton value={card.value} />}
+          >
+            <Input
+              value={card.value}
+              disabled
+              className="max-w-md font-mono text-xs"
+              aria-label={copy.ariaLabel}
+            />
+          </SettingsCard>
+        );
+      })}
 
       <SettingsCard
         tone="danger"

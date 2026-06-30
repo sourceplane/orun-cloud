@@ -6,6 +6,7 @@ import { usePathname } from "next/navigation";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { EmptyState } from "@/components/ui/empty-state";
+import type { PublicOrganization } from "@saas/contracts/membership";
 import { useOrgBySlug } from "@/lib/use-org";
 import { readLastOrgSlug, clearLastOrgSlug } from "@/lib/last-org";
 import { buildBreadcrumbs } from "./breadcrumbs";
@@ -22,7 +23,7 @@ export function OrgScope({
   bare = false,
 }: {
   slug: string;
-  children: (org: { id: string; name: string; slug: string }) => React.ReactNode;
+  children: (org: PublicOrganization) => React.ReactNode;
   /**
    * Skip the shared breadcrumb + vertical rhythm wrapper. For full-bleed routes
    * that own their own chrome (e.g. the catalog service page, which renders its

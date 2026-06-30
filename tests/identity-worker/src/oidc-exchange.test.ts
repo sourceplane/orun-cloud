@@ -153,6 +153,40 @@ describe("POST /v1/auth/oidc/exchange (OV3)", () => {
     expect(claims!.sub).toBe("repo:acme/platform:ref:refs/heads/main");
   });
 
+  it("carries the bound org's durable workspaceId (ws_…) in the token + response (WID5)", async () => {
+    const { token, jwks } = await forgeOidc();
+    const res = await handleOidcExchange(exchangeReq(token), env(), "req_ws", {
+      executor: stateExecutor([linkRow()]),
+      fetchJwks: () => Promise.resolve(jwks),
+      now: () => NOW,
+      // The handler resolves the bound org's `org_<hex>` → its `ws_…` publicRef.
+      resolveOrgRef: async (ref) =>
+        ref === ORG_PUBLIC ? { orgId: ORG_PUBLIC, publicRef: "ws_3KF9TQ2P" } : null,
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { data: { accessToken: string; orgId: string; workspaceId?: string } };
+    expect(body.data.orgId).toBe(ORG_PUBLIC);
+    expect(body.data.workspaceId).toBe("ws_3KF9TQ2P");
+
+    const claims = await verifyWorkflowAccessToken(env(), body.data.accessToken, NOW);
+    expect(claims!.orgId).toBe(ORG_PUBLIC);
+    expect(claims!.workspaceId).toBe("ws_3KF9TQ2P");
+  });
+
+  it("omits workspaceId when the org's ws_ cannot be resolved (fail-soft)", async () => {
+    const { token, jwks } = await forgeOidc();
+    const res = await handleOidcExchange(exchangeReq(token), env(), "req_ws2", {
+      executor: stateExecutor([linkRow()]),
+      fetchJwks: () => Promise.resolve(jwks),
+      now: () => NOW,
+      resolveOrgRef: async () => null,
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { data: { orgId: string; workspaceId?: string } };
+    expect(body.data.orgId).toBe(ORG_PUBLIC);
+    expect(body.data.workspaceId).toBeUndefined();
+  });
+
   it("resolve-bearer accepts the minted workflow token as a workflow actor", async () => {
     const { token, jwks } = await forgeOidc();
     const exchange = await handleOidcExchange(exchangeReq(token), env(), "req_1", {
@@ -287,7 +321,8 @@ describe("POST /v1/auth/oidc/exchange (OV3)", () => {
       executor: stateExecutor(links),
       fetchJwks: () => Promise.resolve(jwks),
       now: () => NOW,
-      resolveOrgRef: async (ref) => (ref === "ws_9QM2X7BD" ? ORG2_PUBLIC : null),
+      resolveOrgRef: async (ref) =>
+        ref === "ws_9QM2X7BD" ? { orgId: ORG2_PUBLIC, publicRef: "ws_9QM2X7BD" } : null,
     });
     expect(res.status).toBe(200);
     const body = (await res.json()) as { data: { orgId: string } };
@@ -301,7 +336,8 @@ describe("POST /v1/auth/oidc/exchange (OV3)", () => {
       executor: stateExecutor(links),
       fetchJwks: () => Promise.resolve(jwks),
       now: () => NOW,
-      resolveOrgRef: async (ref) => (ref === "acme" ? ORG_PUBLIC : null),
+      resolveOrgRef: async (ref) =>
+        ref === "acme" ? { orgId: ORG_PUBLIC, publicRef: "ws_ACMEROOT" } : null,
     });
     expect(res.status).toBe(200);
     const body = (await res.json()) as { data: { orgId: string } };

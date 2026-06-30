@@ -27,10 +27,11 @@ export interface OidcExchangeDeps {
   now?: () => Date;
   /**
    * Resolve an org-hint ref (`ws_`/slug/`org_`) to the canonical `org_<hex>`
-   * (WID3). Defaults to a membership-worker call; injectable in tests. Returns
-   * null when the ref names no org (membership unreachable / unknown ref).
+   * plus its durable `publicRef` (`ws_…`, WID5). Defaults to a membership-worker
+   * call; injectable in tests. Returns null when the ref names no org
+   * (membership unreachable / unknown ref).
    */
-  resolveOrgRef?: (ref: string) => Promise<string | null>;
+  resolveOrgRef?: (ref: string) => Promise<{ orgId: string; publicRef: string | null } | null>;
 }
 
 async function dispose(executor: SqlExecutor): Promise<void> {
@@ -116,6 +117,20 @@ export async function handleOidcExchange(
   }
   const executor = deps?.executor ?? createSqlExecutor(env.PLATFORM_DB!);
   const owned = !deps?.executor;
+
+  // One resolver for both the org-hint disambiguation (→ canonical `org_<hex>`)
+  // and the workflow token's `workspaceId` (→ the org's durable `ws_…`). Defaults
+  // to a membership-worker call; injectable in tests. Fail-soft: a null result
+  // simply means no resolution (the hint falls through to a 404; the workspaceId
+  // claim is omitted).
+  const resolveRef =
+    deps?.resolveOrgRef ??
+    (async (ref: string): Promise<{ orgId: string; publicRef: string | null } | null> => {
+      if (!env.MEMBERSHIP_WORKER) return null;
+      const r = await resolveOrgRefViaMembership(env.MEMBERSHIP_WORKER, ref, requestId);
+      return r.ok ? { orgId: r.orgId, publicRef: r.publicRef } : null;
+    });
+
   try {
     const repo = createStateRepository(executor);
 
@@ -159,14 +174,7 @@ export async function handleOidcExchange(
       // then match links by the resolved id. An `org_<hex>` resolves to itself,
       // preserving the prior behavior; an unresolvable hint falls back to the
       // raw value so it simply matches no link (→ the same 404 below).
-      const resolveRef =
-        deps?.resolveOrgRef ??
-        (async (ref: string): Promise<string | null> => {
-          if (!env.MEMBERSHIP_WORKER) return null;
-          const r = await resolveOrgRefViaMembership(env.MEMBERSHIP_WORKER, ref, requestId);
-          return r.ok ? r.orgId : null;
-        });
-      const resolvedHint = (await resolveRef(orgHint)) ?? orgHint;
+      const resolvedHint = (await resolveRef(orgHint))?.orgId ?? orgHint;
       const matches = links.filter((l) => orgPublicId(l.orgId) === resolvedHint);
       if (matches.length !== 1) {
         // The declared org names no authorized link for this repo. Hide whether
@@ -194,11 +202,19 @@ export async function handleOidcExchange(
     // 5) Mint the short-lived workflow access token bound to (org, project).
     const orgPub = orgPublicId(link.orgId);
     const projectPub = projectPublicId(link.projectId);
+
+    // Resolve the bound org's durable Workspace ID (`ws_…`, WID5) so the token +
+    // response can lead with it alongside the legacy `orgId`. Fail-soft: a
+    // membership hiccup just omits `workspaceId` (the mint never blocks on it).
+    const resolvedOrg = await resolveRef(orgPub);
+    const workspaceId = resolvedOrg?.publicRef ?? undefined;
+
     let minted: { token: string; expiresAt: Date };
     try {
       minted = await mintWorkflowAccessToken(env, {
         sub: claims.sub,
         orgId: orgPub,
+        ...(workspaceId ? { workspaceId } : {}),
         projectId: projectPub,
         now,
       });
@@ -212,6 +228,7 @@ export async function handleOidcExchange(
       tokenType: "Bearer",
       expiresAt: minted.expiresAt.toISOString(),
       orgId: orgPub,
+      ...(workspaceId ? { workspaceId } : {}),
       projectId: projectPub,
     };
     return successResponse(payload, requestId, 200);

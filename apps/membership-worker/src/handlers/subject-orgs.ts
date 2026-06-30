@@ -12,7 +12,8 @@ export interface HandleSubjectOrgsDeps {
 /**
  * Internal endpoint (identity-worker → membership-worker): the orgs a subject
  * belongs to, joined with their org-level role. Backs the CLI session payload's
- * `orgs:[{id,slug,name,role}]` (OP1). Org-independent: the subject is the
+ * `orgs:[{id,workspaceRef,slug,name,role}]` (OP1; `workspaceRef` added WID5).
+ * Org-independent: the subject is the
  * authenticated CLI user; deny-by-default policy still gates the per-org state
  * routes the CLI subsequently calls.
  *
@@ -57,6 +58,10 @@ export async function handleSubjectOrgs(
       .filter((o) => o.status === "active")
       .map((o) => ({
         id: orgPublicId(o.id),
+        // Durable Workspace ID (`ws_…`, WID5) carried alongside the legacy `id`
+        // so the CLI session payload + CLI access-token `workspaceIds[]` claim
+        // can lead with it.
+        workspaceRef: o.publicRef,
         slug: o.slug,
         name: o.name,
         role: o.role,

@@ -60,9 +60,12 @@ export async function orgListCommand(ctx: CommandContext): Promise<CommandResult
   const cliCtx = await ctx.contextStore.load();
   const active = cliCtx.activeOrgId ?? null;
 
+  // Human table leads with the durable Workspace ID (`ws_…`, WID5); the legacy
+  // `org_<hex>` stays available in `--json`. `active` still keys on the stored
+  // `org_<hex>` id (the context store holds that spelling).
   const rows = result.organizations.map((org) => ({
     active: org.id === active ? "*" : "",
-    id: org.id,
+    workspace: org.workspaceRef ?? org.id,
     name: org.name,
     slug: org.slug,
   }));
@@ -81,7 +84,7 @@ export async function orgListCommand(ctx: CommandContext): Promise<CommandResult
     ctx.stdout(
       formatOutput({
         mode: "human",
-        columns: ["active", "id", "name", "slug"],
+        columns: ["active", "workspace", "name", "slug"],
         rows,
       }),
     );
@@ -96,14 +99,20 @@ export async function orgUseCommand(ctx: CommandContext): Promise<CommandResult>
     throw new UsageError("usage: orun-cloud org use <org-id>");
   }
   // Validate the org exists by hitting the SDK; surface 404 as
-  // OrunCloudError → friendly CLI message.
+  // OrunCloudError → friendly CLI message. The arg may be a `ws_`, slug, or
+  // `org_<hex>` (the edge resolves all three, WID3); we store the canonical
+  // `org_<hex>` the response carries as `id`.
   const sdk = await ctx.sdk();
-  await sdk.organizations.get(orgId);
-  await ctx.contextStore.setActiveOrg(orgId);
+  const { organization } = await sdk.organizations.get(orgId);
+  await ctx.contextStore.setActiveOrg(organization.id);
   if (ctx.outputMode === "json") {
-    ctx.stdout(formatOutput({ mode: "json", data: { activeOrgId: orgId } }));
+    ctx.stdout(formatOutput({ mode: "json", data: { activeOrgId: organization.id } }));
   } else {
-    ctx.stdout(`✓ Active organization set to ${orgId}.`);
+    // Lead with the durable Workspace ID; show the legacy `org_<hex>` secondarily.
+    const label = organization.workspaceRef
+      ? `${organization.workspaceRef} (${organization.id})`
+      : organization.id;
+    ctx.stdout(`✓ Active workspace set to ${label}.`);
   }
   return { exitCode: 0 };
 }
@@ -122,6 +131,19 @@ export async function orgMembersCommand(ctx: CommandContext): Promise<CommandRes
     return { exitCode: 0 };
   }
 
+  // Lead the title with the durable Workspace ID (`ws_…`, WID5), showing the
+  // legacy `org_<hex>` secondarily; fall back to the stored id if the lookup
+  // fails (failure-soft — the member listing already succeeded).
+  let title = `Members of ${orgId}`;
+  try {
+    const { organization } = await sdk.organizations.get(orgId);
+    if (organization.workspaceRef) {
+      title = `Members of ${organization.workspaceRef} (${organization.id})`;
+    }
+  } catch {
+    // keep the orgId-only title
+  }
+
   const rows = result.members.map((m) => ({
     id: m.id,
     subject: `${m.subjectType}:${m.subjectId}`,
@@ -133,7 +155,7 @@ export async function orgMembersCommand(ctx: CommandContext): Promise<CommandRes
       mode: "human",
       columns: ["id", "subject", "roles", "status"],
       rows,
-      title: `Members of ${orgId}`,
+      title,
     }),
   );
   return { exitCode: 0 };
