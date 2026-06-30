@@ -54,6 +54,36 @@ function membershipFetcher(): Fetcher {
   });
 }
 
+/** Membership fetcher whose org resolves as a CHILD (IT11 scope-forcing). */
+function childMembershipFetcher(): Fetcher {
+  return {
+    fetch: (input: string) => {
+      if (String(input).includes("/integration-parent")) {
+        return Promise.resolve(
+          Response.json({
+            data: {
+              isChild: true,
+              account: { orgId: "org_11111111111111111111111111111111", workspaceRef: "ws_ACME9999", name: "Acme" },
+            },
+          }),
+        );
+      }
+      return Promise.resolve(
+        Response.json({
+          data: {
+            memberships: [
+              { kind: "role_assignment", role: "admin", scope: { kind: "organization", orgId: ORG_UUID } },
+            ],
+          },
+        }),
+      );
+    },
+    connect() {
+      throw new Error("not implemented");
+    },
+  } as unknown as Fetcher;
+}
+
 function policyFetcher(allow: boolean): Fetcher {
   return jsonFetcher({ data: { allow, reason: allow ? "org_admin" : "no_matching_role" } });
 }
@@ -237,6 +267,30 @@ describe("POST .../integrations/github/connect", () => {
     const res = await handleConnectIntegration(req, env, "req_1", ACTOR, ORG_ID, { executor });
     expect(res.status).toBe(201);
     expect(insertedParams[3]).toBe("workspace"); // recorded from the request
+    const data = (await json(res)).data as Record<string, unknown>;
+    expect((data.connection as Record<string, unknown>).scope).toBe("workspace");
+  });
+
+  it("forces a CHILD workspace to workspace scope even when account is requested (IT11)", async () => {
+    // Sharing is account-only: a child can never own an account-scoped connection.
+    const env = createEnv({ MEMBERSHIP_WORKER: childMembershipFetcher() });
+    let insertedParams: unknown[] = [];
+    const { executor } = fakeExecutor((text, params) => {
+      if (text.includes("INSERT INTO integrations.connections")) {
+        insertedParams = params;
+        return [pendingRow({ id: params[0] as string, scope: params[3] as string })];
+      }
+      return [];
+    });
+    // Explicitly request the shareable 'account' scope from a child.
+    const req = new Request("https://worker.test/v1/organizations/x/integrations/github/connect", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ scope: "account" }),
+    });
+    const res = await handleConnectIntegration(req, env, "req_1", ACTOR, ORG_ID, { executor });
+    expect(res.status).toBe(201);
+    expect(insertedParams[3]).toBe("workspace"); // forced — a child cannot share
     const data = (await json(res)).data as Record<string, unknown>;
     expect((data.connection as Record<string, unknown>).scope).toBe("workspace");
   });
