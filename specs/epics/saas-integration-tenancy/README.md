@@ -134,7 +134,7 @@ change — this is the consumer-side and governance-surface layer.
 
 | ID | Milestone | Status |
 |----|-----------|--------|
-| IT9 | **Account identity surface** (thin — consumes WID4): the console badges the **Account** in the org switcher from the existing `kind`/`isAccountRoot`; a child names its Account via `accountId`. No membership/derivation work (WID4 did it) | 🗓️ Planned |
+| IT9 | **Account identity surface** (thin — consumes WID4): the console badges the **Account** in the org switcher from `kind`/`isAccountRoot` (badge shipped by WID5); a child workspace now names its Account ("in «Account»") via `accountId`, resolved client-side. No membership/derivation work | ✅ Shipped |
 | IT10 | **Inherited shared connections**: a child workspace's Integrations list resolves *up* and shows the account's `account`-scoped connections **read-only**, attributed *"Shared by «Account» (`ws_…`)"*; sibling of WID7's config scope-resolution chain | 🗓️ Planned |
 | IT11 | **Sharing is account-only**: only an **Account root** can own an `account`-scoped connection (child connects forced to `workspace`); managing `share_mode`/grants requires an **account-scoped role** (WID6 `account_admin`); the child UI shows **no** share controls | 🗓️ Planned |
 | IT12 | **Grant by workspace picker**: the account admits workspaces by selecting from its **child workspaces** (`ws_…` + name), filtered to the not-yet-admitted — replacing IT5b's free-text id | 🗓️ Planned |

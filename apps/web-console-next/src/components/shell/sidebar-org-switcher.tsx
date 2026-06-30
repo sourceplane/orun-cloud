@@ -15,7 +15,7 @@ import { useSession } from "@/lib/session";
 import { wrap } from "@/lib/api";
 import { useApiQuery, qk } from "@/lib/query";
 import { useEffectiveOrgSlug } from "./use-effective-org";
-import { workspaceKindBadge } from "./workspace-kind";
+import { workspaceKindBadge, accountNameFor } from "./workspace-kind";
 
 /**
  * Org switcher anchored at the top of the sidebar (Vercel's team-switcher
@@ -65,11 +65,20 @@ export function SidebarOrgSwitcher({ onNavigate }: { onNavigate?: () => void } =
         {orgs?.map((o) => {
           // Account vs Workspace badge (WID4/WID5); omitted on older payloads.
           const badge = workspaceKindBadge(o);
+          // A child workspace shows which Account it belongs to (IT9).
+          const accountName = orgs ? accountNameFor(o, orgs) : null;
           const selected = o.slug === orgSlug;
           return (
             <DropdownMenuItem key={o.id} onSelect={() => go(`/orgs/${o.slug}/projects`)}>
               <Building2 className="h-4 w-4 opacity-70" />
-              <span className="truncate">{o.name}</span>
+              <span className="flex min-w-0 flex-col">
+                <span className="truncate">{o.name}</span>
+                {accountName && (
+                  <span className="truncate text-[10px] text-muted-foreground">
+                    in {accountName}
+                  </span>
+                )}
+              </span>
               {badge && (
                 <span className="ml-2 shrink-0 rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
                   {badge}
