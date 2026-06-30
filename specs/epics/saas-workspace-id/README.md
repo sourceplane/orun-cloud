@@ -72,7 +72,7 @@ same value until the Account becomes a first-class entity (Stage 2).
 
 | ID | Milestone | Stage | Status |
 |----|-----------|-------|--------|
-| WID1 | ID design + glossary: lock `ws_`+base32, immutability, the three-id model; record in `core/vocabulary.md` | — | Draft |
+| WID1 | ID design + glossary: lock `ws_`+base32, immutability, the three-id model; record in `core/vocabulary.md` | — | ✅ Shipped |
 | WID2 | Schema + mint: `public_ref` column + unique index + backfill; `ws_` generator in the id codec; mint in the one `create-organization` transaction | — | Draft |
 | WID3 | Resolver: extend the org-id resolver (`parseOrgPublicId` chokepoint) to accept `ws_ \| slug \| org_`, cached (immutable map) | — | Draft |
 | WID4 | Public surface: lead with `ws_` in contracts/edge; add `accountId` + `kind`/`isAccountRoot`; accept `ws_` in requests; amend `api-guidelines` D2/D4 | — | Draft |
