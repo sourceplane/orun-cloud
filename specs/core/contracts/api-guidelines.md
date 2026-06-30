@@ -50,6 +50,34 @@ organization in the account). These are a *vocabulary layer* over the unchanged
   (`scope.orgId`), and the audit/event taxonomy keep `org`/`org_id`. The alias is
   a public-surface projection only.
 
+### Durable Workspace ID & role discovery (saas-workspace-id WID)
+
+WID adds a durable public Workspace ID **additively** (decision W2 = Option B): it
+does **not** change the value of `workspaceId`/`id`. Both coexist with the D2/D4
+statements above.
+
+- **`workspaceRef` is the durable, led-with public Workspace ID** — `ws_…`
+  (Crockford base32, e.g. `ws_3KF9TQ2P`; WID2's `public_ref`). It is **immutable**
+  (minted once at creation, never reissued), so it is the id to quote to support,
+  paste in the CLI, and commit in `intent.yaml` — unlike the **mutable** `slug`.
+  New clients SHOULD lead with `workspaceRef`.
+- **`workspaceId` / `org_<hex>` are the retained legacy ids.** They keep the
+  **same value** as before (W2 Option B is purely additive; nothing is repointed)
+  and are returned/accepted **forever** (extends D4). `id` on the org/workspace
+  resource stays `org_<hex>`.
+- **`accountId`** — the owning Account's `ws_…` id, the AWS-account-id analog every
+  Workspace carries (= `effectiveBillingOrgId` = `parentOrgId ?? id`, surfaced as a
+  field). For a child it is the parent (account) org's `workspaceRef`; for an
+  Account root it equals the org's own `workspaceRef`.
+- **`kind`** (`"account"` | `"workspace"`) and **`isAccountRoot`** — derived
+  role-discovery fields. `isAccountRoot` is true when `parentOrgId` is null;
+  `kind` is `account` for a parent/standalone org, else `workspace`. (A parent is
+  *both* per the model; the DTO reports the root as `account`.)
+- **Account-root invariant.** `accountId === workspaceRef` ⟺ the org is an Account
+  root. This answers "is this an account?" everywhere **without parsing any id**.
+- **Never branch on a parsed id prefix.** Role/authority comes from the resolved
+  record (`kind`/`accountId`), never from the id string (WID4, W1d).
+
 ### Deprecation & coexistence policy (saas-workspaces WS5)
 
 - **`/v1/organizations/*` and the `orgId` field coexist indefinitely** with the

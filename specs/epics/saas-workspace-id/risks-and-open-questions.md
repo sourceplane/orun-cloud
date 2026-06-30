@@ -10,7 +10,6 @@ milestone lands.
 
 | # | Question | Default lean |
 |---|----------|--------------|
-| **W2** | **Repoint vs add.** `saas-workspaces` published `workspaceId == org_<hex>` (D2/D4). Do we **repoint** `workspaceId` to the `ws_` value (exposing `org_<hex>` as a separate legacy field), or **add** a new field (`workspaceRef`) and leave `workspaceId` equal to `org_<hex>`? | **Repoint** — make `ws_…` *the* Workspace ID; amend `api-guidelines` D2/D4. Cleanest long-term; one published-contract change. |
 | **W3** | **`acct_` for the Account.** Surface the Account's id with an `acct_` alias (= the parent's `ws_` value until Stage 2) on account-scoped billing/admin surfaces, or rely solely on the `accountId` field? | **Defer** — ship `accountId`+`kind` first; add `acct_` only if billing/support surfaces need the louder "Account" identity. Forward-compatible with Stage 2 either way. |
 | **W4** | **`public_ref` body length / check char.** 8 base32 chars (~40 bits) vs 10 (~50 bits); append a check character? | **8 chars, no check char** to start; widen if collision-retry rate is ever non-trivial (it won't be at this scale). |
 | **W5 (Stage 1)** | **Resolution direction** for config/policy: resolve-up-at-read vs copy-down (MO3-style fan-out)? | **Resolve-up** — single source of truth, instant propagation, zero backfill for new workspaces. |
@@ -26,6 +25,7 @@ milestone lands.
 | W1d | **No role in the id** | Account-vs-Workspace is **never** encoded in or parsed from the id; it is discoverable via `accountId` + derived `kind`/`isAccountRoot`. Rationale: role is mutable/relational and the parent is dual-role. |
 | W1e | **`org_<hex>` retention** | **Kept indefinitely** as an accepted/returned alias (extends WS D4); `ws_…` is led-with, `org_<hex>` is never removed. |
 | W1f | **Account-root invariant** | `accountId === workspaceId` ⟺ Account root. `accountId = effectiveBillingOrgId(org) = parentOrgId ?? id`. |
+| **W2** | **Repoint vs add** | **Add (Option B)** — ADD a new immutable field `workspaceRef` (= the `ws_…` value) and **keep `workspaceId == org_<hex>` unchanged** (do not repoint). Purely additive: no existing field's value changes; `org_<hex>` is retained as the legacy id (D2/D4 stand). `api-guidelines` § Public vocabulary amended with `workspaceRef`/`accountId`/`kind`/`isAccountRoot` and the `accountId === workspaceRef` ⟺ Account-root invariant. (Resolved WID4.) |
 
 ## Risks
 

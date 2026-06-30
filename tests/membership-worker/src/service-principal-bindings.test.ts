@@ -75,6 +75,7 @@ function createFakeRepo(opts: {
     async bootstrapOrganization() { return { ok: false as const, error: { kind: "internal" as const, message: "stub" } }; },
     async createOrganization() { return { ok: false as const, error: { kind: "internal" as const, message: "stub" } }; },
     async getOrganizationById() { return { ok: false as const, error: { kind: "not_found" as const } }; },
+    async getOrganizationsByIds() { return { ok: true as const, value: [] }; },
     async getOrganizationBySlug() { return { ok: false as const, error: { kind: "not_found" as const } }; },
     async getOrganizationByPublicRef() { return { ok: false as const, error: { kind: "not_found" as const } }; },
     async listOrganizationsForSubject() { return { ok: true as const, value: [] }; },

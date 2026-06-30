@@ -142,6 +142,28 @@ export function createMembershipRepository(executor: SqlExecutor): MembershipRep
       }
     },
 
+    async getOrganizationsByIds(ids: string[]): Promise<MembershipResult<Array<{ id: string; publicRef: string }>>> {
+      if (ids.length === 0) {
+        return { ok: true, value: [] };
+      }
+      try {
+        const placeholders = ids.map((_, i) => `$${i + 1}`).join(", ");
+        const result = await executor.execute<Record<string, unknown>>(
+          `SELECT id, public_ref FROM membership.organizations WHERE id IN (${placeholders})`,
+          ids,
+        );
+        return {
+          ok: true,
+          value: result.rows.map((row) => ({
+            id: row.id as string,
+            publicRef: row.public_ref as string,
+          })),
+        };
+      } catch (err) {
+        return safeError("Failed to get organizations by ids", err);
+      }
+    },
+
     async getOrganizationBySlug(slugLower: string): Promise<MembershipResult<Organization>> {
       try {
         const result = await executor.execute<Record<string, unknown>>(

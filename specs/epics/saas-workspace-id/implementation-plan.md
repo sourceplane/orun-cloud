@@ -47,7 +47,7 @@ Make `ws_…` work anywhere `org_…`/slug works, at one chokepoint.
   tenant with results byte-identical to the `org_…` spelling; resolver tests cover all
   three spellings + miss/invalid cases.
 
-## WID4 — Public surface (contracts + edge) + docs amendment
+## WID4 — Public surface (contracts + edge) + docs amendment — ✅ Shipped (W2=Option B)
 
 Lead with `ws_…`; expose role; keep `org_<hex>` an alias.
 
