@@ -8,7 +8,6 @@ import * as React from "react";
 import type { PublicConnection } from "@saas/contracts/integrations";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { useToast } from "@/components/ui/toast";
 import { wrap } from "@/lib/api";
 import { useSession } from "@/lib/session";
@@ -34,6 +33,10 @@ export function ConnectionAdmission({
 
   const grants = useApiQuery(qk.connectionGrants(orgId, connection.id), () =>
     wrap(async () => (await client.integrations.listGrants(orgId, connection.id)).grants),
+  );
+  // The account's child workspaces (IT12) — the picker's source.
+  const workspaces = useApiQuery(qk.accountWorkspaces(orgId), () =>
+    wrap(async () => (await client.organizations.listWorkspaces(orgId)).workspaces),
   );
 
   const [admitOrgId, setAdmitOrgId] = React.useState("");
@@ -75,7 +78,7 @@ export function ConnectionAdmission({
     }
     setAdmitOrgId("");
     toast({ kind: "success", title: "Workspace admitted" });
-    grants.reload();
+    grants.reload(); // the admitted workspace drops out of the picker
   };
 
   const revoke = async (workspaceOrgId: string) => {
@@ -91,6 +94,9 @@ export function ConnectionAdmission({
   };
 
   const active = (grants.data ?? []).filter((g) => g.status === "active");
+  // Workspaces not yet admitted — the picker's options.
+  const admittedIds = new Set(active.map((g) => g.workspaceOrgId));
+  const available = (workspaces.data ?? []).filter((w) => !admittedIds.has(w.orgId));
 
   return (
     <div className="mt-3 rounded-md border bg-muted/20 p-3">
@@ -119,13 +125,26 @@ export function ConnectionAdmission({
       {isGranted ? (
         <div className="mt-3 space-y-2">
           <div className="flex gap-2">
-            <Input
+            <select
               value={admitOrgId}
               onChange={(e) => setAdmitOrgId(e.target.value)}
-              placeholder="Workspace org id (org_…)"
-              className="h-8 text-xs"
-            />
-            <Button size="sm" variant="outline" disabled={busy || !admitOrgId.trim()} onClick={() => void admit()}>
+              disabled={busy || available.length === 0}
+              className="h-8 flex-1 rounded-md border bg-card px-2 text-xs"
+            >
+              <option value="">
+                {workspaces.loading
+                  ? "Loading workspaces…"
+                  : available.length === 0
+                    ? "No workspaces to admit"
+                    : "Select a workspace…"}
+              </option>
+              {available.map((w) => (
+                <option key={w.orgId} value={w.orgId}>
+                  {w.name} ({w.workspaceRef})
+                </option>
+              ))}
+            </select>
+            <Button size="sm" variant="outline" disabled={busy || !admitOrgId} onClick={() => void admit()}>
               Admit
             </Button>
           </div>

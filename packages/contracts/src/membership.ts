@@ -57,6 +57,20 @@ export interface ListOrganizationsResponse {
   organizations: PublicOrganization[];
 }
 
+/** A child workspace under an Account (saas-integration-tenancy IT12). */
+export interface PublicWorkspaceSummary {
+  /** Legacy public org id (`org_…`). */
+  orgId: string;
+  /** Led-with Workspace ID (`ws_…`, WID2). */
+  workspaceRef: string;
+  name: string;
+}
+
+/** GET /v1/organizations/{accountId}/workspaces */
+export interface ListAccountWorkspacesResponse {
+  workspaces: PublicWorkspaceSummary[];
+}
+
 export interface GetOrganizationResponse {
   organization: PublicOrganization;
 }

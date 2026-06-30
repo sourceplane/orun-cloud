@@ -2,6 +2,7 @@ import type {
   CreateOrganizationRequest,
   CreateOrganizationResponse,
   GetOrganizationResponse,
+  ListAccountWorkspacesResponse,
   ListOrganizationsResponse,
 } from "@saas/contracts/membership";
 
@@ -29,6 +30,20 @@ export class OrganizationsClient {
   get(orgId: string, opts: RequestOptions = {}): Promise<GetOrganizationResponse> {
     return this.transport.request<GetOrganizationResponse>(
       { method: "GET", path: `/v1/organizations/${encodeURIComponent(orgId)}` },
+      opts,
+    );
+  }
+
+  /**
+   * GET /v1/organizations/:accountId/workspaces — the child workspaces under an
+   * Account (saas-integration-tenancy IT12). Backs the grant-management picker.
+   */
+  listWorkspaces(
+    accountId: string,
+    opts: RequestOptions = {},
+  ): Promise<ListAccountWorkspacesResponse> {
+    return this.transport.request<ListAccountWorkspacesResponse>(
+      { method: "GET", path: `/v1/organizations/${encodeURIComponent(accountId)}/workspaces` },
       opts,
     );
   }

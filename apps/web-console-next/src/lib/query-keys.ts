@@ -25,6 +25,7 @@ export const qk = {
   integrations: (orgId: string) => ["integrations", orgId] as const,
   connectionGrants: (orgId: string, connectionId: string) =>
     ["connectionGrants", orgId, connectionId] as const,
+  accountWorkspaces: (orgId: string) => ["accountWorkspaces", orgId] as const,
   repoLinks: (orgId: string, projectId: string) => ["repoLinks", orgId, projectId] as const,
   workspaceLinks: (orgId: string, projectId: string) =>
     ["workspaceLinks", orgId, projectId] as const,

@@ -4,6 +4,7 @@ import { handleCreateOrganization } from "./handlers/create-organization.js";
 import { handleListOrganizations } from "./handlers/list-organizations.js";
 import { handleGetOrganization } from "./handlers/get-organization.js";
 import { handleListMembers } from "./handlers/list-members.js";
+import { handleListAccountWorkspaces } from "./handlers/list-account-workspaces.js";
 import { handleUpdateMemberRole } from "./handlers/update-member-role.js";
 import { handleGrantAccountRole } from "./handlers/grant-account-role.js";
 import { handleRemoveMember } from "./handlers/remove-member.js";
@@ -43,6 +44,7 @@ function resolveActor(request: Request): ActorContext | null {
 
 const ORG_ID_RE = /^\/v1\/organizations\/([^/]+)$/;
 const ORG_MEMBERS_RE = /^\/v1\/organizations\/([^/]+)\/members$/;
+const ORG_WORKSPACES_RE = /^\/v1\/organizations\/([^/]+)\/workspaces$/;
 const ORG_MEMBER_ID_RE = /^\/v1\/organizations\/([^/]+)\/members\/([^/]+)$/;
 const ORG_INVITATIONS_ACCEPT_RE = /^\/v1\/organizations\/([^/]+)\/invitations\/accept$/;
 const ORG_INVITATIONS_RE = /^\/v1\/organizations\/([^/]+)\/invitations$/;
@@ -219,6 +221,19 @@ export async function route(request: Request, env: Env): Promise<Response> {
           return errorResponse("unauthenticated", "Authentication required", 401, requestId);
         }
         return handleListMembers(env, requestId, actor, orgMembersMatch[1]!, url);
+      }
+      return methodNotAllowed(requestId);
+    }
+
+    // Account's child workspaces (saas-integration-tenancy IT12 grant picker).
+    const orgWorkspacesMatch = url.pathname.match(ORG_WORKSPACES_RE);
+    if (orgWorkspacesMatch) {
+      if (request.method === "GET") {
+        const actor = resolveActor(request);
+        if (!actor) {
+          return errorResponse("unauthenticated", "Authentication required", 401, requestId);
+        }
+        return handleListAccountWorkspaces(env, requestId, actor, orgWorkspacesMatch[1]!);
       }
       return methodNotAllowed(requestId);
     }

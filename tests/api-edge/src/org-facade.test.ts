@@ -87,6 +87,10 @@ describe("api-edge org facade", () => {
       expect(isOrgRoute("/v1/organizations/org_abc/members/mem_abc123")).toBe(true);
     });
 
+    it("matches /v1/organizations/{accountId}/workspaces (IT12)", () => {
+      expect(isOrgRoute("/v1/organizations/org_abc/workspaces")).toBe(true);
+    });
+
     it("does not match deeper nested org routes", () => {
       expect(isOrgRoute("/v1/organizations/org_abc/members/mem_abc123/extra")).toBe(false);
     });
