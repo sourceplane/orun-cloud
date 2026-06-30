@@ -49,6 +49,49 @@ export async function fetchSubjectOrgs(
   return { ok: true, orgs: orgs as CliSessionOrg[] };
 }
 
+export type ResolveOrgRefResult =
+  | { ok: true; orgId: string }
+  | { ok: false };
+
+/**
+ * Resolve any org reference spelling (`ws_`/slug/`org_`) to the canonical
+ * `org_<hex>` via membership-worker (saas-workspace-id WID3). Used by the CLI
+ * tenancy-claim path (oidc-exchange) so an `execution.state.org` hint may be a
+ * `ws_` or slug, not only an `org_<hex>`. Failure-soft: an unreachable
+ * membership-worker or an unknown ref returns `{ ok: false }`.
+ */
+export async function resolveOrgRef(
+  membershipWorker: Fetcher,
+  ref: string,
+  requestId: string,
+): Promise<ResolveOrgRefResult> {
+  let response: Response;
+  try {
+    response = await membershipWorker.fetch(
+      "http://membership-worker/v1/internal/membership/resolve-org-ref",
+      {
+        method: "POST",
+        headers: { "content-type": "application/json", "x-request-id": requestId },
+        body: JSON.stringify({ ref }),
+      },
+    );
+  } catch {
+    return { ok: false };
+  }
+  if (!response.ok) return { ok: false };
+
+  let parsed: unknown;
+  try {
+    parsed = await response.json();
+  } catch {
+    return { ok: false };
+  }
+  const data = (parsed as { data?: { orgId?: unknown } } | null)?.data;
+  const orgId = data?.orgId;
+  if (typeof orgId !== "string" || !orgId.startsWith("org_")) return { ok: false };
+  return { ok: true, orgId };
+}
+
 export async function fetchAuthorizationContext(
   membershipWorker: Fetcher,
   subjectId: string,

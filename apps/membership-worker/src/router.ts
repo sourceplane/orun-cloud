@@ -14,6 +14,7 @@ import { handleAuthorizationContext } from "./handlers/authorization-context.js"
 import { handleSubjectOrgs } from "./handlers/subject-orgs.js";
 import { handleSyncAccountChildren } from "./handlers/sync-account-children.js";
 import { handleResolveBillingParent } from "./handlers/resolve-billing-parent.js";
+import { handleResolveOrgRef } from "./handlers/resolve-org-ref.js";
 import { handleCreateServicePrincipalBinding, handleListServicePrincipalBindings, handleRevokeServicePrincipalBinding } from "./handlers/service-principal-bindings.js";
 import { errorResponse, notFound, methodNotAllowed } from "./http.js";
 import { generateRequestId } from "./ids.js";
@@ -83,6 +84,17 @@ export async function route(request: Request, env: Env): Promise<Response> {
     if (url.pathname === "/v1/internal/membership/organizations/billing-parent") {
       if (request.method === "POST") {
         return handleResolveBillingParent(request, env, requestId);
+      }
+      return methodNotAllowed(requestId);
+    }
+
+    // Internal org-ref resolution (WID3): api-edge resolves any org reference
+    // spelling (`ws_`/slug/`org_`) to the canonical `org_<hex>` so it can rewrite
+    // the URL segment at the edge. Service-binding only — keeps the membership
+    // schema lookup out of every bounded-context worker.
+    if (url.pathname === "/v1/internal/membership/resolve-org-ref") {
+      if (request.method === "POST") {
+        return handleResolveOrgRef(request, env, requestId);
       }
       return methodNotAllowed(requestId);
     }

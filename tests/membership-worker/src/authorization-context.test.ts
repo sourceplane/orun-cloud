@@ -20,6 +20,7 @@ function createFakeRepo(roleAssignments: RoleAssignment[] = []): MembershipRepos
     async createOrganization() { return { ok: false, error: { kind: "internal" as const, message: "not implemented" } }; },
     async getOrganizationById() { return { ok: false, error: { kind: "not_found" as const } }; },
     async getOrganizationBySlug() { return { ok: false, error: { kind: "not_found" as const } }; },
+    async getOrganizationByPublicRef() { return { ok: false, error: { kind: "not_found" as const } }; },
     async listOrganizationsForSubject() { return { ok: true, value: [] }; },
     async listOrganizationsWithRoleForSubject() { return { ok: true, value: [] }; },
     async listOrganizationsForSubjectPaged() { return { ok: true, value: { items: [], nextCursor: null } }; },

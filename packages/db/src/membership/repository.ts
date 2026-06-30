@@ -157,6 +157,21 @@ export function createMembershipRepository(executor: SqlExecutor): MembershipRep
       }
     },
 
+    async getOrganizationByPublicRef(publicRef: string): Promise<MembershipResult<Organization>> {
+      try {
+        const result = await executor.execute<Record<string, unknown>>(
+          `SELECT * FROM membership.organizations WHERE public_ref = $1`,
+          [publicRef],
+        );
+        if (result.rowCount === 0) {
+          return { ok: false, error: { kind: "not_found" } };
+        }
+        return { ok: true, value: mapOrganization(result.rows[0]!) };
+      } catch (err) {
+        return safeError("Failed to get organization by public ref", err);
+      }
+    },
+
     async listChildOrganizations(parentOrgId: string): Promise<MembershipResult<Organization[]>> {
       try {
         const result = await executor.execute<Record<string, unknown>>(

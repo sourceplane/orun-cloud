@@ -34,7 +34,7 @@ Give every org an immutable `ws_…` at birth and backfill the rest.
   creation transaction; the column is `NOT NULL`; repository tests cover generation +
   collision retry.
 
-## WID3 — Resolver
+## WID3 — Resolver — ✅ Shipped (`apps/api-edge/src/org-ref-facade.ts`)
 
 Make `ws_…` work anywhere `org_…`/slug works, at one chokepoint.
 

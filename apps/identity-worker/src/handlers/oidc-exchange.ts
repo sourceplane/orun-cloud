@@ -15,6 +15,7 @@ import { successResponse, errorResponse } from "../http.js";
 import { orgPublicId, projectPublicId } from "../ids.js";
 import { verifyGitHubOidcToken, type JwksFetcher, type GitHubOidcClaims } from "../oidc/github.js";
 import { mintWorkflowAccessToken } from "../cli/jwt.js";
+import { resolveOrgRef as resolveOrgRefViaMembership } from "../membership-client.js";
 
 /** Frozen OIDC audience the CLI requests and this endpoint requires (design §8). */
 const OIDC_AUDIENCE = "orun-cloud";
@@ -24,6 +25,12 @@ export interface OidcExchangeDeps {
   executor?: SqlExecutor;
   fetchJwks?: JwksFetcher;
   now?: () => Date;
+  /**
+   * Resolve an org-hint ref (`ws_`/slug/`org_`) to the canonical `org_<hex>`
+   * (WID3). Defaults to a membership-worker call; injectable in tests. Returns
+   * null when the ref names no org (membership unreachable / unknown ref).
+   */
+  resolveOrgRef?: (ref: string) => Promise<string | null>;
 }
 
 async function dispose(executor: SqlExecutor): Promise<void> {
@@ -147,7 +154,20 @@ export async function handleOidcExchange(
           requestId,
         );
       }
-      const matches = links.filter((l) => orgPublicId(l.orgId) === orgHint);
+      // The hint may be a `ws_`, slug, or `org_<hex>` (WID3). Resolve it to the
+      // canonical `org_<hex>` at the edge of identity (via membership-worker),
+      // then match links by the resolved id. An `org_<hex>` resolves to itself,
+      // preserving the prior behavior; an unresolvable hint falls back to the
+      // raw value so it simply matches no link (→ the same 404 below).
+      const resolveRef =
+        deps?.resolveOrgRef ??
+        (async (ref: string): Promise<string | null> => {
+          if (!env.MEMBERSHIP_WORKER) return null;
+          const r = await resolveOrgRefViaMembership(env.MEMBERSHIP_WORKER, ref, requestId);
+          return r.ok ? r.orgId : null;
+        });
+      const resolvedHint = (await resolveRef(orgHint)) ?? orgHint;
+      const matches = links.filter((l) => orgPublicId(l.orgId) === resolvedHint);
       if (matches.length !== 1) {
         // The declared org names no authorized link for this repo. Hide whether
         // the org exists / the repo is linked elsewhere behind the same 404
