@@ -381,5 +381,14 @@ export const manifest: MigrationManifest = {
       description:
         "Durable public Workspace ID (saas-workspace-id WID2) — adds the immutable membership.organizations.public_ref column ('ws_<8 Crockford-base32>', e.g. ws_3KF9TQ2P) with a unique index, plus the membership.gen_workspace_ref() SQL helper used as the column default. The default backfills existing rows during the rewrite and is a deploy-safety backstop; the canonical mint is the create-organization handler. Additive + idempotent.",
     },
+    {
+      id: "420_membership_account_rbac",
+      context: "membership",
+      path: "420_membership_account_rbac/up.sql",
+      checksum:
+        "b9aab01a0c1c4516c36a00059a550469cef449532740621ea39a2ebf58d02907",
+      description:
+        "Account-scoped RBAC (saas-workspace-id WID6, Stage 1a of the Account layer) — widens membership.role_assignments' CHECK constraints so a role can be granted at account scope and cascade to every workspace under the account: scope_kind gains 'account' (joining 'organization'/'project') and role gains 'account_owner'/'account_admin'/'account_billing_admin'. The cascade is resolved in membership-worker's authorization-context assembly (account facts remapped onto the target org id), not the DB. Additive + idempotent (constraints replaced via guarded DROP+ADD); back-compatible since every existing row keeps validating.",
+    },
   ],
 };

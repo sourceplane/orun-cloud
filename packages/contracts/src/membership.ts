@@ -82,6 +82,14 @@ export interface ListMembersResponse {
 export const ORGANIZATION_ROLES = ["owner", "admin", "builder", "viewer", "billing_admin"] as const;
 export type InvitationRole = (typeof ORGANIZATION_ROLES)[number];
 
+/**
+ * Account-scoped roles (epic `saas-workspace-id`, WID6). Granted at
+ * `scope_kind = 'account'` on an Account (parent org); cascade to authority on
+ * every workspace under the account.
+ */
+export const ACCOUNT_ROLES = ["account_owner", "account_admin", "account_billing_admin"] as const;
+export type AccountRoleName = (typeof ACCOUNT_ROLES)[number];
+
 export interface CreateInvitationRequest {
   email: string;
   role: InvitationRole;

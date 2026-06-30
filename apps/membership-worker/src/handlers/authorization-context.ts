@@ -1,7 +1,7 @@
 import type { Env } from "../env.js";
 import type { AuthorizationContextRequest, AuthorizationContextResponse } from "@saas/contracts/policy";
 import type { MembershipRepository } from "@saas/db/membership";
-import { createMembershipRepository } from "@saas/db/membership";
+import { createMembershipRepository, effectiveBillingOrgId } from "@saas/db/membership";
 import { createSqlExecutor } from "@saas/db/hyperdrive";
 import { asUuid } from "@saas/db/ids";
 import { mapRoleAssignmentsToFacts } from "../membership-facts.js";
@@ -60,12 +60,45 @@ export async function handleAuthorizationContext(
   const repo = deps?.repo ?? createMembershipRepository(executor!);
 
   try {
-    const rolesResult = await repo.listRoleAssignments(asUuid(typedReq.orgId), typedReq.subject.id);
+    const targetOrgUuid = asUuid(typedReq.orgId);
+    const rolesResult = await repo.listRoleAssignments(targetOrgUuid, typedReq.subject.id);
     if (!rolesResult.ok) {
       return errorResponse("internal_error", "Failed to retrieve authorization context", 500, requestId);
     }
 
+    // Org/project facts held directly on the target org. Any account-scoped rows
+    // returned here (the case where the target IS the account root) are preserved
+    // by the mapper and cascade onto the target via the engine's account catalog.
     const memberships = mapRoleAssignmentsToFacts(typedReq.orgId, rolesResult.value);
+
+    // Account-scoped RBAC cascade (saas-workspace-id WID6 — design §8.2). If the
+    // target is a CHILD workspace, also surface the actor's account-scoped roles,
+    // which live on the account (parent) org. We remap them onto the target orgId
+    // so the policy engine's `scope.orgId === orgId` filter matches and the
+    // account role cascades down. Fail-soft: if the org fetch fails we fall back
+    // to org/project facts only (today's behavior).
+    try {
+      const orgResult = await repo.getOrganizationById(targetOrgUuid);
+      if (orgResult.ok) {
+        const accountUuid = effectiveBillingOrgId(orgResult.value);
+        if (accountUuid !== targetOrgUuid) {
+          const accountRolesResult = await repo.listRoleAssignments(
+            asUuid(accountUuid),
+            typedReq.subject.id,
+          );
+          if (accountRolesResult.ok) {
+            const accountAssignments = accountRolesResult.value.filter(
+              (ra) => ra.scopeKind === "account",
+            );
+            // Stamp the cascaded account facts with the TARGET orgId.
+            memberships.push(...mapRoleAssignmentsToFacts(typedReq.orgId, accountAssignments));
+          }
+        }
+      }
+    } catch {
+      // Fail-soft — keep org/project facts only.
+    }
+
     const responseBody: AuthorizationContextResponse = { memberships };
 
     return successResponse(responseBody, requestId);

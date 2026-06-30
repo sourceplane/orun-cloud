@@ -21,7 +21,8 @@
   },
   "dependencies": {
     "@saas/contracts": "workspace:*",
-    "@saas/db": "workspace:*"
+    "@saas/db": "workspace:*",
+    "@saas/policy-engine": "workspace:*"
   },
   "jest": {
     "preset": "ts-jest/presets/default-esm",
@@ -33,6 +34,7 @@
       "^@saas/contracts$": "<rootDir>/../../packages/contracts/src/index.ts",
       "^@saas/contracts/(.*)$": "<rootDir>/../../packages/contracts/src/$1.ts",
       "^@membership-worker/(.*)$": "<rootDir>/../../apps/membership-worker/src/$1.ts",
+      "^@saas/policy-engine$": "<rootDir>/../../packages/policy-engine/src/index.ts",
       "^@saas/db$": "<rootDir>/../../packages/db/src/index.ts",
       "^@saas/db/manifest$": "<rootDir>/../../packages/db/src/manifest.ts",
       "^@saas/db/types$": "<rootDir>/../../packages/db/src/types.ts",

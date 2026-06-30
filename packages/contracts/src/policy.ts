@@ -1,4 +1,4 @@
-import type { OrganizationRole, ProjectRole, TenancyRole, RoleScopeKind } from "./tenancy.js";
+import type { OrganizationRole, ProjectRole, AccountRole, TenancyRole, RoleScopeKind } from "./tenancy.js";
 
 export type SubjectType = "user" | "service_principal" | "workflow" | "system";
 
@@ -135,4 +135,4 @@ export interface AuthorizationContextResponse {
   memberships: MembershipFact[];
 }
 
-export type { OrganizationRole, ProjectRole, TenancyRole, RoleScopeKind };
+export type { OrganizationRole, ProjectRole, AccountRole, TenancyRole, RoleScopeKind };
