@@ -39,6 +39,30 @@ describe("CLI access JWT (OP1)", () => {
     expect(claims!.orgIds).toEqual(["org_1", "org_2"]);
   });
 
+  it("carries workspaceIds alongside orgIds when provided (WID5)", async () => {
+    const { token } = await mintCliAccessToken(env(KEY), {
+      sub: "usr_abc",
+      sessionId: "clises_xyz",
+      orgIds: ["org_1", "org_2"],
+      workspaceIds: ["ws_AAA", "ws_BBB"],
+      now,
+    });
+    const claims = await verifyCliAccessToken(env(KEY), token, now);
+    expect(claims!.orgIds).toEqual(["org_1", "org_2"]);
+    expect(claims!.workspaceIds).toEqual(["ws_AAA", "ws_BBB"]);
+  });
+
+  it("omits workspaceIds when not provided (back-compat)", async () => {
+    const { token } = await mintCliAccessToken(env(KEY), {
+      sub: "usr_abc",
+      sessionId: "clises_xyz",
+      orgIds: ["org_1"],
+      now,
+    });
+    const claims = await verifyCliAccessToken(env(KEY), token, now);
+    expect(claims!.workspaceIds).toBeUndefined();
+  });
+
   it("rejects a token signed with a different key", async () => {
     const { token } = await mintCliAccessToken(env(KEY), { sub: "u", sessionId: "s", orgIds: [], now });
     const claims = await verifyCliAccessToken(env("z".repeat(40)), token, now);

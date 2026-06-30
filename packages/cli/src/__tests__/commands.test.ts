@@ -12,14 +12,15 @@ import { captureFetch, envelope, jsonResponse, MemoryTokenStore } from "./helper
 
 const ORG_LIST = envelope({
   organizations: [
-    { id: "org_1", name: "Acme", slug: "acme", createdAt: "2025-01-01T00:00:00Z" },
-    { id: "org_2", name: "Beta", slug: "beta", createdAt: "2025-02-01T00:00:00Z" },
+    { id: "org_1", workspaceRef: "ws_ACME0001", name: "Acme", slug: "acme", createdAt: "2025-01-01T00:00:00Z" },
+    { id: "org_2", workspaceRef: "ws_BETA0002", name: "Beta", slug: "beta", createdAt: "2025-02-01T00:00:00Z" },
   ],
 });
 
 const ORG_GET = envelope({
   organization: {
     id: "org_1",
+    workspaceRef: "ws_ACME0001",
     name: "Acme",
     slug: "acme",
     createdAt: "2025-01-01T00:00:00Z",
@@ -114,7 +115,9 @@ describe("commands — org list", () => {
         const text = cap.stdout.join("\n");
         expect(text).toContain("Acme");
         expect(text).toContain("Beta");
-        expect(text).toMatch(/active\s+id\s+name\s+slug/);
+        // WID5: the human table leads with the durable Workspace ID.
+        expect(text).toMatch(/active\s+workspace\s+name\s+slug/);
+        expect(text).toContain("ws_ACME0001");
       },
       { response: () => jsonResponse(ORG_LIST), activeOrgId: "org_1" },
     );
@@ -146,6 +149,8 @@ describe("commands — org use", () => {
           "https://api.test/v1/organizations/org_1",
         );
         expect((await contextStore.load()).activeOrgId).toBe("org_1");
+        // WID5: confirmation leads with ws_… and shows the legacy org_ secondarily.
+        expect(cap.stdout.join("\n")).toContain("ws_ACME0001 (org_1)");
       },
       { response: () => jsonResponse(ORG_GET) },
     );
@@ -196,6 +201,23 @@ describe("commands — org members", () => {
         expect(JSON.parse(cap.stdout[0] ?? "")).toEqual(MEMBERS.data);
       },
       { response: () => jsonResponse(MEMBERS), activeOrgId: "org_1" },
+    );
+  });
+
+  it("human title leads with the workspaceRef (WID5)", async () => {
+    // The members listing fetch returns MEMBERS; the follow-up org lookup
+    // (for the title's ws_… label) returns ORG_GET.
+    let call = 0;
+    await withHarness(
+      async ({ cap, runArgv }) => {
+        const r = await runArgv(["org", "members"]);
+        expect(r.exitCode).toBe(0);
+        expect(cap.stdout.join("\n")).toContain("Members of ws_ACME0001 (org_1)");
+      },
+      {
+        response: () => (call++ === 0 ? jsonResponse(MEMBERS) : jsonResponse(ORG_GET)),
+        activeOrgId: "org_1",
+      },
     );
   });
 });

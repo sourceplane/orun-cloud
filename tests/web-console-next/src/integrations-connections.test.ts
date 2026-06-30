@@ -12,6 +12,8 @@ function connection(overrides?: Partial<PublicConnection>): PublicConnection {
     orgId: "org_1",
     provider: "github",
     status: "active",
+    scope: "account",
+    shareMode: "auto",
     displayName: null,
     externalAccountLogin: "acme",
     externalAccountType: "Organization",

@@ -23,6 +23,12 @@ export interface CliAccessClaims {
   sessionId: string;
   /** Public org ids the user is a member of (the CLI's allowedNamespaceIds). */
   orgIds: string[];
+  /**
+   * Durable Workspace IDs (`ws_…`) for the same orgs as `orgIds`, in the same
+   * order (WID5). Carried ALONGSIDE `orgIds` (which is kept until in-flight
+   * tokens age out). Optional for back-compat with tokens minted before WID5.
+   */
+  workspaceIds?: string[];
   /** Issued-at, epoch seconds. */
   iat: number;
   /** Expiry, epoch seconds. */
@@ -95,7 +101,7 @@ export function looksLikeCliAccessToken(token: string): boolean {
  */
 export async function mintCliAccessToken(
   env: Env,
-  input: { sub: string; sessionId: string; orgIds: string[]; now: Date },
+  input: { sub: string; sessionId: string; orgIds: string[]; workspaceIds?: string[]; now: Date },
 ): Promise<{ token: string; expiresAt: Date }> {
   const secret = getCliSigningKey(env);
   if (!secret) {
@@ -108,6 +114,7 @@ export async function mintCliAccessToken(
     actorKind: "user",
     sessionId: input.sessionId,
     orgIds: input.orgIds,
+    ...(input.workspaceIds ? { workspaceIds: input.workspaceIds } : {}),
     iat,
     exp,
   };
@@ -132,6 +139,12 @@ export interface WorkflowAccessClaims {
   actorKind: "workflow";
   /** Public org id the workflow is bound to (resolved from the workspace link). */
   orgId: string;
+  /**
+   * Durable Workspace ID (`ws_…`) of the bound org, carried alongside `orgId`
+   * (WID5). Optional: omitted when it cannot be resolved (kept fail-soft so a
+   * membership hiccup never blocks the mint).
+   */
+  workspaceId?: string;
   /** Public project id the workflow is bound to. */
   projectId: string;
   iat: number;
@@ -144,7 +157,7 @@ export interface WorkflowAccessClaims {
  */
 export async function mintWorkflowAccessToken(
   env: Env,
-  input: { sub: string; orgId: string; projectId: string; now: Date },
+  input: { sub: string; orgId: string; workspaceId?: string; projectId: string; now: Date },
 ): Promise<{ token: string; expiresAt: Date }> {
   const secret = getCliSigningKey(env);
   if (!secret) {
@@ -156,6 +169,7 @@ export async function mintWorkflowAccessToken(
     sub: input.sub,
     actorKind: "workflow",
     orgId: input.orgId,
+    ...(input.workspaceId ? { workspaceId: input.workspaceId } : {}),
     projectId: input.projectId,
     iat,
     exp,

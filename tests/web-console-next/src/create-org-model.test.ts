@@ -70,7 +70,7 @@ describe("sourceSummary", () => {
 describe("createButtonLabel", () => {
   it("names the hand-off the create triggers", () => {
     expect(createButtonLabel("parent", plan("free"), { kind: "scratch" })).toBe(
-      "Create organization",
+      "Create workspace",
     );
     expect(createButtonLabel("parent", plan("pro"), { kind: "scratch" })).toBe(
       "Create & continue to checkout",
@@ -82,7 +82,7 @@ describe("createButtonLabel", () => {
       "Create & connect GitHub",
     );
     expect(createButtonLabel("child", plan("free"), { kind: "scratch" })).toBe(
-      "Create organization",
+      "Create workspace",
     );
   });
 
@@ -97,7 +97,7 @@ describe("createButtonLabel", () => {
       "Create & continue to checkout",
     );
     expect(createButtonLabel("child", plan("business"), { kind: "scratch" })).toBe(
-      "Create organization",
+      "Create workspace",
     );
   });
 });

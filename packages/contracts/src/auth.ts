@@ -123,7 +123,14 @@ export interface UpdateProfileRequest {
 /** The org membership scope returned in a CLI session. `id` is what the CLI
  *  currently calls `allowedNamespaceIds`. */
 export interface CliSessionOrg {
+  /** Legacy `org_<hex>` id — kept as the back-compat namespace id. */
   id: string;
+  /**
+   * Durable, led-with public **Workspace ID** (`ws_…`, WID2's `public_ref`).
+   * Surfaced alongside `id` so the CLI can lead with it and tokens can carry it
+   * (`workspaceIds[]`). Optional for back-compat with older payloads.
+   */
+  workspaceRef?: string;
   slug: string;
   name: string;
   role: OrganizationRole;
@@ -268,6 +275,11 @@ export interface OidcExchangeResponse {
   expiresAt: string;
   /** Resolved binding (public ids). */
   orgId: string;
+  /**
+   * Durable Workspace ID (`ws_…`) of the resolved org, led-with alongside the
+   * legacy `orgId` (WID5). Optional: omitted when the ref cannot be resolved.
+   */
+  workspaceId?: string;
   projectId: string;
 }
 

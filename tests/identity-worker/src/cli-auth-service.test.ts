@@ -9,6 +9,7 @@ if (typeof globalThis.crypto.randomUUID !== "function") {
 }
 
 import { createCliAuthService } from "../../../apps/identity-worker/src/services/cli-auth";
+import { verifyCliAccessToken } from "../../../apps/identity-worker/src/cli/jwt";
 import type { Env } from "../../../apps/identity-worker/src/env";
 import type { CliSessionOrg } from "@saas/contracts/auth";
 import { asUuid } from "@saas/db";
@@ -27,7 +28,9 @@ function envWithKey(): Env {
   } as Env;
 }
 
-const ORGS: CliSessionOrg[] = [{ id: "org_" + "a".repeat(32), slug: "acme", name: "Acme", role: "admin" }];
+const ORGS: CliSessionOrg[] = [
+  { id: "org_" + "a".repeat(32), workspaceRef: "ws_3KF9TQ2P", slug: "acme", name: "Acme", role: "admin" },
+];
 
 function seedUser(repo: ReturnType<typeof createFakeRepository>): void {
   repo._users.set(USER_UUID, {
@@ -110,6 +113,11 @@ describe("CLI auth service (OP1)", () => {
       expect(redeemed.refreshToken).toMatch(/^ocrt_[0-9a-f]{64}$/);
       expect(redeemed.user.id).toBe(USER_PUBLIC);
       expect(redeemed.orgs).toEqual(ORGS);
+
+      // WID5: the access token carries `workspaceIds` (ws_…) aligned with orgIds.
+      const claims = await verifyCliAccessToken(envWithKey(), redeemed.accessToken, now);
+      expect(claims!.orgIds).toEqual(ORGS.map((o) => o.id));
+      expect(claims!.workspaceIds).toEqual(ORGS.map((o) => o.workspaceRef));
 
       // A CLI session row now exists.
       const cliSessions = [...repo._sessions.values()].filter((s) => s.kind === "cli");

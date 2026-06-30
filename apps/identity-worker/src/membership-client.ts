@@ -50,15 +50,17 @@ export async function fetchSubjectOrgs(
 }
 
 export type ResolveOrgRefResult =
-  | { ok: true; orgId: string }
+  | { ok: true; orgId: string; publicRef: string | null }
   | { ok: false };
 
 /**
  * Resolve any org reference spelling (`ws_`/slug/`org_`) to the canonical
  * `org_<hex>` via membership-worker (saas-workspace-id WID3). Used by the CLI
  * tenancy-claim path (oidc-exchange) so an `execution.state.org` hint may be a
- * `ws_` or slug, not only an `org_<hex>`. Failure-soft: an unreachable
- * membership-worker or an unknown ref returns `{ ok: false }`.
+ * `ws_` or slug, not only an `org_<hex>`. Also returns the org's durable
+ * `publicRef` (`ws_…`, WID5) so the workflow token can carry `workspaceId`.
+ * Failure-soft: an unreachable membership-worker or an unknown ref returns
+ * `{ ok: false }`.
  */
 export async function resolveOrgRef(
   membershipWorker: Fetcher,
@@ -86,10 +88,11 @@ export async function resolveOrgRef(
   } catch {
     return { ok: false };
   }
-  const data = (parsed as { data?: { orgId?: unknown } } | null)?.data;
+  const data = (parsed as { data?: { orgId?: unknown; publicRef?: unknown } } | null)?.data;
   const orgId = data?.orgId;
   if (typeof orgId !== "string" || !orgId.startsWith("org_")) return { ok: false };
-  return { ok: true, orgId };
+  const publicRef = typeof data?.publicRef === "string" ? data.publicRef : null;
+  return { ok: true, orgId, publicRef };
 }
 
 export async function fetchAuthorizationContext(
