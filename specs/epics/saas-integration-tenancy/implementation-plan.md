@@ -174,67 +174,77 @@ rollout — they are the governance/flexibility layer on top of it.
 
 # Extended scope (ITX) — IT9–IT12
 
-Builds on shipped IT1–IT8 (design §12). No keystone/scope/tenancy change — a
-consumer-side + governance-surface layer. The one new live wiring is routing the
-**connection list read** through the resolver. Sequence: IT9 (identity) →
-IT10 (visibility) → IT11 (account-only) → IT12 (picker); IT11 may land with or
-just after IT10, and IT12 is a UX refinement of IT5b.
+Builds on shipped IT1–IT8 (design §12) **and the now-shipped `saas-workspace-id`
+(WID)** — ITX consumes WID's identity (WID4) and account RBAC (WID6) rather than
+re-deriving them. No keystone/scope/tenancy change — a consumer-side + governance-
+surface layer. The one new live wiring is routing the **connection list read**
+through the resolver. Sequence: IT9 (badge) → IT10 (visibility) → IT11
+(account-only) → IT12 (picker); IT11 may land with or just after IT10.
 
-## IT9 — Account-workspace identity — 🗓️ Planned
+> **Dependency:** IT9/IT11/IT12 require WID4 (`kind`/`isAccountRoot`/`accountId`/
+> `workspaceRef` on `PublicOrganization`) and WID6 (account-scoped RBAC) — both
+> shipped (#246/#248). IT10 needs only IT1–IT8 + the worker-side parent resolver.
 
-- Membership: derive `kind` (`account`\|`workspace`\|`standalone`, design §12.0)
-  on the org-list reads (`subject-orgs`, `list-organizations`) — `account` needs a
-  child `COUNT`; expose the **parent display name** on a child. Derived, not
-  stored.
-- Contracts/SDK: `kind` (+ optional `parentName`) on the public org shape.
-- Console: an "Account" chip in `sidebar-org-switcher.tsx` + the org list; a child
-  optionally reads "in «Account»".
-- Owner: `apps/membership-worker` + `packages/contracts`/`sdk` + `apps/web-console-next`.
-- **Done when:** accounts/workspaces/standalone are labelled on every org-list
-  surface; a child can name its account; standalone orgs look unchanged.
+## IT9 — Account identity surface (thin) — 🗓️ Planned
+
+WID4 already derives + surfaces `kind`/`isAccountRoot`/`accountId`/`workspaceRef`,
+so the membership work is **done**. IT9 is console-only:
+
+- Console: an "Account" chip in `sidebar-org-switcher.tsx` + the org list, from the
+  existing `kind`/`isAccountRoot`; a child reads its Account name by resolving
+  `accountId` against the orgs it can already see (no new endpoint).
+- Owner: `apps/web-console-next` only (consumes shipped WID4 contracts).
+- **Done when:** Accounts vs Workspaces are labelled on the org-list surfaces from
+  WID4's `kind`; a child names its Account; standalone/account-of-one render
+  sensibly.
 
 ## IT10 — Inherited shared connections — 🗓️ Planned
 
 - Worker: add the worker-side resolver `resolveIntegrationParent` (twin of
   `resolveBillingParent`). `handleListIntegrations(orgId)` returns own connections
-  PLUS — when the org is a child — the account's `account`-scoped connections at
-  `effectiveIntegrationOrg(orgId)`, flagged `inherited` with `sharedByOrgId` +
-  `sharedByOrgName`. Under `granted`, include an inherited connection only if the
-  child holds an active grant (or mark it; D7).
-- Contracts: optional `inherited` + `sharedByOrgName` on `PublicConnection`
-  (null/false for owned rows — back-compatible).
-- Console: render inherited rows **read-only** with the *"Shared by «account»"*
+  PLUS — when the org is a child (`kind === 'workspace'`) — the account's
+  `account`-scoped connections at `effectiveIntegrationOrg(orgId)`, flagged
+  `inherited` with the account's `ws_…` + name. Under `granted`, include an
+  inherited connection only if the child holds an active grant (or mark it; D7).
+- Contracts: optional `inherited` + `sharedByWorkspaceRef` (`ws_…`, led-with) +
+  `sharedByName` on `PublicConnection` (null/false for owned rows — back-compatible).
+- Console: render inherited rows **read-only** with the *"Shared by «Account»"*
   attribution and the repo-link entry point only.
-- Owner: `apps/integrations-worker` + `packages/contracts` + `apps/web-console-next`
-  (+ membership endpoint for parent resolution).
+- Owner: `apps/integrations-worker` + `packages/contracts` + `apps/web-console-next`.
 - **Done when:** a child sees the account's shared connection read-only and
-  attributed; a standalone org's list is unchanged; `granted` hides/marks
-  unadmitted connections; the broker/projection are untouched.
+  attributed by `ws_…`+name; a standalone org's list is unchanged; `granted`
+  hides/marks unadmitted connections; the broker/projection are untouched.
 
 ## IT11 — Sharing is account-only — 🗓️ Planned
 
-- Worker: connect from a **child** (`parentOrgId != null`) is forced to
-  `workspace` scope server-side (hardening IT7's surface rule); the IT8b
-  grant/share-mode handlers add an explicit **top-level-owner** guard → `403` from
-  a child. IT6 split-brain suite asserts *no `account`-scoped connection is owned
-  by a child*.
-- Console: gate `ConnectionAdmission` (IT5b) on `orgKind === "account"` **and** an
-  **owned** (non-inherited) connection; child UI shows no share/grant/revoke
-  affordance.
-- Owner: `apps/integrations-worker` + `apps/web-console-next` (+ the membership
-  `kind` from IT9).
-- **Done when:** a child cannot create a shareable connection or call a
-  share/grant endpoint (server-enforced); the child UI exposes no sharing control;
-  an account is unchanged.
+Two gates (design §12.3): position (who may *own*) + account RBAC (who may *manage*).
+
+- Worker: connect from a **child** (`kind === 'workspace'`) is forced to `workspace`
+  scope server-side (hardening IT7's surface rule); the IT8b grant/share-mode
+  handlers add (a) an **Account-root-owner** structural guard and (b) an
+  **account-scoped role** check (WID6 `account_admin`/`account_owner` at
+  `scope_kind='account'`) → `403` otherwise. IT6 split-brain suite asserts *no
+  `account`-scoped connection is owned by a child*.
+- Console: gate `ConnectionAdmission` (IT5b) on **`isAccountRoot`** **and** an
+  **owned** (non-inherited) connection **and** the actor's account role; child UI
+  shows no share/grant/revoke affordance.
+- Owner: `apps/integrations-worker` + `apps/policy-worker` (account-role check) +
+  `apps/web-console-next` (consumes WID4 `kind` + WID6 roles).
+- **Done when:** a child cannot create a shareable connection or call a share/grant
+  endpoint; only an account-scoped admin may manage sharing; the child UI exposes
+  no sharing control; an account is unchanged.
 
 ## IT12 — Grant by workspace picker — 🗓️ Planned
 
-- Read: list the account's children (`membership.listChildOrganizations`,
-  already in the repo) → `{ orgId, name }`; SDK `workspaces.listChildren(account)`.
-- Console: `ConnectionAdmission` fetches the child list, filters out
-  already-admitted (and the account), and presents a select; revoke unchanged.
-- Guard: the IT8 write rule (a grant names only a child of the owning account)
-  stays as the server check behind the picker.
-- Owner: `packages/sdk` + `apps/web-console-next` (+ membership children read).
+- Read: list the account's children (`membership.listChildOrganizations`, already in
+  the repo) → `{ workspaceRef, name }`; SDK `workspaces.listChildren(account)`. Or
+  derive client-side from the user's org list filtered to `accountId === account &&
+  kind === 'workspace'` (WID4) — no new endpoint where the data is already present.
+- Console: `ConnectionAdmission` filters out already-admitted (and the account) and
+  presents a `ws_…`+name select; revoke unchanged.
+- Guard: the IT8 write rule (a grant names only a child of the owning account,
+  `accountId === account.workspaceRef`) stays as the server check; the grant API
+  accepts `ws_…` or the `org_…` alias (WID3), led with `ws_…`.
+- Owner: `packages/sdk` + `apps/web-console-next` (+ optional membership children read).
 - **Done when:** an account admits a workspace by selecting it; admitted ones drop
   from the list; a non-child id is rejected server-side.
