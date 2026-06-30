@@ -398,6 +398,26 @@ export function createIntegrationsRepository(executor: SqlExecutor): Integration
       }
     },
 
+    async updateConnectionShareMode(
+      orgId: Uuid,
+      id: Uuid,
+      shareMode: ConnectionShareMode,
+    ): Promise<IntegrationsResult<IntegrationConnection>> {
+      try {
+        const result = await executor.execute<Record<string, unknown>>(
+          `UPDATE integrations.connections
+              SET share_mode = $3, updated_at = now()
+            WHERE org_id = $1 AND id = $2
+            RETURNING *`,
+          [orgId, id, shareMode],
+        );
+        if (result.rowCount === 0) return { ok: false, error: { kind: "not_found" } };
+        return { ok: true, value: mapConnection(result.rows[0]!) };
+      } catch {
+        return safeError("Failed to update connection share mode");
+      }
+    },
+
     // ── Admission grants (IT8) ───────────────────────────────
 
     async createConnectionGrant(

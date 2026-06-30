@@ -1,6 +1,7 @@
-import type { InboundDelivery, IntegrationConnection } from "@saas/db/integrations";
+import type { ConnectionGrant, InboundDelivery, IntegrationConnection } from "@saas/db/integrations";
 import type {
   PublicConnection,
+  PublicConnectionGrant,
   PublicInboundDelivery,
   IntegrationProviderId,
 } from "@saas/contracts/integrations";
@@ -41,6 +42,17 @@ export function toPublicConnectionWithSelection(
   repositorySelection: string | null,
 ): PublicConnection {
   return { ...toPublicConnection(connection), repositorySelection };
+}
+
+export function toPublicConnectionGrant(grant: ConnectionGrant): PublicConnectionGrant {
+  return {
+    connectionId: connectionPublicId(grant.connectionId),
+    workspaceOrgId: orgPublicId(grant.orgId),
+    grantedBy: grant.grantedBy,
+    status: grant.status,
+    grantedAt: grant.grantedAt.toISOString(),
+    revokedAt: isoOrNull(grant.revokedAt),
+  };
 }
 
 /**
