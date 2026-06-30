@@ -24,6 +24,7 @@ function mapOrganization(row: Record<string, unknown>): Organization {
     name: row.name as string,
     slug: row.slug as string,
     slugLower: row.slug_lower as string,
+    publicRef: row.public_ref as string,
     status: row.status as string,
     parentOrgId: (row.parent_org_id as string | null) ?? null,
     createdAt: new Date(row.created_at as string),
@@ -108,11 +109,11 @@ export function createMembershipRepository(executor: SqlExecutor): MembershipRep
     async createOrganization(input: CreateOrganizationInput): Promise<MembershipResult<Organization>> {
       try {
         const result = await executor.execute<Record<string, unknown>>(
-          `INSERT INTO membership.organizations (id, name, slug, slug_lower, created_at, updated_at)
-           VALUES ($1, $2, $3, $4, $5, $5)
+          `INSERT INTO membership.organizations (id, name, slug, slug_lower, public_ref, created_at, updated_at)
+           VALUES ($1, $2, $3, $4, $6, $5, $5)
            ON CONFLICT (id) DO NOTHING
            RETURNING *`,
-          [input.id, input.name, input.slug, input.slugLower, input.createdAt.toISOString()],
+          [input.id, input.name, input.slug, input.slugLower, input.createdAt.toISOString(), input.publicRef],
         );
         if (result.rowCount === 0) {
           return { ok: false, error: { kind: "conflict", entity: "organization" } };
@@ -273,8 +274,8 @@ export function createMembershipRepository(executor: SqlExecutor): MembershipRep
       try {
         const result = await executor.execute<Record<string, unknown>>(
           `WITH new_org AS (
-            INSERT INTO membership.organizations (id, name, slug, slug_lower, parent_org_id, created_at, updated_at)
-            VALUES ($1, $2, $3, $4, $19, $5, $5)
+            INSERT INTO membership.organizations (id, name, slug, slug_lower, public_ref, parent_org_id, created_at, updated_at)
+            VALUES ($1, $2, $3, $4, $20, $19, $5, $5)
             ON CONFLICT (id) DO NOTHING
             RETURNING *
           ),
@@ -304,6 +305,7 @@ export function createMembershipRepository(executor: SqlExecutor): MembershipRep
             input.member.id, input.member.orgId, input.member.subjectId, input.member.subjectType, input.member.createdAt.toISOString(),
             input.roleAssignment.id, input.roleAssignment.orgId, input.roleAssignment.subjectId, input.roleAssignment.subjectType, input.roleAssignment.role, input.roleAssignment.scopeKind, input.roleAssignment.scopeRef ?? null, input.roleAssignment.createdAt.toISOString(),
             input.org.parentOrgId ?? null,
+            input.org.publicRef,
           ],
         );
         if (result.rowCount === 0) {

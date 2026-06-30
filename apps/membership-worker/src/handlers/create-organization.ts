@@ -7,7 +7,7 @@ import { createMembershipRepository, effectiveBillingOrgId } from "@saas/db/memb
 import { createEventsRepository } from "@saas/db/events";
 import { successResponse, errorResponse, validationError } from "../http.js";
 import { orgPublicId, memberPublicId } from "../ids.js";
-import { asUuid } from "@saas/db/ids";
+import { asUuid, generateWorkspaceRef } from "@saas/db/ids";
 import {
   assignPlan,
   checkBillingEntitlement,
@@ -263,8 +263,12 @@ export async function handleCreateOrganization(
   const orgName = body.name as string;
   const slugLower = slug.toLowerCase();
 
+  // WID2: mint the immutable public Workspace ID here, the single org-creation
+  // path. The DB column default is only a deploy-safety backstop.
+  const publicRef = generateWorkspaceRef();
+
   const bootstrapInput = {
-    org: { id: orgId, name: orgName, slug, slugLower, parentOrgId: null as string | null, createdAt: now },
+    org: { id: orgId, name: orgName, slug, slugLower, publicRef, parentOrgId: null as string | null, createdAt: now },
     member: { id: memberId, orgId, subjectId: actor.subjectId, subjectType: actor.subjectType, createdAt: now },
     roleAssignment: { id: roleAssignmentId, orgId, subjectId: actor.subjectId, subjectType: actor.subjectType, role: "owner", scopeKind: "organization", scopeRef: null, createdAt: now },
   };

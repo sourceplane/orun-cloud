@@ -9,7 +9,7 @@ const PARENT_HEX = "11111111-1111-1111-1111-111111111111";
 const PARENT_PUB = "org_11111111111111111111111111111111";
 
 function org(parentOrgId: string | null): Organization {
-  return { id: ORG_HEX, name: "O", slug: "o", slugLower: "o", status: "active", parentOrgId, createdAt: new Date(), updatedAt: new Date() };
+  return { id: ORG_HEX, name: "O", slug: "o", slugLower: "o", publicRef: "ws_3KF9TQ2P", status: "active", parentOrgId, createdAt: new Date(), updatedAt: new Date() };
 }
 function req(orgId: string): Request {
   return new Request("https://m/v1/internal/membership/organizations/billing-parent", {

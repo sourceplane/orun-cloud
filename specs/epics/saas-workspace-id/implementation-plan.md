@@ -17,7 +17,7 @@ Lock the id before minting it.
 - **Done when:** the glossary records the format + the three-id table; no code/schema
   has changed; WID2–WID5 reference it.
 
-## WID2 — Schema + mint
+## WID2 — Schema + mint — ✅ Shipped (`410_membership_org_public_ref`)
 
 Give every org an immutable `ws_…` at birth and backfill the rest.
 

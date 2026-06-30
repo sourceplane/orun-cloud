@@ -372,5 +372,14 @@ export const manifest: MigrationManifest = {
       description:
         "Admission control & share mode (saas-integration-tenancy IT8) — adds connections.share_mode ('auto'|'granted') default 'auto' with a CHECK, plus the integrations.connection_grants allow-list (one active grant per connection+workspace). 'auto' is today's implicit sharing; 'granted' requires an active grant. Additive + idempotent; back-compatible since the default is 'auto'.",
     },
+    {
+      id: "410_membership_org_public_ref",
+      context: "membership",
+      path: "410_membership_org_public_ref/up.sql",
+      checksum:
+        "5dcfaeb2cb44bc25103071c4f4917c863dd42f662809aad05d0fd67b990e49ce",
+      description:
+        "Durable public Workspace ID (saas-workspace-id WID2) — adds the immutable membership.organizations.public_ref column ('ws_<8 Crockford-base32>', e.g. ws_3KF9TQ2P) with a unique index, plus the membership.gen_workspace_ref() SQL helper used as the column default. The default backfills existing rows during the rewrite and is a deploy-safety backstop; the canonical mint is the create-organization handler. Additive + idempotent.",
+    },
   ],
 };

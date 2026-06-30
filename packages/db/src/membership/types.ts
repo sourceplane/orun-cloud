@@ -20,6 +20,12 @@ export interface Organization {
   name: string;
   slug: string;
   slugLower: string;
+  /**
+   * Immutable public Workspace ID (epic `saas-workspace-id`, WID2) of the form
+   * `ws_<8 Crockford-base32>` (e.g. `ws_3KF9TQ2P`). Minted once at creation and
+   * never reissued — safe to commit/quote forever, unlike the mutable `slug`.
+   */
+  publicRef: string;
   status: string;
   /**
    * Optional billing parent (epic `saas-multi-org-billing`, MO1). When set, this
@@ -78,6 +84,12 @@ export interface CreateOrganizationInput {
   name: string;
   slug: string;
   slugLower: string;
+  /**
+   * Immutable public Workspace ID (`ws_…`, WID2), minted by the caller via
+   * `generateWorkspaceRef()`. The DB column has a default backstop, but the app
+   * always supplies it so the value is known at creation time.
+   */
+  publicRef: string;
   /** Optional billing parent (MO3). NULL/absent = standalone org. */
   parentOrgId?: string | null;
   createdAt: Date;
