@@ -15,6 +15,7 @@ import { handleAuthorizationContext } from "./handlers/authorization-context.js"
 import { handleSubjectOrgs } from "./handlers/subject-orgs.js";
 import { handleSyncAccountChildren } from "./handlers/sync-account-children.js";
 import { handleResolveBillingParent } from "./handlers/resolve-billing-parent.js";
+import { handleResolveIntegrationParent } from "./handlers/resolve-integration-parent.js";
 import { handleResolveOrgRef } from "./handlers/resolve-org-ref.js";
 import { handleCreateServicePrincipalBinding, handleListServicePrincipalBindings, handleRevokeServicePrincipalBinding } from "./handlers/service-principal-bindings.js";
 import { errorResponse, notFound, methodNotAllowed } from "./http.js";
@@ -86,6 +87,17 @@ export async function route(request: Request, env: Env): Promise<Response> {
     if (url.pathname === "/v1/internal/membership/organizations/billing-parent") {
       if (request.method === "POST") {
         return handleResolveBillingParent(request, env, requestId);
+      }
+      return methodNotAllowed(requestId);
+    }
+
+    // Internal integration-parent resolution (saas-integration-tenancy IT10):
+    // integrations-worker resolves a child org to the Account that owns its
+    // shared GitHub connection (+ the account's ws_/name for attribution).
+    // Service-binding only.
+    if (url.pathname === "/v1/internal/membership/organizations/integration-parent") {
+      if (request.method === "POST") {
+        return handleResolveIntegrationParent(request, env, requestId);
       }
       return methodNotAllowed(requestId);
     }

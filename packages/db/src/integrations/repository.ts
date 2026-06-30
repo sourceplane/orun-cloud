@@ -314,6 +314,24 @@ export function createIntegrationsRepository(executor: SqlExecutor): Integration
       return pagedList(executor, sql, values, params.limit, params.cursor, mapConnection);
     },
 
+    async listActiveAccountScopedConnections(
+      orgId: Uuid,
+    ): Promise<IntegrationsResult<IntegrationConnection[]>> {
+      try {
+        // The account's shared connections a child workspace inherits (IT10):
+        // active + scope='account', owned by the account org. Newest first.
+        const result = await executor.execute<Record<string, unknown>>(
+          `SELECT * FROM integrations.connections
+            WHERE org_id = $1 AND scope = 'account' AND status = 'active'
+            ORDER BY created_at DESC, id DESC`,
+          [orgId],
+        );
+        return { ok: true, value: result.rows.map(mapConnection) };
+      } catch {
+        return safeError("Failed to list account-scoped connections");
+      }
+    },
+
     async consumeConnectionState(
       stateNonceHash: string,
     ): Promise<IntegrationsResult<IntegrationConnection>> {

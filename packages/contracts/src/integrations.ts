@@ -83,6 +83,17 @@ export interface PublicConnection {
   suspendedAt: string | null;
   createdAt: string;
   updatedAt: string;
+  /**
+   * **Inherited** (saas-integration-tenancy IT10): true when this row is the
+   * **Account's** shared connection seen from a **child** workspace — read-only,
+   * shown for provenance. Absent/false for the org's own connections. When true,
+   * `sharedByWorkspaceRef` + `sharedByName` identify the owning Account.
+   */
+  inherited?: boolean;
+  /** Owning Account's Workspace ID (`ws_…`), led-with. Present iff `inherited`. */
+  sharedByWorkspaceRef?: string | null;
+  /** Owning Account's display name. Present iff `inherited`. */
+  sharedByName?: string | null;
 }
 
 // ── Repo links ──────────────────────────────────────────────

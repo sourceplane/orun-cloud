@@ -162,6 +162,17 @@ describe("IntegrationsRepository — connections", () => {
     }
   });
 
+  it("lists active account-scoped connections (IT10 inherited source)", async () => {
+    const { executor, queries } = createFakeExecutor({ rows: [SAMPLE_CONNECTION_ROW] });
+    const repo = createIntegrationsRepository(executor);
+    const result = await repo.listActiveAccountScopedConnections(ORG_ID);
+    expect(result.ok).toBe(true);
+    const sql = queries[0]!.text;
+    expect(sql).toContain("scope = 'account' AND status = 'active'");
+    expect(sql).toContain("WHERE org_id = $1");
+    expect(queries[0]!.params[0]).toBe(ORG_ID);
+  });
+
   it("scopes reads by org_id", async () => {
     const { executor, queries } = createFakeExecutor({ rows: [SAMPLE_CONNECTION_ROW] });
     const repo = createIntegrationsRepository(executor);

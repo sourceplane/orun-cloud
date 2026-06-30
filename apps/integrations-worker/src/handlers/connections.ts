@@ -5,6 +5,7 @@ import type {
   ConnectIntegrationResponse,
   GetIntegrationResponse,
   ListIntegrationsResponse,
+  PublicConnection,
   RevokeIntegrationResponse,
 } from "@saas/contracts/integrations";
 import {
@@ -17,13 +18,17 @@ import { createEventsRepository } from "@saas/db/events";
 import { createSqlExecutor } from "@saas/db/hyperdrive";
 import type { Uuid } from "@saas/db/ids";
 import type { SqlExecutor } from "@saas/db/hyperdrive";
-import { fetchAuthorizationContext } from "../membership-client.js";
+import { fetchAuthorizationContext, resolveIntegrationParent } from "../membership-client.js";
 import { authorizeViaPolicy } from "../policy-client.js";
 import { checkBillingEntitlement } from "../billing-client.js";
 import { errorResponse, listResponse, successResponse } from "../http.js";
-import { toPublicConnection, toPublicConnectionWithSelection } from "../mappers.js";
-import { generateUuid, orgPublicId } from "../ids.js";
-import { uuidFromPublicId } from "@saas/db/ids";
+import {
+  toInheritedPublicConnection,
+  toPublicConnection,
+  toPublicConnectionWithSelection,
+} from "../mappers.js";
+import { generateUuid, orgPublicId, parseOrgPublicId } from "../ids.js";
+import { asUuid, uuidFromPublicId } from "@saas/db/ids";
 import { encodeCursor, parsePageParams } from "../pagination.js";
 import { getConfiguredProvider } from "../providers/registry.js";
 import {
@@ -245,8 +250,38 @@ export async function handleListIntegrations(
       return errorResponse("internal_error", "Service unavailable", 503, requestId);
     }
 
+    const connections: PublicConnection[] = result.value.items.map(toPublicConnection);
+
+    // IT10: on the first page, a child workspace also sees its Account's shared
+    // (`account`-scoped) connections, READ-ONLY and attributed. Fail-soft — any
+    // resolution error just omits the inherited rows. Under `granted` share mode
+    // a connection is shown only if this workspace holds an active grant (D7).
+    if (!page.value.cursor && env.MEMBERSHIP_WORKER) {
+      const parent = await resolveIntegrationParent(
+        env.MEMBERSHIP_WORKER,
+        orgPublicId(orgId),
+        requestId,
+      );
+      if (parent.ok && parent.isChild && parent.account) {
+        const accountUuid = parseOrgPublicId(parent.account.orgId);
+        if (accountUuid) {
+          const shared = await repo.listActiveAccountScopedConnections(asUuid(accountUuid));
+          if (shared.ok) {
+            const account = parent.account;
+            for (const conn of shared.value) {
+              if (conn.shareMode === "granted") {
+                const admitted = await repo.isWorkspaceAdmitted(asUuid(conn.id), orgId);
+                if (!admitted.ok || !admitted.value) continue;
+              }
+              connections.push(toInheritedPublicConnection(conn, account));
+            }
+          }
+        }
+      }
+    }
+
     const payload: ListIntegrationsResponse = {
-      connections: result.value.items.map(toPublicConnection),
+      connections,
       nextCursor: result.value.nextCursor,
     };
     const cursor = result.value.nextCursor

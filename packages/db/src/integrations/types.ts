@@ -287,6 +287,14 @@ export interface IntegrationsRepository {
     query?: ListConnectionsQuery,
   ): Promise<IntegrationsResult<PagedResult<IntegrationConnection>>>;
   /**
+   * The account's `account`-scoped active connections a child workspace
+   * inherits (IT10). Read at the account org id; returns [] for an org that
+   * owns no shared connection.
+   */
+  listActiveAccountScopedConnections(
+    orgId: Uuid,
+  ): Promise<IntegrationsResult<IntegrationConnection[]>>;
+  /**
    * Resolve the pending connection for a connect-flow callback and consume
    * its nonce atomically (single-use). Fails closed: expired or already-
    * consumed state resolves to not_found.
