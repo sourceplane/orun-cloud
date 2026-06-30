@@ -65,7 +65,10 @@ The homepage is generated from the same artifact that is already reviewed in PRs
 2. `design.md` — IA, the markdown-sourcing model, the section-by-section layout,
    empty states, the rendering/security pipeline, and what deliberately does not
    change.
-3. `design/overview-mockup.html` — a static, token-faithful mockup of the page
+3. `wiring.md` — the verified `orun → orun-cloud` push flow, the multi-repo
+   merge model, and exactly how the Overview is fed (the snapshot `product`
+   block, the `project_overview` projection, the `primary_project_id` pointer).
+4. `design/overview-mockup.html` — a static, token-faithful mockup of the page
    (mirrors the `saas-catalog-portal/design/*.html` convention).
 
 ## Milestones at a glance
@@ -73,7 +76,7 @@ The homepage is generated from the same artifact that is already reviewed in PRs
 | ID | Milestone | Status |
 |----|-----------|--------|
 | WO1 | Design + decision lock (this epic): landing-replaces-redirect, repo-sourced narrative, reuse rollup/activity, sanitized rendering | 🔵 Proposed |
-| WO2 | Overview resolution contract: extend the catalog-sync payload to carry `{name, description, namespace, narrativeMarkdown, sourceRepo, sourceSha, syncedAt}`; add a console-authored override field on the org | ⚪ Not started |
+| WO2 | Overview resolution (see `wiring.md`): add a `product` block to `orun`'s `CatalogSnapshot` (name/description/namespace/overviewMarkdown/docs); project it on `catalog.head.advanced` into a derived `state.project_overview` table; add `primary_project_id` + optional `override_overview` on the org; expose `GET /v1/organizations/{orgId}/overview` | ⚪ Not started |
 | WO3 | Route + nav: `/orgs/{slug}` renders Overview (drop the `/projects` redirect); add the "Overview" sidebar item (top of the Workspace section); breadcrumbs | ⚪ Not started |
 | WO4 | UI — identity band + signal row (reuse catalog `rollup`/`MetricTiles`) + right-rail summary cards (reuse `run-rows`, repo + integration lists) + empty/first-run states | ⚪ Not started |
 | WO5 | Markdown pipeline: `react-markdown` + `remark-gfm` + `rehype-sanitize`; "Synced from `<repo>@<sha>`" provenance + "Edit on GitHub" + pinned docs | ⚪ Not started |
