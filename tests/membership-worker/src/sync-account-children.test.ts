@@ -12,6 +12,7 @@ function org(id: string): Organization {
     name: "Child",
     slug: id.slice(0, 8),
     slugLower: id.slice(0, 8),
+    publicRef: "ws_3KF9TQ2P",
     status: "active",
     parentOrgId: "2f65ddde-1f5b-4e93-8c0b-80e030e31229",
     createdAt: new Date("2026-02-01T00:00:00Z"),

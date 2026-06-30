@@ -55,6 +55,7 @@ const SAMPLE_ORG_ROW = {
   name: "Acme Corp",
   slug: "acme-corp",
   slug_lower: "acme-corp",
+  public_ref: "ws_3KF9TQ2P",
   status: "active",
   created_at: NOW.toISOString(),
   updated_at: NOW.toISOString(),
@@ -107,6 +108,7 @@ describe("MembershipRepository", () => {
         name: "Acme Corp",
         slug: "acme-corp",
         slugLower: "acme-corp",
+        publicRef: "ws_3KF9TQ2P",
         createdAt: NOW,
       });
 
@@ -115,12 +117,15 @@ describe("MembershipRepository", () => {
       expect(queries[0]!.text).toContain("$2");
       expect(queries[0]!.text).toContain("$3");
       expect(queries[0]!.text).toContain("$4");
+      // public_ref is a stored column (WID2); the value param is passed last.
+      expect(queries[0]!.text).toContain("public_ref");
       expect(queries[0]!.params).toEqual([
         ORG1,
         "Acme Corp",
         "acme-corp",
         "acme-corp",
         NOW.toISOString(),
+        "ws_3KF9TQ2P",
       ]);
     });
 
@@ -133,6 +138,7 @@ describe("MembershipRepository", () => {
         name: "Acme Corp",
         slug: "acme-corp",
         slugLower: "acme-corp",
+        publicRef: "ws_3KF9TQ2P",
         createdAt: NOW,
       });
 
@@ -141,6 +147,7 @@ describe("MembershipRepository", () => {
         expect(result.value.id).toBe(ORG1);
         expect(result.value.name).toBe("Acme Corp");
         expect(result.value.slugLower).toBe("acme-corp");
+        expect(result.value.publicRef).toBe("ws_3KF9TQ2P");
         expect(result.value.status).toBe("active");
         expect(result.value.createdAt).toEqual(NOW);
       }
@@ -155,6 +162,7 @@ describe("MembershipRepository", () => {
         name: "Acme Corp",
         slug: "acme-corp",
         slugLower: "acme-corp",
+        publicRef: "ws_3KF9TQ2P",
         createdAt: NOW,
       });
 
@@ -175,6 +183,7 @@ describe("MembershipRepository", () => {
         name: "Acme Corp",
         slug: "acme-corp",
         slugLower: "acme-corp",
+        publicRef: "ws_3KF9TQ2P",
         createdAt: NOW,
       });
 
@@ -200,6 +209,7 @@ describe("MembershipRepository", () => {
           name: "Test",
           slug: "test",
           slugLower: "test",
+          publicRef: "ws_3KF9TQ2P",
           createdAt: NOW,
         });
       } finally {
@@ -323,7 +333,7 @@ describe("MembershipRepository", () => {
       const repo = createMembershipRepository(executor);
 
       const result = await repo.bootstrapOrganization({
-        org: { id: ORG1, name: "Acme Corp", slug: "acme-corp", slugLower: "acme-corp", createdAt: NOW },
+        org: { id: ORG1, name: "Acme Corp", slug: "acme-corp", slugLower: "acme-corp", publicRef: "ws_3KF9TQ2P", createdAt: NOW },
         member: { id: "mem-001", orgId: ORG1, subjectId: "usr-001", subjectType: "user", createdAt: NOW },
         roleAssignment: { id: "ra-001", orgId: ORG1, subjectId: "usr-001", subjectType: "user", role: "owner", scopeKind: "organization", createdAt: NOW },
       });
@@ -341,7 +351,7 @@ describe("MembershipRepository", () => {
       }
     });
 
-    it("uses parameterized query with all 18 parameters", async () => {
+    it("uses parameterized query with all 20 parameters (incl. public_ref)", async () => {
       const { executor, queries } = createFakeExecutor({
         rows: [{
           org: SAMPLE_ORG_ROW,
@@ -352,7 +362,7 @@ describe("MembershipRepository", () => {
       const repo = createMembershipRepository(executor);
 
       await repo.bootstrapOrganization({
-        org: { id: ORG1, name: "Acme Corp", slug: "acme-corp", slugLower: "acme-corp", createdAt: NOW },
+        org: { id: ORG1, name: "Acme Corp", slug: "acme-corp", slugLower: "acme-corp", publicRef: "ws_3KF9TQ2P", createdAt: NOW },
         member: { id: "mem-001", orgId: ORG1, subjectId: "usr-001", subjectType: "user", createdAt: NOW },
         roleAssignment: { id: "ra-001", orgId: ORG1, subjectId: "usr-001", subjectType: "user", role: "owner", scopeKind: "organization", createdAt: NOW },
       });
@@ -361,8 +371,11 @@ describe("MembershipRepository", () => {
       expect(queries[0]!.text).toContain("$18");
       // $19 = parent_org_id (MO3); standalone bootstrap passes null.
       expect(queries[0]!.text).toContain("parent_org_id");
-      expect(queries[0]!.params.length).toBe(19);
+      // $20 = public_ref (WID2), the immutable public Workspace ID.
+      expect(queries[0]!.text).toContain("public_ref");
+      expect(queries[0]!.params.length).toBe(20);
       expect(queries[0]!.params[18]).toBeNull();
+      expect(queries[0]!.params[19]).toBe("ws_3KF9TQ2P");
     });
 
     it("returns conflict if organization already exists", async () => {
@@ -370,7 +383,7 @@ describe("MembershipRepository", () => {
       const repo = createMembershipRepository(executor);
 
       const result = await repo.bootstrapOrganization({
-        org: { id: ORG1, name: "Acme Corp", slug: "acme-corp", slugLower: "acme-corp", createdAt: NOW },
+        org: { id: ORG1, name: "Acme Corp", slug: "acme-corp", slugLower: "acme-corp", publicRef: "ws_3KF9TQ2P", createdAt: NOW },
         member: { id: "mem-001", orgId: ORG1, subjectId: "usr-001", subjectType: "user", createdAt: NOW },
         roleAssignment: { id: "ra-001", orgId: ORG1, subjectId: "usr-001", subjectType: "user", role: "owner", scopeKind: "organization", createdAt: NOW },
       });
@@ -390,7 +403,7 @@ describe("MembershipRepository", () => {
       const repo = createMembershipRepository(executor);
 
       await repo.bootstrapOrganization({
-        org: { id: ORG1, name: "Acme Corp", slug: "acme-corp", slugLower: "acme-corp", createdAt: NOW },
+        org: { id: ORG1, name: "Acme Corp", slug: "acme-corp", slugLower: "acme-corp", publicRef: "ws_3KF9TQ2P", createdAt: NOW },
         member: { id: "mem-001", orgId: ORG1, subjectId: "usr-001", subjectType: "user", createdAt: NOW },
         roleAssignment: { id: "ra-001", orgId: ORG1, subjectId: "usr-001", subjectType: "user", role: "owner", scopeKind: "organization", createdAt: NOW },
       });
@@ -1229,6 +1242,7 @@ describe("MembershipRepository", () => {
         name: "Test",
         slug: "test",
         slugLower: "test",
+        publicRef: "ws_3KF9TQ2P",
         createdAt: NOW,
       });
 

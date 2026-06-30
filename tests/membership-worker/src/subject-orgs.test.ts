@@ -25,6 +25,7 @@ function org(over: Partial<OrganizationWithRole> = {}): OrganizationWithRole {
     name: "Acme",
     slug: "acme",
     slugLower: "acme",
+    publicRef: "ws_3KF9TQ2P",
     status: "active",
     parentOrgId: null,
     role: "admin",

@@ -51,3 +51,42 @@ export function hexToUuid(hex: string): string | null {
   if (!HEX32_RE.test(hex)) return null;
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
 }
+
+// ── Workspace ID (`ws_…`) codec — saas-workspace-id (WID2) ──
+// The durable, immutable, public Workspace ID: `ws_` + 8 Crockford-base32 chars
+// (uppercase, excluding I/L/O/U to dodge transcription ambiguity). Minted once at
+// org creation and never reissued, so it is safe to commit, quote, and paste —
+// unlike the mutable `slug`. Shared here so every worker uses one implementation.
+
+/** Crockford base32 alphabet (uppercase, excludes I, L, O, U). */
+const WORKSPACE_REF_ALPHABET = "0123456789ABCDEFGHJKMNPQRSTVWXYZ";
+
+/** Matches a well-formed Workspace ID: `ws_` + 8 Crockford-base32 chars. */
+const WORKSPACE_REF_RE = /^ws_[0-9A-HJKMNP-TV-Z]{8}$/;
+
+/**
+ * Generate a Workspace ID: `ws_` + 8 Crockford-base32 chars, drawn from
+ * `crypto.getRandomValues` (available in Workers and Node). Rejection sampling
+ * trims each random byte to 0–31 before indexing the 32-char alphabet, so there
+ * is no modulo bias.
+ */
+export function generateWorkspaceRef(): string {
+  let body = "";
+  while (body.length < 8) {
+    const buf = new Uint8Array(8 - body.length);
+    crypto.getRandomValues(buf);
+    for (const byte of buf) {
+      // 0..255 → keep only 0..255 that map cleanly; 8 highest values (248..255)
+      // would bias toward 0..7, so discard them and resample.
+      if (byte >= 248) continue;
+      body += WORKSPACE_REF_ALPHABET[byte % 32];
+      if (body.length === 8) break;
+    }
+  }
+  return `ws_${body}`;
+}
+
+/** Type guard: true when `value` is a well-formed Workspace ID (`ws_…`). */
+export function isWorkspaceRef(value: string): boolean {
+  return WORKSPACE_REF_RE.test(value);
+}

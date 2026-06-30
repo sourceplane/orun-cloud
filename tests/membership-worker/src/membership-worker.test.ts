@@ -201,7 +201,7 @@ describe("membership-worker organization service", () => {
     const memberId = crypto.randomUUID();
     const roleAssignmentId = crypto.randomUUID();
     return repo.bootstrapOrganization({
-      org: { id: orgId, name, slug, slugLower: slug, createdAt: fixedNow },
+      org: { id: orgId, name, slug, slugLower: slug, publicRef: "ws_3KF9TQ2P", createdAt: fixedNow },
       member: { id: memberId, orgId, subjectId, subjectType: "user", createdAt: fixedNow },
       roleAssignment: { id: roleAssignmentId, orgId, subjectId, subjectType: "user", role: "owner", scopeKind: "organization", scopeRef: null, createdAt: fixedNow },
     });
@@ -517,6 +517,7 @@ describe("member-list endpoint", () => {
       name: "Test",
       slug: "test",
       slugLower: "test",
+      publicRef: "ws_3KF9TQ2P",
       status: "active",
       parentOrgId: null,
       createdAt: fixedNow,
