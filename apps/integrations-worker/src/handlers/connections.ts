@@ -163,6 +163,23 @@ export async function handleConnectIntegration(
     }
   }
 
+  // IT11: sharing is account-only. Only an **Account root** may own a shareable
+  // (`account`-scoped) connection; a **child** workspace is forced to
+  // `workspace` (private) regardless of the requested scope — a child can never
+  // share. This hardens IT7's surface rule into a server check. (Managing an
+  // account connection's share_mode/grants stays gated by the account-scoped
+  // MANAGE authorization, which WID6 already cascades to account admins.)
+  if (scope === "account" && env.MEMBERSHIP_WORKER) {
+    const parent = await resolveIntegrationParent(
+      env.MEMBERSHIP_WORKER,
+      orgPublicId(orgId),
+      requestId,
+    );
+    if (parent.ok && parent.isChild) {
+      scope = "workspace";
+    }
+  }
+
   // created_by stores the decoded actor UUID (repo-wide convention enforced
   // by lint); the public form is re-derivable for display.
   const createdByUuid = uuidFromPublicId(actor.subjectId);
