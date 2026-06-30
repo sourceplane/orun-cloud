@@ -9,6 +9,7 @@ import type {
   FeatureFlag,
   PagedResult,
   PageQueryParams,
+  ResolveScope,
   Scope,
   SecretMetadata,
   Setting,
@@ -18,7 +19,7 @@ import type {
 
 // ── Scope helpers ──────────────────────────────────────────
 
-function scopeColumns(scope: Scope): {
+function scopeColumns(scope: ResolveScope): {
   orgId: string;
   projectId: string | null;
   environmentId: string | null;
@@ -31,10 +32,13 @@ function scopeColumns(scope: Scope): {
       return { orgId: scope.orgId, projectId: scope.projectId, environmentId: null, scopeKind: "project" };
     case "environment":
       return { orgId: scope.orgId, projectId: scope.projectId, environmentId: scope.environmentId, scopeKind: "environment" };
+    case "account":
+      // An account-scope row lives on the account org's id (no project/env).
+      return { orgId: scope.accountId, projectId: null, environmentId: null, scopeKind: "account" };
   }
 }
 
-function scopeWhere(scope: Scope): { clause: string; params: unknown[] } {
+function scopeWhere(scope: ResolveScope): { clause: string; params: unknown[] } {
   switch (scope.kind) {
     case "organization":
       return { clause: "org_id = $1 AND scope_kind = 'organization'", params: [scope.orgId] };
@@ -42,6 +46,8 @@ function scopeWhere(scope: Scope): { clause: string; params: unknown[] } {
       return { clause: "org_id = $1 AND project_id = $2 AND scope_kind = 'project'", params: [scope.orgId, scope.projectId] };
     case "environment":
       return { clause: "org_id = $1 AND project_id = $2 AND environment_id = $3 AND scope_kind = 'environment'", params: [scope.orgId, scope.projectId, scope.environmentId] };
+    case "account":
+      return { clause: "org_id = $1 AND scope_kind = 'account'", params: [scope.accountId] };
   }
 }
 
@@ -57,6 +63,7 @@ function mapSetting(row: Record<string, unknown>): Setting {
     key: row.key as string,
     value: row.value,
     description: (row.description as string) ?? null,
+    overridable: (row.overridable as boolean) ?? true,
     createdAt: new Date(row.created_at as string),
     updatedAt: new Date(row.updated_at as string),
   };
@@ -182,11 +189,11 @@ export function createConfigRepository(executor: SqlExecutor): ConfigRepository 
       try {
         const sc = scopeColumns(input.scope);
         const result = await executor.execute<Record<string, unknown>>(
-          `INSERT INTO config.settings (id, org_id, project_id, environment_id, scope_kind, key, value, description, created_at, updated_at)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, now(), now())
+          `INSERT INTO config.settings (id, org_id, project_id, environment_id, scope_kind, key, value, description, overridable, created_at, updated_at)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, now(), now())
            ON CONFLICT (org_id, COALESCE(project_id, '00000000-0000-0000-0000-000000000000'), COALESCE(environment_id, '00000000-0000-0000-0000-000000000000'), key) DO NOTHING
            RETURNING *`,
-          [input.id, sc.orgId, sc.projectId, sc.environmentId, sc.scopeKind, input.key, JSON.stringify(input.value), input.description ?? null],
+          [input.id, sc.orgId, sc.projectId, sc.environmentId, sc.scopeKind, input.key, JSON.stringify(input.value), input.description ?? null, input.overridable ?? true],
         );
         if (result.rowCount === 0) {
           return { ok: false, error: { kind: "conflict", entity: "setting" } };
@@ -233,6 +240,22 @@ export function createConfigRepository(executor: SqlExecutor): ConfigRepository 
         return { ok: true, value: mapSetting(result.rows[0]!) };
       } catch {
         return safeError("Failed to get setting");
+      }
+    },
+
+    async getSettingByScopeKey(scope: ResolveScope, key: string): Promise<ConfigResult<Setting>> {
+      try {
+        const sw = scopeWhere(scope);
+        const result = await executor.execute<Record<string, unknown>>(
+          `SELECT * FROM config.settings WHERE ${sw.clause} AND key = $${sw.params.length + 1}`,
+          [...sw.params, key],
+        );
+        if (result.rowCount === 0) {
+          return { ok: false, error: { kind: "not_found" } };
+        }
+        return { ok: true, value: mapSetting(result.rows[0]!) };
+      } catch {
+        return safeError("Failed to get setting by scope/key");
       }
     },
 

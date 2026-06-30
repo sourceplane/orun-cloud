@@ -19,6 +19,21 @@ export interface PublicSetting {
   key: string;
   value: unknown;
   description: string | null;
+  /**
+   * Inheritance mode (saas-workspace-id WID7). `false` marks a locked account-scope
+   * guardrail a workspace cannot override. Optional/absent on surfaces that predate
+   * the scope-resolution chain.
+   */
+  overridable?: boolean;
+  /**
+   * Provenance on a resolved read (saas-workspace-id WID7): the scope rung the
+   * effective value was found at when the chain (environment -> project ->
+   * workspace -> account -> default) was walked. `null`/absent on exact-scope
+   * management reads where no resolution occurred.
+   */
+  inheritedFrom?: {
+    scopeKind: "organization" | "project" | "environment" | "account" | "default";
+  } | null;
   createdAt: string;
   updatedAt: string;
 }

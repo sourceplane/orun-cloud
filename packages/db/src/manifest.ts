@@ -390,5 +390,14 @@ export const manifest: MigrationManifest = {
       description:
         "Account-scoped RBAC (saas-workspace-id WID6, Stage 1a of the Account layer) — widens membership.role_assignments' CHECK constraints so a role can be granted at account scope and cascade to every workspace under the account: scope_kind gains 'account' (joining 'organization'/'project') and role gains 'account_owner'/'account_admin'/'account_billing_admin'. The cascade is resolved in membership-worker's authorization-context assembly (account facts remapped onto the target org id), not the DB. Additive + idempotent (constraints replaced via guarded DROP+ADD); back-compatible since every existing row keeps validating.",
     },
+    {
+      id: "430_config_account_scope",
+      context: "config",
+      path: "430_config_account_scope/up.sql",
+      checksum:
+        "8540ae233af2e2321305a0a29506c6643ae5158c794a230c7fd609baa56ec6d7",
+      description:
+        "Account-level config scope + overridable guardrail (saas-workspace-id WID7) — adds config.settings.overridable BOOLEAN default true, extends the scope_kind CHECK to admit 'account', and guards that only account-scope rows may be locked (overridable=false). Backs the scope-resolution chain (environment->project->workspace->account->default): an account value is inherited by every workspace unless it is a locked guardrail, which workspaces cannot override. Piloted on config.settings; feature_flags/secret_metadata may adopt later. Additive + idempotent.",
+    },
   ],
 };

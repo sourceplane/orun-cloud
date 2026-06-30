@@ -116,6 +116,31 @@ describe("Migration Manifest Verifier", () => {
     });
   });
 
+  // saas-workspace-id WID7 — the account-scope + overridable guardrail migration.
+  describe("430_config_account_scope (WID7)", () => {
+    const entry = manifest.migrations.find((m) => m.id === "430_config_account_scope");
+
+    it("is registered in the manifest under the config context", () => {
+      expect(entry).toBeDefined();
+      expect(entry!.context).toBe("config");
+    });
+
+    it("adds the overridable column, account scope_kind, and the guardrail CHECK", () => {
+      const sql = readFileSync(resolve(MIGRATIONS_ROOT, entry!.path), "utf-8");
+      expect(sql).toContain("ADD COLUMN IF NOT EXISTS overridable BOOLEAN NOT NULL DEFAULT true");
+      expect(sql).toContain("scope_kind IN ('organization', 'project', 'environment', 'account')");
+      expect(sql).toContain("CHECK (overridable = true OR scope_kind = 'account')");
+    });
+
+    it("is idempotent (guarded DO-blocks / IF [NOT] EXISTS)", () => {
+      const sql = readFileSync(resolve(MIGRATIONS_ROOT, entry!.path), "utf-8");
+      expect(sql).toContain("DROP CONSTRAINT settings_scope_kind_check");
+      expect(sql).toContain("pg_constraint");
+      // Replacing the CHECK is guarded so re-running is a no-op.
+      expect(sql).toContain("IF NOT EXISTS");
+    });
+  });
+
   describe("migration description", () => {
     it("each migration has a non-empty description", () => {
       for (const m of migrations) {

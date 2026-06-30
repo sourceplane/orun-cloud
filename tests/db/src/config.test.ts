@@ -43,6 +43,7 @@ const SAMPLE_SETTING_ROW = {
   key: "theme",
   value: { dark: true },
   description: "UI theme",
+  overridable: true,
   created_at: NOW.toISOString(),
   updated_at: NOW.toISOString(),
 };
@@ -260,6 +261,87 @@ describe("ConfigRepository — Settings", () => {
       expect(result.value.items).toHaveLength(1);
       expect(result.value.nextCursor).not.toBeNull();
     }
+  });
+
+  // ── WID7: overridable + getSettingByScopeKey ───────────────
+
+  it("defaults overridable to true when creating and persists it (round-trip)", async () => {
+    const { executor, queries } = createFakeExecutor({ rows: [SAMPLE_SETTING_ROW] });
+    const repo = createConfigRepository(executor);
+    const result = await repo.createSetting({
+      id: "set-001",
+      scope: ORG_SCOPE,
+      key: "theme",
+      value: { dark: true },
+    });
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.value.overridable).toBe(true);
+    // overridable column included in the INSERT; default true passed as a param
+    expect(queries[0]!.text).toContain("overridable");
+    expect(queries[0]!.params).toContain(true);
+  });
+
+  it("round-trips overridable=false on an account-scope create", async () => {
+    const lockedRow = { ...SAMPLE_SETTING_ROW, scope_kind: "account", overridable: false };
+    const { executor, queries } = createFakeExecutor({ rows: [lockedRow] });
+    const repo = createConfigRepository(executor);
+    const result = await repo.createSetting({
+      id: "set-001",
+      scope: { kind: "organization", orgId: "acct-001" },
+      key: "theme",
+      value: { dark: true },
+      overridable: false,
+    });
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value.overridable).toBe(false);
+      expect(result.value.scopeKind).toBe("account");
+    }
+    expect(queries[0]!.params).toContain(false);
+  });
+
+  it("getSettingByScopeKey probes an org scope tuple + key", async () => {
+    const { executor, queries } = createFakeExecutor({ rows: [SAMPLE_SETTING_ROW] });
+    const repo = createConfigRepository(executor);
+    const result = await repo.getSettingByScopeKey(ORG_SCOPE, "theme");
+    expect(result.ok).toBe(true);
+    expect(queries[0]!.text).toContain("scope_kind = 'organization'");
+    expect(queries[0]!.text).toContain("key = $2");
+    expect(queries[0]!.params[0]).toBe("org-001");
+    expect(queries[0]!.params[1]).toBe("theme");
+  });
+
+  it("getSettingByScopeKey probes an account scope by accountId", async () => {
+    const accountRow = { ...SAMPLE_SETTING_ROW, org_id: "acct-001", scope_kind: "account", overridable: false };
+    const { executor, queries } = createFakeExecutor({ rows: [accountRow] });
+    const repo = createConfigRepository(executor);
+    const result = await repo.getSettingByScopeKey({ kind: "account", accountId: "acct-001" }, "theme");
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value.scopeKind).toBe("account");
+      expect(result.value.overridable).toBe(false);
+    }
+    expect(queries[0]!.text).toContain("scope_kind = 'account'");
+    expect(queries[0]!.params[0]).toBe("acct-001");
+    expect(queries[0]!.params[1]).toBe("theme");
+  });
+
+  it("getSettingByScopeKey probes an environment scope tuple", async () => {
+    const { executor, queries } = createFakeExecutor({ rows: [], rowCount: 0 });
+    const repo = createConfigRepository(executor);
+    const result = await repo.getSettingByScopeKey(ENV_SCOPE, "theme");
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.kind).toBe("not_found");
+    expect(queries[0]!.text).toContain("org_id = $1 AND project_id = $2 AND environment_id = $3 AND scope_kind = 'environment'");
+    expect(queries[0]!.params[3]).toBe("theme");
+  });
+
+  it("getSettingByScopeKey returns not_found when no row matches", async () => {
+    const { executor } = createFakeExecutor({ rows: [], rowCount: 0 });
+    const repo = createConfigRepository(executor);
+    const result = await repo.getSettingByScopeKey(ORG_SCOPE, "missing");
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.kind).toBe("not_found");
   });
 });
 
