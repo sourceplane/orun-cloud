@@ -26,22 +26,34 @@ The Overview **is** the Workspace landing. Two changes:
 Nothing else in the nav model moves; the "Manage" footer (Usage, Settings) is
 untouched.
 
+> **Ships in two passes** (`implementation-plan.md`): **WO2 (Phase 1)** stands the
+> page up from orun-cloud alone — the route flip, identity band, signal row,
+> right-rail, and empty states, all from data the platform already has. **WO5
+> (Phase 2)** lights up the git-authored narrative band once the CLI (WO3) and
+> projection (WO4) land. The layout below is the fully-populated end state; §4
+> notes what each pass renders.
+
 ## 2. What feeds the page (summary — see `model.md` for the normative model)
 
 Identity and narrative are **git-authored and carried in the catalog snapshot**,
-never typed into the console. Resolution for the hero, most-authoritative first:
+never typed into the console. The console **never authors** overview content —
+there is **no `override_overview`** and **no `/overview` endpoint** (the page is
+assembled at the read edge from per-context reads — `model.md §4c/§4e`).
+Resolution for the hero, most-authoritative first:
 
-1. **Primary `Product` / `Repo`.** The workspace's `primary_project_id` selects a
-   project; its declared `Product` (or the project's `Repo` facet) supplies name,
-   description, namespace, and the `docs.overview` pointer.
-2. **Narrative.** The `docs.overview` `doc` object, read from R2 **by digest** and
+1. **Primary `Repo`.** The primary project (the most-recently-synced active
+   `workspace_links` project — no authored `primary_project_id` at v1) supplies
+   its `repo_facet` identity: name, description, owner, and the `docs.overview`
+   pointer, unioned with `intent.yaml metadata`. (A first-class `Product` hero is
+   deferred to WO6; until then the workspace *is* the product.)
+2. **Narrative.** The `docs.overview` blob, read from R2 **by digest** and
    rendered sanitized. Pinned docs (extra `docs`) render as a small list.
-3. **Console override (escape hatch only).** For a workspace with no repo linked
-   yet, an admin may set name/description on the org so the page is never empty;
-   repo-authored content wins field-by-field when present.
+3. **No repo linked yet → the empty-state CTA** (§4), never console-typed
+   placeholder prose. This keeps the "console never authors catalog" invariant
+   verbatim and is a better first impression than a blank textbox.
 
 There is **no render-time git-provider call** — the body is always the pinned
-`doc` object (`model.md §3`).
+doc blob (`model.md §3`).
 
 ### Rendering & security
 
@@ -73,22 +85,30 @@ existing faint grid. Three bands:
 
 ### Band 2 — Signal row (metric tiles)
 
-Four tiles, visually identical to the catalog's `MetricTiles` (reuse the
-component / its tokens) so the surfaces feel like one product:
+Four tiles that read as one product with the catalog. The shipped `MetricTiles`
+(`components/catalog/portal/metric-tiles.tsx`) renders
+Services/Ownership/Production-ready/Needs-attention, so the first three below
+**reuse its tokens/components** while the **Activity** tile is a **new
+composition** over the runs feed (it is not in `MetricTiles`) — WO2 is "reuse 3 +
+compose 1", not a drop-in:
 
 | Tile | Value | Source |
 |------|-------|--------|
 | **Components** | catalog total (`rollup.total`), "across N systems" | catalog `rollup` |
 | **Health** | % healthy / needs-attention count | `healthOf` + `needsAttention` over the catalog |
 | **Production-ready** | `rollup.readyPct` with a Gold/Silver/Bronze mini-bar | catalog `rollup` + `tierOf` |
-| **Activity** | runs last 7d + success rate + last-run status icon | runs feed |
+| **Activity** | runs last 7d + success rate + last-run status icon | runs feed (composed tile) |
 
 ### Band 3 — Two-column body
 
 - **Left (~2/3): Product narrative.** The rendered `docs.overview` doc. A
   provenance line — `From <repo>@<short-sha> · <relative time>` — and a
   **"View source"** link to the file at that commit (a plain hyperlink, not an
-  integration). An optional auto-built table of contents for long docs.
+  integration). When the platform knows the latest linked commit (push events /
+  `workspace_links.last_seen_at`), the line also shows **"N commits behind
+  `<default-branch>`"** so staleness is *actionable*, not just visible — the doc
+  self-heals on the next `orun plan`. An optional auto-built table of contents for
+  long docs.
 - **Right rail (~1/3): live summaries**, stacked cards, each a link into its
   full surface:
   - **Components at a glance** — needs-attention list / top systems → Catalog.
@@ -102,26 +122,34 @@ component / its tokens) so the surfaces feel like one product:
 
 | State | What the Overview shows |
 |-------|--------------------------|
-| **No repo linked** | A centered CTA: *"Link a repository to bring this Workspace to life."* + a one-paragraph explanation of the repo-is-homepage model and a `Link a repository` action (`orun cloud link`). The console-override identity (if set) still renders as the header. |
+| **No repo linked** | A centered CTA: *"Link a repository to bring this Workspace to life."* + a one-paragraph explanation of the repo-is-homepage model and a `Link a repository` action (`orun cloud link`). This is the whole "never blank" story — there is no console-authored override header. (This state is also the post-onboarding destination for `saas-unified-onboarding`.) |
 | **Repo linked, no plan yet** | Identity from `intent.yaml` renders; signal tiles read "—"; a hint: *"Run `orun plan` to populate your catalog and overview."* with a copy-paste command. |
 | **Repo + plan, but no `docs.overview`** | Render the declared `description` as the narrative and a gentle nudge: *"Add a `docs/overview.md` and point `docs.overview` at it to tell your team what this product is,"* with a copy-paste `intent.yaml` snippet. |
 | **Fully populated** | The full three-band layout above. |
 
 ## 5. Data contract
 
-Normative in `model.md §4` — `state.repo_facet`, the `doc_ref` (`{path, ref, sha,
-digest}`) column, the `doc` object kind, `primary_project_id` (+ optional
-`override_overview`) on the org, and `GET /v1/organizations/{orgId}/overview`. The
-console reads the resolver through the existing SDK session client; the signal
-tiles keep reading the catalog + runs endpoints they already use, so the page
-degrades gracefully if no overview exists yet.
+Normative in `model.md §4` — `state.repo_facet` (keyed by project) and the
+`doc_ref` (`{path, ref, sha, digest}`) column. Docs ride the existing `blob`
+object kind, so there is **no object-kind migration**. There is **no
+`primary_project_id`/`override_overview`** column and **no `GET …/overview`
+endpoint** at v1: the primary project is *derived* (most-recently-synced link),
+and the Overview is **assembled client-side** from the reads the console already
+makes (catalog rollup, runs, repos) plus the primary `repo_facet` read and the
+doc-by-digest read (`GET …/state/objects/{digest}`, already gated
+`state.object.read`). The signal tiles keep reading the catalog + runs endpoints
+they already use, so the page degrades gracefully if no overview exists yet.
 
 ## 6. What deliberately does NOT change
 
-- **No new entity** beyond `repo_facet` + a `doc_ref` column + the `doc` object
-  kind.
-- **No console CMS.** The narrative is repo-authored; the override is only the
-  not-yet-linked escape hatch.
+- **No new entity** beyond `repo_facet` + a `doc_ref` column, and **no new object
+  kind** — docs ride the existing `blob` closure (and, in WO6, the deferred
+  `Product` rows on the existing table).
+- **No console CMS and no console-authored overview.** The narrative is
+  repo-authored; a not-yet-linked workspace shows the empty-state CTA, not an
+  editable field — there is no `override_overview`.
+- **No cross-context `/overview` endpoint** — the page is composed at the read
+  edge.
 - **No change to the catalog or activity models** — the signal row and cards
   reuse `saas-catalog-portal` and the runs feed; they read, they do not fork.
 - **No git-provider coupling** — the page never calls a provider API at render.
