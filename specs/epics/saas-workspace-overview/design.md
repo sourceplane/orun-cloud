@@ -49,12 +49,15 @@ Workspace's. Resolution is layered, most-authoritative first:
 
 ### How the markdown gets to the console
 
-Two paths; **(A) is the source of truth**, (B) is an optional later augment.
+> **Decision revised — see `kinds-and-docs-model.md §0/§4` (authoritative).** The
+> body is **fetched live from the repo via the GitHub App** at render time; state
+> stores only a **doc pointer** (`docs.overview` → `{path, ref, sha}`). The table
+> below records the trade-off that was weighed; the verdict now favours (B).
 
 | Path | Mechanism | Verdict |
 |------|-----------|---------|
-| **(A) Synced at plan time** | `orun plan`/`run` already pushes the resolved catalog to orun-cloud (see lumen `intent.yaml` `pushCatalog`). Extend that payload to carry the resolved identity + rendered narrative + provenance (`sourceRepo`, `sourceSha`, `syncedAt`). | **Chosen.** Orun-native, works for private repos without the console holding git read scope, deterministic, and versioned with the run that produced it — exactly how the catalog already arrives. Refreshes on the next plan. |
-| (B) Live git fetch | Read the doc on demand through the GitHub integration (`saas-integration-tenancy`). | **Optional (WO6).** Always-fresh, but needs repo-read scope, rate-limit handling, and private-repo auth. Use to augment "last synced N days ago", not as the base. |
+| (A) Synced at plan time | Extend the pushed catalog snapshot to carry the rendered narrative bytes + provenance. | **Not chosen.** Persists prose in state, goes stale between plans, and bloats the snapshot. Kept only as the *identity/pointer* carrier (name/description + `doc_ref`), never the body. |
+| **(B) Live git fetch via the GitHub App** | Resolve the stored `doc_ref` → token-broker mints a `contents:read`-scoped installation token → `GET /repos/{owner}/{repo}/contents/{path}`; short-TTL cache evicted by `scm.push`. | **Chosen.** Always as fresh as the last push, no prose in state, reuses the shipped App/token-broker/`repo_links`; the one constraint is that live fetch needs the repo linked via the GitHub App (graceful fallback to the git-declared description otherwise). |
 
 This mirrors `saas-workspaces`' **relabel/relayer, don't remodel** discipline:
 the Overview is a **projection** over data the platform already holds, plus one

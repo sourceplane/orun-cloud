@@ -86,10 +86,19 @@ workspace-level identity record. That is the gap the Overview must close.
 
 ## 3. Recommendation — ride the state file, project a thin read-model
 
-**Yes: put the product identity + overview *inside the catalog snapshot* (the
-state file) and project it, exactly as component portal fields already are.** This
-keeps the platform invariant — *derived from git, never authored in the console* —
-and needs **no new push endpoint**. Three additive pieces:
+> **Superseded in part by `kinds-and-docs-model.md`.** The identity/entity model
+> below (extend the snapshot, project a thin read-model, primary-project pointer)
+> stands. What changed: **markdown bodies are no longer projected into state.**
+> State stores a **doc *reference*** (`{path, ref, lastSeenSha}`); orun-cloud
+> **fetches the body live** from the repo via the GitHub App at render time. And
+> repo/product identity is modeled as first-class **`Repo`/`Product` entity
+> kinds**, not a bespoke `product` block. Read `kinds-and-docs-model.md` for the
+> current model; this section is retained for the wiring context it establishes.
+
+**Ride the catalog snapshot (the state file) — but for identity/pointers only,
+not prose.** This keeps the platform invariant — *derived from git, never
+authored in the console* — and needs **no new push endpoint**. Three additive
+pieces:
 
 ### 3a. CLI (`orun`) — extend the snapshot, reuse the push
 

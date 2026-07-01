@@ -23,7 +23,7 @@ second source of it. A PR to your docs updates your dashboard.
 | Owner(s) | `apps/web-console-next` (UI) · `packages/contracts`/`sdk` (overview resolution) · the catalog-sync path (`orun plan` → orun-cloud) |
 | Target branch | `claude/orun-workspace-overview-design-qonyiv` (design); feature PRs to `main` incrementally |
 | Builds on | `saas-workspaces` (the Account/Workspace vocabulary the page is titled with), `saas-catalog-portal` (the `MetricTiles` rollup + `CatalogService` health/maturity model reused for the signal row), the org **Activities** runs feed (`components/activity/*`), `saas-integration-tenancy` (GitHub connection status), `saas-workspace-id` (durable `ws_` id) |
-| Decisions locked | (1) The Overview **is** the Workspace landing — `/orgs/{slug}` renders it instead of redirecting to `/projects`; (2) **repo-sourced narrative, not a console CMS** — markdown is resolved from the connected repo, with a console-authored override as the only escape hatch for repos-not-yet-connected; (3) **reuse, don't reinvent** — the signal row reuses the catalog rollup and the activity run-rows verbatim; (4) markdown is rendered through a **sanitizing** pipeline (untrusted repo content). |
+| Decisions locked | (1) The Overview **is** the Workspace landing — `/orgs/{slug}` renders it instead of redirecting to `/projects`; (2) **repo-sourced, fetched live, not a console CMS** — state stores a **doc *pointer*** (`docs.overview` → `{path, ref, sha}`); orun-cloud **fetches the markdown body live from the repo via the GitHub App** at render time (short-TTL cache, `scm.push` eviction), never persisting prose (see `kinds-and-docs-model.md`); (3) repo/product identity are **first-class declared entity kinds** (`Repo`, `Product`) emitted from `intent.yaml` over the existing snapshot path — `kind` is free-text TEXT server-side, **no enum migration**; a `docs.overview` pointer is added to the **shared** docs struct so it spans every kind; (4) **reuse, don't reinvent** — signal row reuses the catalog rollup, run-rows, the GitHub **token-broker**, and `repo_links`; (5) markdown rendered through a **sanitizing** pipeline (untrusted repo content). |
 | Gate | Human-independent for WO1–WO5. WO6 (live git fetch) depends on `saas-integration-tenancy` repo-read scope. |
 
 ## Thesis
@@ -66,9 +66,13 @@ The homepage is generated from the same artifact that is already reviewed in PRs
    empty states, the rendering/security pipeline, and what deliberately does not
    change.
 3. `wiring.md` — the verified `orun → orun-cloud` push flow, the multi-repo
-   merge model, and exactly how the Overview is fed (the snapshot `product`
-   block, the `project_overview` projection, the `primary_project_id` pointer).
-4. `design/overview-mockup.html` — a static, token-faithful mockup of the page
+   merge model, and how identity/pointers ride the catalog snapshot (its §3 is
+   partly superseded by the doc below — see the note there).
+4. `kinds-and-docs-model.md` — **the current model**: the `docs.overview`
+   convention across all kinds, the new declared `Repo`/`Product` kinds, the
+   `state.repo_facet` repo top-layer, and **fetch-live markdown via the GitHub
+   integration** (state stores the pointer, not the body).
+5. `design/overview-mockup.html` — a static, token-faithful mockup of the page
    (mirrors the `saas-catalog-portal/design/*.html` convention).
 
 ## Milestones at a glance
@@ -76,7 +80,9 @@ The homepage is generated from the same artifact that is already reviewed in PRs
 | ID | Milestone | Status |
 |----|-----------|--------|
 | WO1 | Design + decision lock (this epic): landing-replaces-redirect, repo-sourced narrative, reuse rollup/activity, sanitized rendering | 🔵 Proposed |
-| WO2 | Overview resolution (see `wiring.md`): add a `product` block to `orun`'s `CatalogSnapshot` (name/description/namespace/overviewMarkdown/docs); project it on `catalog.head.advanced` into a derived `state.project_overview` table; add `primary_project_id` + optional `override_overview` on the org; expose `GET /v1/organizations/{orgId}/overview` | ⚪ Not started |
+| WO2a | `orun`: add `docs.overview` to the shared docs struct; add declared `repo` + `products` blocks in `intent.yaml`; emit `Repo`/`Product` entities + per-entity `doc_ref`s into the catalog snapshot (kind constants + `allEntityKinds` + specs + summary counts) | ⚪ Not started |
+| WO2b | orun-cloud projector (`catalog-projection.ts`): project `Repo`→`state.repo_facet` (repo top-layer), `Product`→`org_catalog_entities`, and `doc_ref` (pointer only) onto entities; add `Repo`/`Product` to `lib/catalog-kind.ts`; add `primary_project_id` (+ optional `override_overview`) on the org | ⚪ Not started |
+| WO2c | integrations-worker: `getRepositoryFileContents` in `github-app.ts` + a `repo-content.ts` handler over the existing **token-broker** (`contents:read`, per-request scoped); `repo_content_cache` (AES-GCM); `scm.push` cache-eviction; `GET /v1/organizations/{orgId}/overview` resolver | ⚪ Not started |
 | WO3 | Route + nav: `/orgs/{slug}` renders Overview (drop the `/projects` redirect); add the "Overview" sidebar item (top of the Workspace section); breadcrumbs | ⚪ Not started |
 | WO4 | UI — identity band + signal row (reuse catalog `rollup`/`MetricTiles`) + right-rail summary cards (reuse `run-rows`, repo + integration lists) + empty/first-run states | ⚪ Not started |
 | WO5 | Markdown pipeline: `react-markdown` + `remark-gfm` + `rehype-sanitize`; "Synced from `<repo>@<sha>`" provenance + "Edit on GitHub" + pinned docs | ⚪ Not started |
