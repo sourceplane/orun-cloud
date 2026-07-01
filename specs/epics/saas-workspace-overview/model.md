@@ -10,15 +10,16 @@ Status: Draft (normative once WO1 lands). Grounded against `orun`
 
 Revised 2026-07-01 to adopt `architecture-review.md`: the `Repo` ref is minted
 from the durable project id (not an un-normalized remote string), doc bytes are
-read at the pinned commit, `Product` is deferred behind the single-per-repo
-`Repo` kind, and there is no console-authored `override_overview`. The
-architecture review is the rationale record for each of these.
+read at the pinned commit and **ride the existing `blob` closure (no new object
+kind)**, `Product` is deferred behind the single-per-repo `Repo` kind, and there
+is no console-authored `override_overview`. The architecture review is the
+rationale record for each of these.
 
 Defines: (1) an `intent.yaml` `docs` convention spanning **every** entity kind,
 (2) a new declared kind — **`Repo`**, one per `intent.yaml` — that points at an
 overview (with **`Product`** specified but deferred to a later milestone), (3) how
-repo-authored docs travel as **content-addressed `doc` objects** in the catalog
-snapshot and render **by digest** with no git-provider coupling, and (4) a
+repo-authored docs travel as **content-addressed blobs** in the catalog snapshot
+closure and render **by digest** with no git-provider coupling, and (4) a
 **repo-level top layer** (`state.repo_facet`, keyed by project) that drives the
 Git Repos list and the Overview identity.
 
@@ -26,8 +27,8 @@ Git Repos list and the Overview identity.
 
 | Decision | Choice |
 |----------|--------|
-| **How does markdown reach the platform?** | As its **own content-addressed `doc` object** in the catalog snapshot closure. `orun plan` reads each referenced `docs.overview` **at the commit the catalog head is advanced at** and adds it to the object closure (kind `doc`); the entity's `doc_ref` is `{path, ref, sha, digest}`. orun-cloud renders the body from R2 **by digest** — no live git call, works for **any git remote**, self-host-portable, and pinned to that commit. Set-difference sync means an unchanged doc is never re-uploaded. **No GitHub App, no token broker, no render-time provider coupling.** |
-| **Why a `doc` object kind and not a plain `blob`?** | The closure already moves `blob`/`tree` objects, so mechanically a doc *could* ride as a blob. `doc` is a distinct kind because repo-authored prose is **user-sized and user-controlled** (a `techdocs` tree can be MBs) and must be **accounted, capped, and GC'd separately** from machine-generated plan/tree internals — it is the quota/retention boundary for `limit.state.storage_gb`, and it lets the console enumerate docs without walking every tree. This costs exactly **one reconciled value** in the `state.objects.kind` CHECK (§4d). |
+| **How does markdown reach the platform?** | As a **content-addressed blob in the existing catalog snapshot closure**. `orun plan` reads each referenced `docs.overview` **at the commit the catalog head is advanced at** and adds it to the object closure as a `blob`; the entity's `doc_ref` is `{path, ref, sha, digest}`. orun-cloud renders the body from R2 **by digest** — no live git call, works for **any git remote**, self-host-portable, and pinned to that commit. Set-difference sync means an unchanged doc is never re-uploaded. **No GitHub App, no token broker, no render-time provider coupling.** |
+| **A new `doc` object kind, or just a `blob`?** | **Just a `blob` — no new object kind.** The snapshot's own constituents already travel as `blob`/`tree` objects, and the `state.objects.kind` CHECK has admitted `blob` since migration `250_state_refs` — so a `docs.overview` file rides the closure exactly like an entity JSON: content-addressed, digest-readable via `GET …/objects/{digest}`, set-difference synced, reachability-GC'd. A distinct `doc` kind was considered and **rejected**: GC is **closure-based** (`gc-reachability.ts` reclaims objects unreachable from the live heads), so superseded doc digests are collected like any other blob — a kind tag buys no lifecycle benefit; and storage attribution ("how many GB are docs") is a join of `state.objects.size` on the entities' `doc_ref.digest`, not a kind filter. Riding `blob` means **no CHECK migration and no CLI↔platform release ordering** (`architecture-review.md §B`). |
 | **How does repo identity enter the catalog?** | As a **first-class declared kind (`Repo`)** emitted from `intent.yaml`, riding the **existing** snapshot → catalog-head → projector path. `kind` is free-text TEXT server-side (verified: no CHECK on `org_catalog_entities.kind`; the projector stores it as-is), so this needs **no kind-enum migration**. The `Repo` ref is minted from the **durable project id**, not a remote string (§2c). |
 | **What about `Product` / multi-product?** | **Deferred to WO6.** In the common single-product workspace the workspace *is* the product; identity is derived from `metadata` + the primary `Repo`. The `Product` kind (namespace-scoped, merges across repos) is fully specified in §7 but ships only when multi-product/multi-repo workspaces are real — the same judgment the epic applies to an explicit primary-project setting. |
 | **Does the console ever author overview content?** | **No.** There is no `override_overview`. A not-yet-linked workspace shows the empty-state CTA (`design.md §4`), which is a better first impression than console-typed placeholder prose and keeps `18-state.md`'s *"the console never writes catalog content; derived, never authored, drift-free"* invariant **verbatim**. |
@@ -174,14 +175,14 @@ Docs join it as blobs referenced by digest — the native pattern:
 orun plan  (internal/catalogresolve + objremote.Sync)
    1. resolve each entity's docs.overview → read the file bytes AT THE COMMIT THE
       HEAD IS ADVANCED AT (a git object, not the working tree — §3a)
-   2. add each as an object in the closure:  digest = sha256(bytes), kind = doc
+   2. add each as an object in the closure:  digest = sha256(bytes), kind = blob
       entity JSON gets  docs.overview = { path, ref, sha, digest }
    3. set-difference sync:  POST …/objects/missing → PUT only missing digests
-      PUT …/state/objects/{digest}   header Orun-Object-Kind: doc
+      PUT …/state/objects/{digest}   header Orun-Object-Kind: blob
    4. advance the head  (the docs are in the closure the head pins)
    ▼
 orun-cloud
-   • doc bytes → R2  state/{org}/{project}/objects/{digest}   (index row kind='doc')
+   • doc bytes → R2  state/{org}/{project}/objects/{digest}   (index row kind='blob')
    • projector records doc_ref.digest on the entity / repo_facet
    ▼
 console renders overview:  read the doc object by digest → sanitize → render
@@ -216,9 +217,10 @@ them — silent drift on the one surface whose entire pitch is *drift-free*.
 
 Bounds: push **only the single `docs.overview` file per entity** by default (KB-
 scale). A `techdocs: docs/` *tree* is opt-in and size-capped (per-object and
-per-closure byte caps; truncation is `log()`-ed, never silent). Doc storage counts
-toward `limit.state.storage_gb` **as its own `doc` kind** (§0), so it is
-accountable and GC-able independently of plan/tree internals.
+per-closure byte caps; truncation is `log()`-ed, never silent). Doc bytes count
+toward `limit.state.storage_gb` like any blob; per-doc attribution is a
+`doc_ref.digest → state.objects.size` join, and reachability GC reclaims
+superseded doc blobs from the live heads (§0) — no distinct object kind needed.
 
 Security: repo markdown is rendered through a **sanitizing** pipeline (no raw
 HTML, `rel="nofollow ugc noopener"`, no auto-loaded remote images), width-
@@ -261,7 +263,7 @@ the **primary repo's** `repo_facet` (§4c).
 
 `org_catalog_entities` gains a nullable `doc_ref JSONB` projected from each
 entity's `docs.overview`: `{path, ref, sha, digest}`. The **digest** is the
-content address of the `doc` object (§3); `path/ref/sha` are provenance (the "view
+content address of the doc blob (§3); `path/ref/sha` are provenance (the "view
 source" link). The body is read from R2 by digest — Postgres holds only the
 pointer. `kind` is already TEXT and the projector is kind-agnostic, so `Repo` rows
 need **no kind migration**.
@@ -287,14 +289,16 @@ The Overview is assembled **client-side** from reads the console already makes
 `org_catalog_entities` (org-wide) + the runs feed, so the page degrades gracefully
 if no overview exists yet.
 
-### 4d. `doc` in the `state.objects.kind` CHECK — reconcile, don't just append
+### 4d. No `state.objects.kind` change — docs ride the `blob` kind
 
-The migration CHECK today allows `plan | catalog-snapshot | composition-lock |
-artifact-manifest`, but the write-time validator (`object-store.ts` `OBJECT_KINDS`)
-already accepts more (`job-result | log | run-record | blob | tree`) — the schema
-already lies about what it stores. WO4's migration adds `doc` **as a
-reconciliation**: bring the CHECK in line with the actual `OBJECT_KINDS` set and
-add `doc`, so the constraint stops drifting from reality.
+There is **no object-kind migration** in this epic. The `state.objects.kind` CHECK
+has admitted `blob`/`tree` since migration `250_state_refs`, doc bytes are pushed
+as `blob` (§3), and GC is closure-based (`gc-reachability.ts`), so a distinct
+`doc` kind would add a migration and a CLI↔platform release-ordering coupling for
+no lifecycle or read benefit (`architecture-review.md §B`). (Separately, the
+write-time `OBJECT_KINDS` set lists three coordination kinds —
+`job-result | log | run-record` — not in the CHECK; that pre-existing drift is
+real but **out of scope** for this epic, which persists nothing under those kinds.)
 
 ### 4e. No `/overview` endpoint at v1 — assemble at the read edge
 
@@ -326,9 +330,9 @@ head_digest`) — repo/env are **filters, not partitions**. So at v1:
 | Surface | Reads | Body |
 |---------|-------|------|
 | **Git Repos list** | `state.repo_facet` (per project) | none (description inline); overview badge |
-| **Repo header/detail** | `repo_facet` + its `doc_ref` | `doc` object from R2 by digest |
-| **Workspace Overview hero** | primary project's `repo_facet` (∪ `metadata`) | `doc` object from R2 by digest |
-| **Component / System / Domain page** | `org_catalog_entities` row + `doc_ref` | `doc` object from R2 by digest |
+| **Repo header/detail** | `repo_facet` + its `doc_ref` | doc blob from R2 by digest |
+| **Workspace Overview hero** | primary project's `repo_facet` (∪ `metadata`) | doc blob from R2 by digest |
+| **Component / System / Domain page** | `org_catalog_entities` row + `doc_ref` | doc blob from R2 by digest |
 | **Signal tiles** | `org_catalog_entities` rollup (org-wide) + runs feed | none |
 
 ## 7. Deferred — `Product` and explicit primary selection (WO6)
@@ -371,17 +375,18 @@ Both are additive to everything WO2–WO5 ship; nothing here blocks on them.
 - **Zero git-provider coupling** — provider-agnostic, self-host-portable, no App,
   no token, no render-time external call; the OSS backend behaves identically.
 - **Reuses what's built** — the CAS closure + set-difference sync already ship the
-  snapshot; docs ride it as `doc` blobs, accountable against the storage limit.
-  Net-new is one reconciled `state.objects.kind` value (`doc`) + `repo_facet` +
-  the `doc_ref` column.
+  snapshot; docs ride it as ordinary `blob` objects, deduped and GC'd like every
+  other snapshot object. Net-new is just `repo_facet` + the `doc_ref` column —
+  **no object-kind change**.
 - **Ships in the right order** — the landing (WO2) delivers the "front door" from
   orun-cloud alone; the cross-repo narrative chain (WO3–WO5) lands behind a page
   that is already live.
 
 ## 9. What deliberately does NOT change
 
-- No new entity beyond `repo_facet` + a `doc_ref` column + the `doc` object kind
-  (and, in WO6, the `Product` rows that ride the existing `org_catalog_entities`).
+- No new entity beyond `repo_facet` + a `doc_ref` column, and **no new object
+  kind** — docs ride the existing `blob` closure (and, in WO6, the `Product` rows
+  that ride the existing `org_catalog_entities`).
 - No console CMS; the console never authors catalog content — **no
   `override_overview`.**
 - No change to the catalog/activity read models — the signal row and cards reuse

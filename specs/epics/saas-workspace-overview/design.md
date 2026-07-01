@@ -46,14 +46,14 @@ Resolution for the hero, most-authoritative first:
    its `repo_facet` identity: name, description, owner, and the `docs.overview`
    pointer, unioned with `intent.yaml metadata`. (A first-class `Product` hero is
    deferred to WO6; until then the workspace *is* the product.)
-2. **Narrative.** The `docs.overview` `doc` object, read from R2 **by digest** and
+2. **Narrative.** The `docs.overview` blob, read from R2 **by digest** and
    rendered sanitized. Pinned docs (extra `docs`) render as a small list.
 3. **No repo linked yet → the empty-state CTA** (§4), never console-typed
    placeholder prose. This keeps the "console never authors catalog" invariant
    verbatim and is a better first impression than a blank textbox.
 
 There is **no render-time git-provider call** — the body is always the pinned
-`doc` object (`model.md §3`).
+doc blob (`model.md §3`).
 
 ### Rendering & security
 
@@ -129,8 +129,9 @@ compose 1", not a drop-in:
 
 ## 5. Data contract
 
-Normative in `model.md §4` — `state.repo_facet` (keyed by project), the `doc_ref`
-(`{path, ref, sha, digest}`) column, and the `doc` object kind. There is **no
+Normative in `model.md §4` — `state.repo_facet` (keyed by project) and the
+`doc_ref` (`{path, ref, sha, digest}`) column. Docs ride the existing `blob`
+object kind, so there is **no object-kind migration**. There is **no
 `primary_project_id`/`override_overview`** column and **no `GET …/overview`
 endpoint** at v1: the primary project is *derived* (most-recently-synced link),
 and the Overview is **assembled client-side** from the reads the console already
@@ -141,8 +142,9 @@ they already use, so the page degrades gracefully if no overview exists yet.
 
 ## 6. What deliberately does NOT change
 
-- **No new entity** beyond `repo_facet` + a `doc_ref` column + the `doc` object
-  kind (and, in WO6, the deferred `Product` rows on the existing table).
+- **No new entity** beyond `repo_facet` + a `doc_ref` column, and **no new object
+  kind** — docs ride the existing `blob` closure (and, in WO6, the deferred
+  `Product` rows on the existing table).
 - **No console CMS and no console-authored overview.** The narrative is
   repo-authored; a not-yet-linked workspace shows the empty-state CTA, not an
   editable field — there is no `override_overview`.

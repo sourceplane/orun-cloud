@@ -22,8 +22,10 @@ tracks the genuinely open items and the risks worth naming.
   free-text TEXT server-side, so no kind-enum migration. **`Product` is deferred**
   to WO6.
 - **L4 — `docs.overview` extends the shared docs struct**, spanning all kinds;
-  bytes are read **at the pinned commit** and travel as a `doc` object (the
-  quota/GC boundary for repo prose).
+  bytes are read **at the pinned commit** and travel as a content-addressed
+  **`blob`** in the existing closure — **no new object kind, no CHECK migration**
+  (GC is closure-based, so a distinct kind buys nothing — `architecture-review.md
+  §B`).
 - **L5 — The console never authors catalog content.** No `override_overview`, no
   `/overview` endpoint; the page is assembled at the read edge, and a not-yet-
   linked workspace shows the empty-state CTA.
@@ -77,11 +79,11 @@ validation — primary's chosen). Revisit when WO6 is scoped.
 
 ### Q4 — Doc size / storage bound · open (default decided)
 
-Docs count toward `limit.state.storage_gb` **as the `doc` kind** (separately
-accountable — that is what the distinct kind buys). Default: **single `overview`
-file only** (KB-scale). A `techdocs: docs/` tree is **opt-in**, with a per-object
-and per-closure byte cap, `log()`-ed when truncated (never silently dropped). The
-exact cap values are the remaining open detail.
+Docs count toward `limit.state.storage_gb` like any `blob`; per-doc attribution is
+a `doc_ref.digest → state.objects.size` join (no kind filter needed). Default:
+**single `overview` file only** (KB-scale). A `techdocs: docs/` tree is **opt-in**,
+with a per-object and per-closure byte cap, `log()`-ed when truncated (never
+silently dropped). The exact cap values are the remaining open detail.
 
 ## Risks
 
@@ -91,9 +93,9 @@ exact cap values are the remaining open detail.
 | **Working-tree ≠ commit on `--push-catalog`** — doc bytes could diverge from the pinned sha. | Read `docs.overview` bytes from the **git object at the resolved commit**, or refuse to attach doc objects on a dirty tree (the autopush gate) and log why (`model.md §3a`). Makes the point-in-time guarantee unconditional. |
 | **Markdown as an injection vector** — untrusted repo content in the console. | `rehype-sanitize`, no raw HTML, `rel="nofollow ugc noopener"`, no auto-loaded remote images, width-constrained prose (`design.md §2`). |
 | **Kind sprawl** — adding `Repo` (and later `Product`) normalizes ad-hoc kinds. | One kind at v1 (`Repo`), `Product` deferred; they ride the existing extensibility path; the frontend `KINDS` array stays the single styling registry. Note the real cost: a new kind needs `buildGraphs()` + an emit path, not just an array entry (`architecture-review.md §A2`). |
-| **Snapshot bloat** — many large docs inflate the closure. | Overview-only default + size caps (Q4); set-difference sync means unchanged docs never re-upload; content-addressed dedup across repos; `doc` kind lets storage be GC'd/capped independently. |
+| **Snapshot bloat** — many large docs inflate the closure. | Overview-only default + size caps (Q4); set-difference sync means unchanged docs never re-upload; content-addressed dedup across repos; reachability GC reclaims superseded doc blobs from the live heads, same as any snapshot object. |
 | **Empty landing** — a brand-new workspace with no repo feels broken. | The empty-state CTA keeps the page purposeful, never blank (`design.md §4`) — no console-authored override needed. |
-| **Cross-repo release coupling** — the narrative needs a coordinated CLI + platform release. | Phasing removes it from the critical path: WO2 (the landing) ships from orun-cloud alone; WO4's CHECK reconciliation lands before WO3 pushes `Orun-Object-Kind: doc`. |
+| **Cross-repo release coupling** — the narrative needs a coordinated CLI + platform release. | Phasing removes it from the critical path: WO2 (the landing) ships from orun-cloud alone; and docs ride the existing `blob` kind, so there is **no object-kind ordering** between WO3 and WO4 at all. |
 
 ## Gate
 

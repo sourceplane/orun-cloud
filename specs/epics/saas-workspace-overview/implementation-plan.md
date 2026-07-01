@@ -18,8 +18,9 @@ milestone lists its repo and a concrete **done when**.
   only when multi-product/multi-repo workspaces are real.
 
 Landing order: **WO2 → WO3 → WO4 → WO5**; WO6 is independent and later. WO3 (CLI)
-and WO4 (platform) must coordinate on the `doc` object kind (WO4's CHECK
-reconciliation lands before WO3 pushes `Orun-Object-Kind: doc` to production).
+and WO4 (platform) need **no object-kind coordination**: docs ride the existing
+`blob` kind (legal since migration `250_state_refs`), so WO3 can push before WO4
+projects — unreferenced doc blobs are inert until then.
 
 ---
 
@@ -70,7 +71,7 @@ existing endpoints — no snapshot, projection, or CLI change.
 
 ## Phase 2
 
-### WO3 — CLI: `Repo` kind, `docs.overview`, `doc` objects (`sourceplane/orun`)
+### WO3 — CLI: `Repo` kind, `docs.overview`, doc blobs (`sourceplane/orun`)
 
 See the `orun` repo's `specs/orun-workspace-overview/implementation-plan.md` for
 the step-by-step; summary of the platform-relevant output:
@@ -81,12 +82,12 @@ the step-by-step; summary of the platform-relevant output:
    in `internal/model/intent.go`; **emit** `entities/Repo/*.json`; wire relations
    into `catalogresolve/graph.go buildGraphs()`. **`Repo` ref is minted from the
    durable project id** (`model.md §2c`), not `CatalogSnapshot.Repo`.
-3. Walk each entity's `docs.overview` into the closure as a `doc` object, reading
-   bytes **at the pinned commit** (or refusing on a dirty tree) — `model.md §3a`;
-   set `doc_ref = {path, ref, sha, digest}` on the entity JSON.
+3. Walk each entity's `docs.overview` into the closure as a content-addressed
+   **blob**, reading bytes **at the pinned commit** (or refusing on a dirty tree)
+   — `model.md §3a`; set `doc_ref = {path, ref, sha, digest}` on the entity JSON.
 4. `objremote.Sync` uploads doc blobs via the existing set-difference sync with
-   header `Orun-Object-Kind: doc`. No new wire call. `Product`/`products` are
-   **deferred to WO6**.
+   header `Orun-Object-Kind: blob`. No new wire call, **no new object kind**.
+   `Product`/`products` are **deferred to WO6**.
 
 **Done when:** `orun catalog push` on a repo with a `repo:` block + `docs.overview`
 uploads the doc blob once (unchanged re-push is a no-op), the snapshot carries a
@@ -94,10 +95,10 @@ uploads the doc blob once (unchanged re-push is a no-op), the snapshot carries a
 
 ### WO4 — Platform: projection (`sourceplane/orun-cloud`) · no `/overview` endpoint
 
-1. **Migration:** **reconcile** the `state.objects.kind` CHECK with the real
-   write-time `OBJECT_KINDS` set **and** add `'doc'` (`model.md §4d`); create
-   `state.repo_facet` (`model.md §4a`, keyed `(org_id, source_project_id)`); add
-   `doc_ref JSONB` to `state.org_catalog_entities`. **No** `primary_project_id` /
+1. **Migration:** create `state.repo_facet` (`model.md §4a`, keyed `(org_id,
+   source_project_id)`); add `doc_ref JSONB` to `state.org_catalog_entities`.
+   **No `state.objects.kind` change** — docs ride the existing `blob` kind (legal
+   since migration `250_state_refs`; `model.md §4d`). **No** `primary_project_id` /
    `override_overview` columns (deferred / dropped — `model.md §4c`, §7).
 2. **Projector** (`apps/state-worker/src/catalog-projection.ts`): on
    `catalog.head.advanced`, project the `Repo` entity → `state.repo_facet`, and
@@ -121,7 +122,7 @@ endpoint was added.
    render its `repo_facet` identity ∪ `metadata`. Assembled **client-side** from
    the `repo_facet` read + the reads WO2 already makes; **no bespoke `/overview`
    endpoint** (`model.md §4e`).
-2. **Narrative band:** fetch the `doc` object by digest → render with
+2. **Narrative band:** fetch the doc blob by digest → render with
    `react-markdown` + `remark-gfm` + `rehype-sanitize` (new deps; none exist
    today). Sanitizing pipeline per `design.md §2`: no raw HTML, `rel="noopener
    nofollow ugc"`, no auto-loaded remote images, width-constrained prose.
@@ -167,10 +168,10 @@ deterministically.
   unchanged and still linked.
 - **Phase 2 is additive throughout:** repos without a `repo:` block or
   `docs.overview` simply have no `repo_facet`/`doc_ref`; the Overview falls back to
-  WO2's identity + empty states. The `doc` kind and `doc_ref` are additive to the
-  state contract; an older orun-cloud stores unknown-kind objects and ignores
+  WO2's identity + empty states. Doc blobs and `doc_ref` are additive to the state
+  contract; an older orun-cloud already accepts `blob` objects and simply ignores
   unreferenced ones until WO4 projects them.
-- **Coordinate the `doc` object kind:** WO4's CHECK reconciliation (accepting
-  `doc`) lands before WO3 pushes `Orun-Object-Kind: doc` to production; until then,
-  gate the doc-object push behind the same publish path (clean default branch,
-  best-effort) so it never fails a plan.
+- **No object-kind coordination:** docs ride the existing `blob` kind, so there is
+  no CHECK migration and no CLI↔platform release ordering — WO3 can push doc blobs
+  before WO4 lands. (The doc push still rides the normal publish path — clean
+  default branch, best-effort — so it never fails a plan.)

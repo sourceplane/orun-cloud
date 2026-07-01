@@ -4,9 +4,10 @@ Status: Review (2026-07-01) — **ADOPTED.** The epic (`README.md`, `model.md`,
 `design.md`, `implementation-plan.md`, `risks-and-open-questions.md`) was revised
 to incorporate every recommendation below; this document remains as the **rationale
 record** — the "why" behind the phased delivery, the project-id `Repo` ref, the
-pinned-commit doc read, the dropped `override_overview`, the read-edge assembly,
-and the deferred `Product`. Grounded against the code as it stands today, not
-against the spec's description of it. Cross-checked in `orun`
+pinned-commit doc read, **docs riding the `blob` closure (no new object kind)**,
+the dropped `override_overview`, the read-edge assembly, and the deferred
+`Product`. Grounded against the code as it stands today, not against the spec's
+description of it. Cross-checked in `orun`
 (`internal/catalogmodel/*`, `internal/catalogresolve/*`, `internal/model/intent.go`,
 `internal/objremote/*`, `internal/remotestate/*`) and `orun-cloud`
 (`apps/state-worker/src/catalog-projection.ts`, `object-store.ts`,
@@ -98,15 +99,16 @@ bytes from the git object at the resolved commit rather than the working tree, o
 (b) refuse to attach doc objects when the tree is dirty (same gate the autopush
 path already enforces) and log why. Make the guarantee true, not incidental.
 
-### A4 — The `state.objects.kind` CHECK is already out of sync with the write-time kind set — reconcile it, don't just append to it
+### A4 — The `state.objects.kind` CHECK — moot for this epic (docs ride `blob`)
 
-The migration CHECK allows `plan | catalog-snapshot | composition-lock |
-artifact-manifest` (`220_state_foundation`), but the write-time validator in
-`object-store.ts` already accepts more (`job-result | log | run-record | blob |
-tree`). Adding `doc` to the CHECK is correct, but do it as a **reconciliation**
-migration that brings the CHECK in line with the actual `OBJECT_KINDS` set, so the
-schema stops lying about what it stores. Otherwise the epic adds one value to a
-constraint that is already wrong and leaves the drift for the next author.
+> **Resolved (2026-07-01):** the epic adds **no object kind** (see §B), so it does
+> not touch the CHECK at all. Recorded here for context. Note the finding above
+> was itself partly stale: migration **`250_state_refs`** already widened the CHECK
+> to include `blob`/`tree`, so the current constraint is `plan | catalog-snapshot
+> | composition-lock | artifact-manifest | blob | tree`. A residual drift remains —
+> the write-time `OBJECT_KINDS` set also lists `job-result | log | run-record`,
+> which are **not** in the CHECK — but that is **pre-existing hygiene, out of scope
+> for this epic** (which persists nothing under those kinds).
 
 ---
 
@@ -120,19 +122,32 @@ just another content-addressed `blob` the closure references, and the entity's
 epic should answer explicitly is: **what does the `doc` kind buy that `blob`
 doesn't?**
 
-There is a legitimate answer — **quota and lifecycle accounting**: a distinct
-`doc` kind lets `limit.state.storage_gb`, retention, and GC reason about
-repo-authored prose separately from plan/tree internals, and lets the console
-list "docs" without walking every tree. If that's the reason, **say so** in
-`model.md §3` and in the risks table; it justifies the one-value CHECK migration.
+The candidate justification was **quota and lifecycle accounting**: a distinct
+`doc` kind could let `limit.state.storage_gb`, retention, and GC reason about
+repo-authored prose separately. Two code facts dissolve it:
 
-If it is *not* the reason — if `doc` is just a semantic label — then **drop it**:
-let docs ride as ordinary closure blobs, keep `doc_ref.digest` on the entity, and
-you delete a migration, a header value, and a cross-repo coordination step (the
-WO2a→WO2b "server must accept `Orun-Object-Kind: doc` before the CLI pushes it"
-dance in the sequencing note). Fewer new kinds is fewer things to defend against
-the "kind sprawl" risk the epic already names. **Lean: keep `doc` only if it is
-the quota/GC boundary; otherwise ride the blob closure.**
+- **GC is closure-based, not kind-based.** `gc-reachability.ts` reclaims objects
+  "no longer reachable from any [head] digests + run plan digests" — the
+  transitive closure of the live roots, older than a grace window. A superseded
+  `overview.md` digest becomes unreachable on the next head advance and is
+  collected **exactly like a superseded entity blob**. A kind tag buys no
+  lifecycle benefit.
+- **`blob` already round-trips end to end.** Since migration `250_state_refs` the
+  CHECK admits `blob`; snapshot constituents are already indexed `blob` rows,
+  digest-readable via `GET …/objects/{digest}`. A doc-as-`blob` needs zero new
+  server work.
+
+The only thing a `doc` kind would add is per-kind storage *attribution* ("how many
+GB are docs") — recoverable anyway via a `doc_ref.digest → state.objects.size`
+join, or a later backfill (`UPDATE state.objects SET kind='doc' …`; digests don't
+change) if a billing/usage surface ever needs it.
+
+> **Resolved (2026-07-01): ride the `blob` closure.** No new object kind, no CHECK
+> migration, and — crucially — **no WO3→WO4 release ordering** (`server must accept
+> the kind before the CLI pushes it` disappears). This is the choice consistent
+> with the defer-until-needed discipline the rest of the epic applies to `Product`
+> and `primary_project_id`. Promotion to a distinct `doc` kind stays available as a
+> trivial future backfill if per-kind storage diagnostics become a real ask.
 
 ---
 
@@ -282,11 +297,11 @@ hold the former hostage.
 | A1 | Mint the `Repo` ref from the durable project/`ws_` id, not an un-normalized remote string; keep `repo_facet` keyed by project | Correctness | S | **P0** |
 | A3 | Read `docs.overview` bytes from the pinned commit (or refuse on dirty tree) so provenance can't lie | Correctness | S | **P0** |
 | C1 | Drop `override_overview` for v1 (empty-state CTA already covers it); if kept, quarantine as labeled org profile, no field-merge | Invariant | S | **P1** |
-| B | Justify the `doc` kind by quota/GC accounting or drop it and ride the blob closure | Simplification | S | **P1** |
+| B | **Resolved: ride the blob closure** — no new object kind (GC is closure-based; `blob` already legal since migration 250) | Simplification | S | **P1** |
 | C2 | No bespoke `/overview` endpoint for v1 — assemble client-side; if server-side later, make it an api-edge composition | Boundary | M | **P1** |
 | C4 | Defer the `Product` kind; derive product identity from `metadata` + primary `Repo` for v1 | Scope | M | **P1** |
 | A2 | Re-scope WO2a: emitting/relating `Repo`/`Product` is graph + emit-path work, not an array poke | Estimate | — | **P2** |
-| A4 | Reconcile the `state.objects.kind` CHECK with the real write-time kind set when adding `doc` | Hygiene | S | **P2** |
+| A4 | Moot — epic adds no object kind; CHECK already admits `blob` (migration 250). Residual `job-result\|log\|run-record` drift is pre-existing, out of scope | Hygiene | — | — |
 | E | MetricTiles honesty (compose the Activity tile); make staleness actionable; close Q6 | Polish | S | **P2** |
 
 None of these change the thesis. A1/A3/D are the ones to act on before code lands;
