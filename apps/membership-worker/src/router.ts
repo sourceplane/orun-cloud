@@ -9,6 +9,7 @@ import { handleUpdateMemberRole } from "./handlers/update-member-role.js";
 import { handleGrantAccountRole } from "./handlers/grant-account-role.js";
 import { handleGrantTeamRole } from "./handlers/grant-team-role.js";
 import { handleRevokeTeamRole } from "./handlers/revoke-team-role.js";
+import { handleCreateTeam, handleListTeams, handleGetTeam, handleDeleteTeam } from "./handlers/teams.js";
 import { handleRemoveMember } from "./handlers/remove-member.js";
 import { handleCreateInvitation } from "./handlers/create-invitation.js";
 import { handleListInvitations } from "./handlers/list-invitations.js";
@@ -53,6 +54,8 @@ const ORG_INVITATIONS_RE = /^\/v1\/organizations\/([^/]+)\/invitations$/;
 const ORG_INVITATION_ID_RE = /^\/v1\/organizations\/([^/]+)\/invitations\/([^/]+)$/;
 const ORG_ACCOUNT_ROLES_RE = /^\/v1\/organizations\/([^/]+)\/account-roles$/;
 const ORG_TEAM_ROLES_RE = /^\/v1\/organizations\/([^/]+)\/team-roles$/;
+const ORG_TEAMS_RE = /^\/v1\/organizations\/([^/]+)\/teams$/;
+const ORG_TEAM_ID_RE = /^\/v1\/organizations\/([^/]+)\/teams\/([^/]+)$/;
 const SP_BINDINGS_PATH = "/v1/internal/membership/service-principal-bindings";
 const SP_BINDING_ID_RE = /^\/v1\/internal\/membership\/service-principal-bindings\/([^/]+)$/;
 
@@ -229,6 +232,38 @@ export async function route(request: Request, env: Env): Promise<Response> {
       }
       if (request.method === "DELETE") {
         return handleRevokeTeamRole(request, env, requestId, actor, teamRolesMatch[1]!);
+      }
+      return methodNotAllowed(requestId);
+    }
+
+    // Team lifecycle (saas-teams TM4b): create/list on the collection.
+    const teamsMatch = url.pathname.match(ORG_TEAMS_RE);
+    if (teamsMatch) {
+      const actor = resolveActor(request);
+      if (!actor) {
+        return errorResponse("unauthenticated", "Authentication required", 401, requestId);
+      }
+      if (request.method === "POST") {
+        return handleCreateTeam(request, env, requestId, actor, teamsMatch[1]!);
+      }
+      if (request.method === "GET") {
+        return handleListTeams(env, requestId, actor, teamsMatch[1]!);
+      }
+      return methodNotAllowed(requestId);
+    }
+
+    // Team lifecycle (saas-teams TM4b): get/delete a single team.
+    const teamIdMatch = url.pathname.match(ORG_TEAM_ID_RE);
+    if (teamIdMatch) {
+      const actor = resolveActor(request);
+      if (!actor) {
+        return errorResponse("unauthenticated", "Authentication required", 401, requestId);
+      }
+      if (request.method === "GET") {
+        return handleGetTeam(env, requestId, actor, teamIdMatch[1]!, teamIdMatch[2]!);
+      }
+      if (request.method === "DELETE") {
+        return handleDeleteTeam(env, requestId, actor, teamIdMatch[1]!, teamIdMatch[2]!);
       }
       return methodNotAllowed(requestId);
     }
