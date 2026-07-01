@@ -26,6 +26,7 @@ import { asUuid, uuidFromPublicId, type Uuid } from "@saas/db/ids";
 import type { SqlExecutor } from "@saas/db/hyperdrive";
 import { fetchAuthorizationContext } from "../membership-client.js";
 import { authorizeViaPolicy } from "../policy-client.js";
+import { resolveUsableConnection } from "../connection-access.js";
 import { checkBillingEntitlement } from "../billing-client.js";
 import { fetchProjectEnvironmentSlugs } from "../projects-client.js";
 import { errorResponse, listResponse, successResponse, validationError } from "../http.js";
@@ -225,9 +226,10 @@ export async function handleCreateRepoLink(
   try {
     const repo = createIntegrationsRepository(executor);
 
-    // Connection must be this org's, and live.
-    const connection = await repo.getConnection(orgId, asUuid(connectionUuid));
-    if (!connection.ok || connection.value.status !== "active") {
+    // Connection must be usable by this org — its own, or an Account's shared
+    // connection it inherits (IT10) — and live.
+    const connection = await resolveUsableConnection(env, repo, orgId, asUuid(connectionUuid), requestId);
+    if (!connection || connection.status !== "active") {
       return errorResponse("not_found", "Connection not found or not active", 404, requestId);
     }
 

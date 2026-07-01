@@ -19,6 +19,7 @@ import { listInstallationRepositories } from "../github-app.js";
 import { getPlatformInstallationToken } from "../installation-token.js";
 import { fetchAuthorizationContext } from "../membership-client.js";
 import { authorizeViaPolicy } from "../policy-client.js";
+import { resolveUsableConnection } from "../connection-access.js";
 import { errorResponse, successResponse } from "../http.js";
 
 export interface RepositoriesDeps {
@@ -63,9 +64,11 @@ export async function handleListRepositories(
   const owned = !deps?.executor;
   try {
     const repo = createIntegrationsRepository(executor);
-    const connection = await repo.getConnection(orgId, connectionId);
-    if (!connection.ok) return errorResponse("not_found", "Not found", 404, requestId);
-    if (connection.value.status !== "active") {
+    // Resolve own connections OR an Account's shared connection this workspace
+    // inherits (IT10) — the picker references the id it sees in its list.
+    const connection = await resolveUsableConnection(env, repo, orgId, connectionId, requestId);
+    if (!connection) return errorResponse("not_found", "Not found", 404, requestId);
+    if (connection.status !== "active") {
       return errorResponse(
         "precondition_failed",
         "The connection is not active",
@@ -81,7 +84,7 @@ export async function handleListRepositories(
     const token = await getPlatformInstallationToken(
       env,
       repo,
-      connection.value.id,
+      connection.id,
       installation.value.installationId,
       Date.now(),
       deps?.fetchImpl,
