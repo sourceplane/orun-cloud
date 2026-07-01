@@ -3,6 +3,16 @@
 Status: Draft. Decisions locked in `README.md` are not re-litigated here; this
 tracks the genuinely open items and the risks worth naming.
 
+> **2026-07-01 architecture review** (`architecture-review.md`) revisits several
+> of the items below against the code as it stands. In particular it sharpens
+> **Q1** (there is no CLI-side remote normalization to match — mint the `Repo`
+> ref from the durable project id instead), reframes **Q5** as an *invariant*
+> question, not a lifecycle one (`override_overview` is the first console-authored
+> content the catalog would render — quarantine or drop it), and closes **Q6**
+> (reuse `catalog.read` / `state.object.read`; no new gate). It also proposes
+> dropping/justifying the `doc` object kind and splitting delivery so the landing
+> ships before the cross-repo CLI chain. Reconcile before WO2 lands.
+
 ## Decisions locked (recap, not open)
 
 - **L1 — No git-provider coupling.** Docs travel as content-addressed `doc`

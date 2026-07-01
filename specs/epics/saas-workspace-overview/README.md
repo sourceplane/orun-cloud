@@ -76,7 +76,11 @@ no drift, and no live provider call.
    (The `orun` repo's copy references this.)
 4. `implementation-plan.md` — WO1–WO5, each with "done when", split by repo.
 5. `risks-and-open-questions.md` — the decisions still open and the ones locked.
-6. `design/overview-mockup.html` — a token-faithful static mockup (mirrors the
+6. `architecture-review.md` — a lead-architect pass grounded against the code as
+   it stands (2026-07-01): code-reality corrections, a simplify/scope pass, and a
+   sequencing change that ships the landing before the cross-repo CLI chain. Read
+   it before WO2 code lands.
+7. `design/overview-mockup.html` — a token-faithful static mockup (mirrors the
    `saas-catalog-portal/design/*.html` convention).
 
 ## Milestones at a glance
