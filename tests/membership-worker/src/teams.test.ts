@@ -1,7 +1,7 @@
-import { handleCreateTeam, handleListTeams, handleGetTeam, handleDeleteTeam } from "@membership-worker/handlers/teams";
+import { handleCreateTeam, handleListTeams, handleGetTeam, handleDeleteTeam, handleUpdateTeam, handleAddTeamMember, handleRemoveTeamMember, handleListTeamMembers } from "@membership-worker/handlers/teams";
 import { orgPublicId, teamPublicId } from "@membership-worker/ids";
 import type { Env } from "@membership-worker/env";
-import type { MembershipRepository, Organization, RoleAssignment, Team, CreateTeamInput } from "@saas/db/membership";
+import type { MembershipRepository, Organization, RoleAssignment, Team, TeamMember, CreateTeamInput, CreateTeamMemberInput } from "@saas/db/membership";
 import type { EventsRepository } from "@saas/db/events";
 import { authorize } from "@saas/policy-engine";
 import type { AuthorizationRequest } from "@saas/contracts/policy";
@@ -38,15 +38,24 @@ function orgRole(orgId: string, role: string): RoleAssignment {
   return { id: "ra", orgId, subjectId: ACTOR, subjectType: "user", role, scopeKind: "organization", scopeRef: null, createdAt: NOW, revokedAt: null };
 }
 
+function member(subjectId: string, subjectType = "user"): TeamMember {
+  return { teamId: TEAM_UUID, subjectId, subjectType, status: "active", createdAt: NOW };
+}
+
 function makeRepo(cfg: {
   orgs: Record<string, Organization>;
   roles?: Record<string, RoleAssignment[]>;   // `${orgId}|${subjectId}`
   teams?: Record<string, Team>;
   teamsList?: Team[];
+  members?: TeamMember[];
   createConflict?: boolean;
-}): { repo: MembershipRepository; created: CreateTeamInput[]; revokedTeams: string[] } {
+  updateConflict?: boolean;
+  removeMissing?: boolean;
+}): { repo: MembershipRepository; created: CreateTeamInput[]; revokedTeams: string[]; addedMembers: CreateTeamMemberInput[]; removedMembers: string[] } {
   const created: CreateTeamInput[] = [];
   const revokedTeams: string[] = [];
+  const addedMembers: CreateTeamMemberInput[] = [];
+  const removedMembers: string[] = [];
   const repo = {
     ...teamRepoStubs(),
     async getOrganizationById(id: string) {
@@ -68,6 +77,11 @@ function makeRepo(cfg: {
       const t = cfg.teams?.[id];
       return t ? { ok: true as const, value: t } : { ok: false as const, error: { kind: "not_found" as const } };
     },
+    async updateTeam(id: string, input: { name?: string; slugLower?: string }) {
+      if (cfg.updateConflict) return { ok: false as const, error: { kind: "conflict" as const, entity: "team" } };
+      const base = team(id, ACCOUNT);
+      return { ok: true as const, value: { ...base, name: input.name ?? base.name, slugLower: input.slugLower ?? base.slugLower } };
+    },
     async deleteTeam(id: string) {
       return { ok: true as const, value: { ...team(id, ACCOUNT), status: "deleted" } };
     },
@@ -75,8 +89,20 @@ function makeRepo(cfg: {
       revokedTeams.push(teamPub);
       return { ok: true as const, value: [] };
     },
+    async addTeamMember(input: CreateTeamMemberInput) {
+      addedMembers.push(input);
+      return { ok: true as const, value: member(input.subjectId, input.subjectType) };
+    },
+    async removeTeamMember(_teamId: string, subjectId: string) {
+      if (cfg.removeMissing) return { ok: false as const, error: { kind: "not_found" as const } };
+      removedMembers.push(subjectId);
+      return { ok: true as const, value: { ...member(subjectId), status: "removed" } };
+    },
+    async listTeamMembers() {
+      return { ok: true as const, value: cfg.members ?? [] };
+    },
   } as unknown as MembershipRepository;
-  return { repo, created, revokedTeams };
+  return { repo, created, revokedTeams, addedMembers, removedMembers };
 }
 
 function makeEvents(): { events: Array<{ type: string }>; eventsRepo: Pick<EventsRepository, "appendEventWithAudit"> } {
@@ -176,5 +202,96 @@ describe("teams: delete (saas-teams TM4b)", () => {
     const res = await handleDeleteTeam(env(), "r", actor, orgPublicId(ACCOUNT), teamPublicId(TEAM_UUID), { repo });
     expect(res.status).toBe(404);
     expect(revokedTeams).toHaveLength(0);
+  });
+});
+
+const admins = { [`${ACCOUNT}|${ACTOR}`]: [accountRole("account_admin")] };
+function memReq(orgUuid: string, teamUuid: string, body: unknown, method = "POST"): Request {
+  return new Request(`http://mw/v1/organizations/${orgPublicId(orgUuid)}/teams/${teamPublicId(teamUuid)}/members`, {
+    method, headers: { "content-type": "application/json" }, body: JSON.stringify(body),
+  });
+}
+
+describe("teams: update (saas-teams TM4b2)", () => {
+  it("an account_admin renames a team + emits team.updated", async () => {
+    const { repo } = makeRepo({ orgs: { [ACCOUNT]: org(ACCOUNT, null) }, roles: admins, teams: { [TEAM_UUID]: team(TEAM_UUID, ACCOUNT) } });
+    const { events, eventsRepo } = makeEvents();
+    const request = new Request(`http://mw/v1/organizations/${orgPublicId(ACCOUNT)}/teams/${teamPublicId(TEAM_UUID)}`, {
+      method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ name: "Platform Team", slug: "Platform Team" }),
+    });
+    const res = await handleUpdateTeam(request, env(), "r", actor, orgPublicId(ACCOUNT), teamPublicId(TEAM_UUID), { repo, eventsRepo, now: () => NOW });
+    expect(res.status).toBe(200);
+    const json = await res.json() as { data: { team: { name: string; slug: string } } };
+    expect(json.data.team.name).toBe("Platform Team");
+    expect(json.data.team.slug).toBe("platform-team");
+    expect(events.map((e) => e.type)).toContain("team.updated");
+  });
+
+  it("rejects an empty patch (422)", async () => {
+    const { repo } = makeRepo({ orgs: { [ACCOUNT]: org(ACCOUNT, null) }, roles: admins, teams: { [TEAM_UUID]: team(TEAM_UUID, ACCOUNT) } });
+    const request = new Request(`http://mw/x`, { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({}) });
+    const res = await handleUpdateTeam(request, env(), "r", actor, orgPublicId(ACCOUNT), teamPublicId(TEAM_UUID), { repo });
+    expect(res.status).toBe(422);
+  });
+
+  it("a non-admin cannot update (404)", async () => {
+    const { repo } = makeRepo({ orgs: { [ACCOUNT]: org(ACCOUNT, null) }, roles: { [`${ACCOUNT}|${ACTOR}`]: [orgRole(ACCOUNT, "viewer")] }, teams: { [TEAM_UUID]: team(TEAM_UUID, ACCOUNT) } });
+    const request = new Request(`http://mw/x`, { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ name: "X" }) });
+    const res = await handleUpdateTeam(request, env(), "r", actor, orgPublicId(ACCOUNT), teamPublicId(TEAM_UUID), { repo });
+    expect(res.status).toBe(404);
+  });
+});
+
+describe("teams: members (saas-teams TM4b2)", () => {
+  it("an account_admin adds a member + emits team.member.added", async () => {
+    const { repo, addedMembers } = makeRepo({ orgs: { [ACCOUNT]: org(ACCOUNT, null) }, roles: admins, teams: { [TEAM_UUID]: team(TEAM_UUID, ACCOUNT) } });
+    const { events, eventsRepo } = makeEvents();
+    const res = await handleAddTeamMember(memReq(ACCOUNT, TEAM_UUID, { subjectId: "usr_new" }), env(), "r", actor, orgPublicId(ACCOUNT), teamPublicId(TEAM_UUID), { repo, eventsRepo });
+    expect(res.status).toBe(201);
+    expect(addedMembers[0]!.subjectId).toBe("usr_new");
+    expect(addedMembers[0]!.subjectType).toBe("user");
+    expect(events.map((e) => e.type)).toContain("team.member.added");
+  });
+
+  it("accepts a service_principal member", async () => {
+    const { repo, addedMembers } = makeRepo({ orgs: { [ACCOUNT]: org(ACCOUNT, null) }, roles: admins, teams: { [TEAM_UUID]: team(TEAM_UUID, ACCOUNT) } });
+    const res = await handleAddTeamMember(memReq(ACCOUNT, TEAM_UUID, { subjectId: "sp_ci", subjectType: "service_principal" }), env(), "r", actor, orgPublicId(ACCOUNT), teamPublicId(TEAM_UUID), { repo });
+    expect(res.status).toBe(201);
+    expect(addedMembers[0]!.subjectType).toBe("service_principal");
+  });
+
+  it("rejects an invalid subjectType (422)", async () => {
+    const { repo } = makeRepo({ orgs: { [ACCOUNT]: org(ACCOUNT, null) }, roles: admins, teams: { [TEAM_UUID]: team(TEAM_UUID, ACCOUNT) } });
+    const res = await handleAddTeamMember(memReq(ACCOUNT, TEAM_UUID, { subjectId: "x", subjectType: "robot" }), env(), "r", actor, orgPublicId(ACCOUNT), teamPublicId(TEAM_UUID), { repo });
+    expect(res.status).toBe(422);
+  });
+
+  it("a member add on a cross-account team 404s", async () => {
+    const { repo } = makeRepo({ orgs: { [ACCOUNT]: org(ACCOUNT, null) }, roles: admins, teams: { [TEAM_UUID]: team(TEAM_UUID, OTHER_ACCOUNT) } });
+    const res = await handleAddTeamMember(memReq(ACCOUNT, TEAM_UUID, { subjectId: "usr_new" }), env(), "r", actor, orgPublicId(ACCOUNT), teamPublicId(TEAM_UUID), { repo });
+    expect(res.status).toBe(404);
+  });
+
+  it("removes a member + emits team.member.removed", async () => {
+    const { repo, removedMembers } = makeRepo({ orgs: { [ACCOUNT]: org(ACCOUNT, null) }, roles: admins, teams: { [TEAM_UUID]: team(TEAM_UUID, ACCOUNT) } });
+    const { events, eventsRepo } = makeEvents();
+    const res = await handleRemoveTeamMember(env(), "r", actor, orgPublicId(ACCOUNT), teamPublicId(TEAM_UUID), "usr_new", { repo, eventsRepo });
+    expect(res.status).toBe(200);
+    expect(removedMembers).toEqual(["usr_new"]);
+    expect(events.map((e) => e.type)).toContain("team.member.removed");
+  });
+
+  it("removing a non-member 404s", async () => {
+    const { repo } = makeRepo({ orgs: { [ACCOUNT]: org(ACCOUNT, null) }, roles: admins, teams: { [TEAM_UUID]: team(TEAM_UUID, ACCOUNT) }, removeMissing: true });
+    const res = await handleRemoveTeamMember(env(), "r", actor, orgPublicId(ACCOUNT), teamPublicId(TEAM_UUID), "ghost", { repo });
+    expect(res.status).toBe(404);
+  });
+
+  it("lists members for an account admin", async () => {
+    const { repo } = makeRepo({ orgs: { [ACCOUNT]: org(ACCOUNT, null) }, roles: admins, teams: { [TEAM_UUID]: team(TEAM_UUID, ACCOUNT) }, members: [member("usr_a"), member("sp_b", "service_principal")] });
+    const res = await handleListTeamMembers(env(), "r", actor, orgPublicId(ACCOUNT), teamPublicId(TEAM_UUID), { repo });
+    expect(res.status).toBe(200);
+    const json = await res.json() as { data: { members: unknown[] } };
+    expect(json.data.members).toHaveLength(2);
   });
 });

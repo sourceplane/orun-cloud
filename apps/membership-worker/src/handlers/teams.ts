@@ -1,6 +1,6 @@
 import type { Env } from "../env.js";
 import type { ActorContext } from "../router.js";
-import type { MembershipRepository, Team } from "@saas/db/membership";
+import type { MembershipRepository, Team, TeamMember } from "@saas/db/membership";
 import type { EventsRepository } from "@saas/db/events";
 import { createSqlExecutor } from "@saas/db/hyperdrive";
 import { createMembershipRepository, effectiveBillingOrgId } from "@saas/db/membership";
@@ -35,6 +35,12 @@ function publicTeam(t: Team): Record<string, unknown> {
 function slugify(input: string): string {
   return input.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
 }
+
+function publicMember(m: TeamMember): Record<string, unknown> {
+  return { subjectId: m.subjectId, subjectType: m.subjectType, status: m.status, createdAt: m.createdAt.toISOString() };
+}
+
+const MEMBER_SUBJECT_TYPES = new Set(["user", "service_principal"]);
 
 /**
  * Resolve the account org for the target and authorize the actor for `action`
@@ -282,6 +288,279 @@ export async function handleDeleteTeam(
     }
     if (!result.ok) return errorResponse("not_found", "Team not found", 404, requestId);
     return successResponse({ team: publicTeam(result.value) }, requestId);
+  } catch {
+    return errorResponse("internal_error", "An unexpected error occurred", 500, requestId);
+  } finally {
+    if (executor) await executor.dispose();
+  }
+}
+
+// ── update (rename / re-slug) ───────────────────────────────────────
+export async function handleUpdateTeam(
+  request: Request,
+  env: Env,
+  requestId: string,
+  actor: ActorContext,
+  orgIdParam: string,
+  teamIdParam: string,
+  deps?: TeamsDeps,
+): Promise<Response> {
+  const orgUuid = parseOrgPublicId(orgIdParam);
+  if (!orgUuid) return errorResponse("not_found", "Organization not found", 404, requestId);
+  const teamUuid = parseTeamPublicId(teamIdParam);
+  if (!teamUuid) return errorResponse("not_found", "Team not found", 404, requestId);
+  const pf = preflight(env, deps, requestId);
+  if (pf) return pf;
+
+  let body: unknown;
+  try {
+    body = await request.json();
+  } catch {
+    return validationError(requestId, { body: ["Invalid JSON"] });
+  }
+  if (!body || typeof body !== "object") return validationError(requestId, { body: ["Request body must be an object"] });
+  const { name, slug } = body as { name?: unknown; slug?: unknown };
+  if (name !== undefined && (typeof name !== "string" || name.trim().length === 0)) {
+    return validationError(requestId, { name: ["Must be a non-empty string"] });
+  }
+  if (slug !== undefined && typeof slug !== "string") {
+    return validationError(requestId, { slug: ["Must be a string"] });
+  }
+  if (name === undefined && slug === undefined) {
+    return validationError(requestId, { body: ["Provide name and/or slug"] });
+  }
+  const nextName = typeof name === "string" ? name.trim() : undefined;
+  const nextSlug = typeof slug === "string" ? slugify(slug) : undefined;
+  if (nextSlug !== undefined && nextSlug.length === 0) {
+    return validationError(requestId, { slug: ["Could not derive a slug"] });
+  }
+
+  const executor = deps ? null : createSqlExecutor(env.PLATFORM_DB!);
+  try {
+    const repo = deps ? deps.repo : createMembershipRepository(executor!);
+    const authz = await authorizeOnAccount(env, repo, actor, orgUuid, "team.update", requestId);
+    if (!authz.ok) return authz.res;
+
+    const existing = await repo.getTeamById(teamUuid);
+    if (!existing.ok || existing.value.accountOrgId !== authz.accountUuid) {
+      return errorResponse("not_found", "Team not found", 404, requestId);
+    }
+
+    const now = deps?.now ? deps.now() : new Date();
+    const genId = deps?.generateId ?? (() => crypto.randomUUID());
+    const teamPub = teamPublicId(teamUuid);
+
+    const run = async (r: MembershipRepository, ev: Pick<EventsRepository, "appendEventWithAudit"> | null) => {
+      const updated = await r.updateTeam(teamUuid, {
+        ...(nextName !== undefined ? { name: nextName } : {}),
+        ...(nextSlug !== undefined ? { slugLower: nextSlug } : {}),
+        updatedAt: now,
+      });
+      if (!updated.ok) return updated;
+      if (ev) {
+        await ev.appendEventWithAudit({
+          event: {
+            id: genId(), type: "team.updated", version: 1, source: "membership-worker",
+            occurredAt: now, actorType: actor.subjectType, actorId: actor.subjectId,
+            orgId: authz.accountUuid, subjectKind: "team", subjectId: teamPub,
+            requestId, payload: { teamId: teamPub, ...(nextName !== undefined ? { name: nextName } : {}), ...(nextSlug !== undefined ? { slug: nextSlug } : {}) },
+          },
+          audit: { id: genId(), category: "membership", description: `Team ${teamPub} updated` },
+        });
+      }
+      return updated;
+    };
+
+    let result;
+    if (executor && "transaction" in executor) {
+      result = await executor.transaction(async (tx) => run(createMembershipRepository(tx), createEventsRepository(tx)));
+    } else {
+      result = await run(repo, deps?.eventsRepo ?? null);
+    }
+    if (!result.ok) {
+      if (result.error.kind === "conflict") return errorResponse("conflict", "A team with that slug already exists", 409, requestId);
+      return errorResponse("not_found", "Team not found", 404, requestId);
+    }
+    return successResponse({ team: publicTeam(result.value) }, requestId);
+  } catch {
+    return errorResponse("internal_error", "An unexpected error occurred", 500, requestId);
+  } finally {
+    if (executor) await executor.dispose();
+  }
+}
+
+// ── members: list ───────────────────────────────────────────────────
+export async function handleListTeamMembers(
+  env: Env,
+  requestId: string,
+  actor: ActorContext,
+  orgIdParam: string,
+  teamIdParam: string,
+  deps?: TeamsDeps,
+): Promise<Response> {
+  const orgUuid = parseOrgPublicId(orgIdParam);
+  if (!orgUuid) return errorResponse("not_found", "Organization not found", 404, requestId);
+  const teamUuid = parseTeamPublicId(teamIdParam);
+  if (!teamUuid) return errorResponse("not_found", "Team not found", 404, requestId);
+  const pf = preflight(env, deps, requestId);
+  if (pf) return pf;
+
+  const executor = deps ? null : createSqlExecutor(env.PLATFORM_DB!);
+  try {
+    const repo = deps ? deps.repo : createMembershipRepository(executor!);
+    const authz = await authorizeOnAccount(env, repo, actor, orgUuid, "organization.member.list", requestId);
+    if (!authz.ok) return authz.res;
+    const existing = await repo.getTeamById(teamUuid);
+    if (!existing.ok || existing.value.accountOrgId !== authz.accountUuid) {
+      return errorResponse("not_found", "Team not found", 404, requestId);
+    }
+    const members = await repo.listTeamMembers(teamUuid);
+    if (!members.ok) return errorResponse("internal_error", "An unexpected error occurred", 500, requestId);
+    return successResponse({ members: members.value.map(publicMember) }, requestId);
+  } catch {
+    return errorResponse("internal_error", "An unexpected error occurred", 500, requestId);
+  } finally {
+    if (executor) await executor.dispose();
+  }
+}
+
+// ── members: add ────────────────────────────────────────────────────
+export async function handleAddTeamMember(
+  request: Request,
+  env: Env,
+  requestId: string,
+  actor: ActorContext,
+  orgIdParam: string,
+  teamIdParam: string,
+  deps?: TeamsDeps,
+): Promise<Response> {
+  const orgUuid = parseOrgPublicId(orgIdParam);
+  if (!orgUuid) return errorResponse("not_found", "Organization not found", 404, requestId);
+  const teamUuid = parseTeamPublicId(teamIdParam);
+  if (!teamUuid) return errorResponse("not_found", "Team not found", 404, requestId);
+  const pf = preflight(env, deps, requestId);
+  if (pf) return pf;
+
+  let body: unknown;
+  try {
+    body = await request.json();
+  } catch {
+    return validationError(requestId, { body: ["Invalid JSON"] });
+  }
+  if (!body || typeof body !== "object") return validationError(requestId, { body: ["Request body must be an object"] });
+  const { subjectId, subjectType } = body as { subjectId?: unknown; subjectType?: unknown };
+  if (typeof subjectId !== "string" || subjectId.length === 0) {
+    return validationError(requestId, { subjectId: ["Required"] });
+  }
+  const memberType = subjectType === undefined ? "user" : subjectType;
+  if (typeof memberType !== "string" || !MEMBER_SUBJECT_TYPES.has(memberType)) {
+    return validationError(requestId, { subjectType: ["Must be one of: user, service_principal"] });
+  }
+
+  const executor = deps ? null : createSqlExecutor(env.PLATFORM_DB!);
+  try {
+    const repo = deps ? deps.repo : createMembershipRepository(executor!);
+    const authz = await authorizeOnAccount(env, repo, actor, orgUuid, "team.member.add", requestId);
+    if (!authz.ok) return authz.res;
+    const existing = await repo.getTeamById(teamUuid);
+    if (!existing.ok || existing.value.accountOrgId !== authz.accountUuid) {
+      return errorResponse("not_found", "Team not found", 404, requestId);
+    }
+
+    const now = deps?.now ? deps.now() : new Date();
+    const genId = deps?.generateId ?? (() => crypto.randomUUID());
+    const teamPub = teamPublicId(teamUuid);
+
+    const run = async (r: MembershipRepository, ev: Pick<EventsRepository, "appendEventWithAudit"> | null) => {
+      const added = await r.addTeamMember({ teamId: teamUuid, subjectId, subjectType: memberType, createdAt: now });
+      if (!added.ok) return added;
+      if (ev) {
+        await ev.appendEventWithAudit({
+          event: {
+            id: genId(), type: "team.member.added", version: 1, source: "membership-worker",
+            occurredAt: now, actorType: actor.subjectType, actorId: actor.subjectId,
+            orgId: authz.accountUuid, subjectKind: "team", subjectId: teamPub,
+            requestId, payload: { teamId: teamPub, memberSubjectId: subjectId, memberSubjectType: memberType },
+          },
+          audit: { id: genId(), category: "membership", description: `Subject added to team ${teamPub}` },
+        });
+      }
+      return added;
+    };
+
+    let result;
+    if (executor && "transaction" in executor) {
+      result = await executor.transaction(async (tx) => run(createMembershipRepository(tx), createEventsRepository(tx)));
+    } else {
+      result = await run(repo, deps?.eventsRepo ?? null);
+    }
+    if (!result.ok) return errorResponse("internal_error", "An unexpected error occurred", 500, requestId);
+    return successResponse({ member: publicMember(result.value) }, requestId, 201);
+  } catch {
+    return errorResponse("internal_error", "An unexpected error occurred", 500, requestId);
+  } finally {
+    if (executor) await executor.dispose();
+  }
+}
+
+// ── members: remove ─────────────────────────────────────────────────
+export async function handleRemoveTeamMember(
+  env: Env,
+  requestId: string,
+  actor: ActorContext,
+  orgIdParam: string,
+  teamIdParam: string,
+  subjectIdParam: string,
+  deps?: TeamsDeps,
+): Promise<Response> {
+  const orgUuid = parseOrgPublicId(orgIdParam);
+  if (!orgUuid) return errorResponse("not_found", "Organization not found", 404, requestId);
+  const teamUuid = parseTeamPublicId(teamIdParam);
+  if (!teamUuid) return errorResponse("not_found", "Team not found", 404, requestId);
+  const subjectId = decodeURIComponent(subjectIdParam);
+  if (subjectId.length === 0) return errorResponse("not_found", "Member not found", 404, requestId);
+  const pf = preflight(env, deps, requestId);
+  if (pf) return pf;
+
+  const executor = deps ? null : createSqlExecutor(env.PLATFORM_DB!);
+  try {
+    const repo = deps ? deps.repo : createMembershipRepository(executor!);
+    const authz = await authorizeOnAccount(env, repo, actor, orgUuid, "team.member.remove", requestId);
+    if (!authz.ok) return authz.res;
+    const existing = await repo.getTeamById(teamUuid);
+    if (!existing.ok || existing.value.accountOrgId !== authz.accountUuid) {
+      return errorResponse("not_found", "Team not found", 404, requestId);
+    }
+
+    const now = deps?.now ? deps.now() : new Date();
+    const genId = deps?.generateId ?? (() => crypto.randomUUID());
+    const teamPub = teamPublicId(teamUuid);
+
+    const run = async (r: MembershipRepository, ev: Pick<EventsRepository, "appendEventWithAudit"> | null) => {
+      const removed = await r.removeTeamMember(teamUuid, subjectId);
+      if (!removed.ok) return removed;
+      if (ev) {
+        await ev.appendEventWithAudit({
+          event: {
+            id: genId(), type: "team.member.removed", version: 1, source: "membership-worker",
+            occurredAt: now, actorType: actor.subjectType, actorId: actor.subjectId,
+            orgId: authz.accountUuid, subjectKind: "team", subjectId: teamPub,
+            requestId, payload: { teamId: teamPub, memberSubjectId: subjectId },
+          },
+          audit: { id: genId(), category: "membership", description: `Subject removed from team ${teamPub}` },
+        });
+      }
+      return removed;
+    };
+
+    let result;
+    if (executor && "transaction" in executor) {
+      result = await executor.transaction(async (tx) => run(createMembershipRepository(tx), createEventsRepository(tx)));
+    } else {
+      result = await run(repo, deps?.eventsRepo ?? null);
+    }
+    if (!result.ok) return errorResponse("not_found", "Member not found", 404, requestId);
+    return successResponse({ member: publicMember(result.value) }, requestId);
   } catch {
     return errorResponse("internal_error", "An unexpected error occurred", 500, requestId);
   } finally {

@@ -9,7 +9,7 @@ import { handleUpdateMemberRole } from "./handlers/update-member-role.js";
 import { handleGrantAccountRole } from "./handlers/grant-account-role.js";
 import { handleGrantTeamRole } from "./handlers/grant-team-role.js";
 import { handleRevokeTeamRole } from "./handlers/revoke-team-role.js";
-import { handleCreateTeam, handleListTeams, handleGetTeam, handleDeleteTeam } from "./handlers/teams.js";
+import { handleCreateTeam, handleListTeams, handleGetTeam, handleDeleteTeam, handleUpdateTeam, handleListTeamMembers, handleAddTeamMember, handleRemoveTeamMember } from "./handlers/teams.js";
 import { handleRemoveMember } from "./handlers/remove-member.js";
 import { handleCreateInvitation } from "./handlers/create-invitation.js";
 import { handleListInvitations } from "./handlers/list-invitations.js";
@@ -56,6 +56,8 @@ const ORG_ACCOUNT_ROLES_RE = /^\/v1\/organizations\/([^/]+)\/account-roles$/;
 const ORG_TEAM_ROLES_RE = /^\/v1\/organizations\/([^/]+)\/team-roles$/;
 const ORG_TEAMS_RE = /^\/v1\/organizations\/([^/]+)\/teams$/;
 const ORG_TEAM_ID_RE = /^\/v1\/organizations\/([^/]+)\/teams\/([^/]+)$/;
+const ORG_TEAM_MEMBERS_RE = /^\/v1\/organizations\/([^/]+)\/teams\/([^/]+)\/members$/;
+const ORG_TEAM_MEMBER_ID_RE = /^\/v1\/organizations\/([^/]+)\/teams\/([^/]+)\/members\/([^/]+)$/;
 const SP_BINDINGS_PATH = "/v1/internal/membership/service-principal-bindings";
 const SP_BINDING_ID_RE = /^\/v1\/internal\/membership\/service-principal-bindings\/([^/]+)$/;
 
@@ -252,7 +254,36 @@ export async function route(request: Request, env: Env): Promise<Response> {
       return methodNotAllowed(requestId);
     }
 
-    // Team lifecycle (saas-teams TM4b): get/delete a single team.
+    // Team membership (saas-teams TM4b2): remove a specific member.
+    const teamMemberIdMatch = url.pathname.match(ORG_TEAM_MEMBER_ID_RE);
+    if (teamMemberIdMatch) {
+      const actor = resolveActor(request);
+      if (!actor) {
+        return errorResponse("unauthenticated", "Authentication required", 401, requestId);
+      }
+      if (request.method === "DELETE") {
+        return handleRemoveTeamMember(env, requestId, actor, teamMemberIdMatch[1]!, teamMemberIdMatch[2]!, teamMemberIdMatch[3]!);
+      }
+      return methodNotAllowed(requestId);
+    }
+
+    // Team membership (saas-teams TM4b2): list/add members.
+    const teamMembersMatch = url.pathname.match(ORG_TEAM_MEMBERS_RE);
+    if (teamMembersMatch) {
+      const actor = resolveActor(request);
+      if (!actor) {
+        return errorResponse("unauthenticated", "Authentication required", 401, requestId);
+      }
+      if (request.method === "GET") {
+        return handleListTeamMembers(env, requestId, actor, teamMembersMatch[1]!, teamMembersMatch[2]!);
+      }
+      if (request.method === "POST") {
+        return handleAddTeamMember(request, env, requestId, actor, teamMembersMatch[1]!, teamMembersMatch[2]!);
+      }
+      return methodNotAllowed(requestId);
+    }
+
+    // Team lifecycle (saas-teams TM4b/TM4b2): get/update/delete a single team.
     const teamIdMatch = url.pathname.match(ORG_TEAM_ID_RE);
     if (teamIdMatch) {
       const actor = resolveActor(request);
@@ -261,6 +292,9 @@ export async function route(request: Request, env: Env): Promise<Response> {
       }
       if (request.method === "GET") {
         return handleGetTeam(env, requestId, actor, teamIdMatch[1]!, teamIdMatch[2]!);
+      }
+      if (request.method === "PATCH") {
+        return handleUpdateTeam(request, env, requestId, actor, teamIdMatch[1]!, teamIdMatch[2]!);
       }
       if (request.method === "DELETE") {
         return handleDeleteTeam(env, requestId, actor, teamIdMatch[1]!, teamIdMatch[2]!);
