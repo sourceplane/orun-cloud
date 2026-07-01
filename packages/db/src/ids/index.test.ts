@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { generateWorkspaceRef, isWorkspaceRef, generateTeamId, isTeamId } from "./index.js";
+import { generateWorkspaceRef, isWorkspaceRef, isTeamId, uuidToHex } from "./index.js";
 
 describe("Workspace ID codec (saas-workspace-id WID2)", () => {
   it("generateWorkspaceRef produces a value that isWorkspaceRef accepts", () => {
@@ -53,47 +53,24 @@ describe("Workspace ID codec (saas-workspace-id WID2)", () => {
   });
 });
 
-describe("Team ID codec (saas-teams TM1)", () => {
-  it("generateTeamId produces a value that isTeamId accepts", () => {
-    for (let i = 0; i < 100; i++) {
-      expect(isTeamId(generateTeamId())).toBe(true);
-    }
+describe("Team ID codec (saas-teams TM1/TM2)", () => {
+  it("isTeamId accepts team_ + the 32-hex form of a UUID", () => {
+    const hex = uuidToHex("00000000-0000-0000-0000-0000000000a1");
+    expect(isTeamId(`team_${hex}`)).toBe(true);
   });
 
-  it("has the team_ prefix and an 8-char Crockford-base32 body", () => {
-    const id = generateTeamId();
-    expect(id.startsWith("team_")).toBe(true);
-    expect(id.slice(5)).toHaveLength(8);
-    expect(id).toMatch(/^team_[0-9A-HJKMNP-TV-Z]{8}$/);
+  it("accepts well-formed ids (upper/lower hex)", () => {
+    expect(isTeamId("team_0123456789abcdef0123456789abcdef")).toBe(true);
+    expect(isTeamId("team_0123456789ABCDEF0123456789ABCDEF")).toBe(true);
   });
 
-  it("never emits the ambiguous Crockford characters I, L, O, U", () => {
-    for (let i = 0; i < 500; i++) {
-      expect(generateTeamId().slice(5)).not.toMatch(/[ILOU]/);
-    }
-  });
-
-  it("produces distinct values across many calls", () => {
-    const seen = new Set<string>();
-    for (let i = 0; i < 1000; i++) seen.add(generateTeamId());
-    expect(seen.size).toBe(1000);
-  });
-
-  describe("isTeamId", () => {
-    it("accepts well-formed ids", () => {
-      expect(isTeamId("team_3KF9TQ2P")).toBe(true);
-      expect(isTeamId("team_00000000")).toBe(true);
-      expect(isTeamId("team_ZZZZZZZZ")).toBe(true);
-    });
-
-    it("rejects malformed ids", () => {
-      expect(isTeamId("team_3KF9TQ2")).toBe(false); // 7 chars
-      expect(isTeamId("team_3KF9TQ2PA")).toBe(false); // 9 chars
-      expect(isTeamId("3KF9TQ2P")).toBe(false); // no prefix
-      expect(isTeamId("ws_3KF9TQ2P")).toBe(false); // wrong prefix
-      expect(isTeamId("team_3kf9tq2p")).toBe(false); // lowercase body
-      expect(isTeamId("team_ILOU0000")).toBe(false); // excluded letters
-      expect(isTeamId("")).toBe(false);
-    });
+  it("rejects malformed ids", () => {
+    expect(isTeamId("team_0123456789abcdef0123456789abcde")).toBe(false); // 31 chars
+    expect(isTeamId("team_0123456789abcdef0123456789abcdeff")).toBe(false); // 33 chars
+    expect(isTeamId("0123456789abcdef0123456789abcdef")).toBe(false); // no prefix
+    expect(isTeamId("org_0123456789abcdef0123456789abcdef")).toBe(false); // wrong prefix
+    expect(isTeamId("team_ZZZZZZZZ")).toBe(false); // base32, not hex
+    expect(isTeamId("team_3KF9TQ2P")).toBe(false); // not 32 hex
+    expect(isTeamId("")).toBe(false);
   });
 });

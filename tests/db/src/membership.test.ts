@@ -2023,5 +2023,57 @@ describe("MembershipRepository", () => {
         expect(result.ok).toBe(true);
       });
     });
+
+    // saas-teams TM2 — team grants.
+    describe("revokeTeamGrant", () => {
+      const TEAM_PUB = "team_00000000000000000000000000000a1b";
+
+      it("revokes the matching active grant by tuple (org+team+role+scope)", async () => {
+        const { executor, queries } = createFakeExecutor({
+          rows: [{ id: "ra-1", org_id: ORG1, subject_id: TEAM_PUB, subject_type: "team", role: "builder", scope_kind: "organization", scope_ref: null, created_at: NOW.toISOString(), revoked_at: NOW.toISOString() }],
+        });
+        const repo = createMembershipRepository(executor);
+
+        const result = await repo.revokeTeamGrant(ORG1, TEAM_PUB, "builder", "organization", null, NOW);
+
+        expect(queries[0]!.text).toContain("subject_type = 'team'");
+        expect(queries[0]!.text).toContain("COALESCE(scope_ref, '') = COALESCE($5, '')");
+        expect(queries[0]!.text).toContain("revoked_at IS NULL");
+        expect(queries[0]!.params).toEqual([ORG1, TEAM_PUB, "builder", "organization", null, NOW.toISOString()]);
+        expect(result.ok).toBe(true);
+      });
+
+      it("returns not_found when no active grant matches", async () => {
+        const { executor } = createFakeExecutor({ rows: [] });
+        const repo = createMembershipRepository(executor);
+
+        const result = await repo.revokeTeamGrant(ORG1, TEAM_PUB, "builder", "project", "proj_1", NOW);
+        expect(result.ok).toBe(false);
+        if (!result.ok) expect(result.error.kind).toBe("not_found");
+      });
+    });
+
+    describe("revokeAllTeamGrants (delete-cascade)", () => {
+      const TEAM_PUB = "team_00000000000000000000000000000a1b";
+
+      it("revokes every active team grant across all orgs by subject_id", async () => {
+        const { executor, queries } = createFakeExecutor({
+          rows: [
+            { id: "ra-1", org_id: ORG1, subject_id: TEAM_PUB, subject_type: "team", role: "builder", scope_kind: "organization", scope_ref: null, created_at: NOW.toISOString(), revoked_at: NOW.toISOString() },
+            { id: "ra-2", org_id: ORG2, subject_id: TEAM_PUB, subject_type: "team", role: "account_admin", scope_kind: "account", scope_ref: null, created_at: NOW.toISOString(), revoked_at: NOW.toISOString() },
+          ],
+        });
+        const repo = createMembershipRepository(executor);
+
+        const result = await repo.revokeAllTeamGrants(TEAM_PUB, NOW);
+
+        expect(queries[0]!.text).toContain("subject_id = $1");
+        expect(queries[0]!.text).toContain("subject_type = 'team'");
+        expect(queries[0]!.text).not.toContain("org_id =");
+        expect(queries[0]!.params).toEqual([TEAM_PUB, NOW.toISOString()]);
+        expect(result.ok).toBe(true);
+        if (result.ok) expect(result.value).toHaveLength(2);
+      });
+    });
   });
 });

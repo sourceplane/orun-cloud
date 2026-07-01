@@ -9,7 +9,7 @@ shipped). Confirm the ⛔ items before the corresponding milestone lands.
 
 | # | Question | Default lean |
 |---|----------|--------------|
-| **T1** | **Team id format** — `team_<base32>` (match the `ws_` direction) vs `team_<hex>` (match the legacy `usr_`/`org_` hex)? | **`team_<base32>`** — align with the new durable-id direction in `saas-workspace-id`. |
+| ~~**T1**~~ | ~~**Team id format**~~ — **Resolved in TM2: `team_<hex>`** (the team UUID rendered like `usr_`/`sp_`/`org_`/`mem_`). A grant stores `subject_id='team_<hex>'` and decodes straight back to the team UUID with no separate public-id column — one-step resolvable, unlike a base32 handle which would need a `public_ref` column + resolver (the `ws_` pattern). Teams are grant-referenced principals, not support-quoted handles, so consistency + resolvability win. | Resolved. |
 | **T2** | **Members** — users only, or also service principals? | **Both** — `subject_type` already supports `service_principal`; allowing SPs in teams covers CI/automation grouping. |
 | **T6** | **Grantable scopes** — allow team grants at all of account/workspace/project, or restrict to account+workspace initially? | **All three** — `role_assignments` already models project scope; no reason to special-case it out. |
 

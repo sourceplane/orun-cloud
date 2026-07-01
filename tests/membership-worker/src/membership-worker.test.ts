@@ -30,6 +30,7 @@ import type {
 } from "@saas/db/membership";
 import type { AppendEventWithAuditInput, StoredEvent, StoredAuditEntry } from "@saas/db/events";
 import type { Env } from "@membership-worker/env";
+import { teamRepoStubs } from "./team-repo-stubs.js";
 
 // Permissive response envelope used across the suite. Tests assert deep-property
 // shapes ad-hoc; this lets each call site narrow what it reads without needing a
@@ -105,6 +106,7 @@ function createFakeRepository(): MembershipRepository & { _orgs: Map<string, Org
   const _roles = new Map<string, RoleAssignment[]>();
 
   const repo: MembershipRepository & { _orgs: typeof _orgs; _roles: typeof _roles } = {
+    ...teamRepoStubs(),
     _orgs,
     _roles,
 

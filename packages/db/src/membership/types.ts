@@ -81,8 +81,9 @@ export interface RoleAssignment {
 
 /**
  * An account-owned Team (saas-teams TM1): a named principal-group a role can be
- * granted to. `id` is the internal UUID; the public id is `team_<base32>`
- * (minted via `generateTeamId`) — grants bind to the public id, never the slug.
+ * granted to. `id` is the internal UUID; the public id is `team_<hex>` (the UUID
+ * rendered via `teamPublicId`, decodable back with `parseTeamPublicId`) — grants
+ * bind to the public id, never the slug.
  */
 export interface Team {
   id: string;
@@ -267,6 +268,27 @@ export interface MembershipRepository {
   listTeamMembers(teamId: Uuid): Promise<MembershipResult<TeamMember[]>>;
   /** Active teams (within an account) a subject is an active member of. */
   listTeamsForSubject(accountOrgId: Uuid, subjectId: string): Promise<MembershipResult<Team[]>>;
+
+  // ── Team grants (saas-teams TM2) ────────────────────────────────
+  /**
+   * Revoke a single team grant identified by its full tuple (org + team public
+   * id + role + scope). The partial-unique index makes at most one active row
+   * match. Returns not_found when no active grant matches.
+   */
+  revokeTeamGrant(
+    orgId: Uuid,
+    teamPublicId: string,
+    role: string,
+    scopeKind: string,
+    scopeRef: string | null,
+    revokedAt: Date,
+  ): Promise<MembershipResult<RoleAssignment>>;
+  /**
+   * Cascade-revoke every active grant for a team across ALL orgs (delete-cascade,
+   * TM2). Team public ids are globally unique, so filtering by subject_id +
+   * subject_type='team' is exact. Returns the revoked assignments.
+   */
+  revokeAllTeamGrants(teamPublicId: string, revokedAt: Date): Promise<MembershipResult<RoleAssignment[]>>;
 
   createRoleAssignment(input: CreateRoleAssignmentInput): Promise<MembershipResult<RoleAssignment>>;
   listRoleAssignments(orgId: Uuid, subjectId: string): Promise<MembershipResult<RoleAssignment[]>>;
