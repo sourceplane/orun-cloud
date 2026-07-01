@@ -50,14 +50,16 @@ Workspace's. Resolution is layered, most-authoritative first:
 ### How the markdown gets to the console
 
 > **Decision revised — see `kinds-and-docs-model.md §0/§4` (authoritative).** The
-> body is **fetched live from the repo via the GitHub App** at render time; state
-> stores only a **doc pointer** (`docs.overview` → `{path, ref, sha}`). The table
-> below records the trade-off that was weighed; the verdict now favours (B).
+> body is pushed as its **own content-addressed `doc` object** in the state
+> closure and rendered from R2 **by digest**; state carries a `doc_ref`
+> (`{path, ref, sha, digest}`), never inline prose. The table records the three
+> options weighed; the verdict is (C).
 
 | Path | Mechanism | Verdict |
 |------|-----------|---------|
-| (A) Synced at plan time | Extend the pushed catalog snapshot to carry the rendered narrative bytes + provenance. | **Not chosen.** Persists prose in state, goes stale between plans, and bloats the snapshot. Kept only as the *identity/pointer* carrier (name/description + `doc_ref`), never the body. |
-| **(B) Live git fetch via the GitHub App** | Resolve the stored `doc_ref` → token-broker mints a `contents:read`-scoped installation token → `GET /repos/{owner}/{repo}/contents/{path}`; short-TTL cache evicted by `scm.push`. | **Chosen.** Always as fresh as the last push, no prose in state, reuses the shipped App/token-broker/`repo_links`; the one constraint is that live fetch needs the repo linked via the GitHub App (graceful fallback to the git-declared description otherwise). |
+| (A) Inline in the snapshot blob | Carry the rendered narrative bytes inside `catalog.json`. | **Rejected.** Bloats the snapshot, couples doc to catalog, no dedup. |
+| (B) Live git fetch via the GitHub App | Resolve a path pointer → token-broker → `GET /repos/…/contents/…` at render. | **Optional overlay only.** Freshest, but GitHub-/SaaS-only (breaks the `18-state.md` "any git remote, no App" invariant) and can render a HEAD that differs from the plan commit. Kept as a drift/"latest-on-branch" badge where the App is linked. |
+| **(C) Separate `doc` object in the state closure** | `orun plan` walks each `docs.overview` into the object closure as a `doc` blob (set-difference sync); render from R2 by digest. | **Chosen (base).** Provider-agnostic, self-host-portable, point-in-time-consistent with the catalog head, no render-time GitHub dependency; reuses the CAS closure that already ships the snapshot. |
 
 This mirrors `saas-workspaces`' **relabel/relayer, don't remodel** discipline:
 the Overview is a **projection** over data the platform already holds, plus one

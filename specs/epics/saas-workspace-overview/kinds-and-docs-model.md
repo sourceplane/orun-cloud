@@ -16,7 +16,7 @@ never the prose.
 
 | Decision | Choice |
 |----------|--------|
-| **Where does markdown live in the platform?** | **Nowhere durable.** State stores a **doc reference** `{repo, path, ref, lastSeenSha}`; orun-cloud **fetches the body live** from the repo through the GitHub App at render time, with a short-TTL cache invalidated by `scm.push`. (Supersedes the earlier "project `narrativeMarkdown` into `project_overview`" idea.) |
+| **Where does markdown live in the platform?** | **As its own content-addressed object in the state plane (base); fetch-live is an optional freshness overlay.** `orun plan` walks each referenced `docs.overview` into the object **closure** as a separate `doc` object (kind `doc`); the entity's `doc_ref` becomes `{path, ref, sha, digest}`. orun-cloud renders the body from R2 **by digest** — no GitHub call, works for **any git remote** (honours the `18-state.md` "no App required" invariant), and is point-in-time-consistent with the catalog head it shipped with. Set-difference sync means an unchanged doc is never re-uploaded. Fetch-live via the GitHub App is kept only as an optional "latest-on-branch / drift" overlay where the App is linked. **(Supersedes the earlier fetch-live-as-base and the still-earlier inline-`narrativeMarkdown` ideas.)** |
 | **How do repo/product identity enter the catalog?** | As **first-class declared entity kinds** (`Repo`, `Product`) emitted from `intent.yaml`, riding the **existing** snapshot → catalog-head → projector path. `kind` is free-text TEXT server-side, so this needs **no DB/enum migration** for the kind itself. |
 
 ## 1. Grounding — what exists today (verified)
@@ -132,7 +132,7 @@ CREATE TABLE state.repo_facet (
   owner             TEXT,
   default_branch    TEXT,
   links             JSONB DEFAULT '[]'::jsonb,
-  doc_ref           JSONB,                   -- {path, ref, lastSeenSha}  ← POINTER, not body
+  doc_ref           JSONB,                   -- {path, ref, sha, digest}  ← digest = the doc object in CAS
   head_digest       TEXT NOT NULL,
   source_commit     TEXT,
   synced_at         TIMESTAMPTZ NOT NULL,
@@ -144,58 +144,108 @@ Projected from the `Repo` entity in the snapshot. The repos list reads it
 directly (description, owner, "has overview" badge); the Workspace Overview reads
 the `Product` entity (or the primary repo's `repo_facet`).
 
-### 3b. `doc_ref` on any entity — the pointer the fetch layer resolves
+### 3b. `doc_ref` on any entity — a digest pointer into CAS
 
 `org_catalog_entities` gains a nullable `doc_ref JSONB` projected from each
-entity's `docs.overview` (path + resolved branch/ref + the commit sha the head
-was advanced at). No markdown bytes land in Postgres or R2. The `Repo` facet
-carries its own `doc_ref` (3a); components/systems/products carry theirs on their
-`org_catalog_entities` row.
+entity's `docs.overview`: `{path, ref, sha, digest}`. The **digest** is the
+content address of the doc object the CLI pushed into the closure (§4); `path/ref/
+sha` are provenance (the "edit on GitHub" link and the drift check). The body is
+read from R2 **by digest** — Postgres holds only the index/pointer. The `Repo`
+facet carries its own `doc_ref` (3a); components/systems/products carry theirs on
+their `org_catalog_entities` row.
 
 > `kind` is already TEXT and the projector is kind-agnostic, so `Repo`/`Product`
-> rows need **no schema change**; only `repo_facet` + the `doc_ref` column are new.
+> rows need **no kind migration**. New: `repo_facet`, the `doc_ref` column, and
+> one added value (`doc`) in the `state.objects.kind` CHECK constraint (§4).
 
-## 4. Render-time fetch via the GitHub integration
+## 4. Doc bytes: content-addressed objects (base) + optional live overlay
 
-The body is fetched live, on demand, when a surface renders an overview:
+### 4a. Base — push each referenced doc as its own `doc` object
+
+The catalog snapshot is **already a Merkle tree**: `catalog.json` +
+`entities/<Kind>/*.json` leaves, transferred by the CLI's **set-difference**
+object sync (`objects/missing` → PUT only the missing digests). Docs join that
+tree as blobs referenced by digest — the native pattern, not a bolt-on:
 
 ```
-console renders Repo/Product/Component overview
-   │  GET /v1/organizations/{orgId}/projects/{projectId}/repo/doc?entityRef=…   (new)
+orun plan  (internal/catalogmodel + objremote.Sync)
+   1. resolve each entity's docs.overview → read the file bytes at HEAD
+   2. add each as an object in the closure:  digest = sha256(bytes)
+      entity JSON gets  docs.overview = { path, ref, sha, digest }
+   3. set-difference sync:  POST …/state/objects/missing  → PUT only missing digests
+      PUT …/state/objects/{digest}   header Orun-Object-Kind: doc
+   4. advance the head as usual  (the docs are in the closure the head pins)
    ▼
-integrations-worker  (new handler repo-content.ts)
-   1. resolve doc_ref (path, ref) for the entity  ← from repo_facet / org_catalog_entities
-   2. find the integrations.repo_links row for source_project_id
-        └─ NONE (only a CLI workspace_link, no App)  →  422 needs_github_connection  (graceful fallback)
-   3. token-broker: mint short-lived token, repos:[repo_external_id], contents:read   (⊆ App grant; never cached raw)
-   4. github-app.getRepositoryFileContents(token, owner/repo, path, ref)   ← NEW: GET /repos/{owner}/{repo}/contents/{path}?ref=
-   5. cache body in integrations.repo_content_cache  (AES-GCM, key (connection, repo, path, sha), short TTL)
+orun-cloud
+   • doc bytes → R2  state/{org}/{project}/objects/{digest}   (index row kind='doc')
+   • projector records doc_ref.digest on the entity / repo_facet
    ▼
-sanitize (rehype-sanitize) → render
+console renders overview:  GET the doc object by digest → sanitize → render
 ```
 
-- **Cache & freshness.** Reuse the `installation_tokens` AES-GCM pattern for a
-  `repo_content_cache` table (or Cloudflare Cache API). The integration **already
-  receives `scm.push` webhooks** — on a push to the doc's branch, bump
-  `repo_facet.doc_ref.lastSeenSha` and evict the cache. So the overview is as
-  fresh as the last push, with zero polling.
-- **Access = the GitHub App.** Live fetch requires the repo linked via the App
-  (`repo_links`). If only a CLI `workspace_link` exists, the pointer still shows
-  (path + "connect GitHub to preview"), and the header degrades to the
-  git-declared `metadata.description` already carried on `repo_facet`. This makes
-  "connect GitHub" a concrete, motivated upsell on the Overview/repos surfaces.
-- **Security.** Untrusted repo markdown → sanitizing pipeline (no raw HTML,
-  `rel="nofollow ugc noopener"`, no auto-loaded remote images). Tokens are
-  minted per-request, scoped to the one repo, `contents:read` only, never logged.
+Why this is the base:
+- **Any git remote, no App.** Honours the explicit `18-state.md` invariant —
+  "Orun linking must work for any git remote with no GitHub App installed." The
+  CLI reads the working tree and pushes; GitLab/Gitea/bare-git and the OSS
+  self-host backend all work identically. Fetch-live would make the overview a
+  GitHub-only, SaaS-only feature.
+- **Point-in-time correct.** The doc is pinned to the exact commit the catalog
+  head was advanced at — the overview always matches the catalog it shipped with,
+  never skewed by a later push to `main`. This is the *same* freshness model the
+  rest of the catalog already has (snapshot-at-plan), so it is consistent, not a
+  regression.
+- **Self-contained & fast.** Rendered from R2 (owned, low-latency) — no GitHub
+  round-trip, token mint, or rate limit on the hot path. No cloud-side repo-read
+  scope needed for private repos.
+- **Nearly free on the CLI.** `objremote.Sync` already walks the closure and
+  set-diffs; adding doc blobs to the closure reuses it. Unchanged docs (same
+  digest) are never re-uploaded. Bytes are tiny and content-addressed (dedup
+  across repos/pushes).
+
+Bounds: push **only the single `docs.overview` file per entity** by default (KB-
+scale). A `techdocs: docs/` *tree* is opt-in and size-capped, so nobody
+accidentally mirrors a large folder into state. Storage counts toward
+`limit.state.storage_gb` and obeys the normal object retention/GC.
+
+Migration cost: one added value (`doc`) in the `state.objects.kind` CHECK
+constraint. Everything else (CAS, sync, R2 layout, retention) already exists.
+
+### 4b. Optional overlay — live "latest on branch / drift" via the GitHub App
+
+Where the repo **is** linked via the GitHub App (`integrations.repo_links`), a
+thin overlay can fetch HEAD of the doc's branch to show freshness, **without**
+being the source of record:
+
+```
+GET /v1/organizations/{orgId}/projects/{projectId}/repo/doc/head?entityRef=…   (optional)
+   → token-broker mints repos:[repo_external_id], contents:read  (⊆ App grant)
+   → github-app.getRepositoryFileContents(token, owner/repo, path, ref)   (NEW)
+   → compare sha to doc_ref.sha:  equal → "up to date";  differ → "changed since last plan — re-plan to update"
+```
+
+- Value is a **drift signal + an always-current preview toggle**, not the base
+  render. The base render is the pinned CAS object, so the page never depends on
+  GitHub being reachable or the App being present.
+- Reuses the shipped App JWT + token-broker; `scm.push` webhooks can flip the
+  drift flag without polling. Net-new is only `getRepositoryFileContents` + a
+  small handler; no persistent content cache is required (the CAS object is the
+  cache).
+
+### 4c. Security (both paths)
+
+Untrusted repo markdown → sanitizing pipeline (no raw HTML,
+`rel="nofollow ugc noopener"`, no auto-loaded remote images), width-constrained
+prose, console type scale. Overlay tokens are minted per-request, scoped to one
+repo, `contents:read` only, never logged.
 
 ## 5. How every surface is fed
 
 | Surface | Reads | Body |
 |---------|-------|------|
 | **Git Repos list** | `state.repo_facet` (per project) | none (description inline); overview badge |
-| **Repo header/detail** | `repo_facet` + its `doc_ref` | live-fetched `docs/overview.md` |
-| **Workspace Overview hero** | `Product` entity (primary) / primary `repo_facet` | live-fetched product `overview.md` |
-| **Component / System / Domain page** | `org_catalog_entities` row + `doc_ref` | live-fetched `docs.overview` |
+| **Repo header/detail** | `repo_facet` + its `doc_ref` | `doc` object from R2 by digest (+ optional drift badge) |
+| **Workspace Overview hero** | `Product` entity (primary) / primary `repo_facet` | `doc` object from R2 by digest |
+| **Component / System / Domain page** | `org_catalog_entities` row + `doc_ref` | `doc` object from R2 by digest |
 | **Signal tiles** | `org_catalog_entities` rollup (org-wide) + runs feed | none |
 
 ## 6. Why this is the optimum
@@ -206,24 +256,29 @@ sanitize (rehype-sanitize) → render
 - **Repo vs Product scoping is principled**, not ad-hoc — it reuses the proven
   "repo is a segment / systems merge across repos" distinction, so a product that
   spans repos just *works* via the org-wide merge, and a repo stays one-per-project.
-- **State remains a pure git-derived projection** — pointers + facets, never
-  prose. The `18-state.md` "derived, never authored, drift-free" invariant holds
-  verbatim; nothing in the console authors catalog content.
-- **Fetch-live reuses what's built** — App JWT, scoped token-broker, `repo_links`,
-  push webhooks. The only net-new code is `getRepositoryFileContents`, one
-  handler, and a cache table. No kind enum migration.
-- **Freshness for free** — push webhooks evict the cache; the overview tracks the
-  repo without a plan re-run or a polling loop.
-- **A built-in upsell** — surfaces that need the body make "connect GitHub" a
-  concrete, in-context action, while never being empty (they fall back to the
-  git-declared description already projected).
+- **State stays git-derived, and the doc is part of it** — the doc bytes are a
+  content-addressed object pinned to the head, never console-authored. The
+  `18-state.md` "derived, never authored, drift-free" invariant holds *more*
+  faithfully than fetch-live, which would render live HEAD that can differ from
+  the plan commit.
+- **Provider-agnostic & self-host-portable** — the overview works for any git
+  remote with no GitHub App, exactly like the rest of the catalog; the OSS
+  self-host backend needs zero integration code. Fetch-live is demoted to an
+  optional GitHub-only *freshness overlay*, not a dependency.
+- **Reuses what's built** — the CAS closure + set-difference sync already move
+  the snapshot; docs ride it as blobs. Net-new is one `state.objects.kind` value
+  (`doc`) + `repo_facet` + the `doc_ref` column. The optional overlay adds only
+  `getRepositoryFileContents` + a small handler — no persistent content cache.
+- **Consistent freshness** — the overview is as fresh as the last plan (like the
+  catalog), with an optional drift badge where the App is linked to nudge a
+  re-plan; never empty and never dependent on GitHub being reachable.
 
 ## 7. Milestone deltas (folds into the README)
 
 | ID | Milestone |
 |----|-----------|
-| WO2a | `orun`: add `docs.overview` to the shared docs struct; add declared `repo` + `products` blocks; emit `Repo`/`Product` entities + `doc_ref`s into the snapshot |
-| WO2b | orun-cloud projector: project `Repo`→`state.repo_facet`, `Product`→`org_catalog_entities`, and `doc_ref` (pointer only) on entities; add `Repo`/`Product` to `catalog-kind.ts` |
-| WO2c | integrations-worker: `getRepositoryFileContents` + `repo-content.ts` handler over the token-broker; `repo_content_cache`; `scm.push` cache-eviction |
+| WO2a | `orun`: add `docs.overview` to the shared docs struct; add declared `repo` + `products` blocks; **walk each `docs.overview` into the object closure as a `doc` object** and record `doc_ref={path,ref,sha,digest}`; emit `Repo`/`Product` entities |
+| WO2b | orun-cloud: add `doc` to the `state.objects.kind` CHECK constraint; projector projects `Repo`→`state.repo_facet`, `Product`→`org_catalog_entities`, and `doc_ref` (digest pointer) on entities; add `Repo`/`Product` to `catalog-kind.ts`; expose a read-doc-by-digest path for the console |
+| WO2c | *(optional overlay)* integrations-worker: `getRepositoryFileContents` + a small `repo/doc/head` handler over the token-broker for the live "drift / latest-on-branch" badge; `scm.push` flips the drift flag. No persistent content cache — the CAS object is the base render |
 | WO3 | Git Repos list reads `repo_facet`; repo header renders the live overview; Workspace Overview hero renders the `Product`/primary-repo overview |
 | WO4 | Empty/fallback states (no App link → description + "connect GitHub"); sanitizing markdown pipeline |
