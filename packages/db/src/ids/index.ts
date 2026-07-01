@@ -90,3 +90,36 @@ export function generateWorkspaceRef(): string {
 export function isWorkspaceRef(value: string): boolean {
   return WORKSPACE_REF_RE.test(value);
 }
+
+// ── Team ID (`team_…`) codec — saas-teams (TM1) ─────────────────────
+// A Team's public id: `team_` + 8 Crockford-base32 chars, matching the `ws_`
+// direction (durable, readable, copy-safe). A team is referenced in grant APIs
+// (`role_assignments.subject_id` for `subject_type='team'`), so grants bind to
+// this stable public id, never the mutable slug.
+
+/** Matches a well-formed Team ID: `team_` + 8 Crockford-base32 chars. */
+const TEAM_ID_RE = /^team_[0-9A-HJKMNP-TV-Z]{8}$/;
+
+/**
+ * Generate a Team ID: `team_` + 8 Crockford-base32 chars, drawn from
+ * `crypto.getRandomValues` with the same unbiased rejection sampling as
+ * `generateWorkspaceRef`.
+ */
+export function generateTeamId(): string {
+  let body = "";
+  while (body.length < 8) {
+    const buf = new Uint8Array(8 - body.length);
+    crypto.getRandomValues(buf);
+    for (const byte of buf) {
+      if (byte >= 248) continue;
+      body += WORKSPACE_REF_ALPHABET[byte % 32];
+      if (body.length === 8) break;
+    }
+  }
+  return `team_${body}`;
+}
+
+/** Type guard: true when `value` is a well-formed Team ID (`team_…`). */
+export function isTeamId(value: string): boolean {
+  return TEAM_ID_RE.test(value);
+}

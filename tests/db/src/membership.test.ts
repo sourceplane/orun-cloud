@@ -1837,4 +1837,191 @@ describe("MembershipRepository", () => {
       }
     });
   });
+
+  // saas-teams TM1 — Teams as account-owned principals.
+  describe("Teams (TM1)", () => {
+    const SAMPLE_TEAM_ROW = {
+      id: "00000000-0000-0000-0000-0000000000a1",
+      account_org_id: ORG1,
+      name: "Platform",
+      slug_lower: "platform",
+      status: "active",
+      created_at: NOW.toISOString(),
+      updated_at: NOW.toISOString(),
+    };
+    const SAMPLE_TEAM_MEMBER_ROW = {
+      team_id: "00000000-0000-0000-0000-0000000000a1",
+      subject_id: "usr-001",
+      subject_type: "user",
+      status: "active",
+      created_at: NOW.toISOString(),
+    };
+
+    describe("createTeam", () => {
+      it("inserts an account-scoped team and maps the row", async () => {
+        const { executor, queries } = createFakeExecutor({ rows: [SAMPLE_TEAM_ROW] });
+        const repo = createMembershipRepository(executor);
+
+        const result = await repo.createTeam({
+          id: SAMPLE_TEAM_ROW.id,
+          accountOrgId: ORG1,
+          name: "Platform",
+          slugLower: "platform",
+          createdAt: NOW,
+        });
+
+        expect(queries[0]!.text).toContain("INSERT INTO membership.teams");
+        expect(queries[0]!.params).toEqual([
+          SAMPLE_TEAM_ROW.id,
+          ORG1,
+          "Platform",
+          "platform",
+          NOW.toISOString(),
+        ]);
+        expect(result.ok).toBe(true);
+        if (result.ok) {
+          expect(result.value.accountOrgId).toBe(ORG1);
+          expect(result.value.slugLower).toBe("platform");
+        }
+      });
+
+      it("maps a unique-violation to a conflict error", async () => {
+        const { executor } = createFakeExecutor({ error: { code: "23505" } });
+        const repo = createMembershipRepository(executor);
+
+        const result = await repo.createTeam({
+          id: SAMPLE_TEAM_ROW.id,
+          accountOrgId: ORG1,
+          name: "Platform",
+          slugLower: "platform",
+          createdAt: NOW,
+        });
+
+        expect(result.ok).toBe(false);
+        if (!result.ok) {
+          expect(result.error.kind).toBe("conflict");
+          expect((result.error as { kind: "conflict"; entity: string }).entity).toBe("team");
+        }
+      });
+    });
+
+    describe("getTeamById / listTeams", () => {
+      it("getTeamById excludes deleted teams", async () => {
+        const { executor, queries } = createFakeExecutor({ rows: [SAMPLE_TEAM_ROW] });
+        const repo = createMembershipRepository(executor);
+
+        const result = await repo.getTeamById(SAMPLE_TEAM_ROW.id);
+
+        expect(queries[0]!.text).toContain("status <> 'deleted'");
+        expect(queries[0]!.params).toEqual([SAMPLE_TEAM_ROW.id]);
+        expect(result.ok).toBe(true);
+      });
+
+      it("getTeamById returns not_found when absent", async () => {
+        const { executor } = createFakeExecutor({ rows: [] });
+        const repo = createMembershipRepository(executor);
+
+        const result = await repo.getTeamById("missing");
+        expect(result.ok).toBe(false);
+        if (!result.ok) expect(result.error.kind).toBe("not_found");
+      });
+
+      it("listTeams scopes by account and orders oldest-first", async () => {
+        const { executor, queries } = createFakeExecutor({ rows: [SAMPLE_TEAM_ROW] });
+        const repo = createMembershipRepository(executor);
+
+        await repo.listTeams(ORG1);
+
+        expect(queries[0]!.text).toContain("account_org_id = $1");
+        expect(queries[0]!.text).toContain("status <> 'deleted'");
+        expect(queries[0]!.text).toContain("ORDER BY created_at ASC");
+        expect(queries[0]!.params).toEqual([ORG1]);
+      });
+    });
+
+    describe("deleteTeam", () => {
+      it("soft-deletes (status='deleted') and frees the slug", async () => {
+        const { executor, queries } = createFakeExecutor({
+          rows: [{ ...SAMPLE_TEAM_ROW, status: "deleted" }],
+        });
+        const repo = createMembershipRepository(executor);
+
+        const result = await repo.deleteTeam(SAMPLE_TEAM_ROW.id, NOW);
+
+        expect(queries[0]!.text).toContain("SET status = 'deleted'");
+        expect(queries[0]!.params).toEqual([SAMPLE_TEAM_ROW.id, NOW.toISOString()]);
+        expect(result.ok).toBe(true);
+        if (result.ok) expect(result.value.status).toBe("deleted");
+      });
+    });
+
+    describe("team membership", () => {
+      it("addTeamMember upserts and re-activates on conflict", async () => {
+        const { executor, queries } = createFakeExecutor({ rows: [SAMPLE_TEAM_MEMBER_ROW] });
+        const repo = createMembershipRepository(executor);
+
+        const result = await repo.addTeamMember({
+          teamId: asUuid(SAMPLE_TEAM_ROW.id),
+          subjectId: "usr-001",
+          subjectType: "user",
+          createdAt: NOW,
+        });
+
+        expect(queries[0]!.text).toContain("INSERT INTO membership.team_members");
+        expect(queries[0]!.text).toContain("ON CONFLICT (team_id, subject_id)");
+        expect(queries[0]!.text).toContain("status = 'active'");
+        expect(result.ok).toBe(true);
+        if (result.ok) expect(result.value.subjectId).toBe("usr-001");
+      });
+
+      it("removeTeamMember soft-removes an active member", async () => {
+        const { executor, queries } = createFakeExecutor({
+          rows: [{ ...SAMPLE_TEAM_MEMBER_ROW, status: "removed" }],
+        });
+        const repo = createMembershipRepository(executor);
+
+        const result = await repo.removeTeamMember(asUuid(SAMPLE_TEAM_ROW.id), "usr-001");
+
+        expect(queries[0]!.text).toContain("SET status = 'removed'");
+        expect(queries[0]!.text).toContain("status = 'active'");
+        expect(queries[0]!.params).toEqual([SAMPLE_TEAM_ROW.id, "usr-001"]);
+        expect(result.ok).toBe(true);
+      });
+
+      it("removeTeamMember returns not_found when no active row matches", async () => {
+        const { executor } = createFakeExecutor({ rows: [] });
+        const repo = createMembershipRepository(executor);
+
+        const result = await repo.removeTeamMember(asUuid(SAMPLE_TEAM_ROW.id), "ghost");
+        expect(result.ok).toBe(false);
+        if (!result.ok) expect(result.error.kind).toBe("not_found");
+      });
+
+      it("listTeamMembers returns only active members", async () => {
+        const { executor, queries } = createFakeExecutor({ rows: [SAMPLE_TEAM_MEMBER_ROW] });
+        const repo = createMembershipRepository(executor);
+
+        await repo.listTeamMembers(asUuid(SAMPLE_TEAM_ROW.id));
+
+        expect(queries[0]!.text).toContain("status = 'active'");
+        expect(queries[0]!.params).toEqual([SAMPLE_TEAM_ROW.id]);
+      });
+    });
+
+    describe("listTeamsForSubject", () => {
+      it("joins team_members and scopes by account + active membership", async () => {
+        const { executor, queries } = createFakeExecutor({ rows: [SAMPLE_TEAM_ROW] });
+        const repo = createMembershipRepository(executor);
+
+        const result = await repo.listTeamsForSubject(ORG1, "usr-001");
+
+        expect(queries[0]!.text).toContain("INNER JOIN membership.team_members");
+        expect(queries[0]!.text).toContain("t.account_org_id = $1");
+        expect(queries[0]!.text).toContain("tm.status = 'active'");
+        expect(queries[0]!.text).toContain("t.status <> 'deleted'");
+        expect(queries[0]!.params).toEqual([ORG1, "usr-001"]);
+        expect(result.ok).toBe(true);
+      });
+    });
+  });
 });

@@ -16,6 +16,11 @@ import type {
   PagedResult,
   PageQueryParams,
   RoleAssignment,
+  Team,
+  TeamMember,
+  CreateTeamInput,
+  UpdateTeamInput,
+  CreateTeamMemberInput,
 } from "./types.js";
 
 function mapOrganization(row: Record<string, unknown>): Organization {
@@ -71,6 +76,28 @@ function mapRoleAssignment(row: Record<string, unknown>): RoleAssignment {
     scopeRef: (row.scope_ref as string) ?? null,
     createdAt: new Date(row.created_at as string),
     revokedAt: row.revoked_at ? new Date(row.revoked_at as string) : null,
+  };
+}
+
+function mapTeam(row: Record<string, unknown>): Team {
+  return {
+    id: row.id as string,
+    accountOrgId: row.account_org_id as string,
+    name: row.name as string,
+    slugLower: row.slug_lower as string,
+    status: row.status as string,
+    createdAt: new Date(row.created_at as string),
+    updatedAt: new Date(row.updated_at as string),
+  };
+}
+
+function mapTeamMember(row: Record<string, unknown>): TeamMember {
+  return {
+    teamId: row.team_id as string,
+    subjectId: row.subject_id as string,
+    subjectType: row.subject_type as string,
+    status: row.status as string,
+    createdAt: new Date(row.created_at as string),
   };
 }
 
@@ -783,6 +810,168 @@ export function createMembershipRepository(executor: SqlExecutor): MembershipRep
         return { ok: true, value: result.rows.map(mapRoleAssignment) };
       } catch (err) {
         return safeError("Failed to revoke all role assignments", err);
+      }
+    },
+
+    // ── Teams (saas-teams TM1) ──────────────────────────────────────
+    async createTeam(input: CreateTeamInput): Promise<MembershipResult<Team>> {
+      try {
+        const result = await executor.execute<Record<string, unknown>>(
+          `INSERT INTO membership.teams (id, account_org_id, name, slug_lower, created_at, updated_at)
+           VALUES ($1, $2, $3, $4, $5, $5)
+           RETURNING *`,
+          [input.id, input.accountOrgId, input.name, input.slugLower, input.createdAt.toISOString()],
+        );
+        return { ok: true, value: mapTeam(result.rows[0]!) };
+      } catch (err) {
+        if (isUniqueViolation(err)) {
+          return { ok: false, error: { kind: "conflict", entity: "team" } };
+        }
+        return safeError("Failed to create team", err);
+      }
+    },
+
+    async getTeamById(id: string): Promise<MembershipResult<Team>> {
+      try {
+        const result = await executor.execute<Record<string, unknown>>(
+          `SELECT * FROM membership.teams WHERE id = $1 AND status <> 'deleted'`,
+          [id],
+        );
+        if (result.rowCount === 0) return { ok: false, error: { kind: "not_found" } };
+        return { ok: true, value: mapTeam(result.rows[0]!) };
+      } catch (err) {
+        return safeError("Failed to get team", err);
+      }
+    },
+
+    async getTeamBySlug(accountOrgId: string, slugLower: string): Promise<MembershipResult<Team>> {
+      try {
+        const result = await executor.execute<Record<string, unknown>>(
+          `SELECT * FROM membership.teams
+           WHERE account_org_id = $1 AND slug_lower = $2 AND status <> 'deleted'`,
+          [accountOrgId, slugLower],
+        );
+        if (result.rowCount === 0) return { ok: false, error: { kind: "not_found" } };
+        return { ok: true, value: mapTeam(result.rows[0]!) };
+      } catch (err) {
+        return safeError("Failed to get team by slug", err);
+      }
+    },
+
+    async listTeams(accountOrgId: string): Promise<MembershipResult<Team[]>> {
+      try {
+        const result = await executor.execute<Record<string, unknown>>(
+          `SELECT * FROM membership.teams
+           WHERE account_org_id = $1 AND status <> 'deleted'
+           ORDER BY created_at ASC, id ASC`,
+          [accountOrgId],
+        );
+        return { ok: true, value: result.rows.map(mapTeam) };
+      } catch (err) {
+        return safeError("Failed to list teams", err);
+      }
+    },
+
+    async updateTeam(id: string, input: UpdateTeamInput): Promise<MembershipResult<Team>> {
+      try {
+        const result = await executor.execute<Record<string, unknown>>(
+          `UPDATE membership.teams
+           SET name = COALESCE($2, name),
+               slug_lower = COALESCE($3, slug_lower),
+               updated_at = $4
+           WHERE id = $1 AND status <> 'deleted'
+           RETURNING *`,
+          [id, input.name ?? null, input.slugLower ?? null, input.updatedAt.toISOString()],
+        );
+        if (result.rowCount === 0) return { ok: false, error: { kind: "not_found" } };
+        return { ok: true, value: mapTeam(result.rows[0]!) };
+      } catch (err) {
+        if (isUniqueViolation(err)) {
+          return { ok: false, error: { kind: "conflict", entity: "team" } };
+        }
+        return safeError("Failed to update team", err);
+      }
+    },
+
+    async deleteTeam(id: string, updatedAt: Date): Promise<MembershipResult<Team>> {
+      try {
+        const result = await executor.execute<Record<string, unknown>>(
+          `UPDATE membership.teams
+           SET status = 'deleted', updated_at = $2
+           WHERE id = $1 AND status <> 'deleted'
+           RETURNING *`,
+          [id, updatedAt.toISOString()],
+        );
+        if (result.rowCount === 0) return { ok: false, error: { kind: "not_found" } };
+        return { ok: true, value: mapTeam(result.rows[0]!) };
+      } catch (err) {
+        return safeError("Failed to delete team", err);
+      }
+    },
+
+    async addTeamMember(input: CreateTeamMemberInput): Promise<MembershipResult<TeamMember>> {
+      try {
+        const result = await executor.execute<Record<string, unknown>>(
+          `INSERT INTO membership.team_members (team_id, subject_id, subject_type, status, created_at)
+           VALUES ($1, $2, $3, 'active', $4)
+           ON CONFLICT (team_id, subject_id)
+           DO UPDATE SET status = 'active', subject_type = EXCLUDED.subject_type
+           RETURNING *`,
+          [input.teamId, input.subjectId, input.subjectType, input.createdAt.toISOString()],
+        );
+        return { ok: true, value: mapTeamMember(result.rows[0]!) };
+      } catch (err) {
+        return safeError("Failed to add team member", err);
+      }
+    },
+
+    async removeTeamMember(teamId: string, subjectId: string): Promise<MembershipResult<TeamMember>> {
+      try {
+        const result = await executor.execute<Record<string, unknown>>(
+          `UPDATE membership.team_members
+           SET status = 'removed'
+           WHERE team_id = $1 AND subject_id = $2 AND status = 'active'
+           RETURNING *`,
+          [teamId, subjectId],
+        );
+        if (result.rowCount === 0) return { ok: false, error: { kind: "not_found" } };
+        return { ok: true, value: mapTeamMember(result.rows[0]!) };
+      } catch (err) {
+        return safeError("Failed to remove team member", err);
+      }
+    },
+
+    async listTeamMembers(teamId: string): Promise<MembershipResult<TeamMember[]>> {
+      try {
+        const result = await executor.execute<Record<string, unknown>>(
+          `SELECT * FROM membership.team_members
+           WHERE team_id = $1 AND status = 'active'
+           ORDER BY created_at ASC, subject_id ASC`,
+          [teamId],
+        );
+        return { ok: true, value: result.rows.map(mapTeamMember) };
+      } catch (err) {
+        return safeError("Failed to list team members", err);
+      }
+    },
+
+    async listTeamsForSubject(accountOrgId: string, subjectId: string): Promise<MembershipResult<Team[]>> {
+      try {
+        const result = await executor.execute<Record<string, unknown>>(
+          `SELECT t.*
+           FROM membership.teams t
+           INNER JOIN membership.team_members tm
+             ON tm.team_id = t.id
+           WHERE t.account_org_id = $1
+             AND tm.subject_id = $2
+             AND tm.status = 'active'
+             AND t.status <> 'deleted'
+           ORDER BY t.created_at ASC, t.id ASC`,
+          [accountOrgId, subjectId],
+        );
+        return { ok: true, value: result.rows.map(mapTeam) };
+      } catch (err) {
+        return safeError("Failed to list teams for subject", err);
       }
     },
 
