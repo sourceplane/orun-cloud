@@ -69,6 +69,13 @@ const ORG_ROLE_PERMISSIONS: Record<OrganizationRole, readonly string[]> = {
     "secret.value.use",
     "org.cli.link",
     "org.ci.trust.write",
+    "team.create",
+    "team.update",
+    "team.delete",
+    "team.member.add",
+    "team.member.remove",
+    "team.role.grant",
+    "team.role.revoke",
   ],
   admin: [
     "organization.read",
@@ -121,6 +128,13 @@ const ORG_ROLE_PERMISSIONS: Record<OrganizationRole, readonly string[]> = {
     "secret.value.use",
     "org.cli.link",
     "org.ci.trust.write",
+    "team.create",
+    "team.update",
+    "team.delete",
+    "team.member.add",
+    "team.member.remove",
+    "team.role.grant",
+    "team.role.revoke",
   ],
   builder: [
     "organization.read",
@@ -322,6 +336,16 @@ const ALL_KNOWN_ACTIONS: ReadonlySet<string> = new Set([
   "secret.value.use",
   "org.cli.link",
   "org.ci.trust.write",
+  // saas-teams TM4 — team management actions (owner/admin org roles +
+  // account_owner/account_admin via the account-role catalog). Org-scoped:
+  // teams are account-owned but managed on the account org / target org.
+  "team.create",
+  "team.update",
+  "team.delete",
+  "team.member.add",
+  "team.member.remove",
+  "team.role.grant",
+  "team.role.revoke",
 ]);
 
 function isOrgRole(role: string): role is OrganizationRole {

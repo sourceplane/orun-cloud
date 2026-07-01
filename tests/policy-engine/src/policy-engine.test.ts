@@ -686,7 +686,8 @@ describe("listEffectivePermissions", () => {
     expect(result.derivedScope.orgId).toBe("org_1");
 
     const allowed = result.permissions.filter((p) => p.allow);
-    expect(allowed.length).toBe(42);
+    // 42 base + 7 saas-teams TM4 team.* management actions.
+    expect(allowed.length).toBe(49);
   });
 
   it("returns limited permissions for viewer", () => {
@@ -1147,5 +1148,45 @@ describe("account-scoped RBAC cascade", () => {
     const result = authorize(authReq("organization.read", "org_other", facts));
     expect(result.allow).toBe(false);
     expect(result.reason).toBe("no_matching_role");
+  });
+});
+
+// saas-teams TM4 — team management permission catalog.
+describe("team.* management actions", () => {
+  const ORG = "org_teams";
+  const TEAM_ACTIONS = [
+    "team.create", "team.update", "team.delete",
+    "team.member.add", "team.member.remove",
+    "team.role.grant", "team.role.revoke",
+  ];
+
+  it("owner is allowed every team.* action", () => {
+    for (const action of TEAM_ACTIONS) {
+      expect(authorize(authReq(action, ORG, [orgFact("owner", ORG)])).allow).toBe(true);
+    }
+  });
+
+  it("admin is allowed every team.* action", () => {
+    for (const action of TEAM_ACTIONS) {
+      expect(authorize(authReq(action, ORG, [orgFact("admin", ORG)])).allow).toBe(true);
+    }
+  });
+
+  it("builder and viewer are denied team management", () => {
+    for (const role of ["builder", "viewer"]) {
+      expect(authorize(authReq("team.create", ORG, [orgFact(role, ORG)])).allow).toBe(false);
+      expect(authorize(authReq("team.role.grant", ORG, [orgFact(role, ORG)])).allow).toBe(false);
+    }
+  });
+
+  it("account_admin (cascaded) is allowed team.role.grant on a workspace", () => {
+    // Account-scope fact stamped onto the target org (as authorization-context does).
+    const result = authorize(authReq("team.role.grant", ORG, [accountFact("account_admin", ORG)]));
+    expect(result.allow).toBe(true);
+  });
+
+  it("account_billing_admin is NOT allowed team management", () => {
+    const result = authorize(authReq("team.create", ORG, [accountFact("account_billing_admin", ORG)]));
+    expect(result.allow).toBe(false);
   });
 });
