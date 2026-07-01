@@ -132,7 +132,7 @@ export async function handleGrantTeamRole(
     }
     const authResult = await authorizeViaPolicy(env.POLICY_WORKER, {
       actor,
-      action: "organization.member.update_role",
+      action: "team.role.grant",
       resource: { kind: "organization", id: authorityOrg, orgId: authorityOrg },
       orgId: authorityOrg,
       roleAssignments: actorRoles.value,
