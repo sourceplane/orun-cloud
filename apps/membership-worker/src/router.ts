@@ -12,8 +12,10 @@ import { handleRevokeTeamRole } from "./handlers/revoke-team-role.js";
 import { handleRemoveMember } from "./handlers/remove-member.js";
 import { handleCreateInvitation } from "./handlers/create-invitation.js";
 import { handleListInvitations } from "./handlers/list-invitations.js";
+import { handleListMyInvitations } from "./handlers/list-my-invitations.js";
 import { handleRevokeInvitation } from "./handlers/revoke-invitation.js";
 import { handleAcceptInvitation } from "./handlers/accept-invitation.js";
+import { handleAcceptMyInvitation } from "./handlers/accept-my-invitation.js";
 import { handleAuthorizationContext } from "./handlers/authorization-context.js";
 import { handleSubjectOrgs } from "./handlers/subject-orgs.js";
 import { handleSyncAccountChildren } from "./handlers/sync-account-children.js";
@@ -48,6 +50,8 @@ const ORG_ID_RE = /^\/v1\/organizations\/([^/]+)$/;
 const ORG_MEMBERS_RE = /^\/v1\/organizations\/([^/]+)\/members$/;
 const ORG_WORKSPACES_RE = /^\/v1\/organizations\/([^/]+)\/workspaces$/;
 const ORG_MEMBER_ID_RE = /^\/v1\/organizations\/([^/]+)\/members\/([^/]+)$/;
+const ME_INVITATIONS_RE = /^\/v1\/me\/invitations$/;
+const ME_INVITATION_ACCEPT_RE = /^\/v1\/me\/invitations\/([^/]+)\/accept$/;
 const ORG_INVITATIONS_ACCEPT_RE = /^\/v1\/organizations\/([^/]+)\/invitations\/accept$/;
 const ORG_INVITATIONS_RE = /^\/v1\/organizations\/([^/]+)\/invitations$/;
 const ORG_INVITATION_ID_RE = /^\/v1\/organizations\/([^/]+)\/invitations\/([^/]+)$/;
@@ -151,6 +155,41 @@ export async function route(request: Request, env: Env): Promise<Response> {
           return errorResponse("unauthenticated", "Authentication required", 401, requestId);
         }
         return handleListOrganizations(env, requestId, actor, url);
+      }
+      return methodNotAllowed(requestId);
+    }
+
+    // Invitation discovery + token-less acceptance for the signed-in recipient
+    // (saas invitation login flow). Both are keyed on the actor's verified
+    // `x-actor-email`; the invitation email never delivers a token, so this is
+    // how a user finds and accepts invitations sent to their address.
+    if (ME_INVITATIONS_RE.test(url.pathname)) {
+      if (request.method === "GET") {
+        const actor = resolveActor(request);
+        if (!actor) {
+          return errorResponse("unauthenticated", "Authentication required", 401, requestId);
+        }
+        const actorEmail = request.headers.get("x-actor-email");
+        if (!actorEmail) {
+          return errorResponse("unauthenticated", "Authentication required", 401, requestId);
+        }
+        return handleListMyInvitations(env, requestId, actorEmail);
+      }
+      return methodNotAllowed(requestId);
+    }
+
+    const meAcceptMatch = url.pathname.match(ME_INVITATION_ACCEPT_RE);
+    if (meAcceptMatch) {
+      if (request.method === "POST") {
+        const actor = resolveActor(request);
+        if (!actor) {
+          return errorResponse("unauthenticated", "Authentication required", 401, requestId);
+        }
+        const actorEmail = request.headers.get("x-actor-email");
+        if (!actorEmail) {
+          return errorResponse("unauthenticated", "Authentication required", 401, requestId);
+        }
+        return handleAcceptMyInvitation(env, requestId, { ...actor, email: actorEmail }, meAcceptMatch[1]!);
       }
       return methodNotAllowed(requestId);
     }

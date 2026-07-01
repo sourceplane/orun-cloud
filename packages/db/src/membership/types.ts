@@ -67,6 +67,24 @@ export interface OrganizationInvitation {
   createdAt: Date;
 }
 
+/**
+ * A pending invitation for a given email, joined with the inviting
+ * organization's display fields (saas invitation login flow). Only pending,
+ * non-revoked, non-accepted, non-expired invitations are returned by
+ * `listPendingInvitationsByEmail`, so the signed-in recipient sees exactly the
+ * invitations they can still act on.
+ */
+export interface PendingInvitationForEmail {
+  invitation: OrganizationInvitation;
+  org: {
+    id: string;
+    name: string;
+    slug: string;
+    publicRef: string;
+    status: string;
+  };
+}
+
 export interface RoleAssignment {
   id: string;
   orgId: string;
@@ -204,6 +222,23 @@ export interface AcceptInvitationInput {
   acceptedAt: Date;
 }
 
+/**
+ * Accept an invitation by its id, authorizing on the signed-in actor's verified
+ * email instead of a one-time token (saas invitation login flow). The email of
+ * the authenticated (magic-link) session must equal invitation.email_lower —
+ * equivalent proof of email control to the token path, which is why no token is
+ * required here. `orgId` is derived from the invitation row, not supplied.
+ */
+export interface AcceptInvitationByIdInput {
+  invitationId: string;
+  emailLower: string;
+  memberId: string;
+  roleAssignmentId: string;
+  subjectId: string;
+  subjectType: string;
+  acceptedAt: Date;
+}
+
 export interface MembershipRepository {
   createOrganization(input: CreateOrganizationInput): Promise<MembershipResult<Organization>>;
   getOrganizationById(id: string): Promise<MembershipResult<Organization>>;
@@ -248,8 +283,20 @@ export interface MembershipRepository {
   getInvitationByTokenHash(tokenHash: string): Promise<MembershipResult<OrganizationInvitation>>;
   listInvitations(orgId: Uuid): Promise<MembershipResult<OrganizationInvitation[]>>;
   listInvitationsPaged(orgId: Uuid, params: PageQueryParams): Promise<MembershipResult<PagedResult<OrganizationInvitation>>>;
+  /**
+   * Every pending, still-actionable invitation for a normalized email, joined
+   * with the inviting org's display fields. Powers the /v1/me/invitations
+   * discovery path so a signed-in user finds invitations sent to their address
+   * across all organizations. Newest first.
+   */
+  listPendingInvitationsByEmail(emailLower: string): Promise<MembershipResult<PendingInvitationForEmail[]>>;
   revokeInvitation(orgId: Uuid, invitationId: string, revokedAt: Date): Promise<MembershipResult<OrganizationInvitation>>;
   acceptInvitation(input: AcceptInvitationInput): Promise<MembershipResult<{ invitation: OrganizationInvitation; member: OrganizationMember; roleAssignment: RoleAssignment }>>;
+  /**
+   * Accept an invitation by id, matched on the actor's verified email (no
+   * token). Same member + role-assignment writes as `acceptInvitation`.
+   */
+  acceptInvitationById(input: AcceptInvitationByIdInput): Promise<MembershipResult<{ invitation: OrganizationInvitation; member: OrganizationMember; roleAssignment: RoleAssignment }>>;
 
   // ── Teams (saas-teams TM1) ──────────────────────────────────────
   /** Create an account-owned team. Conflicts on (account_org_id, slug_lower). */

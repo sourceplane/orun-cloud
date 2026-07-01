@@ -137,6 +137,24 @@ Last updated: 2026-05-26
 - api-edge forwards `x-actor-email` from the identity session response for
   organization routes. Downstream workers may ignore it unless a route explicitly
   requires authenticated email matching.
+- Invitation login flow (email-scoped discovery + token-less acceptance). The
+  `invitation.created` email carries no token link — it tells the recipient to
+  "sign in with this email address to view and accept the invitation" — so a
+  signed-in user needs a way to find invitations sent to their address. Two
+  email-keyed routes back this, both riding the org facade (same
+  membership-worker + `x-actor-email`): `GET /v1/me/invitations` lists every
+  still-actionable pending invitation for the actor's verified email across all
+  orgs (joined with org display fields; index `org_invitations_email_lower_only_idx`
+  from migration 450 since the pre-existing `(org_id, email_lower)` index can't
+  serve an email-only lookup), and `POST /v1/me/invitations/{invitationId}/accept`
+  accepts by id gated on `email_lower` matching the session email — no token.
+  Rationale: a verified magic-link session email is equivalent proof of email
+  control to the one-time token, so it is a sound authorization basis when the
+  token path is unavailable. Neither route calls policy-worker (a user is always
+  allowed to see/accept invitations to their own address). `acceptInvitationById`
+  reuses the same atomic invitation-accepted + member + role-assignment CTE and
+  emits the same `invite.accepted` event and best-effort `invitation.accepted`
+  notification as the token path.
 - Before shipping destructive member-admin mutations such as member removal or
   role changes, add an events/audit persistence seam so those mutations can be
   audited instead of deepening the existing audit gap.

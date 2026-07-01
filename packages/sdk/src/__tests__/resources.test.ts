@@ -106,6 +106,22 @@ describe("MembershipsClient", () => {
     expect(calls[0]!.init.method).toBe("POST");
   });
 
+  it("listMyInvitations issues GET on the me path", async () => {
+    const { fetch, calls } = captureFetch(jsonResponse(envelope({ invitations: [] })));
+    await client(fetch).memberships.listMyInvitations();
+    expect(calls[0]!.url).toBe("https://api.test/v1/me/invitations");
+    expect(calls[0]!.init.method).toBe("GET");
+  });
+
+  it("acceptMyInvitation issues POST on the me accept path", async () => {
+    const { fetch, calls } = captureFetch(
+      jsonResponse(envelope({ invitation: {}, membership: {} })),
+    );
+    await client(fetch).memberships.acceptMyInvitation("inv_1");
+    expect(calls[0]!.url).toBe("https://api.test/v1/me/invitations/inv_1/accept");
+    expect(calls[0]!.init.method).toBe("POST");
+  });
+
   it("removeMember surfaces ForbiddenError on 403", async () => {
     const { fetch } = captureFetch(errorResponse("forbidden", 403));
     await expect(
