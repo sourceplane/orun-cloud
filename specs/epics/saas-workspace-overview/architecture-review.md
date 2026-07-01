@@ -1,6 +1,11 @@
 # saas-workspace-overview — Architecture review
 
-Status: Review (2026-07-01). Grounded against the code as it stands today, not
+Status: Review (2026-07-01) — **ADOPTED.** The epic (`README.md`, `model.md`,
+`design.md`, `implementation-plan.md`, `risks-and-open-questions.md`) was revised
+to incorporate every recommendation below; this document remains as the **rationale
+record** — the "why" behind the phased delivery, the project-id `Repo` ref, the
+pinned-commit doc read, the dropped `override_overview`, the read-edge assembly,
+and the deferred `Product`. Grounded against the code as it stands today, not
 against the spec's description of it. Cross-checked in `orun`
 (`internal/catalogmodel/*`, `internal/catalogresolve/*`, `internal/model/intent.go`,
 `internal/objremote/*`, `internal/remotestate/*`) and `orun-cloud`
