@@ -61,8 +61,20 @@ role_assignments { org_id: <X uuid>, subject_id: 'team_3KF9TQ2P', subject_type: 
                    role: 'builder', scope_kind: 'organization' }
 -- account-scope grant (cascades to all workspaces — see §4)
 role_assignments { org_id: <account uuid>, subject_id: 'team_…', subject_type: 'team',
-                   role: 'admin', scope_kind: 'account' }   -- needs WID6
+                   role: 'admin', scope_kind: 'account' }   -- WID6 (shipped)
 ```
+
+**The migration must widen two CHECK constraints — the SQL sketch above hides real
+work.** `role_assignments` today enforces
+`role_assignments_subject_type_check CHECK (subject_type IN ('user','service_principal'))`
+(`020_membership_core/up.sql`); TM1/TM2 must `DROP … + ADD` it to include `'team'`,
+following the guarded-DO-block, additive-idempotent pattern that `420_membership_account_rbac`
+used to widen `scope_kind`. The same applies to the new `team_members.subject_type` check
+(`user | service_principal`). The `role` check is untouched — team grants reuse the
+existing roles. Note also that the existing partial-unique index
+`role_assignments_active_idx (org_id, subject_id, role, scope_kind, COALESCE(scope_ref,''))`
+already accommodates team rows for free, because `subject_id` (the `team_` id) differs
+from any user's.
 
 ## 3. Authorization — expand at context assembly; engine unchanged (TM3)
 
@@ -117,6 +129,31 @@ account-scope grants by account admins; workspace-scope grants by that workspace
 admins; project-scope by project admins. Surfaces (console/SDK/CLI) mirror the existing
 member-management chrome.
 
+**Reuse, don't reinvent, the grant path.** `apps/membership-worker/src/handlers/grant-account-role.ts`
+already implements "validate the grantor's authority on the right scope org, then write a
+`role_assignments` row" for account roles. A team grant is the same handler with
+`subjectType: 'team'` and the scope generalized to account | organization | project —
+copy its authorization shape rather than authoring a parallel one. **Gap to close:** that
+handler writes **no audit/event row** (unlike every other membership mutation —
+`create-organization`, `*-invitation`, `*-member`). TM4 must emit `team.*` events/audit
+on create/update/delete/member-add/remove/grant/revoke, and should backfill the
+account-role grant while it is there — a SaaS admin/compliance surface is not credible
+without an audit trail of authority changes.
+
+**Lifecycle cleanup (specify it — the original draft was silent).**
+
+- **Team delete** → cascade-revoke every `role_assignments` row with
+  `subject_type='team', subject_id=<team>`. Expansion filters on an existing/active team
+  so a deleted team stops conferring access regardless, but leaving orphan grant rows
+  pointing at a dead `team_` id corrupts the TM6 effective-access view and audit history.
+  Revoke, don't orphan.
+- **Member leaves the account** (org membership removed) → also remove them from the
+  account's teams, or their team-derived access silently outlives their account
+  membership. Wire this into the existing `remove-member` handler.
+- **Grants bind to the immutable id, never the slug** — `subject_id` stores the
+  `team_<base32>` public id, which is immutable; renaming a team (slug/name change) must
+  not touch any grant. State this invariant so no one "helpfully" keys grants on slug.
+
 ## 6. Identity
 
 Team public id = **`team_<base32>`** (Crockford base32, matching the `ws_` direction in
@@ -124,18 +161,38 @@ Team public id = **`team_<base32>`** (Crockford base32, matching the `ws_` direc
 helps; they are less "quoted to support" than Accounts, so no special ergonomics beyond
 the shared convention.
 
-## 7. Cache invalidation (TM5)
+## 7. Cache & hot-path cost (TM5) — corrected against repo reality
 
-The PERF2 actor/authz cache makes a removed team member (or a revoked team grant) keep
-working until the entry expires — a correctness risk for offboarding. Options:
+**The original premise was wrong.** The "PERF2 actor/authz cache"
+(`apps/api-edge/src/actor-cache.ts`) caches **only the token→`ActorInfo`
+resolution** — `subjectId`, `subjectType`, `email`, `orgId` — for a 30s TTL. It does
+**not** cache role facts, team membership, or authorization decisions. The
+authorization context (direct facts + account cascade + — with this epic — team facts)
+is **re-assembled live on every authorize** in
+`apps/membership-worker/src/handlers/authorization-context.ts`. Consequences:
 
-- **Explicit bust** on `team_members` / team-`role_assignments` change (precise; needs a
-  cache-key strategy keyed by actor/team), or
-- **Short TTL** for any authz context that drew on a team fact (simple; bounded
-  staleness).
+- **Offboarding is already immediate.** Remove a member from a team (or revoke a team
+  grant) and the *next* request re-assembles without that fact. There is no
+  team-derived cache entry to bust; the only residual staleness is the 30s identity
+  cache, which carries no team data. So the "removed member keeps access until expiry"
+  risk **does not exist** as described — TM5 is not a correctness blocker.
+- **The real cost is the inverse: added queries on the hot path.** Expansion adds a
+  `team_members`-by-actor lookup plus a team-grants lookup (target scope **and** account
+  scope) to a path PERF2 spent effort making fast. Mitigations, in order:
+  1. **Reuse `listRoleAssignmentsForSubjects`** (already in the repo) so all of an
+     actor's team grants resolve in one batched query, not N+1.
+  2. **Short-circuit when the account has no teams** — a cheap cached count/existence
+     check skips both team queries entirely for the (initially majority) team-less
+     accounts, so non-adopters pay ~zero.
+  3. Fold the actor's team-ids into the same round trip that already fetches the account
+     cascade where practical.
+- **Invalidation only re-enters scope if you later cache the assembled context.** If a
+  future PERF task memoizes the *authz context* (not just identity), it **reintroduces**
+  the staleness this section imagined — at which point explicit busting on
+  `team_members` / team-grant change, keyed by actor and team, becomes required. Record
+  that as the trigger condition, not as work for Stage 1.
 
-Decide in `risks-and-open-questions.md` (T5). Default lean: short TTL now, explicit bust
-if the staleness window proves too wide for offboarding SLAs.
+Decision + revocation-window statement live in `risks-and-open-questions.md` (T5).
 
 ## 8. Stage-1 scope lines (what we deliberately defer)
 
