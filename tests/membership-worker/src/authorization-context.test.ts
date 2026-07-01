@@ -1,6 +1,7 @@
 import { handleAuthorizationContext } from "@membership-worker/handlers/authorization-context";
 import { mapRoleAssignmentsToFacts } from "@membership-worker/membership-facts";
-import type { MembershipRepository, RoleAssignment } from "@saas/db/membership";
+import { teamPublicId } from "@membership-worker/ids";
+import type { MembershipRepository, RoleAssignment, Organization, Team } from "@saas/db/membership";
 import type { Env } from "@membership-worker/env";
 import { teamRepoStubs } from "./team-repo-stubs.js";
 
@@ -494,5 +495,125 @@ describe("membership-facts: account-scoped assignments (WID6)", () => {
     expect(facts).toEqual([
       { kind: "role_assignment", role: "account_admin", scope: { kind: "account", orgId: "target-org" } },
     ]);
+  });
+});
+
+// ── saas-teams TM3 — team-derived facts in the authorization context ──
+const ACCOUNT = "00000000-0000-0000-0000-0000000000a1";
+const CHILD = "00000000-0000-0000-0000-0000000000c1";
+const TEAM_UUID = "00000000-0000-0000-0000-0000000000b1";
+const TEAM_PUB = teamPublicId(TEAM_UUID);
+const USER = "usr_teamonly";
+
+function org(id: string, parentOrgId: string | null): Organization {
+  return {
+    id, name: "n", slug: "s", slugLower: "s", publicRef: "ws_TESTREF1",
+    status: "active", parentOrgId,
+    createdAt: new Date("2026-01-01"), updatedAt: new Date("2026-01-01"),
+  };
+}
+function team(id: string, accountOrgId: string): Team {
+  return {
+    id, accountOrgId, name: "Platform", slugLower: "platform", status: "active",
+    createdAt: new Date("2026-01-01"), updatedAt: new Date("2026-01-01"),
+  };
+}
+function grant(orgId: string, subjectId: string, role: string, scopeKind: string, scopeRef: string | null = null): RoleAssignment {
+  return { id: `ra-${role}`, orgId, subjectId, subjectType: "team", role, scopeKind, scopeRef, createdAt: new Date("2026-01-01"), revokedAt: null };
+}
+
+/** Team-aware fake keyed on (org, subject). Counts grant-batch calls. */
+function makeTeamRepo(cfg: {
+  orgs: Record<string, Organization>;
+  directRoles?: Record<string, RoleAssignment[]>;   // `${orgId}|${subjectId}`
+  teamsFor?: Record<string, Team[]>;                 // `${accountId}|${subjectId}`
+  teamGrants?: Record<string, RoleAssignment[]>;     // `${orgId}|${teamPublicId}`
+}): { repo: MembershipRepository; counters: { batchCalls: number } } {
+  const counters = { batchCalls: 0 };
+  const repo: MembershipRepository = {
+    ...createFakeRepo(),
+    async getOrganizationById(id: string) {
+      const found = cfg.orgs[id];
+      return found ? { ok: true as const, value: found } : { ok: false as const, error: { kind: "not_found" as const } };
+    },
+    async listRoleAssignments(orgId: string, subjectId: string) {
+      return { ok: true as const, value: cfg.directRoles?.[`${orgId}|${subjectId}`] ?? [] };
+    },
+    async listTeamsForSubject(accountId: string, subjectId: string) {
+      return { ok: true as const, value: cfg.teamsFor?.[`${accountId}|${subjectId}`] ?? [] };
+    },
+    async listRoleAssignmentsForSubjects(orgId: string, subjectIds: string[]) {
+      counters.batchCalls++;
+      const map = new Map<string, RoleAssignment[]>();
+      for (const sid of subjectIds) map.set(sid, cfg.teamGrants?.[`${orgId}|${sid}`] ?? []);
+      return { ok: true as const, value: map };
+    },
+  };
+  return { repo, counters };
+}
+
+async function factsFor(repo: MembershipRepository, orgId: string, subjectId = USER): Promise<Array<Record<string, unknown>>> {
+  const res = await handleAuthorizationContext(
+    makeRequest({ subject: { type: "user", id: subjectId }, orgId }),
+    createFakeEnv(), "r", { repo });
+  const json = await res.json() as { data: { memberships: Array<Record<string, unknown>> } };
+  return json.data.memberships;
+}
+
+describe("authorization-context: team-derived facts (saas-teams TM3)", () => {
+  it("a user with no direct role but a team org-grant is authorized via the team", async () => {
+    const { repo } = makeTeamRepo({
+      orgs: { [ACCOUNT]: org(ACCOUNT, null) },
+      teamsFor: { [`${ACCOUNT}|${USER}`]: [team(TEAM_UUID, ACCOUNT)] },
+      teamGrants: { [`${ACCOUNT}|${TEAM_PUB}`]: [grant(ACCOUNT, TEAM_PUB, "builder", "organization")] },
+    });
+    const facts = await factsFor(repo, ACCOUNT);
+    expect(facts).toContainEqual({ kind: "role_assignment", role: "builder", scope: { kind: "organization", orgId: ACCOUNT } });
+  });
+
+  it("an account-scope team grant cascades onto a child workspace", async () => {
+    const { repo } = makeTeamRepo({
+      orgs: { [CHILD]: org(CHILD, ACCOUNT) },
+      teamsFor: { [`${ACCOUNT}|${USER}`]: [team(TEAM_UUID, ACCOUNT)] },
+      teamGrants: {
+        [`${CHILD}|${TEAM_PUB}`]: [], // nothing directly on the child
+        [`${ACCOUNT}|${TEAM_PUB}`]: [grant(ACCOUNT, TEAM_PUB, "account_admin", "account")],
+      },
+    });
+    const facts = await factsFor(repo, CHILD);
+    // Stamped onto the TARGET (child) org id so the engine's scope filter matches.
+    expect(facts).toContainEqual({ kind: "role_assignment", role: "account_admin", scope: { kind: "account", orgId: CHILD } });
+  });
+
+  it("an org-scope team grant on the account does NOT cascade to a child", async () => {
+    const { repo } = makeTeamRepo({
+      orgs: { [CHILD]: org(CHILD, ACCOUNT) },
+      teamsFor: { [`${ACCOUNT}|${USER}`]: [team(TEAM_UUID, ACCOUNT)] },
+      teamGrants: {
+        [`${CHILD}|${TEAM_PUB}`]: [],
+        [`${ACCOUNT}|${TEAM_PUB}`]: [grant(ACCOUNT, TEAM_PUB, "admin", "organization")], // org scope, stays on account
+      },
+    });
+    const facts = await factsFor(repo, CHILD);
+    expect(facts).toHaveLength(0);
+  });
+
+  it("a removed team member loses the team-derived access (no active team → no expansion)", async () => {
+    const { repo } = makeTeamRepo({
+      orgs: { [ACCOUNT]: org(ACCOUNT, null) },
+      teamsFor: { [`${ACCOUNT}|${USER}`]: [] }, // not an active member of any team
+      teamGrants: { [`${ACCOUNT}|${TEAM_PUB}`]: [grant(ACCOUNT, TEAM_PUB, "builder", "organization")] },
+    });
+    const facts = await factsFor(repo, ACCOUNT);
+    expect(facts).toHaveLength(0);
+  });
+
+  it("a team-less account issues zero grant-batch queries (hot-path short-circuit)", async () => {
+    const { repo, counters } = makeTeamRepo({
+      orgs: { [ACCOUNT]: org(ACCOUNT, null) },
+      teamsFor: {}, // no teams for anyone
+    });
+    await factsFor(repo, ACCOUNT);
+    expect(counters.batchCalls).toBe(0);
   });
 });
