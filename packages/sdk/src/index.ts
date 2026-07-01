@@ -20,6 +20,7 @@ import { ConfigClient } from "./config.js";
 import { EnvironmentsClient } from "./environments.js";
 import { EventsClient } from "./events.js";
 import { MembershipsClient } from "./memberships.js";
+import { TeamsClient } from "./teams.js";
 import { MeteringClient } from "./metering.js";
 import { NotificationsClient } from "./notifications.js";
 import { OrganizationsClient } from "./organizations.js";
@@ -50,6 +51,7 @@ export class OrunCloud {
   readonly projects: ProjectsClient;
   readonly environments: EnvironmentsClient;
   readonly memberships: MembershipsClient;
+  readonly teams: TeamsClient;
   readonly apiKeys: ApiKeysClient;
   readonly webhooks: WebhooksClient;
   readonly metering: MeteringClient;
@@ -74,6 +76,7 @@ export class OrunCloud {
     this.repos = this.projects;
     this.environments = new EnvironmentsClient(this.transport);
     this.memberships = new MembershipsClient(this.transport);
+    this.teams = new TeamsClient(this.transport);
     this.apiKeys = new ApiKeysClient(this.transport);
     this.webhooks = new WebhooksClient(this.transport);
     this.metering = new MeteringClient(this.transport);
@@ -95,6 +98,7 @@ export { WorkspacesClient } from "./workspaces.js";
 export { ProjectsClient } from "./projects.js";
 export { EnvironmentsClient } from "./environments.js";
 export { MembershipsClient } from "./memberships.js";
+export { TeamsClient } from "./teams.js";
 export {
   ApiKeysClient,
   type ListApiKeysResponse,
@@ -181,6 +185,18 @@ export type {
   RemoveMemberResponse,
   AcceptInvitationRequest,
   AcceptInvitationResponse,
+  PublicTeam,
+  PublicTeamMember,
+  CreateTeamRequest,
+  CreateTeamResponse,
+  UpdateTeamRequest,
+  GetTeamResponse,
+  ListTeamsResponse,
+  AddTeamMemberRequest,
+  AddTeamMemberResponse,
+  ListTeamMembersResponse,
+  GrantTeamRoleRequest,
+  GrantTeamRoleResponse,
 } from "@saas/contracts/membership";
 
 export { ORGANIZATION_ROLES } from "@saas/contracts/membership";
