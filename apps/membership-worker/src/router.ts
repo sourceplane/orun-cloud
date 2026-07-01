@@ -7,6 +7,8 @@ import { handleListMembers } from "./handlers/list-members.js";
 import { handleListAccountWorkspaces } from "./handlers/list-account-workspaces.js";
 import { handleUpdateMemberRole } from "./handlers/update-member-role.js";
 import { handleGrantAccountRole } from "./handlers/grant-account-role.js";
+import { handleGrantTeamRole } from "./handlers/grant-team-role.js";
+import { handleRevokeTeamRole } from "./handlers/revoke-team-role.js";
 import { handleRemoveMember } from "./handlers/remove-member.js";
 import { handleCreateInvitation } from "./handlers/create-invitation.js";
 import { handleListInvitations } from "./handlers/list-invitations.js";
@@ -50,6 +52,7 @@ const ORG_INVITATIONS_ACCEPT_RE = /^\/v1\/organizations\/([^/]+)\/invitations\/a
 const ORG_INVITATIONS_RE = /^\/v1\/organizations\/([^/]+)\/invitations$/;
 const ORG_INVITATION_ID_RE = /^\/v1\/organizations\/([^/]+)\/invitations\/([^/]+)$/;
 const ORG_ACCOUNT_ROLES_RE = /^\/v1\/organizations\/([^/]+)\/account-roles$/;
+const ORG_TEAM_ROLES_RE = /^\/v1\/organizations\/([^/]+)\/team-roles$/;
 const SP_BINDINGS_PATH = "/v1/internal/membership/service-principal-bindings";
 const SP_BINDING_ID_RE = /^\/v1\/internal\/membership\/service-principal-bindings\/([^/]+)$/;
 
@@ -209,6 +212,23 @@ export async function route(request: Request, env: Env): Promise<Response> {
       }
       if (request.method === "POST") {
         return handleGrantAccountRole(request, env, requestId, actor, accountRolesMatch[1]!);
+      }
+      return methodNotAllowed(requestId);
+    }
+
+    // Team grants (saas-teams TM2): grant/revoke a team a role at account |
+    // organization (workspace) | project scope. subject_type='team'.
+    const teamRolesMatch = url.pathname.match(ORG_TEAM_ROLES_RE);
+    if (teamRolesMatch) {
+      const actor = resolveActor(request);
+      if (!actor) {
+        return errorResponse("unauthenticated", "Authentication required", 401, requestId);
+      }
+      if (request.method === "POST") {
+        return handleGrantTeamRole(request, env, requestId, actor, teamRolesMatch[1]!);
+      }
+      if (request.method === "DELETE") {
+        return handleRevokeTeamRole(request, env, requestId, actor, teamRolesMatch[1]!);
       }
       return methodNotAllowed(requestId);
     }

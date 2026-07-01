@@ -2,6 +2,7 @@ import { handleAuthorizationContext } from "@membership-worker/handlers/authoriz
 import { mapRoleAssignmentsToFacts } from "@membership-worker/membership-facts";
 import type { MembershipRepository, RoleAssignment } from "@saas/db/membership";
 import type { Env } from "@membership-worker/env";
+import { teamRepoStubs } from "./team-repo-stubs.js";
 
 function createFakeEnv(overrides: Partial<Env> = {}): Env {
   return {
@@ -13,6 +14,7 @@ function createFakeEnv(overrides: Partial<Env> = {}): Env {
 
 function createFakeRepo(roleAssignments: RoleAssignment[] = []): MembershipRepository {
   return {
+    ...teamRepoStubs(),
     async listRoleAssignments() {
       return { ok: true, value: roleAssignments };
     },

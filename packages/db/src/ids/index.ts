@@ -91,35 +91,20 @@ export function isWorkspaceRef(value: string): boolean {
   return WORKSPACE_REF_RE.test(value);
 }
 
-// ── Team ID (`team_…`) codec — saas-teams (TM1) ─────────────────────
-// A Team's public id: `team_` + 8 Crockford-base32 chars, matching the `ws_`
-// direction (durable, readable, copy-safe). A team is referenced in grant APIs
-// (`role_assignments.subject_id` for `subject_type='team'`), so grants bind to
-// this stable public id, never the mutable slug.
+// ── Team ID (`team_…`) codec — saas-teams (TM1/TM2) ─────────────────
+// A Team's public id: `team_` + the team's UUID with dashes stripped (32 hex),
+// exactly like `usr_`/`sp_`/`org_`/`mem_`. This makes it *resolvable* — a grant
+// stores `role_assignments.subject_id = 'team_<hex>'` (subject_type='team') and
+// the handler decodes it straight back to the team UUID to look the team up, with
+// no separate public-id column. (T1 resolved: hex-derived over base32 — teams are
+// principals referenced in grants, not support-quoted handles like `ws_`, so
+// consistency + one-step resolvability win.) Render with `team_<uuidToHex>` /
+// decode with `uuidFromPublicId(id, 'team')`.
 
-/** Matches a well-formed Team ID: `team_` + 8 Crockford-base32 chars. */
-const TEAM_ID_RE = /^team_[0-9A-HJKMNP-TV-Z]{8}$/;
+/** Matches a well-formed Team ID: `team_` + 32 hex chars (a UUID, dashes stripped). */
+const TEAM_ID_RE = /^team_[0-9a-f]{32}$/i;
 
-/**
- * Generate a Team ID: `team_` + 8 Crockford-base32 chars, drawn from
- * `crypto.getRandomValues` with the same unbiased rejection sampling as
- * `generateWorkspaceRef`.
- */
-export function generateTeamId(): string {
-  let body = "";
-  while (body.length < 8) {
-    const buf = new Uint8Array(8 - body.length);
-    crypto.getRandomValues(buf);
-    for (const byte of buf) {
-      if (byte >= 248) continue;
-      body += WORKSPACE_REF_ALPHABET[byte % 32];
-      if (body.length === 8) break;
-    }
-  }
-  return `team_${body}`;
-}
-
-/** Type guard: true when `value` is a well-formed Team ID (`team_…`). */
+/** Type guard: true when `value` is a well-formed Team ID (`team_<hex>`). */
 export function isTeamId(value: string): boolean {
   return TEAM_ID_RE.test(value);
 }

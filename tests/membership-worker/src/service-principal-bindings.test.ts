@@ -6,6 +6,7 @@ import {
 import type { CreateRoleAssignmentInput, MembershipRepository, MembershipResult, RoleAssignment } from "@saas/db/membership";
 import type { Env } from "@membership-worker/env";
 import { isServicePrincipalSubjectId, servicePrincipalSubjectId, parseServicePrincipalSubjectId } from "@saas/contracts/service-principal";
+import { teamRepoStubs } from "./team-repo-stubs.js";
 
 type BindingDTO = { id: string; orgId: string; subjectId: string; subjectType: string; role: string; scopeKind: string; scopeRef: string | null; createdAt: string; revokedAt: string | null };
 type SuccessEnvelope<T> = { data: T; meta: { requestId: string; cursor: string | null } };
@@ -44,6 +45,7 @@ function createFakeRepo(opts: {
 } = {}): MembershipRepository {
   const roleAssignments = opts.roleAssignments ?? [];
   return {
+    ...teamRepoStubs(),
     async listRoleAssignments() {
       return { ok: true as const, value: roleAssignments };
     },

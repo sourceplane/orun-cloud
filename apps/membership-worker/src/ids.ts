@@ -23,6 +23,16 @@ export function parseOrgPublicId(id: string): Uuid | null {
   return uuidFromPublicId(id, "org");
 }
 
+/** Render a team's UUID as its public id `team_<hex>` (saas-teams TM1/TM2). */
+export function teamPublicId(uuid: string): string {
+  return `team_${uuidToHex(uuid)}`;
+}
+
+/** Decode a `team_<hex>` public id back to the team UUID, or null if malformed. */
+export function parseTeamPublicId(publicId: string): Uuid | null {
+  return uuidFromPublicId(publicId, "team");
+}
+
 export function memberPublicId(uuid: string): string {
   return `mem_${uuidToHex(uuid)}`;
 }

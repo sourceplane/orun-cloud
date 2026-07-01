@@ -975,6 +975,53 @@ export function createMembershipRepository(executor: SqlExecutor): MembershipRep
       }
     },
 
+    // ── Team grants (saas-teams TM2) ────────────────────────────────
+    async revokeTeamGrant(
+      orgId: string,
+      teamPublicId: string,
+      role: string,
+      scopeKind: string,
+      scopeRef: string | null,
+      revokedAt: Date,
+    ): Promise<MembershipResult<RoleAssignment>> {
+      try {
+        const result = await executor.execute<Record<string, unknown>>(
+          `UPDATE membership.role_assignments
+           SET revoked_at = $6
+           WHERE org_id = $1
+             AND subject_id = $2
+             AND subject_type = 'team'
+             AND role = $3
+             AND scope_kind = $4
+             AND COALESCE(scope_ref, '') = COALESCE($5, '')
+             AND revoked_at IS NULL
+           RETURNING *`,
+          [orgId, teamPublicId, role, scopeKind, scopeRef, revokedAt.toISOString()],
+        );
+        if (result.rowCount === 0) return { ok: false, error: { kind: "not_found" } };
+        return { ok: true, value: mapRoleAssignment(result.rows[0]!) };
+      } catch (err) {
+        return safeError("Failed to revoke team grant", err);
+      }
+    },
+
+    async revokeAllTeamGrants(teamPublicId: string, revokedAt: Date): Promise<MembershipResult<RoleAssignment[]>> {
+      try {
+        const result = await executor.execute<Record<string, unknown>>(
+          `UPDATE membership.role_assignments
+           SET revoked_at = $2
+           WHERE subject_id = $1
+             AND subject_type = 'team'
+             AND revoked_at IS NULL
+           RETURNING *`,
+          [teamPublicId, revokedAt.toISOString()],
+        );
+        return { ok: true, value: result.rows.map(mapRoleAssignment) };
+      } catch (err) {
+        return safeError("Failed to revoke all team grants", err);
+      }
+    },
+
     async countActiveOwners(orgId: string): Promise<MembershipResult<number>> {
       try {
         const result = await executor.execute<Record<string, unknown>>(
