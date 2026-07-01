@@ -36,6 +36,18 @@ import {
 } from "./commands/notification-preferences.js";
 import { integrationsGithubTokenCommand } from "./commands/integrations-token.js";
 import {
+  teamListCommand,
+  teamCreateCommand,
+  teamGetCommand,
+  teamUpdateCommand,
+  teamDeleteCommand,
+  teamMembersCommand,
+  teamMemberAddCommand,
+  teamMemberRemoveCommand,
+  teamGrantCommand,
+  teamRevokeCommand,
+} from "./commands/teams.js";
+import {
   usageSummaryCommand,
   billingSummaryCommand,
   auditListCommand,
@@ -198,6 +210,17 @@ function buildRouter(opts: RunOptions): Router {
   r.register(["notifications", "preferences"], "Show your email notification preferences for an org", notificationPreferencesGetCommand);
   r.register(["notifications", "preferences", "set"], "Enable/disable an email notification category", notificationPreferencesSetCommand);
   r.register(["integrations", "github", "token"], "Mint a short-lived, repo-scoped GitHub installation token", integrationsGithubTokenCommand);
+  // Teams (saas-teams TM4c2b) — account-owned principal groups.
+  r.register(["team", "list"], "List teams in the active account", teamListCommand);
+  r.register(["team", "create"], "Create a team in the active account", teamCreateCommand);
+  r.register(["team", "get"], "Show a team", teamGetCommand);
+  r.register(["team", "update"], "Rename or re-slug a team", teamUpdateCommand);
+  r.register(["team", "delete"], "Delete a team (revokes its grants)", teamDeleteCommand);
+  r.register(["team", "members"], "List a team's members", teamMembersCommand);
+  r.register(["team", "member-add"], "Add a subject to a team", teamMemberAddCommand);
+  r.register(["team", "member-remove"], "Remove a subject from a team", teamMemberRemoveCommand);
+  r.register(["team", "grant"], "Grant a team a role at account|workspace|project scope", teamGrantCommand);
+  r.register(["team", "revoke"], "Revoke a team's role grant", teamRevokeCommand);
   return r;
 }
 
