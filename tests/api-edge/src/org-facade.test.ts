@@ -91,6 +91,14 @@ describe("api-edge org facade", () => {
       expect(isOrgRoute("/v1/organizations/org_abc/workspaces")).toBe(true);
     });
 
+    it("matches team routes (saas-teams TM4c)", () => {
+      expect(isOrgRoute("/v1/organizations/org_abc/teams")).toBe(true);
+      expect(isOrgRoute("/v1/organizations/org_abc/teams/team_abc")).toBe(true);
+      expect(isOrgRoute("/v1/organizations/org_abc/teams/team_abc/members")).toBe(true);
+      expect(isOrgRoute("/v1/organizations/org_abc/teams/team_abc/members/usr_x")).toBe(true);
+      expect(isOrgRoute("/v1/organizations/org_abc/team-roles")).toBe(true);
+    });
+
     it("does not match deeper nested org routes", () => {
       expect(isOrgRoute("/v1/organizations/org_abc/members/mem_abc123/extra")).toBe(false);
     });
@@ -193,6 +201,49 @@ describe("api-edge org facade", () => {
       );
 
       expect(response.status).toBe(401);
+    });
+  });
+
+  describe("team routes (saas-teams TM4c)", () => {
+    it("proxies POST /teams to MEMBERSHIP_WORKER with actor context + body", async () => {
+      const { fetcher: identityFetcher } = createSessionFetcher("usr_abc123");
+      const { fetcher: membershipFetcher, calls: membershipCalls } = createFakeFetcher();
+      const request = new Request("https://api.example.com/v1/organizations/org_abc/teams", {
+        method: "POST",
+        headers: { authorization: "Bearer sps_ses_abc.secret", "content-type": "application/json" },
+        body: JSON.stringify({ name: "Platform" }),
+      });
+      await handleOrgRoute(request, { IDENTITY_WORKER: identityFetcher, MEMBERSHIP_WORKER: membershipFetcher, ENVIRONMENT: "test" }, "req_t", "/v1/organizations/org_abc/teams");
+      expect(membershipCalls).toHaveLength(1);
+      expect(membershipCalls[0]!.url).toContain("/v1/organizations/org_abc/teams");
+      expect(membershipCalls[0]!.init.method).toBe("POST");
+      expect(membershipCalls[0]!.init.body).toBeDefined();
+      const h = new Headers(membershipCalls[0]!.init.headers as HeadersInit);
+      expect(h.get("x-actor-subject-id")).toBe("usr_abc123");
+    });
+
+    it("forwards the DELETE body for /team-roles (revoke tuple)", async () => {
+      const { fetcher: identityFetcher } = createSessionFetcher("usr_abc123");
+      const { fetcher: membershipFetcher, calls: membershipCalls } = createFakeFetcher();
+      const request = new Request("https://api.example.com/v1/organizations/org_abc/team-roles", {
+        method: "DELETE",
+        headers: { authorization: "Bearer sps_ses_abc.secret", "content-type": "application/json" },
+        body: JSON.stringify({ teamId: "team_abc", role: "builder", scopeKind: "organization" }),
+      });
+      await handleOrgRoute(request, { IDENTITY_WORKER: identityFetcher, MEMBERSHIP_WORKER: membershipFetcher, ENVIRONMENT: "test" }, "req_t", "/v1/organizations/org_abc/team-roles");
+      expect(membershipCalls[0]!.init.method).toBe("DELETE");
+      expect(membershipCalls[0]!.init.body).toBeDefined();
+    });
+
+    it("405s an unsupported method on /teams", async () => {
+      const { fetcher: identityFetcher } = createSessionFetcher("usr_abc123");
+      const { fetcher: membershipFetcher } = createFakeFetcher();
+      const request = new Request("https://api.example.com/v1/organizations/org_abc/teams", {
+        method: "PUT",
+        headers: { authorization: "Bearer sps_ses_abc.secret" },
+      });
+      const res = await handleOrgRoute(request, { IDENTITY_WORKER: identityFetcher, MEMBERSHIP_WORKER: membershipFetcher, ENVIRONMENT: "test" }, "req_t", "/v1/organizations/org_abc/teams");
+      expect(res.status).toBe(405);
     });
   });
 
