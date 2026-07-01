@@ -399,5 +399,14 @@ export const manifest: MigrationManifest = {
       description:
         "Account-level config scope + overridable guardrail (saas-workspace-id WID7) — adds config.settings.overridable BOOLEAN default true, extends the scope_kind CHECK to admit 'account', and guards that only account-scope rows may be locked (overridable=false). Backs the scope-resolution chain (environment->project->workspace->account->default): an account value is inherited by every workspace unless it is a locked guardrail, which workspaces cannot override. Piloted on config.settings; feature_flags/secret_metadata may adopt later. Additive + idempotent.",
     },
+    {
+      id: "440_membership_teams",
+      context: "membership",
+      path: "440_membership_teams/up.sql",
+      checksum:
+        "c509a7453c1abd486741dd2fbc037820734feac26a9c106a7e963323c7ac10ed",
+      description:
+        "Account-owned Teams as principals (saas-teams TM1) — adds membership.teams (id, account_org_id, name, slug_lower, status; unique (account_org_id, slug_lower) for non-deleted) and membership.team_members (team_id, subject_id, subject_type, status; unique (team_id, subject_id)), and widens membership.role_assignments' subject_type CHECK to admit 'team' so a team becomes a grantable principal (subject_id = team_<base32>). Teams are account-scoped (not a tenancy level, not a resource container); grants are expanded into facts at authorization-context assembly (TM3). Additive + idempotent (guarded DROP+ADD for the CHECK); back-compatible since every existing user/service_principal row keeps validating.",
+    },
   ],
 };

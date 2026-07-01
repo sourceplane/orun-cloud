@@ -79,6 +79,51 @@ export interface RoleAssignment {
   revokedAt: Date | null;
 }
 
+/**
+ * An account-owned Team (saas-teams TM1): a named principal-group a role can be
+ * granted to. `id` is the internal UUID; the public id is `team_<base32>`
+ * (minted via `generateTeamId`) — grants bind to the public id, never the slug.
+ */
+export interface Team {
+  id: string;
+  accountOrgId: string;
+  name: string;
+  slugLower: string;
+  status: string;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+/** A team membership fact (saas-teams TM1): a subject in a team. */
+export interface TeamMember {
+  teamId: string;
+  subjectId: string;
+  subjectType: string;
+  status: string;
+  createdAt: Date;
+}
+
+export interface CreateTeamInput {
+  id: string;
+  accountOrgId: Uuid;
+  name: string;
+  slugLower: string;
+  createdAt: Date;
+}
+
+export interface UpdateTeamInput {
+  name?: string;
+  slugLower?: string;
+  updatedAt: Date;
+}
+
+export interface CreateTeamMemberInput {
+  teamId: Uuid;
+  subjectId: string;
+  subjectType: string;
+  createdAt: Date;
+}
+
 export interface CreateOrganizationInput {
   id: string;
   name: string;
@@ -204,6 +249,24 @@ export interface MembershipRepository {
   listInvitationsPaged(orgId: Uuid, params: PageQueryParams): Promise<MembershipResult<PagedResult<OrganizationInvitation>>>;
   revokeInvitation(orgId: Uuid, invitationId: string, revokedAt: Date): Promise<MembershipResult<OrganizationInvitation>>;
   acceptInvitation(input: AcceptInvitationInput): Promise<MembershipResult<{ invitation: OrganizationInvitation; member: OrganizationMember; roleAssignment: RoleAssignment }>>;
+
+  // ── Teams (saas-teams TM1) ──────────────────────────────────────
+  /** Create an account-owned team. Conflicts on (account_org_id, slug_lower). */
+  createTeam(input: CreateTeamInput): Promise<MembershipResult<Team>>;
+  getTeamById(id: string): Promise<MembershipResult<Team>>;
+  /** Look up a team by its slug within an account (case-insensitive). */
+  getTeamBySlug(accountOrgId: Uuid, slugLower: string): Promise<MembershipResult<Team>>;
+  /** All active teams owned by an account, oldest first. */
+  listTeams(accountOrgId: Uuid): Promise<MembershipResult<Team[]>>;
+  updateTeam(id: string, input: UpdateTeamInput): Promise<MembershipResult<Team>>;
+  /** Soft-delete a team (status='deleted'); frees its slug for reuse. */
+  deleteTeam(id: string, updatedAt: Date): Promise<MembershipResult<Team>>;
+
+  addTeamMember(input: CreateTeamMemberInput): Promise<MembershipResult<TeamMember>>;
+  removeTeamMember(teamId: Uuid, subjectId: string): Promise<MembershipResult<TeamMember>>;
+  listTeamMembers(teamId: Uuid): Promise<MembershipResult<TeamMember[]>>;
+  /** Active teams (within an account) a subject is an active member of. */
+  listTeamsForSubject(accountOrgId: Uuid, subjectId: string): Promise<MembershipResult<Team[]>>;
 
   createRoleAssignment(input: CreateRoleAssignmentInput): Promise<MembershipResult<RoleAssignment>>;
   listRoleAssignments(orgId: Uuid, subjectId: string): Promise<MembershipResult<RoleAssignment[]>>;

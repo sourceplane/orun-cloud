@@ -144,4 +144,54 @@ describe("Membership Migration Verification", () => {
       expect(membershipMigrations.some((m) => m.context === "projects")).toBe(false);
     });
   });
+
+  // saas-teams TM1 — account-owned Teams as principals.
+  describe("440_membership_teams (TM1)", () => {
+    const entry = manifest.migrations.find((m) => m.id === "440_membership_teams");
+
+    it("is registered in the manifest under the membership context", () => {
+      expect(entry).toBeDefined();
+      expect(entry!.context).toBe("membership");
+    });
+
+    const sql = readFileSync(
+      resolve(MIGRATIONS_ROOT, "440_membership_teams/up.sql"),
+      "utf-8",
+    );
+
+    it("creates membership.teams and membership.team_members", () => {
+      expect(sql).toContain("CREATE TABLE IF NOT EXISTS membership.teams");
+      expect(sql).toContain("CREATE TABLE IF NOT EXISTS membership.team_members");
+    });
+
+    it("teams are account-scoped with a per-account unique slug", () => {
+      expect(sql).toContain("account_org_id");
+      expect(sql).toContain("teams_account_slug_idx");
+      expect(sql).toContain("slug_lower");
+    });
+
+    it("team_members disambiguates user vs service_principal subjects", () => {
+      expect(sql).toContain("team_members_subject_type_check");
+      expect(sql).toContain("subject_type IN ('user', 'service_principal')");
+    });
+
+    it("widens role_assignments subject_type CHECK to admit 'team'", () => {
+      expect(sql).toContain("DROP CONSTRAINT role_assignments_subject_type_check");
+      expect(sql).toContain("subject_type IN ('user', 'service_principal', 'team')");
+      expect(sql).toContain("pg_constraint");
+    });
+
+    it("is idempotent (IF NOT EXISTS + guarded DO-block for the CHECK)", () => {
+      const creates = sql.match(/CREATE\s+(TABLE|INDEX)/g) ?? [];
+      const ifNotExists = sql.match(/IF NOT EXISTS/g) ?? [];
+      expect(ifNotExists.length).toBeGreaterThanOrEqual(creates.length);
+    });
+
+    it("has no foreign keys to cross-context tables", () => {
+      const fkMatches = sql.match(/REFERENCES\s+(\w+\.\w+)/g) ?? [];
+      for (const fk of fkMatches) {
+        expect(fk).toContain("membership.");
+      }
+    });
+  });
 });
