@@ -211,8 +211,8 @@
       <!-- Left: narrative -->
       <div class="panel">
         <div class="prov">
-          <span>Synced from <b style="color:hsl(var(--foreground))">sourceplane/lumen</b>@<b style="color:hsl(var(--foreground))">a16286e</b> · 6 min ago · <code>overview.md</code></span>
-          <a href="#">Edit on GitHub ↗</a>
+          <span>From <b style="color:hsl(var(--foreground))">sourceplane/lumen</b>@<b style="color:hsl(var(--foreground))">a16286e</b> · 6 min ago · <code>docs/overview.md</code></span>
+          <a href="#">View source ↗</a>
         </div>
         <div class="prose">
           <p class="lead">lumen is a production SaaS baseline — fork it, rebrand in one script,
@@ -262,11 +262,6 @@
           <div class="hd"><span class="t">📦 Repositories</span><a href="#">Git Repos →</a></div>
           <div class="row">sourceplane/lumen <span class="pill" style="color:hsl(var(--healthy));border-color:hsl(var(--healthy)/.4)">primary</span><span class="meta">main · 6m</span></div>
         </div>
-        <!-- Integrations -->
-        <div class="panel card">
-          <div class="hd"><span class="t">🔌 Integrations</span><a href="#">Manage →</a></div>
-          <div class="row"><span class="dot" style="background:hsl(var(--healthy))"></span> GitHub <span class="meta">connected · ACME</span></div>
-        </div>
         <!-- Pinned docs -->
         <div class="panel card">
           <div class="hd"><span class="t">📌 Pinned docs</span></div>
@@ -278,11 +273,12 @@
 
     <div class="note">
       <b>Empty-state behaviour (not shown above).</b> No repo connected → a centered
-      “Connect a repository to bring this Workspace to life” CTA. Repo but no plan →
-      identity renders, tiles read “—”, hint to run <code>orun plan</code>. Repo + plan
-      but no <code>overview.md</code> → render the intent <code>description</code> and nudge
-      the team to add one (copy-paste template + “Create on GitHub”). The narrative is
-      always repo-sourced; a console override is the only escape hatch for not-yet-connected
+      “Link a repository to bring this Workspace to life” CTA (<code>orun cloud link</code>).
+      Repo but no plan → identity renders, tiles read “—”, hint to run <code>orun plan</code>.
+      Repo + plan but no <code>docs.overview</code> → render the declared <code>description</code>
+      and nudge the team to add one (copy-paste <code>intent.yaml</code> snippet). The narrative
+      is always repo-authored (a content-addressed <code>doc</code> object, rendered by digest —
+      no git-provider call); a console override is the only escape hatch for not-yet-linked
       Workspaces.
     </div>
   </main>
