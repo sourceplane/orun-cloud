@@ -16,6 +16,7 @@ import { handleListInvitations } from "./handlers/list-invitations.js";
 import { handleRevokeInvitation } from "./handlers/revoke-invitation.js";
 import { handleAcceptInvitation } from "./handlers/accept-invitation.js";
 import { handleAuthorizationContext } from "./handlers/authorization-context.js";
+import { handleEffectiveAccess } from "./handlers/effective-access.js";
 import { handleSubjectOrgs } from "./handlers/subject-orgs.js";
 import { handleSyncAccountChildren } from "./handlers/sync-account-children.js";
 import { handleResolveBillingParent } from "./handlers/resolve-billing-parent.js";
@@ -78,6 +79,15 @@ export async function route(request: Request, env: Env): Promise<Response> {
     if (url.pathname === "/v1/internal/membership/authorization-context") {
       if (request.method === "POST") {
         return handleAuthorizationContext(request, env, requestId);
+      }
+      return methodNotAllowed(requestId);
+    }
+
+    // Effective access (saas-teams TM6b2): the actor's permitted actions on a
+    // target org/project, each with `via` provenance. Service-binding only.
+    if (url.pathname === "/v1/internal/membership/effective-access") {
+      if (request.method === "POST") {
+        return handleEffectiveAccess(request, env, requestId);
       }
       return methodNotAllowed(requestId);
     }

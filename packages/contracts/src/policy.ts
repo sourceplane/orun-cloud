@@ -94,6 +94,16 @@ export interface EffectivePermissionsResponse {
   };
 }
 
+/**
+ * "Who can do what here, and via which grant" (saas-teams TM6b). The actor's
+ * effective permissions on a target org/project, each carrying `via` provenance
+ * (direct / team / account cascade) for the allowed ones. Assembled by
+ * membership-worker (facts + engine); surfaced by api-edge/SDK/CLI/console.
+ */
+export interface EffectiveAccessResponse {
+  permissions: EffectivePermission[];
+}
+
 export interface RoleAssignmentValidationRequest {
   role: string;
   scope: {
