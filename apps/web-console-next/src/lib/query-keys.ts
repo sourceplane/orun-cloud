@@ -15,6 +15,7 @@ export const qk = {
     ["environments", orgId, projectId] as const,
   members: (orgId: string) => ["members", orgId] as const,
   teams: (orgId: string) => ["teams", orgId] as const,
+  effectiveAccess: (orgId: string) => ["effectiveAccess", orgId] as const,
   invitations: (orgId: string) => ["invitations", orgId] as const,
   apiKeys: (orgId: string) => ["apiKeys", orgId] as const,
   cliSessions: () => ["cliSessions"] as const,
