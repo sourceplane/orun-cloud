@@ -47,6 +47,7 @@
     "doc": "platform-secrets/<env>",
     "secret": {
       "SECRET_ENCRYPTION_KEY": ["webhooks-worker", "config-worker", "integrations-worker"],
+      "SECRET_KEK": ["config-worker"],
       "OAUTH_STATE_SECRET": ["identity-worker"],
       "CLI_JWT_SIGNING_KEY": ["identity-worker"],
       "INTEGRATIONS_STATE_SECRET": ["integrations-worker"],

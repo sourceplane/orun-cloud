@@ -151,9 +151,10 @@ export async function handleCreateSecret(
   // Resolve encryption adapter
   let encryptionAdapter: EncryptionAdapter | null | undefined = deps?.encryptionAdapter;
   if (encryptionAdapter === undefined && !deps) {
-    // Production path: lazy-import encryption adapter
-    const { createEncryptionAdapter } = await import("../encryption.js");
-    encryptionAdapter = await createEncryptionAdapter(env.SECRET_ENCRYPTION_KEY);
+    // Production path: lazy-import encryption adapter. Workspace-bound (SM2):
+    // v:2 DEK envelopes when SECRET_KEK is configured, else the v:1 static key.
+    const { createSecretEncryptionAdapter } = await import("../encryption.js");
+    encryptionAdapter = await createSecretEncryptionAdapter(env, scope.orgId);
   }
 
   // If value is provided, encryption adapter is required

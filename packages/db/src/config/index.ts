@@ -21,6 +21,10 @@ export type {
   SecretVersion,
   CreateSecretMetadataInput,
   ConfigRepository,
+  SecretDek,
+  EnvelopeVersionCounts,
+  SecretDekRepository,
 } from "./types.js";
 
 export { createConfigRepository } from "./repository.js";
+export { createSecretDekRepository } from "./dek-repository.js";

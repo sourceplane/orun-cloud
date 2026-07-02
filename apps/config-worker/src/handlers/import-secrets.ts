@@ -93,8 +93,12 @@ export async function handleImportSecrets(
   // Resolve encryption adapter — import is write-only, so it is always required.
   let encryptionAdapter: EncryptionAdapter | null | undefined = deps?.encryptionAdapter;
   if (encryptionAdapter === undefined && !deps) {
-    const { createEncryptionAdapter } = await import("../encryption.js");
-    encryptionAdapter = await createEncryptionAdapter(env.SECRET_ENCRYPTION_KEY);
+    // Workspace-bound (SM2): v:2 DEK envelopes when SECRET_KEK is configured,
+    // else the v:1 static key. One adapter per request — the DEK resolves
+    // lazily on the first encrypt (after authorization) and is cached, so a
+    // bulk import does one DEK fetch.
+    const { createSecretEncryptionAdapter } = await import("../encryption.js");
+    encryptionAdapter = await createSecretEncryptionAdapter(env, scope.orgId);
   }
   if (!encryptionAdapter) {
     return errorResponse("internal_error", "Encryption is not configured", 503, requestId);

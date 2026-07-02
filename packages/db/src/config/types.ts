@@ -211,6 +211,46 @@ export interface CreateSecretMetadataInput {
   ciphertextEnvelope?: string;
 }
 
+// ── Secret DEKs (saas-secret-manager SM2) ───────────────────
+// NOTE: No raw key material fields. `wrappedDek` is ciphertext under the KEK.
+
+/**
+ * A workspace data-encryption key row (saas-secret-manager SM2), keyed
+ * `(orgId, generation)` — the unit a v:2 envelope's `keyId`
+ * (`ws:<org-uuid>:<generation>`) names. Stored WRAPPED under the KEK; the
+ * repository never sees, logs, or returns unwrapped key bytes.
+ */
+export interface SecretDek {
+  orgId: string;
+  generation: number;
+  /** JSON wrap document `{v, iv, ct}` — DEK ciphertext under the KEK. */
+  wrappedDek: string;
+  /** 'active' (serving writes), 'retiring' (decrypt-only), or 'shredded'. */
+  state: string;
+  createdAt: Date;
+}
+
+/**
+ * Envelope-format census over config.secret_versions — the % of envelopes on
+ * workspace DEKs drives the k0 retirement date (orun-secrets R-13).
+ */
+export interface EnvelopeVersionCounts {
+  v1Count: number;
+  v2Count: number;
+}
+
+export interface SecretDekRepository {
+  /** The org's highest active generation, or `not_found` before the first v:2 write. */
+  getActiveDek(orgId: string): Promise<ConfigResult<SecretDek>>;
+  /**
+   * Race-safe insert (`ON CONFLICT DO NOTHING`): `inserted` is false when a
+   * concurrent writer won the `(orgId, generation)` slot — callers re-SELECT.
+   */
+  insertDek(orgId: string, generation: number, wrappedDek: string): Promise<ConfigResult<{ inserted: boolean }>>;
+  /** Envelope counts by format version, org-scoped when `orgId` is given. */
+  countEnvelopeVersions(orgId?: string): Promise<ConfigResult<EnvelopeVersionCounts>>;
+}
+
 // ── Repository interface ────────────────────────────────────
 
 export interface ConfigRepository {

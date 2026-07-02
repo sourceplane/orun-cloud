@@ -244,3 +244,25 @@ export interface ImportSecretResult {
 export interface ImportSecretsResponse {
   results: ImportSecretResult[];
 }
+
+// ---------------------------------------------------------------------------
+// Key hierarchy status (saas-secret-manager SM2)
+// ---------------------------------------------------------------------------
+
+/**
+ * Workspace key-hierarchy status: `GET …/config/secrets/key-status` (org
+ * scope, `secret.read`). Counts and generation numbers only — never key
+ * material or ciphertext.
+ */
+export interface SecretKeyStatus {
+  /** Whether the KEK (SECRET_KEK) is configured, i.e. new writes envelope v:2. */
+  kekConfigured: boolean;
+  /** The workspace's active DEK generation, or null before its first v:2 write. */
+  activeGeneration: number | null;
+  /** Stored envelope counts by format version — the k0-retirement metric (orun-secrets R-13). */
+  envelopes: { v1: number; v2: number };
+}
+
+export interface SecretKeyStatusResponse {
+  keyStatus: SecretKeyStatus;
+}
