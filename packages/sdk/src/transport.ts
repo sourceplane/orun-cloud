@@ -113,6 +113,37 @@ export class Transport {
     return this.performRequest<T>(input, opts);
   }
 
+  /**
+   * Raw-body sibling of `request<T>`: same URL / auth / request-id / abort
+   * semantics, but sends `accept: * / *` (overridable via `opts.headers`) and
+   * returns the response body as text — NOT the JSON envelope. For endpoints
+   * that stream non-JSON bytes (e.g. a doc blob read by digest, which returns
+   * markdown as application/octet-stream). Non-2xx still decodes to a typed
+   * `OrunCloudError`.
+   */
+  async requestText(input: PerformInput, opts: RequestOptions = {}): Promise<string> {
+    const url = this.buildUrl(input.path, input.query);
+    const requestId = opts.requestId ?? generateRequestId();
+
+    const headers = new Headers();
+    for (const [k, v] of Object.entries(this.defaultHeaders)) headers.set(k, v);
+    if (this.auth) applyAuth(headers, this.auth);
+    headers.set("accept", "*/*");
+    headers.set("x-request-id", requestId);
+    if (opts.headers) {
+      for (const [k, v] of Object.entries(opts.headers)) headers.set(k, v);
+    }
+
+    const init: RequestInit = { method: input.method, headers };
+    if (opts.signal !== undefined) init.signal = opts.signal;
+
+    const response = await this.fetchImpl(url, init);
+    if (!response.ok) {
+      throw await decodeError(response, requestId);
+    }
+    return response.text();
+  }
+
   private async performRequest<T>(
     input: PerformInput,
     opts: RequestOptions,

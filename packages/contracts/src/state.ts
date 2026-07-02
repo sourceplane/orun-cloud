@@ -316,6 +316,38 @@ export interface OrgCatalogEntity {
   language?: string | null;
   /** Free-form tags declared in the component source. */
   tags?: string[];
+  /** {path,ref,sha,digest} pointer to the entity's docs.overview blob in CAS
+   *  (saas-workspace-overview WO4); the body is read from R2 by digest. */
+  docRef?: Record<string, unknown> | null;
+}
+
+/** A repo's self-description (state.repo_facet), one per (org, project),
+ *  projected from the declared Repo entity (saas-workspace-overview WO4/WO5).
+ *  Public shape: internal UUIDs are surfaced as public ids. */
+export interface RepoFacet {
+  orgId: string;
+  /** The project (repo) this facet describes — public `prj_…` id. */
+  projectId: string;
+  displayName: string | null;
+  description: string | null;
+  owner: string | null;
+  defaultBranch: string | null;
+  links: Array<Record<string, unknown>>;
+  tags: string[];
+  /** {path,ref,sha,digest} pointer to the overview doc blob in CAS, or null. */
+  docRef: Record<string, unknown> | null;
+  entityRef: string | null;
+  headDigest: string;
+  sourceCommit: string | null;
+  syncedAt: string;
+}
+
+export interface ListRepoFacetsResponse {
+  repoFacets: RepoFacet[];
+}
+
+export interface GetRepoFacetResponse {
+  repoFacet: RepoFacet | null;
 }
 
 // ── Catalog scorecards & insights (computed overlay; SC4/SC5) ─────────

@@ -40,6 +40,7 @@ import {
   handleListCatalogEntities,
   handleListOrgCatalogEntities,
 } from "./handlers/catalog.js";
+import { handleListOrgRepoFacets, handleGetOrgRepoFacet } from "./handlers/repo-facets.js";
 import { handleGetOrgStateStorage } from "./handlers/state-usage.js";
 import { handleGetStateGcReport } from "./handlers/gc-report.js";
 import { handleCollectStateGc } from "./handlers/gc-collect.js";
@@ -141,6 +142,9 @@ const GC_REPORT_RE = new RegExp(`^${STATE_BASE}/gc/report$`);
 const GC_COLLECT_RE = new RegExp(`^${STATE_BASE}/gc/collect$`);
 // OV6 — org-global catalog browser (no project scope): the default merged graph.
 const ORG_CATALOG_ENTITIES_RE = /^\/v1\/organizations\/([^/]+)\/catalog\/entities$/;
+// WO5 — repo self-description read model (org-scoped list + per-project get).
+const ORG_REPO_FACETS_RE = /^\/v1\/organizations\/([^/]+)\/repo-facets$/;
+const ORG_REPO_FACET_RE = /^\/v1\/organizations\/([^/]+)\/repo-facets\/([^/]+)$/;
 // OV9 — org state-plane storage footprint (no project scope): the STOCK gauge.
 const ORG_STATE_USAGE_RE = /^\/v1\/organizations\/([^/]+)\/state\/usage$/;
 // Org-global runs feed (no project scope): the console "Activities" surface, the
@@ -231,6 +235,25 @@ export async function route(request: Request, env: Env, ctx?: ExecutionContext):
     if (!orgId) return notFound(requestId, pathname);
     if (request.method !== "GET") return methodNotAllowed(requestId);
     return handleListOrgCatalogEntities(request, env, requestId, actor, orgId);
+  }
+
+  // GET /v1/organizations/{orgId}/repo-facets — repo self-descriptions for the
+  // org (WO5). Org-scoped read-model, dispatched here at the top level (outside
+  // the `/state/` contract-version gate), mirroring …/catalog/entities.
+  m = pathname.match(ORG_REPO_FACET_RE);
+  if (m) {
+    const orgId = parseOrgPublicId(m[1]!);
+    const projectId = parseProjectPublicId(m[2]!);
+    if (!orgId || !projectId) return notFound(requestId, pathname);
+    if (request.method !== "GET") return methodNotAllowed(requestId);
+    return handleGetOrgRepoFacet(request, env, requestId, actor, orgId, projectId);
+  }
+  m = pathname.match(ORG_REPO_FACETS_RE);
+  if (m) {
+    const orgId = parseOrgPublicId(m[1]!);
+    if (!orgId) return notFound(requestId, pathname);
+    if (request.method !== "GET") return methodNotAllowed(requestId);
+    return handleListOrgRepoFacets(request, env, requestId, actor, orgId);
   }
 
   // GET /v1/organizations/{orgId}/state/usage — org state-plane storage footprint
