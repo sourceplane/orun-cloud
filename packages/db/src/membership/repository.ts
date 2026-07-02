@@ -1185,6 +1185,22 @@ export function createMembershipRepository(executor: SqlExecutor): MembershipRep
       }
     },
 
+    async listTeamGrants(teamPublicId: string): Promise<MembershipResult<RoleAssignment[]>> {
+      try {
+        const result = await executor.execute<Record<string, unknown>>(
+          `SELECT * FROM membership.role_assignments
+           WHERE subject_id = $1
+             AND subject_type = 'team'
+             AND revoked_at IS NULL
+           ORDER BY created_at ASC, id ASC`,
+          [teamPublicId],
+        );
+        return { ok: true, value: result.rows.map(mapRoleAssignment) };
+      } catch (err) {
+        return safeError("Failed to list team grants", err);
+      }
+    },
+
     async countActiveOwners(orgId: string): Promise<MembershipResult<number>> {
       try {
         const result = await executor.execute<Record<string, unknown>>(

@@ -1,4 +1,4 @@
-import { handleCreateTeam, handleListTeams, handleGetTeam, handleDeleteTeam, handleUpdateTeam, handleAddTeamMember, handleRemoveTeamMember, handleListTeamMembers } from "@membership-worker/handlers/teams";
+import { handleCreateTeam, handleListTeams, handleGetTeam, handleDeleteTeam, handleUpdateTeam, handleAddTeamMember, handleRemoveTeamMember, handleListTeamMembers, handleListTeamGrants } from "@membership-worker/handlers/teams";
 import { orgPublicId, teamPublicId } from "@membership-worker/ids";
 import type { Env } from "@membership-worker/env";
 import type { MembershipRepository, Organization, RoleAssignment, Team, TeamMember, CreateTeamInput, CreateTeamMemberInput } from "@saas/db/membership";
@@ -48,6 +48,7 @@ function makeRepo(cfg: {
   teams?: Record<string, Team>;
   teamsList?: Team[];
   members?: TeamMember[];
+  grants?: RoleAssignment[];
   createConflict?: boolean;
   updateConflict?: boolean;
   removeMissing?: boolean;
@@ -100,6 +101,9 @@ function makeRepo(cfg: {
     },
     async listTeamMembers() {
       return { ok: true as const, value: cfg.members ?? [] };
+    },
+    async listTeamGrants() {
+      return { ok: true as const, value: cfg.grants ?? [] };
     },
   } as unknown as MembershipRepository;
   return { repo, created, revokedTeams, addedMembers, removedMembers };
@@ -183,6 +187,50 @@ describe("teams: list / get (saas-teams TM4b)", () => {
   it("404s a team from another account", async () => {
     const { repo } = makeRepo({ orgs: { [ACCOUNT]: org(ACCOUNT, null) }, roles: { [`${ACCOUNT}|${ACTOR}`]: [accountRole("account_admin")] }, teams: { [TEAM_UUID]: team(TEAM_UUID, OTHER_ACCOUNT) } });
     const res = await handleGetTeam(env(), "r", actor, orgPublicId(ACCOUNT), teamPublicId(TEAM_UUID), { repo });
+    expect(res.status).toBe(404);
+  });
+});
+
+describe("teams: grants read (teams-hub TH3a)", () => {
+  const grant = (orgId: string, role: string, scopeKind: string, scopeRef: string | null = null): RoleAssignment => ({
+    id: `ra-${orgId}-${role}`, orgId, subjectId: teamPublicId(TEAM_UUID), subjectType: "team",
+    role, scopeKind, scopeRef, createdAt: NOW, revokedAt: null,
+  });
+
+  it("lists the team's active grants across orgs, each tagged with its target org", async () => {
+    const { repo } = makeRepo({
+      orgs: { [ACCOUNT]: org(ACCOUNT, null) },
+      roles: { [`${ACCOUNT}|${ACTOR}`]: [accountRole("account_admin")] },
+      teams: { [TEAM_UUID]: team(TEAM_UUID, ACCOUNT) },
+      grants: [grant(ACCOUNT, "account_admin", "account"), grant(CHILD, "builder", "organization")],
+    });
+    const res = await handleListTeamGrants(env(), "r", actor, orgPublicId(ACCOUNT), teamPublicId(TEAM_UUID), { repo });
+    expect(res.status).toBe(200);
+    const json = await res.json() as { data: { grants: Array<Record<string, unknown>> } };
+    expect(json.data.grants).toHaveLength(2);
+    expect(json.data.grants[0]).toMatchObject({ role: "account_admin", scopeKind: "account", orgId: orgPublicId(ACCOUNT) });
+    expect(json.data.grants[1]).toMatchObject({ role: "builder", scopeKind: "organization", orgId: orgPublicId(CHILD) });
+  });
+
+  it("404s a team from another account", async () => {
+    const { repo } = makeRepo({
+      orgs: { [ACCOUNT]: org(ACCOUNT, null) },
+      roles: { [`${ACCOUNT}|${ACTOR}`]: [accountRole("account_admin")] },
+      teams: { [TEAM_UUID]: team(TEAM_UUID, OTHER_ACCOUNT) },
+      grants: [grant(ACCOUNT, "account_admin", "account")],
+    });
+    const res = await handleListTeamGrants(env(), "r", actor, orgPublicId(ACCOUNT), teamPublicId(TEAM_UUID), { repo });
+    expect(res.status).toBe(404);
+  });
+
+  it("denies an actor with no role on the account (404)", async () => {
+    const { repo } = makeRepo({
+      orgs: { [CHILD]: org(CHILD, ACCOUNT), [ACCOUNT]: org(ACCOUNT, null) },
+      roles: { [`${CHILD}|${ACTOR}`]: [orgRole(CHILD, "admin")], [`${ACCOUNT}|${ACTOR}`]: [] },
+      teams: { [TEAM_UUID]: team(TEAM_UUID, ACCOUNT) },
+      grants: [grant(ACCOUNT, "account_admin", "account")],
+    });
+    const res = await handleListTeamGrants(env(), "r", actor, orgPublicId(CHILD), teamPublicId(TEAM_UUID), { repo });
     expect(res.status).toBe(404);
   });
 });

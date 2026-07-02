@@ -155,6 +155,20 @@ export interface GrantTeamRoleRequest {
   scopeRef?: string;
 }
 
+/** One active grant a team holds (teams-hub TH3a), with its target org. */
+export interface TeamGrant {
+  role: string;
+  scopeKind: string;
+  scopeRef: string | null;
+  orgId: string;
+  createdAt: string;
+}
+
+/** GET …/teams/{teamId}/grants */
+export interface ListTeamGrantsResponse {
+  grants: TeamGrant[];
+}
+
 export interface GrantTeamRoleResponse {
   grant: {
     teamId: string;

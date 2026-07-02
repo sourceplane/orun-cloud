@@ -105,6 +105,10 @@ describe("api-edge org facade", () => {
       expect(isOrgRoute("/v1/organizations/org_abc/account-members")).toBe(true);
     });
 
+    it("matches the team-grants read (teams-hub TH3a)", () => {
+      expect(isOrgRoute("/v1/organizations/org_abc/teams/team_abc/grants")).toBe(true);
+    });
+
     it("does not match deeper nested org routes", () => {
       expect(isOrgRoute("/v1/organizations/org_abc/members/mem_abc123/extra")).toBe(false);
     });

@@ -32,6 +32,8 @@ const ORG_TEAMS_RE = /^\/v1\/organizations\/[^/]+\/teams$/;
 const ORG_TEAM_ID_RE = /^\/v1\/organizations\/[^/]+\/teams\/[^/]+$/;
 const ORG_TEAM_MEMBERS_RE = /^\/v1\/organizations\/[^/]+\/teams\/[^/]+\/members$/;
 const ORG_TEAM_MEMBER_ID_RE = /^\/v1\/organizations\/[^/]+\/teams\/[^/]+\/members\/[^/]+$/;
+// teams-hub TH3a — a team's active grants across orgs (read-only).
+const ORG_TEAM_GRANTS_RE = /^\/v1\/organizations\/[^/]+\/teams\/[^/]+\/grants$/;
 const ORG_EFFECTIVE_ACCESS_RE = /^\/v1\/organizations\/[^/]+\/effective-access$/;
 
 const FORWARDED_HEADERS = [
@@ -42,7 +44,7 @@ const FORWARDED_HEADERS = [
 ];
 
 export function isOrgRoute(pathname: string): boolean {
-  return pathname in ORG_ROUTES || ME_INVITATIONS_RE.test(pathname) || ME_INVITATION_ACCEPT_RE.test(pathname) || ORG_ID_RE.test(pathname) || ORG_MEMBERS_RE.test(pathname) || ORG_MEMBER_ID_RE.test(pathname) || ORG_WORKSPACES_RE.test(pathname) || ORG_INVITATIONS_ACCEPT_RE.test(pathname) || ORG_INVITATIONS_RE.test(pathname) || ORG_INVITATION_ID_RE.test(pathname) || ORG_API_KEYS_RE.test(pathname) || ORG_API_KEY_ID_RE.test(pathname) || ORG_ACCOUNT_ROLES_RE.test(pathname) || ORG_ACCOUNT_MEMBERS_RE.test(pathname) || ORG_TEAM_ROLES_RE.test(pathname) || ORG_TEAMS_RE.test(pathname) || ORG_TEAM_ID_RE.test(pathname) || ORG_TEAM_MEMBERS_RE.test(pathname) || ORG_TEAM_MEMBER_ID_RE.test(pathname) || ORG_EFFECTIVE_ACCESS_RE.test(pathname);
+  return pathname in ORG_ROUTES || ME_INVITATIONS_RE.test(pathname) || ME_INVITATION_ACCEPT_RE.test(pathname) || ORG_ID_RE.test(pathname) || ORG_MEMBERS_RE.test(pathname) || ORG_MEMBER_ID_RE.test(pathname) || ORG_WORKSPACES_RE.test(pathname) || ORG_INVITATIONS_ACCEPT_RE.test(pathname) || ORG_INVITATIONS_RE.test(pathname) || ORG_INVITATION_ID_RE.test(pathname) || ORG_API_KEYS_RE.test(pathname) || ORG_API_KEY_ID_RE.test(pathname) || ORG_ACCOUNT_ROLES_RE.test(pathname) || ORG_ACCOUNT_MEMBERS_RE.test(pathname) || ORG_TEAM_ROLES_RE.test(pathname) || ORG_TEAMS_RE.test(pathname) || ORG_TEAM_ID_RE.test(pathname) || ORG_TEAM_MEMBERS_RE.test(pathname) || ORG_TEAM_MEMBER_ID_RE.test(pathname) || ORG_TEAM_GRANTS_RE.test(pathname) || ORG_EFFECTIVE_ACCESS_RE.test(pathname);
 }
 
 export async function handleOrgRoute(
@@ -113,6 +115,10 @@ export async function handleOrgRoute(
   }
 
   if (ORG_TEAM_MEMBERS_RE.test(pathname) && request.method !== "GET" && request.method !== "POST") {
+    return errorResponse("unsupported", "Method not allowed", 405, requestId);
+  }
+
+  if (ORG_TEAM_GRANTS_RE.test(pathname) && request.method !== "GET") {
     return errorResponse("unsupported", "Method not allowed", 405, requestId);
   }
 

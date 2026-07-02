@@ -206,6 +206,8 @@ export type {
   ListTeamMembersResponse,
   GrantTeamRoleRequest,
   GrantTeamRoleResponse,
+  TeamGrant,
+  ListTeamGrantsResponse,
   AccountRoleAssignment,
   ListAccountRolesResponse,
   GrantAccountRoleRequest,

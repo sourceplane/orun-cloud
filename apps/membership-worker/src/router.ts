@@ -12,7 +12,7 @@ import { handleListAccountMembers } from "./handlers/list-account-members.js";
 import { handleRevokeAccountRole } from "./handlers/revoke-account-role.js";
 import { handleGrantTeamRole } from "./handlers/grant-team-role.js";
 import { handleRevokeTeamRole } from "./handlers/revoke-team-role.js";
-import { handleCreateTeam, handleListTeams, handleGetTeam, handleDeleteTeam, handleUpdateTeam, handleListTeamMembers, handleAddTeamMember, handleRemoveTeamMember } from "./handlers/teams.js";
+import { handleCreateTeam, handleListTeams, handleGetTeam, handleDeleteTeam, handleUpdateTeam, handleListTeamMembers, handleAddTeamMember, handleRemoveTeamMember, handleListTeamGrants } from "./handlers/teams.js";
 import { handleRemoveMember } from "./handlers/remove-member.js";
 import { handleCreateInvitation } from "./handlers/create-invitation.js";
 import { handleListInvitations } from "./handlers/list-invitations.js";
@@ -66,6 +66,7 @@ const ORG_TEAM_ROLES_RE = /^\/v1\/organizations\/([^/]+)\/team-roles$/;
 const ORG_TEAMS_RE = /^\/v1\/organizations\/([^/]+)\/teams$/;
 const ORG_TEAM_ID_RE = /^\/v1\/organizations\/([^/]+)\/teams\/([^/]+)$/;
 const ORG_TEAM_MEMBERS_RE = /^\/v1\/organizations\/([^/]+)\/teams\/([^/]+)\/members$/;
+const ORG_TEAM_GRANTS_RE = /^\/v1\/organizations\/([^/]+)\/teams\/([^/]+)\/grants$/;
 const ORG_TEAM_MEMBER_ID_RE = /^\/v1\/organizations\/([^/]+)\/teams\/([^/]+)\/members\/([^/]+)$/;
 const ORG_EFFECTIVE_ACCESS_RE = /^\/v1\/organizations\/([^/]+)\/effective-access$/;
 const SP_BINDINGS_PATH = "/v1/internal/membership/service-principal-bindings";
@@ -325,6 +326,19 @@ export async function route(request: Request, env: Env): Promise<Response> {
       }
       if (request.method === "GET") {
         return handleListTeams(env, requestId, actor, teamsMatch[1]!);
+      }
+      return methodNotAllowed(requestId);
+    }
+
+    // Team grants read (teams-hub TH3a): what the team holds, and where.
+    const teamGrantsMatch = url.pathname.match(ORG_TEAM_GRANTS_RE);
+    if (teamGrantsMatch) {
+      const actor = resolveActor(request);
+      if (!actor) {
+        return errorResponse("unauthenticated", "Authentication required", 401, requestId);
+      }
+      if (request.method === "GET") {
+        return handleListTeamGrants(env, requestId, actor, teamGrantsMatch[1]!, teamGrantsMatch[2]!);
       }
       return methodNotAllowed(requestId);
     }

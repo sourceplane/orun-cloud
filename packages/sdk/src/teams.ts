@@ -9,6 +9,7 @@ import type {
   ListTeamMembersResponse,
   GrantTeamRoleRequest,
   GrantTeamRoleResponse,
+  ListTeamGrantsResponse,
 } from "@saas/contracts/membership";
 
 import type { EffectiveAccessResponse } from "@saas/contracts/policy";
@@ -104,6 +105,14 @@ export class TeamsClient {
   grantTeamRole(orgId: string, body: GrantTeamRoleRequest, opts: RequestOptions = {}): Promise<GrantTeamRoleResponse> {
     return this.transport.request<GrantTeamRoleResponse>(
       { method: "POST", path: `/v1/organizations/${encodeURIComponent(orgId)}/team-roles`, body },
+      opts,
+    );
+  }
+
+  /** GET /v1/organizations/:orgId/teams/:teamId/grants — the team's active grants across orgs. */
+  listTeamGrants(orgId: string, teamId: string, opts: RequestOptions = {}): Promise<ListTeamGrantsResponse> {
+    return this.transport.request<ListTeamGrantsResponse>(
+      { method: "GET", path: `/v1/organizations/${encodeURIComponent(orgId)}/teams/${encodeURIComponent(teamId)}/grants` },
       opts,
     );
   }
