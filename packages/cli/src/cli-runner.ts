@@ -49,6 +49,13 @@ import {
   teamAccessCommand,
 } from "./commands/teams.js";
 import {
+  accountWorkspacesCommand,
+  accountMembersCommand,
+  accountRolesCommand,
+  accountGrantCommand,
+  accountRevokeCommand,
+} from "./commands/account.js";
+import {
   usageSummaryCommand,
   billingSummaryCommand,
   auditListCommand,
@@ -223,6 +230,12 @@ function buildRouter(opts: RunOptions): Router {
   r.register(["team", "grant"], "Grant a team a role at account|workspace|project scope", teamGrantCommand);
   r.register(["team", "revoke"], "Revoke a team's role grant", teamRevokeCommand);
   r.register(["team", "access"], "Show effective access (permitted actions + provenance) for you or a subject", teamAccessCommand);
+  // Account Hub (teams-hub TH1d) — the account above the workspaces.
+  r.register(["account", "workspaces"], "List the workspaces under the active account", accountWorkspacesCommand);
+  r.register(["account", "members"], "List the derived account-member roster (origin-tagged)", accountMembersCommand);
+  r.register(["account", "roles"], "List account-scoped role assignments (users and teams)", accountRolesCommand);
+  r.register(["account", "grant"], "Grant a user an account role (cascades to all workspaces)", accountGrantCommand);
+  r.register(["account", "revoke"], "Revoke a user's account role", accountRevokeCommand);
   return r;
 }
 
