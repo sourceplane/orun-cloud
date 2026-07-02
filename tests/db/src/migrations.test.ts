@@ -183,6 +183,33 @@ describe("Migration Manifest Verifier", () => {
     });
   });
 
+  // saas-secret-manager SM2 — the wrapped workspace-DEK migration.
+  describe("480_config_secret_deks (SM2)", () => {
+    const entry = manifest.migrations.find((m) => m.id === "480_config_secret_deks");
+
+    it("is registered in the manifest under the config context", () => {
+      expect(entry).toBeDefined();
+      expect(entry!.context).toBe("config");
+    });
+
+    it("creates the wrapped-DEK table keyed (org_id, generation) with the state lifecycle", () => {
+      const sql = readFileSync(resolve(MIGRATIONS_ROOT, entry!.path), "utf-8");
+      expect(sql).toContain("CREATE TABLE IF NOT EXISTS config.secret_deks");
+      expect(sql).toContain("PRIMARY KEY (org_id, generation)");
+      expect(sql).toContain("CHECK (generation >= 1)");
+      expect(sql).toContain("CHECK (state IN ('active', 'retiring', 'shredded'))");
+      expect(sql).toContain("wrapped_dek");
+      // Nothing here may ever hold raw key material — the column is the
+      // KEK-wrapped document only.
+      expect(sql.toLowerCase()).not.toContain("plaintext");
+    });
+
+    it("is idempotent (IF NOT EXISTS)", () => {
+      const sql = readFileSync(resolve(MIGRATIONS_ROOT, entry!.path), "utf-8");
+      expect(sql).toContain("IF NOT EXISTS");
+    });
+  });
+
   describe("migration description", () => {
     it("each migration has a non-empty description", () => {
       for (const m of migrations) {

@@ -14,7 +14,8 @@
       "SECRET_ENCRYPTION_KEY": "fixture-webhooks-key-stage"
     },
     "config-worker": {
-      "SECRET_ENCRYPTION_KEY": "fixture-config-key-stage"
+      "SECRET_ENCRYPTION_KEY": "fixture-config-key-stage",
+      "SECRET_KEK": "fixture-config-kek-stage"
     },
     "integrations-worker": {
       "GITHUB_APP_ID": "fixture-integrations-gh-app-id-stage",
@@ -41,7 +42,8 @@
       "SECRET_ENCRYPTION_KEY": "fixture-webhooks-key-prod"
     },
     "config-worker": {
-      "SECRET_ENCRYPTION_KEY": "fixture-config-key-prod"
+      "SECRET_ENCRYPTION_KEY": "fixture-config-key-prod",
+      "SECRET_KEK": "fixture-config-kek-prod"
     },
     "integrations-worker": {
       "GITHUB_APP_ID": "fixture-integrations-gh-app-id-prod",

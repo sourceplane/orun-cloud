@@ -22,6 +22,7 @@
       "vars": {
         "ENVIRONMENT": "stage"
         // SECRET_ENCRYPTION_KEY: set via `wrangler secret put SECRET_ENCRYPTION_KEY --env stage`
+        // SECRET_KEK: set via `wrangler secret put SECRET_KEK --env stage` (workspace-DEK wrap key, SM2)
       },
       "hyperdrive": [
         {
@@ -45,6 +46,7 @@
       "vars": {
         "ENVIRONMENT": "prod"
         // SECRET_ENCRYPTION_KEY: set via `wrangler secret put SECRET_ENCRYPTION_KEY --env prod`
+        // SECRET_KEK: set via `wrangler secret put SECRET_KEK --env prod` (workspace-DEK wrap key, SM2)
       },
       "hyperdrive": [
         {

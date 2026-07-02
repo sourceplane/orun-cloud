@@ -5,4 +5,12 @@ export interface Env {
   ENVIRONMENT: string;
   /** Hex-encoded 256-bit key for secret payload encryption (AES-256-GCM). */
   SECRET_ENCRYPTION_KEY?: string;
+  /**
+   * Hex-encoded 256-bit key-encryption key (SM2): wraps/unwraps the per-workspace
+   * DEKs in config.secret_deks. When set, all new secret writes produce v:2
+   * envelopes; when absent, writes fall back to the v:1 SECRET_ENCRYPTION_KEY
+   * path. Delivered as a plain worker secret for now — the Cloudflare Secrets
+   * Store binding is deferred to the saas-secrets-sync SS4 epic.
+   */
+  SECRET_KEK?: string;
 }

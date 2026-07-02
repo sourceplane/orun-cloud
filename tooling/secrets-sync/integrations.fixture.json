@@ -32,6 +32,7 @@
     },
     "platform": {
       "SECRET_ENCRYPTION_KEY": "fixture-encryption-key-stage",
+      "SECRET_KEK": "fixture-kek-stage",
       "OAUTH_STATE_SECRET": "fixture-oauth-state-stage",
       "INTEGRATIONS_STATE_SECRET": "fixture-integrations-state-stage",
       "STATE_ENCRYPTION_KEY": "fixture-state-encryption-key-stage"
@@ -69,6 +70,7 @@
     },
     "platform": {
       "SECRET_ENCRYPTION_KEY": "fixture-encryption-key-prod",
+      "SECRET_KEK": "fixture-kek-prod",
       "OAUTH_STATE_SECRET": "fixture-oauth-state-prod",
       "INTEGRATIONS_STATE_SECRET": "fixture-integrations-state-prod",
       "STATE_ENCRYPTION_KEY": "fixture-state-encryption-key-prod"

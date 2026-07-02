@@ -13,6 +13,7 @@ import { handleCreateSecret } from "./handlers/create-secret.js";
 import { handleRotateSecret } from "./handlers/rotate-secret.js";
 import { handleRevokeSecret } from "./handlers/revoke-secret.js";
 import { handleImportSecrets } from "./handlers/import-secrets.js";
+import { handleSecretKeyStatus } from "./handlers/secret-key-status.js";
 import { handleListSecretChain } from "./handlers/list-secret-chain.js";
 import { handleListSecretVersions } from "./handlers/list-secret-versions.js";
 import { errorResponse, notFound, methodNotAllowed } from "./http.js";
@@ -82,6 +83,9 @@ const ENV_SECRET_ROTATE_RE = /^\/v1\/organizations\/([^/]+)\/projects\/([^/]+)\/
 const ORG_SECRET_VERSIONS_RE = /^\/v1\/organizations\/([^/]+)\/config\/secrets\/([^/]+)\/versions$/;
 const PRJ_SECRET_VERSIONS_RE = /^\/v1\/organizations\/([^/]+)\/projects\/([^/]+)\/config\/secrets\/([^/]+)\/versions$/;
 const ENV_SECRET_VERSIONS_RE = /^\/v1\/organizations\/([^/]+)\/projects\/([^/]+)\/environments\/([^/]+)\/config\/secrets\/([^/]+)\/versions$/;
+
+// Key-hierarchy status (SM2): GET .../config/secrets/key-status — org scope only.
+const ORG_SECRETS_KEY_STATUS_RE = /^\/v1\/organizations\/([^/]+)\/config\/secrets\/key-status$/;
 
 // Bulk write-only import (SM1): POST .../config/secrets/import.
 const ORG_SECRETS_IMPORT_RE = /^\/v1\/organizations\/([^/]+)\/config\/secrets\/import$/;
@@ -291,6 +295,14 @@ function matchSecretsImportRoute(pathname: string): { scope: Scope } | null {
   return null;
 }
 
+function matchSecretsKeyStatusRoute(pathname: string): { scope: Scope & { kind: "organization" } } | null {
+  const m = pathname.match(ORG_SECRETS_KEY_STATUS_RE);
+  if (!m) return null;
+  const orgId = parseOrgPublicId(m[1]!);
+  if (!orgId) return null;
+  return { scope: { kind: "organization", orgId } };
+}
+
 interface MatchedSecretItemRoute {
   scope: Scope;
   secretId: string;
@@ -397,12 +409,13 @@ export async function route(request: Request, env: Env): Promise<Response> {
     const matchedResolve = matchResolveRoute(url.pathname);
     const matched = matchedResolve ? null : matchRoute(url.pathname);
     const matchedItem = (matchedResolve || matched) ? null : matchItemRoute(url.pathname);
-    // Import is matched before the generic secret item route: `import` is a
-    // reserved path segment, not a secret id.
+    // Import and key-status are matched before the generic secret item route:
+    // `import`/`key-status` are reserved path segments, not secret ids.
     const matchedImport = (matchedResolve || matched || matchedItem) ? null : matchSecretsImportRoute(url.pathname);
-    const matchedSecretItem = (matchedResolve || matched || matchedItem || matchedImport) ? null : matchSecretItemRoute(url.pathname);
+    const matchedKeyStatus = (matchedResolve || matched || matchedItem || matchedImport) ? null : matchSecretsKeyStatusRoute(url.pathname);
+    const matchedSecretItem = (matchedResolve || matched || matchedItem || matchedImport || matchedKeyStatus) ? null : matchSecretItemRoute(url.pathname);
 
-    if (!matchedResolve && !matched && !matchedItem && !matchedImport && !matchedSecretItem) {
+    if (!matchedResolve && !matched && !matchedItem && !matchedImport && !matchedKeyStatus && !matchedSecretItem) {
       return notFound(requestId, url.pathname);
     }
 
@@ -425,6 +438,14 @@ export async function route(request: Request, env: Env): Promise<Response> {
         return methodNotAllowed(requestId);
       }
       return handleImportSecrets(request, env, requestId, actor, matchedImport.scope);
+    }
+
+    // Key-hierarchy status (SM2): GET only.
+    if (matchedKeyStatus) {
+      if (request.method !== "GET") {
+        return methodNotAllowed(requestId);
+      }
+      return handleSecretKeyStatus(request, env, requestId, actor, matchedKeyStatus.scope);
     }
 
     // Secret item-level routes (rotate: POST, revoke: DELETE, versions: GET)

@@ -435,5 +435,14 @@ export const manifest: MigrationManifest = {
       description:
         "Secret store v3 (saas-secret-manager SM1, pairs orun-secrets SEC1) — creates config.secret_versions, the append-only per-secret ciphertext history keyed (secret_id, version) with status active/revoked (rotate stops overwriting envelopes in place; each existing head envelope is backfilled as its current version, ON CONFLICT DO NOTHING), and widens config.secret_metadata onto the WID7 scope-resolution chain shape: personal_owner UUID (NULL = shared; a per-user overlay, environment scope only via CHECK), overridable BOOLEAN default true (lockable at account OR organization scope — deliberate divergence from settings' account-only locks), last_used_at TIMESTAMPTZ (stamped by the SM3 resolve), scope_kind CHECK widened to admit 'account', and the scope-key unique index rebuilt to include COALESCE(personal_owner, zero-uuid) so a personal overlay coexists with the shared row. Additive + idempotent.",
     },
+    {
+      id: "480_config_secret_deks",
+      context: "config",
+      path: "480_config_secret_deks/up.sql",
+      checksum:
+        "07fab66d95cd22ba51b61d5439c6d168016ab77c751f95bdc02a5b52e4393550",
+      description:
+        "Wrapped workspace data-encryption keys (saas-secret-manager SM2, pairs orun-secrets SD-2′) — creates config.secret_deks keyed (org_id, generation >= 1): each workspace's DEK stored WRAPPED under the KEK (the config-worker SECRET_KEK binding; Cloudflare Secrets Store deferred to saas-secrets-sync SS4) as a JSON {v, iv, ct} document in BYTEA, with state active/retiring/shredded (the cryptoshred/rotate unit). A v:2 ciphertext envelope names its row via keyId ws:<org_id>:<generation>; generation 1 is minted on a workspace's first KEK-era write via race-safe INSERT ... ON CONFLICT DO NOTHING. No raw key material ever lands in Postgres. Additive + idempotent.",
+    },
   ],
 };

@@ -88,8 +88,10 @@ export async function handleRotateSecret(
   // Resolve encryption adapter
   let encryptionAdapter: EncryptionAdapter | null | undefined = deps?.encryptionAdapter;
   if (encryptionAdapter === undefined && !deps) {
-    const { createEncryptionAdapter } = await import("../encryption.js");
-    encryptionAdapter = await createEncryptionAdapter(env.SECRET_ENCRYPTION_KEY);
+    // Workspace-bound (SM2): v:2 DEK envelopes when SECRET_KEK is configured,
+    // else the v:1 static key.
+    const { createSecretEncryptionAdapter } = await import("../encryption.js");
+    encryptionAdapter = await createSecretEncryptionAdapter(env, orgId);
   }
 
   // If value is provided, encryption adapter is required
