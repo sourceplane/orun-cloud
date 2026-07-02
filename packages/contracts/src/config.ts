@@ -132,12 +132,41 @@ export interface PublicSecretMetadata {
   lastRotatedAt: string | null;
   expiresAt: string | null;
   createdBy: string;
+  /**
+   * Inheritance mode (saas-secret-manager SM1). `false` marks a locked guardrail
+   * a lower scope cannot override; secrets may be locked at account OR
+   * organization scope. Optional/absent on surfaces that predate the chain.
+   */
+  overridable?: boolean;
+  /** `true` when this row is the caller's personal overlay (owner-only visibility). */
+  personal?: boolean;
+  /** When a value was last served by the resolve path (SM3). */
+  lastUsedAt?: string | null;
+  /**
+   * Provenance on a chain read (saas-secret-manager SM1): the rung the serving
+   * head was found at when the chain (personal -> environment -> project ->
+   * workspace -> account) was walked. Absent on exact-scope management reads.
+   */
+  servesFrom?: "personal" | "environment" | "project" | "workspace" | "account";
   createdAt: string;
   updatedAt: string;
 }
 
 export interface ListSecretMetadataResponse {
   secrets: PublicSecretMetadata[];
+}
+
+/** One row of the append-only version history. Metadata only — never ciphertext. */
+export interface PublicSecretVersion {
+  secretId: string;
+  version: number;
+  status: string;
+  createdBy: string;
+  createdAt: string;
+}
+
+export interface ListSecretVersionsResponse {
+  versions: PublicSecretVersion[];
 }
 
 // ---------------------------------------------------------------------------
@@ -165,6 +194,10 @@ export interface CreateSecretRequest {
   displayName?: string | null;
   rotationPolicy?: string | null;
   expiresAt?: string | null;
+  /** Lock this key as a guardrail — account/organization scope only (SM1). */
+  overridable?: boolean;
+  /** Create as the caller's personal overlay — environment scope only (SM1). */
+  personal?: boolean;
 }
 
 export interface CreateSecretMetadataResponse {
@@ -183,4 +216,31 @@ export interface RotateSecretMetadataResponse {
 
 export interface RevokeSecretMetadataResponse {
   secret: PublicSecretMetadata;
+}
+
+// ---------------------------------------------------------------------------
+// Secret Bulk Import (saas-secret-manager SM1)
+// ---------------------------------------------------------------------------
+// Write-only: each entry's `value` is encrypted before persistence and never
+// returned in any response, event, or audit payload.
+
+export interface ImportSecretEntry {
+  secretKey: string;
+  /** Write-only secret value. Encrypted before persistence; never returned. */
+  value: string;
+  displayName?: string | null;
+}
+
+export interface ImportSecretsRequest {
+  /** Up to 100 entries per request. */
+  secrets: ImportSecretEntry[];
+}
+
+export interface ImportSecretResult {
+  secretKey: string;
+  status: "created" | "conflict" | "invalid";
+}
+
+export interface ImportSecretsResponse {
+  results: ImportSecretResult[];
 }

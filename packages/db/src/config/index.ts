@@ -18,6 +18,7 @@ export type {
   CreateFeatureFlagInput,
   UpdateFeatureFlagInput,
   SecretMetadata,
+  SecretVersion,
   CreateSecretMetadataInput,
   ConfigRepository,
 } from "./types.js";

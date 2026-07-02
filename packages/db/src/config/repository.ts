@@ -1,4 +1,5 @@
 import type { SqlExecutor } from "../hyperdrive/executor.js";
+import type { Uuid } from "../ids/index.js";
 import type {
   ConfigRepository,
   ConfigResult,
@@ -12,6 +13,7 @@ import type {
   ResolveScope,
   Scope,
   SecretMetadata,
+  SecretVersion,
   Setting,
   UpdateFeatureFlagInput,
   UpdateSettingInput,
@@ -101,14 +103,30 @@ function mapSecretMetadata(row: Record<string, unknown>): SecretMetadata {
     lastRotatedAt: row.last_rotated_at ? new Date(row.last_rotated_at as string) : null,
     expiresAt: row.expires_at ? new Date(row.expires_at as string) : null,
     createdBy: row.created_by as string,
+    personalOwner: (row.personal_owner as string) ?? null,
+    overridable: (row.overridable as boolean) ?? true,
+    lastUsedAt: row.last_used_at ? new Date(row.last_used_at as string) : null,
     createdAt: new Date(row.created_at as string),
     updatedAt: new Date(row.updated_at as string),
   };
 }
 
+function mapSecretVersion(row: Record<string, unknown>): SecretVersion {
+  // Intentionally omits ciphertext_envelope — version reads are metadata only.
+  return {
+    secretId: row.secret_id as string,
+    version: row.version as number,
+    status: row.status as string,
+    createdBy: row.created_by as string,
+    createdAt: new Date(row.created_at as string),
+  };
+}
+
 // ── Secret metadata safe columns (no ciphertext_envelope) ──
 
-const SECRET_METADATA_SAFE_COLUMNS = `id, org_id, project_id, environment_id, scope_kind, secret_key, display_name, status, version, rotation_policy, last_rotated_at, expires_at, created_by, created_at, updated_at`;
+const SECRET_METADATA_SAFE_COLUMNS = `id, org_id, project_id, environment_id, scope_kind, secret_key, display_name, status, version, rotation_policy, last_rotated_at, expires_at, created_by, personal_owner, overridable, last_used_at, created_at, updated_at`;
+
+const SECRET_VERSION_SAFE_COLUMNS = `secret_id, version, status, created_by, created_at`;
 
 function safeError(message: string): ConfigResult<never> {
   return { ok: false, error: { kind: "internal", message } };
@@ -137,13 +155,23 @@ function isCheckViolation(err: unknown): boolean {
 async function pagedList<T>(
   executor: SqlExecutor,
   table: string,
-  scope: Scope,
+  scope: ResolveScope,
+  params: PageQueryParams,
+  mapper: (row: Record<string, unknown>) => T,
+  selectColumns = "*",
+): Promise<ConfigResult<PagedResult<T>>> {
+  return pagedListWhere(executor, table, scopeWhere(scope), params, mapper, selectColumns);
+}
+
+async function pagedListWhere<T>(
+  executor: SqlExecutor,
+  table: string,
+  sw: { clause: string; params: unknown[] },
   params: PageQueryParams,
   mapper: (row: Record<string, unknown>) => T,
   selectColumns = "*",
 ): Promise<ConfigResult<PagedResult<T>>> {
   try {
-    const sw = scopeWhere(scope);
     const fetchLimit = params.limit + 1;
     const baseIdx = sw.params.length;
     let sql: string;
@@ -348,14 +376,23 @@ export function createConfigRepository(executor: SqlExecutor): ConfigRepository 
       try {
         const sc = scopeColumns(input.scope);
         const hasCiphertext = input.ciphertextEnvelope !== undefined;
+        // With an envelope, version 1 is appended to config.secret_versions in the
+        // same statement (a data-modifying CTE) so head + history stay atomic even
+        // without an explicit transaction.
         const sql = hasCiphertext
-          ? `INSERT INTO config.secret_metadata (id, org_id, project_id, environment_id, scope_kind, secret_key, display_name, status, version, rotation_policy, expires_at, created_by, ciphertext_envelope, created_at, updated_at)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, 'active', 1, $8, $9, $10, $11, now(), now())
-           RETURNING ${SECRET_METADATA_SAFE_COLUMNS}`
-          : `INSERT INTO config.secret_metadata (id, org_id, project_id, environment_id, scope_kind, secret_key, display_name, status, version, rotation_policy, expires_at, created_by, created_at, updated_at)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, 'active', 1, $8, $9, $10, now(), now())
+          ? `WITH head AS (
+             INSERT INTO config.secret_metadata (id, org_id, project_id, environment_id, scope_kind, secret_key, display_name, status, version, rotation_policy, expires_at, created_by, personal_owner, overridable, ciphertext_envelope, created_at, updated_at)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, 'active', 1, $8, $9, $10, $11, $12, $13, now(), now())
+             RETURNING *
+           ), version_append AS (
+             INSERT INTO config.secret_versions (secret_id, version, ciphertext_envelope, created_by)
+             SELECT id, version, ciphertext_envelope, created_by FROM head
+           )
+           SELECT ${SECRET_METADATA_SAFE_COLUMNS} FROM head`
+          : `INSERT INTO config.secret_metadata (id, org_id, project_id, environment_id, scope_kind, secret_key, display_name, status, version, rotation_policy, expires_at, created_by, personal_owner, overridable, created_at, updated_at)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, 'active', 1, $8, $9, $10, $11, $12, now(), now())
            RETURNING ${SECRET_METADATA_SAFE_COLUMNS}`;
-        const params = [input.id, sc.orgId, sc.projectId, sc.environmentId, sc.scopeKind, input.secretKey, input.displayName ?? null, input.rotationPolicy ?? null, input.expiresAt?.toISOString() ?? null, input.createdBy];
+        const params = [input.id, sc.orgId, sc.projectId, sc.environmentId, sc.scopeKind, input.secretKey, input.displayName ?? null, input.rotationPolicy ?? null, input.expiresAt?.toISOString() ?? null, input.createdBy, input.personalOwner ?? null, input.overridable ?? true];
         if (hasCiphertext) {
           params.push(input.ciphertextEnvelope!);
         }
@@ -375,8 +412,43 @@ export function createConfigRepository(executor: SqlExecutor): ConfigRepository 
       }
     },
 
-    async listSecretMetadata(scope: Scope, params: PageQueryParams): Promise<ConfigResult<PagedResult<SecretMetadata>>> {
-      return pagedList(executor, "config.secret_metadata", scope, params, mapSecretMetadata, SECRET_METADATA_SAFE_COLUMNS);
+    async listSecretMetadata(scope: ResolveScope, params: PageQueryParams, viewerSubjectId?: string): Promise<ConfigResult<PagedResult<SecretMetadata>>> {
+      // A personal overlay is visible only to its owner: without a viewer every
+      // personal row is excluded; with one, only that viewer's rows join the list.
+      const sw = scopeWhere(scope);
+      const whereParams = [...sw.params];
+      let clause = sw.clause;
+      if (viewerSubjectId !== undefined) {
+        whereParams.push(viewerSubjectId);
+        clause += ` AND (personal_owner IS NULL OR personal_owner = $${whereParams.length})`;
+      } else {
+        clause += ` AND personal_owner IS NULL`;
+      }
+      return pagedListWhere(executor, "config.secret_metadata", { clause, params: whereParams }, params, mapSecretMetadata, SECRET_METADATA_SAFE_COLUMNS);
+    },
+
+    async getSecretMetadataByScopeKey(scope: ResolveScope, key: string, personalOwner?: string): Promise<ConfigResult<SecretMetadata>> {
+      try {
+        const sw = scopeWhere(scope);
+        const values = [...sw.params, key];
+        let personalClause = "personal_owner IS NULL";
+        if (personalOwner !== undefined) {
+          values.push(personalOwner);
+          personalClause = `personal_owner = $${values.length}`;
+        }
+        const result = await executor.execute<Record<string, unknown>>(
+          `SELECT ${SECRET_METADATA_SAFE_COLUMNS} FROM config.secret_metadata
+           WHERE ${sw.clause} AND secret_key = $${sw.params.length + 1} AND ${personalClause}
+             AND status IN ('active', 'rotated')`,
+          values,
+        );
+        if (result.rowCount === 0) {
+          return { ok: false, error: { kind: "not_found" } };
+        }
+        return { ok: true, value: mapSecretMetadata(result.rows[0]!) };
+      } catch {
+        return safeError("Failed to get secret metadata by scope/key");
+      }
     },
 
     async getSecretMetadata(orgId: string, secretId: string): Promise<ConfigResult<SecretMetadata>> {
@@ -394,19 +466,28 @@ export function createConfigRepository(executor: SqlExecutor): ConfigRepository 
       }
     },
 
-    async rotateSecretMetadata(orgId: string, secretId: string, ciphertextEnvelope?: string): Promise<ConfigResult<SecretMetadata>> {
+    async rotateSecretMetadata(orgId: string, secretId: string, createdBy: Uuid, ciphertextEnvelope?: string): Promise<ConfigResult<SecretMetadata>> {
       try {
+        // Append, never overwrite (SM1): the head cache is refreshed and the new
+        // (secret_id, version) row lands in config.secret_versions in the same
+        // statement. A metadata-only rotate (no new envelope) carries the current
+        // envelope forward so history stays aligned with the head version.
         const hasCiphertext = ciphertextEnvelope !== undefined;
-        const sql = hasCiphertext
-          ? `UPDATE config.secret_metadata
-           SET version = version + 1, last_rotated_at = now(), updated_at = now(), ciphertext_envelope = $3
+        const setClause = hasCiphertext
+          ? `version = version + 1, last_rotated_at = now(), updated_at = now(), ciphertext_envelope = $4`
+          : `version = version + 1, last_rotated_at = now(), updated_at = now()`;
+        const sql = `WITH head AS (
+           UPDATE config.secret_metadata
+           SET ${setClause}
            WHERE org_id = $1 AND id = $2 AND status = 'active'
-           RETURNING ${SECRET_METADATA_SAFE_COLUMNS}`
-          : `UPDATE config.secret_metadata
-           SET version = version + 1, last_rotated_at = now(), updated_at = now()
-           WHERE org_id = $1 AND id = $2 AND status = 'active'
-           RETURNING ${SECRET_METADATA_SAFE_COLUMNS}`;
-        const params: unknown[] = [orgId, secretId];
+           RETURNING *
+         ), version_append AS (
+           INSERT INTO config.secret_versions (secret_id, version, ciphertext_envelope, created_by)
+           SELECT id, version, ciphertext_envelope, $3 FROM head
+           WHERE ciphertext_envelope IS NOT NULL
+         )
+         SELECT ${SECRET_METADATA_SAFE_COLUMNS} FROM head`;
+        const params: unknown[] = [orgId, secretId, createdBy];
         if (hasCiphertext) {
           params.push(ciphertextEnvelope);
         }
@@ -435,6 +516,46 @@ export function createConfigRepository(executor: SqlExecutor): ConfigRepository 
         return { ok: true, value: mapSecretMetadata(result.rows[0]!) };
       } catch {
         return safeError("Failed to revoke secret metadata");
+      }
+    },
+
+    async listSecretVersions(orgId: string, secretId: string, params: PageQueryParams): Promise<ConfigResult<PagedResult<SecretVersion>>> {
+      try {
+        // Newest first. Tenant isolation rides the metadata join (org_id lives on
+        // the head row, not the version rows). Metadata columns only — the
+        // envelope never crosses the repository read surface.
+        const fetchLimit = params.limit + 1;
+        let sql: string;
+        let values: unknown[];
+        if (params.cursor) {
+          sql = `SELECT ${SECRET_VERSION_SAFE_COLUMNS} FROM config.secret_versions
+           WHERE secret_id = $2
+             AND secret_id IN (SELECT id FROM config.secret_metadata WHERE org_id = $1 AND id = $2)
+             AND created_at < $4
+           ORDER BY created_at DESC, version DESC
+           LIMIT $3`;
+          values = [orgId, secretId, fetchLimit, params.cursor.createdAt];
+        } else {
+          sql = `SELECT ${SECRET_VERSION_SAFE_COLUMNS} FROM config.secret_versions
+           WHERE secret_id = $2
+             AND secret_id IN (SELECT id FROM config.secret_metadata WHERE org_id = $1 AND id = $2)
+           ORDER BY created_at DESC, version DESC
+           LIMIT $3`;
+          values = [orgId, secretId, fetchLimit];
+        }
+        const result = await executor.execute<Record<string, unknown>>(sql, values);
+        const rows = result.rows.map(mapSecretVersion);
+        let nextCursor: CursorPosition | null = null;
+        if (rows.length > params.limit) {
+          rows.pop();
+          const last = rows[rows.length - 1]!;
+          // The version rows share the secret's uuid as the cursor id (the
+          // standard cursor shape wants a uuid; created_at carries the position).
+          nextCursor = { createdAt: last.createdAt.toISOString(), id: last.secretId };
+        }
+        return { ok: true, value: { items: rows, nextCursor } };
+      } catch {
+        return safeError("Failed to list secret versions");
       }
     },
   };

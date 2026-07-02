@@ -141,6 +141,48 @@ describe("Migration Manifest Verifier", () => {
     });
   });
 
+  // saas-secret-manager SM1 — the secret store v3 migration.
+  describe("470_config_secret_manager (SM1)", () => {
+    const entry = manifest.migrations.find((m) => m.id === "470_config_secret_manager");
+
+    it("is registered in the manifest under the config context", () => {
+      expect(entry).toBeDefined();
+      expect(entry!.context).toBe("config");
+    });
+
+    it("creates the append-only secret_versions table with backfill", () => {
+      const sql = readFileSync(resolve(MIGRATIONS_ROOT, entry!.path), "utf-8");
+      expect(sql).toContain("CREATE TABLE IF NOT EXISTS config.secret_versions");
+      expect(sql).toContain("PRIMARY KEY (secret_id, version)");
+      expect(sql).toContain("CHECK (version >= 1)");
+      expect(sql).toContain("CHECK (status IN ('active', 'revoked'))");
+      // Backfill copies each live envelope as its current version, idempotently.
+      expect(sql).toContain("WHERE ciphertext_envelope IS NOT NULL");
+      expect(sql).toContain("ON CONFLICT (secret_id, version) DO NOTHING");
+    });
+
+    it("widens secret_metadata with the chain columns and guardrail CHECKs", () => {
+      const sql = readFileSync(resolve(MIGRATIONS_ROOT, entry!.path), "utf-8");
+      expect(sql).toContain("ADD COLUMN IF NOT EXISTS personal_owner UUID");
+      expect(sql).toContain("ADD COLUMN IF NOT EXISTS overridable BOOLEAN NOT NULL DEFAULT true");
+      expect(sql).toContain("ADD COLUMN IF NOT EXISTS last_used_at TIMESTAMPTZ");
+      expect(sql).toContain("scope_kind IN ('organization', 'project', 'environment', 'account')");
+      // Secrets may be locked at account OR organization scope (unlike settings).
+      expect(sql).toContain("CHECK (overridable = true OR scope_kind IN ('account', 'organization'))");
+      // Personal overlays are environment-scope only.
+      expect(sql).toContain("CHECK (personal_owner IS NULL OR scope_kind = 'environment')");
+      // The scope-key unique index keys per personal owner.
+      expect(sql).toContain("COALESCE(personal_owner, '00000000-0000-0000-0000-000000000000')");
+    });
+
+    it("is idempotent (guarded DO-blocks / IF [NOT] EXISTS)", () => {
+      const sql = readFileSync(resolve(MIGRATIONS_ROOT, entry!.path), "utf-8");
+      expect(sql).toContain("DROP CONSTRAINT secret_metadata_scope_kind_check");
+      expect(sql).toContain("pg_constraint");
+      expect(sql).toContain("IF NOT EXISTS");
+    });
+  });
+
   describe("migration description", () => {
     it("each migration has a non-empty description", () => {
       for (const m of migrations) {

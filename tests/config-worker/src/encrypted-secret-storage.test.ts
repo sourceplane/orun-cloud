@@ -140,6 +140,9 @@ function fakeSecret(overrides?: Partial<SecretMetadata>): SecretMetadata {
     lastRotatedAt: null,
     expiresAt: null,
     createdBy: TEST_USER_ID,
+    personalOwner: null,
+    overridable: true,
+    lastUsedAt: null,
     createdAt: FIXED_NOW,
     updatedAt: FIXED_NOW,
     ...overrides,
@@ -482,13 +485,15 @@ describe("handleRotateSecret with value", () => {
     const eventsRepo = fakeEventsRepo();
     const adapter = fakeEncryptionAdapter();
     let capturedCiphertext: string | undefined;
+    let capturedCreatedBy: string | undefined;
 
     const res = await handleRotateSecret(
       makeJsonRequest({ value: "new-s3cret!" }), FAKE_ENV, "req1", ACTOR, ORG_SCOPE, SECRET_UUID,
       {
         repo: {
           getSecretMetadata: () => Promise.resolve({ ok: true as const, value: existing }),
-          rotateSecretMetadata: (_orgId: string, _secretId: string, ciphertextEnvelope?: string) => {
+          rotateSecretMetadata: (_orgId: string, _secretId: string, createdBy: string, ciphertextEnvelope?: string) => {
+            capturedCreatedBy = createdBy;
             capturedCiphertext = ciphertextEnvelope;
             return Promise.resolve({ ok: true as const, value: rotated });
           },
@@ -502,6 +507,8 @@ describe("handleRotateSecret with value", () => {
 
     expect(res.status).toBe(200);
     expect(adapter.calls).toEqual(["new-s3cret!"]);
+    // created_by is a UUID column — the actor id must arrive decoded (SM1).
+    expect(capturedCreatedBy).toBe("abababab-abab-abab-abab-abababababab");
     expect(capturedCiphertext).toBeDefined();
     const envelope = JSON.parse(capturedCiphertext!) as CiphertextEnvelope;
     expect(envelope.alg).toBe("AES-256-GCM");
@@ -520,7 +527,7 @@ describe("handleRotateSecret with value", () => {
       {
         repo: {
           getSecretMetadata: () => Promise.resolve({ ok: true as const, value: existing }),
-          rotateSecretMetadata: (_orgId: string, _secretId: string, ciphertextEnvelope?: string) => {
+          rotateSecretMetadata: (_orgId: string, _secretId: string, _createdBy: string, ciphertextEnvelope?: string) => {
             capturedCiphertext = ciphertextEnvelope;
             return Promise.resolve({ ok: true as const, value: rotated });
           },

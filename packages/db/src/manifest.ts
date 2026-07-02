@@ -426,5 +426,14 @@ export const manifest: MigrationManifest = {
       description:
         "Repo self-description facet + doc_ref pointers (saas-workspace-overview WO4). Adds state.org_catalog_entities.doc_ref JSONB (a nullable {path,ref,sha,digest} pointer to the entity's docs.overview blob in CAS — digest is the content address, the body is read from R2 by digest; no state.objects.kind change since docs ride the existing blob kind) and creates state.repo_facet (org_id, source_project_id PK; display_name, description, owner, default_branch, links, tags, doc_ref, entity_ref, head_digest, source_commit, synced_at) — one row per (org, project) projected from the declared Repo entity, keyed by project so the Git Repos list + Workspace Overview identity join by project. Derived, never authored; delete-then-upsert on catalog.head.advanced. Additive + idempotent.",
     },
+    {
+      id: "470_config_secret_manager",
+      context: "config",
+      path: "470_config_secret_manager/up.sql",
+      checksum:
+        "e6596e911770611b13ca6a8c86372d9af8cc47e70e92dc07879900fdc4a838b5",
+      description:
+        "Secret store v3 (saas-secret-manager SM1, pairs orun-secrets SEC1) — creates config.secret_versions, the append-only per-secret ciphertext history keyed (secret_id, version) with status active/revoked (rotate stops overwriting envelopes in place; each existing head envelope is backfilled as its current version, ON CONFLICT DO NOTHING), and widens config.secret_metadata onto the WID7 scope-resolution chain shape: personal_owner UUID (NULL = shared; a per-user overlay, environment scope only via CHECK), overridable BOOLEAN default true (lockable at account OR organization scope — deliberate divergence from settings' account-only locks), last_used_at TIMESTAMPTZ (stamped by the SM3 resolve), scope_kind CHECK widened to admit 'account', and the scope-key unique index rebuilt to include COALESCE(personal_owner, zero-uuid) so a personal overlay coexists with the shared row. Additive + idempotent.",
+    },
   ],
 };

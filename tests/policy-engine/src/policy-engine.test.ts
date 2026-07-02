@@ -686,8 +686,8 @@ describe("listEffectivePermissions", () => {
     expect(result.derivedScope.orgId).toBe("org_1");
 
     const allowed = result.permissions.filter((p) => p.allow);
-    // 42 base + 7 saas-teams TM4 team.* management actions.
-    expect(allowed.length).toBe(49);
+    // 42 base + 7 saas-teams TM4 team.* actions + secret.reveal (SM1).
+    expect(allowed.length).toBe(50);
   });
 
   it("returns limited permissions for viewer", () => {
@@ -1033,7 +1033,7 @@ describe("state-plane actions (saas-orun-platform OP0)", () => {
     "secret.value.use",
     "org.cli.link",
   ];
-  const ADMIN_ONLY_ACTIONS = ["secret.write", "org.ci.trust.write"];
+  const ADMIN_ONLY_ACTIONS = ["secret.write", "secret.reveal", "org.ci.trust.write"];
 
   it("owner and admin can do everything in the state plane", () => {
     for (const role of ["owner", "admin"]) {
