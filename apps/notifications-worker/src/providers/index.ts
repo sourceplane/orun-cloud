@@ -32,6 +32,7 @@ export function resolveProvider(env: Env): NotificationProvider {
         email: env.EMAIL,
         fromAddress: env.EMAIL_FROM_ADDRESS,
         ...(env.EMAIL_FROM_NAME ? { fromName: env.EMAIL_FROM_NAME } : {}),
+        ...(env.CONSOLE_BASE_URL ? { consoleBaseUrl: env.CONSOLE_BASE_URL } : {}),
       });
     }
     default:

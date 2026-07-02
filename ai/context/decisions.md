@@ -155,6 +155,20 @@ Last updated: 2026-05-26
   reuses the same atomic invitation-accepted + member + role-assignment CTE and
   emits the same `invite.accepted` event and best-effort `invitation.accepted`
   notification as the token path.
+- Invitation email one-click accept link (auto-accept after sign-in). The
+  `invitation.created` email now carries an "Accept invitation" button →
+  `${CONSOLE_BASE_URL}/invitations/accept?inv=<invitationPublicId>`. It deep-links
+  the invitation's *public id*, NOT the raw token — the redaction decision above
+  (never email the token) stands. The console accept page auto-accepts via the
+  email-matched `POST /v1/me/invitations/:id/accept` once the recipient is signed
+  in; if unauthenticated it bounces through `/login?returnTo=…` (same-origin
+  paths only, to avoid open-redirect) and returns to auto-accept. Chosen over a
+  public token-bearer accept endpoint (rejected: emailing a bearer token lets
+  anyone with the email join, and contradicts the identity-verified accept model).
+  `CONSOLE_BASE_URL` is a new notifications-worker var (local `http://localhost:3000`,
+  stage `https://stage.orun.dev`, prod `https://app.orun.dev`), mirroring
+  identity-worker's `CLI_CONSOLE_BASE_URL`; when unset the template degrades to the
+  plain "sign in to view and accept" copy.
 - Before shipping destructive member-admin mutations such as member removal or
   role changes, add an events/audit persistence seam so those mutations can be
   audited instead of deepening the existing audit gap.
