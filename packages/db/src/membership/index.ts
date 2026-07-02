@@ -14,6 +14,8 @@ export type {
   CreateInvitationInput,
   CreateRoleAssignmentInput,
   AcceptInvitationInput,
+  AcceptInvitationByIdInput,
+  PendingInvitationForEmail,
   BootstrapOrganizationInput,
   MembershipRepository,
   MembershipResult,

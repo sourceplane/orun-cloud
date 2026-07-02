@@ -5,6 +5,7 @@ import type {
   CreateInvitationResponse,
   ListInvitationsResponse,
   ListMembersResponse,
+  ListMyInvitationsResponse,
   RemoveMemberResponse,
   RevokeInvitationResponse,
   UpdateMemberRoleRequest,
@@ -74,6 +75,43 @@ export class MembershipsClient {
   // -------------------------------------------------------------------------
   // Invitations
   // -------------------------------------------------------------------------
+
+  /**
+   * GET /v1/me/invitations
+   *
+   * The signed-in user's pending invitations across all organizations, matched
+   * on their verified session email. Backs the "view and accept the invitation"
+   * flow the invite email points to — no org id or token required.
+   */
+  listMyInvitations(opts: RequestOptions = {}): Promise<ListMyInvitationsResponse> {
+    return this.transport.request<ListMyInvitationsResponse>(
+      {
+        method: "GET",
+        path: `/v1/me/invitations`,
+      },
+      opts,
+    );
+  }
+
+  /**
+   * POST /v1/me/invitations/:invitationId/accept
+   *
+   * Accept an invitation surfaced by `listMyInvitations` without a one-time
+   * token — authorized on the signed-in actor's verified email matching the
+   * invitation address.
+   */
+  acceptMyInvitation(
+    invitationId: string,
+    opts: RequestOptions = {},
+  ): Promise<AcceptInvitationResponse> {
+    return this.transport.request<AcceptInvitationResponse>(
+      {
+        method: "POST",
+        path: `/v1/me/invitations/${encodeURIComponent(invitationId)}/accept`,
+      },
+      opts,
+    );
+  }
 
   /** GET /v1/organizations/:orgId/invitations */
   listInvitations(

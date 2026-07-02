@@ -408,5 +408,14 @@ export const manifest: MigrationManifest = {
       description:
         "Account-owned Teams as principals (saas-teams TM1) — adds membership.teams (id, account_org_id, name, slug_lower, status; unique (account_org_id, slug_lower) for non-deleted) and membership.team_members (team_id, subject_id, subject_type, status; unique (team_id, subject_id)), and widens membership.role_assignments' subject_type CHECK to admit 'team' so a team becomes a grantable principal (subject_id = team_<base32>). Teams are account-scoped (not a tenancy level, not a resource container); grants are expanded into facts at authorization-context assembly (TM3). Additive + idempotent (guarded DROP+ADD for the CHECK); back-compatible since every existing user/service_principal row keeps validating.",
     },
+    {
+      id: "450_membership_invitation_email_index",
+      context: "membership",
+      path: "450_membership_invitation_email_index/up.sql",
+      checksum:
+        "f05ac0636c8c9398a8e260d12494975d24add15fd71dae5b72642cd06b7c8c0d",
+      description:
+        "Email-scoped invitation discovery — adds a standalone index membership.organization_invitations (email_lower) so a signed-in user can look up every pending invitation for their verified email across all organizations. The invitation-created email carries no token link ('sign in with this email address to view and accept the invitation'); the existing composite (org_id, email_lower) index cannot serve an email-only lookup. Additive + idempotent (CREATE INDEX IF NOT EXISTS); back-compatible.",
+    },
   ],
 };

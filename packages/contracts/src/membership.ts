@@ -201,6 +201,33 @@ export interface ListInvitationsResponse {
   invitations: PublicInvitation[];
 }
 
+/**
+ * A pending invitation surfaced to its recipient after they sign in (saas
+ * invitation login flow), carrying the inviting organization's display fields
+ * so the console can name each workspace. Only still-actionable invitations
+ * (pending, not revoked/accepted/expired) are returned by GET /v1/me/invitations.
+ */
+export interface PublicPendingInvitation {
+  id: string;
+  org: {
+    id: string;
+    name: string;
+    slug: string;
+    workspaceRef: string;
+    status: string;
+  };
+  email: string;
+  role: string;
+  invitedBy: string;
+  expiresAt: string;
+  createdAt: string;
+}
+
+/** GET /v1/me/invitations — the signed-in user's pending invitations. */
+export interface ListMyInvitationsResponse {
+  invitations: PublicPendingInvitation[];
+}
+
 export interface RevokeInvitationResponse {
   invitation: PublicInvitation;
 }

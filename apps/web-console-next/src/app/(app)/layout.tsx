@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, usePathname } from "next/navigation";
 import { Sidebar } from "@/components/shell/sidebar";
 import { Topbar } from "@/components/shell/topbar";
 import { BottomTabs } from "@/components/shell/bottom-tabs";
@@ -57,20 +57,36 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
 /**
  * Invisible guard: the console has no working view without an organization, so
- * an authenticated user with zero orgs is sent to the mandatory `/onboarding`
- * flow (create the parent org + pick a plan) from anywhere in the shell. Backed
- * by the shared `orgs` query the shell already fetches, so this adds no extra
- * request; on fetch errors it stays put rather than guessing.
+ * an authenticated user with zero orgs is normally sent to the mandatory
+ * `/onboarding` flow (create the parent org + pick a plan) from anywhere in the
+ * shell. Exception (saas invitation login flow): a user with zero orgs but a
+ * pending invitation is invited into an *existing* workspace and must not be
+ * forced to create one — they are routed to `/orgs`, which surfaces the
+ * invitation to accept. Backed by the shared `orgs`/`myInvitations` queries the
+ * shell already fetches; on fetch errors it falls back to onboarding rather than
+ * trapping the user on a blank shell.
  */
 function OnboardingGate() {
   const router = useRouter();
+  const pathname = usePathname();
   const { client } = useSession();
   const orgs = useApiQuery(qk.orgs(), () =>
     wrap(async () => (await client.organizations.list()).organizations),
   );
+  const invites = useApiQuery(qk.myInvitations(), () =>
+    wrap(async () => (await client.memberships.listMyInvitations()).invitations),
+  );
   React.useEffect(() => {
-    if (orgs.data && orgs.data.length === 0) router.replace("/onboarding");
-  }, [orgs.data, router]);
+    if (!orgs.data || orgs.data.length > 0) return;
+    // Decide only once the invitations list has settled (loaded or errored), so
+    // an invited user isn't briefly funneled to onboarding before we know.
+    if (!invites.data && !invites.error) return;
+    if (invites.data && invites.data.length > 0) {
+      if (pathname !== "/orgs") router.replace("/orgs");
+    } else {
+      router.replace("/onboarding");
+    }
+  }, [orgs.data, invites.data, invites.error, pathname, router]);
   return null;
 }
 

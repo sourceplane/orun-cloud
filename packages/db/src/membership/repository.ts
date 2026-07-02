@@ -1,5 +1,6 @@
 import type { SqlExecutor } from "../hyperdrive/executor.js";
 import type {
+  AcceptInvitationByIdInput,
   AcceptInvitationInput,
   BootstrapOrganizationInput,
   CreateInvitationInput,
@@ -14,6 +15,7 @@ import type {
   OrganizationMember,
   OrganizationWithRole,
   PagedResult,
+  PendingInvitationForEmail,
   PageQueryParams,
   RoleAssignment,
   Team,
@@ -616,6 +618,44 @@ export function createMembershipRepository(executor: SqlExecutor): MembershipRep
       }
     },
 
+    async listPendingInvitationsByEmail(emailLower: string): Promise<MembershipResult<PendingInvitationForEmail[]>> {
+      try {
+        // Discovery for the signed-in recipient: every invitation addressed to
+        // their normalized email that is still actionable (pending, not
+        // revoked/accepted/expired), joined with the inviting org's display
+        // fields so the UI can name each workspace. Index-backed by
+        // org_invitations_email_lower_only_idx (migration 450). Newest first.
+        const now = new Date();
+        const result = await executor.execute<Record<string, unknown>>(
+          `SELECT i.id, i.org_id, i.email, i.email_lower, i.role, i.status, i.invited_by,
+                  i.expires_at, i.accepted_at, i.revoked_at, i.created_at,
+                  o.name AS org_name, o.slug AS org_slug, o.public_ref AS org_public_ref, o.status AS org_status
+           FROM membership.organization_invitations i
+           JOIN membership.organizations o ON o.id = i.org_id
+           WHERE i.email_lower = $1
+             AND i.status = 'pending'
+             AND i.accepted_at IS NULL
+             AND i.revoked_at IS NULL
+             AND i.expires_at > $2
+           ORDER BY i.created_at DESC, i.id DESC`,
+          [emailLower, now.toISOString()],
+        );
+        const items = result.rows.map((row) => ({
+          invitation: mapInvitation(row),
+          org: {
+            id: row.org_id as string,
+            name: row.org_name as string,
+            slug: row.org_slug as string,
+            publicRef: row.org_public_ref as string,
+            status: row.org_status as string,
+          },
+        }));
+        return { ok: true, value: items };
+      } catch (err) {
+        return safeError("Failed to list pending invitations by email", err);
+      }
+    },
+
     async revokeInvitation(orgId: string, invitationId: string, revokedAt: Date): Promise<MembershipResult<OrganizationInvitation>> {
       try {
         const result = await executor.execute<Record<string, unknown>>(
@@ -690,6 +730,88 @@ export function createMembershipRepository(executor: SqlExecutor): MembershipRep
           [
             input.tokenHash, input.acceptedAt.toISOString(),
             input.orgId, input.emailLower,
+            input.memberId, input.subjectId, input.subjectType, input.acceptedAt.toISOString(),
+            input.roleAssignmentId, input.subjectId, input.subjectType, input.acceptedAt.toISOString(),
+          ],
+        );
+        if (result.rowCount === 0) {
+          return { ok: false, error: { kind: "not_found" } };
+        }
+        const row = result.rows[0]!;
+        return {
+          ok: true,
+          value: {
+            invitation: mapInvitation(parseJsonColumn(row.invitation)),
+            member: mapMember(parseJsonColumn(row.member)),
+            roleAssignment: mapRoleAssignment(parseJsonColumn(row.role_assignment)),
+          },
+        };
+      } catch (err: unknown) {
+        if (isUniqueViolation(err)) {
+          return { ok: false, error: { kind: "conflict", entity: "organization_member" } };
+        }
+        return safeError("Failed to accept invitation", err);
+      }
+    },
+
+    async acceptInvitationById(input: AcceptInvitationByIdInput): Promise<MembershipResult<{ invitation: OrganizationInvitation; member: OrganizationMember; roleAssignment: RoleAssignment }>> {
+      try {
+        // Token-less acceptance for the signed-in recipient (saas invitation
+        // login flow). Keyed on the invitation id, gated on the actor's
+        // verified email matching email_lower — equivalent proof of email
+        // control to the token path. Same member + role writes as
+        // `acceptInvitation`; org_id is taken from the invitation row.
+        const checkResult = await executor.execute<Record<string, unknown>>(
+          `SELECT id, org_id, email, email_lower, role, status, invited_by, expires_at, accepted_at, revoked_at, created_at
+           FROM membership.organization_invitations WHERE id = $1`,
+          [input.invitationId],
+        );
+        if (checkResult.rowCount === 0) {
+          return { ok: false, error: { kind: "not_found" } };
+        }
+        const inv = mapInvitation(checkResult.rows[0]!);
+        if (inv.emailLower !== input.emailLower) {
+          return { ok: false, error: { kind: "not_found" } };
+        }
+        if (inv.revokedAt !== null) {
+          return { ok: false, error: { kind: "revoked" } };
+        }
+        if (inv.acceptedAt !== null) {
+          return { ok: false, error: { kind: "already_accepted" } };
+        }
+        if (inv.expiresAt < input.acceptedAt) {
+          return { ok: false, error: { kind: "expired" } };
+        }
+
+        const result = await executor.execute<Record<string, unknown>>(
+          `WITH accepted_inv AS (
+            UPDATE membership.organization_invitations
+            SET status = 'accepted', accepted_at = $2
+            WHERE id = $1 AND email_lower = $3 AND status = 'pending' AND revoked_at IS NULL AND accepted_at IS NULL AND expires_at > $2
+            RETURNING id, org_id, email, email_lower, role, status, invited_by, expires_at, accepted_at, revoked_at, created_at
+          ),
+          new_member AS (
+            INSERT INTO membership.organization_members (id, org_id, subject_id, subject_type, created_at, updated_at)
+            SELECT $4, org_id, $5, $6, $7, $7
+            FROM accepted_inv
+            RETURNING *
+          ),
+          new_role AS (
+            INSERT INTO membership.role_assignments (id, org_id, subject_id, subject_type, role, scope_kind, scope_ref, created_at)
+            SELECT $8, org_id, $9, $10, role, 'organization', NULL, $11
+            FROM accepted_inv
+            RETURNING *
+          )
+          SELECT
+            row_to_json(ai.*) as invitation,
+            row_to_json(nm.*) as member,
+            row_to_json(nr.*) as role_assignment
+          FROM accepted_inv ai
+          CROSS JOIN new_member nm
+          CROSS JOIN new_role nr`,
+          [
+            input.invitationId, input.acceptedAt.toISOString(),
+            input.emailLower,
             input.memberId, input.subjectId, input.subjectType, input.acceptedAt.toISOString(),
             input.roleAssignmentId, input.subjectId, input.subjectType, input.acceptedAt.toISOString(),
           ],

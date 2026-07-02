@@ -107,6 +107,103 @@ describe("api-edge org facade", () => {
     it("does not match /v1/auth routes", () => {
       expect(isOrgRoute("/v1/auth/resolve")).toBe(false);
     });
+
+    it("matches /v1/me/invitations", () => {
+      expect(isOrgRoute("/v1/me/invitations")).toBe(true);
+    });
+
+    it("matches /v1/me/invitations/{invitationId}/accept", () => {
+      expect(isOrgRoute("/v1/me/invitations/inv_abc/accept")).toBe(true);
+    });
+  });
+
+  describe("me invitation routes (saas invitation login flow)", () => {
+    it("forwards GET /v1/me/invitations to MEMBERSHIP_WORKER with actor email", async () => {
+      const { fetcher: identityFetcher } = createSessionFetcher("usr_invitee");
+      const { fetcher: membershipFetcher, calls } = createFakeFetcher();
+
+      const request = new Request("https://api.example.com/v1/me/invitations", {
+        method: "GET",
+        headers: { authorization: "Bearer sps_ses_abc.secret" },
+      });
+
+      const response = await handleOrgRoute(
+        request,
+        { IDENTITY_WORKER: identityFetcher, MEMBERSHIP_WORKER: membershipFetcher, ENVIRONMENT: "test" },
+        "req_test",
+        "/v1/me/invitations",
+      );
+
+      expect(response.status).toBe(200);
+      const membershipCall = calls.find((c) => c.url.includes("/v1/me/invitations"));
+      expect(membershipCall).toBeDefined();
+      const forwarded = new Headers(membershipCall!.init.headers as HeadersInit);
+      expect(forwarded.get("x-actor-subject-id")).toBe("usr_invitee");
+      expect(forwarded.get("x-actor-email")).toBe("user@test.com");
+    });
+
+    it("returns 405 for POST on /v1/me/invitations collection", async () => {
+      const { fetcher: identityFetcher } = createSessionFetcher("usr_invitee");
+      const { fetcher: membershipFetcher } = createFakeFetcher();
+
+      const request = new Request("https://api.example.com/v1/me/invitations", {
+        method: "POST",
+        headers: { authorization: "Bearer sps_ses_abc.secret", "content-type": "application/json" },
+        body: JSON.stringify({}),
+      });
+
+      const response = await handleOrgRoute(
+        request,
+        { IDENTITY_WORKER: identityFetcher, MEMBERSHIP_WORKER: membershipFetcher, ENVIRONMENT: "test" },
+        "req_test",
+        "/v1/me/invitations",
+      );
+
+      expect(response.status).toBe(405);
+    });
+
+    it("forwards POST /v1/me/invitations/{id}/accept to MEMBERSHIP_WORKER with actor email", async () => {
+      const { fetcher: identityFetcher } = createSessionFetcher("usr_invitee");
+      const { fetcher: membershipFetcher, calls } = createFakeFetcher();
+
+      const request = new Request("https://api.example.com/v1/me/invitations/inv_def/accept", {
+        method: "POST",
+        headers: { authorization: "Bearer sps_ses_abc.secret" },
+      });
+
+      const response = await handleOrgRoute(
+        request,
+        { IDENTITY_WORKER: identityFetcher, MEMBERSHIP_WORKER: membershipFetcher, ENVIRONMENT: "test" },
+        "req_test",
+        "/v1/me/invitations/inv_def/accept",
+      );
+
+      expect(response.status).toBe(200);
+      const membershipCall = calls.find((c) => c.url.includes("/v1/me/invitations/inv_def/accept"));
+      expect(membershipCall).toBeDefined();
+      expect(membershipCall!.init.method).toBe("POST");
+      const forwarded = new Headers(membershipCall!.init.headers as HeadersInit);
+      expect(forwarded.get("x-actor-email")).toBe("user@test.com");
+    });
+
+    it("returns 405 for GET on the me accept route", async () => {
+      const { fetcher: identityFetcher } = createSessionFetcher("usr_invitee");
+      const { fetcher: membershipFetcher } = createFakeFetcher();
+
+      const request = new Request("https://api.example.com/v1/me/invitations/inv_def/accept", {
+        method: "GET",
+        headers: { authorization: "Bearer sps_ses_abc.secret" },
+      });
+
+      const response = await handleOrgRoute(
+        request,
+        { IDENTITY_WORKER: identityFetcher, MEMBERSHIP_WORKER: membershipFetcher, ENVIRONMENT: "test" },
+        "req_test",
+        "/v1/me/invitations/inv_def/accept",
+      );
+
+      expect(response.status).toBe(405);
+    });
   });
 
   describe("session resolution through IDENTITY_WORKER", () => {

@@ -8,6 +8,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { EmptyState } from "@/components/ui/empty-state";
+import { PendingInvitations } from "@/components/orgs/pending-invitations";
 import { pickAccountBillingOrg } from "@/components/billing/account-org";
 import { useSession } from "@/lib/session";
 import { readLastOrgSlug, clearLastOrgSlug } from "@/lib/last-org";
@@ -64,6 +65,8 @@ export default function OrgsPage() {
           </Link>
         </Button>
       </header>
+
+      <PendingInvitations onAccepted={() => orgs.reload()} />
 
       {(orgs.data ?? []).some((o) => o.status === "suspended") && (
         <Card className="border-warning/40 bg-warning/5">

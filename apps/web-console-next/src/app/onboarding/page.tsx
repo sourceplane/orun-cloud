@@ -41,6 +41,14 @@ export default function OnboardingPage() {
     () => wrap(async () => (await client.organizations.list()).organizations),
     { enabled: ready },
   );
+  // A user invited into an existing workspace lands here with zero orgs; they
+  // must not be forced to create one (saas invitation login flow), so a pending
+  // invitation forwards them to /orgs to view and accept it instead.
+  const invites = useApiQuery(
+    qk.myInvitations(),
+    () => wrap(async () => (await client.memberships.listMyInvitations()).invitations),
+    { enabled: ready },
+  );
 
   const [phase, setPhase] = React.useState<"deciding" | "create" | "forwarding">("deciding");
   React.useEffect(() => {
@@ -51,6 +59,14 @@ export default function OnboardingPage() {
     }
     if (!orgs.data) return; // wait for the first settled list
     if (orgs.data.length === 0) {
+      // Wait for the invitations list to settle (or error) before deciding
+      // between "accept an invitation" and "create your first workspace".
+      if (!invites.data && !invites.error) return;
+      if (invites.data && invites.data.length > 0) {
+        setPhase("forwarding");
+        router.replace("/orgs");
+        return;
+      }
       setPhase("create");
       return;
     }
@@ -60,7 +76,7 @@ export default function OnboardingPage() {
       : pickAccountBillingOrg(orgs.data)!.slug;
     setPhase("forwarding");
     router.replace(defaultOrgDestination(slug));
-  }, [phase, orgs.data, orgs.error, router]);
+  }, [phase, orgs.data, orgs.error, invites.data, invites.error, router]);
 
   return (
     <div className="bg-grid-glow min-h-screen bg-background">
