@@ -16,7 +16,7 @@ import { handleListInvitations } from "./handlers/list-invitations.js";
 import { handleRevokeInvitation } from "./handlers/revoke-invitation.js";
 import { handleAcceptInvitation } from "./handlers/accept-invitation.js";
 import { handleAuthorizationContext } from "./handlers/authorization-context.js";
-import { handleEffectiveAccess } from "./handlers/effective-access.js";
+import { handleEffectiveAccess, handleOrgEffectiveAccess } from "./handlers/effective-access.js";
 import { handleSubjectOrgs } from "./handlers/subject-orgs.js";
 import { handleSyncAccountChildren } from "./handlers/sync-account-children.js";
 import { handleResolveBillingParent } from "./handlers/resolve-billing-parent.js";
@@ -59,6 +59,7 @@ const ORG_TEAMS_RE = /^\/v1\/organizations\/([^/]+)\/teams$/;
 const ORG_TEAM_ID_RE = /^\/v1\/organizations\/([^/]+)\/teams\/([^/]+)$/;
 const ORG_TEAM_MEMBERS_RE = /^\/v1\/organizations\/([^/]+)\/teams\/([^/]+)\/members$/;
 const ORG_TEAM_MEMBER_ID_RE = /^\/v1\/organizations\/([^/]+)\/teams\/([^/]+)\/members\/([^/]+)$/;
+const ORG_EFFECTIVE_ACCESS_RE = /^\/v1\/organizations\/([^/]+)\/effective-access$/;
 const SP_BINDINGS_PATH = "/v1/internal/membership/service-principal-bindings";
 const SP_BINDING_ID_RE = /^\/v1\/internal\/membership\/service-principal-bindings\/([^/]+)$/;
 
@@ -289,6 +290,20 @@ export async function route(request: Request, env: Env): Promise<Response> {
       }
       if (request.method === "POST") {
         return handleAddTeamMember(request, env, requestId, actor, teamMembersMatch[1]!, teamMembersMatch[2]!);
+      }
+      return methodNotAllowed(requestId);
+    }
+
+    // Effective access (saas-teams TM6b3): the actor's (or, with ?subjectId=,
+    // another subject's) permitted actions here, each with `via` provenance.
+    const effectiveAccessMatch = url.pathname.match(ORG_EFFECTIVE_ACCESS_RE);
+    if (effectiveAccessMatch) {
+      const actor = resolveActor(request);
+      if (!actor) {
+        return errorResponse("unauthenticated", "Authentication required", 401, requestId);
+      }
+      if (request.method === "GET") {
+        return handleOrgEffectiveAccess(env, requestId, actor, effectiveAccessMatch[1]!, url);
       }
       return methodNotAllowed(requestId);
     }

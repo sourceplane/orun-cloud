@@ -11,6 +11,7 @@ import type {
   GrantTeamRoleResponse,
 } from "@saas/contracts/membership";
 
+import type { EffectiveAccessResponse } from "@saas/contracts/policy";
 import type { RequestOptions, Transport } from "./transport.js";
 
 /**
@@ -111,6 +112,31 @@ export class TeamsClient {
   revokeTeamRole(orgId: string, body: GrantTeamRoleRequest, opts: RequestOptions = {}): Promise<GrantTeamRoleResponse> {
     return this.transport.request<GrantTeamRoleResponse>(
       { method: "DELETE", path: `/v1/organizations/${encodeURIComponent(orgId)}/team-roles`, body },
+      opts,
+    );
+  }
+
+  // -------------------------------------------------------------------------
+  // Effective access (saas-teams TM6b)
+  // -------------------------------------------------------------------------
+
+  /**
+   * GET /v1/organizations/:orgId/effective-access — "who can do what here, and
+   * via which grant". Defaults to the caller's own access; pass `subjectId` to
+   * view another subject's (requires member-list authority), and `projectId` to
+   * narrow to a project. Each permitted action carries `via` provenance.
+   */
+  effectiveAccess(
+    orgId: string,
+    query: { projectId?: string; subjectId?: string } = {},
+    opts: RequestOptions = {},
+  ): Promise<EffectiveAccessResponse> {
+    return this.transport.request<EffectiveAccessResponse>(
+      {
+        method: "GET",
+        path: `/v1/organizations/${encodeURIComponent(orgId)}/effective-access`,
+        query: { ...(query.projectId ? { projectId: query.projectId } : {}), ...(query.subjectId ? { subjectId: query.subjectId } : {}) },
+      },
       opts,
     );
   }
