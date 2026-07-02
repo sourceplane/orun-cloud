@@ -1,9 +1,9 @@
-import { handleEffectiveAccess } from "@membership-worker/handlers/effective-access";
-import { teamPublicId } from "@membership-worker/ids";
+import { handleEffectiveAccess, handleOrgEffectiveAccess } from "@membership-worker/handlers/effective-access";
+import { orgPublicId, teamPublicId } from "@membership-worker/ids";
 import type { Env } from "@membership-worker/env";
 import type { MembershipRepository, Organization, RoleAssignment, Team } from "@saas/db/membership";
-import { listEffectivePermissions } from "@saas/policy-engine";
-import type { EffectivePermissionsRequest } from "@saas/contracts/policy";
+import { listEffectivePermissions, authorize } from "@saas/policy-engine";
+import type { EffectivePermissionsRequest, AuthorizationRequest } from "@saas/contracts/policy";
 import { teamRepoStubs } from "./team-repo-stubs.js";
 
 const ACCOUNT = "00000000-0000-0000-0000-0000000000a1";
@@ -18,6 +18,10 @@ const policyFetcher = {
     if (String(url).includes("/effective-permissions")) {
       const body = JSON.parse(init!.body as string) as EffectivePermissionsRequest;
       return Response.json({ data: listEffectivePermissions(body), meta: { requestId: "r", cursor: null } });
+    }
+    if (String(url).includes("/authorize")) {
+      const body = JSON.parse(init!.body as string) as AuthorizationRequest;
+      return Response.json({ data: authorize(body), meta: { requestId: "r", cursor: null } });
     }
     return Response.json({ error: { code: "not_found" } }, { status: 404 });
   },
@@ -120,5 +124,56 @@ describe("effective-access (saas-teams TM6b2)", () => {
     });
     const res = await handleEffectiveAccess(bad, env(), "r4", { repo });
     expect(res.status).toBe(422);
+  });
+});
+
+const OTHER = "usr_other";
+function urlFor(orgUuid: string, q: Record<string, string> = {}): URL {
+  const u = new URL(`http://mw/v1/organizations/${orgPublicId(orgUuid)}/effective-access`);
+  for (const [k, v] of Object.entries(q)) u.searchParams.set(k, v);
+  return u;
+}
+function ownerDirect(subjectId: string): RoleAssignment {
+  return { id: "ra-o", orgId: ACCOUNT, subjectId, subjectType: "user", role: "owner", scopeKind: "organization", scopeRef: null, createdAt: NOW, revokedAt: null };
+}
+const actorPolicy = { subjectId: USER, subjectType: "user" };
+
+describe("handleOrgEffectiveAccess (public, TM6b3)", () => {
+  it("returns the CALLER's own effective access by default", async () => {
+    const repo = makeRepo({
+      orgs: { [ACCOUNT]: org(ACCOUNT, null) },
+      teamsFor: { [`${ACCOUNT}|${USER}`]: [team(TEAM_UUID, ACCOUNT)] },
+      teamGrants: { [`${ACCOUNT}|${TEAM_PUB}`]: [grant(ACCOUNT, TEAM_PUB, "builder", "organization")] },
+    });
+    const res = await handleOrgEffectiveAccess(env(), "r1", actorPolicy, orgPublicId(ACCOUNT), urlFor(ACCOUNT), { repo });
+    expect(res.status).toBe(200);
+    const json = (await res.json()) as { data: { permissions: Perm[] } };
+    const read = json.data.permissions.find((p) => p.action === "organization.read");
+    expect(read?.allow).toBe(true);
+    expect(read?.via).toEqual({ kind: "team", teamId: TEAM_PUB });
+  });
+
+  it("an admin can view ANOTHER subject's access (?subjectId=)", async () => {
+    const repo = makeRepo({
+      orgs: { [ACCOUNT]: org(ACCOUNT, null) },
+      directRoles: { [`${ACCOUNT}|${USER}`]: [ownerDirect(USER)] }, // caller is owner → has member.list
+      teamsFor: { [`${ACCOUNT}|${OTHER}`]: [team(TEAM_UUID, ACCOUNT)] },
+      teamGrants: { [`${ACCOUNT}|${TEAM_PUB}`]: [grant(ACCOUNT, TEAM_PUB, "builder", "organization")] },
+    });
+    const res = await handleOrgEffectiveAccess(env(), "r2", actorPolicy, orgPublicId(ACCOUNT), urlFor(ACCOUNT, { subjectId: OTHER }), { repo });
+    expect(res.status).toBe(200);
+    const json = (await res.json()) as { data: { permissions: Perm[] } };
+    // OTHER's builder-via-team grant, not the caller's owner.
+    const read = json.data.permissions.find((p) => p.action === "organization.read");
+    expect(read?.via).toEqual({ kind: "team", teamId: TEAM_PUB });
+  });
+
+  it("a non-admin CANNOT view another subject's access (404)", async () => {
+    const repo = makeRepo({
+      orgs: { [ACCOUNT]: org(ACCOUNT, null) },
+      directRoles: { [`${ACCOUNT}|${USER}`]: [] }, // caller has no role → no member.list
+    });
+    const res = await handleOrgEffectiveAccess(env(), "r3", actorPolicy, orgPublicId(ACCOUNT), urlFor(ACCOUNT, { subjectId: OTHER }), { repo });
+    expect(res.status).toBe(404);
   });
 });

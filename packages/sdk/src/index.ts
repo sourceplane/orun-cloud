@@ -201,6 +201,13 @@ export type {
 
 export { ORGANIZATION_ROLES } from "@saas/contracts/membership";
 
+// Effective-access + provenance (saas-teams TM6b).
+export type {
+  EffectiveAccessResponse,
+  EffectivePermission,
+  FactOrigin,
+} from "@saas/contracts/policy";
+
 export type {
   PublicProject,
   PublicEnvironment,

@@ -80,6 +80,15 @@ describe("TeamsClient (saas-teams TM4c)", () => {
     expect(JSON.parse(calls[0]!.init.body as string).teamId).toBe("team_x");
   });
 
+  it("effectiveAccess → GET /effective-access with query", async () => {
+    const { client: c, calls } = client({ permissions: [{ action: "organization.read", allow: true, reason: "org_builder", via: { kind: "team", teamId: "team_x" } }] });
+    const res = await c.teams.effectiveAccess("org_1", { subjectId: "usr_x" });
+    expect(res.permissions[0]!.via).toEqual({ kind: "team", teamId: "team_x" });
+    expect(calls[0]!.url).toContain("https://api.test/v1/organizations/org_1/effective-access");
+    expect(calls[0]!.url).toContain("subjectId=usr_x");
+    expect(calls[0]!.init.method).toBe("GET");
+  });
+
   it("revokeTeamRole → DELETE /team-roles with body", async () => {
     const { client: c, calls } = client({ grant: { teamId: "team_x", role: "builder", scopeKind: "organization", scopeRef: null } });
     await c.teams.revokeTeamRole("org_1", { teamId: "team_x", role: "builder", scopeKind: "organization" });
