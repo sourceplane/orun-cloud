@@ -608,6 +608,51 @@ export interface ListCatalogEntitiesResponse {
   nextCursor: StateCursor | null;
 }
 
+// ── Account-scoped cross-workspace reads (teams-hub TH2) ────────────
+/**
+ * The workspace a fan-out row came from. Catalog and runs stay per-org
+ * authoritative (design §3 — no denormalized cross-workspace store); the
+ * account aggregate reads each workspace's own index and tags the results.
+ */
+export interface AccountWorkspaceTag {
+  orgId: string;
+  workspaceRef: string;
+  name: string;
+}
+
+/**
+ * Per-workspace fan-out outcome. `denied` is a first-class result — the
+ * viewer's per-workspace authority is enforced by each workspace's own policy
+ * gate, so a workspace the viewer cannot read reports `denied` with no items
+ * rather than silently disappearing (gate TH-C).
+ */
+export type AccountFanoutStatus = "ok" | "denied" | "error";
+
+export interface AccountCatalogWorkspace {
+  workspace: AccountWorkspaceTag;
+  status: AccountFanoutStatus;
+  entities: OrgCatalogEntity[];
+}
+
+/** GET /v1/organizations/{orgId}/account-catalog */
+export interface AccountCatalogResponse {
+  workspaces: AccountCatalogWorkspace[];
+  /** True when the account has more workspaces than the fan-out cap. */
+  truncated: boolean;
+}
+
+export interface AccountRunsWorkspace {
+  workspace: AccountWorkspaceTag;
+  status: AccountFanoutStatus;
+  runs: Run[];
+}
+
+/** GET /v1/organizations/{orgId}/account-runs */
+export interface AccountRunsResponse {
+  workspaces: AccountRunsWorkspace[];
+  truncated: boolean;
+}
+
 /**
  * GET /v1/organizations/{orgId}/catalog/entities — the org-global catalog
  * browser (OV6). Optional provenance/facet filters: `project` and `environment`
