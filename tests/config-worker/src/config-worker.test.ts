@@ -267,6 +267,9 @@ describe("mappers", () => {
       lastRotatedAt: new Date("2026-03-01T00:00:00Z"),
       expiresAt: new Date("2026-06-01T00:00:00Z"),
       createdBy: TEST_USER_ID,
+      personalOwner: null,
+      overridable: true,
+      lastUsedAt: null,
       ...baseDates,
     };
     const pub = toPublicSecretMetadata(secret);
@@ -301,6 +304,9 @@ describe("mappers", () => {
       lastRotatedAt: null,
       expiresAt: null,
       createdBy: TEST_USER_ID,
+      personalOwner: null,
+      overridable: true,
+      lastUsedAt: null,
       ...baseDates,
     };
     const pub = toPublicSecretMetadata(secret);

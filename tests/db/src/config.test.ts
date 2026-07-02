@@ -76,9 +76,22 @@ const SAMPLE_SECRET_ROW = {
   last_rotated_at: null,
   expires_at: null,
   created_by: "user-001",
+  personal_owner: null,
+  overridable: true,
+  last_used_at: null,
   created_at: NOW.toISOString(),
   updated_at: NOW.toISOString(),
 };
+
+const SAMPLE_SECRET_VERSION_ROW = {
+  secret_id: "sec-001",
+  version: 2,
+  status: "active",
+  created_by: "00000000-0000-0000-0000-000000000001",
+  created_at: NOW.toISOString(),
+};
+
+const CREATED_BY = asUuid("00000000-0000-0000-0000-000000000001");
 
 const ORG_SCOPE: Scope = { kind: "organization", orgId: "org-001" };
 const PROJECT_SCOPE: Scope = { kind: "project", orgId: "org-001", projectId: "prj-001" };
@@ -478,18 +491,34 @@ describe("ConfigRepository — Secret Metadata", () => {
     expect(queries[0]!.text).not.toContain("SELECT *");
   });
 
-  it("rotates secret metadata (increments version)", async () => {
+  it("rotates secret metadata (increments version and appends a version row)", async () => {
     const rotatedRow = { ...SAMPLE_SECRET_ROW, version: 2, last_rotated_at: NOW.toISOString() };
     const { executor, queries } = createFakeExecutor({ rows: [rotatedRow] });
     const repo = createConfigRepository(executor);
-    const result = await repo.rotateSecretMetadata("org-001", "sec-001");
+    const result = await repo.rotateSecretMetadata("org-001", "sec-001", CREATED_BY);
     expect(result.ok).toBe(true);
     if (result.ok) {
       expect(result.value.version).toBe(2);
     }
+    // One atomic statement: head bump + append to the version history (SM1).
+    expect(queries).toHaveLength(1);
     expect(queries[0]!.text).toContain("version = version + 1");
     expect(queries[0]!.text).toContain("status = 'active'");
-    expect(queries[0]!.text).not.toContain("ciphertext_envelope");
+    expect(queries[0]!.text).toContain("INSERT INTO config.secret_versions");
+    expect(queries[0]!.params[2]).toBe(CREATED_BY);
+    // The head cache is not overwritten on a metadata-only rotate.
+    expect(queries[0]!.text).not.toContain("ciphertext_envelope = $");
+  });
+
+  it("rotate with a new envelope refreshes the head cache and appends it", async () => {
+    const rotatedRow = { ...SAMPLE_SECRET_ROW, version: 2, last_rotated_at: NOW.toISOString() };
+    const { executor, queries } = createFakeExecutor({ rows: [rotatedRow] });
+    const repo = createConfigRepository(executor);
+    const result = await repo.rotateSecretMetadata("org-001", "sec-001", CREATED_BY, "{\"alg\":\"AES-256-GCM\"}");
+    expect(result.ok).toBe(true);
+    expect(queries[0]!.text).toContain("ciphertext_envelope = $4");
+    expect(queries[0]!.text).toContain("INSERT INTO config.secret_versions");
+    expect(queries[0]!.params[3]).toBe("{\"alg\":\"AES-256-GCM\"}");
   });
 
   it("revokes secret metadata", async () => {
@@ -508,7 +537,7 @@ describe("ConfigRepository — Secret Metadata", () => {
   it("returns not_found when rotating non-existent secret", async () => {
     const { executor } = createFakeExecutor({ rows: [], rowCount: 0 });
     const repo = createConfigRepository(executor);
-    const result = await repo.rotateSecretMetadata("org-001", "nope");
+    const result = await repo.rotateSecretMetadata("org-001", "nope", CREATED_BY);
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error.kind).toBe("not_found");
   });
@@ -559,6 +588,141 @@ describe("ConfigRepository — Secret Metadata", () => {
 });
 
 // ── Scope validation tests ─────────────────────────────────
+
+// ── Secret store v3 (saas-secret-manager SM1) ──────────────
+
+describe("ConfigRepository — Secret Store v3 (SM1)", () => {
+  it("create with an envelope appends version 1 in the same statement", async () => {
+    const { executor, queries } = createFakeExecutor({ rows: [SAMPLE_SECRET_ROW] });
+    const repo = createConfigRepository(executor);
+    const result = await repo.createSecretMetadata({
+      id: "sec-001",
+      scope: ORG_SCOPE,
+      secretKey: "DB_PASSWORD",
+      createdBy: CREATED_BY,
+      ciphertextEnvelope: "{\"alg\":\"AES-256-GCM\"}",
+    });
+    expect(result.ok).toBe(true);
+    expect(queries).toHaveLength(1);
+    expect(queries[0]!.text).toContain("INSERT INTO config.secret_versions");
+    // The final projection never exposes the envelope.
+    const finalSelect = queries[0]!.text.split("SELECT").pop()!;
+    expect(finalSelect).not.toContain("ciphertext_envelope");
+  });
+
+  it("create without an envelope appends no version row", async () => {
+    const { executor, queries } = createFakeExecutor({ rows: [SAMPLE_SECRET_ROW] });
+    const repo = createConfigRepository(executor);
+    await repo.createSecretMetadata({
+      id: "sec-001",
+      scope: ORG_SCOPE,
+      secretKey: "DB_PASSWORD",
+      createdBy: CREATED_BY,
+    });
+    expect(queries[0]!.text).not.toContain("config.secret_versions");
+  });
+
+  it("create persists personal_owner and overridable", async () => {
+    const { executor, queries } = createFakeExecutor({ rows: [SAMPLE_SECRET_ROW] });
+    const repo = createConfigRepository(executor);
+    await repo.createSecretMetadata({
+      id: "sec-001",
+      scope: ENV_SCOPE,
+      secretKey: "MY_TOKEN",
+      createdBy: CREATED_BY,
+      personalOwner: asUuid("00000000-0000-0000-0000-000000000009"),
+      overridable: false,
+    });
+    expect(queries[0]!.params[10]).toBe("00000000-0000-0000-0000-000000000009");
+    expect(queries[0]!.params[11]).toBe(false);
+  });
+
+  it("create accepts the account scope rung", async () => {
+    const row = { ...SAMPLE_SECRET_ROW, scope_kind: "account" };
+    const { executor, queries } = createFakeExecutor({ rows: [row] });
+    const repo = createConfigRepository(executor);
+    const result = await repo.createSecretMetadata({
+      id: "sec-001",
+      scope: { kind: "account", accountId: "org-acct" },
+      secretKey: "DB_PASSWORD",
+      createdBy: CREATED_BY,
+    });
+    expect(result.ok).toBe(true);
+    expect(queries[0]!.params[1]).toBe("org-acct");
+    expect(queries[0]!.params[4]).toBe("account");
+  });
+
+  it("listSecretVersions returns history newest-first, metadata only", async () => {
+    const rows = [
+      { ...SAMPLE_SECRET_VERSION_ROW, version: 3 },
+      { ...SAMPLE_SECRET_VERSION_ROW, version: 2 },
+    ];
+    const { executor, queries } = createFakeExecutor({ rows });
+    const repo = createConfigRepository(executor);
+    const result = await repo.listSecretVersions("org-001", "sec-001", { limit: 10, cursor: null });
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value.items.map((v) => v.version)).toEqual([3, 2]);
+      const item = result.value.items[0]!;
+      expect("ciphertextEnvelope" in item).toBe(false);
+      expect("ciphertext_envelope" in item).toBe(false);
+      expect(item.secretId).toBe("sec-001");
+      expect(item.status).toBe("active");
+    }
+    expect(queries[0]!.text).toContain("ORDER BY created_at DESC, version DESC");
+    expect(queries[0]!.text).not.toContain("ciphertext_envelope");
+    // Tenant isolation rides the metadata org check.
+    expect(queries[0]!.params[0]).toBe("org-001");
+    expect(queries[0]!.params[1]).toBe("sec-001");
+  });
+
+  it("getSecretMetadataByScopeKey probes the shared row by default", async () => {
+    const { executor, queries } = createFakeExecutor({ rows: [SAMPLE_SECRET_ROW] });
+    const repo = createConfigRepository(executor);
+    const result = await repo.getSecretMetadataByScopeKey(ORG_SCOPE, "DB_PASSWORD");
+    expect(result.ok).toBe(true);
+    expect(queries[0]!.text).toContain("personal_owner IS NULL");
+    expect(queries[0]!.text).toContain("status IN ('active', 'rotated')");
+    expect(queries[0]!.params).toEqual(["org-001", "DB_PASSWORD"]);
+  });
+
+  it("getSecretMetadataByScopeKey matches a given personal owner", async () => {
+    const row = { ...SAMPLE_SECRET_ROW, personal_owner: "user-009" };
+    const { executor, queries } = createFakeExecutor({ rows: [row] });
+    const repo = createConfigRepository(executor);
+    const result = await repo.getSecretMetadataByScopeKey(ENV_SCOPE, "MY_TOKEN", "user-009");
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value.personalOwner).toBe("user-009");
+    }
+    expect(queries[0]!.text).toContain("personal_owner = $");
+    expect(queries[0]!.params).toEqual(["org-001", "prj-001", "env-001", "MY_TOKEN", "user-009"]);
+  });
+
+  it("getSecretMetadataByScopeKey probes the account rung by accountId", async () => {
+    const { executor, queries } = createFakeExecutor({ rows: [] });
+    const repo = createConfigRepository(executor);
+    const result = await repo.getSecretMetadataByScopeKey({ kind: "account", accountId: "org-acct" }, "DB_PASSWORD");
+    expect(result.ok).toBe(false);
+    expect(queries[0]!.text).toContain("scope_kind = 'account'");
+    expect(queries[0]!.params[0]).toBe("org-acct");
+  });
+
+  it("list without a viewer excludes every personal row", async () => {
+    const { executor, queries } = createFakeExecutor({ rows: [] });
+    const repo = createConfigRepository(executor);
+    await repo.listSecretMetadata(ENV_SCOPE, { limit: 10, cursor: null });
+    expect(queries[0]!.text).toContain("AND personal_owner IS NULL");
+  });
+
+  it("list with a viewer includes only that viewer's personal rows", async () => {
+    const { executor, queries } = createFakeExecutor({ rows: [] });
+    const repo = createConfigRepository(executor);
+    await repo.listSecretMetadata(ENV_SCOPE, { limit: 10, cursor: null }, "user-009");
+    expect(queries[0]!.text).toContain("(personal_owner IS NULL OR personal_owner = $");
+    expect(queries[0]!.params).toContain("user-009");
+  });
+});
 
 describe("ConfigRepository — Scope Validation", () => {
   it("rejects setting creation when check constraint violated", async () => {
@@ -619,6 +783,9 @@ describe("Secret Safety Invariants", () => {
       lastRotatedAt: null,
       expiresAt: null,
       createdBy: asUuid("00000000-0000-0000-0000-000000000002"),
+      personalOwner: null,
+      overridable: true,
+      lastUsedAt: null,
       createdAt: NOW,
       updatedAt: NOW,
     };
@@ -637,12 +804,24 @@ describe("Secret Safety Invariants", () => {
 
     await repo.getSecretMetadata("org-001", "sec-001");
     await repo.listSecretMetadata(ORG_SCOPE, { limit: 10, cursor: null });
-    await repo.rotateSecretMetadata("org-001", "sec-001");
+    await repo.getSecretMetadataByScopeKey(ORG_SCOPE, "DB_PASSWORD");
+    await repo.listSecretVersions("org-001", "sec-001", { limit: 10, cursor: null });
     await repo.revokeSecretMetadata("org-001", "sec-001");
 
     for (const q of queries) {
       expect(q.text).not.toContain("SELECT *");
       expect(q.text).not.toContain("ciphertext_envelope");
     }
+  });
+
+  it("rotate never projects the envelope back to the caller", async () => {
+    const { executor, queries } = createFakeExecutor({ rows: [SAMPLE_SECRET_ROW] });
+    const repo = createConfigRepository(executor);
+    await repo.rotateSecretMetadata("org-001", "sec-001", CREATED_BY);
+    // The version-append CTE references the column; the final projection —
+    // everything after the last SELECT — must stay on the safe columns.
+    const finalSelect = queries[0]!.text.split("SELECT").pop()!;
+    expect(finalSelect).not.toContain("ciphertext_envelope");
+    expect(finalSelect).not.toContain("*");
   });
 });

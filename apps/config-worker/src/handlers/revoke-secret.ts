@@ -82,7 +82,8 @@ export async function handleRevokeSecret(
         }
 
         const secret = existing.value;
-        const policyAction = secret.scopeKind === "organization" ? "organization.config.write" : "project.config.write";
+        // Layer-1 RBAC activation (SM1): secrets authorize on secret.*.
+        const policyAction = "secret.write";
         const resource: PolicyResource = { kind: secret.scopeKind === "organization" ? "organization" : "project", orgId };
         if (secret.projectId) {
           resource.projectId = secret.projectId;

@@ -3,7 +3,9 @@ import type { ActorContext } from "../router.js";
 import type { Scope, CreateSecretMetadataInput } from "@saas/db/config";
 import type { EventsRepository } from "@saas/db/events";
 import type { ConfigRepository } from "@saas/db/config";
+import type { MembershipRepository } from "@saas/db/membership";
 import { createConfigRepository } from "@saas/db/config";
+import { createMembershipRepository } from "@saas/db/membership";
 import { createEventsRepository } from "@saas/db/events";
 import { createSqlExecutor } from "@saas/db/hyperdrive";
 import { fetchAuthorizationContext } from "../membership-client.js";
@@ -11,10 +13,14 @@ import { authorizeViaPolicy } from "../policy-client.js";
 import { errorResponse, successResponse, validationError } from "../http.js";
 import { uuidFromPublicId } from "@saas/db";
 import { toPublicSecretMetadata } from "../mappers.js";
+import { findLockedSecretAbove } from "../config-resolver.js";
 import type { PolicyResource } from "@saas/contracts/policy";
 import type { EncryptionAdapter } from "../encryption.js";
 
 const KEY_RE = /^[a-zA-Z][a-zA-Z0-9._-]{0,127}$/;
+
+/** A locked guardrail above the target scope blocked this write (SM1). */
+const LOCKED_MESSAGE = "Cannot override a locked secret";
 
 /**
  * Fields that must never appear in a create-secret request body,
@@ -33,7 +39,10 @@ const SECRET_MATERIAL_FIELDS = [
 ];
 
 export interface CreateSecretDeps {
-  repo: Pick<ConfigRepository, "createSecretMetadata">;
+  repo: Pick<ConfigRepository, "createSecretMetadata"> & Partial<Pick<ConfigRepository, "getSecretMetadataByScopeKey">>;
+  /** Needed for the locked-guardrail probe; when omitted (older test fakes) the
+   * deps path skips the guardrail — the production path always enforces it. */
+  membershipRepo?: Pick<MembershipRepository, "getOrganizationById">;
   eventsRepo?: Pick<EventsRepository, "appendEventWithAudit">;
   generateId?: () => string;
   now?: () => Date;
@@ -79,12 +88,14 @@ export async function handleCreateSecret(
     }
   }
 
-  const { secretKey, displayName, rotationPolicy, expiresAt, value } = raw as {
+  const { secretKey, displayName, rotationPolicy, expiresAt, value, overridable, personal } = raw as {
     secretKey?: unknown;
     displayName?: unknown;
     rotationPolicy?: unknown;
     expiresAt?: unknown;
     value?: unknown;
+    overridable?: unknown;
+    personal?: unknown;
   };
 
   if (typeof secretKey !== "string" || !KEY_RE.test(secretKey)) {
@@ -95,6 +106,17 @@ export async function handleCreateSecret(
   }
   if (rotationPolicy !== undefined && rotationPolicy !== null && typeof rotationPolicy !== "string") {
     fields.rotationPolicy = ["rotationPolicy must be a string or null"];
+  }
+  if (overridable !== undefined && typeof overridable !== "boolean") {
+    fields.overridable = ["overridable must be a boolean"];
+  }
+  // Secrets may be locked (overridable=false) at account or organization scope
+  // only; the account rung is not routable, so organization is the writable one.
+  if (overridable === false && scope.kind !== "organization") {
+    fields.overridable = ["Only an organization-scope secret may be locked (overridable=false)"];
+  }
+  if (personal !== undefined && typeof personal !== "boolean") {
+    fields.personal = ["personal must be a boolean"];
   }
   if (value !== undefined && value !== null && typeof value !== "string") {
     fields.value = ["value must be a string"];
@@ -119,6 +141,11 @@ export async function handleCreateSecret(
 
   if (Object.keys(fields).length > 0) {
     return validationError(requestId, fields);
+  }
+
+  // Personal overlays exist at environment scope only (DB CHECK mirrors this).
+  if (personal === true && scope.kind !== "environment") {
+    return errorResponse("bad_request", "Personal secrets are only supported at environment scope", 400, requestId);
   }
 
   // Resolve encryption adapter
@@ -158,7 +185,9 @@ export async function handleCreateSecret(
       return errorResponse("not_found", "Not found", 404, requestId);
     }
 
-    const policyAction = scope.kind === "organization" ? "organization.config.write" : "project.config.write";
+    // Layer-1 RBAC activation (SM1): secrets authorize on the dedicated
+    // secret.* actions, not the generic config plane.
+    const policyAction = "secret.write";
     const resource: PolicyResource = { kind: scope.kind === "organization" ? "organization" : "project", orgId: scope.orgId };
     if ("projectId" in scope) {
       resource.projectId = scope.projectId;
@@ -214,6 +243,13 @@ export async function handleCreateSecret(
   if (ciphertextEnvelope !== undefined) {
     input.ciphertextEnvelope = ciphertextEnvelope;
   }
+  if (overridable !== undefined) {
+    input.overridable = overridable as boolean;
+  }
+  if (personal === true) {
+    // The overlay owner is always the verified actor — never caller-supplied.
+    input.personalOwner = createdByUuid;
+  }
 
   const executor = deps ? null : createSqlExecutor(env.PLATFORM_DB!);
   try {
@@ -221,6 +257,14 @@ export async function handleCreateSecret(
       const txResult = await executor.transaction(async (txExec) => {
         const txRepo = createConfigRepository(txExec);
         const txEventsRepo = createEventsRepository(txExec);
+        const txMembershipRepo = createMembershipRepository(txExec);
+
+        // Guardrail (SM1): a scoped write may not override a locked
+        // (overridable=false) account- or organization-scope key.
+        const locked = await findLockedSecretAbove(txRepo, txMembershipRepo, scope, secretKey as string);
+        if (locked) {
+          return { result: { ok: false as const, error: { kind: "locked" as const } } };
+        }
 
         const result = await txRepo.createSecretMetadata(input);
 
@@ -267,6 +311,9 @@ export async function handleCreateSecret(
 
       if (!txResult.result.ok) {
         const err = txResult.result.error;
+        if (err.kind === "locked") {
+          return errorResponse("conflict", LOCKED_MESSAGE, 409, requestId);
+        }
         if (err.kind === "conflict") {
           return errorResponse("conflict", "Secret already exists for this scope and key", 409, requestId);
         }
@@ -278,6 +325,19 @@ export async function handleCreateSecret(
 
     // Non-transactional path (deps injection for tests)
     if (deps) {
+      // Guardrail (SM1): reject overriding a locked account/organization key.
+      if (deps.membershipRepo && deps.repo.getSecretMetadataByScopeKey) {
+        const locked = await findLockedSecretAbove(
+          deps.repo as Pick<ConfigRepository, "getSecretMetadataByScopeKey">,
+          deps.membershipRepo,
+          scope,
+          secretKey as string,
+        );
+        if (locked) {
+          return errorResponse("conflict", LOCKED_MESSAGE, 409, requestId);
+        }
+      }
+
       const result = await deps.repo.createSecretMetadata(input);
 
       if (!result.ok) {

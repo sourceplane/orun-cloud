@@ -20,13 +20,16 @@
  * `getOrganizationById`. Fail-soft: if the org fetch fails the chain resolves only
  * environment -> project -> workspace -> default (the account rung is skipped).
  *
- * Designed so feature_flags / secret_metadata can adopt the same shape later
- * (follow-up — not implemented here).
+ * Designed so feature_flags / secret_metadata can adopt the same shape later —
+ * secret_metadata now has (saas-secret-manager SM1, secrets section below);
+ * feature_flags remains a follow-up.
  */
 import type {
   ConfigRepository,
   ResolveScope,
   Scope,
+  ScopeKind,
+  SecretMetadata,
   Setting,
 } from "@saas/db/config";
 import type { MembershipRepository } from "@saas/db/membership";
@@ -158,4 +161,114 @@ export async function findLockedAccountSetting(
     return null;
   }
   return result.value.overridable ? null : result.value;
+}
+
+// ── Secrets (saas-secret-manager SM1) ───────────────────────
+// The secrets variant of the chain above. Same read semantics (most specific
+// present head wins; fail-soft account rung), plus a personal rung: the
+// viewer's own environment-scope overlay beats the shared environment row.
+// Metadata plane only — no values ever flow through the resolver.
+
+/** The rung a secret head serves from. `organization` reads as `workspace`. */
+export type SecretServesFrom = "personal" | "environment" | "project" | "workspace" | "account";
+
+export interface ResolvedSecret {
+  /** The serving head row, or `null` when no rung has the key. */
+  secret: SecretMetadata | null;
+  /** Which rung serves (`null` when no row exists anywhere in the chain). */
+  servesFrom: SecretServesFrom | null;
+  /** `false` only when the serving head is a locked guardrail. */
+  overridable: boolean;
+}
+
+/** Just the slice of the config repo the secrets resolver needs. */
+type SecretResolverRepo = Pick<ConfigRepository, "getSecretMetadataByScopeKey">;
+
+export interface ResolveSecretQuery {
+  orgId: string;
+  projectId?: string;
+  environmentId?: string;
+  key: string;
+  /** Decoded subject uuid; enables the personal rung (environment scope only). */
+  viewerSubjectId?: string;
+}
+
+export function secretServesFrom(scopeKind: ScopeKind, personal: boolean): SecretServesFrom {
+  if (personal) return "personal";
+  if (scopeKind === "organization") return "workspace";
+  return scopeKind as SecretServesFrom;
+}
+
+/**
+ * Walk the secrets scope-resolution chain for `key` and return the serving head
+ * with its provenance: personal(environment, viewer) -> environment -> project
+ * -> workspace(org) -> account -> null. Stops at the first rung that has a row.
+ */
+export async function resolveEffectiveSecret(
+  deps: { repo: SecretResolverRepo; membershipRepo: ResolverMembershipRepo },
+  query: ResolveSecretQuery,
+): Promise<ResolvedSecret> {
+  const scope: Scope = query.environmentId && query.projectId
+    ? { kind: "environment", orgId: query.orgId, projectId: query.projectId, environmentId: query.environmentId }
+    : query.projectId
+      ? { kind: "project", orgId: query.orgId, projectId: query.projectId }
+      : { kind: "organization", orgId: query.orgId };
+
+  // Personal rung — the viewer's own overlay, environment scope only.
+  if (scope.kind === "environment" && query.viewerSubjectId) {
+    const personal = await deps.repo.getSecretMetadataByScopeKey(scope, query.key, query.viewerSubjectId);
+    if (personal.ok) {
+      return { secret: personal.value, servesFrom: "personal", overridable: personal.value.overridable };
+    }
+  }
+
+  const accountId = await resolveAccountId(deps.membershipRepo, query.orgId);
+  for (const rung of buildChain(scope, accountId)) {
+    const result = await deps.repo.getSecretMetadataByScopeKey(rung, query.key);
+    if (result.ok) {
+      const secret = result.value;
+      return {
+        secret,
+        servesFrom: secretServesFrom(secret.scopeKind, secret.personalOwner !== null),
+        overridable: secret.overridable,
+      };
+    }
+    // not_found / internal errors fall through to the next rung (fail-soft),
+    // exactly like the settings resolver above.
+  }
+
+  return { secret: null, servesFrom: null, overridable: true };
+}
+
+/**
+ * Write-path guardrail for secrets (saas-secret-manager SM1). Before writing a
+ * scoped secret, the create handler calls this to find a LOCKED
+ * (`overridable=false`) row for the same key ABOVE the target scope. Unlike
+ * settings (account-only locks), secrets may be locked at the account OR the
+ * workspace(org) rung, so both are probed. Returns the locked row (the write
+ * must be rejected with 409) or `null` (allowed — including fail-soft when the
+ * account uuid can't be resolved). A rung is never blocked by itself: an
+ * organization-scope write only probes the account rung.
+ */
+export async function findLockedSecretAbove(
+  repo: SecretResolverRepo,
+  membershipRepo: ResolverMembershipRepo,
+  scope: Scope,
+  key: string,
+): Promise<SecretMetadata | null> {
+  if (scope.kind === "project" || scope.kind === "environment") {
+    const org = await repo.getSecretMetadataByScopeKey({ kind: "organization", orgId: scope.orgId }, key);
+    if (org.ok && !org.value.overridable) {
+      return org.value;
+    }
+  }
+  const accountId = await resolveAccountId(membershipRepo, scope.orgId);
+  if (!accountId) {
+    return null;
+  }
+  const account = await repo.getSecretMetadataByScopeKey({ kind: "account", accountId }, key);
+  if (!account.ok) {
+    return null;
+  }
+  return account.value.overridable ? null : account.value;
 }

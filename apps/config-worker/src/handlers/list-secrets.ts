@@ -6,6 +6,7 @@ import { createSqlExecutor } from "@saas/db/hyperdrive";
 import { fetchAuthorizationContext } from "../membership-client.js";
 import { authorizeViaPolicy } from "../policy-client.js";
 import { errorResponse, listResponse, validationError, withTimings } from "../http.js";
+import { uuidFromPublicId } from "@saas/db";
 import { createTimings } from "@saas/contracts/timing";
 import { toPublicSecretMetadata } from "../mappers.js";
 import { parsePageParams, encodeCursor } from "../pagination.js";
@@ -34,7 +35,8 @@ export async function handleListSecrets(
     return validationError(requestId, { [pageResult.field]: [pageResult.reason] });
   }
 
-  const policyAction = scope.kind === "organization" ? "organization.config.read" : "project.config.read";
+  // Layer-1 RBAC activation (SM1): secrets authorize on secret.*.
+  const policyAction = "secret.read";
   const resource: PolicyResource = { kind: scope.kind === "organization" ? "organization" : "project", orgId: scope.orgId };
   if ("projectId" in scope) {
     resource.projectId = scope.projectId;
@@ -65,7 +67,9 @@ export async function handleListSecrets(
           requestId,
         ),
       ),
-      timings.measure("db", () => repo.listSecretMetadata(scope, { limit, cursor: dbCursor })),
+      // Personal overlays are owner-only: the viewer's decoded subject uuid
+      // includes their own rows; anyone else's personal rows never list.
+      timings.measure("db", () => repo.listSecretMetadata(scope, { limit, cursor: dbCursor }, uuidFromPublicId(actor.subjectId) ?? undefined)),
     ]);
     if (!contextResult.ok) {
       endTotal();

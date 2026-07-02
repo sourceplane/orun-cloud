@@ -12,6 +12,9 @@ import { handleUpdateFeatureFlag } from "./handlers/update-feature-flag.js";
 import { handleCreateSecret } from "./handlers/create-secret.js";
 import { handleRotateSecret } from "./handlers/rotate-secret.js";
 import { handleRevokeSecret } from "./handlers/revoke-secret.js";
+import { handleImportSecrets } from "./handlers/import-secrets.js";
+import { handleListSecretChain } from "./handlers/list-secret-chain.js";
+import { handleListSecretVersions } from "./handlers/list-secret-versions.js";
 import { errorResponse, notFound, methodNotAllowed } from "./http.js";
 import { generateRequestId, parseOrgPublicId, parseProjectPublicId, parseEnvironmentPublicId, parseSettingPublicId, parseFeatureFlagPublicId, parseSecretMetadataPublicId } from "./ids.js";
 
@@ -74,6 +77,16 @@ const ENV_SECRET_ITEM_RE = /^\/v1\/organizations\/([^/]+)\/projects\/([^/]+)\/en
 const ORG_SECRET_ROTATE_RE = /^\/v1\/organizations\/([^/]+)\/config\/secrets\/([^/]+)\/rotate$/;
 const PRJ_SECRET_ROTATE_RE = /^\/v1\/organizations\/([^/]+)\/projects\/([^/]+)\/config\/secrets\/([^/]+)\/rotate$/;
 const ENV_SECRET_ROTATE_RE = /^\/v1\/organizations\/([^/]+)\/projects\/([^/]+)\/environments\/([^/]+)\/config\/secrets\/([^/]+)\/rotate$/;
+
+// Version history (SM1): GET .../secrets/{id}/versions — metadata only.
+const ORG_SECRET_VERSIONS_RE = /^\/v1\/organizations\/([^/]+)\/config\/secrets\/([^/]+)\/versions$/;
+const PRJ_SECRET_VERSIONS_RE = /^\/v1\/organizations\/([^/]+)\/projects\/([^/]+)\/config\/secrets\/([^/]+)\/versions$/;
+const ENV_SECRET_VERSIONS_RE = /^\/v1\/organizations\/([^/]+)\/projects\/([^/]+)\/environments\/([^/]+)\/config\/secrets\/([^/]+)\/versions$/;
+
+// Bulk write-only import (SM1): POST .../config/secrets/import.
+const ORG_SECRETS_IMPORT_RE = /^\/v1\/organizations\/([^/]+)\/config\/secrets\/import$/;
+const PRJ_SECRETS_IMPORT_RE = /^\/v1\/organizations\/([^/]+)\/projects\/([^/]+)\/config\/secrets\/import$/;
+const ENV_SECRETS_IMPORT_RE = /^\/v1\/organizations\/([^/]+)\/projects\/([^/]+)\/environments\/([^/]+)\/config\/secrets\/import$/;
 
 type ConfigResource = "settings" | "feature-flags" | "secrets";
 
@@ -253,15 +266,68 @@ function matchItemRoute(pathname: string): MatchedItemRoute | null {
   return null;
 }
 
+function matchSecretsImportRoute(pathname: string): { scope: Scope } | null {
+  let m = pathname.match(ENV_SECRETS_IMPORT_RE);
+  if (m) {
+    const orgId = parseOrgPublicId(m[1]!);
+    const projectId = parseProjectPublicId(m[2]!);
+    const environmentId = parseEnvironmentPublicId(m[3]!);
+    if (!orgId || !projectId || !environmentId) return null;
+    return { scope: { kind: "environment", orgId, projectId, environmentId } };
+  }
+  m = pathname.match(PRJ_SECRETS_IMPORT_RE);
+  if (m) {
+    const orgId = parseOrgPublicId(m[1]!);
+    const projectId = parseProjectPublicId(m[2]!);
+    if (!orgId || !projectId) return null;
+    return { scope: { kind: "project", orgId, projectId } };
+  }
+  m = pathname.match(ORG_SECRETS_IMPORT_RE);
+  if (m) {
+    const orgId = parseOrgPublicId(m[1]!);
+    if (!orgId) return null;
+    return { scope: { kind: "organization", orgId } };
+  }
+  return null;
+}
+
 interface MatchedSecretItemRoute {
   scope: Scope;
   secretId: string;
-  action: "rotate" | "revoke";
+  action: "rotate" | "revoke" | "versions";
 }
 
 function matchSecretItemRoute(pathname: string): MatchedSecretItemRoute | null {
+  // Version-history routes (GET .../secrets/{id}/versions)
+  let m = pathname.match(ENV_SECRET_VERSIONS_RE);
+  if (m) {
+    const orgId = parseOrgPublicId(m[1]!);
+    const projectId = parseProjectPublicId(m[2]!);
+    const environmentId = parseEnvironmentPublicId(m[3]!);
+    const secretId = parseSecretMetadataPublicId(m[4]!);
+    if (!orgId || !projectId || !environmentId || !secretId) return null;
+    return { scope: { kind: "environment", orgId, projectId, environmentId }, secretId, action: "versions" };
+  }
+
+  m = pathname.match(PRJ_SECRET_VERSIONS_RE);
+  if (m) {
+    const orgId = parseOrgPublicId(m[1]!);
+    const projectId = parseProjectPublicId(m[2]!);
+    const secretId = parseSecretMetadataPublicId(m[3]!);
+    if (!orgId || !projectId || !secretId) return null;
+    return { scope: { kind: "project", orgId, projectId }, secretId, action: "versions" };
+  }
+
+  m = pathname.match(ORG_SECRET_VERSIONS_RE);
+  if (m) {
+    const orgId = parseOrgPublicId(m[1]!);
+    const secretId = parseSecretMetadataPublicId(m[2]!);
+    if (!orgId || !secretId) return null;
+    return { scope: { kind: "organization", orgId }, secretId, action: "versions" };
+  }
+
   // Rotate routes (POST .../secrets/{id}/rotate)
-  let m = pathname.match(ENV_SECRET_ROTATE_RE);
+  m = pathname.match(ENV_SECRET_ROTATE_RE);
   if (m) {
     const orgId = parseOrgPublicId(m[1]!);
     const projectId = parseProjectPublicId(m[2]!);
@@ -331,9 +397,12 @@ export async function route(request: Request, env: Env): Promise<Response> {
     const matchedResolve = matchResolveRoute(url.pathname);
     const matched = matchedResolve ? null : matchRoute(url.pathname);
     const matchedItem = (matchedResolve || matched) ? null : matchItemRoute(url.pathname);
-    const matchedSecretItem = (matchedResolve || matched || matchedItem) ? null : matchSecretItemRoute(url.pathname);
+    // Import is matched before the generic secret item route: `import` is a
+    // reserved path segment, not a secret id.
+    const matchedImport = (matchedResolve || matched || matchedItem) ? null : matchSecretsImportRoute(url.pathname);
+    const matchedSecretItem = (matchedResolve || matched || matchedItem || matchedImport) ? null : matchSecretItemRoute(url.pathname);
 
-    if (!matchedResolve && !matched && !matchedItem && !matchedSecretItem) {
+    if (!matchedResolve && !matched && !matchedItem && !matchedImport && !matchedSecretItem) {
       return notFound(requestId, url.pathname);
     }
 
@@ -350,13 +419,27 @@ export async function route(request: Request, env: Env): Promise<Response> {
       return handleResolveSetting(request, env, requestId, actor, matchedResolve.scope);
     }
 
-    // Secret item-level routes (rotate: POST, revoke: DELETE)
+    // Bulk write-only secret import (SM1): POST only.
+    if (matchedImport) {
+      if (request.method !== "POST") {
+        return methodNotAllowed(requestId);
+      }
+      return handleImportSecrets(request, env, requestId, actor, matchedImport.scope);
+    }
+
+    // Secret item-level routes (rotate: POST, revoke: DELETE, versions: GET)
     if (matchedSecretItem) {
       if (matchedSecretItem.action === "rotate") {
         if (request.method !== "POST") {
           return methodNotAllowed(requestId);
         }
         return handleRotateSecret(request, env, requestId, actor, matchedSecretItem.scope, matchedSecretItem.secretId);
+      }
+      if (matchedSecretItem.action === "versions") {
+        if (request.method !== "GET") {
+          return methodNotAllowed(requestId);
+        }
+        return handleListSecretVersions(request, env, requestId, actor, matchedSecretItem.scope, matchedSecretItem.secretId);
       }
       if (matchedSecretItem.action === "revoke") {
         if (request.method !== "DELETE") {
@@ -387,6 +470,11 @@ export async function route(request: Request, env: Env): Promise<Response> {
         case "feature-flags":
           return handleListFeatureFlags(request, env, requestId, actor, matched!.scope);
         case "secrets":
+          // Chain read (SM1): the environment-scope list with ?chain=true walks
+          // the whole scope-resolution chain instead of the exact scope.
+          if (url.searchParams.get("chain") === "true" && matched!.scope.kind === "environment") {
+            return handleListSecretChain(request, env, requestId, actor, matched!.scope as Scope & { kind: "environment" }, undefined);
+          }
           return handleListSecrets(request, env, requestId, actor, matched!.scope);
       }
     }

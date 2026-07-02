@@ -157,15 +157,44 @@ export interface SecretMetadata {
   lastRotatedAt: Date | null;
   expiresAt: Date | null;
   createdBy: string;
+  /**
+   * Personal-overlay owner (saas-secret-manager SM1). `null` = shared row.
+   * When set, this row is a per-user overlay: visible to and serving only this
+   * subject, and only at environment scope (DB CHECK enforces this).
+   */
+  personalOwner: string | null;
+  /**
+   * Inheritance mode for the scope-resolution chain (saas-secret-manager SM1).
+   * `true` (default) = a more-specific scope may override this key. `false` = a
+   * locked guardrail a lower scope cannot override. Secrets may be locked at
+   * account OR organization scope (DB CHECK; deliberately wider than settings).
+   */
+  overridable: boolean;
+  /** Stamped when a value is served by the resolve path (SM3). */
+  lastUsedAt: Date | null;
   createdAt: Date;
   updatedAt: Date;
   // NOTE: ciphertext_envelope is intentionally excluded from the type.
   // It is never exposed through the repository read surface.
 }
 
+/**
+ * A row of the append-only ciphertext history (saas-secret-manager SM1).
+ * NOTE: the envelope is intentionally excluded — version reads are metadata
+ * only; only the SM3 resolve/reveal decrypt path may touch ciphertext.
+ */
+export interface SecretVersion {
+  secretId: string;
+  version: number;
+  status: string;
+  createdBy: string;
+  createdAt: Date;
+}
+
 export interface CreateSecretMetadataInput {
   id: string;
-  scope: Scope;
+  /** Account scope is a valid secret rung (SM1), unlike settings writes. */
+  scope: ResolveScope;
   secretKey: string;
   displayName?: string;
   rotationPolicy?: string;
@@ -173,7 +202,12 @@ export interface CreateSecretMetadataInput {
   /** UUID column `config.secret_metadata.created_by` — must be a decoded `Uuid`,
    * not a public `usr_<hex>` id. Branding makes a missing decode a compile error. */
   createdBy: Uuid;
-  /** JSON-serialized ciphertext envelope. Write-only — never returned. */
+  /** Personal-overlay owner (environment scope only). Omit for a shared row. */
+  personalOwner?: Uuid;
+  /** Only meaningful at account/organization scope; defaults to true. */
+  overridable?: boolean;
+  /** JSON-serialized ciphertext envelope. Write-only — never returned. When
+   * present, version 1 is appended to config.secret_versions atomically. */
   ciphertextEnvelope?: string;
 }
 
@@ -201,8 +235,29 @@ export interface ConfigRepository {
 
   // Secret metadata
   createSecretMetadata(input: CreateSecretMetadataInput): Promise<ConfigResult<SecretMetadata>>;
-  listSecretMetadata(scope: Scope, params: PageQueryParams): Promise<ConfigResult<PagedResult<SecretMetadata>>>;
+  /**
+   * Exact-scope management list. Personal-overlay rows are visible only to their
+   * owner: pass `viewerSubjectId` (a decoded subject uuid) to include the
+   * viewer's own personal rows; without it every personal row is excluded.
+   */
+  listSecretMetadata(scope: ResolveScope, params: PageQueryParams, viewerSubjectId?: string): Promise<ConfigResult<PagedResult<SecretMetadata>>>;
   getSecretMetadata(orgId: string, secretId: string): Promise<ConfigResult<SecretMetadata>>;
-  rotateSecretMetadata(orgId: string, secretId: string, ciphertextEnvelope?: string): Promise<ConfigResult<SecretMetadata>>;
+  /**
+   * Point lookup of a single live secret head by its exact scope tuple + key
+   * (saas-secret-manager SM1) — the secrets mirror of `getSettingByScopeKey`.
+   * Backs the chain resolver: each rung is probed with this. With
+   * `personalOwner` set it matches only that owner's overlay row; without it,
+   * only the shared (`personal_owner IS NULL`) row.
+   */
+  getSecretMetadataByScopeKey(scope: ResolveScope, key: string, personalOwner?: string): Promise<ConfigResult<SecretMetadata>>;
+  /**
+   * Rotate = append, never overwrite (SM1): bumps the head version, stamps
+   * last_rotated_at, refreshes the head envelope cache when a new envelope is
+   * given, and appends the resulting `(secret_id, version)` row to
+   * config.secret_versions — one atomic statement.
+   */
+  rotateSecretMetadata(orgId: string, secretId: string, createdBy: Uuid, ciphertextEnvelope?: string): Promise<ConfigResult<SecretMetadata>>;
   revokeSecretMetadata(orgId: string, secretId: string): Promise<ConfigResult<SecretMetadata>>;
+  /** Version history, newest first. Metadata only — never ciphertext. */
+  listSecretVersions(orgId: string, secretId: string, params: PageQueryParams): Promise<ConfigResult<PagedResult<SecretVersion>>>;
 }

@@ -6,17 +6,19 @@ import { resolveActor } from "./resolve-actor.js";
 // Organization-scoped config
 const ORG_CONFIG_SETTINGS_RE = /^\/v1\/organizations\/[^/]+\/config\/settings(\/[^/]+)?$/;
 const ORG_CONFIG_FLAGS_RE = /^\/v1\/organizations\/[^/]+\/config\/feature-flags(\/[^/]+)?$/;
-const ORG_CONFIG_SECRETS_RE = /^\/v1\/organizations\/[^/]+\/config\/secrets(\/[^/]+(\/rotate)?)?$/;
+// Secrets subpaths (saas-secret-manager SM1): a single trailing segment covers
+// item ids and `/import`; `/rotate` and `/versions` nest one deeper.
+const ORG_CONFIG_SECRETS_RE = /^\/v1\/organizations\/[^/]+\/config\/secrets(\/[^/]+(\/(rotate|versions))?)?$/;
 
 // Project-scoped config
 const PRJ_CONFIG_SETTINGS_RE = /^\/v1\/organizations\/[^/]+\/projects\/[^/]+\/config\/settings(\/[^/]+)?$/;
 const PRJ_CONFIG_FLAGS_RE = /^\/v1\/organizations\/[^/]+\/projects\/[^/]+\/config\/feature-flags(\/[^/]+)?$/;
-const PRJ_CONFIG_SECRETS_RE = /^\/v1\/organizations\/[^/]+\/projects\/[^/]+\/config\/secrets(\/[^/]+(\/rotate)?)?$/;
+const PRJ_CONFIG_SECRETS_RE = /^\/v1\/organizations\/[^/]+\/projects\/[^/]+\/config\/secrets(\/[^/]+(\/(rotate|versions))?)?$/;
 
 // Environment-scoped config
 const ENV_CONFIG_SETTINGS_RE = /^\/v1\/organizations\/[^/]+\/projects\/[^/]+\/environments\/[^/]+\/config\/settings(\/[^/]+)?$/;
 const ENV_CONFIG_FLAGS_RE = /^\/v1\/organizations\/[^/]+\/projects\/[^/]+\/environments\/[^/]+\/config\/feature-flags(\/[^/]+)?$/;
-const ENV_CONFIG_SECRETS_RE = /^\/v1\/organizations\/[^/]+\/projects\/[^/]+\/environments\/[^/]+\/config\/secrets(\/[^/]+(\/rotate)?)?$/;
+const ENV_CONFIG_SECRETS_RE = /^\/v1\/organizations\/[^/]+\/projects\/[^/]+\/environments\/[^/]+\/config\/secrets(\/[^/]+(\/(rotate|versions))?)?$/;
 
 const FORWARDED_HEADERS = [
   "content-type",

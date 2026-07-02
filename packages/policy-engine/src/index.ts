@@ -67,6 +67,7 @@ const ORG_ROLE_PERMISSIONS: Record<OrganizationRole, readonly string[]> = {
     "secret.read",
     "secret.write",
     "secret.value.use",
+    "secret.reveal",
     "org.cli.link",
     "org.ci.trust.write",
     "team.create",
@@ -126,6 +127,7 @@ const ORG_ROLE_PERMISSIONS: Record<OrganizationRole, readonly string[]> = {
     "secret.read",
     "secret.write",
     "secret.value.use",
+    "secret.reveal",
     "org.cli.link",
     "org.ci.trust.write",
     "team.create",
@@ -334,6 +336,11 @@ const ALL_KNOWN_ACTIONS: ReadonlySet<string> = new Set([
   "secret.read",
   "secret.write",
   "secret.value.use",
+  // saas-secret-manager SM1 — elevated break-glass read (the reveal route
+  // itself lands in SM6; only the action + owner/admin grants land here).
+  // Org-scoped like the other secret.* actions: valid at org scope with an
+  // optional projectId narrowing the resource.
+  "secret.reveal",
   "org.cli.link",
   "org.ci.trust.write",
   // saas-teams TM4 — team management actions (owner/admin org roles +

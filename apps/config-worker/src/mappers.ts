@@ -1,6 +1,6 @@
-import type { Setting, FeatureFlag, SecretMetadata } from "@saas/db/config";
-import type { PublicSetting, PublicFeatureFlag, PublicSecretMetadata } from "@saas/contracts/config";
-import type { ResolutionSource } from "./config-resolver.js";
+import type { Setting, FeatureFlag, SecretMetadata, SecretVersion } from "@saas/db/config";
+import type { PublicSetting, PublicFeatureFlag, PublicSecretMetadata, PublicSecretVersion } from "@saas/contracts/config";
+import type { ResolutionSource, SecretServesFrom } from "./config-resolver.js";
 import {
   orgPublicId,
   settingPublicId,
@@ -95,6 +95,8 @@ export function toPublicFeatureFlag(f: FeatureFlag): PublicFeatureFlag {
 }
 
 export function toPublicSecretMetadata(s: SecretMetadata): PublicSecretMetadata {
+  // personal_owner never crosses the boundary as a raw uuid — only the fact
+  // that the row is a personal overlay (visibility is owner-filtered upstream).
   return {
     id: secretMetadataPublicId(s.id),
     ...mapScopeIds(s),
@@ -107,7 +109,31 @@ export function toPublicSecretMetadata(s: SecretMetadata): PublicSecretMetadata 
     lastRotatedAt: s.lastRotatedAt ? toISOString(s.lastRotatedAt) : null,
     expiresAt: s.expiresAt ? toISOString(s.expiresAt) : null,
     createdBy: s.createdBy,
+    overridable: s.overridable,
+    personal: s.personalOwner !== null,
+    lastUsedAt: s.lastUsedAt ? toISOString(s.lastUsedAt) : null,
     createdAt: toISOString(s.createdAt),
     updatedAt: toISOString(s.updatedAt),
+  };
+}
+
+/**
+ * Map a chain-serving secret head (saas-secret-manager SM1) onto the public
+ * shape with its provenance rung. Metadata only — never ciphertext.
+ */
+export function toChainPublicSecretMetadata(s: SecretMetadata, servesFrom: SecretServesFrom): PublicSecretMetadata {
+  return {
+    ...toPublicSecretMetadata(s),
+    servesFrom,
+  };
+}
+
+export function toPublicSecretVersion(v: SecretVersion): PublicSecretVersion {
+  return {
+    secretId: secretMetadataPublicId(v.secretId),
+    version: v.version,
+    status: v.status,
+    createdBy: v.createdBy,
+    createdAt: toISOString(v.createdAt),
   };
 }

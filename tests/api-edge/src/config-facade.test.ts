@@ -149,6 +149,24 @@ describe("api-edge config facade", () => {
     it("matches environment-scoped secret rotate route", () => {
       expect(isConfigRoute("/v1/organizations/org_a/projects/prj_b/environments/env_c/config/secrets/sec_abc/rotate")).toBe(true);
     });
+
+    // saas-secret-manager SM1 — version history, bulk import.
+    it("matches secret versions routes at all scopes", () => {
+      expect(isConfigRoute("/v1/organizations/org_abc/config/secrets/sec_abc/versions")).toBe(true);
+      expect(isConfigRoute("/v1/organizations/org_abc/projects/prj_def/config/secrets/sec_abc/versions")).toBe(true);
+      expect(isConfigRoute("/v1/organizations/org_a/projects/prj_b/environments/env_c/config/secrets/sec_abc/versions")).toBe(true);
+    });
+
+    it("matches secret import routes at all scopes", () => {
+      expect(isConfigRoute("/v1/organizations/org_abc/config/secrets/import")).toBe(true);
+      expect(isConfigRoute("/v1/organizations/org_abc/projects/prj_def/config/secrets/import")).toBe(true);
+      expect(isConfigRoute("/v1/organizations/org_a/projects/prj_b/environments/env_c/config/secrets/import")).toBe(true);
+    });
+
+    it("does not match unknown secret sub-actions", () => {
+      expect(isConfigRoute("/v1/organizations/org_abc/config/secrets/sec_abc/reveal")).toBe(false);
+      expect(isConfigRoute("/v1/organizations/org_abc/config/secrets/sec_abc/versions/2")).toBe(false);
+    });
   });
 
   describe("handleConfigRoute", () => {
@@ -241,6 +259,51 @@ describe("api-edge config facade", () => {
       });
       const res = await handleConfigRoute(req, env as never, "req_test", "/v1/organizations/org_abc/config/settings");
       expect(res.status).toBe(503);
+    });
+
+    it("forwards GET to config-worker for secret versions (SM1)", async () => {
+      const { fetcher: identityFetcher } = createSessionFetcher("usr_test");
+      const { fetcher: configFetcher, calls: configCalls } = createFakeFetcher();
+      const env = createEnv({ IDENTITY_WORKER: identityFetcher, CONFIG_WORKER: configFetcher });
+      const path = "/v1/organizations/org_abc/config/secrets/sec_abc/versions";
+      const req = new Request(`https://api-edge${path}`, {
+        method: "GET",
+        headers: { authorization: "Bearer tok_test" },
+      });
+      const res = await handleConfigRoute(req, env as never, "req_test", path);
+      expect(res.status).toBe(200);
+      expect(configCalls.length).toBe(1);
+      expect(configCalls[0]!.url).toContain(path);
+    });
+
+    it("forwards POST to config-worker for secret import (SM1)", async () => {
+      const { fetcher: identityFetcher } = createSessionFetcher("usr_test");
+      const { fetcher: configFetcher, calls: configCalls } = createFakeFetcher();
+      const env = createEnv({ IDENTITY_WORKER: identityFetcher, CONFIG_WORKER: configFetcher });
+      const path = "/v1/organizations/org_abc/config/secrets/import";
+      const req = new Request(`https://api-edge${path}`, {
+        method: "POST",
+        headers: { "content-type": "application/json", authorization: "Bearer tok_test" },
+        body: JSON.stringify({ secrets: [{ secretKey: "A", value: "v" }] }),
+      });
+      const res = await handleConfigRoute(req, env as never, "req_test", path);
+      expect(res.status).toBe(200);
+      expect(configCalls.length).toBe(1);
+      expect(configCalls[0]!.init.method).toBe("POST");
+    });
+
+    it("passes the chain query through to config-worker (SM1)", async () => {
+      const { fetcher: identityFetcher } = createSessionFetcher("usr_test");
+      const { fetcher: configFetcher, calls: configCalls } = createFakeFetcher();
+      const env = createEnv({ IDENTITY_WORKER: identityFetcher, CONFIG_WORKER: configFetcher });
+      const path = "/v1/organizations/org_a/projects/prj_b/environments/env_c/config/secrets";
+      const req = new Request(`https://api-edge${path}?chain=true`, {
+        method: "GET",
+        headers: { authorization: "Bearer tok_test" },
+      });
+      const res = await handleConfigRoute(req, env as never, "req_test", path);
+      expect(res.status).toBe(200);
+      expect(configCalls[0]!.url).toContain("chain=true");
     });
 
     it("injects actor headers when forwarding to config-worker", async () => {

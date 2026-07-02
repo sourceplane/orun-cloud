@@ -8,6 +8,7 @@ import { createSqlExecutor } from "@saas/db/hyperdrive";
 import { fetchAuthorizationContext } from "../membership-client.js";
 import { authorizeViaPolicy } from "../policy-client.js";
 import { errorResponse, successResponse } from "../http.js";
+import { uuidFromPublicId } from "@saas/db";
 import { toPublicSecretMetadata } from "../mappers.js";
 import { scopeMatchesRequested } from "../scope-match.js";
 import type { PolicyResource } from "@saas/contracts/policy";
@@ -120,6 +121,11 @@ export async function handleRotateSecret(
   const genId = deps?.generateId ?? (() => randomHex(16));
   const now = deps?.now ? deps.now() : new Date();
 
+  // config.secret_versions.created_by is a UUID column; the actor id arrives as
+  // the public `usr_<hex>` form — decode it (branded Uuid) before the append.
+  const createdByUuid = uuidFromPublicId(actor.subjectId);
+  if (!createdByUuid) return errorResponse("validation_failed", "Invalid actor id", 422, requestId);
+
   const executor = deps ? null : createSqlExecutor(env.PLATFORM_DB!);
   try {
     if (executor && "transaction" in executor) {
@@ -149,7 +155,8 @@ export async function handleRotateSecret(
         }
 
         const secret = existing.value;
-        const policyAction = secret.scopeKind === "organization" ? "organization.config.write" : "project.config.write";
+        // Layer-1 RBAC activation (SM1): secrets authorize on secret.*.
+        const policyAction = "secret.write";
         const resource: PolicyResource = { kind: secret.scopeKind === "organization" ? "organization" : "project", orgId };
         if (secret.projectId) {
           resource.projectId = secret.projectId;
@@ -168,7 +175,7 @@ export async function handleRotateSecret(
           return { result: { ok: false as const, error: { kind: "not_found" as const } } };
         }
 
-        const result = await txRepo.rotateSecretMetadata(orgId, secretId, ciphertextEnvelope);
+        const result = await txRepo.rotateSecretMetadata(orgId, secretId, createdByUuid, ciphertextEnvelope);
 
         if (!result.ok) {
           return { result };
@@ -237,7 +244,7 @@ export async function handleRotateSecret(
         return errorResponse("not_found", "Secret not found", 404, requestId);
       }
 
-      const result = await deps.repo.rotateSecretMetadata(orgId, secretId, ciphertextEnvelope);
+      const result = await deps.repo.rotateSecretMetadata(orgId, secretId, createdByUuid, ciphertextEnvelope);
 
       if (!result.ok) {
         const err = result.error;
