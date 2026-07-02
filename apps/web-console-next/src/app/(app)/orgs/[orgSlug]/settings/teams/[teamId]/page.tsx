@@ -3,7 +3,7 @@
 import * as React from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { ArrowLeft, Plus, ShieldCheck, UserPlus, Users } from "lucide-react";
+import { Activity, ArrowLeft, Plus, ShieldCheck, UserPlus, Users } from "lucide-react";
 import { OrgScope } from "@/components/shell/org-scope";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -22,6 +22,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Select,
   SelectContent,
@@ -70,6 +71,10 @@ function Inner({ orgId, slug, teamId }: { orgId: string; slug: string; teamId: s
   );
   const workspaces = useApiQuery(qk.accountWorkspaces(orgId), () =>
     wrap(async () => (await client.account.workspaces(orgId)).workspaces),
+  );
+  // TH4 — recent activity across the account's workspace set (bounded fan-out).
+  const activity = useApiQuery(qk.accountRuns(orgId), () =>
+    wrap(async () => await client.account.runs(orgId, { limit: 10 })),
   );
 
   const workspaceName = React.useCallback(
@@ -125,27 +130,58 @@ function Inner({ orgId, slug, teamId }: { orgId: string; slug: string; teamId: s
   const [grantOpen, setGrantOpen] = React.useState(false);
   const [scope, setScope] = React.useState<"account" | "organization">("organization");
   const [role, setRole] = React.useState("builder");
-  const [targetOrg, setTargetOrg] = React.useState(orgId);
+  // TH5 — the "these three" scalpel: a SET of target workspaces, not one.
+  const [targetOrgs, setTargetOrgs] = React.useState<Set<string>>(() => new Set([orgId]));
   const [pendingRevoke, setPendingRevoke] = React.useState<TeamGrant | null>(null);
 
   const rolesForScope = scope === "account" ? ACCOUNT_ROLES : ORGANIZATION_ROLES;
 
+  const toggleTargetOrg = (id: string) => {
+    setTargetOrgs((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
   const grantRole = async () => {
-    setBusy(true);
-    // The grant is written on its authority org: the account for account scope
-    // (any org path resolves up), the TARGET workspace for organization scope.
-    const pathOrg = scope === "account" ? orgId : targetOrg;
-    const r = await wrap(() =>
-      client.teams.grantTeamRole(pathOrg, { teamId, role, scopeKind: scope }),
-    );
-    setBusy(false);
-    if (!r.ok) {
-      toast({ kind: "error", title: "Grant failed", description: r.error.message });
+    // Account scope is ONE grant on the account (all workspaces, current and
+    // future — the WID6 cascade). Workspace scope writes one grant per selected
+    // workspace, each on the TARGET org's path (its authority org).
+    const targets = scope === "account" ? [orgId] : [...targetOrgs];
+    if (targets.length === 0) {
+      toast({ kind: "error", title: "Select at least one workspace" });
       return;
     }
-    toast({ kind: "success", title: "Role granted" });
-    setGrantOpen(false);
-    grants.reload();
+    setBusy(true);
+    let granted = 0;
+    for (const target of targets) {
+      const r = await wrap(() =>
+        client.teams.grantTeamRole(target, { teamId, role, scopeKind: scope }),
+      );
+      if (r.ok) {
+        granted += 1;
+      } else {
+        toast({
+          kind: "error",
+          title: `Grant failed for ${scope === "account" ? "account" : workspaceName(target)}`,
+          description: r.error.message,
+        });
+      }
+    }
+    setBusy(false);
+    if (granted > 0) {
+      toast({
+        kind: "success",
+        title:
+          scope === "account"
+            ? "Role granted account-wide"
+            : `Role granted on ${granted} workspace${granted === 1 ? "" : "s"}`,
+      });
+      setGrantOpen(false);
+      grants.reload();
+    }
   };
 
   const revokeGrant = async (g: TeamGrant) => {
@@ -352,20 +388,31 @@ function Inner({ orgId, slug, teamId }: { orgId: string; slug: string; teamId: s
                 </div>
                 {scope === "organization" ? (
                   <div className="space-y-2">
-                    <Label>Workspace</Label>
-                    <Select value={targetOrg} onValueChange={setTargetOrg}>
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value={orgId}>this workspace</SelectItem>
-                        {(workspaces.data ?? [])
-                          .filter((w) => w.orgId !== orgId)
-                          .map((w) => (
-                            <SelectItem key={w.orgId} value={w.orgId}>{w.name}</SelectItem>
-                          ))}
-                      </SelectContent>
-                    </Select>
+                    <Label>Workspaces</Label>
+                    <div className="max-h-48 space-y-2 overflow-y-auto rounded-md border p-3">
+                      <label className="flex items-center gap-2 text-sm">
+                        <Checkbox
+                          checked={targetOrgs.has(orgId)}
+                          onCheckedChange={() => toggleTargetOrg(orgId)}
+                        />
+                        this workspace
+                      </label>
+                      {(workspaces.data ?? [])
+                        .filter((w) => w.orgId !== orgId)
+                        .map((w) => (
+                          <label key={w.orgId} className="flex items-center gap-2 text-sm">
+                            <Checkbox
+                              checked={targetOrgs.has(w.orgId)}
+                              onCheckedChange={() => toggleTargetOrg(w.orgId)}
+                            />
+                            {w.name}
+                          </label>
+                        ))}
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      One grant per selected workspace. For everything — including workspaces created
+                      later — use account scope instead.
+                    </p>
                   </div>
                 ) : null}
                 <div className="space-y-2">
@@ -445,6 +492,87 @@ function Inner({ orgId, slug, teamId }: { orgId: string; slug: string; teamId: s
           </Card>
         )}
       </section>
+
+      {/* ── Recent activity (TH4) — across the account's workspace set. Shows
+          account-wide runs until ownership (teams-ownership) can narrow this
+          to the team's owned services; degrades to an empty state. ── */}
+      <section className="space-y-3">
+        <div>
+          <h2 className="text-base font-semibold">Recent activity</h2>
+          <p className="text-sm text-muted-foreground">
+            Recent runs across the workspaces this account spans{activity.data?.truncated ? " (largest accounts truncated to the first 20 workspaces)" : ""}.
+          </p>
+        </div>
+        {activity.loading ? (
+          <LoadingCard rows={4} />
+        ) : activity.error || !activity.data || activityRows(activity.data).length === 0 ? (
+          <EmptyState
+            icon={Activity}
+            title="No recent activity"
+            description="Runs in workspaces you can read will show up here."
+          />
+        ) : (
+          <Card>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Workspace</TableHead>
+                  <TableHead>Run</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead>Environment</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {activityRows(activity.data).map((r) => (
+                  <TableRow key={`${r.workspace}-${r.runId}`}>
+                    <TableCell className="text-muted-foreground">{r.workspace}</TableCell>
+                    <TableCell className="font-mono text-xs">{r.runId}</TableCell>
+                    <TableCell>
+                      <Badge
+                        variant={
+                          r.status === "succeeded"
+                            ? "success"
+                            : r.status === "failed"
+                              ? "destructive"
+                              : r.status === "running"
+                                ? "default"
+                                : "secondary"
+                        }
+                      >
+                        {r.status}
+                      </Badge>
+                    </TableCell>
+                    <TableCell className="text-muted-foreground">{r.environment ?? "—"}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </Card>
+        )}
+      </section>
     </div>
   );
+}
+
+/** Flatten the per-workspace fan-out into one newest-first list, capped for the card. */
+function activityRows(data: import("@saas/contracts/state").AccountRunsResponse): Array<{
+  workspace: string;
+  runId: string;
+  status: string;
+  environment: string | null;
+  createdAt: string;
+}> {
+  return data.workspaces
+    .filter((w) => w.status === "ok")
+    .flatMap((w) =>
+      w.runs.map((run) => ({
+        workspace: w.workspace.name || w.workspace.workspaceRef,
+        runId: run.runId,
+        status: run.status,
+        environment: run.environment,
+        createdAt: run.createdAt,
+      })),
+    )
+    .sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1))
+    .slice(0, 10);
 }
