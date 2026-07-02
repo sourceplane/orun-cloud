@@ -172,10 +172,12 @@ describe("getOrCreateActiveDek", () => {
 // value-touching surface stays minimal (orun-secrets §3, implementation-plan
 // invariant "no decrypt import outside the resolve/reveal handlers").
 
-describe("decryption is imported only by the internal resolve handler (SM3)", () => {
-  const ALLOWED_DECRYPT_IMPORTERS = new Set(["internal-resolve-secrets.ts"]);
+describe("decryption is imported only by the internal resolve + reveal handlers (SM3/SEC7)", () => {
+  // SEC7 adds the SECOND authorized decrypt consumer: the audited break-glass
+  // reveal handler. No other handler and not the router may import decryption.
+  const ALLOWED_DECRYPT_IMPORTERS = new Set(["internal-resolve-secrets.ts", "reveal-secret.ts"]);
 
-  it("no handler or router imports decryption except the internal resolve handler", () => {
+  it("no handler or router imports decryption except the internal resolve + reveal handlers", () => {
     const srcRoot = join(testDir, "..", "..", "..", "apps", "config-worker", "src");
     const files = [
       join(srcRoot, "router.ts"),

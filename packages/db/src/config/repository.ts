@@ -18,6 +18,7 @@ import type {
   SecretMetadata,
   SecretPolicyRecord,
   SecretPolicyScope,
+  SecretRotationDue,
   SecretSync,
   SecretVersion,
   Setting,
@@ -125,6 +126,24 @@ function mapSecretVersion(row: Record<string, unknown>): SecretVersion {
     status: row.status as string,
     createdBy: row.created_by as string,
     createdAt: new Date(row.created_at as string),
+  };
+}
+
+function mapSecretRotationDue(row: Record<string, unknown>): SecretRotationDue {
+  // Metadata only — no ciphertext/value column is selected.
+  return {
+    id: row.id as string,
+    orgId: row.org_id as string,
+    projectId: (row.project_id as string) ?? null,
+    environmentId: (row.environment_id as string) ?? null,
+    scopeKind: row.scope_kind as SecretRotationDue["scopeKind"],
+    secretKey: row.secret_key as string,
+    rotationPolicy: (row.rotation_policy as string) ?? null,
+    lastRotatedAt: row.last_rotated_at ? new Date(row.last_rotated_at as string) : null,
+    expiresAt: row.expires_at ? new Date(row.expires_at as string) : null,
+    createdAt: new Date(row.created_at as string),
+    ageDays: Number(row.age_days ?? 0),
+    dueKind: row.due_kind === "expiry" ? "expiry" : "rotation",
   };
 }
 
@@ -649,6 +668,67 @@ export function createConfigRepository(executor: SqlExecutor): ConfigRepository 
         return { ok: true, value: undefined };
       } catch {
         return safeError("Failed to stamp last_used_at");
+      }
+    },
+
+    async listSecretsDueForRotation(
+      now: Date,
+      leadWindowSeconds: number,
+      suppressSeconds: number,
+      limit: number,
+    ): Promise<ConfigResult<SecretRotationDue[]>> {
+      try {
+        // Overdue-by-policy: rotation_policy is a simple duration like "90d"
+        // ("<n>[hdwmy]"). Parse the unit in SQL and add the interval to the last
+        // rotation (or creation when never rotated). Expiring: expires_at falls
+        // inside now + leadWindow. Either qualifies. Rows reminded within the
+        // suppression window (last_reminded_at) are excluded so a still-due
+        // secret is not re-notified every tick. Metadata only — no value column.
+        const policyInterval = `
+          CASE right(rotation_policy, 1)
+            WHEN 'h' THEN make_interval(hours  => left(rotation_policy, length(rotation_policy) - 1)::int)
+            WHEN 'd' THEN make_interval(days   => left(rotation_policy, length(rotation_policy) - 1)::int)
+            WHEN 'w' THEN make_interval(weeks  => left(rotation_policy, length(rotation_policy) - 1)::int)
+            WHEN 'm' THEN make_interval(months => left(rotation_policy, length(rotation_policy) - 1)::int)
+            WHEN 'y' THEN make_interval(years  => left(rotation_policy, length(rotation_policy) - 1)::int)
+          END`;
+        const overdueByPolicy = `(rotation_policy ~ '^[0-9]+[hdwmy]$'
+          AND COALESCE(last_rotated_at, created_at) + (${policyInterval}) < $1::timestamptz)`;
+        const expiring = `(expires_at IS NOT NULL AND expires_at < $1::timestamptz + make_interval(secs => $2))`;
+        const sql = `
+          SELECT id, org_id, project_id, environment_id, scope_kind, secret_key,
+                 rotation_policy, last_rotated_at, expires_at, created_at,
+                 FLOOR(EXTRACT(EPOCH FROM ($1::timestamptz - COALESCE(last_rotated_at, created_at))) / 86400)::int AS age_days,
+                 CASE WHEN ${expiring} THEN 'expiry' ELSE 'rotation' END AS due_kind
+          FROM config.secret_metadata
+          WHERE status = 'active'
+            AND personal_owner IS NULL
+            AND (${overdueByPolicy} OR ${expiring})
+            AND (last_reminded_at IS NULL OR last_reminded_at < $1::timestamptz - make_interval(secs => $3))
+          ORDER BY COALESCE(expires_at, COALESCE(last_rotated_at, created_at) + (${policyInterval})) ASC
+          LIMIT $4`;
+        const result = await executor.execute<Record<string, unknown>>(sql, [
+          now.toISOString(),
+          leadWindowSeconds,
+          suppressSeconds,
+          limit,
+        ]);
+        return { ok: true, value: result.rows.map(mapSecretRotationDue) };
+      } catch {
+        return safeError("Failed to list secrets due for rotation");
+      }
+    },
+
+    async markSecretsReminded(secretIds: string[], at: Date): Promise<ConfigResult<void>> {
+      if (secretIds.length === 0) return { ok: true, value: undefined };
+      try {
+        await executor.execute<Record<string, unknown>>(
+          `UPDATE config.secret_metadata SET last_reminded_at = $2 WHERE id = ANY($1::uuid[])`,
+          [secretIds, at.toISOString()],
+        );
+        return { ok: true, value: undefined };
+      } catch {
+        return safeError("Failed to stamp last_reminded_at");
       }
     },
 

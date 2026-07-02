@@ -8,6 +8,17 @@
   "compatibility_flags": ["nodejs_compat"],
   "main": "src/index.ts",
   "minify": false,
+  // Rotation/expiry reminder cron (SEC7 — orun-secrets SD-3, platform-integration
+  // §3): a daily pass surfaces secrets whose rotation_policy interval has elapsed
+  // or whose expires_at falls inside the lead window, emitting alert-worthy
+  // secret.rotation_due / secret.expiring events (metadata only, never a value).
+  // config-worker OWNS the secret data, so the sweep lives here rather than in
+  // state-worker's cron. ONE cron trigger / ONE scheduled handler (src/index.ts);
+  // future config maintenance MUST coalesce into it rather than adding a slot
+  // (Cloudflare cron-slot budget). Runs daily at 08:00 UTC.
+  "triggers": {
+    "crons": ["0 8 * * *"]
+  },
   "vars": {
     "ENVIRONMENT": "local"
   },
