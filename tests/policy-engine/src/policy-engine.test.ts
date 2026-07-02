@@ -1190,3 +1190,45 @@ describe("team.* management actions", () => {
     expect(result.allow).toBe(false);
   });
 });
+
+// saas-teams TM6b — the engine reports which fact permitted an action.
+describe("effective-access provenance (TM6b)", () => {
+  const ORG = "org_prov";
+  const teamFact: MembershipFact = {
+    kind: "role_assignment",
+    role: "admin",
+    scope: { kind: "organization", orgId: ORG },
+    grantedVia: { kind: "team", teamId: "team_abc" },
+  };
+
+  it("authorize reports the permitting fact's provenance", () => {
+    const r = authorize(authReq("organization.read", ORG, [teamFact]));
+    expect(r.allow).toBe(true);
+    expect(r.via).toEqual({ kind: "team", teamId: "team_abc" });
+  });
+
+  it("no via when the permitting fact carries no provenance", () => {
+    const r = authorize(authReq("organization.read", ORG, [orgFact("admin", ORG)]));
+    expect(r.allow).toBe(true);
+    expect(r.via).toBeUndefined();
+  });
+
+  it("denials carry no via", () => {
+    const r = authorize(authReq("organization.read", ORG, []));
+    expect(r.allow).toBe(false);
+    expect(r.via).toBeUndefined();
+  });
+
+  it("listEffectivePermissions attributes each allowed action to its fact", () => {
+    const res = listEffectivePermissions({
+      subject,
+      resource: { kind: "organization", orgId: ORG },
+      context: { memberships: [teamFact] },
+    });
+    const read = res.permissions.find((p) => p.action === "organization.read");
+    expect(read?.allow).toBe(true);
+    expect(read?.via).toEqual({ kind: "team", teamId: "team_abc" });
+    const denied = res.permissions.find((p) => !p.allow);
+    if (denied) expect(denied.via).toBeUndefined();
+  });
+});

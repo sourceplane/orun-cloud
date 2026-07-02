@@ -62,6 +62,13 @@ export interface AuthorizationResponse {
     orgId: string;
     projectId?: string;
   };
+  /**
+   * Provenance of the fact that permitted the action (saas-teams TM6b) — the
+   * `grantedVia` of the winning fact. Present only when `allow` is true and the
+   * permitting fact carried provenance. Undefined for denials or facts without
+   * a `grantedVia`. Does not affect the decision — reporting only.
+   */
+  via?: FactOrigin;
 }
 
 export interface EffectivePermissionsRequest {
@@ -74,6 +81,8 @@ export interface EffectivePermission {
   action: string;
   allow: boolean;
   reason: string;
+  /** Provenance of the permitting fact (saas-teams TM6b); set only when allowed. */
+  via?: FactOrigin;
 }
 
 export interface EffectivePermissionsResponse {
