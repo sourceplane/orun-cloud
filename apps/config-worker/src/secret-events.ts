@@ -13,6 +13,9 @@ export const SECRET_EVENT_TYPES = {
   DENIED: "secret.denied",
   /** SM3 policy push: a SecretPolicy document was upserted. */
   POLICY_UPDATED: "secret.policy.updated",
+  /** SM5 materialize: a secret version was synced into a target entity
+   *  (payload = key/version/target/entityRef/runId — NEVER a value). */
+  SYNC_RECORDED: "secret.sync.recorded",
 } as const;
 
 export type SecretEventType = (typeof SECRET_EVENT_TYPES)[keyof typeof SECRET_EVENT_TYPES];

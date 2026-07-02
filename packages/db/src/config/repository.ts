@@ -8,14 +8,17 @@ import type {
   CreateSettingInput,
   CursorPosition,
   FeatureFlag,
+  ListSecretSyncsFilter,
   PagedResult,
   PageQueryParams,
   PutSecretPolicyInput,
+  RecordSecretSyncInput,
   ResolveScope,
   Scope,
   SecretMetadata,
   SecretPolicyRecord,
   SecretPolicyScope,
+  SecretSync,
   SecretVersion,
   Setting,
   UpdateFeatureFlagInput,
@@ -140,6 +143,23 @@ function mapSecretPolicy(row: Record<string, unknown>): SecretPolicyRecord {
   };
 }
 
+function mapSecretSync(row: Record<string, unknown>): SecretSync {
+  // References/metadata only — a secret value never lands in this table (SM5).
+  return {
+    id: row.id as string,
+    secretId: row.secret_id as string,
+    orgId: row.org_id as string,
+    projectId: (row.project_id as string) ?? null,
+    environmentId: (row.environment_id as string) ?? null,
+    version: row.version as number,
+    target: row.target as string,
+    entityRef: row.entity_ref as string,
+    runId: row.run_id as string,
+    status: row.status as SecretSync["status"],
+    syncedAt: new Date(row.synced_at as string),
+  };
+}
+
 const ZERO_UUID = "00000000-0000-0000-0000-000000000000";
 
 // ── Secret metadata safe columns (no ciphertext_envelope) ──
@@ -147,6 +167,23 @@ const ZERO_UUID = "00000000-0000-0000-0000-000000000000";
 const SECRET_METADATA_SAFE_COLUMNS = `id, org_id, project_id, environment_id, scope_kind, secret_key, display_name, status, version, rotation_policy, last_rotated_at, expires_at, created_by, personal_owner, overridable, last_used_at, created_at, updated_at`;
 
 const SECRET_VERSION_SAFE_COLUMNS = `secret_id, version, status, created_by, created_at`;
+
+// Every column of config.secret_syncs is provenance metadata — no value column
+// exists on the table, so the full projection is safe (SM5).
+const SECRET_SYNC_COLUMNS = `id, secret_id, org_id, project_id, environment_id, version, target, entity_ref, run_id, status, synced_at`;
+
+/** Scope filter for config.secret_syncs (no scope_kind column — the recording
+ *  scope is denormalized as org_id/project_id/environment_id). */
+function syncScopeWhere(scope: Scope): { clause: string; params: unknown[] } {
+  switch (scope.kind) {
+    case "organization":
+      return { clause: "org_id = $1 AND project_id IS NULL AND environment_id IS NULL", params: [scope.orgId] };
+    case "project":
+      return { clause: "org_id = $1 AND project_id = $2 AND environment_id IS NULL", params: [scope.orgId, scope.projectId] };
+    case "environment":
+      return { clause: "org_id = $1 AND project_id = $2 AND environment_id = $3", params: [scope.orgId, scope.projectId, scope.environmentId] };
+  }
+}
 
 function safeError(message: string): ConfigResult<never> {
   return { ok: false, error: { kind: "internal", message } };
@@ -680,6 +717,131 @@ export function createConfigRepository(executor: SqlExecutor): ConfigRepository 
         return { ok: true, value: result.rows.map(mapSecretPolicy) };
       } catch {
         return safeError("Failed to list secret policies");
+      }
+    },
+
+    // ── Secret syncs (SM5, materialization provenance) ─────
+
+    async recordSecretSync(input: RecordSecretSyncInput): Promise<ConfigResult<SecretSync>> {
+      try {
+        const sc = scopeColumns(input.scope);
+        // One atomic statement: the `existing` CTE detects an identical
+        // (secret_id, version, target, entity_ref, run_id) already-`synced` row
+        // (idempotent re-record). When none exists, `superseded` flips the prior
+        // live row and `inserted` appends the new `synced` row — the partial
+        // unique index on WHERE status='synced' keeps at most one live row. On an
+        // idempotent replay both write CTEs are guarded off and `existing` is
+        // returned, so no duplicate and no self-supersede occur.
+        const sql = `WITH existing AS (
+           SELECT ${SECRET_SYNC_COLUMNS} FROM config.secret_syncs
+           WHERE secret_id = $2 AND target = $7 AND entity_ref = $8
+             AND version = $6 AND run_id = $9 AND status = 'synced'
+           LIMIT 1
+         ), superseded AS (
+           UPDATE config.secret_syncs
+           SET status = 'superseded'
+           WHERE secret_id = $2 AND target = $7 AND entity_ref = $8 AND status = 'synced'
+             AND NOT EXISTS (SELECT 1 FROM existing)
+           RETURNING id
+         ), inserted AS (
+           INSERT INTO config.secret_syncs (id, secret_id, org_id, project_id, environment_id, version, target, entity_ref, run_id, status, synced_at)
+           SELECT $1, $2, $3, $4, $5, $6, $7, $8, $9, 'synced', now()
+           WHERE NOT EXISTS (SELECT 1 FROM existing)
+           RETURNING ${SECRET_SYNC_COLUMNS}
+         )
+         SELECT ${SECRET_SYNC_COLUMNS} FROM inserted
+         UNION ALL
+         SELECT ${SECRET_SYNC_COLUMNS} FROM existing`;
+        const result = await executor.execute<Record<string, unknown>>(sql, [
+          input.id,
+          input.secretId,
+          sc.orgId,
+          sc.projectId,
+          sc.environmentId,
+          input.version,
+          input.target,
+          input.entityRef,
+          input.runId,
+        ]);
+        if (result.rowCount === 0) {
+          return safeError("Failed to record secret sync");
+        }
+        return { ok: true, value: mapSecretSync(result.rows[0]!) };
+      } catch (err: unknown) {
+        if (isUniqueViolation(err)) {
+          // A concurrent writer won the live slot for this entity.
+          return { ok: false, error: { kind: "conflict", entity: "secret_sync" } };
+        }
+        if (isCheckViolation(err)) {
+          return safeError("Invalid status for secret sync");
+        }
+        return safeError("Failed to record secret sync");
+      }
+    },
+
+    async listSecretSyncs(scope: Scope, filter: ListSecretSyncsFilter, params: PageQueryParams): Promise<ConfigResult<PagedResult<SecretSync>>> {
+      try {
+        const sw = syncScopeWhere(scope);
+        const values = [...sw.params];
+        let clause = sw.clause;
+        if (filter.entityRef !== undefined) {
+          values.push(filter.entityRef);
+          clause += ` AND entity_ref = $${values.length}`;
+        }
+        if (filter.secretId !== undefined) {
+          values.push(filter.secretId);
+          clause += ` AND secret_id = $${values.length}`;
+        }
+        if (filter.status !== undefined) {
+          values.push(filter.status);
+          clause += ` AND status = $${values.length}`;
+        }
+        const fetchLimit = params.limit + 1;
+        let sql: string;
+        let queryValues: unknown[];
+        // Keyset on (synced_at, id) — the table's ordering column is synced_at,
+        // surfaced as `createdAt` in the standard cursor shape.
+        if (params.cursor) {
+          values.push(fetchLimit, params.cursor.createdAt, params.cursor.id);
+          const limitIdx = values.length - 2;
+          sql = `SELECT ${SECRET_SYNC_COLUMNS} FROM config.secret_syncs
+           WHERE ${clause}
+             AND (synced_at, id) < ($${limitIdx + 1}, $${limitIdx + 2})
+           ORDER BY synced_at DESC, id DESC
+           LIMIT $${limitIdx}`;
+          queryValues = values;
+        } else {
+          values.push(fetchLimit);
+          sql = `SELECT ${SECRET_SYNC_COLUMNS} FROM config.secret_syncs
+           WHERE ${clause}
+           ORDER BY synced_at DESC, id DESC
+           LIMIT $${values.length}`;
+          queryValues = values;
+        }
+        const result = await executor.execute<Record<string, unknown>>(sql, queryValues);
+        const rows = result.rows.map(mapSecretSync);
+        let nextCursor: CursorPosition | null = null;
+        if (rows.length > params.limit) {
+          rows.pop();
+          const last = rows[rows.length - 1]!;
+          nextCursor = { createdAt: last.syncedAt.toISOString(), id: last.id };
+        }
+        return { ok: true, value: { items: rows, nextCursor } };
+      } catch {
+        return safeError("Failed to list secret syncs");
+      }
+    },
+
+    async markSyncsOrphaned(entityRef: string): Promise<ConfigResult<{ count: number }>> {
+      try {
+        const result = await executor.execute<Record<string, unknown>>(
+          `UPDATE config.secret_syncs SET status = 'orphaned'
+           WHERE entity_ref = $1 AND status = 'synced'`,
+          [entityRef],
+        );
+        return { ok: true, value: { count: result.rowCount } };
+      } catch {
+        return safeError("Failed to orphan secret syncs");
       }
     },
   };

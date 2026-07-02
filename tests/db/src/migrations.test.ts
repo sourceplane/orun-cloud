@@ -210,6 +210,44 @@ describe("Migration Manifest Verifier", () => {
     });
   });
 
+  // saas-secret-manager SM5 — the materialization-provenance migration.
+  describe("510_config_secret_syncs (SM5)", () => {
+    const entry = manifest.migrations.find((m) => m.id === "510_config_secret_syncs");
+
+    it("is registered in the manifest under the config context", () => {
+      expect(entry).toBeDefined();
+      expect(entry!.context).toBe("config");
+    });
+
+    it("creates the provenance table with the status CHECK and the FK to secret_metadata", () => {
+      const sql = readFileSync(resolve(MIGRATIONS_ROOT, entry!.path), "utf-8");
+      expect(sql).toContain("CREATE TABLE IF NOT EXISTS config.secret_syncs");
+      expect(sql).toContain("id             UUID        PRIMARY KEY");
+      expect(sql).toContain("secret_id      UUID        NOT NULL REFERENCES config.secret_metadata(id)");
+      expect(sql).toContain("CHECK (status IN ('synced', 'superseded', 'orphaned'))");
+      // No secret value ever lands here (Invariant 10).
+      expect(sql.toLowerCase()).not.toContain("plaintext");
+      expect(sql.toLowerCase()).not.toContain("ciphertext");
+    });
+
+    it("adds the catalog-join index, the per-entity index, and the partial live-unique index", () => {
+      const sql = readFileSync(resolve(MIGRATIONS_ROOT, entry!.path), "utf-8");
+      // Catalog join keyed on the coalesced scope tuple + secret_id.
+      expect(sql).toContain("ON config.secret_syncs (org_id, COALESCE(project_id, '00000000-0000-0000-0000-000000000000'), COALESCE(environment_id, '00000000-0000-0000-0000-000000000000'), secret_id)");
+      // Per-entity view.
+      expect(sql).toContain("ON config.secret_syncs (entity_ref, target)");
+      // At most ONE synced row per (secret_id, target, entity_ref).
+      expect(sql).toContain("CREATE UNIQUE INDEX IF NOT EXISTS secret_syncs_live_uniq_idx");
+      expect(sql).toContain("ON config.secret_syncs (secret_id, target, entity_ref)");
+      expect(sql).toContain("WHERE status = 'synced'");
+    });
+
+    it("is idempotent (IF NOT EXISTS)", () => {
+      const sql = readFileSync(resolve(MIGRATIONS_ROOT, entry!.path), "utf-8");
+      expect(sql).toContain("IF NOT EXISTS");
+    });
+  });
+
   describe("migration description", () => {
     it("each migration has a non-empty description", () => {
       for (const m of migrations) {
