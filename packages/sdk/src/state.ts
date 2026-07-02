@@ -4,6 +4,8 @@ import type {
   ResolveWorkspaceLinksResponse,
   WorkspaceLink,
   ListOrgCatalogEntitiesResponse,
+  ListRepoFacetsResponse,
+  GetRepoFacetResponse,
   GetStateStorageResponse,
   GetStateGcReportResponse,
   CollectStateGcRequest,
@@ -14,6 +16,7 @@ import type {
   ReadLogResponse,
   StateCursor,
 } from "@saas/contracts/state";
+import { STATE_CONTRACT_VERSION } from "@saas/contracts/state";
 
 import type { Transport, RequestOptions } from "./transport.js";
 
@@ -206,6 +209,53 @@ export class StateClient {
         },
       },
       opts,
+    );
+  }
+
+  /**
+   * GET /v1/organizations/:orgId/repo-facets — the repo self-descriptions for
+   * the org (saas-workspace-overview WO5): one per project, projected from the
+   * declared Repo entity. Drives the Git Repos list + the Workspace Overview
+   * identity. Policy: catalog.read.
+   */
+  listRepoFacets(orgId: string, opts: RequestOptions = {}): Promise<ListRepoFacetsResponse> {
+    return this.transport.request<ListRepoFacetsResponse>(
+      { method: "GET", path: `/v1/organizations/${encodeURIComponent(orgId)}/repo-facets` },
+      opts,
+    );
+  }
+
+  /** GET /v1/organizations/:orgId/repo-facets/:projectId — one project's facet. */
+  getRepoFacet(orgId: string, projectId: string, opts: RequestOptions = {}): Promise<GetRepoFacetResponse> {
+    return this.transport.request<GetRepoFacetResponse>(
+      {
+        method: "GET",
+        path: `/v1/organizations/${encodeURIComponent(orgId)}/repo-facets/${encodeURIComponent(projectId)}`,
+      },
+      opts,
+    );
+  }
+
+  /**
+   * Read a content-addressed object's body as text by digest (WO5): the
+   * doc-overview markdown a `doc_ref.digest` points at. Raw bytes → text (not
+   * the JSON envelope); the object plane is under `/state/`, so the contract
+   * version header is required. Policy: state.object.read.
+   */
+  readObjectText(
+    orgId: string,
+    projectId: string,
+    digest: string,
+    opts: RequestOptions = {},
+  ): Promise<string> {
+    return this.transport.requestText(
+      {
+        method: "GET",
+        path: `/v1/organizations/${encodeURIComponent(orgId)}/projects/${encodeURIComponent(
+          projectId,
+        )}/state/objects/${encodeURIComponent(digest)}`,
+      },
+      { ...opts, headers: { "orun-contract-version": String(STATE_CONTRACT_VERSION), ...(opts.headers ?? {}) } },
     );
   }
 
