@@ -29,6 +29,8 @@ export const qk = {
   connectionGrants: (orgId: string, connectionId: string) =>
     ["connectionGrants", orgId, connectionId] as const,
   accountWorkspaces: (orgId: string) => ["accountWorkspaces", orgId] as const,
+  accountMembers: (orgId: string) => ["accountMembers", orgId] as const,
+  accountRoles: (orgId: string) => ["accountRoles", orgId] as const,
   repoLinks: (orgId: string, projectId: string) => ["repoLinks", orgId, projectId] as const,
   workspaceLinks: (orgId: string, projectId: string) =>
     ["workspaceLinks", orgId, projectId] as const,
