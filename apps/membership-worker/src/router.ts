@@ -7,6 +7,8 @@ import { handleListMembers } from "./handlers/list-members.js";
 import { handleListAccountWorkspaces } from "./handlers/list-account-workspaces.js";
 import { handleUpdateMemberRole } from "./handlers/update-member-role.js";
 import { handleGrantAccountRole } from "./handlers/grant-account-role.js";
+import { handleListAccountRoles } from "./handlers/list-account-roles.js";
+import { handleRevokeAccountRole } from "./handlers/revoke-account-role.js";
 import { handleGrantTeamRole } from "./handlers/grant-team-role.js";
 import { handleRevokeTeamRole } from "./handlers/revoke-team-role.js";
 import { handleCreateTeam, handleListTeams, handleGetTeam, handleDeleteTeam, handleUpdateTeam, handleListTeamMembers, handleAddTeamMember, handleRemoveTeamMember } from "./handlers/teams.js";
@@ -257,8 +259,9 @@ export async function route(request: Request, env: Env): Promise<Response> {
       return methodNotAllowed(requestId);
     }
 
-    // Account-scoped RBAC grant (saas-workspace-id WID6). Writes a
-    // scope_kind='account' role on the account org; cascades to all workspaces.
+    // Account-scoped RBAC (saas-workspace-id WID6 grant; teams-hub TH1a
+    // list/revoke). Grants write a scope_kind='account' role on the account
+    // org and cascade to all workspaces; list/revoke close WID6's deferred half.
     const accountRolesMatch = url.pathname.match(ORG_ACCOUNT_ROLES_RE);
     if (accountRolesMatch) {
       const actor = resolveActor(request);
@@ -267,6 +270,12 @@ export async function route(request: Request, env: Env): Promise<Response> {
       }
       if (request.method === "POST") {
         return handleGrantAccountRole(request, env, requestId, actor, accountRolesMatch[1]!);
+      }
+      if (request.method === "GET") {
+        return handleListAccountRoles(env, requestId, actor, accountRolesMatch[1]!);
+      }
+      if (request.method === "DELETE") {
+        return handleRevokeAccountRole(request, env, requestId, actor, accountRolesMatch[1]!);
       }
       return methodNotAllowed(requestId);
     }

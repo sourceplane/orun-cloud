@@ -869,6 +869,47 @@ export function createMembershipRepository(executor: SqlExecutor): MembershipRep
       }
     },
 
+    // ── Account roles (teams-hub TH1a) ──────────────────────────────
+    async listAccountRoleAssignments(accountOrgId: string): Promise<MembershipResult<RoleAssignment[]>> {
+      try {
+        const result = await executor.execute<Record<string, unknown>>(
+          `SELECT * FROM membership.role_assignments
+           WHERE org_id = $1 AND scope_kind = 'account' AND revoked_at IS NULL
+           ORDER BY created_at ASC, id ASC`,
+          [accountOrgId],
+        );
+        return { ok: true, value: result.rows.map(mapRoleAssignment) };
+      } catch (err) {
+        return safeError("Failed to list account role assignments", err);
+      }
+    },
+
+    async revokeAccountRole(
+      accountOrgId: string,
+      subjectId: string,
+      role: string,
+      revokedAt: Date,
+    ): Promise<MembershipResult<RoleAssignment>> {
+      try {
+        const result = await executor.execute<Record<string, unknown>>(
+          `UPDATE membership.role_assignments
+           SET revoked_at = $4
+           WHERE org_id = $1
+             AND subject_id = $2
+             AND subject_type = 'user'
+             AND role = $3
+             AND scope_kind = 'account'
+             AND revoked_at IS NULL
+           RETURNING *`,
+          [accountOrgId, subjectId, role, revokedAt.toISOString()],
+        );
+        if (result.rowCount === 0) return { ok: false, error: { kind: "not_found" } };
+        return { ok: true, value: mapRoleAssignment(result.rows[0]!) };
+      } catch (err) {
+        return safeError("Failed to revoke account role", err);
+      }
+    },
+
     async listRoleAssignmentsForSubjects(
       orgId: string,
       subjectIds: string[],

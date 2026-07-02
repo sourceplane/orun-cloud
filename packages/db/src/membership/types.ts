@@ -339,6 +339,21 @@ export interface MembershipRepository {
 
   createRoleAssignment(input: CreateRoleAssignmentInput): Promise<MembershipResult<RoleAssignment>>;
   listRoleAssignments(orgId: Uuid, subjectId: string): Promise<MembershipResult<RoleAssignment[]>>;
+
+  // ── Account roles (teams-hub TH1a — closes WID6's deferred list/revoke) ──
+  /**
+   * All ACTIVE account-scoped role assignments on an account org — every
+   * subject type (users and teams), oldest first. Backs the Account Hub
+   * "Roles" roster: "who holds account-wide authority here".
+   */
+  listAccountRoleAssignments(accountOrgId: Uuid): Promise<MembershipResult<RoleAssignment[]>>;
+  /**
+   * Revoke a USER's active account-scoped role, identified by (subject, role).
+   * Team account grants are revoked through `revokeTeamGrant` (the /team-roles
+   * surface) — this method deliberately matches `subject_type='user'` only.
+   * Returns not_found when no active row matches.
+   */
+  revokeAccountRole(accountOrgId: Uuid, subjectId: string, role: string, revokedAt: Date): Promise<MembershipResult<RoleAssignment>>;
   /**
    * Batched reverse lookup: all active role assignments for a set of subjects in
    * one query, returned as a `subjectId -> RoleAssignment[]` map (every queried
