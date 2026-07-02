@@ -46,6 +46,7 @@ import {
   teamMemberRemoveCommand,
   teamGrantCommand,
   teamRevokeCommand,
+  teamAccessCommand,
 } from "./commands/teams.js";
 import {
   usageSummaryCommand,
@@ -221,6 +222,7 @@ function buildRouter(opts: RunOptions): Router {
   r.register(["team", "member-remove"], "Remove a subject from a team", teamMemberRemoveCommand);
   r.register(["team", "grant"], "Grant a team a role at account|workspace|project scope", teamGrantCommand);
   r.register(["team", "revoke"], "Revoke a team's role grant", teamRevokeCommand);
+  r.register(["team", "access"], "Show effective access (permitted actions + provenance) for you or a subject", teamAccessCommand);
   return r;
 }
 

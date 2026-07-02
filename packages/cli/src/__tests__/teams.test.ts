@@ -122,3 +122,31 @@ describe("commands — team", () => {
     }, { response: () => jsonResponse(envelope({ grant: { teamId: "team_abc", role: "builder", scopeKind: "organization", scopeRef: null } })), activeOrgId: "org_1" });
   });
 });
+
+describe("commands — team access (TM6b3b)", () => {
+  it("team access → GET /effective-access and renders action + via", async () => {
+    await withHarness(async ({ cap, runArgv }) => {
+      const r = await runArgv(["team", "access"]);
+      expect(r.exitCode).toBe(0);
+      expect(cap.fetchCalls[0]!.url).toBe("https://api.test/v1/organizations/org_1/effective-access");
+      expect(cap.fetchCalls[0]!.init.method).toBe("GET");
+      const text = cap.stdout.join("\n");
+      expect(text).toContain("organization.read");
+      expect(text).toContain("team team_x");
+    }, {
+      response: () => jsonResponse(envelope({ permissions: [
+        { action: "organization.read", allow: true, reason: "org_builder", via: { kind: "team", teamId: "team_x" } },
+        { action: "organization.settings.update", allow: false, reason: "no_matching_role" },
+      ] })),
+      activeOrgId: "org_1",
+    });
+  });
+
+  it("team access <subjectId> forwards subjectId", async () => {
+    await withHarness(async ({ cap, runArgv }) => {
+      const r = await runArgv(["team", "access", "usr_other"]);
+      expect(r.exitCode).toBe(0);
+      expect(cap.fetchCalls[0]!.url).toContain("subjectId=usr_other");
+    }, { response: () => jsonResponse(envelope({ permissions: [] })), activeOrgId: "org_1" });
+  });
+});
