@@ -44,4 +44,10 @@ describe("query cache keys (qk)", () => {
     expect(qk.orgRuns("org_1")).not.toEqual(qk.orgRuns("org_2"));
     expect(JSON.stringify(qk.orgRuns("org_1"))).not.toEqual(JSON.stringify(qk.orgCatalog("org_1")));
   });
+
+  it("keys repo facets by org and doc objects by (org, project, digest)", () => {
+    expect(qk.repoFacets("org_1")).toEqual(["repoFacets", "org_1"]);
+    expect(qk.docObject("org_1", "prj_1", "sha256:d")).toEqual(["docObject", "org_1", "prj_1", "sha256:d"]);
+    expect(qk.docObject("org_1", "prj_1", "sha256:d")).not.toEqual(qk.docObject("org_1", "prj_1", "sha256:e"));
+  });
 });

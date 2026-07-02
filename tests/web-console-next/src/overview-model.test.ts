@@ -1,11 +1,16 @@
 import {
+  docDigestOf,
   environmentCount,
   healthyPct,
   overviewActivity,
+  primaryRepoFacet,
+  repoFromEntityRef,
   resolveOverviewState,
+  shortSha,
   tierCounts,
   topAttention,
 } from "@web-console-next/lib/overview/model";
+import type { RepoFacet } from "@saas/contracts/state";
 import type { CatalogService } from "@web-console-next/lib/catalog-portal/model";
 import type { RunRow } from "@web-console-next/lib/runs-portal/model";
 import type { RunStatus } from "@saas/contracts/state";
@@ -136,6 +141,52 @@ describe("topAttention", () => {
 });
 
 // ── small helpers ────────────────────────────────────────────
+
+// ── repo facet helpers (WO5) ─────────────────────────────────
+
+function facet(over: Partial<RepoFacet> = {}): RepoFacet {
+  return {
+    orgId: "org_1",
+    projectId: "prj_1",
+    displayName: null,
+    description: null,
+    owner: null,
+    defaultBranch: null,
+    links: [],
+    tags: [],
+    docRef: null,
+    entityRef: null,
+    headDigest: "sha256:aaa",
+    sourceCommit: null,
+    syncedAt: "2026-07-01T00:00:00.000Z",
+    ...over,
+  };
+}
+
+describe("repo facet helpers", () => {
+  it("primaryRepoFacet takes the first (most-recently-synced) facet", () => {
+    expect(primaryRepoFacet([])).toBeNull();
+    const a = facet({ projectId: "prj_a" });
+    const b = facet({ projectId: "prj_b" });
+    expect(primaryRepoFacet([a, b])?.projectId).toBe("prj_a");
+  });
+  it("docDigestOf reads docRef.digest, else null", () => {
+    expect(docDigestOf(null)).toBeNull();
+    expect(docDigestOf(facet())).toBeNull();
+    expect(docDigestOf(facet({ docRef: { path: "docs/overview.md" } }))).toBeNull();
+    expect(docDigestOf(facet({ docRef: { digest: "sha256:d" } }))).toBe("sha256:d");
+  });
+  it("repoFromEntityRef extracts the middle segment", () => {
+    expect(repoFromEntityRef("default/orun/orun")).toBe("orun");
+    expect(repoFromEntityRef("ns/repo/name")).toBe("repo");
+    expect(repoFromEntityRef("two/seg")).toBeNull();
+    expect(repoFromEntityRef(null)).toBeNull();
+  });
+  it("shortSha truncates to 7", () => {
+    expect(shortSha("a1b2c3d4e5")).toBe("a1b2c3d");
+    expect(shortSha(null)).toBeNull();
+  });
+});
 
 describe("healthyPct / environmentCount", () => {
   it("healthyPct is the inverse of the attention rate", () => {
