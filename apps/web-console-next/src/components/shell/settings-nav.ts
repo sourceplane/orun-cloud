@@ -84,6 +84,41 @@ export function buildSettingsNav(orgSlug: string): SettingsNavGroup[] {
       ],
     },
     {
+      // The Account Hub (teams-hub TH1e): the surface over the account that
+      // owns this workspace set. A *surface*, not a tenancy level — every page
+      // reads through the current org and resolves up to the account
+      // server-side, so the same nav works from the account root or any child.
+      id: "account",
+      label: "Account",
+      links: [
+        {
+          href: `${base}/account`,
+          label: "Overview",
+          icon: "Building2",
+          description: "The account above this workspace",
+          exact: true,
+        },
+        {
+          href: `${base}/account/workspaces`,
+          label: "Workspaces",
+          icon: "Boxes",
+          description: "All workspaces under the account",
+        },
+        {
+          href: `${base}/account/members`,
+          label: "Account members",
+          icon: "Users",
+          description: "Everyone with account-level presence",
+        },
+        {
+          href: `${base}/account/roles`,
+          label: "Account roles",
+          icon: "ShieldCheck",
+          description: "Account-wide authority — grant, list, revoke",
+        },
+      ],
+    },
+    {
       id: "billing",
       label: "Billing",
       links: [
