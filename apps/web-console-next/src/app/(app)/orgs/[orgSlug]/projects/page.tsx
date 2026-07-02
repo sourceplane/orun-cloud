@@ -13,7 +13,7 @@ import { useParams } from "next/navigation";
 import { Plus, FolderKanban, Github, ShieldCheck, ChevronRight } from "lucide-react";
 import type { PublicProject } from "@saas/contracts/projects";
 import type { PublicConnection, PublicRepository } from "@saas/contracts/integrations";
-import type { WorkspaceLink } from "@saas/contracts/state";
+import type { WorkspaceLink, RepoFacet } from "@saas/contracts/state";
 import { OrgScope } from "@/components/shell/org-scope";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -61,6 +61,9 @@ function Inner({ orgId, orgSlug }: { orgId: string; orgSlug: string }) {
   const links = useApiQuery(qk.orgLinks(orgId), () =>
     wrap(async () => (await client.state.listOrgLinks(orgId)).links),
   );
+  const repoFacets = useApiQuery(qk.repoFacets(orgId), () =>
+    wrap(async () => (await client.state.listRepoFacets(orgId)).repoFacets),
+  );
 
   const activeConnection: PublicConnection | null =
     connections.data?.find((c) => c.status === "active") ?? null;
@@ -77,6 +80,12 @@ function Inner({ orgId, orgSlug }: { orgId: string; orgSlug: string }) {
     for (const l of allowList) m.set(l.projectId, l);
     return m;
   }, [allowList]);
+  // projectId → its repo facet (git-authored description + overview badge, WO5).
+  const facetByProject = React.useMemo(() => {
+    const m = new Map<string, RepoFacet>();
+    for (const f of repoFacets.data ?? []) m.set(f.projectId, f);
+    return m;
+  }, [repoFacets.data]);
   // provider repo ids already onboarded — disabled in the picker.
   const onboardedRepoIds = React.useMemo(
     () => new Set(allowList.map((l) => l.providerRepoId).filter((x): x is string => !!x)),
@@ -171,6 +180,7 @@ function Inner({ orgId, orgSlug }: { orgId: string; orgSlug: string }) {
             orgId={orgId}
             orgSlug={orgSlug}
             linkByProject={linkByProject}
+            facetByProject={facetByProject}
             prefetch={prefetch}
             client={client}
             onArchive={archive}
@@ -223,6 +233,7 @@ function RepositoriesTab({
   orgId,
   orgSlug,
   linkByProject,
+  facetByProject,
   prefetch,
   client,
   onArchive,
@@ -235,6 +246,7 @@ function RepositoriesTab({
   orgId: string;
   orgSlug: string;
   linkByProject: Map<string, WorkspaceLink>;
+  facetByProject: Map<string, RepoFacet>;
   prefetch: ReturnType<typeof usePrefetch>;
   client: ReturnType<typeof useSession>["client"];
   onArchive: (p: PublicProject) => void;
@@ -285,6 +297,8 @@ function RepositoriesTab({
         {items.map((p) => {
           const link = linkByProject.get(p.id);
           const repoName = link ? repoFullNameFromRemote(link.remoteUrl) : null;
+          const facet = facetByProject.get(p.id);
+          const hasOverview = !!(facet?.docRef && (facet.docRef as Record<string, unknown>)["digest"]);
           return (
             <li key={p.id} className="flex items-center gap-3 px-4 py-3 transition-colors hover:bg-accent/40">
               <Link
@@ -299,9 +313,13 @@ function RepositoriesTab({
                 <FolderKanban className="h-4 w-4 shrink-0 text-muted-foreground" />
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2">
-                    <span className="truncate text-sm font-medium">{p.name}</span>
+                    <span className="truncate text-sm font-medium">{facet?.displayName || p.name}</span>
                     <Badge variant={p.status === "active" ? "success" : "secondary"}>{p.status}</Badge>
+                    {hasOverview ? <Badge variant="outline">overview</Badge> : null}
                   </div>
+                  {facet?.description ? (
+                    <div className="truncate text-xs text-muted-foreground">{facet.description}</div>
+                  ) : null}
                   <div className="flex items-center gap-2 text-xs text-muted-foreground">
                     <span className="truncate">{p.slug}</span>
                     {repoName ? (

@@ -24,7 +24,7 @@ import {
   Terminal,
 } from "lucide-react";
 import type { PublicProject } from "@saas/contracts/projects";
-import type { Run, WorkspaceLink } from "@saas/contracts/state";
+import type { Run, WorkspaceLink, RepoFacet } from "@saas/contracts/state";
 
 import { useSession } from "@/lib/session";
 import { useApiQuery, qk } from "@/lib/query";
@@ -32,13 +32,17 @@ import { wrap } from "@/lib/api";
 import { collectOrgCatalog } from "@/lib/catalog-portal/fetch";
 import { rollup, toServices } from "@/lib/catalog-portal/model";
 import { TIER } from "@/lib/catalog-portal/palette";
-import { decorateRun } from "@/lib/runs-portal/model";
+import { decorateRun, formatRelative } from "@/lib/runs-portal/model";
 import { RUN_STATUS } from "@/lib/runs-portal/palette";
 import {
+  docDigestOf,
   environmentCount,
   healthyPct,
   overviewActivity,
+  primaryRepoFacet,
+  repoFromEntityRef,
   resolveOverviewState,
+  shortSha,
   tierCounts,
   topAttention,
 } from "@/lib/overview/model";
@@ -51,6 +55,7 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { Skeleton } from "@/components/ui/skeleton";
 import { RunCards } from "@/components/activity/run-rows";
 import { StatusMark } from "@/components/activity/run-status-icon";
+import { Markdown } from "@/components/overview/markdown";
 
 const TILE = "rounded-xl border border-border bg-card px-4 py-3";
 const LABEL = "font-mono text-[10.5px] uppercase tracking-[0.1em] text-muted-foreground/80";
@@ -76,7 +81,11 @@ export function WorkspaceOverview({ orgId, orgSlug }: { orgId: string; orgSlug: 
   const links = useApiQuery(qk.orgLinks(orgId), () =>
     wrap(async () => (await client.state.listOrgLinks(orgId)).links),
   );
+  const repoFacets = useApiQuery(qk.repoFacets(orgId), () =>
+    wrap(async () => (await client.state.listRepoFacets(orgId)).repoFacets),
+  );
 
+  const primary = primaryRepoFacet(repoFacets.data ?? []);
   const services = React.useMemo(() => toServices(catalog.data ?? []), [catalog.data]);
   const metrics = React.useMemo(() => rollup(services), [services]);
   const tiers = React.useMemo(() => tierCounts(services), [services]);
@@ -102,6 +111,8 @@ export function WorkspaceOverview({ orgId, orgSlug }: { orgId: string; orgSlug: 
       <IdentityBand
         orgSlug={orgSlug}
         state={state}
+        displayName={primary?.displayName ?? null}
+        description={primary?.description ?? null}
         components={metrics.total}
         systems={metrics.systems}
         environments={environmentCount(services)}
@@ -135,6 +146,9 @@ export function WorkspaceOverview({ orgId, orgSlug }: { orgId: string; orgSlug: 
 
           <div className="grid gap-4 lg:grid-cols-3">
             <div className="space-y-4 lg:col-span-2">
+              {state === "ready" && primary && (docDigestOf(primary) || primary.description) && (
+                <NarrativeBand orgId={orgId} facet={primary} now={now} />
+              )}
               <RecentActivityCard
                 orgSlug={orgSlug}
                 runs={runs.data ?? []}
@@ -168,6 +182,8 @@ export function WorkspaceOverview({ orgId, orgSlug }: { orgId: string; orgSlug: 
 function IdentityBand({
   orgSlug,
   state,
+  displayName,
+  description,
   components,
   systems,
   environments,
@@ -175,6 +191,8 @@ function IdentityBand({
 }: {
   orgSlug: string;
   state: "no-repo" | "no-plan" | "ready";
+  displayName: string | null;
+  description: string | null;
   components: number;
   systems: number;
   environments: number;
@@ -189,7 +207,9 @@ function IdentityBand({
       />
       <div className="relative">
         <div className={LABEL}>Workspace</div>
-        <h1 className="mt-1 text-2xl font-semibold tracking-tight text-foreground">{orgSlug}</h1>
+        <h1 className="mt-1 text-2xl font-semibold tracking-tight text-foreground">{displayName || orgSlug}</h1>
+        {/* Git-authored one-line description from the primary repo facet (WO5). */}
+        {description && <p className="mt-1.5 max-w-2xl text-sm text-muted-foreground">{description}</p>}
         {state !== "no-repo" && (
           <p className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-muted-foreground">
             <Fact n={components} one="component" many="components" />
@@ -219,6 +239,58 @@ function Fact({ n, one, many }: { n: number; one: string; many: string }) {
     <span>
       <span className="font-medium text-foreground">{n}</span> {n === 1 ? one : many}
     </span>
+  );
+}
+
+// ── Band 3 (left) — git-authored product narrative ───────────
+
+function NarrativeBand({ orgId, facet, now }: { orgId: string; facet: RepoFacet; now: number }) {
+  const { client } = useSession();
+  const digest = docDigestOf(facet);
+  const doc = useApiQuery(
+    qk.docObject(orgId, facet.projectId, digest ?? ""),
+    () => wrap(() => client.state.readObjectText(orgId, facet.projectId, digest!)),
+    { enabled: !!digest },
+  );
+
+  // No overview doc: the description already renders in the identity band, so
+  // nudge the author to add one rather than showing an empty panel.
+  if (!digest) {
+    return (
+      <Card className="p-5">
+        <div className={LABEL}>Overview</div>
+        <p className="mt-2 text-sm text-muted-foreground">
+          Add a <code className="rounded bg-muted px-1 py-0.5 font-mono text-[12px]">docs/overview.md</code> and point{" "}
+          <code className="rounded bg-muted px-1 py-0.5 font-mono text-[12px]">repo.docs.overview</code> at it to tell your
+          team what this product is.
+        </p>
+      </Card>
+    );
+  }
+
+  const repo = repoFromEntityRef(facet.entityRef);
+  const sha = shortSha(facet.sourceCommit);
+  const prov = [repo, sha ? `@${sha}` : null].filter(Boolean).join(" ");
+  return (
+    <Card className="p-5">
+      {(prov || facet.syncedAt) && (
+        <div className="mb-3 flex items-center gap-2 border-b border-border pb-3 font-mono text-[11px] text-muted-foreground">
+          {prov && <span>From {prov}</span>}
+          {facet.syncedAt && <span>· synced {formatRelative(facet.syncedAt, now)}</span>}
+        </div>
+      )}
+      {doc.loading && !doc.data ? (
+        <div className="space-y-2">
+          <Skeleton className="h-4 w-1/3" />
+          <Skeleton className="h-3 w-full" />
+          <Skeleton className="h-3 w-5/6" />
+        </div>
+      ) : doc.error ? (
+        <p className="text-sm text-muted-foreground">Could not load the overview document.</p>
+      ) : (
+        <Markdown>{doc.data ?? ""}</Markdown>
+      )}
+    </Card>
   );
 }
 

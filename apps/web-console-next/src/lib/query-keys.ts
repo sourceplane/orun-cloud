@@ -37,6 +37,9 @@ export const qk = {
   configSecrets: (scopeKey: string) => ["configSecrets", scopeKey] as const,
   orgCatalog: (orgId: string) => ["orgCatalog", orgId] as const,
   orgRuns: (orgId: string) => ["orgRuns", orgId] as const,
+  repoFacets: (orgId: string) => ["repoFacets", orgId] as const,
+  docObject: (orgId: string, projectId: string, digest: string) =>
+    ["docObject", orgId, projectId, digest] as const,
   catalogEntity: (orgId: string, entityKey: string) => ["catalogEntity", orgId, entityKey] as const,
   run: (orgId: string, projectId: string, runId: string) => ["run", orgId, projectId, runId] as const,
   runJobs: (orgId: string, projectId: string, runId: string) => ["runJobs", orgId, projectId, runId] as const,

@@ -14,7 +14,7 @@
 import type { CatalogService } from "../catalog-portal/model";
 import { needsAttention, scoreOf, tierOf } from "../catalog-portal/model";
 import type { RunRow } from "../runs-portal/model";
-import type { RunStatus } from "@saas/contracts/state";
+import type { RunStatus, RepoFacet } from "@saas/contracts/state";
 
 const DAY_MS = 86_400_000;
 const WEEK_MS = 7 * DAY_MS;
@@ -103,6 +103,35 @@ export function environmentCount(services: readonly CatalogService[]): number {
   const envs = new Set<string>();
   for (const s of services) if (s.sourceEnvironment) envs.add(s.sourceEnvironment);
   return envs.size;
+}
+
+// ── Repo facet (WO5) ─────────────────────────────────────────
+
+/**
+ * The primary repo facet for the workspace hero: the most-recently-synced one.
+ * `listRepoFacets` already returns rows ordered `synced_at DESC`, so the first
+ * is the default primary (matching the derived-primary rule in model.md §4c).
+ */
+export function primaryRepoFacet(facets: readonly RepoFacet[]): RepoFacet | null {
+  return facets[0] ?? null;
+}
+
+/** The content-addressed digest of a facet's overview doc, or null. */
+export function docDigestOf(facet: RepoFacet | null | undefined): string | null {
+  const d = facet?.docRef?.["digest"];
+  return typeof d === "string" && d.length > 0 ? d : null;
+}
+
+/** The repo segment of an entity key `<namespace>/<repo>/<name>`, or null. */
+export function repoFromEntityRef(entityRef: string | null | undefined): string | null {
+  if (!entityRef) return null;
+  const parts = entityRef.split("/");
+  return parts.length >= 3 ? parts[1]! : null;
+}
+
+/** Short (7-char) commit sha for the provenance line, or null. */
+export function shortSha(commit: string | null | undefined): string | null {
+  return commit ? commit.slice(0, 7) : null;
 }
 
 /** The first `n` services needing attention (unowned / degraded / down). */
