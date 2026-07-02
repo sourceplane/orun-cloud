@@ -64,6 +64,12 @@ export function buildSettingsNav(orgSlug: string): SettingsNavGroup[] {
           description: "Account-owned groups you grant roles to",
         },
         {
+          href: `${base}/access`,
+          label: "Access",
+          icon: "Users",
+          description: "Your effective access here, and how you got it",
+        },
+        {
           href: `${base}/invitations`,
           label: "Invitations",
           icon: "Mail",
