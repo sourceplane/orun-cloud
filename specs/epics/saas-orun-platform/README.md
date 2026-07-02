@@ -90,7 +90,7 @@ shipped substrate.
 | OV5 | GitHub App bridge: outbound write-back (checks/deployments) | ✅ Done — **live**: IG D1 satisfied (App registered stage+prod, 2026-06-18); state-worker cron Phase 3 → `integrations-worker /internal/github/writeback` posts Check Runs |
 | OV6 | Org-global catalog projection (repo/env as facets) | ✅ Done (#93–#95) |
 | OV7 | Console: Runs & Stacks over ModelReader | ✅ Done (#96–#104) |
-| OV8 | Secrets — Orun Cloud slice of the canonical `orun-secrets` epic (SEC) | 🗓️ Deferred — canonical design reconciled (#72); platform slice not yet built |
+| OV8 | Secrets — Orun Cloud slice of the canonical `orun-secrets` epic (SEC) | 🗓️ Ready — v3 design re-architected to the shipped platform; platform slice specced in [`../saas-secret-manager/`](../saas-secret-manager/) (SM1–SM6); contract §4 revised (leaseEpoch resolve, chain, versions) |
 | OV9 | Metering, entitlements, retention/GC | ✅ Done — env-lifecycle archival, metering visibility (flow + stock), over-quota 412 (off by default), object-GC report + **safe-by-default reclamation** (`…/state/gc/collect`: dry-run unless `STATE_GC_COLLECT_ENABLED`, refuses when the reachability walk is capped, grace-windowed, audited), surfaced in the console project **Storage** panel (report + dry-run preview + confirmed reclaim) |
 
 Paired integrations bridge: **IG8–IG9**
