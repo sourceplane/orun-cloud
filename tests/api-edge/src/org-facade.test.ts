@@ -100,6 +100,11 @@ describe("api-edge org facade", () => {
       expect(isOrgRoute("/v1/organizations/org_abc/effective-access")).toBe(true);
     });
 
+    it("matches account-surface routes (teams-hub TH1c)", () => {
+      expect(isOrgRoute("/v1/organizations/org_abc/account-roles")).toBe(true);
+      expect(isOrgRoute("/v1/organizations/org_abc/account-members")).toBe(true);
+    });
+
     it("does not match deeper nested org routes", () => {
       expect(isOrgRoute("/v1/organizations/org_abc/members/mem_abc123/extra")).toBe(false);
     });
@@ -318,6 +323,52 @@ describe("api-edge org facade", () => {
       expect(membershipCalls[0]!.init.body).toBeDefined();
       const h = new Headers(membershipCalls[0]!.init.headers as HeadersInit);
       expect(h.get("x-actor-subject-id")).toBe("usr_abc123");
+    });
+
+    it("proxies GET /account-roles and GET /account-members with actor context (teams-hub TH1c)", async () => {
+      const { fetcher: identityFetcher } = createSessionFetcher("usr_abc123");
+      const { fetcher: membershipFetcher, calls: membershipCalls } = createFakeFetcher();
+      for (const path of ["/v1/organizations/org_abc/account-roles", "/v1/organizations/org_abc/account-members"]) {
+        const request = new Request(`https://api.example.com${path}`, {
+          method: "GET",
+          headers: { authorization: "Bearer sps_ses_abc.secret" },
+        });
+        await handleOrgRoute(request, { IDENTITY_WORKER: identityFetcher, MEMBERSHIP_WORKER: membershipFetcher, ENVIRONMENT: "test" }, "req_t", path);
+      }
+      expect(membershipCalls).toHaveLength(2);
+      expect(membershipCalls[0]!.url).toContain("/v1/organizations/org_abc/account-roles");
+      expect(membershipCalls[1]!.url).toContain("/v1/organizations/org_abc/account-members");
+      const h = new Headers(membershipCalls[0]!.init.headers as HeadersInit);
+      expect(h.get("x-actor-subject-id")).toBe("usr_abc123");
+    });
+
+    it("forwards the DELETE body for /account-roles (revoke tuple) and 405s PATCH", async () => {
+      const { fetcher: identityFetcher } = createSessionFetcher("usr_abc123");
+      const { fetcher: membershipFetcher, calls: membershipCalls } = createFakeFetcher();
+      const request = new Request("https://api.example.com/v1/organizations/org_abc/account-roles", {
+        method: "DELETE",
+        headers: { authorization: "Bearer sps_ses_abc.secret", "content-type": "application/json" },
+        body: JSON.stringify({ subjectId: "usr_x", role: "account_admin" }),
+      });
+      await handleOrgRoute(request, { IDENTITY_WORKER: identityFetcher, MEMBERSHIP_WORKER: membershipFetcher, ENVIRONMENT: "test" }, "req_t", "/v1/organizations/org_abc/account-roles");
+      expect(membershipCalls[0]!.init.method).toBe("DELETE");
+      expect(membershipCalls[0]!.init.body).toBeDefined();
+
+      const patchReq = new Request("https://api.example.com/v1/organizations/org_abc/account-roles", {
+        method: "PATCH", headers: { authorization: "Bearer sps_ses_abc.secret" },
+      });
+      const res = await handleOrgRoute(patchReq, { IDENTITY_WORKER: identityFetcher, MEMBERSHIP_WORKER: membershipFetcher, ENVIRONMENT: "test" }, "req_t", "/v1/organizations/org_abc/account-roles");
+      expect(res.status).toBe(405);
+    });
+
+    it("405s a non-GET on /account-members", async () => {
+      const { fetcher: identityFetcher } = createSessionFetcher("usr_abc123");
+      const { fetcher: membershipFetcher } = createFakeFetcher();
+      const request = new Request("https://api.example.com/v1/organizations/org_abc/account-members", {
+        method: "POST", headers: { authorization: "Bearer sps_ses_abc.secret" },
+      });
+      const res = await handleOrgRoute(request, { IDENTITY_WORKER: identityFetcher, MEMBERSHIP_WORKER: membershipFetcher, ENVIRONMENT: "test" }, "req_t", "/v1/organizations/org_abc/account-members");
+      expect(res.status).toBe(405);
     });
 
     it("forwards the DELETE body for /team-roles (revoke tuple)", async () => {
