@@ -107,7 +107,7 @@ export { ProjectsClient } from "./projects.js";
 export { EnvironmentsClient } from "./environments.js";
 export { MembershipsClient } from "./memberships.js";
 export { TeamsClient } from "./teams.js";
-export { AccountClient } from "./account.js";
+export { AccountClient, type AccountCatalogQuery, type AccountRunsQuery } from "./account.js";
 export {
   ApiKeysClient,
   type ListApiKeysResponse,
@@ -382,6 +382,13 @@ export type {
   CreateWorkspaceLinkRequest,
   CreateWorkspaceLinkResponse,
   ResolveWorkspaceLinksResponse,
+  // Account-scoped cross-workspace reads (teams-hub TH2).
+  AccountWorkspaceTag,
+  AccountFanoutStatus,
+  AccountCatalogWorkspace,
+  AccountCatalogResponse,
+  AccountRunsWorkspace,
+  AccountRunsResponse,
 } from "@saas/contracts/state";
 
 export { ERROR_CODES, type ErrorCode } from "@saas/contracts/errors";

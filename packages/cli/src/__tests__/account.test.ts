@@ -110,6 +110,48 @@ describe("commands — account (teams-hub TH1d)", () => {
     });
   });
 
+  it("account catalog → GET /account-catalog, table tagged by workspace, denied noted (TH2b)", async () => {
+    await withHarness(async ({ cap, runArgv }) => {
+      const r = await runArgv(["account", "catalog"]);
+      expect(r.exitCode).toBe(0);
+      expect(cap.fetchCalls[0]!.url).toBe("https://api.test/v1/organizations/org_1/account-catalog");
+      expect(cap.fetchCalls[0]!.init.method).toBe("GET");
+      const text = cap.stdout.join("\n");
+      expect(text).toContain("ws_ROOT");
+      expect(text).toContain("svc-payments");
+      expect(text).toContain("no access: ws_SECRET");
+    }, {
+      response: () => jsonResponse(envelope({
+        workspaces: [
+          { workspace: { orgId: "org_1", workspaceRef: "ws_ROOT", name: "Root" }, status: "ok", entities: [{ ref: "svc-payments", kind: "service" }] },
+          { workspace: { orgId: "org_s", workspaceRef: "ws_SECRET", name: "Secret" }, status: "denied", entities: [] },
+        ],
+        truncated: false,
+      })),
+      activeOrgId: "org_1",
+    });
+  });
+
+  it("account runs → GET /account-runs with status filter (TH2b)", async () => {
+    await withHarness(async ({ cap, runArgv }) => {
+      const r = await runArgv(["account", "runs", "--status=running"]);
+      expect(r.exitCode).toBe(0);
+      expect(cap.fetchCalls[0]!.url).toContain("https://api.test/v1/organizations/org_1/account-runs");
+      expect(cap.fetchCalls[0]!.url).toContain("status=running");
+      const text = cap.stdout.join("\n");
+      expect(text).toContain("run_abc");
+      expect(text).toContain("ws_C1");
+    }, {
+      response: () => jsonResponse(envelope({
+        workspaces: [
+          { workspace: { orgId: "org_c1", workspaceRef: "ws_C1", name: "Payments" }, status: "ok", runs: [{ id: "run_abc", status: "running", environment: "prod" }] },
+        ],
+        truncated: false,
+      })),
+      activeOrgId: "org_1",
+    });
+  });
+
   it("account revoke <subjectId> --role → DELETE /account-roles with tuple body", async () => {
     await withHarness(async ({ cap, runArgv }) => {
       const r = await runArgv(["account", "revoke", "usr_old", "--role=account_billing_admin"]);

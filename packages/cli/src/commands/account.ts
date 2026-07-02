@@ -93,6 +93,86 @@ export async function accountRolesCommand(ctx: CommandContext): Promise<CommandR
   return { exitCode: 0 };
 }
 
+// account catalog [--kind=K] [--q=TEXT] [--environment=ENV] [--limit=N]
+export async function accountCatalogCommand(ctx: CommandContext): Promise<CommandResult> {
+  const orgId = await resolveOrgId(ctx, true);
+  const sdk = await ctx.sdk();
+  const kind = strFlag(ctx, "kind");
+  const q = strFlag(ctx, "q");
+  const environment = strFlag(ctx, "environment");
+  const result = await sdk.account.catalog(orgId, {
+    ...(kind ? { kind } : {}),
+    ...(q ? { q } : {}),
+    ...(environment ? { environment } : {}),
+  });
+  if (ctx.outputMode === "json") {
+    ctx.stdout(formatOutput({ mode: "json", data: result }));
+    return { exitCode: 0 };
+  }
+  const rows = result.workspaces.flatMap((w) =>
+    w.entities.map((e) => {
+      const ent = e as { ref?: string; name?: string; kind?: string };
+      return {
+        workspace: w.workspace.workspaceRef || w.workspace.name,
+        entity: ent.ref ?? ent.name ?? "",
+        kind: ent.kind ?? "",
+      };
+    }),
+  );
+  ctx.stdout(formatOutput({
+    mode: "human",
+    columns: ["workspace", "entity", "kind"],
+    rows,
+    title: `Catalog across the account of ${orgId}${result.truncated ? " (truncated)" : ""}`,
+  }));
+  emitSkippedWorkspaces(ctx, result.workspaces.map((w) => ({ status: w.status, tag: w.workspace.workspaceRef || w.workspace.name })));
+  return { exitCode: 0 };
+}
+
+// account runs [--status=S] [--environment=ENV] [--limit=N]
+export async function accountRunsCommand(ctx: CommandContext): Promise<CommandResult> {
+  const orgId = await resolveOrgId(ctx, true);
+  const sdk = await ctx.sdk();
+  const status = strFlag(ctx, "status");
+  const environment = strFlag(ctx, "environment");
+  const result = await sdk.account.runs(orgId, {
+    ...(status ? { status } : {}),
+    ...(environment ? { environment } : {}),
+  });
+  if (ctx.outputMode === "json") {
+    ctx.stdout(formatOutput({ mode: "json", data: result }));
+    return { exitCode: 0 };
+  }
+  const rows = result.workspaces.flatMap((w) =>
+    w.runs.map((r) => {
+      const run = r as { id?: string; status?: string; environment?: string };
+      return {
+        workspace: w.workspace.workspaceRef || w.workspace.name,
+        run: run.id ?? "",
+        status: run.status ?? "",
+        environment: run.environment ?? "",
+      };
+    }),
+  );
+  ctx.stdout(formatOutput({
+    mode: "human",
+    columns: ["workspace", "run", "status", "environment"],
+    rows,
+    title: `Runs across the account of ${orgId}${result.truncated ? " (truncated)" : ""}`,
+  }));
+  emitSkippedWorkspaces(ctx, result.workspaces.map((w) => ({ status: w.status, tag: w.workspace.workspaceRef || w.workspace.name })));
+  return { exitCode: 0 };
+}
+
+/** Per-workspace fan-out honesty: name the workspaces that returned nothing
+ * because the read was denied or failed, instead of silently omitting them. */
+function emitSkippedWorkspaces(ctx: CommandContext, rows: Array<{ status: string; tag: string }>): void {
+  const denied = rows.filter((r) => r.status === "denied").map((r) => r.tag);
+  const errored = rows.filter((r) => r.status === "error").map((r) => r.tag);
+  if (denied.length > 0) ctx.stdout(`(no access: ${denied.join(", ")})`);
+  if (errored.length > 0) ctx.stdout(`(unavailable: ${errored.join(", ")})`);
+}
+
 // account grant <subjectId> --role=account_owner|account_admin|account_billing_admin
 export async function accountGrantCommand(ctx: CommandContext): Promise<CommandResult> {
   const usage = "usage: orun-cloud account grant <subjectId> --role=account_owner|account_admin|account_billing_admin [--org=ORG_ID]";
