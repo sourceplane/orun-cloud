@@ -9,7 +9,7 @@ This guide takes you from nothing to a working project in your workspace: sign i
 
 Open [`https://app.orun.dev`](https://app.orun.dev) and sign in with your email — Orun Cloud is passwordless, so you complete sign-in with the code emailed to you instead of a password.
 
-On first login a **workspace** is auto-created for you, and the console lands you directly in it — no chooser screen. You can create additional workspaces later from the console.
+On first login a one-time onboarding creates your first **workspace** — you name your organization and pick a plan, and the console lands you directly in a working workspace, never an empty chooser screen. You can create additional workspaces later from the console.
 
 :::note
 OAuth sign-in providers are credential-blocked in this deployment and rolling out; email sign-in is the supported path today (see `specs/epics/saas-baseline` in the repo).
