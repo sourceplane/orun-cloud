@@ -1,0 +1,34 @@
+// docs.orun.dev — Orun Cloud documentation site.
+// Static assets served by a Cloudflare Worker: no code bundle, no bindings,
+// no wiring — assets only. The Docusaurus build emits ./dist; the prod
+// environment claims the docs custom domain and wrangler manages the DNS
+// record + certificate (same model as apps/website on the apex).
+{
+  "name": "orun-cloud-docs",
+  "compatibility_date": "2025-05-01",
+  "assets": {
+    "directory": "./dist"
+  },
+  "env": {
+    // dev/stage exist so verify lanes can dry-run per environment; they
+    // serve the same static assets on workers.dev, no custom domain.
+    "dev": {
+      "assets": {
+        "directory": "./dist"
+      }
+    },
+    "stage": {
+      "assets": {
+        "directory": "./dist"
+      }
+    },
+    "prod": {
+      "assets": {
+        "directory": "./dist"
+      },
+      "routes": [
+        { "pattern": "docs.orun.dev", "custom_domain": true }
+      ]
+    }
+  }
+}

@@ -1,0 +1,230 @@
+---
+title: Orun Cloud
+slug: /
+description: Orun Cloud is the managed control plane for platform delivery — workspaces, remote state, live runs, and a service catalog, with identity, access control, audit, metering, billing, and webhooks built in.
+---
+
+<div className="heroFrame">
+  <div className="eyebrow">workspaces · runs · catalog · control plane</div>
+  <h1 className="heroTitle">Your platform, delivered. <em>With a control plane behind it.</em></h1>
+  <p className="heroCopy">
+    Orun Cloud is the managed backend for <a href="https://orun.sourceplane.ai"><code>orun</code></a> and a
+    complete multi-tenant SaaS control plane: workspaces and projects, deny-by-default access
+    control, remote state and live runs, an immutable audit log, usage metering, billing,
+    and signed webhooks — behind one versioned API, one TypeScript SDK, and one CLI.
+  </p>
+  <div className="heroActions">
+    <a className="button button--primary button--lg" href="/getting-started/quickstart">Quickstart →</a>
+    <a className="button button--secondary button--lg" href="/api/overview">API reference</a>
+    <a className="button button--secondary button--lg" href="https://app.orun.dev">Open the console</a>
+  </div>
+
+<div className="cockpitFrame">
+  <div className="cf-chrome">
+    <span className="cf-dots"><span/><span/><span/></span>
+    <span>api.orun.dev · POST /v1/organizations/org_9f2c…/projects</span>
+  </div>
+<pre>
+{`$ curl -sX POST https://api.orun.dev/v1/organizations/org_9f2c.../projects \\
+    -H "Authorization: Bearer $SOURCEPLANE_TOKEN" \\
+    -H "Idempotency-Key: 4c9d1e0a-create-checkout-api" \\
+    -d '{"name": "checkout-api"}'
+
+{
+  "data": {
+    "project": { "id": "proj_...", "name": "checkout-api", "slug": "checkout-api" }
+  },
+  "meta": { "requestId": "req_..." }
+}`}
+</pre>
+</div>
+
+</div>
+
+<div className="pillarGrid">
+  <article className="pillarCard">
+    <span className="glyph">▲</span>
+    <strong>deliver</strong>
+    <h3>Remote state & live runs</h3>
+    <p>
+      Point <code>orun</code> at Orun Cloud and every plan, run, and state transition is
+      stored, ordered, and streamed. Jobs coordinate across runners; the catalog of record
+      is derived from what actually shipped.
+    </p>
+    <p><a href="/platform/state-plane/overview">State plane →</a></p>
+  </article>
+  <article className="pillarCard">
+    <span className="glyph">◆</span>
+    <strong>organize</strong>
+    <h3>Workspaces, projects, environments</h3>
+    <p>
+      Accounts hold workspaces; workspaces hold projects (your repos) and their
+      environments. Every resource is tenant-scoped in the URL — no ambient context,
+      no tenant headers to forget.
+    </p>
+    <p><a href="/platform/workspaces/organizations">Workspaces →</a></p>
+  </article>
+  <article className="pillarCard">
+    <span className="glyph">◐</span>
+    <strong>govern</strong>
+    <h3>Access control & audit</h3>
+    <p>
+      Deny-by-default RBAC with workspace, project, account, and team roles — every
+      decision carries its provenance. Every state change lands in an immutable,
+      queryable audit log.
+    </p>
+    <p><a href="/platform/access-control/rbac">Access control →</a></p>
+  </article>
+  <article className="pillarCard">
+    <span className="glyph">→</span>
+    <strong>integrate</strong>
+    <h3>API, SDK, CLI, webhooks</h3>
+    <p>
+      One versioned REST API with caller-owned idempotency and typed errors, a
+      zero-dependency TypeScript SDK, the <code>orun-cloud</code> CLI, and
+      HMAC-signed webhooks for everything that happens.
+    </p>
+    <p><a href="/api/overview">API overview →</a></p>
+  </article>
+</div>
+
+## What Orun Cloud is
+
+Orun Cloud is two things at once, by design:
+
+<div className="signalGrid">
+  <article className="signalCard">
+    <strong>the managed backend</strong>
+    <h3>For orun, the intent compiler</h3>
+    <p>
+      <a href="https://orun.sourceplane.ai">orun</a> compiles platform intent into
+      deterministic plans. Orun Cloud gives those plans a home: managed remote state,
+      run coordination across runners, and a service catalog projected from real
+      execution history.
+    </p>
+  </article>
+  <article className="signalCard">
+    <strong>a SaaS control plane</strong>
+    <h3>Tenancy, access, and money</h3>
+    <p>
+      Identity, organizations, teams, RBAC, configuration, secrets metadata, audit,
+      usage metering, quotas, billing, notifications, and webhooks — the primitives
+      every production platform needs, shipped as bounded-context services behind
+      one edge API.
+    </p>
+  </article>
+  <article className="signalCard">
+    <strong>an open baseline</strong>
+    <h3>Fork it, rebrand it, grow it</h3>
+    <p>
+      The whole platform is open source and written as portable component intent,
+      converged by orun itself on every commit. <a href="/self-hosting/deploy-your-own">Run
+      your own</a> from a clean clone — no committed resource IDs, ever.
+    </p>
+  </article>
+  <article className="signalCard">
+    <strong>one design language</strong>
+    <h3>Console, docs, CLI, cockpit</h3>
+    <p>
+      The console, these docs, and orun's CLI cockpit share the same tokens, glyphs,
+      and status vocabulary. What you see in a CI log is what you see in the control
+      room — and in the margin of this page.
+    </p>
+  </article>
+</div>
+
+## The platform at a glance
+
+```text
+                        ┌──────────────────────── api.orun.dev ───────────────────────┐
+  orun CLI · SDK ──────▶│  edge API · /v1 · auth resolution · idempotency · rate limits │
+  console · CI (OIDC)   └──────┬────────────────────────────────────────────────┬─────┘
+                               ▼                                                ▼
+             ┌── tenancy & access ──┐  ┌── platform primitives ──┐  ┌── delivery plane ──┐
+             │ identity · sessions  │  │ config · feature flags  │  │ remote state       │
+             │ workspaces · teams   │  │ audit · events          │  │ run coordination   │
+             │ RBAC (deny-default)  │  │ metering · quotas       │  │ catalog of record  │
+             │ projects · envs      │  │ billing · notifications │  │ repo links (GitHub)│
+             └──────────────────────┘  │ webhooks (signed)       │  └────────────────────┘
+                                       └─────────────────────────┘
+```
+
+Every box is a bounded-context service with its own contract; nothing reaches the data
+plane except through the edge. The [architecture page](/self-hosting/architecture) walks
+through each one.
+
+## How to read these docs
+
+<div className="pathGrid">
+  <article className="pathCard">
+    <strong>start</strong>
+    <h3>First call in five minutes</h3>
+    <p>
+      The <a href="/getting-started/quickstart">quickstart</a> takes you from sign-in to
+      an authenticated API call. <a href="/getting-started/vocabulary">Vocabulary</a> pins
+      down accounts, workspaces, projects, and actors before anything else uses the words.
+    </p>
+  </article>
+  <article className="pathCard">
+    <strong>learn</strong>
+    <h3>Platform, product by product</h3>
+    <p>
+      Each platform section — <a href="/platform/identity/authentication">identity</a>,
+      <a href="/platform/access-control/rbac">access control</a>,
+      <a href="/platform/audit/audit-log">audit</a>,
+      <a href="/platform/billing/plans-and-entitlements">billing</a>,
+      <a href="/platform/webhooks/overview">webhooks</a> — explains the model first,
+      then the operations, with the console and API side by side.
+    </p>
+  </article>
+  <article className="pathCard">
+    <strong>build</strong>
+    <h3>API, SDK, and CLI reference</h3>
+    <p>
+      The <a href="/api/overview">API section</a> covers the mechanics every endpoint
+      shares — <a href="/api/authentication">auth</a>, <a href="/api/errors">errors</a>,
+      <a href="/api/pagination">pagination</a>, <a href="/api/idempotency">idempotency</a>,
+      <a href="/api/rate-limits">rate limits</a> — then a reference per resource.
+    </p>
+  </article>
+  <article className="pathCard">
+    <strong>operate</strong>
+    <h3>Security & self-hosting</h3>
+    <p>
+      The <a href="/security/security-model">security model</a> explains tenancy isolation
+      end to end. <a href="/self-hosting/deploy-your-own">Run your own</a> covers forking
+      the baseline and converging it with orun — the same way we deploy it.
+    </p>
+  </article>
+</div>
+
+## Why this design
+
+<div className="cardGrid">
+  <article className="featureCard">
+    <h3>Tenancy in the path, not in headers</h3>
+    <p>Every resource lives under <code>/v1/organizations/&#123;id&#125;/…</code>. The tenant is
+    visible in every URL, every log line, and every audit entry.</p>
+  </article>
+  <article className="featureCard">
+    <h3>Deny by default</h3>
+    <p>No role, no access. Permissions are explicit action strings evaluated by a single
+    policy engine, and every decision records how it was derived.</p>
+  </article>
+  <article className="featureCard">
+    <h3>Caller-owned idempotency</h3>
+    <p>Unsafe requests accept an <code>Idempotency-Key</code>; replays return the recorded
+    response. Retries are safe because you name them, not because we guess.</p>
+  </article>
+  <article className="featureCard">
+    <h3>Converged by its own thesis</h3>
+    <p>The platform deploys through <a href="https://orun.sourceplane.ai">orun</a>: every
+    commit compiles a plan, every merge converges it. These docs ship the same way.</p>
+  </article>
+</div>
+
+---
+
+Ready to make your first call? Start with the [quickstart](/getting-started/quickstart),
+skim [what Orun Cloud is](/getting-started/what-is-orun-cloud) for the full picture, or go
+straight to the [API reference](/api/overview).

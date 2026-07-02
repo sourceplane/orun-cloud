@@ -1,0 +1,50 @@
+apiVersion: sourceplane.io/v1
+kind: Component
+metadata:
+  name: web-docs
+  description: Orun Cloud documentation site (Docusaurus, static assets Worker on docs.orun.dev)
+spec:
+  type: cloudflare-worker-turbo
+  lifecycle: production
+  owner: platform
+  domain: starter-ui
+  path: apps/web-docs
+  subscribe:
+    environments:
+      - name: dev
+        profile: verify
+      - name: prod
+        profile: verify
+        profileRules:
+          - profile: deploy
+            when:
+              triggerRef: github-push-main
+  parameters:
+    nodeVersion: "22"
+    pnpmVersion: "10.12.1"
+    workspaceDir: ../..
+    appDir: .
+    awsAccountId: "306024784101"
+    awsRegion: us-east-1
+    orgName: sourceplane
+    owner: sourceplane
+    repo: orun-cloud
+
+    turboFilter: "@saas/web-docs"
+    wranglerConfig: wrangler.jsonc
+    installCommand: pnpm install --frozen-lockfile
+    buildCommand: pnpm exec turbo run build --filter=@saas/web-docs
+    typecheckCommand: pnpm exec turbo run typecheck --filter=@saas/web-docs
+    dryRunCommand: pnpm exec wrangler deploy --dry-run --config wrangler.jsonc --env prod
+    deployCommand: pnpm exec wrangler deploy --config wrangler.jsonc --env prod
+    preDeployCommand: "echo 'No pre-deploy step configured.'"
+    migrationCommand: "echo 'No migrations configured.'"
+    # Smoke: the docs homepage renders and the sidebar-linked quickstart is
+    # reachable (Docusaurus emits one HTML file per doc, so a 200 on the
+    # quickstart proves the docs tree deployed, not just the shell).
+    smokeCommand: "html=$(curl -sfL \"https://docs.orun.dev/\") && echo \"${html}\" | grep -q 'Orun Cloud' && curl -sfL \"https://docs.orun.dev/getting-started/quickstart\" >/dev/null"
+  labels:
+    team: platform
+    layer: docs
+    surface: web-docs
+    runtime: cloudflare
