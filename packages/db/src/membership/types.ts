@@ -336,6 +336,12 @@ export interface MembershipRepository {
    * subject_type='team' is exact. Returns the revoked assignments.
    */
   revokeAllTeamGrants(teamPublicId: string, revokedAt: Date): Promise<MembershipResult<RoleAssignment[]>>;
+  /**
+   * All ACTIVE grants held by a team across every org (teams-hub TH3a) —
+   * "what can this team do, and where". Same exact subject filter as the
+   * cascade revoke; oldest first.
+   */
+  listTeamGrants(teamPublicId: string): Promise<MembershipResult<RoleAssignment[]>>;
 
   createRoleAssignment(input: CreateRoleAssignmentInput): Promise<MembershipResult<RoleAssignment>>;
   listRoleAssignments(orgId: Uuid, subjectId: string): Promise<MembershipResult<RoleAssignment[]>>;

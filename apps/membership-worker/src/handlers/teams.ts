@@ -8,7 +8,7 @@ import { createEventsRepository } from "@saas/db/events";
 import { asUuid, type Uuid } from "@saas/db/ids";
 import { authorizeViaPolicy } from "../policy-client.js";
 import { successResponse, errorResponse, validationError } from "../http.js";
-import { parseOrgPublicId, parseTeamPublicId, teamPublicId } from "../ids.js";
+import { parseOrgPublicId, parseTeamPublicId, teamPublicId, orgPublicId } from "../ids.js";
 
 // saas-teams TM4b — team lifecycle management (create · list · get · delete).
 // Teams are account-owned, so every operation authorizes against the ACCOUNT org
@@ -222,6 +222,60 @@ export async function handleGetTeam(
       return errorResponse("not_found", "Team not found", 404, requestId);
     }
     return successResponse({ team: publicTeam(team.value) }, requestId);
+  } catch {
+    return errorResponse("internal_error", "An unexpected error occurred", 500, requestId);
+  } finally {
+    if (executor) await executor.dispose();
+  }
+}
+
+/**
+ * GET …/teams/{teamId}/grants — every ACTIVE grant the team holds, across all
+ * orgs (teams-hub TH3a): "what can this team do, and where". Same read gate as
+ * getTeam (`organization.member.list` on the account) and the same
+ * team-belongs-to-this-account check; each row carries its target org so the
+ * Team Page can show workspace-scoped grants against their workspace.
+ */
+export async function handleListTeamGrants(
+  env: Env,
+  requestId: string,
+  actor: ActorContext,
+  orgIdParam: string,
+  teamIdParam: string,
+  deps?: TeamsDeps,
+): Promise<Response> {
+  const orgUuid = parseOrgPublicId(orgIdParam);
+  if (!orgUuid) return errorResponse("not_found", "Organization not found", 404, requestId);
+  const teamUuid = parseTeamPublicId(teamIdParam);
+  if (!teamUuid) return errorResponse("not_found", "Team not found", 404, requestId);
+  const pf = preflight(env, deps, requestId);
+  if (pf) return pf;
+
+  const executor = deps ? null : createSqlExecutor(env.PLATFORM_DB!);
+  try {
+    const repo = deps ? deps.repo : createMembershipRepository(executor!);
+    const authz = await authorizeOnAccount(env, repo, actor, orgUuid, "organization.member.list", requestId);
+    if (!authz.ok) return authz.res;
+    const team = await repo.getTeamById(teamUuid);
+    if (!team.ok || team.value.accountOrgId !== authz.accountUuid) {
+      return errorResponse("not_found", "Team not found", 404, requestId);
+    }
+    const grants = await repo.listTeamGrants(teamPublicId(teamUuid));
+    if (!grants.ok) {
+      return errorResponse("internal_error", "An unexpected error occurred", 500, requestId);
+    }
+    return successResponse(
+      {
+        grants: grants.value.map((g) => ({
+          role: g.role,
+          scopeKind: g.scopeKind,
+          scopeRef: g.scopeRef,
+          orgId: orgPublicId(asUuid(g.orgId)),
+          createdAt: g.createdAt.toISOString(),
+        })),
+      },
+      requestId,
+    );
   } catch {
     return errorResponse("internal_error", "An unexpected error occurred", 500, requestId);
   } finally {

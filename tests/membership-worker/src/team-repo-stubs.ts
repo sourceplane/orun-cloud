@@ -21,6 +21,7 @@ export function teamRepoStubs(): Pick<
   | "listTeamsForSubject"
   | "revokeTeamGrant"
   | "revokeAllTeamGrants"
+  | "listTeamGrants"
   | "listAccountRoleAssignments"
   | "revokeAccountRole"
 > {
@@ -38,6 +39,7 @@ export function teamRepoStubs(): Pick<
     async listTeamsForSubject() { return { ok: true as const, value: [] }; },
     async revokeTeamGrant() { return notFound; },
     async revokeAllTeamGrants() { return { ok: true as const, value: [] }; },
+    async listTeamGrants() { return { ok: true as const, value: [] }; },
     async listAccountRoleAssignments() { return { ok: true as const, value: [] }; },
     async revokeAccountRole() { return notFound; },
   };

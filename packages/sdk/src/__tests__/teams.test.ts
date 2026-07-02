@@ -43,6 +43,14 @@ describe("TeamsClient (saas-teams TM4c)", () => {
     expect(calls[0]!.init.method).toBe("PATCH");
   });
 
+  it("listTeamGrants → GET /teams/:id/grants (TH3a)", async () => {
+    const { client: c, calls } = client({ grants: [{ role: "builder", scopeKind: "organization", scopeRef: null, orgId: "org_c1", createdAt: "2026-01-01T00:00:00Z" }] });
+    const res = await c.teams.listTeamGrants("org_1", "team_x");
+    expect(res.grants).toHaveLength(1);
+    expect(calls[0]!.url).toBe("https://api.test/v1/organizations/org_1/teams/team_x/grants");
+    expect(calls[0]!.init.method).toBe("GET");
+  });
+
   it("deleteTeam → DELETE /teams/:id", async () => {
     const { client: c, calls } = client({ team: { id: "team_x" } });
     await c.teams.deleteTeam("org_1", "team_x");
