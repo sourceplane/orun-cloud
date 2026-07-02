@@ -191,6 +191,27 @@ export interface SecretVersion {
   createdAt: Date;
 }
 
+/**
+ * A secret due for a rotation reminder or expiry warning (saas-secret-manager
+ * SEC7). Metadata only — a value NEVER appears. `dueKind` distinguishes an
+ * overdue rotation from an approaching/passed expiry; `ageDays` is whole days
+ * since the last rotation (or creation when never rotated).
+ */
+export interface SecretRotationDue {
+  id: string;
+  orgId: string;
+  projectId: string | null;
+  environmentId: string | null;
+  scopeKind: ScopeKind;
+  secretKey: string;
+  rotationPolicy: string | null;
+  lastRotatedAt: Date | null;
+  expiresAt: Date | null;
+  createdAt: Date;
+  ageDays: number;
+  dueKind: "rotation" | "expiry";
+}
+
 export interface CreateSecretMetadataInput {
   id: string;
   /** Account scope is a valid secret rung (SM1), unlike settings writes. */
@@ -405,6 +426,22 @@ export interface ConfigRepository {
   getSecretCiphertext(secretId: string, version: number): Promise<ConfigResult<string>>;
   /** Stamp `last_used_at = now()` on a served secret head (SM3 resolve). */
   touchSecretLastUsed(orgId: string, secretId: string, at: Date): Promise<ConfigResult<void>>;
+  /**
+   * List the secrets due for a rotation reminder or expiry warning (SEC7 cron).
+   * A row is due when EITHER its `rotation_policy` interval has elapsed since the
+   * last rotation (or creation when never rotated), OR `expires_at` falls within
+   * `now + leadWindowSeconds`. Rows reminded within the last `suppressSeconds`
+   * (via `last_reminded_at`) are excluded so a still-due secret is not re-notified
+   * every tick. Bounded by `limit`. Metadata only — never a value.
+   */
+  listSecretsDueForRotation(
+    now: Date,
+    leadWindowSeconds: number,
+    suppressSeconds: number,
+    limit: number,
+  ): Promise<ConfigResult<SecretRotationDue[]>>;
+  /** Stamp `last_reminded_at` on a batch of just-reminded secrets (SEC7 cron idempotency). */
+  markSecretsReminded(secretIds: string[], at: Date): Promise<ConfigResult<void>>;
 
   // Secret policies (SM3, Layer 2)
   /**

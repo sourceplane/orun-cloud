@@ -19,6 +19,7 @@ export type {
   UpdateFeatureFlagInput,
   SecretMetadata,
   SecretVersion,
+  SecretRotationDue,
   CreateSecretMetadataInput,
   SecretPolicyTier,
   SecretPolicyRecord,

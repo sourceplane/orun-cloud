@@ -11,6 +11,7 @@ import { handleCreateFeatureFlag } from "./handlers/create-feature-flag.js";
 import { handleUpdateFeatureFlag } from "./handlers/update-feature-flag.js";
 import { handleCreateSecret } from "./handlers/create-secret.js";
 import { handleRotateSecret } from "./handlers/rotate-secret.js";
+import { handleRevealSecret } from "./handlers/reveal-secret.js";
 import { handleRevokeSecret } from "./handlers/revoke-secret.js";
 import { handleImportSecrets } from "./handlers/import-secrets.js";
 import { handleSecretKeyStatus } from "./handlers/secret-key-status.js";
@@ -83,6 +84,12 @@ const ENV_SECRET_ITEM_RE = /^\/v1\/organizations\/([^/]+)\/projects\/([^/]+)\/en
 const ORG_SECRET_ROTATE_RE = /^\/v1\/organizations\/([^/]+)\/config\/secrets\/([^/]+)\/rotate$/;
 const PRJ_SECRET_ROTATE_RE = /^\/v1\/organizations\/([^/]+)\/projects\/([^/]+)\/config\/secrets\/([^/]+)\/rotate$/;
 const ENV_SECRET_ROTATE_RE = /^\/v1\/organizations\/([^/]+)\/projects\/([^/]+)\/environments\/([^/]+)\/config\/secrets\/([^/]+)\/rotate$/;
+
+// Break-glass reveal (SEC7): POST .../secrets/{id}/reveal — the ONE audited,
+// value-returning route. A fixed sub-path like rotate, matched before {id}.
+const ORG_SECRET_REVEAL_RE = /^\/v1\/organizations\/([^/]+)\/config\/secrets\/([^/]+)\/reveal$/;
+const PRJ_SECRET_REVEAL_RE = /^\/v1\/organizations\/([^/]+)\/projects\/([^/]+)\/config\/secrets\/([^/]+)\/reveal$/;
+const ENV_SECRET_REVEAL_RE = /^\/v1\/organizations\/([^/]+)\/projects\/([^/]+)\/environments\/([^/]+)\/config\/secrets\/([^/]+)\/reveal$/;
 
 // Version history (SM1): GET .../secrets/{id}/versions — metadata only.
 const ORG_SECRET_VERSIONS_RE = /^\/v1\/organizations\/([^/]+)\/config\/secrets\/([^/]+)\/versions$/;
@@ -384,7 +391,7 @@ function matchSecretsKeyStatusRoute(pathname: string): { scope: Scope & { kind: 
 interface MatchedSecretItemRoute {
   scope: Scope;
   secretId: string;
-  action: "rotate" | "revoke" | "versions";
+  action: "rotate" | "revoke" | "versions" | "reveal";
 }
 
 function matchSecretItemRoute(pathname: string): MatchedSecretItemRoute | null {
@@ -442,6 +449,34 @@ function matchSecretItemRoute(pathname: string): MatchedSecretItemRoute | null {
     const secretId = parseSecretMetadataPublicId(m[2]!);
     if (!orgId || !secretId) return null;
     return { scope: { kind: "organization", orgId }, secretId, action: "rotate" };
+  }
+
+  // Break-glass reveal routes (POST .../secrets/{id}/reveal)
+  m = pathname.match(ENV_SECRET_REVEAL_RE);
+  if (m) {
+    const orgId = parseOrgPublicId(m[1]!);
+    const projectId = parseProjectPublicId(m[2]!);
+    const environmentId = parseEnvironmentPublicId(m[3]!);
+    const secretId = parseSecretMetadataPublicId(m[4]!);
+    if (!orgId || !projectId || !environmentId || !secretId) return null;
+    return { scope: { kind: "environment", orgId, projectId, environmentId }, secretId, action: "reveal" };
+  }
+
+  m = pathname.match(PRJ_SECRET_REVEAL_RE);
+  if (m) {
+    const orgId = parseOrgPublicId(m[1]!);
+    const projectId = parseProjectPublicId(m[2]!);
+    const secretId = parseSecretMetadataPublicId(m[3]!);
+    if (!orgId || !projectId || !secretId) return null;
+    return { scope: { kind: "project", orgId, projectId }, secretId, action: "reveal" };
+  }
+
+  m = pathname.match(ORG_SECRET_REVEAL_RE);
+  if (m) {
+    const orgId = parseOrgPublicId(m[1]!);
+    const secretId = parseSecretMetadataPublicId(m[2]!);
+    if (!orgId || !secretId) return null;
+    return { scope: { kind: "organization", orgId }, secretId, action: "reveal" };
   }
 
   // Revoke routes (DELETE .../secrets/{id})
@@ -583,6 +618,12 @@ export async function route(request: Request, env: Env): Promise<Response> {
           return methodNotAllowed(requestId);
         }
         return handleRotateSecret(request, env, requestId, actor, matchedSecretItem.scope, matchedSecretItem.secretId);
+      }
+      if (matchedSecretItem.action === "reveal") {
+        if (request.method !== "POST") {
+          return methodNotAllowed(requestId);
+        }
+        return handleRevealSecret(request, env, requestId, actor, matchedSecretItem.scope, matchedSecretItem.secretId);
       }
       if (matchedSecretItem.action === "versions") {
         if (request.method !== "GET") {

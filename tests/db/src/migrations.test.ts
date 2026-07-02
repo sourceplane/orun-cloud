@@ -248,6 +248,33 @@ describe("Migration Manifest Verifier", () => {
     });
   });
 
+  describe("520_config_secret_rotation_reminder (SEC7)", () => {
+    const entry = manifest.migrations.find((m) => m.id === "520_config_secret_rotation_reminder");
+
+    it("is registered in the manifest under the config context", () => {
+      expect(entry).toBeDefined();
+      expect(entry!.context).toBe("config");
+    });
+
+    it("adds the last_reminded_at column (reminder bookkeeping only — no value)", () => {
+      const sql = readFileSync(resolve(MIGRATIONS_ROOT, entry!.path), "utf-8");
+      expect(sql).toContain("ADD COLUMN IF NOT EXISTS last_reminded_at TIMESTAMPTZ");
+      expect(sql.toLowerCase()).not.toContain("plaintext");
+      expect(sql.toLowerCase()).not.toContain("ciphertext");
+    });
+
+    it("adds the partial due-scan index over the reminder-eligible population", () => {
+      const sql = readFileSync(resolve(MIGRATIONS_ROOT, entry!.path), "utf-8");
+      expect(sql).toContain("CREATE INDEX IF NOT EXISTS secret_metadata_rotation_due_idx");
+      expect(sql).toContain("WHERE status = 'active' AND (rotation_policy IS NOT NULL OR expires_at IS NOT NULL)");
+    });
+
+    it("is idempotent (IF NOT EXISTS)", () => {
+      const sql = readFileSync(resolve(MIGRATIONS_ROOT, entry!.path), "utf-8");
+      expect(sql).toContain("IF NOT EXISTS");
+    });
+  });
+
   describe("migration description", () => {
     it("each migration has a non-empty description", () => {
       for (const m of migrations) {

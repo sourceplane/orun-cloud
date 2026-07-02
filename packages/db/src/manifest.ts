@@ -471,5 +471,14 @@ export const manifest: MigrationManifest = {
       description:
         "Materialization provenance (saas-secret-manager SM5, pairs orun-secrets SEC6) — creates config.secret_syncs (id UUID PK, secret_id FK to secret_metadata, org_id/project_id/environment_id recording scope, version, target adapter id, entity_ref provisioned entity, run_id deploy ULID, status synced/superseded/orphaned CHECK default synced, synced_at). Records what a deploy run's materialize step pushed where, at which version, so the catalog facet answers 'is the running entity on the latest rotation?' and drift is detectable. References/metadata ONLY — no secret value (Invariant 10). Indexes: (org_id, COALESCE(project_id, zero), COALESCE(environment_id, zero), secret_id) for the catalog join, (entity_ref, target) for the per-entity view, and a partial UNIQUE (secret_id, target, entity_ref) WHERE status='synced' so a new sync supersedes the prior. Additive + idempotent.",
     },
+    {
+      id: "520_config_secret_rotation_reminder",
+      context: "config",
+      path: "520_config_secret_rotation_reminder/up.sql",
+      checksum:
+        "8576f09371698749a73d3e80b5e2fac181d900bc9aff8d28e9c89e0dc02304f9",
+      description:
+        "Rotation/expiry reminder bookkeeping (saas-secret-manager SEC7, pairs orun-secrets SD-3) — adds config.secret_metadata.last_reminded_at TIMESTAMPTZ (NULL = never reminded), the idempotency stamp the rotation/expiry cron writes after emitting a secret.rotation_due / secret.expiring event so a still-overdue secret is not re-notified every tick. Adds a partial index (last_reminded_at) WHERE status='active' AND (rotation_policy IS NOT NULL OR expires_at IS NOT NULL) so the periodic due-scan is O(candidates). Reminder bookkeeping over metadata only — no secret value. Additive + idempotent.",
+    },
   ],
 };
