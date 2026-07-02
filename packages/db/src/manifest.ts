@@ -462,5 +462,14 @@ export const manifest: MigrationManifest = {
       description:
         "Tier-tagged SecretPolicy documents (saas-secret-manager SM3, pairs orun-secrets SEC2) — creates config.secret_policies (id UUID PK, org_id, project_id NULL = workspace-wide, name, tier composition/stack/intent, source provenance, document JSONB, document_hash content-address, created_at) with a unique index on (org_id, COALESCE(project_id, zero-uuid), tier, name). The Layer-2 condition store the lease-bound resolve evaluates in a config-worker pure lib; a document's tenancy scope comes from (org_id, project_id), push is idempotent by document_hash, and the JSONB body NEVER carries a secret value. Additive + idempotent.",
     },
+    {
+      id: "510_config_secret_syncs",
+      context: "config",
+      path: "510_config_secret_syncs/up.sql",
+      checksum:
+        "583e8bb995b83daf35580dd876bb846d34d25dc1c0c6353ab7553bcbc863d9b8",
+      description:
+        "Materialization provenance (saas-secret-manager SM5, pairs orun-secrets SEC6) — creates config.secret_syncs (id UUID PK, secret_id FK to secret_metadata, org_id/project_id/environment_id recording scope, version, target adapter id, entity_ref provisioned entity, run_id deploy ULID, status synced/superseded/orphaned CHECK default synced, synced_at). Records what a deploy run's materialize step pushed where, at which version, so the catalog facet answers 'is the running entity on the latest rotation?' and drift is detectable. References/metadata ONLY — no secret value (Invariant 10). Indexes: (org_id, COALESCE(project_id, zero), COALESCE(environment_id, zero), secret_id) for the catalog join, (entity_ref, target) for the per-entity view, and a partial UNIQUE (secret_id, target, entity_ref) WHERE status='synced' so a new sync supersedes the prior. Additive + idempotent.",
+    },
   ],
 };

@@ -6,9 +6,10 @@ import { resolveActor } from "./resolve-actor.js";
 // Organization-scoped config
 const ORG_CONFIG_SETTINGS_RE = /^\/v1\/organizations\/[^/]+\/config\/settings(\/[^/]+)?$/;
 const ORG_CONFIG_FLAGS_RE = /^\/v1\/organizations\/[^/]+\/config\/feature-flags(\/[^/]+)?$/;
-// Secrets subpaths (saas-secret-manager SM1): a single trailing segment covers
-// item ids and `/import`; `/rotate` and `/versions` nest one deeper.
-const ORG_CONFIG_SECRETS_RE = /^\/v1\/organizations\/[^/]+\/config\/secrets(\/[^/]+(\/(rotate|versions))?)?$/;
+// Secrets subpaths (saas-secret-manager SM1/SM5): a single trailing segment
+// covers item ids, `/import`, and `/syncs`; `/rotate` and `/versions` nest one
+// deeper. `/syncs` is called out explicitly (the SM5 provenance collection).
+const ORG_CONFIG_SECRETS_RE = /^\/v1\/organizations\/[^/]+\/config\/secrets(\/syncs|\/[^/]+(\/(rotate|versions))?)?$/;
 // SecretPolicy documents (SM3): PUT collection + POST /evaluate. NOTE: the
 // lease-verified value resolve lives at /v1/internal/config/secrets/resolve and
 // is DELIBERATELY absent here — api-edge never forwards /v1/internal/*, so the
@@ -18,13 +19,13 @@ const ORG_CONFIG_SECRET_POLICIES_RE = /^\/v1\/organizations\/[^/]+\/config\/secr
 // Project-scoped config
 const PRJ_CONFIG_SETTINGS_RE = /^\/v1\/organizations\/[^/]+\/projects\/[^/]+\/config\/settings(\/[^/]+)?$/;
 const PRJ_CONFIG_FLAGS_RE = /^\/v1\/organizations\/[^/]+\/projects\/[^/]+\/config\/feature-flags(\/[^/]+)?$/;
-const PRJ_CONFIG_SECRETS_RE = /^\/v1\/organizations\/[^/]+\/projects\/[^/]+\/config\/secrets(\/[^/]+(\/(rotate|versions))?)?$/;
+const PRJ_CONFIG_SECRETS_RE = /^\/v1\/organizations\/[^/]+\/projects\/[^/]+\/config\/secrets(\/syncs|\/[^/]+(\/(rotate|versions))?)?$/;
 const PRJ_CONFIG_SECRET_POLICIES_RE = /^\/v1\/organizations\/[^/]+\/projects\/[^/]+\/config\/secret-policies(\/evaluate)?$/;
 
 // Environment-scoped config
 const ENV_CONFIG_SETTINGS_RE = /^\/v1\/organizations\/[^/]+\/projects\/[^/]+\/environments\/[^/]+\/config\/settings(\/[^/]+)?$/;
 const ENV_CONFIG_FLAGS_RE = /^\/v1\/organizations\/[^/]+\/projects\/[^/]+\/environments\/[^/]+\/config\/feature-flags(\/[^/]+)?$/;
-const ENV_CONFIG_SECRETS_RE = /^\/v1\/organizations\/[^/]+\/projects\/[^/]+\/environments\/[^/]+\/config\/secrets(\/[^/]+(\/(rotate|versions))?)?$/;
+const ENV_CONFIG_SECRETS_RE = /^\/v1\/organizations\/[^/]+\/projects\/[^/]+\/environments\/[^/]+\/config\/secrets(\/syncs|\/[^/]+(\/(rotate|versions))?)?$/;
 
 const FORWARDED_HEADERS = [
   "content-type",

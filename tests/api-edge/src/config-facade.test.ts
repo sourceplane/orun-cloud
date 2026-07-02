@@ -167,6 +167,19 @@ describe("api-edge config facade", () => {
       expect(isConfigRoute("/v1/organizations/org_abc/config/secrets/sec_abc/reveal")).toBe(false);
       expect(isConfigRoute("/v1/organizations/org_abc/config/secrets/sec_abc/versions/2")).toBe(false);
     });
+
+    // saas-secret-manager SM5 — materialization-provenance syncs collection.
+    it("matches secret syncs routes at all scopes", () => {
+      expect(isConfigRoute("/v1/organizations/org_abc/config/secrets/syncs")).toBe(true);
+      expect(isConfigRoute("/v1/organizations/org_abc/projects/prj_def/config/secrets/syncs")).toBe(true);
+      expect(isConfigRoute("/v1/organizations/org_a/projects/prj_b/environments/env_c/config/secrets/syncs")).toBe(true);
+    });
+
+    it("still matches the secret item route (syncs does not shadow the {id} catch-all)", () => {
+      expect(isConfigRoute("/v1/organizations/org_abc/config/secrets/sec_abc")).toBe(true);
+      // A nested sub-action under syncs is not a route (single-segment only).
+      expect(isConfigRoute("/v1/organizations/org_abc/config/secrets/syncs/extra")).toBe(false);
+    });
   });
 
   describe("handleConfigRoute", () => {
@@ -287,6 +300,39 @@ describe("api-edge config facade", () => {
       expect(res.status).toBe(200);
       expect(configCalls.length).toBe(1);
       expect(configCalls[0]!.url).toContain(path);
+    });
+
+    it("forwards POST to config-worker for a secret sync record (SM5)", async () => {
+      const { fetcher: identityFetcher } = createSessionFetcher("usr_test");
+      const { fetcher: configFetcher, calls: configCalls } = createFakeFetcher();
+      const env = createEnv({ IDENTITY_WORKER: identityFetcher, CONFIG_WORKER: configFetcher });
+      const path = "/v1/organizations/org_a/projects/prj_b/environments/env_c/config/secrets/syncs";
+      const req = new Request(`https://api-edge${path}`, {
+        method: "POST",
+        headers: { "content-type": "application/json", authorization: "Bearer tok_test" },
+        body: JSON.stringify({ secretKey: "DATABASE_URL", version: 7, target: "cloudflare-worker", entityRef: "Resource/worker-api-prod", runId: "01JRUN" }),
+      });
+      const res = await handleConfigRoute(req, env as never, "req_test", path);
+      expect(res.status).toBe(200);
+      expect(configCalls.length).toBe(1);
+      expect(configCalls[0]!.init.method).toBe("POST");
+      expect(configCalls[0]!.url).toContain(path);
+    });
+
+    it("forwards GET (with query filters) to config-worker for a secret sync list (SM5)", async () => {
+      const { fetcher: identityFetcher } = createSessionFetcher("usr_test");
+      const { fetcher: configFetcher, calls: configCalls } = createFakeFetcher();
+      const env = createEnv({ IDENTITY_WORKER: identityFetcher, CONFIG_WORKER: configFetcher });
+      const path = "/v1/organizations/org_abc/config/secrets/syncs";
+      const req = new Request(`https://api-edge${path}?entityRef=Resource/worker-api-prod&status=synced`, {
+        method: "GET",
+        headers: { authorization: "Bearer tok_test" },
+      });
+      const res = await handleConfigRoute(req, env as never, "req_test", path);
+      expect(res.status).toBe(200);
+      expect(configCalls.length).toBe(1);
+      expect(configCalls[0]!.url).toContain("entityRef=Resource");
+      expect(configCalls[0]!.url).toContain("status=synced");
     });
 
     it("forwards POST to config-worker for secret import (SM1)", async () => {

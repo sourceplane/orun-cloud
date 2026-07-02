@@ -254,6 +254,52 @@ export interface SecretPolicyScope {
   projectId?: string | null;
 }
 
+// ── Secret syncs (saas-secret-manager SM5, materialization provenance) ──
+// A record of what a deploy run's materialize step pushed where, at which
+// version. References/metadata ONLY — a secret VALUE never appears here.
+
+export type SecretSyncStatus = "synced" | "superseded" | "orphaned";
+
+/**
+ * One materialization-provenance row (saas-secret-manager SM5): the value of
+ * `secretId`@`version` was written into the provisioned catalog entity
+ * `entityRef` on the `target` adapter by deploy run `runId`. `status` tracks the
+ * lifecycle: `synced` (current) -> `superseded` (a newer sync replaced it) ->
+ * `orphaned` (the entity was decommissioned). NEVER carries a secret value.
+ */
+export interface SecretSync {
+  id: string;
+  secretId: string;
+  orgId: string;
+  projectId: string | null;
+  environmentId: string | null;
+  version: number;
+  target: string;
+  entityRef: string;
+  runId: string;
+  status: SecretSyncStatus;
+  syncedAt: Date;
+}
+
+export interface RecordSecretSyncInput {
+  id: string;
+  /** Recording scope (org/project/environment) — denormalized onto the row. */
+  scope: Scope;
+  secretId: string;
+  version: number;
+  target: string;
+  entityRef: string;
+  runId: string;
+}
+
+/** Metadata-only filters for a sync list: per-entity (`entityRef`),
+ *  per-component (`secretId`), and lifecycle (`status`) views. */
+export interface ListSecretSyncsFilter {
+  entityRef?: string;
+  secretId?: string;
+  status?: SecretSyncStatus;
+}
+
 // ── Secret DEKs (saas-secret-manager SM2) ───────────────────
 // NOTE: No raw key material fields. `wrappedDek` is ciphertext under the KEK.
 
@@ -375,4 +421,28 @@ export interface ConfigRepository {
    * project's documents.
    */
   listSecretPolicies(scope: SecretPolicyScope): Promise<ConfigResult<SecretPolicyRecord[]>>;
+
+  // Secret syncs (SM5, materialization provenance)
+  /**
+   * Record a materialization sync (saas-secret-manager SM5) in ONE atomic
+   * statement: flip any existing `synced` row for the same
+   * `(secretId, target, entityRef)` to `superseded`, then insert the new
+   * `synced` row. Idempotent-friendly: if an identical
+   * `(secretId, version, target, entityRef, runId)` is already `synced`, the
+   * existing row is returned unchanged (no supersede, no duplicate). References
+   * only — never a secret value.
+   */
+  recordSecretSync(input: RecordSecretSyncInput): Promise<ConfigResult<SecretSync>>;
+  /**
+   * List sync provenance rows in scope, newest first (saas-secret-manager SM5).
+   * Metadata only. Supports the catalog facet's per-entity (`entityRef`),
+   * per-component (`secretId`), and lifecycle (`status`) views.
+   */
+  listSecretSyncs(scope: Scope, filter: ListSecretSyncsFilter, params: PageQueryParams): Promise<ConfigResult<PagedResult<SecretSync>>>;
+  /**
+   * Flip every `synced` row for a decommissioned entity to `orphaned`
+   * (saas-secret-manager SM5). Exposed now; the caller (entity removal) is wired
+   * later. Returns the number of rows orphaned.
+   */
+  markSyncsOrphaned(entityRef: string): Promise<ConfigResult<{ count: number }>>;
 }

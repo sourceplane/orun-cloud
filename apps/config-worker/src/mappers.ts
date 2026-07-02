@@ -1,4 +1,4 @@
-import type { Setting, FeatureFlag, SecretMetadata, SecretVersion } from "@saas/db/config";
+import type { Setting, FeatureFlag, SecretMetadata, SecretVersion, SecretSync } from "@saas/db/config";
 import type { PublicSetting, PublicFeatureFlag, PublicSecretMetadata, PublicSecretVersion } from "@saas/contracts/config";
 import type { ResolutionSource, SecretServesFrom } from "./config-resolver.js";
 import {
@@ -6,6 +6,7 @@ import {
   settingPublicId,
   featureFlagPublicId,
   secretMetadataPublicId,
+  secretSyncPublicId,
 } from "./ids.js";
 
 function projectPublicId(uuid: string): string {
@@ -135,5 +136,37 @@ export function toPublicSecretVersion(v: SecretVersion): PublicSecretVersion {
     status: v.status,
     createdBy: v.createdBy,
     createdAt: toISOString(v.createdAt),
+  };
+}
+
+/**
+ * Public shape of a materialization-provenance row (saas-secret-manager SM5).
+ * Metadata only — references + lifecycle, never a secret value.
+ */
+export interface PublicSecretSync {
+  id: string;
+  secretId: string;
+  orgId: string;
+  projectId: string | null;
+  environmentId: string | null;
+  version: number;
+  target: string;
+  entityRef: string;
+  runId: string;
+  status: string;
+  syncedAt: string;
+}
+
+export function toPublicSecretSync(s: SecretSync): PublicSecretSync {
+  return {
+    id: secretSyncPublicId(s.id),
+    secretId: secretMetadataPublicId(s.secretId),
+    ...mapScopeIds(s),
+    version: s.version,
+    target: s.target,
+    entityRef: s.entityRef,
+    runId: s.runId,
+    status: s.status,
+    syncedAt: toISOString(s.syncedAt),
   };
 }

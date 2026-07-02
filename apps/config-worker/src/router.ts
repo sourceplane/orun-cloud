@@ -18,6 +18,8 @@ import { handleListSecretChain } from "./handlers/list-secret-chain.js";
 import { handleListSecretVersions } from "./handlers/list-secret-versions.js";
 import { handlePutSecretPolicy } from "./handlers/put-secret-policy.js";
 import { handleEvaluateSecretPolicy } from "./handlers/evaluate-secret-policy.js";
+import { handleRecordSecretSync } from "./handlers/record-secret-sync.js";
+import { handleListSecretSyncs } from "./handlers/list-secret-syncs.js";
 import { handleInternalResolveSecrets } from "./handlers/internal-resolve-secrets.js";
 import { errorResponse, notFound, methodNotAllowed } from "./http.js";
 import { generateRequestId, parseOrgPublicId, parseProjectPublicId, parseEnvironmentPublicId, parseSettingPublicId, parseFeatureFlagPublicId, parseSecretMetadataPublicId } from "./ids.js";
@@ -101,6 +103,12 @@ const PRJ_SECRET_POLICIES_EVALUATE_RE = /^\/v1\/organizations\/([^/]+)\/projects
 // service binding. NOT exposed through api-edge (no /v1/internal/* forwarding),
 // and does NOT require a user bearer: it trusts the calling worker.
 const INTERNAL_SECRETS_RESOLVE_PATH = "/v1/internal/config/secrets/resolve";
+
+// Materialization provenance (SM5): POST records a sync, GET lists them.
+// `syncs` is a fixed sub-path (like `import`), matched before the {id} route.
+const ORG_SECRETS_SYNCS_RE = /^\/v1\/organizations\/([^/]+)\/config\/secrets\/syncs$/;
+const PRJ_SECRETS_SYNCS_RE = /^\/v1\/organizations\/([^/]+)\/projects\/([^/]+)\/config\/secrets\/syncs$/;
+const ENV_SECRETS_SYNCS_RE = /^\/v1\/organizations\/([^/]+)\/projects\/([^/]+)\/environments\/([^/]+)\/config\/secrets\/syncs$/;
 
 // Bulk write-only import (SM1): POST .../config/secrets/import.
 const ORG_SECRETS_IMPORT_RE = /^\/v1\/organizations\/([^/]+)\/config\/secrets\/import$/;
@@ -310,6 +318,31 @@ function matchSecretsImportRoute(pathname: string): { scope: Scope } | null {
   return null;
 }
 
+function matchSecretsSyncsRoute(pathname: string): { scope: Scope } | null {
+  let m = pathname.match(ENV_SECRETS_SYNCS_RE);
+  if (m) {
+    const orgId = parseOrgPublicId(m[1]!);
+    const projectId = parseProjectPublicId(m[2]!);
+    const environmentId = parseEnvironmentPublicId(m[3]!);
+    if (!orgId || !projectId || !environmentId) return null;
+    return { scope: { kind: "environment", orgId, projectId, environmentId } };
+  }
+  m = pathname.match(PRJ_SECRETS_SYNCS_RE);
+  if (m) {
+    const orgId = parseOrgPublicId(m[1]!);
+    const projectId = parseProjectPublicId(m[2]!);
+    if (!orgId || !projectId) return null;
+    return { scope: { kind: "project", orgId, projectId } };
+  }
+  m = pathname.match(ORG_SECRETS_SYNCS_RE);
+  if (m) {
+    const orgId = parseOrgPublicId(m[1]!);
+    if (!orgId) return null;
+    return { scope: { kind: "organization", orgId } };
+  }
+  return null;
+}
+
 function matchSecretPoliciesRoute(pathname: string): { scope: Scope; action: "put" | "evaluate" } | null {
   let m = pathname.match(PRJ_SECRET_POLICIES_EVALUATE_RE);
   if (m) {
@@ -476,13 +509,16 @@ export async function route(request: Request, env: Env): Promise<Response> {
     // Import and key-status are matched before the generic secret item route:
     // `import`/`key-status` are reserved path segments, not secret ids.
     const matchedImport = (matchedResolve || matched || matchedItem) ? null : matchSecretsImportRoute(url.pathname);
+    // Syncs are matched before the generic secret item route: `syncs` is a
+    // reserved sub-path (a fixed collection), not a secret id.
+    const matchedSyncs = (matchedResolve || matched || matchedItem || matchedImport) ? null : matchSecretsSyncsRoute(url.pathname);
     // SecretPolicy routes are matched before the generic secret item route:
     // `secret-policies` is a distinct collection, not a secret id.
-    const matchedSecretPolicies = (matchedResolve || matched || matchedItem || matchedImport) ? null : matchSecretPoliciesRoute(url.pathname);
-    const matchedKeyStatus = (matchedResolve || matched || matchedItem || matchedImport || matchedSecretPolicies) ? null : matchSecretsKeyStatusRoute(url.pathname);
-    const matchedSecretItem = (matchedResolve || matched || matchedItem || matchedImport || matchedSecretPolicies || matchedKeyStatus) ? null : matchSecretItemRoute(url.pathname);
+    const matchedSecretPolicies = (matchedResolve || matched || matchedItem || matchedImport || matchedSyncs) ? null : matchSecretPoliciesRoute(url.pathname);
+    const matchedKeyStatus = (matchedResolve || matched || matchedItem || matchedImport || matchedSyncs || matchedSecretPolicies) ? null : matchSecretsKeyStatusRoute(url.pathname);
+    const matchedSecretItem = (matchedResolve || matched || matchedItem || matchedImport || matchedSyncs || matchedSecretPolicies || matchedKeyStatus) ? null : matchSecretItemRoute(url.pathname);
 
-    if (!matchedResolve && !matched && !matchedItem && !matchedImport && !matchedSecretPolicies && !matchedKeyStatus && !matchedSecretItem) {
+    if (!matchedResolve && !matched && !matchedItem && !matchedImport && !matchedSyncs && !matchedSecretPolicies && !matchedKeyStatus && !matchedSecretItem) {
       return notFound(requestId, url.pathname);
     }
 
@@ -511,6 +547,17 @@ export async function route(request: Request, env: Env): Promise<Response> {
         return methodNotAllowed(requestId);
       }
       return handlePutSecretPolicy(request, env, requestId, actor, matchedSecretPolicies.scope);
+    }
+
+    // Materialization provenance (SM5): POST records a sync, GET lists them.
+    if (matchedSyncs) {
+      if (request.method === "POST") {
+        return handleRecordSecretSync(request, env, requestId, actor, matchedSyncs.scope);
+      }
+      if (request.method === "GET") {
+        return handleListSecretSyncs(request, env, requestId, actor, matchedSyncs.scope);
+      }
+      return methodNotAllowed(requestId);
     }
 
     // Bulk write-only secret import (SM1): POST only.
