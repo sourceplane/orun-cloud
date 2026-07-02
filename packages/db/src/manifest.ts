@@ -453,5 +453,14 @@ export const manifest: MigrationManifest = {
       description:
         "Drop the v1 work-plane schema (orun-work v1 scrapped before any product surface consumed it — no route, worker, SDK, or console ever read these tables). Removes the work schema created by 200_work_foundation (items/events/links/status/cursors/sequences) via DROP SCHEMA ... CASCADE, alongside the removal of the @saas/db/work library. The v2 design (two append-only logs, lifecycle as a derived query, no stored status) lands its own schema under fresh migrations; see the orun repo specs/orun-work/ (v2), specs/archive/orun-work-v1/ (frozen v1), and specs/epics/orun-work/ here.",
     },
+    {
+      id: "500_config_secret_policies",
+      context: "config",
+      path: "500_config_secret_policies/up.sql",
+      checksum:
+        "2f15f1ea8552d1de6de6528b5b8be7ec4b1fa0c602194cf53b3a30edbc17412d",
+      description:
+        "Tier-tagged SecretPolicy documents (saas-secret-manager SM3, pairs orun-secrets SEC2) — creates config.secret_policies (id UUID PK, org_id, project_id NULL = workspace-wide, name, tier composition/stack/intent, source provenance, document JSONB, document_hash content-address, created_at) with a unique index on (org_id, COALESCE(project_id, zero-uuid), tier, name). The Layer-2 condition store the lease-bound resolve evaluates in a config-worker pure lib; a document's tenancy scope comes from (org_id, project_id), push is idempotent by document_hash, and the JSONB body NEVER carries a secret value. Additive + idempotent.",
+    },
   ],
 };

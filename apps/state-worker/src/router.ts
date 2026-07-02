@@ -51,6 +51,7 @@ import {
   handleDeleteRef,
 } from "./handlers/refs.js";
 import { handleListTriggers } from "./handlers/triggers.js";
+import { handleResolveRunSecrets } from "./handlers/secrets-resolve.js";
 import {
   generateRequestId,
   isRunUlid,
@@ -111,6 +112,9 @@ const RUN_RE = new RegExp(`^${STATE_BASE}/runs/([^/]+)$`);
 const RUN_JOBS_RE = new RegExp(`^${STATE_BASE}/runs/([^/]+)/jobs$`);
 const RUN_RUNNABLE_RE = new RegExp(`^${STATE_BASE}/runs/([^/]+)/runnable$`);
 const RUN_LOGS_RE = new RegExp(`^${STATE_BASE}/runs/([^/]+)/logs/([^/]+)$`);
+// SM3 — the lease-bound secret resolve (state-api-contract §4). SLASH form
+// (…/secrets/resolve), not a colon-verb; the ONLY value-returning machine route.
+const RUN_SECRETS_RESOLVE_RE = new RegExp(`^${STATE_BASE}/runs/([^/]+)/secrets/resolve$`);
 
 // Native v2 coordination wire (coordination-api.md §2/§3) — colon-verbs + the
 // run event-log/frontier reads, routed to the RunCoordinator DO. Disjoint from
@@ -366,6 +370,17 @@ async function routeRun(
     if (!scope || !isRunUlid(m[3]!)) return notFound(requestId, pathname);
     if (request.method !== "GET") return methodNotAllowed(requestId);
     return handleNativeFrontier(env, requestId, actor, scope.orgId, scope.projectId, m[3]!);
+  }
+
+  // POST …/runs/{runId}/secrets/resolve (SM3) — the lease-bound secret resolve.
+  // Matched before the greedy single-run GET; the slash form is disjoint from
+  // the colon-verbs above.
+  m = pathname.match(RUN_SECRETS_RESOLVE_RE);
+  if (m) {
+    const scope = parseScope(m[1]!, m[2]!);
+    if (!scope || !isRunUlid(m[3]!)) return notFound(requestId, pathname);
+    if (request.method !== "POST") return methodNotAllowed(requestId);
+    return handleResolveRunSecrets(request, env, requestId, actor, scope.orgId, scope.projectId, m[3]!);
   }
 
   // GET …/runs/{runId}/jobs

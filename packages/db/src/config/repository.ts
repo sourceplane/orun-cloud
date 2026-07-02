@@ -10,9 +10,12 @@ import type {
   FeatureFlag,
   PagedResult,
   PageQueryParams,
+  PutSecretPolicyInput,
   ResolveScope,
   Scope,
   SecretMetadata,
+  SecretPolicyRecord,
+  SecretPolicyScope,
   SecretVersion,
   Setting,
   UpdateFeatureFlagInput,
@@ -121,6 +124,23 @@ function mapSecretVersion(row: Record<string, unknown>): SecretVersion {
     createdAt: new Date(row.created_at as string),
   };
 }
+
+function mapSecretPolicy(row: Record<string, unknown>): SecretPolicyRecord {
+  const doc = row.document;
+  return {
+    id: row.id as string,
+    orgId: row.org_id as string,
+    projectId: (row.project_id as string) ?? null,
+    name: row.name as string,
+    tier: row.tier as SecretPolicyRecord["tier"],
+    source: row.source as string,
+    document: (typeof doc === "string" ? JSON.parse(doc) : doc) as Record<string, unknown>,
+    documentHash: row.document_hash as string,
+    createdAt: new Date(row.created_at as string),
+  };
+}
+
+const ZERO_UUID = "00000000-0000-0000-0000-000000000000";
 
 // ── Secret metadata safe columns (no ciphertext_envelope) ──
 
@@ -556,6 +576,110 @@ export function createConfigRepository(executor: SqlExecutor): ConfigRepository 
         return { ok: true, value: { items: rows, nextCursor } };
       } catch {
         return safeError("Failed to list secret versions");
+      }
+    },
+
+    async getSecretCiphertext(secretId: string, version: number): Promise<ConfigResult<string>> {
+      try {
+        // convert_from: ciphertext_envelope is JSON text stored as BYTEA — a bare
+        // ::text cast would yield the \x hex form, not the document. This is the
+        // ONE repository read allowed to select ciphertext (SM3 resolve/reveal).
+        const result = await executor.execute<Record<string, unknown>>(
+          `SELECT convert_from(ciphertext_envelope, 'UTF8') AS ciphertext_envelope
+           FROM config.secret_versions
+           WHERE secret_id = $1 AND version = $2 AND status = 'active'`,
+          [secretId, version],
+        );
+        if (result.rowCount === 0) {
+          return { ok: false, error: { kind: "not_found" } };
+        }
+        return { ok: true, value: result.rows[0]!.ciphertext_envelope as string };
+      } catch {
+        return safeError("Failed to get secret ciphertext");
+      }
+    },
+
+    async touchSecretLastUsed(orgId: string, secretId: string, at: Date): Promise<ConfigResult<void>> {
+      try {
+        const result = await executor.execute<Record<string, unknown>>(
+          `UPDATE config.secret_metadata SET last_used_at = $3
+           WHERE org_id = $1 AND id = $2`,
+          [orgId, secretId, at.toISOString()],
+        );
+        if (result.rowCount === 0) {
+          return { ok: false, error: { kind: "not_found" } };
+        }
+        return { ok: true, value: undefined };
+      } catch {
+        return safeError("Failed to stamp last_used_at");
+      }
+    },
+
+    // ── Secret policies (SM3, Layer 2) ─────────────────────
+
+    async putSecretPolicy(input: PutSecretPolicyInput): Promise<ConfigResult<{ record: SecretPolicyRecord; updated: boolean }>> {
+      try {
+        // Idempotent by document_hash: an unchanged push updates nothing (xmax
+        // stays 0 ⇒ no row-version bump), a changed one replaces document + hash
+        // in place. `updated` is true only when the stored row actually changed.
+        const result = await executor.execute<Record<string, unknown>>(
+          `INSERT INTO config.secret_policies (id, org_id, project_id, name, tier, source, document, document_hash, created_at)
+           VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8, now())
+           ON CONFLICT (org_id, COALESCE(project_id, '${ZERO_UUID}'), tier, name)
+             DO UPDATE SET
+               document = EXCLUDED.document,
+               document_hash = EXCLUDED.document_hash,
+               source = EXCLUDED.source
+             WHERE config.secret_policies.document_hash <> EXCLUDED.document_hash
+           RETURNING *,
+             (xmax <> 0) AS was_updated`,
+          [input.id, input.orgId, input.projectId ?? null, input.name, input.tier, input.source, JSON.stringify(input.document), input.documentHash],
+        );
+        if (result.rowCount === 0) {
+          // ON CONFLICT ... WHERE guard skipped the update (identical hash): the
+          // push is a clean no-op. Re-read the current row so callers still get it.
+          const existing = await executor.execute<Record<string, unknown>>(
+            `SELECT * FROM config.secret_policies
+             WHERE org_id = $1 AND COALESCE(project_id, '${ZERO_UUID}') = COALESCE($2::uuid, '${ZERO_UUID}') AND tier = $3 AND name = $4`,
+            [input.orgId, input.projectId ?? null, input.tier, input.name],
+          );
+          if (existing.rowCount === 0) {
+            return safeError("Failed to upsert secret policy");
+          }
+          return { ok: true, value: { record: mapSecretPolicy(existing.rows[0]!), updated: false } };
+        }
+        const row = result.rows[0]!;
+        return { ok: true, value: { record: mapSecretPolicy(row), updated: (row.was_updated as boolean) === true } };
+      } catch (err: unknown) {
+        if (isCheckViolation(err)) {
+          return safeError("Invalid tier for secret policy");
+        }
+        return safeError("Failed to upsert secret policy");
+      }
+    },
+
+    async listSecretPolicies(scope: SecretPolicyScope): Promise<ConfigResult<SecretPolicyRecord[]>> {
+      try {
+        // Tier order composition → stack → intent (policy-model §5). Workspace-
+        // wide documents (project_id NULL) always join; a project id adds that
+        // project's documents. Ordered deterministically by (tier, name).
+        const values: unknown[] = [scope.orgId];
+        let projectClause = "project_id IS NULL";
+        if (scope.projectId) {
+          values.push(scope.projectId);
+          projectClause = `(project_id IS NULL OR project_id = $${values.length})`;
+        }
+        const result = await executor.execute<Record<string, unknown>>(
+          `SELECT * FROM config.secret_policies
+           WHERE org_id = $1 AND ${projectClause}
+           ORDER BY
+             CASE tier WHEN 'composition' THEN 0 WHEN 'stack' THEN 1 ELSE 2 END,
+             name ASC`,
+          values,
+        );
+        return { ok: true, value: result.rows.map(mapSecretPolicy) };
+      } catch {
+        return safeError("Failed to list secret policies");
       }
     },
   };

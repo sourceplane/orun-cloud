@@ -14,6 +14,7 @@ spec:
     - component: policy-worker
     - component: projects-worker
     - component: integrations-worker
+    - component: config-worker
     - component: cloudflare-hyperdrive
     - component: cloudflare-r2
   subscribe:

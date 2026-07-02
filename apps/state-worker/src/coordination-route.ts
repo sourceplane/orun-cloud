@@ -123,8 +123,10 @@ export async function runIsDoBacked(env: Env, runId: string): Promise<boolean> {
 // reads (status/jobs) stay fresh. The DO is the authority; this keeps the
 // delayed read model close behind, seq-guarded so it is safe to run repeatedly.
 
-/** Read the run shard's folded state (GET /state → RunFoldState), or null. */
-async function readCoordinatorState(env: Env, runId: string): Promise<RunFoldState | null> {
+/** Read the run shard's folded state (GET /state → RunFoldState), or null.
+ *  Exported for the SM3 lease verification (lease.ts) — the resolve route
+ *  checks the DO fold's (phase, holder, leaseEpoch, leaseExpiresAt) directly. */
+export async function readCoordinatorState(env: Env, runId: string): Promise<RunFoldState | null> {
   const res = await callCoordinator(env, runId, "GET", "/state");
   if (!res.ok) return null;
   return (await res.json()) as RunFoldState;

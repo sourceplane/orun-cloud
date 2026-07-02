@@ -16,6 +16,9 @@ import { handleImportSecrets } from "./handlers/import-secrets.js";
 import { handleSecretKeyStatus } from "./handlers/secret-key-status.js";
 import { handleListSecretChain } from "./handlers/list-secret-chain.js";
 import { handleListSecretVersions } from "./handlers/list-secret-versions.js";
+import { handlePutSecretPolicy } from "./handlers/put-secret-policy.js";
+import { handleEvaluateSecretPolicy } from "./handlers/evaluate-secret-policy.js";
+import { handleInternalResolveSecrets } from "./handlers/internal-resolve-secrets.js";
 import { errorResponse, notFound, methodNotAllowed } from "./http.js";
 import { generateRequestId, parseOrgPublicId, parseProjectPublicId, parseEnvironmentPublicId, parseSettingPublicId, parseFeatureFlagPublicId, parseSecretMetadataPublicId } from "./ids.js";
 
@@ -86,6 +89,18 @@ const ENV_SECRET_VERSIONS_RE = /^\/v1\/organizations\/([^/]+)\/projects\/([^/]+)
 
 // Key-hierarchy status (SM2): GET .../config/secrets/key-status — org scope only.
 const ORG_SECRETS_KEY_STATUS_RE = /^\/v1\/organizations\/([^/]+)\/config\/secrets\/key-status$/;
+
+// SecretPolicy documents (SM3, Layer 2): PUT .../config/secret-policies (push a
+// tier-tagged document) and POST .../config/secret-policies/evaluate (dry-run).
+const ORG_SECRET_POLICIES_RE = /^\/v1\/organizations\/([^/]+)\/config\/secret-policies$/;
+const PRJ_SECRET_POLICIES_RE = /^\/v1\/organizations\/([^/]+)\/projects\/([^/]+)\/config\/secret-policies$/;
+const ORG_SECRET_POLICIES_EVALUATE_RE = /^\/v1\/organizations\/([^/]+)\/config\/secret-policies\/evaluate$/;
+const PRJ_SECRET_POLICIES_EVALUATE_RE = /^\/v1\/organizations\/([^/]+)\/projects\/([^/]+)\/config\/secret-policies\/evaluate$/;
+
+// Internal, lease-verified resolve (SM3) — reachable ONLY via the state-worker
+// service binding. NOT exposed through api-edge (no /v1/internal/* forwarding),
+// and does NOT require a user bearer: it trusts the calling worker.
+const INTERNAL_SECRETS_RESOLVE_PATH = "/v1/internal/config/secrets/resolve";
 
 // Bulk write-only import (SM1): POST .../config/secrets/import.
 const ORG_SECRETS_IMPORT_RE = /^\/v1\/organizations\/([^/]+)\/config\/secrets\/import$/;
@@ -295,6 +310,36 @@ function matchSecretsImportRoute(pathname: string): { scope: Scope } | null {
   return null;
 }
 
+function matchSecretPoliciesRoute(pathname: string): { scope: Scope; action: "put" | "evaluate" } | null {
+  let m = pathname.match(PRJ_SECRET_POLICIES_EVALUATE_RE);
+  if (m) {
+    const orgId = parseOrgPublicId(m[1]!);
+    const projectId = parseProjectPublicId(m[2]!);
+    if (!orgId || !projectId) return null;
+    return { scope: { kind: "project", orgId, projectId }, action: "evaluate" };
+  }
+  m = pathname.match(ORG_SECRET_POLICIES_EVALUATE_RE);
+  if (m) {
+    const orgId = parseOrgPublicId(m[1]!);
+    if (!orgId) return null;
+    return { scope: { kind: "organization", orgId }, action: "evaluate" };
+  }
+  m = pathname.match(PRJ_SECRET_POLICIES_RE);
+  if (m) {
+    const orgId = parseOrgPublicId(m[1]!);
+    const projectId = parseProjectPublicId(m[2]!);
+    if (!orgId || !projectId) return null;
+    return { scope: { kind: "project", orgId, projectId }, action: "put" };
+  }
+  m = pathname.match(ORG_SECRET_POLICIES_RE);
+  if (m) {
+    const orgId = parseOrgPublicId(m[1]!);
+    if (!orgId) return null;
+    return { scope: { kind: "organization", orgId }, action: "put" };
+  }
+  return null;
+}
+
 function matchSecretsKeyStatusRoute(pathname: string): { scope: Scope & { kind: "organization" } } | null {
   const m = pathname.match(ORG_SECRETS_KEY_STATUS_RE);
   if (!m) return null;
@@ -406,16 +451,38 @@ export async function route(request: Request, env: Env): Promise<Response> {
       return handleHealth(env, requestId);
     }
 
+    // Internal, lease-verified resolve (SM3). Handled BEFORE the actor gate: it
+    // trusts the calling worker (state-worker, which already ran bearer authz +
+    // lease verification) and carries no user bearer — exactly like the other
+    // /v1/internal/* endpoints. api-edge never forwards this path, so the only
+    // reachable caller is the service binding.
+    if (url.pathname === INTERNAL_SECRETS_RESOLVE_PATH) {
+      if (request.method !== "POST") {
+        return methodNotAllowed(requestId);
+      }
+      // The verified actor rides x-actor-* headers set by the calling worker;
+      // no user bearer is required (the caller — state-worker — already ran
+      // bearer authz + lease verification).
+      const internalActor = resolveActor(request);
+      if (!internalActor) {
+        return errorResponse("unauthenticated", "Actor headers required", 401, requestId);
+      }
+      return handleInternalResolveSecrets(request, env, requestId, internalActor);
+    }
+
     const matchedResolve = matchResolveRoute(url.pathname);
     const matched = matchedResolve ? null : matchRoute(url.pathname);
     const matchedItem = (matchedResolve || matched) ? null : matchItemRoute(url.pathname);
     // Import and key-status are matched before the generic secret item route:
     // `import`/`key-status` are reserved path segments, not secret ids.
     const matchedImport = (matchedResolve || matched || matchedItem) ? null : matchSecretsImportRoute(url.pathname);
-    const matchedKeyStatus = (matchedResolve || matched || matchedItem || matchedImport) ? null : matchSecretsKeyStatusRoute(url.pathname);
-    const matchedSecretItem = (matchedResolve || matched || matchedItem || matchedImport || matchedKeyStatus) ? null : matchSecretItemRoute(url.pathname);
+    // SecretPolicy routes are matched before the generic secret item route:
+    // `secret-policies` is a distinct collection, not a secret id.
+    const matchedSecretPolicies = (matchedResolve || matched || matchedItem || matchedImport) ? null : matchSecretPoliciesRoute(url.pathname);
+    const matchedKeyStatus = (matchedResolve || matched || matchedItem || matchedImport || matchedSecretPolicies) ? null : matchSecretsKeyStatusRoute(url.pathname);
+    const matchedSecretItem = (matchedResolve || matched || matchedItem || matchedImport || matchedSecretPolicies || matchedKeyStatus) ? null : matchSecretItemRoute(url.pathname);
 
-    if (!matchedResolve && !matched && !matchedItem && !matchedImport && !matchedKeyStatus && !matchedSecretItem) {
+    if (!matchedResolve && !matched && !matchedItem && !matchedImport && !matchedSecretPolicies && !matchedKeyStatus && !matchedSecretItem) {
       return notFound(requestId, url.pathname);
     }
 
@@ -430,6 +497,20 @@ export async function route(request: Request, env: Env): Promise<Response> {
         return methodNotAllowed(requestId);
       }
       return handleResolveSetting(request, env, requestId, actor, matchedResolve.scope);
+    }
+
+    // SecretPolicy routes (SM3): PUT push, POST evaluate (dry-run).
+    if (matchedSecretPolicies) {
+      if (matchedSecretPolicies.action === "evaluate") {
+        if (request.method !== "POST") {
+          return methodNotAllowed(requestId);
+        }
+        return handleEvaluateSecretPolicy(request, env, requestId, actor, matchedSecretPolicies.scope);
+      }
+      if (request.method !== "PUT") {
+        return methodNotAllowed(requestId);
+      }
+      return handlePutSecretPolicy(request, env, requestId, actor, matchedSecretPolicies.scope);
     }
 
     // Bulk write-only secret import (SM1): POST only.
