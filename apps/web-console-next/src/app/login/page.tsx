@@ -62,6 +62,14 @@ export default function LoginPage() {
   const [busy, setBusy] = React.useState(false);
   const [tokenInput, setTokenInput] = React.useState("");
   const [oauthProviders, setOauthProviders] = React.useState<OAuthProviderInfo[]>([]);
+  // When arriving from an invitation "Accept" link, tell the recipient that
+  // this same email step both signs them in and — if they're new — creates
+  // their account, so a never-signed-up invitee isn't left wondering.
+  const [invitedContext, setInvitedContext] = React.useState(false);
+  React.useEffect(() => {
+    const rt = new URLSearchParams(window.location.search).get("returnTo");
+    setInvitedContext(!!rt && rt.startsWith("/invitations/accept"));
+  }, []);
 
   // Discover configured OAuth providers so we only render buttons that work.
   React.useEffect(() => {
@@ -98,8 +106,12 @@ export default function LoginPage() {
 
         <Card className="animate-fade-in">
           <CardHeader>
-            <CardTitle>Sign in</CardTitle>
-            <CardDescription>Use email code or paste a bearer token for prod testing.</CardDescription>
+            <CardTitle>{invitedContext ? "Accept your invitation" : "Sign in"}</CardTitle>
+            <CardDescription>
+              {invitedContext
+                ? "Enter the email your invitation was sent to. We'll sign you in — or create your account if you're new — then accept it automatically."
+                : "Use email code or paste a bearer token for prod testing."}
+            </CardDescription>
           </CardHeader>
           <CardContent>
             {oauthProviders.length > 0 && (
