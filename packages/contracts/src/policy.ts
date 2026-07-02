@@ -15,6 +15,19 @@ export interface PolicyResource {
   environmentId?: string;
 }
 
+/**
+ * Where a membership fact reached the actor (saas-teams TM6). Assembled by the
+ * membership-worker's authorization-context builder; **ignored by the policy
+ * engine** (it decides on `role`/`scope` only). Purely for legibility —
+ * effective-access / provenance surfaces render it so union-over-teams + account
+ * cascade stay explainable.
+ */
+export interface FactOrigin {
+  kind: "direct" | "team" | "account_cascade";
+  /** The granting team's public id (`team_<hex>`) when `kind === "team"`. */
+  teamId?: string;
+}
+
 export interface MembershipFact {
   kind: "role_assignment";
   role: TenancyRole;
@@ -23,6 +36,8 @@ export interface MembershipFact {
     orgId: string;
     projectId?: string;
   };
+  /** Provenance (saas-teams TM6). Optional + engine-ignored; additive. */
+  grantedVia?: FactOrigin;
 }
 
 export type PolicyMembershipFact = MembershipFact | Record<string, unknown>;

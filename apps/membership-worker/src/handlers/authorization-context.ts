@@ -121,8 +121,9 @@ export async function handleAuthorizationContext(
             const accountAssignments = accountRolesResult.value.filter(
               (ra) => ra.scopeKind === "account",
             );
-            // Stamp the cascaded account facts with the TARGET orgId.
-            memberships.push(...mapRoleAssignmentsToFacts(typedReq.orgId, accountAssignments));
+            // Stamp the cascaded account facts with the TARGET orgId + account
+            // provenance (TM6).
+            memberships.push(...mapRoleAssignmentsToFacts(typedReq.orgId, accountAssignments, { kind: "account_cascade" }));
           }
         }
 
