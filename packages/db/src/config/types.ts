@@ -211,6 +211,49 @@ export interface CreateSecretMetadataInput {
   ciphertextEnvelope?: string;
 }
 
+// ── Secret policies (saas-secret-manager SM3, Layer 2) ──────
+// Tier-tagged portable SecretPolicy documents. NEVER any secret value — only
+// the who/what/where/how conditions the resolve evaluates.
+
+export type SecretPolicyTier = "composition" | "stack" | "intent";
+
+/**
+ * A stored SecretPolicy document (saas-secret-manager SM3). The `document` is
+ * the validated spec (`{ rules: [...] }`, orun-secrets data-model §4); its
+ * tenancy scope comes from `(orgId, projectId)`, not the body. Push is
+ * idempotent by `documentHash`.
+ */
+export interface SecretPolicyRecord {
+  id: string;
+  orgId: string;
+  /** NULL = workspace-wide; else the project the document is scoped to. */
+  projectId: string | null;
+  name: string;
+  tier: SecretPolicyTier;
+  source: string;
+  document: Record<string, unknown>;
+  documentHash: string;
+  createdAt: Date;
+}
+
+export interface PutSecretPolicyInput {
+  id: string;
+  orgId: string;
+  projectId?: string | null;
+  name: string;
+  tier: SecretPolicyTier;
+  source: string;
+  document: Record<string, unknown>;
+  documentHash: string;
+}
+
+/** Scope of a policy list: the org, and optionally a project (workspace-wide
+ *  documents always join). */
+export interface SecretPolicyScope {
+  orgId: string;
+  projectId?: string | null;
+}
+
 // ── Secret DEKs (saas-secret-manager SM2) ───────────────────
 // NOTE: No raw key material fields. `wrappedDek` is ciphertext under the KEK.
 
@@ -249,6 +292,12 @@ export interface SecretDekRepository {
   insertDek(orgId: string, generation: number, wrappedDek: string): Promise<ConfigResult<{ inserted: boolean }>>;
   /** Envelope counts by format version, org-scoped when `orgId` is given. */
   countEnvelopeVersions(orgId?: string): Promise<ConfigResult<EnvelopeVersionCounts>>;
+  /**
+   * Fetch a specific wrapped-DEK generation for decrypt (saas-secret-manager
+   * SM3). Any state (active/retiring) is decryptable; a shredded generation is
+   * unusable. Returns the wrap document text, or `not_found`.
+   */
+  getWrappedDek(orgId: string, generation: number): Promise<ConfigResult<string>>;
 }
 
 // ── Repository interface ────────────────────────────────────
@@ -300,4 +349,30 @@ export interface ConfigRepository {
   revokeSecretMetadata(orgId: string, secretId: string): Promise<ConfigResult<SecretMetadata>>;
   /** Version history, newest first. Metadata only — never ciphertext. */
   listSecretVersions(orgId: string, secretId: string, params: PageQueryParams): Promise<ConfigResult<PagedResult<SecretVersion>>>;
+  /**
+   * Fetch the raw ciphertext envelope for a specific `(secretId, version)`
+   * (saas-secret-manager SM3). This is the ONE read path allowed to touch
+   * ciphertext — used only by the lease-bound resolve/reveal decrypt handlers.
+   * Returns `not_found` when the version does not exist or is revoked. The
+   * returned envelope is the JSON document text; callers must never log it.
+   */
+  getSecretCiphertext(secretId: string, version: number): Promise<ConfigResult<string>>;
+  /** Stamp `last_used_at = now()` on a served secret head (SM3 resolve). */
+  touchSecretLastUsed(orgId: string, secretId: string, at: Date): Promise<ConfigResult<void>>;
+
+  // Secret policies (SM3, Layer 2)
+  /**
+   * Upsert a tier-tagged SecretPolicy document by `(org, project, tier, name)`
+   * (saas-secret-manager SM3). Idempotent by `documentHash`: an identical
+   * document is a no-op; a changed one updates `document` + `document_hash` in
+   * place (ON CONFLICT). `updated` reports whether the row changed.
+   */
+  putSecretPolicy(input: PutSecretPolicyInput): Promise<ConfigResult<{ record: SecretPolicyRecord; updated: boolean }>>;
+  /**
+   * List the SecretPolicy documents in scope, tier-ordered
+   * composition → stack → intent (policy-model §5). Workspace-wide documents
+   * (project_id NULL) always join; a project id additionally includes that
+   * project's documents.
+   */
+  listSecretPolicies(scope: SecretPolicyScope): Promise<ConfigResult<SecretPolicyRecord[]>>;
 }

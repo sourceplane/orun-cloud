@@ -57,6 +57,53 @@ export async function fetchAuthorizationContext(
   return { ok: true, memberships: typed.memberships };
 }
 
+export type ResolveOrgRefResult =
+  | { ok: true; orgUuid: string; slug: string }
+  | { ok: false };
+
+/**
+ * Resolve any org reference spelling (`org_<hex>`, `ws_<8>`, or slug) to the
+ * canonical org via membership-worker's internal resolve-org-ref (WID3). Used
+ * by the SM3 secrets resolve to check a `secret://<workspace>/…` ref's
+ * workspace segment against the path-scoped org. Fails closed.
+ */
+export async function resolveOrgRef(
+  membershipWorker: Fetcher,
+  ref: string,
+  requestId: string,
+): Promise<ResolveOrgRefResult> {
+  let response: Response;
+  try {
+    response = await membershipWorker.fetch(
+      "http://membership-worker/v1/internal/membership/resolve-org-ref",
+      {
+        method: "POST",
+        headers: { "content-type": "application/json", "x-request-id": requestId },
+        body: JSON.stringify({ ref }),
+      },
+    );
+  } catch {
+    return { ok: false };
+  }
+  if (!response.ok) return { ok: false };
+
+  let parsed: unknown;
+  try {
+    parsed = await response.json();
+  } catch {
+    return { ok: false };
+  }
+  if (!parsed || typeof parsed !== "object" || !("data" in parsed)) return { ok: false };
+  const data = (parsed as { data: unknown }).data as { orgId?: unknown; slug?: unknown } | null;
+  if (!data || typeof data.orgId !== "string") return { ok: false };
+  // data.orgId is the public `org_<hex>` form; decode to the raw uuid.
+  if (!data.orgId.startsWith("org_")) return { ok: false };
+  const hex = data.orgId.slice(4);
+  if (!/^[0-9a-f]{32}$/.test(hex)) return { ok: false };
+  const orgUuid = `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+  return { ok: true, orgUuid, slug: typeof data.slug === "string" ? data.slug : "" };
+}
+
 export async function fetchSubjectOrgs(
   membershipWorker: Fetcher,
   subjectId: string,

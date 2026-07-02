@@ -126,6 +126,68 @@ export async function createProject(
   return { ok: true, project: project as ResolvedProject };
 }
 
+export interface ResolvedEnvironment {
+  id: string;
+  slug: string;
+  name: string;
+  status: string;
+}
+
+export type ListEnvironmentsResult =
+  | { ok: true; environments: ResolvedEnvironment[] }
+  | { ok: false };
+
+/**
+ * List a project's environments via the internal seam (id + slug + status).
+ * Used by the SM3 secrets resolve to translate a ref's environment slug to the
+ * environment UUID the config plane scopes by. `orgId`/`projectId` are raw
+ * UUIDs. Fails closed.
+ */
+export async function listProjectEnvironments(
+  projectsWorker: Fetcher,
+  orgId: string,
+  projectId: string,
+  requestId: string,
+): Promise<ListEnvironmentsResult> {
+  let response: Response;
+  try {
+    const target = new URL("/v1/internal/projects/environments", "http://projects-worker");
+    target.searchParams.set("orgId", orgId);
+    target.searchParams.set("projectId", projectId);
+    response = await projectsWorker.fetch(target.toString(), {
+      method: "GET",
+      headers: { "x-request-id": requestId },
+    });
+  } catch {
+    return { ok: false };
+  }
+  if (!response.ok) return { ok: false };
+
+  let parsed: unknown;
+  try {
+    parsed = await response.json();
+  } catch {
+    return { ok: false };
+  }
+  const environments =
+    parsed && typeof parsed === "object" && "data" in parsed
+      ? (parsed as { data: { environments?: unknown } }).data?.environments
+      : undefined;
+  if (!Array.isArray(environments)) return { ok: false };
+  const items: ResolvedEnvironment[] = [];
+  for (const e of environments) {
+    if (
+      e &&
+      typeof e === "object" &&
+      typeof (e as ResolvedEnvironment).id === "string" &&
+      typeof (e as ResolvedEnvironment).slug === "string"
+    ) {
+      items.push(e as ResolvedEnvironment);
+    }
+  }
+  return { ok: true, environments: items };
+}
+
 export type RegisterEnvironmentResult =
   | { ok: true; created: boolean }
   | { ok: false; status: number };

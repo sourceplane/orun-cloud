@@ -199,14 +199,27 @@ describe("api-edge config facade", () => {
       expect(configCalls[0]!.init.method).toBe("DELETE");
     });
 
-    it("returns 405 for PUT (unsupported method)", async () => {
+    it("returns 405 for HEAD (unsupported method)", async () => {
+      // GET/POST/PUT/PATCH/DELETE are all forwarded (PUT is SM3's secret-policy
+      // push); anything else is rejected at the facade before any downstream hop.
       const env = createEnv();
       const req = new Request("https://api-edge/v1/organizations/org_abc/config/settings", {
-        method: "PUT",
+        method: "HEAD",
         headers: { authorization: "Bearer tok_test" },
       });
       const res = await handleConfigRoute(req, env as never, "req_test", "/v1/organizations/org_abc/config/settings");
       expect(res.status).toBe(405);
+    });
+
+    it("forwards PUT (SM3 secret-policy push) to config-worker", async () => {
+      const env = createEnv();
+      const req = new Request("https://api-edge/v1/organizations/org_abc/config/secret-policies", {
+        method: "PUT",
+        headers: { authorization: "Bearer tok_test", "content-type": "application/json" },
+        body: JSON.stringify({ name: "p", tier: "stack", source: "intent", document: { rules: [] } }),
+      });
+      const res = await handleConfigRoute(req, env as never, "req_test", "/v1/organizations/org_abc/config/secret-policies");
+      expect(res.status).toBe(200);
     });
 
     it("returns 503 when IDENTITY_WORKER is missing", async () => {

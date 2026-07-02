@@ -7,7 +7,7 @@
  * src/handlers or the router touches decryption.ts until the SM3 resolve).
  */
 import { readdirSync, readFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const testDir = dirname(fileURLToPath(import.meta.url));
@@ -166,10 +166,16 @@ describe("getOrCreateActiveDek", () => {
   });
 });
 
-// ── The non-import invariant ───────────────────────────────
+// ── The decrypt-surface invariant ──────────────────────────
+// SM3 activates the decrypt path — but ONLY inside the lease-verified internal
+// resolve handler. No other handler and not the router may import it, so the
+// value-touching surface stays minimal (orun-secrets §3, implementation-plan
+// invariant "no decrypt import outside the resolve/reveal handlers").
 
-describe("decryption stays dormant until SM3", () => {
-  it("no handler or router imports the decryption module", () => {
+describe("decryption is imported only by the internal resolve handler (SM3)", () => {
+  const ALLOWED_DECRYPT_IMPORTERS = new Set(["internal-resolve-secrets.ts"]);
+
+  it("no handler or router imports decryption except the internal resolve handler", () => {
     const srcRoot = join(testDir, "..", "..", "..", "apps", "config-worker", "src");
     const files = [
       join(srcRoot, "router.ts"),
@@ -177,7 +183,9 @@ describe("decryption stays dormant until SM3", () => {
     ];
     for (const file of files) {
       const text = readFileSync(file, "utf8");
-      expect({ file, imports: /from\s+["'].*decryption/.test(text) }).toEqual({ file, imports: false });
+      const imports = /from\s+["'].*decryption/.test(text);
+      const allowed = ALLOWED_DECRYPT_IMPORTERS.has(basename(file));
+      expect({ file, imports }).toEqual({ file, imports: allowed });
     }
   });
 });

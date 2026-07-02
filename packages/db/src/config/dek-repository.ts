@@ -63,6 +63,25 @@ export function createSecretDekRepository(executor: SqlExecutor): SecretDekRepos
       }
     },
 
+    async getWrappedDek(orgId: string, generation: number): Promise<ConfigResult<string>> {
+      try {
+        // A shredded generation is cryptoshredded — its wrapped bytes are gone,
+        // so it is excluded; active + retiring generations still decrypt.
+        const result = await executor.execute<Record<string, unknown>>(
+          `SELECT convert_from(wrapped_dek, 'UTF8') AS wrapped_dek
+           FROM config.secret_deks
+           WHERE org_id = $1 AND generation = $2 AND state <> 'shredded'`,
+          [orgId, generation],
+        );
+        if (result.rowCount === 0) {
+          return { ok: false, error: { kind: "not_found" } };
+        }
+        return { ok: true, value: result.rows[0]!.wrapped_dek as string };
+      } catch {
+        return safeError("Failed to get wrapped DEK");
+      }
+    },
+
     async countEnvelopeVersions(orgId?: string): Promise<ConfigResult<EnvelopeVersionCounts>> {
       try {
         // The envelope is JSON text stored as BYTEA; a serialized-JSON LIKE

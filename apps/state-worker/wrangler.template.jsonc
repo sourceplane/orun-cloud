@@ -38,7 +38,14 @@
       },
       "durable_objects": {
         "bindings": [{ "name": "COORDINATOR", "class_name": "RunCoordinator" }]
-      }
+      },
+      "services": [
+        {
+          // SM3: lease-verified secret resolve → config-worker internal resolve.
+          "binding": "CONFIG_WORKER",
+          "service": "config-worker-dev"
+        }
+      ]
     },
     "stage": {
       "workers_dev": false,
@@ -86,6 +93,11 @@
           // GitHub through integrations-worker (which holds the App key).
           "binding": "INTEGRATIONS_WORKER",
           "service": "integrations-worker-stage"
+        },
+        {
+          // SM3: lease-verified secret resolve → config-worker internal resolve.
+          "binding": "CONFIG_WORKER",
+          "service": "config-worker-stage"
         }
       ]
     },
@@ -132,6 +144,11 @@
           // GitHub through integrations-worker (which holds the App key).
           "binding": "INTEGRATIONS_WORKER",
           "service": "integrations-worker-prod"
+        },
+        {
+          // SM3: lease-verified secret resolve → config-worker internal resolve.
+          "binding": "CONFIG_WORKER",
+          "service": "config-worker-prod"
         }
       ]
     }

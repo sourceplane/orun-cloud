@@ -13,6 +13,14 @@ export interface Env {
   POLICY_WORKER?: Fetcher;
   PROJECTS_WORKER?: Fetcher;
   /**
+   * config-worker service binding (SM3). The lease-verified secret resolve
+   * (POST …/state/runs/{runId}/secrets/resolve) calls config-worker's internal
+   * resolve (POST /v1/internal/config/secrets/resolve) over this binding after
+   * verifying bearer authz + a live job lease. Absent = the resolve is
+   * unavailable (503), never a leak.
+   */
+  CONFIG_WORKER?: Fetcher;
+  /**
    * integrations-worker service binding (OV5/IG9 write-back). The run-result
    * driver POSTs a Check Run back to GitHub through this binding; absent =
    * write-back is dormant (a safe no-op, e.g. before the GitHub App exists). The
