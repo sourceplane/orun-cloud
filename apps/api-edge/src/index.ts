@@ -20,6 +20,7 @@ import {
   handleIntegrationsIngressRoute,
 } from "./integrations-facade";
 import { isStateRoute, handleStateRoute } from "./state-facade";
+import { isAccountAggregateRoute, handleAccountAggregateRoute } from "./account-facade";
 import {
   isWorkspaceAliasRoute,
   rewriteWorkspacePath,
@@ -84,6 +85,10 @@ export default {
     } else if (isStateRoute(pathname)) {
       // Workspace links + tenancy resolution (OP4) and the OP2+ state planes.
       response = await handleStateRoute(routedRequest, env, requestId, pathname);
+    } else if (isAccountAggregateRoute(pathname)) {
+      // teams-hub TH2 — account-catalog / account-runs: bounded fan-out over
+      // the account's workspace set across the per-org state indexes.
+      response = await handleAccountAggregateRoute(routedRequest, env, requestId, pathname);
     } else if (isBillingWebhookRoute(pathname)) {
       // Public inbound provider webhook (no session) — matched before the
       // authenticated webhooks/billing facades.
