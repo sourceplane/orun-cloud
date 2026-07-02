@@ -178,6 +178,41 @@ describe("email templates", () => {
     expect(rendered!.html).toContain("as admin");
   });
 
+  test("invitation.created includes a one-click accept link when a console origin is configured", () => {
+    const rendered = renderEmailTemplate(
+      "invitation.created",
+      {
+        role: "admin",
+        invitationId: "inv_abc",
+        expiresAt: "2026-06-19T00:00:00.000Z",
+        invitedBy: "user_123",
+        orgId: "org_456",
+      },
+      { brandName: "Acme", consoleBaseUrl: "https://app.orun.dev/" },
+    );
+
+    expect(rendered).not.toBeNull();
+    // Trailing slash on the base is tolerated; the deep link carries the
+    // invitation public id and no token.
+    expect(rendered!.html).toContain('href="https://app.orun.dev/invitations/accept?inv=inv_abc"');
+    expect(rendered!.html).toContain("Accept invitation");
+    expect(rendered!.text).toContain("https://app.orun.dev/invitations/accept?inv=inv_abc");
+    // No raw token should ever appear.
+    expect(rendered!.html).not.toContain("token");
+  });
+
+  test("invitation.created falls back to plain copy when no console origin is configured", () => {
+    const rendered = renderEmailTemplate(
+      "invitation.created",
+      { role: "admin", invitationId: "inv_abc", expiresAt: "2026-06-19T00:00:00.000Z" },
+      { brandName: "Acme" },
+    );
+
+    expect(rendered).not.toBeNull();
+    expect(rendered!.html).not.toContain("/invitations/accept");
+    expect(rendered!.html).toContain("Sign in with this email address to view and accept");
+  });
+
   test("renders invitation.accepted with the granted role", () => {
     const rendered = renderEmailTemplate("invitation.accepted", {
       invitationId: "inv_abc",

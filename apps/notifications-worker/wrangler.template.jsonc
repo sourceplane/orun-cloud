@@ -11,14 +11,16 @@
   "vars": {
     "ENVIRONMENT": "local",
     "NOTIFICATIONS_PROVIDER": "local-debug",
-    "DEBUG_DELIVERY": "true"
+    "DEBUG_DELIVERY": "true",
+    "CONSOLE_BASE_URL": "http://localhost:3000"
   },
   "env": {
     "dev": {
       "vars": {
         "ENVIRONMENT": "dev",
         "NOTIFICATIONS_PROVIDER": "local-debug",
-        "DEBUG_DELIVERY": "true"
+        "DEBUG_DELIVERY": "true",
+        "CONSOLE_BASE_URL": "http://localhost:3000"
       }
     },
     "stage": {
@@ -33,7 +35,8 @@
         "NOTIFICATIONS_PROVIDER": "cloudflare-email",
         "DEBUG_DELIVERY": "true",
         "EMAIL_FROM_ADDRESS": "no-reply@mail.orun.dev",
-        "EMAIL_FROM_NAME": "Orun"
+        "EMAIL_FROM_NAME": "Orun",
+        "CONSOLE_BASE_URL": "https://stage.orun.dev"
       },
       "send_email": [
         {
@@ -60,7 +63,8 @@
         "NOTIFICATIONS_PROVIDER": "cloudflare-email",
         "DEBUG_DELIVERY": "false",
         "EMAIL_FROM_ADDRESS": "no-reply@mail.orun.dev",
-        "EMAIL_FROM_NAME": "Orun"
+        "EMAIL_FROM_NAME": "Orun",
+        "CONSOLE_BASE_URL": "https://app.orun.dev"
       },
       "send_email": [
         {

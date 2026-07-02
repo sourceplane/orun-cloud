@@ -51,6 +51,11 @@ export interface CloudflareEmailProviderOptions {
   fromAddress: string;
   /** Optional display name rendered as `Name <address>` and used for branding copy. */
   fromName?: string;
+  /**
+   * Console origin for building deep links in emails (e.g. the invitation
+   * accept button). Forwarded to templates; templates omit the link when unset.
+   */
+  consoleBaseUrl?: string;
 }
 
 /**
@@ -73,6 +78,7 @@ export function createCloudflareEmailProvider(
     async send(ctx: ProviderSendContext): Promise<ProviderSendResult> {
       const rendered = renderEmailTemplate(ctx.templateKey, ctx.templateData, {
         ...(opts.fromName ? { brandName: opts.fromName } : {}),
+        ...(opts.consoleBaseUrl ? { consoleBaseUrl: opts.consoleBaseUrl } : {}),
       });
       if (!rendered) {
         // Refuse to deliver an empty/generic body for a key nobody registered;

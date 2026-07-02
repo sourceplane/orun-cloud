@@ -29,6 +29,13 @@ export interface TemplateRenderOptions {
    * deployment still produces a sensible email.
    */
   brandName?: string;
+  /**
+   * Console origin for building deep links (e.g. the invitation accept
+   * button). When unset, link-bearing templates degrade to plain "sign in to
+   * view and accept" copy — a misconfigured deployment still sends a usable
+   * email, just without the one-click button.
+   */
+  consoleBaseUrl?: string;
 }
 
 function escapeHtml(value: string): string {
@@ -75,6 +82,29 @@ function htmlShell(title: string, bodyHtml: string, footerLine: string): string 
   ].join("");
 }
 
+/**
+ * A primary call-to-action button (table-based for email-client width quirks).
+ * `href` must already be a trusted, fully-formed URL — it is HTML-escaped for
+ * the attribute here, but the caller is responsible for its origin/params.
+ */
+function ctaButton(href: string, label: string): string {
+  return [
+    '<table role="presentation" cellspacing="0" cellpadding="0" style="margin:0 0 20px;"><tr><td>',
+    `<a href="${escapeHtml(href)}" style="display:inline-block;background:#1a1a2e;color:#ffffff;text-decoration:none;font-size:14px;font-weight:600;padding:11px 20px;border-radius:6px;">${escapeHtml(label)}</a>`,
+    "</td></tr></table>",
+  ].join("");
+}
+
+/**
+ * Join a console origin and a path into a clean absolute URL, tolerating a
+ * trailing slash on the base. Returns "" when the base is missing so callers
+ * can branch on link availability.
+ */
+function consoleUrl(base: string | undefined, path: string): string {
+  if (!base) return "";
+  return `${base.replace(/\/+$/, "")}${path}`;
+}
+
 type TemplateRenderer = (data: TemplateData, opts: TemplateRenderOptions) => RenderedEmail;
 
 const renderMagicLink: TemplateRenderer = (data, opts) => {
@@ -119,10 +149,25 @@ const renderInvitationCreated: TemplateRenderer = (data, opts) => {
     : "You have been invited to join an organization.";
   const expiryLineText = expires ? `The invitation expires at ${expires}.` : "";
 
+  // One-click accept link (auto-accept after sign-in). Built from the console
+  // origin + the invitation's public id — no token travels in the email; the
+  // landing page accepts via the email-matched `/v1/me/invitations` path once
+  // the recipient is signed in as the invited address. Omitted (with a plain
+  // "sign in to view and accept" fallback) when no console origin is configured.
+  const invitationId = str(data, "invitationId");
+  const acceptUrl = invitationId
+    ? consoleUrl(opts.consoleBaseUrl, `/invitations/accept?inv=${encodeURIComponent(invitationId)}`)
+    : "";
+
+  const ctaLineText = acceptUrl
+    ? "Accept the invitation (you'll be asked to sign in with this email address first):"
+    : "Sign in with this email address to view and accept the invitation.";
+
   const text = [
     roleLineText,
     expiryLineText,
-    "Sign in with this email address to view and accept the invitation.",
+    ctaLineText,
+    acceptUrl,
     "If you were not expecting this invitation, you can safely ignore this email.",
   ]
     .filter((line) => line.length > 0)
@@ -135,7 +180,12 @@ const renderInvitationCreated: TemplateRenderer = (data, opts) => {
       expiryLineText
         ? `<p style="margin:0 0 16px;font-size:13px;color:#6b6b80;">${escapeHtml(expiryLineText)}</p>`
         : "",
-      '<p style="margin:0 0 8px;font-size:14px;">Sign in with this email address to view and accept the invitation.</p>',
+      acceptUrl
+        ? [
+            ctaButton(acceptUrl, "Accept invitation"),
+            '<p style="margin:0 0 8px;font-size:13px;color:#6b6b80;">You’ll be asked to sign in with this email address, then the invitation is accepted automatically.</p>',
+          ].join("")
+        : '<p style="margin:0 0 8px;font-size:14px;">Sign in with this email address to view and accept the invitation.</p>',
       '<p style="margin:0;font-size:13px;color:#6b6b80;">If you were not expecting this invitation, you can safely ignore this email.</p>',
     ].join(""),
     escapeHtml(brand ? `Sent by ${brand}` : "This is an automated email."),

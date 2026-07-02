@@ -21,6 +21,19 @@ const emailSchema = z.object({
   email: z.string().email("Enter a valid email"),
 });
 
+/**
+ * A `?returnTo=` deep link to honor after sign-in (e.g. the invitation accept
+ * page). Only same-origin absolute paths are allowed — protocol-relative
+ * (`//evil`) and absolute URLs are rejected to prevent an open-redirect. Read
+ * at click time from the live URL so no navigation state is stashed.
+ */
+function readSafeReturnTo(): string | null {
+  if (typeof window === "undefined") return null;
+  const raw = new URLSearchParams(window.location.search).get("returnTo");
+  if (!raw || !raw.startsWith("/") || raw.startsWith("//")) return null;
+  return raw;
+}
+
 const PROVIDER_ICONS: Record<string, React.ReactNode> = {
   github: (
     <svg viewBox="0 0 16 16" aria-hidden="true" className="h-4 w-4" fill="currentColor">
@@ -191,7 +204,8 @@ export default function LoginPage() {
                           setToken(r.data.token);
                           toast({ kind: "success", title: "Signed in" });
                           router.push(
-                            await resolvePostAuthDestination(createClient(target, r.data.token)),
+                            readSafeReturnTo() ??
+                              (await resolvePostAuthDestination(createClient(target, r.data.token))),
                           );
                         }}
                       >
@@ -223,7 +237,8 @@ export default function LoginPage() {
                     setToken(tokenInput);
                     toast({ kind: "success", title: "Token set" });
                     router.push(
-                      await resolvePostAuthDestination(createClient(target, tokenInput)),
+                      readSafeReturnTo() ??
+                        (await resolvePostAuthDestination(createClient(target, tokenInput))),
                     );
                   }}
                 >
