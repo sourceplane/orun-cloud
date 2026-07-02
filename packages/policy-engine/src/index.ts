@@ -376,8 +376,21 @@ function deny(reason: string, orgId: string, projectId?: string): AuthorizationR
   return { allow: false, reason, policyVersion: POLICY_VERSION, derivedScope: buildScope(orgId, projectId) };
 }
 
-function allow(reason: string, orgId: string, projectId?: string): AuthorizationResponse {
-  return { allow: true, reason, policyVersion: POLICY_VERSION, derivedScope: buildScope(orgId, projectId) };
+function allow(
+  reason: string,
+  orgId: string,
+  projectId?: string,
+  via?: MembershipFact["grantedVia"],
+): AuthorizationResponse {
+  return {
+    allow: true,
+    reason,
+    policyVersion: POLICY_VERSION,
+    derivedScope: buildScope(orgId, projectId),
+    // Provenance of the permitting fact (saas-teams TM6b). Reporting only —
+    // it never changes the decision (the fact was already selected above).
+    ...(via ? { via } : {}),
+  };
 }
 
 export function authorize(input: AuthorizationRequest): AuthorizationResponse {
@@ -410,10 +423,10 @@ export function authorize(input: AuthorizationRequest): AuthorizationResponse {
       const permissions = ORG_ROLE_PERMISSIONS[fact.role];
       if (permissions.includes(action)) {
         if (PROJECT_SCOPED_ACTIONS.has(action) && projectId) {
-          return allow(`org_${fact.role}`, orgId, projectId);
+          return allow(`org_${fact.role}`, orgId, projectId, fact.grantedVia);
         }
         if (!PROJECT_SCOPED_ACTIONS.has(action) || !projectId) {
-          return allow(`org_${fact.role}`, orgId, projectId);
+          return allow(`org_${fact.role}`, orgId, projectId, fact.grantedVia);
         }
       }
     }
@@ -428,10 +441,10 @@ export function authorize(input: AuthorizationRequest): AuthorizationResponse {
       const permissions = ACCOUNT_ROLE_PERMISSIONS[fact.role];
       if (permissions.includes(action)) {
         if (PROJECT_SCOPED_ACTIONS.has(action) && projectId) {
-          return allow(`account_${fact.role}`, orgId, projectId);
+          return allow(`account_${fact.role}`, orgId, projectId, fact.grantedVia);
         }
         if (!PROJECT_SCOPED_ACTIONS.has(action) || !projectId) {
-          return allow(`account_${fact.role}`, orgId, projectId);
+          return allow(`account_${fact.role}`, orgId, projectId, fact.grantedVia);
         }
       }
     }
@@ -446,7 +459,7 @@ export function authorize(input: AuthorizationRequest): AuthorizationResponse {
       }
       const permissions = PROJECT_ROLE_PERMISSIONS[fact.role];
       if (permissions.includes(action)) {
-        return allow(fact.role, orgId, projectId);
+        return allow(fact.role, orgId, projectId, fact.grantedVia);
       }
     }
   }
@@ -479,6 +492,8 @@ export function listEffectivePermissions(
       action,
       allow: result.allow,
       reason: result.reason,
+      // Provenance of the permitting fact (saas-teams TM6b), when allowed.
+      ...(result.via ? { via: result.via } : {}),
     });
   }
 
