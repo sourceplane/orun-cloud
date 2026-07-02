@@ -94,7 +94,7 @@ export function ScopeSwitcher() {
             <>
               <DropdownMenuLabel>Workspaces</DropdownMenuLabel>
               {orgs.map((o) => (
-                <DropdownMenuItem key={o.id} onSelect={() => router.push(`/orgs/${o.slug}/projects`)}>
+                <DropdownMenuItem key={o.id} onSelect={() => router.push(`/orgs/${o.slug}`)}>
                   <Building2 className="h-4 w-4 opacity-70" /> {o.name}
                   {o.slug === effectiveOrgSlug ? (
                     <Check className="ml-auto h-4 w-4" />
