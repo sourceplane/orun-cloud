@@ -43,6 +43,7 @@ The architect-style ground rules:
 | **WID** | [`epics/saas-workspace-id/`](./epics/saas-workspace-id/) | Draft | Durable public **Workspace ID** (`ws_` + Crockford base32, immutable `public_ref`) + the **Account-layer** evolution: WID1 id/glossary · WID2 schema+mint · WID3 resolver (`ws_\|slug\|org_`) · WID4 public surface + `accountId`/`kind` + `api-guidelines` D2/D4 amend · WID5 SDK/CLI/console/tokens/`intent.yaml` · WID6 account RBAC (`scope_kind='account'` + cascade) · WID7 scope-resolution chain + override/locked config · WID8 first-class `accounts` entity (Stage 2, deferred). Additive over **WS**/**MO**; `org_<hex>` retained indefinitely. |
 | **TM** | [`epics/saas-teams/`](./epics/saas-teams/) | Draft | Account-owned **Teams as principals** (the access-grant slice of the `teams-*` program): TM1 model (`teams`+`team_members`) · TM2 grants via `role_assignments` (`subject_type='team'`) · TM3 authz-context fact expansion (engine unchanged) · TM4 management surfaces + `team.*` RBAC + audit · TM5 PERF note (actor cache holds no team data) · TM6 effective-access + provenance. Account-scope grants cascade to all (incl. future) workspaces. Principal-group, **not** a hierarchy level. Builds on **WID6** (shipped). |
 | **TEAMS** | [`epics/teams-platform/`](./epics/teams-platform/) | Draft (program) | **World-class Teams** program over **TM** — Team as the product's organizing primitive across three planes, no tenancy remodel. **TF** teams-foundation (entity + handle + team-roles + provenance) · **TO** teams-ownership (owner→team **resolver** respecting `18-state`; My Teams/My Services) · **TH** teams-hub (Account Hub surface + Team Page + cross-workspace fan-out) · **TC** teams-collaboration (team notification target + `@team` + on-call defaults) · **TG** teams-governance (SCIM group→team ⛔B10 · restriction/ABAC decision · custom roles · access reviews). Keystones: the ownership resolver + thickening the account **surface** (not the tree). Sequencing: TF→TO→{TH,TC}→TG. |
+| **MCP** | [`epics/saas-mcp-server/`](./epics/saas-mcp-server/) | Draft | The AI-agent client surface (promotes the agent-surface half of P7): MCP0 tool plane (`packages/mcp`, ≤ 25 task-shaped read tools over SDK) · MCP1 stdio via CLI · MCP2 remote worker (`sk_` keys) · MCP3 OAuth 2.1 over OP1 · MCP4 resources/prompts · MCP5 gated writes (idempotent, annotated, audited) · MCP6 metering + `feature.mcp_server` · MCP7 console Connect page · MCP8 conformance + agent evals. Invariant: a client of the public API, never a fourth plane — RBAC/rate-limits/audit unchanged. |
 | **P1, P3–P7** | [`epics/saas-product-areas/`](./epics/saas-product-areas/) | Holding register | P1 promote-flow · P3 observability · P4 notification inbox · P5 marketplace (⬆ promoted → `saas-integrations`) · P6 changelog/status · P7 AI-native. |
 
 For the status legend (`Draft → In progress → ✅ Shipped → ⛔ Blocked → Closed`),
@@ -116,6 +117,15 @@ see [`README.md`](./README.md).
   and BM7 (decommission) need an operator call. Open product/security calls: D1
   memoization scope (per-project → org-shared → global) and D2 `jobInputHash`
   definition.
+- **MCP (agent client surface)** is additive and rides entirely on shipped
+  rails: MCP0–MCP2 (tool plane over the SDK, stdio via the CLI, remote worker on
+  `sk_` keys) are human-independent and deliver the highest-leverage slice — a
+  local agent that can query the catalog and diagnose a failed run. MCP3 (OAuth)
+  reuses OP1 issuance (no second token plane — the epic's R5), MCP6's
+  entitlement seam mirrors the SC scorecards gate, and `catalog_get_entity`
+  coordinates with SC0 (whichever lands second adapts — MCP risks D2). Nothing
+  in MCP competes with B/U/PERF for files; it turns already-live backend
+  capability into a new client population, the same posture as PX.
 - **BF (bootstrap factory)** is orthogonal to B/U/P and mostly human-independent:
   BF0–BF2 (docs truth, infra `dependsOn` edges, parameterizing the Terraform +
   stack identity surface) are safe to schedule any time and improve this
