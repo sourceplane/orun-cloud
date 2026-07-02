@@ -164,6 +164,76 @@ export interface GrantTeamRoleResponse {
   };
 }
 
+// ── Account Hub (teams-hub TH1) ─────────────────────────────────────
+/**
+ * One active account-scoped role assignment on the account org. Subjects may
+ * be users (WID6 grants) or teams (TM2 account-scope grants), labeled by
+ * `subjectType` so the hub Roles surface renders both honestly.
+ */
+export interface AccountRoleAssignment {
+  subjectId: string;
+  subjectType: string;
+  role: string;
+  createdAt: string;
+}
+
+/** GET /v1/organizations/{orgId}/account-roles */
+export interface ListAccountRolesResponse {
+  assignments: AccountRoleAssignment[];
+}
+
+/** POST /v1/organizations/{orgId}/account-roles (WID6 grant). */
+export interface GrantAccountRoleRequest {
+  subjectId: string;
+  role: string;
+}
+
+export interface GrantAccountRoleResponse {
+  assignment: {
+    subjectId: string;
+    role: string;
+    scopeKind: string;
+  };
+}
+
+/** DELETE /v1/organizations/{orgId}/account-roles — tuple in the body. */
+export interface RevokeAccountRoleRequest {
+  subjectId: string;
+  role: string;
+}
+
+export interface RevokeAccountRoleResponse {
+  assignment: {
+    subjectId: string;
+    role: string;
+    scopeKind: string;
+    revoked: boolean;
+  };
+}
+
+/**
+ * How a subject reaches the derived account roster (TH1b, no account_members
+ * table): an active member of the account root org, a holder of an
+ * account-scoped role, or both.
+ */
+export type AccountMemberOrigin = "member" | "account_role" | "both";
+
+export interface AccountMemberRow {
+  subjectId: string;
+  subjectType: string;
+  origin: AccountMemberOrigin;
+  /** Present when the subject is an org member (origin member | both). */
+  status?: string;
+  joinedAt?: string;
+  /** Account roles held (empty for plain members). */
+  accountRoles: string[];
+}
+
+/** GET /v1/organizations/{orgId}/account-members */
+export interface ListAccountMembersResponse {
+  members: AccountMemberRow[];
+}
+
 export const ORGANIZATION_ROLES = ["owner", "admin", "builder", "viewer", "billing_admin"] as const;
 export type InvitationRole = (typeof ORGANIZATION_ROLES)[number];
 

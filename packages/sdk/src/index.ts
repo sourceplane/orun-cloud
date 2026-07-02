@@ -21,6 +21,7 @@ import { EnvironmentsClient } from "./environments.js";
 import { EventsClient } from "./events.js";
 import { MembershipsClient } from "./memberships.js";
 import { TeamsClient } from "./teams.js";
+import { AccountClient } from "./account.js";
 import { MeteringClient } from "./metering.js";
 import { NotificationsClient } from "./notifications.js";
 import { OrganizationsClient } from "./organizations.js";
@@ -52,6 +53,12 @@ export class OrunCloud {
   readonly environments: EnvironmentsClient;
   readonly memberships: MembershipsClient;
   readonly teams: TeamsClient;
+  /**
+   * Account resource — the Account Hub surface over the org that owns this
+   * workspace set (teams-hub TH1c): child workspaces, the derived member
+   * roster, and account-role management.
+   */
+  readonly account: AccountClient;
   readonly apiKeys: ApiKeysClient;
   readonly webhooks: WebhooksClient;
   readonly metering: MeteringClient;
@@ -77,6 +84,7 @@ export class OrunCloud {
     this.environments = new EnvironmentsClient(this.transport);
     this.memberships = new MembershipsClient(this.transport);
     this.teams = new TeamsClient(this.transport);
+    this.account = new AccountClient(this.transport);
     this.apiKeys = new ApiKeysClient(this.transport);
     this.webhooks = new WebhooksClient(this.transport);
     this.metering = new MeteringClient(this.transport);
@@ -99,6 +107,7 @@ export { ProjectsClient } from "./projects.js";
 export { EnvironmentsClient } from "./environments.js";
 export { MembershipsClient } from "./memberships.js";
 export { TeamsClient } from "./teams.js";
+export { AccountClient } from "./account.js";
 export {
   ApiKeysClient,
   type ListApiKeysResponse,
@@ -197,6 +206,17 @@ export type {
   ListTeamMembersResponse,
   GrantTeamRoleRequest,
   GrantTeamRoleResponse,
+  AccountRoleAssignment,
+  ListAccountRolesResponse,
+  GrantAccountRoleRequest,
+  GrantAccountRoleResponse,
+  RevokeAccountRoleRequest,
+  RevokeAccountRoleResponse,
+  AccountMemberOrigin,
+  AccountMemberRow,
+  ListAccountMembersResponse,
+  PublicWorkspaceSummary,
+  ListAccountWorkspacesResponse,
 } from "@saas/contracts/membership";
 
 export { ORGANIZATION_ROLES } from "@saas/contracts/membership";
