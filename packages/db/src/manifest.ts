@@ -444,5 +444,14 @@ export const manifest: MigrationManifest = {
       description:
         "Wrapped workspace data-encryption keys (saas-secret-manager SM2, pairs orun-secrets SD-2′) — creates config.secret_deks keyed (org_id, generation >= 1): each workspace's DEK stored WRAPPED under the KEK (the config-worker SECRET_KEK binding; Cloudflare Secrets Store deferred to saas-secrets-sync SS4) as a JSON {v, iv, ct} document in BYTEA, with state active/retiring/shredded (the cryptoshred/rotate unit). A v:2 ciphertext envelope names its row via keyId ws:<org_id>:<generation>; generation 1 is minted on a workspace's first KEK-era write via race-safe INSERT ... ON CONFLICT DO NOTHING. No raw key material ever lands in Postgres. Additive + idempotent.",
     },
+    {
+      id: "490_work_teardown",
+      context: "work",
+      path: "490_work_teardown/up.sql",
+      checksum:
+        "6a78f3a70c13ca561228710dc0ef96d43767b65d42f39f0f55cc2e6ed8e05666",
+      description:
+        "Drop the v1 work-plane schema (orun-work v1 scrapped before any product surface consumed it — no route, worker, SDK, or console ever read these tables). Removes the work schema created by 200_work_foundation (items/events/links/status/cursors/sequences) via DROP SCHEMA ... CASCADE, alongside the removal of the @saas/db/work library. The v2 design (two append-only logs, lifecycle as a derived query, no stored status) lands its own schema under fresh migrations; see the orun repo specs/orun-work/ (v2), specs/archive/orun-work-v1/ (frozen v1), and specs/epics/orun-work/ here.",
+    },
   ],
 };
