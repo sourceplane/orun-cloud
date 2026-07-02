@@ -7,7 +7,25 @@ import type {
   RevokeAccountRoleRequest,
   RevokeAccountRoleResponse,
 } from "@saas/contracts/membership";
+import type { AccountCatalogResponse, AccountRunsResponse } from "@saas/contracts/state";
 import type { RequestOptions, Transport } from "./transport.js";
+
+/** Filters forwarded verbatim to every per-workspace read of the fan-out. */
+export interface AccountCatalogQuery {
+  kind?: string;
+  owner?: string;
+  q?: string;
+  environment?: string;
+  limit?: number;
+}
+
+export interface AccountRunsQuery {
+  status?: string;
+  environment?: string;
+  branch?: string;
+  source?: string;
+  limit?: number;
+}
 
 /**
  * Account resource client (teams-hub TH1c).
@@ -57,6 +75,36 @@ export class AccountClient {
   revokeRole(orgId: string, body: RevokeAccountRoleRequest, opts: RequestOptions = {}): Promise<RevokeAccountRoleResponse> {
     return this.transport.request<RevokeAccountRoleResponse>(
       { method: "DELETE", path: `/v1/organizations/${encodeURIComponent(orgId)}/account-roles`, body },
+      opts,
+    );
+  }
+
+  // -------------------------------------------------------------------------
+  // Cross-workspace reads (teams-hub TH2) — bounded fan-out over the
+  // account's workspace set; rows arrive tagged with their workspace and a
+  // per-workspace status (ok | denied | error).
+  // -------------------------------------------------------------------------
+
+  /** GET /v1/organizations/:orgId/account-catalog — catalog entities across the account. */
+  catalog(orgId: string, query: AccountCatalogQuery = {}, opts: RequestOptions = {}): Promise<AccountCatalogResponse> {
+    return this.transport.request<AccountCatalogResponse>(
+      {
+        method: "GET",
+        path: `/v1/organizations/${encodeURIComponent(orgId)}/account-catalog`,
+        query: { kind: query.kind, owner: query.owner, q: query.q, environment: query.environment, limit: query.limit },
+      },
+      opts,
+    );
+  }
+
+  /** GET /v1/organizations/:orgId/account-runs — the runs feed across the account. */
+  runs(orgId: string, query: AccountRunsQuery = {}, opts: RequestOptions = {}): Promise<AccountRunsResponse> {
+    return this.transport.request<AccountRunsResponse>(
+      {
+        method: "GET",
+        path: `/v1/organizations/${encodeURIComponent(orgId)}/account-runs`,
+        query: { status: query.status, environment: query.environment, branch: query.branch, source: query.source, limit: query.limit },
+      },
       opts,
     );
   }

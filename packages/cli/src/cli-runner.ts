@@ -52,6 +52,8 @@ import {
   accountWorkspacesCommand,
   accountMembersCommand,
   accountRolesCommand,
+  accountCatalogCommand,
+  accountRunsCommand,
   accountGrantCommand,
   accountRevokeCommand,
 } from "./commands/account.js";
@@ -234,6 +236,8 @@ function buildRouter(opts: RunOptions): Router {
   r.register(["account", "workspaces"], "List the workspaces under the active account", accountWorkspacesCommand);
   r.register(["account", "members"], "List the derived account-member roster (origin-tagged)", accountMembersCommand);
   r.register(["account", "roles"], "List account-scoped role assignments (users and teams)", accountRolesCommand);
+  r.register(["account", "catalog"], "Catalog entities across every workspace under the account", accountCatalogCommand);
+  r.register(["account", "runs"], "Recent runs across every workspace under the account", accountRunsCommand);
   r.register(["account", "grant"], "Grant a user an account role (cascades to all workspaces)", accountGrantCommand);
   r.register(["account", "revoke"], "Revoke a user's account role", accountRevokeCommand);
   return r;

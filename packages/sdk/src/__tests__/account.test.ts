@@ -59,4 +59,22 @@ describe("AccountClient (teams-hub TH1c)", () => {
     expect(calls[0]!.init.method).toBe("DELETE");
     expect(JSON.parse(calls[0]!.init.body as string)).toEqual({ subjectId: "usr_a", role: "account_admin" });
   });
+
+  it("catalog → GET /account-catalog with filters (TH2b)", async () => {
+    const { client: c, calls } = client({ workspaces: [], truncated: false });
+    const res = await c.account.catalog("org_1", { kind: "service", q: "pay" });
+    expect(res).toEqual({ workspaces: [], truncated: false });
+    expect(calls[0]!.url).toContain("https://api.test/v1/organizations/org_1/account-catalog");
+    expect(calls[0]!.url).toContain("kind=service");
+    expect(calls[0]!.url).toContain("q=pay");
+    expect(calls[0]!.init.method).toBe("GET");
+  });
+
+  it("runs → GET /account-runs with filters (TH2b)", async () => {
+    const { client: c, calls } = client({ workspaces: [], truncated: false });
+    await c.account.runs("org_1", { status: "running", limit: 5 });
+    expect(calls[0]!.url).toContain("https://api.test/v1/organizations/org_1/account-runs");
+    expect(calls[0]!.url).toContain("status=running");
+    expect(calls[0]!.url).toContain("limit=5");
+  });
 });
