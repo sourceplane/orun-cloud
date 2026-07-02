@@ -9,6 +9,7 @@ import { handleUpdateMemberRole } from "./handlers/update-member-role.js";
 import { handleGrantAccountRole } from "./handlers/grant-account-role.js";
 import { handleGrantTeamRole } from "./handlers/grant-team-role.js";
 import { handleRevokeTeamRole } from "./handlers/revoke-team-role.js";
+import { handleCreateTeam, handleListTeams, handleGetTeam, handleDeleteTeam, handleUpdateTeam, handleListTeamMembers, handleAddTeamMember, handleRemoveTeamMember } from "./handlers/teams.js";
 import { handleRemoveMember } from "./handlers/remove-member.js";
 import { handleCreateInvitation } from "./handlers/create-invitation.js";
 import { handleListInvitations } from "./handlers/list-invitations.js";
@@ -17,6 +18,7 @@ import { handleRevokeInvitation } from "./handlers/revoke-invitation.js";
 import { handleAcceptInvitation } from "./handlers/accept-invitation.js";
 import { handleAcceptMyInvitation } from "./handlers/accept-my-invitation.js";
 import { handleAuthorizationContext } from "./handlers/authorization-context.js";
+import { handleEffectiveAccess } from "./handlers/effective-access.js";
 import { handleSubjectOrgs } from "./handlers/subject-orgs.js";
 import { handleSyncAccountChildren } from "./handlers/sync-account-children.js";
 import { handleResolveBillingParent } from "./handlers/resolve-billing-parent.js";
@@ -57,6 +59,10 @@ const ORG_INVITATIONS_RE = /^\/v1\/organizations\/([^/]+)\/invitations$/;
 const ORG_INVITATION_ID_RE = /^\/v1\/organizations\/([^/]+)\/invitations\/([^/]+)$/;
 const ORG_ACCOUNT_ROLES_RE = /^\/v1\/organizations\/([^/]+)\/account-roles$/;
 const ORG_TEAM_ROLES_RE = /^\/v1\/organizations\/([^/]+)\/team-roles$/;
+const ORG_TEAMS_RE = /^\/v1\/organizations\/([^/]+)\/teams$/;
+const ORG_TEAM_ID_RE = /^\/v1\/organizations\/([^/]+)\/teams\/([^/]+)$/;
+const ORG_TEAM_MEMBERS_RE = /^\/v1\/organizations\/([^/]+)\/teams\/([^/]+)\/members$/;
+const ORG_TEAM_MEMBER_ID_RE = /^\/v1\/organizations\/([^/]+)\/teams\/([^/]+)\/members\/([^/]+)$/;
 const SP_BINDINGS_PATH = "/v1/internal/membership/service-principal-bindings";
 const SP_BINDING_ID_RE = /^\/v1\/internal\/membership\/service-principal-bindings\/([^/]+)$/;
 
@@ -77,6 +83,15 @@ export async function route(request: Request, env: Env): Promise<Response> {
     if (url.pathname === "/v1/internal/membership/authorization-context") {
       if (request.method === "POST") {
         return handleAuthorizationContext(request, env, requestId);
+      }
+      return methodNotAllowed(requestId);
+    }
+
+    // Effective access (saas-teams TM6b2): the actor's permitted actions on a
+    // target org/project, each with `via` provenance. Service-binding only.
+    if (url.pathname === "/v1/internal/membership/effective-access") {
+      if (request.method === "POST") {
+        return handleEffectiveAccess(request, env, requestId);
       }
       return methodNotAllowed(requestId);
     }
@@ -268,6 +283,70 @@ export async function route(request: Request, env: Env): Promise<Response> {
       }
       if (request.method === "DELETE") {
         return handleRevokeTeamRole(request, env, requestId, actor, teamRolesMatch[1]!);
+      }
+      return methodNotAllowed(requestId);
+    }
+
+    // Team lifecycle (saas-teams TM4b): create/list on the collection.
+    const teamsMatch = url.pathname.match(ORG_TEAMS_RE);
+    if (teamsMatch) {
+      const actor = resolveActor(request);
+      if (!actor) {
+        return errorResponse("unauthenticated", "Authentication required", 401, requestId);
+      }
+      if (request.method === "POST") {
+        return handleCreateTeam(request, env, requestId, actor, teamsMatch[1]!);
+      }
+      if (request.method === "GET") {
+        return handleListTeams(env, requestId, actor, teamsMatch[1]!);
+      }
+      return methodNotAllowed(requestId);
+    }
+
+    // Team membership (saas-teams TM4b2): remove a specific member.
+    const teamMemberIdMatch = url.pathname.match(ORG_TEAM_MEMBER_ID_RE);
+    if (teamMemberIdMatch) {
+      const actor = resolveActor(request);
+      if (!actor) {
+        return errorResponse("unauthenticated", "Authentication required", 401, requestId);
+      }
+      if (request.method === "DELETE") {
+        return handleRemoveTeamMember(env, requestId, actor, teamMemberIdMatch[1]!, teamMemberIdMatch[2]!, teamMemberIdMatch[3]!);
+      }
+      return methodNotAllowed(requestId);
+    }
+
+    // Team membership (saas-teams TM4b2): list/add members.
+    const teamMembersMatch = url.pathname.match(ORG_TEAM_MEMBERS_RE);
+    if (teamMembersMatch) {
+      const actor = resolveActor(request);
+      if (!actor) {
+        return errorResponse("unauthenticated", "Authentication required", 401, requestId);
+      }
+      if (request.method === "GET") {
+        return handleListTeamMembers(env, requestId, actor, teamMembersMatch[1]!, teamMembersMatch[2]!);
+      }
+      if (request.method === "POST") {
+        return handleAddTeamMember(request, env, requestId, actor, teamMembersMatch[1]!, teamMembersMatch[2]!);
+      }
+      return methodNotAllowed(requestId);
+    }
+
+    // Team lifecycle (saas-teams TM4b/TM4b2): get/update/delete a single team.
+    const teamIdMatch = url.pathname.match(ORG_TEAM_ID_RE);
+    if (teamIdMatch) {
+      const actor = resolveActor(request);
+      if (!actor) {
+        return errorResponse("unauthenticated", "Authentication required", 401, requestId);
+      }
+      if (request.method === "GET") {
+        return handleGetTeam(env, requestId, actor, teamIdMatch[1]!, teamIdMatch[2]!);
+      }
+      if (request.method === "PATCH") {
+        return handleUpdateTeam(request, env, requestId, actor, teamIdMatch[1]!, teamIdMatch[2]!);
+      }
+      if (request.method === "DELETE") {
+        return handleDeleteTeam(env, requestId, actor, teamIdMatch[1]!, teamIdMatch[2]!);
       }
       return methodNotAllowed(requestId);
     }

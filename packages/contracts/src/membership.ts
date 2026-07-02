@@ -93,6 +93,77 @@ export interface ListMembersResponse {
   members: PublicMember[];
 }
 
+// ── Teams (saas-teams TM4c) ─────────────────────────────────────────
+/** Public shape of an account-owned Team. `id` is the `team_<hex>` public id. */
+export interface PublicTeam {
+  id: string;
+  name: string;
+  slug: string;
+  status: string;
+  createdAt: string;
+}
+
+export interface PublicTeamMember {
+  subjectId: string;
+  subjectType: string;
+  status: string;
+  createdAt: string;
+}
+
+export interface CreateTeamRequest {
+  name: string;
+  slug?: string;
+}
+
+export interface UpdateTeamRequest {
+  name?: string;
+  slug?: string;
+}
+
+export interface CreateTeamResponse {
+  team: PublicTeam;
+}
+
+export interface GetTeamResponse {
+  team: PublicTeam;
+}
+
+export interface ListTeamsResponse {
+  teams: PublicTeam[];
+}
+
+export interface AddTeamMemberRequest {
+  subjectId: string;
+  /** "user" | "service_principal" — defaults to "user". */
+  subjectType?: string;
+}
+
+export interface AddTeamMemberResponse {
+  member: PublicTeamMember;
+}
+
+export interface ListTeamMembersResponse {
+  members: PublicTeamMember[];
+}
+
+/** Grant a team a role at account | organization (workspace) | project scope. */
+export interface GrantTeamRoleRequest {
+  teamId: string;
+  role: string;
+  scopeKind: "account" | "organization" | "project";
+  /** Required when scopeKind is "project" — the project id. */
+  scopeRef?: string;
+}
+
+export interface GrantTeamRoleResponse {
+  grant: {
+    teamId: string;
+    role: string;
+    scopeKind: string;
+    scopeRef: string | null;
+  };
+}
+
 export const ORGANIZATION_ROLES = ["owner", "admin", "builder", "viewer", "billing_admin"] as const;
 export type InvitationRole = (typeof ORGANIZATION_ROLES)[number];
 

@@ -15,6 +15,19 @@ export interface PolicyResource {
   environmentId?: string;
 }
 
+/**
+ * Where a membership fact reached the actor (saas-teams TM6). Assembled by the
+ * membership-worker's authorization-context builder; **ignored by the policy
+ * engine** (it decides on `role`/`scope` only). Purely for legibility —
+ * effective-access / provenance surfaces render it so union-over-teams + account
+ * cascade stay explainable.
+ */
+export interface FactOrigin {
+  kind: "direct" | "team" | "account_cascade";
+  /** The granting team's public id (`team_<hex>`) when `kind === "team"`. */
+  teamId?: string;
+}
+
 export interface MembershipFact {
   kind: "role_assignment";
   role: TenancyRole;
@@ -23,6 +36,8 @@ export interface MembershipFact {
     orgId: string;
     projectId?: string;
   };
+  /** Provenance (saas-teams TM6). Optional + engine-ignored; additive. */
+  grantedVia?: FactOrigin;
 }
 
 export type PolicyMembershipFact = MembershipFact | Record<string, unknown>;
@@ -47,6 +62,13 @@ export interface AuthorizationResponse {
     orgId: string;
     projectId?: string;
   };
+  /**
+   * Provenance of the fact that permitted the action (saas-teams TM6b) — the
+   * `grantedVia` of the winning fact. Present only when `allow` is true and the
+   * permitting fact carried provenance. Undefined for denials or facts without
+   * a `grantedVia`. Does not affect the decision — reporting only.
+   */
+  via?: FactOrigin;
 }
 
 export interface EffectivePermissionsRequest {
@@ -59,6 +81,8 @@ export interface EffectivePermission {
   action: string;
   allow: boolean;
   reason: string;
+  /** Provenance of the permitting fact (saas-teams TM6b); set only when allowed. */
+  via?: FactOrigin;
 }
 
 export interface EffectivePermissionsResponse {
@@ -68,6 +92,16 @@ export interface EffectivePermissionsResponse {
     orgId: string;
     projectId?: string;
   };
+}
+
+/**
+ * "Who can do what here, and via which grant" (saas-teams TM6b). The actor's
+ * effective permissions on a target org/project, each carrying `via` provenance
+ * (direct / team / account cascade) for the allowed ones. Assembled by
+ * membership-worker (facts + engine); surfaced by api-edge/SDK/CLI/console.
+ */
+export interface EffectiveAccessResponse {
+  permissions: EffectivePermission[];
 }
 
 export interface RoleAssignmentValidationRequest {

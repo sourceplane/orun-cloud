@@ -1,7 +1,19 @@
-import type { MembershipFact, TenancyRole, RoleScopeKind } from "@saas/contracts/policy";
+import type { MembershipFact, FactOrigin, TenancyRole, RoleScopeKind } from "@saas/contracts/policy";
 import type { RoleAssignment } from "@saas/db/membership";
 
-export function mapRoleAssignmentsToFacts(orgId: string, assignments: RoleAssignment[]): MembershipFact[] {
+/**
+ * Map role assignments to policy facts, stamping each with its provenance
+ * (saas-teams TM6). `origin` is the default for non-team assignments (direct
+ * grants, or the account cascade when the caller passes `{kind:'account_cascade'}`);
+ * a `subject_type='team'` assignment always resolves to `{kind:'team', teamId}`
+ * (the team public id lives in `subject_id`), so a batch of team grants gets its
+ * per-team attribution automatically. The policy engine ignores `grantedVia`.
+ */
+export function mapRoleAssignmentsToFacts(
+  orgId: string,
+  assignments: RoleAssignment[],
+  origin: FactOrigin = { kind: "direct" },
+): MembershipFact[] {
   return assignments.map((ra) => {
     let scope: MembershipFact["scope"];
     if (ra.scopeKind === "project") {
@@ -14,6 +26,8 @@ export function mapRoleAssignmentsToFacts(orgId: string, assignments: RoleAssign
     } else {
       scope = { kind: "organization" as RoleScopeKind, orgId };
     }
-    return { kind: "role_assignment" as const, role: ra.role as TenancyRole, scope };
+    const grantedVia: FactOrigin =
+      ra.subjectType === "team" ? { kind: "team", teamId: ra.subjectId } : origin;
+    return { kind: "role_assignment" as const, role: ra.role as TenancyRole, scope, grantedVia };
   });
 }

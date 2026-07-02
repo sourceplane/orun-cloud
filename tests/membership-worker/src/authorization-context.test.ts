@@ -100,6 +100,7 @@ describe("membership-worker: authorization-context internal route", () => {
         kind: "role_assignment",
         role: "admin",
         scope: { kind: "organization", orgId: ORG_ID },
+        grantedVia: { kind: "direct" },
       });
     });
 
@@ -131,6 +132,7 @@ describe("membership-worker: authorization-context internal route", () => {
         kind: "role_assignment",
         role: "project_builder",
         scope: { kind: "project", orgId: ORG_ID, projectId: projectRef },
+        grantedVia: { kind: "direct" },
       });
     });
 
@@ -296,7 +298,7 @@ describe("membership-facts: mapRoleAssignmentsToFacts", () => {
     ];
     const facts = mapRoleAssignmentsToFacts("org-1", assignments);
     expect(facts).toEqual([
-      { kind: "role_assignment", role: "admin", scope: { kind: "organization", orgId: "org-1" } },
+      { kind: "role_assignment", role: "admin", scope: { kind: "organization", orgId: "org-1" }, grantedVia: { kind: "direct" } },
     ]);
   });
 
@@ -316,7 +318,7 @@ describe("membership-facts: mapRoleAssignmentsToFacts", () => {
     ];
     const facts = mapRoleAssignmentsToFacts("org-1", assignments);
     expect(facts).toEqual([
-      { kind: "role_assignment", role: "project_viewer", scope: { kind: "project", orgId: "org-1", projectId: "prj-uuid-1" } },
+      { kind: "role_assignment", role: "project_viewer", scope: { kind: "project", orgId: "org-1", projectId: "prj-uuid-1" }, grantedVia: { kind: "direct" } },
     ]);
   });
 
@@ -410,6 +412,7 @@ describe("authorization-context: account-scoped RBAC cascade", () => {
       kind: "role_assignment",
       role: "account_admin",
       scope: { kind: "account", orgId: CHILD_UUID }, // remapped onto the child
+      grantedVia: { kind: "account_cascade" },
     });
   });
 
@@ -445,7 +448,7 @@ describe("authorization-context: account-scoped RBAC cascade", () => {
     const json = (await res.json()) as { data: { memberships: unknown[] } };
     // exactly one fact, account-scoped, stamped with the account org id (no dup)
     expect(json.data.memberships).toEqual([
-      { kind: "role_assignment", role: "account_admin", scope: { kind: "account", orgId: ACCOUNT_UUID } },
+      { kind: "role_assignment", role: "account_admin", scope: { kind: "account", orgId: ACCOUNT_UUID }, grantedVia: { kind: "direct" } },
     ]);
   });
 
@@ -473,7 +476,7 @@ describe("authorization-context: account-scoped RBAC cascade", () => {
 
     const json = (await res.json()) as { data: { memberships: unknown[] } };
     expect(json.data.memberships).toEqual([
-      { kind: "role_assignment", role: "viewer", scope: { kind: "organization", orgId: CHILD_UUID } },
+      { kind: "role_assignment", role: "viewer", scope: { kind: "organization", orgId: CHILD_UUID }, grantedVia: { kind: "direct" } },
     ]);
   });
 });
@@ -495,7 +498,7 @@ describe("membership-facts: account-scoped assignments (WID6)", () => {
     ];
     const facts = mapRoleAssignmentsToFacts("target-org", assignments);
     expect(facts).toEqual([
-      { kind: "role_assignment", role: "account_admin", scope: { kind: "account", orgId: "target-org" } },
+      { kind: "role_assignment", role: "account_admin", scope: { kind: "account", orgId: "target-org" }, grantedVia: { kind: "direct" } },
     ]);
   });
 });
@@ -570,7 +573,7 @@ describe("authorization-context: team-derived facts (saas-teams TM3)", () => {
       teamGrants: { [`${ACCOUNT}|${TEAM_PUB}`]: [grant(ACCOUNT, TEAM_PUB, "builder", "organization")] },
     });
     const facts = await factsFor(repo, ACCOUNT);
-    expect(facts).toContainEqual({ kind: "role_assignment", role: "builder", scope: { kind: "organization", orgId: ACCOUNT } });
+    expect(facts).toContainEqual({ kind: "role_assignment", role: "builder", scope: { kind: "organization", orgId: ACCOUNT }, grantedVia: { kind: "team", teamId: TEAM_PUB } });
   });
 
   it("an account-scope team grant cascades onto a child workspace", async () => {
@@ -584,7 +587,7 @@ describe("authorization-context: team-derived facts (saas-teams TM3)", () => {
     });
     const facts = await factsFor(repo, CHILD);
     // Stamped onto the TARGET (child) org id so the engine's scope filter matches.
-    expect(facts).toContainEqual({ kind: "role_assignment", role: "account_admin", scope: { kind: "account", orgId: CHILD } });
+    expect(facts).toContainEqual({ kind: "role_assignment", role: "account_admin", scope: { kind: "account", orgId: CHILD }, grantedVia: { kind: "team", teamId: TEAM_PUB } });
   });
 
   it("an org-scope team grant on the account does NOT cascade to a child", async () => {

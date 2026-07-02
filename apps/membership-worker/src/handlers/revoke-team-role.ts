@@ -95,7 +95,7 @@ export async function handleRevokeTeamRole(
     }
     const authResult = await authorizeViaPolicy(env.POLICY_WORKER, {
       actor,
-      action: "organization.member.update_role",
+      action: "team.role.revoke",
       resource: { kind: "organization", id: authorityOrg, orgId: authorityOrg },
       orgId: authorityOrg,
       roleAssignments: actorRoles.value,

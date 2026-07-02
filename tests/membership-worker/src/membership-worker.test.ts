@@ -418,6 +418,7 @@ describe("policy-client", () => {
         kind: "role_assignment",
         role: "owner",
         scope: { kind: "organization", orgId: "org-uuid" },
+        grantedVia: { kind: "direct" },
       });
     });
 
@@ -433,6 +434,7 @@ describe("policy-client", () => {
         kind: "role_assignment",
         role: "project_admin",
         scope: { kind: "project", orgId: "org-uuid", projectId: "proj-uuid" },
+        grantedVia: { kind: "direct" },
       });
     });
 
@@ -542,7 +544,7 @@ describe("policy-client", () => {
         resource: { kind: "organization", id: "org-uuid", orgId: "org-uuid" },
         context: {
           memberships: [
-            { kind: "role_assignment", role: "admin", scope: { kind: "organization", orgId: "org-uuid" } },
+            { kind: "role_assignment", role: "admin", scope: { kind: "organization", orgId: "org-uuid" }, grantedVia: { kind: "direct" } },
           ],
         },
       });

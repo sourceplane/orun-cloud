@@ -1,8 +1,10 @@
 import type { Env } from "../env.js";
 import type { ActorContext } from "../router.js";
 import type { MembershipRepository } from "@saas/db/membership";
+import type { EventsRepository } from "@saas/db/events";
 import { createSqlExecutor } from "@saas/db/hyperdrive";
 import { createMembershipRepository, effectiveBillingOrgId } from "@saas/db/membership";
+import { createEventsRepository } from "@saas/db/events";
 import { asUuid } from "@saas/db/ids";
 import { ACCOUNT_ROLES } from "@saas/contracts/membership";
 import { authorizeViaPolicy } from "../policy-client.js";
@@ -14,6 +16,9 @@ export interface GrantAccountRoleDeps {
     MembershipRepository,
     "getOrganizationById" | "listRoleAssignments" | "createRoleAssignment"
   >;
+  /** Optional audit sink (saas-teams TM4b2 backfill). When present, a successful
+   * grant emits an `account.role.granted` event. */
+  eventsRepo?: Pick<EventsRepository, "appendEventWithAudit">;
   now?: () => Date;
   generateId?: () => string;
 }
@@ -118,6 +123,21 @@ export async function handleGrantAccountRole(
     });
     if (!created.ok) {
       return errorResponse("internal_error", "An unexpected error occurred", 500, requestId);
+    }
+
+    // Audit the grant (saas-teams TM4b2 backfill). Best-effort: an audit-append
+    // failure must not fail an already-committed grant.
+    const eventsRepo = deps?.eventsRepo ?? (executor ? createEventsRepository(executor) : null);
+    if (eventsRepo) {
+      await eventsRepo.appendEventWithAudit({
+        event: {
+          id: genId(), type: "account.role.granted", version: 1, source: "membership-worker",
+          occurredAt: now, actorType: actor.subjectType, actorId: actor.subjectId,
+          orgId: accountUuid, subjectKind: "subject", subjectId,
+          requestId, payload: { subjectId, role, scopeKind: "account" },
+        },
+        audit: { id: genId(), category: "membership", description: `Account role ${role} granted to ${subjectId}` },
+      }).catch(() => { /* best-effort */ });
     }
 
     return successResponse(

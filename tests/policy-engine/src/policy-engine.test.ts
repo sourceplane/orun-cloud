@@ -686,7 +686,8 @@ describe("listEffectivePermissions", () => {
     expect(result.derivedScope.orgId).toBe("org_1");
 
     const allowed = result.permissions.filter((p) => p.allow);
-    expect(allowed.length).toBe(42);
+    // 42 base + 7 saas-teams TM4 team.* management actions.
+    expect(allowed.length).toBe(49);
   });
 
   it("returns limited permissions for viewer", () => {
@@ -1147,5 +1148,87 @@ describe("account-scoped RBAC cascade", () => {
     const result = authorize(authReq("organization.read", "org_other", facts));
     expect(result.allow).toBe(false);
     expect(result.reason).toBe("no_matching_role");
+  });
+});
+
+// saas-teams TM4 — team management permission catalog.
+describe("team.* management actions", () => {
+  const ORG = "org_teams";
+  const TEAM_ACTIONS = [
+    "team.create", "team.update", "team.delete",
+    "team.member.add", "team.member.remove",
+    "team.role.grant", "team.role.revoke",
+  ];
+
+  it("owner is allowed every team.* action", () => {
+    for (const action of TEAM_ACTIONS) {
+      expect(authorize(authReq(action, ORG, [orgFact("owner", ORG)])).allow).toBe(true);
+    }
+  });
+
+  it("admin is allowed every team.* action", () => {
+    for (const action of TEAM_ACTIONS) {
+      expect(authorize(authReq(action, ORG, [orgFact("admin", ORG)])).allow).toBe(true);
+    }
+  });
+
+  it("builder and viewer are denied team management", () => {
+    for (const role of ["builder", "viewer"]) {
+      expect(authorize(authReq("team.create", ORG, [orgFact(role, ORG)])).allow).toBe(false);
+      expect(authorize(authReq("team.role.grant", ORG, [orgFact(role, ORG)])).allow).toBe(false);
+    }
+  });
+
+  it("account_admin (cascaded) is allowed team.role.grant on a workspace", () => {
+    // Account-scope fact stamped onto the target org (as authorization-context does).
+    const result = authorize(authReq("team.role.grant", ORG, [accountFact("account_admin", ORG)]));
+    expect(result.allow).toBe(true);
+  });
+
+  it("account_billing_admin is NOT allowed team management", () => {
+    const result = authorize(authReq("team.create", ORG, [accountFact("account_billing_admin", ORG)]));
+    expect(result.allow).toBe(false);
+  });
+});
+
+// saas-teams TM6b — the engine reports which fact permitted an action.
+describe("effective-access provenance (TM6b)", () => {
+  const ORG = "org_prov";
+  const teamFact: MembershipFact = {
+    kind: "role_assignment",
+    role: "admin",
+    scope: { kind: "organization", orgId: ORG },
+    grantedVia: { kind: "team", teamId: "team_abc" },
+  };
+
+  it("authorize reports the permitting fact's provenance", () => {
+    const r = authorize(authReq("organization.read", ORG, [teamFact]));
+    expect(r.allow).toBe(true);
+    expect(r.via).toEqual({ kind: "team", teamId: "team_abc" });
+  });
+
+  it("no via when the permitting fact carries no provenance", () => {
+    const r = authorize(authReq("organization.read", ORG, [orgFact("admin", ORG)]));
+    expect(r.allow).toBe(true);
+    expect(r.via).toBeUndefined();
+  });
+
+  it("denials carry no via", () => {
+    const r = authorize(authReq("organization.read", ORG, []));
+    expect(r.allow).toBe(false);
+    expect(r.via).toBeUndefined();
+  });
+
+  it("listEffectivePermissions attributes each allowed action to its fact", () => {
+    const res = listEffectivePermissions({
+      subject,
+      resource: { kind: "organization", orgId: ORG },
+      context: { memberships: [teamFact] },
+    });
+    const read = res.permissions.find((p) => p.action === "organization.read");
+    expect(read?.allow).toBe(true);
+    expect(read?.via).toEqual({ kind: "team", teamId: "team_abc" });
+    const denied = res.permissions.find((p) => !p.allow);
+    if (denied) expect(denied.via).toBeUndefined();
   });
 });

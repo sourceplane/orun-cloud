@@ -184,3 +184,23 @@ describe("grant-account-role (saas-workspace-id WID6)", () => {
     expect(res.status).toBe(422);
   });
 });
+
+describe("grant-account-role audit (saas-teams TM4b2 backfill)", () => {
+  it("emits account.role.granted when an events sink is provided", async () => {
+    const { repo } = makeRepo({
+      orgs: { [ACCOUNT_UUID]: org(ACCOUNT_UUID, null) },
+      roles: { [ACCOUNT_UUID]: [accountRole(ACCOUNT_UUID, ACTOR_ID, "account_admin")] },
+    });
+    const events: Array<{ type: string }> = [];
+    const eventsRepo = {
+      async appendEventWithAudit(input: { event: { type: string } }) {
+        events.push({ type: input.event.type });
+        return { ok: true as const, value: { event: input.event, audit: {} } as never };
+      },
+    };
+    const req = makeRequest(ACCOUNT_UUID, { role: "account_admin", subjectId: GRANTEE_ID });
+    const res = await handleGrantAccountRole(req, createFakeEnv(), "req-a", actor, orgPublicId(ACCOUNT_UUID), { repo, eventsRepo });
+    expect(res.status).toBe(201);
+    expect(events.map((e) => e.type)).toContain("account.role.granted");
+  });
+});
