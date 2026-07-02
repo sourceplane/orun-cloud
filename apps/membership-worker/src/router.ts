@@ -8,6 +8,7 @@ import { handleListAccountWorkspaces } from "./handlers/list-account-workspaces.
 import { handleUpdateMemberRole } from "./handlers/update-member-role.js";
 import { handleGrantAccountRole } from "./handlers/grant-account-role.js";
 import { handleListAccountRoles } from "./handlers/list-account-roles.js";
+import { handleListAccountMembers } from "./handlers/list-account-members.js";
 import { handleRevokeAccountRole } from "./handlers/revoke-account-role.js";
 import { handleGrantTeamRole } from "./handlers/grant-team-role.js";
 import { handleRevokeTeamRole } from "./handlers/revoke-team-role.js";
@@ -60,6 +61,7 @@ const ORG_INVITATIONS_ACCEPT_RE = /^\/v1\/organizations\/([^/]+)\/invitations\/a
 const ORG_INVITATIONS_RE = /^\/v1\/organizations\/([^/]+)\/invitations$/;
 const ORG_INVITATION_ID_RE = /^\/v1\/organizations\/([^/]+)\/invitations\/([^/]+)$/;
 const ORG_ACCOUNT_ROLES_RE = /^\/v1\/organizations\/([^/]+)\/account-roles$/;
+const ORG_ACCOUNT_MEMBERS_RE = /^\/v1\/organizations\/([^/]+)\/account-members$/;
 const ORG_TEAM_ROLES_RE = /^\/v1\/organizations\/([^/]+)\/team-roles$/;
 const ORG_TEAMS_RE = /^\/v1\/organizations\/([^/]+)\/teams$/;
 const ORG_TEAM_ID_RE = /^\/v1\/organizations\/([^/]+)\/teams\/([^/]+)$/;
@@ -276,6 +278,20 @@ export async function route(request: Request, env: Env): Promise<Response> {
       }
       if (request.method === "DELETE") {
         return handleRevokeAccountRole(request, env, requestId, actor, accountRolesMatch[1]!);
+      }
+      return methodNotAllowed(requestId);
+    }
+
+    // Derived account-member roster (teams-hub TH1b): the union of the account
+    // root org's active members and account-scope role holders — no new table.
+    const accountMembersMatch = url.pathname.match(ORG_ACCOUNT_MEMBERS_RE);
+    if (accountMembersMatch) {
+      const actor = resolveActor(request);
+      if (!actor) {
+        return errorResponse("unauthenticated", "Authentication required", 401, requestId);
+      }
+      if (request.method === "GET") {
+        return handleListAccountMembers(env, requestId, actor, accountMembersMatch[1]!);
       }
       return methodNotAllowed(requestId);
     }
