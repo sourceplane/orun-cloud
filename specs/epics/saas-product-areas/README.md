@@ -24,11 +24,13 @@ then it is **promoted** to its own `saas-<slug>/` folder with a full doc set
 | **P4** | Notification inbox + delivery preferences UX | 🗓️ Planned | **B2** | In-app inbox surfacing what notifications-worker delivered; per-channel preferences per identity; mark-as-read. (Console *preferences* page is also tracked in `saas-console-ux` once the edge facade lands.) |
 | **P5** | Integration marketplace primitives | ⬆ **Promoted** → [`../saas-integrations/`](../saas-integrations/) | B1 (shipped), B5 (shipped), B11 | Promoted 2026-06-11 as the **IG** epic: pluggable integrations platform, GitHub App first (connect, repo links, normalized `scm.*` inbound events, token broker). The P2 dependency was dropped — repo links are plain records now, forward-compatible with manifested resources. |
 | **P6** | Hosted changelog + status page | 🗓️ Planned | P3 (status), U9 (white-label) | Per-product changelog from a content source; hosted status page reading observability + uptime. |
-| **P7** | AI-native affordances | 🗓️ Planned | P3 + B9 (data) | NL audit search, anomaly detection on usage curves, NL → entitlement query, NL → webhook filter. Separate sub-tasks once P3/B9 give the data. |
+| **P7** | AI-native affordances | ⬆ Agent-surface half **promoted** → [`../saas-mcp-server/`](../saas-mcp-server/); NL-analytics half 🗓️ Planned | P3 + B9 (data, for the parked half) | The protocol/connectivity leg (agents querying the platform) promoted 2026-07-02 as the **MCP** epic: an MCP server over catalog/runs/audit/usage with stdio + remote transports. The NL-*analytics* legs (NL audit search, anomaly detection on usage curves, NL → entitlement query, NL → webhook filter) stay parked here on P3/B9 data. |
 
 ## Sequencing note
 
 P1 (promote-flow) is the most likely next human-independent leg — verify against
-code before committing. P5/P6/P7 each depend on earlier data/infrastructure
-(P2/P3/B9) and should not start before their prerequisites are stable. Prefer B/U
-work over P until baseline buyer-credibility is reached.
+code before committing. P6 and P7's parked NL-analytics half depend on earlier
+data/infrastructure (P3/B9) and should not start before their prerequisites are
+stable (P7's promoted agent-surface half rides shipped rails and carries its own
+sequencing in `../saas-mcp-server/`). Prefer B/U work over P until baseline
+buyer-credibility is reached.
