@@ -136,6 +136,37 @@ export async function teamMemberRemoveCommand(ctx: CommandContext): Promise<Comm
   return { exitCode: 0 };
 }
 
+function formatVia(via?: { kind: string; teamId?: string }): string {
+  if (!via) return "";
+  if (via.kind === "team") return `team ${via.teamId ?? ""}`.trim();
+  if (via.kind === "account_cascade") return "account";
+  return "direct";
+}
+
+// team access [subjectId] [--project=ID]
+export async function teamAccessCommand(ctx: CommandContext): Promise<CommandResult> {
+  const subjectId = ctx.args[0];
+  const project = strFlag(ctx, "project");
+  const orgId = await resolveOrgId(ctx, true);
+  const sdk = await ctx.sdk();
+  const result = await sdk.teams.effectiveAccess(orgId, {
+    ...(subjectId ? { subjectId } : {}),
+    ...(project ? { projectId: project } : {}),
+  });
+  if (ctx.outputMode === "json") {
+    ctx.stdout(formatOutput({ mode: "json", data: result }));
+    return { exitCode: 0 };
+  }
+  const allowed = result.permissions.filter((p) => p.allow);
+  ctx.stdout(formatOutput({
+    mode: "human",
+    columns: ["action", "via"],
+    rows: allowed.map((p) => ({ action: p.action, via: formatVia(p.via) })),
+    title: `Effective access for ${subjectId ?? "you"} in ${orgId}`,
+  }));
+  return { exitCode: 0 };
+}
+
 // team grant <teamId> --role=ROLE --scope=account|organization|project [--scope-ref=PROJECT_ID]
 export async function teamGrantCommand(ctx: CommandContext): Promise<CommandResult> {
   const teamId = requireArg(ctx.args[0], "usage: orun-cloud team grant <teamId> --role=ROLE --scope=account|organization|project [--scope-ref=PROJECT_ID] [--org=ORG_ID]");

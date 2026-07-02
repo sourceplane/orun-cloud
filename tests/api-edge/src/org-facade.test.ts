@@ -97,6 +97,7 @@ describe("api-edge org facade", () => {
       expect(isOrgRoute("/v1/organizations/org_abc/teams/team_abc/members")).toBe(true);
       expect(isOrgRoute("/v1/organizations/org_abc/teams/team_abc/members/usr_x")).toBe(true);
       expect(isOrgRoute("/v1/organizations/org_abc/team-roles")).toBe(true);
+      expect(isOrgRoute("/v1/organizations/org_abc/effective-access")).toBe(true);
     });
 
     it("does not match deeper nested org routes", () => {
@@ -330,6 +331,31 @@ describe("api-edge org facade", () => {
       await handleOrgRoute(request, { IDENTITY_WORKER: identityFetcher, MEMBERSHIP_WORKER: membershipFetcher, ENVIRONMENT: "test" }, "req_t", "/v1/organizations/org_abc/team-roles");
       expect(membershipCalls[0]!.init.method).toBe("DELETE");
       expect(membershipCalls[0]!.init.body).toBeDefined();
+    });
+
+    it("proxies GET /effective-access with actor context", async () => {
+      const { fetcher: identityFetcher } = createSessionFetcher("usr_abc123");
+      const { fetcher: membershipFetcher, calls: membershipCalls } = createFakeFetcher();
+      const request = new Request("https://api.example.com/v1/organizations/org_abc/effective-access?subjectId=usr_x", {
+        method: "GET",
+        headers: { authorization: "Bearer sps_ses_abc.secret" },
+      });
+      await handleOrgRoute(request, { IDENTITY_WORKER: identityFetcher, MEMBERSHIP_WORKER: membershipFetcher, ENVIRONMENT: "test" }, "req_t", "/v1/organizations/org_abc/effective-access");
+      expect(membershipCalls).toHaveLength(1);
+      expect(membershipCalls[0]!.url).toContain("/v1/organizations/org_abc/effective-access");
+      expect(membershipCalls[0]!.url).toContain("subjectId=usr_x");
+      const h = new Headers(membershipCalls[0]!.init.headers as HeadersInit);
+      expect(h.get("x-actor-subject-id")).toBe("usr_abc123");
+    });
+
+    it("405s POST /effective-access", async () => {
+      const { fetcher: identityFetcher } = createSessionFetcher("usr_abc123");
+      const { fetcher: membershipFetcher } = createFakeFetcher();
+      const request = new Request("https://api.example.com/v1/organizations/org_abc/effective-access", {
+        method: "POST", headers: { authorization: "Bearer sps_ses_abc.secret" },
+      });
+      const res = await handleOrgRoute(request, { IDENTITY_WORKER: identityFetcher, MEMBERSHIP_WORKER: membershipFetcher, ENVIRONMENT: "test" }, "req_t", "/v1/organizations/org_abc/effective-access");
+      expect(res.status).toBe(405);
     });
 
     it("405s an unsupported method on /teams", async () => {

@@ -1,10 +1,12 @@
 import type { Env } from "../env.js";
+import type { ActorContext } from "../router.js";
 import type { EffectiveAccessResponse, PolicySubject } from "@saas/contracts/policy";
 import type { MembershipRepository } from "@saas/db/membership";
 import { createMembershipRepository } from "@saas/db/membership";
 import { createSqlExecutor } from "@saas/db/hyperdrive";
 import { assembleAuthorizationFacts } from "../authz-facts.js";
-import { effectivePermissionsViaPolicy } from "../policy-client.js";
+import { effectivePermissionsViaPolicy, authorizeViaPolicy } from "../policy-client.js";
+import { parseOrgPublicId } from "../ids.js";
 import { errorResponse, successResponse, validationError } from "../http.js";
 
 const SUBJECT_TYPES = new Set(["user", "service_principal", "workflow", "system"]);
@@ -88,6 +90,81 @@ export async function handleEffectiveAccess(
       name: typeof e?.name === "string" ? e.name : undefined,
       message: typeof e?.message === "string" ? e.message : undefined,
     });
+    return errorResponse("internal_error", "An unexpected error occurred", 500, requestId);
+  } finally {
+    if (executor) await executor.dispose();
+  }
+}
+
+/**
+ * Public (actor-in-headers) effective-access read (saas-teams TM6b3):
+ * `GET /v1/organizations/:orgId/effective-access?projectId=&subjectId=`.
+ *
+ * The subject defaults to the calling actor (you can always see your own
+ * access). Passing `subjectId` (viewing someone else's access) requires
+ * `organization.member.list` on the org — the same authority that lets you see
+ * the member list. Proxied by api-edge, which supplies the resolved actor via
+ * the `x-actor-*` headers the router reads into `actor`.
+ */
+export async function handleOrgEffectiveAccess(
+  env: Env,
+  requestId: string,
+  actor: ActorContext,
+  orgIdParam: string,
+  url: URL,
+  deps?: HandleEffectiveAccessDeps,
+): Promise<Response> {
+  const orgUuid = parseOrgPublicId(orgIdParam);
+  if (!orgUuid) {
+    return errorResponse("not_found", "Organization not found", 404, requestId);
+  }
+  if (!deps?.repo && !env.PLATFORM_DB) {
+    return errorResponse("internal_error", "Service unavailable", 503, requestId);
+  }
+  if (!env.POLICY_WORKER) {
+    return errorResponse("internal_error", "Policy service unavailable", 503, requestId);
+  }
+
+  const requestedSubject = url.searchParams.get("subjectId");
+  const projectId = url.searchParams.get("projectId") ?? undefined;
+  const viewingOther = requestedSubject != null && requestedSubject.length > 0 && requestedSubject !== actor.subjectId;
+  const subject: PolicySubject = viewingOther
+    ? { type: "user", id: requestedSubject! }
+    : { type: actor.subjectType as PolicySubject["type"], id: actor.subjectId };
+
+  const executor = deps?.repo ? null : createSqlExecutor(env.PLATFORM_DB!);
+  const repo = deps?.repo ?? createMembershipRepository(executor!);
+
+  try {
+    // Viewing another subject's access requires member-list authority.
+    if (viewingOther) {
+      const actorRoles = await repo.listRoleAssignments(orgUuid, actor.subjectId);
+      if (!actorRoles.ok) {
+        return errorResponse("not_found", "Organization not found", 404, requestId);
+      }
+      const auth = await authorizeViaPolicy(env.POLICY_WORKER, {
+        actor,
+        action: "organization.member.list",
+        resource: { kind: "organization", id: orgUuid, orgId: orgUuid },
+        orgId: orgUuid,
+        roleAssignments: actorRoles.value,
+        requestId,
+      });
+      if (!auth.allow) {
+        return errorResponse("not_found", "Organization not found", 404, requestId);
+      }
+    }
+
+    const memberships = await assembleAuthorizationFacts(repo, subject.id, orgUuid);
+    const permissions = await effectivePermissionsViaPolicy(env.POLICY_WORKER, {
+      subject,
+      resource: { kind: "organization", orgId: orgUuid, ...(projectId ? { projectId } : {}) },
+      memberships,
+      requestId,
+    });
+    const responseBody: EffectiveAccessResponse = { permissions };
+    return successResponse(responseBody, requestId);
+  } catch {
     return errorResponse("internal_error", "An unexpected error occurred", 500, requestId);
   } finally {
     if (executor) await executor.dispose();

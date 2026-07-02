@@ -50,15 +50,15 @@ export function clearLastOrgSlug(): void {
 }
 
 /**
- * Default destination after auth / at the app root: the last-used org's projects
- * if one is remembered, otherwise onboarding. There is deliberately no org-less
- * landing view — an organization is the unit of work, so when we don't know one
- * we send the user to `/onboarding`, which either creates the first org or
- * forwards to an existing one. Pure given a slug so it's trivially testable;
- * callers pass `readLastOrgSlug()`.
+ * Default destination after auth / at the app root: the last-used org's Overview
+ * (the Workspace landing) if one is remembered, otherwise onboarding. There is
+ * deliberately no org-less landing view — an organization is the unit of work,
+ * so when we don't know one we send the user to `/onboarding`, which either
+ * creates the first org or forwards to an existing one. Pure given a slug so
+ * it's trivially testable; callers pass `readLastOrgSlug()`.
  */
 export function defaultOrgDestination(lastOrgSlug: string | null): string {
-  return lastOrgSlug ? `/orgs/${lastOrgSlug}/projects` : "/onboarding";
+  return lastOrgSlug ? `/orgs/${lastOrgSlug}` : "/onboarding";
 }
 
 /** Minimal shape of the API client needed to resolve the post-auth destination. */

@@ -4,8 +4,8 @@ import {
 } from "@web-console-next/lib/last-org";
 
 describe("defaultOrgDestination", () => {
-  it("routes to the last-used org's projects when one is remembered", () => {
-    expect(defaultOrgDestination("acme")).toBe("/orgs/acme/projects");
+  it("routes to the last-used org's Overview (the Workspace landing) when one is remembered", () => {
+    expect(defaultOrgDestination("acme")).toBe("/orgs/acme");
   });
 
   it("falls back to onboarding when none is remembered — there is no org-less landing view", () => {
@@ -29,7 +29,7 @@ describe("resolvePostAuthDestination", () => {
       auth: profile("acme"),
       organizations: { list: async () => ({ organizations: [] }) },
     });
-    expect(dest).toBe("/orgs/acme/projects");
+    expect(dest).toBe("/orgs/acme");
   });
 
   it("sends a first sign-in (no orgs) to mandatory onboarding", async () => {
@@ -52,7 +52,7 @@ describe("resolvePostAuthDestination", () => {
         }),
       },
     });
-    expect(dest).toBe("/orgs/alpha/projects");
+    expect(dest).toBe("/orgs/alpha");
   });
 
   it("still resolves via the org list when the profile read fails", async () => {
@@ -62,7 +62,7 @@ describe("resolvePostAuthDestination", () => {
         list: async () => ({ organizations: [org("org_a", "alpha", "2026-01-01T00:00:00Z")] }),
       },
     });
-    expect(dest).toBe("/orgs/alpha/projects");
+    expect(dest).toBe("/orgs/alpha");
   });
 
   it("falls back to the local cache (empty here) when every read fails", async () => {
