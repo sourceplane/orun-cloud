@@ -426,5 +426,14 @@ export const manifest: MigrationManifest = {
       description:
         "Repo self-description facet + doc_ref pointers (saas-workspace-overview WO4). Adds state.org_catalog_entities.doc_ref JSONB (a nullable {path,ref,sha,digest} pointer to the entity's docs.overview blob in CAS — digest is the content address, the body is read from R2 by digest; no state.objects.kind change since docs ride the existing blob kind) and creates state.repo_facet (org_id, source_project_id PK; display_name, description, owner, default_branch, links, tags, doc_ref, entity_ref, head_digest, source_commit, synced_at) — one row per (org, project) projected from the declared Repo entity, keyed by project so the Git Repos list + Workspace Overview identity join by project. Derived, never authored; delete-then-upsert on catalog.head.advanced. Additive + idempotent.",
     },
+    {
+      id: "470_work_teardown",
+      context: "work",
+      path: "470_work_teardown/up.sql",
+      checksum:
+        "5c63bf21711e99d2fa23dadffb973b428371120176b8ac1b6ccf487eab7c5390",
+      description:
+        "Drop the v1 work-plane schema (orun-work v1 scrapped before any product surface consumed it — no route, worker, SDK, or console ever read these tables). Removes the work schema created by 200_work_foundation (items/events/links/status/cursors/sequences) via DROP SCHEMA ... CASCADE, alongside the removal of the @saas/db/work library. The v2 design (two append-only logs, lifecycle as a derived query, no stored status) lands its own schema under fresh migrations; see the orun repo specs/orun-work/ (v2), specs/archive/orun-work-v1/ (frozen v1), and specs/epics/orun-work/ here.",
+    },
   ],
 };

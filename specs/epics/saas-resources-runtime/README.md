@@ -33,11 +33,14 @@ The pure cores + persistence foundation are on `main`:
   contract phase set), the `Deployment` reconciliation machine
   (`queued→running→succeeded/failed`, terminal-idempotent), `reconcile` (runtime
   truth → resource status), and migration `210_resources_runtime_foundation`.
-- **`@saas/db/bridge`** — the **runtime → work seam**: a deployment reconciling
-  to live (`liveObservation`) drives orun-work's W3 Released automation
-  (`decideReleased`), so *deploy goes live → the tasks that shipped in that
-  revision auto-Release*. Released stays derived from the Deployment overlay,
-  never a deploy attempt (work invariant 5).
+- **The runtime → work seam**: a deployment reconciling to live
+  (`liveObservation`) feeds the work plane's `revision_live` observation, from
+  which the v2 fold derives **Released** (orun `specs/orun-work/`, milestone
+  WP3). *Deploy goes live → the tasks that shipped in that revision read
+  Released.* Released stays derived from the Deployment overlay, never a
+  deploy attempt (work invariant 5). (The v1 `@saas/db/bridge` module that
+  prototyped this seam was removed with the v1 work plane; the
+  `LiveObservation` shape lives on in `@saas/db/resources`.)
 
 **Still pending:** the resources/deployments SQL repository, the api-edge
 `/v1/{components,resources,deployments}` facade + `@saas/contracts` (the epic's

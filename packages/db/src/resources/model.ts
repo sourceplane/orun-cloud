@@ -9,8 +9,9 @@
 //
 // The connection to orun-work is `liveObservation`: a create/update deployment
 // that succeeds means a revision is live in an environment — exactly the
-// Deployment-overlay observation the work plane's W3 Released automation
-// consumes. That bridge is the "seamless SaaS" seam.
+// `revision_live` observation the work-plane v2 fold derives Released from
+// (orun repo specs/orun-work/, milestone WP3). That bridge is the "seamless
+// SaaS" seam.
 
 export const RESOURCE_API_VERSION = "sourceplane.io/v1alpha1";
 
@@ -221,10 +222,11 @@ export function reconcile(resource: Resource, deployment: Deployment, at: string
 
 // ── The seam to orun-work (Deployment overlay → Released) ──────────────────
 
-/** The work-plane Deployment-overlay observation shape (mirrors
- *  @saas/db/work `DeploymentObservation`), kept structurally compatible so the
- *  bridge needs no import cycle. `source: "overlay"` denotes observed live
- *  state — the only thing that releases work tasks (work invariant 5). */
+/** The work-plane Deployment-overlay observation shape (feeds the v2
+ *  `revision_live` observation — orun specs/orun-work/data-model.md §4.2),
+ *  kept structurally compatible so the bridge needs no import cycle.
+ *  `source: "overlay"` denotes observed live state — the only thing that
+ *  derives Released (work invariant 5: a deploy attempt releases nothing). */
 export interface LiveObservation {
   source: "overlay";
   ref: string;
