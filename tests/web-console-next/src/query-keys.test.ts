@@ -38,4 +38,10 @@ describe("query cache keys (qk)", () => {
   it("webhook endpoint key carries both org and endpoint id", () => {
     expect(qk.webhookEndpoint("org_1", "ep_9")).toEqual(["webhookEndpoint", "org_1", "ep_9"]);
   });
+
+  it("scopes the org runs feed key by org and never collides with the catalog", () => {
+    expect(qk.orgRuns("org_1")).toEqual(["orgRuns", "org_1"]);
+    expect(qk.orgRuns("org_1")).not.toEqual(qk.orgRuns("org_2"));
+    expect(JSON.stringify(qk.orgRuns("org_1"))).not.toEqual(JSON.stringify(qk.orgCatalog("org_1")));
+  });
 });

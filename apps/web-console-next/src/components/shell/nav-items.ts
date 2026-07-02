@@ -60,6 +60,9 @@ export function buildNavSections(scope: NavScope): NavSection[] {
       id: "org",
       label: orgSlug ? `Workspace · ${orgSlug}` : "Workspace",
       links: [
+        // The Overview is the Workspace landing (the org root), so it is the
+        // rail's home row — first, above Catalog.
+        { href: orgBase, label: "Overview", icon: "LayoutDashboard" },
         { href: `${orgBase}/catalog`, label: "Catalog", icon: "Boxes" },
         { href: `${orgBase}/activities`, label: "Activities", icon: "Activity" },
         { href: `${orgBase}/projects`, label: "Git Repos", icon: "FolderKanban" },
@@ -97,10 +100,16 @@ export function buildNavSections(scope: NavScope): NavSection[] {
  * Resolve the active link for a pathname: the longest matching `href` prefix
  * wins, so `/orgs/x/projects/y/environments` highlights Environments, not
  * Projects. `/orgs` (exact) only highlights when the path is exactly `/orgs`.
+ *
+ * The org root `/orgs/:slug` (the Overview home row) is also matched exactly —
+ * otherwise, as a prefix of every org sub-route, it would light up on Catalog,
+ * Activities, and the rest.
  */
 export function isLinkActive(href: string, pathname: string | null): boolean {
   if (!pathname) return false;
   if (href === "/orgs") return pathname === "/orgs";
   if (href === "/account") return pathname === "/account";
+  // The org root (`/orgs/<slug>`, no further segment) is an exact match.
+  if (/^\/orgs\/[^/]+$/.test(href)) return pathname === href;
   return pathname === href || pathname.startsWith(`${href}/`);
 }

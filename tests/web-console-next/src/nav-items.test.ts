@@ -30,9 +30,18 @@ describe("buildNavSections", () => {
     expect(ids).not.toContain("project");
   });
 
+  it("puts Overview first in the org section, pointing at the org root", () => {
+    const org = buildNavSections({ orgSlug: "acme" }).find((s) => s.id === "org")!;
+    const first = org.links[0]!;
+    expect(first.label).toBe("Overview");
+    expect(first.href).toBe("/orgs/acme");
+    expect(first.subPanel ?? false).toBe(false);
+  });
+
   it("adds a product-focused org section (work surfaces only) at the top", () => {
     const org = buildNavSections({ orgSlug: "acme" }).find((s) => s.id === "org")!;
     const hrefs = org.links.map((l) => l.href);
+    expect(hrefs).toContain("/orgs/acme");
     expect(hrefs).toContain("/orgs/acme/projects");
     expect(hrefs).toContain("/orgs/acme/catalog");
     expect(hrefs).toContain("/orgs/acme/activities");
@@ -103,6 +112,14 @@ describe("isLinkActive", () => {
     expect(isLinkActive("/account", "/account")).toBe(true);
     expect(isLinkActive("/account", "/account/security")).toBe(false);
     expect(isLinkActive("/account/security", "/account/security")).toBe(true);
+  });
+
+  it("matches the org root (Overview) exactly, not its sub-routes", () => {
+    // The Overview home row lives at /orgs/:slug, a prefix of every org page —
+    // it must only light up on the root, never on Catalog/Activities/etc.
+    expect(isLinkActive("/orgs/acme", "/orgs/acme")).toBe(true);
+    expect(isLinkActive("/orgs/acme", "/orgs/acme/catalog")).toBe(false);
+    expect(isLinkActive("/orgs/acme", "/orgs/acme/projects/web/environments")).toBe(false);
   });
 
   it("matches a link when the path is the href or a child of it", () => {
