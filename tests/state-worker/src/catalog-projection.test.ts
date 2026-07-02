@@ -87,9 +87,10 @@ interface Capture {
   executor: SqlExecutor;
   deletes: number;
   upserts: unknown[][];
+  repoFacets: unknown[][];
 }
 function captureExecutor(): Capture {
-  const cap: Capture = { executor: undefined as unknown as SqlExecutor, deletes: 0, upserts: [] };
+  const cap: Capture = { executor: undefined as unknown as SqlExecutor, deletes: 0, upserts: [], repoFacets: [] };
   cap.executor = {
     execute<T extends SqlRow = SqlRow>(text: string, params: unknown[] = []): Promise<SqlExecutorResult<T>> {
       if (text.includes("DELETE FROM state.org_catalog_entities")) {
@@ -103,8 +104,18 @@ function captureExecutor(): Capture {
           owner: params[5], lifecycle: params[6], relations: params[7],
           description: params[8], system: params[9], language: params[10], tags: params[11],
           source_project_id: params[12], source_environment: params[13], source_commit: params[14],
-          head_digest: params[15],
+          head_digest: params[15], doc_ref: params[16],
           created_at: "2026-06-18T00:00:00.000Z", updated_at: "2026-06-18T00:00:00.000Z",
+        };
+        return Promise.resolve({ rows: [row] as unknown as T[], rowCount: 1 });
+      }
+      if (text.includes("INSERT INTO state.repo_facet")) {
+        cap.repoFacets.push(params);
+        const row = {
+          org_id: params[0], source_project_id: params[1], display_name: params[2], description: params[3],
+          owner: params[4], default_branch: params[5], links: params[6], tags: params[7], doc_ref: params[8],
+          entity_ref: params[9], head_digest: params[10], source_commit: params[11],
+          synced_at: "2026-06-18T00:00:00.000Z",
         };
         return Promise.resolve({ rows: [row] as unknown as T[], rowCount: 1 });
       }
@@ -112,6 +123,45 @@ function captureExecutor(): Capture {
     },
   } as unknown as SqlExecutor;
   return cap;
+}
+
+// A snapshot with a declared Repo entity carrying a doc_ref (WO4).
+function buildRepoSnapshot(): { rootDigest: string; store: Record<string, Uint8Array> } {
+  const repoBlob = frame(
+    "blob",
+    JSON.stringify({
+      apiVersion: "orun.io/v1",
+      kind: "Repo",
+      identity: { entityKey: "default/orun/orun", kind: "Repo", name: "orun" },
+      metadata: { displayName: "Orun Platform", description: "The platform", tags: ["saas"] },
+      ownership: { owner: "group:platform" },
+      docs: { overview: { path: "docs/overview.md", sha: "abc", digest: "sha256:" + "d".repeat(64) } },
+      links: [{ title: "Runbook", url: "https://x", icon: "book" }],
+    }),
+  );
+  const repoBlobId = hx("1");
+  const repoKindTree = hx("2");
+  const entitiesTree = hx("3");
+  const compsTree = hx("4");
+  const docsTree = hx("5");
+  const root = hx("6");
+  const store: Record<string, Uint8Array> = {
+    [`sha256:${repoBlobId}`]: repoBlob,
+    [`sha256:${repoKindTree}`]: frame("tree", entry("blob", "orun.json", repoBlobId)),
+    [`sha256:${entitiesTree}`]: frame("tree", entry("tree", "Repo", repoKindTree)),
+    [`sha256:${compsTree}`]: frame("tree", new Uint8Array()),
+    [`sha256:${docsTree}`]: frame("tree", new Uint8Array()),
+    // Root entries name-sorted: components < docs < entities.
+    [`sha256:${root}`]: frame(
+      "tree",
+      concat(
+        entry("tree", "components", compsTree),
+        entry("tree", "docs", docsTree),
+        entry("tree", "entities", entitiesTree),
+      ),
+    ),
+  };
+  return { rootDigest: `sha256:${root}`, store };
 }
 
 function scope(over?: Partial<Record<string, unknown>>) {
@@ -166,6 +216,38 @@ describe("projectCatalogSnapshot (OV6.2b)", () => {
     expect(sys[5]).toBe("team-identity");
     expect(sys[6]).toBe("experimental");
     expect(sys[8]).toBe("The identity system."); // derived-entity description from spec
+  });
+
+  it("projects a declared Repo entity into org_catalog_entities and state.repo_facet with its doc_ref", async () => {
+    const { rootDigest, store } = buildRepoSnapshot();
+    const cap = captureExecutor();
+    const summary = await projectCatalogSnapshot({} as Env, scope({ digest: rootDigest }), {
+      executor: cap.executor,
+      fetcher: fetcherOf(store),
+    });
+    expect(summary).toEqual({ deleted: 2, projected: 1 });
+
+    // The Repo entity is in the org graph with its doc_ref (param $17).
+    expect(cap.upserts).toHaveLength(1);
+    const up = cap.upserts[0]!;
+    expect(up[2]).toBe("default/orun/orun"); // entityRef
+    expect(up[3]).toBe("Repo"); // kind
+    expect(up[8]).toBe("The platform"); // description from metadata
+    const docRef = JSON.parse(up[16] as string);
+    expect(docRef).toEqual({ path: "docs/overview.md", sha: "abc", digest: "sha256:" + "d".repeat(64) });
+
+    // …and it drives the per-project repo_facet.
+    expect(cap.repoFacets).toHaveLength(1);
+    const rf = cap.repoFacets[0]!;
+    // params: [orgId, projectId, display_name, description, owner, default_branch,
+    //          links(json), tags(json), doc_ref(json), entity_ref, head_digest, source_commit]
+    expect(rf[1]).toBe(PROJECT);
+    expect(rf[2]).toBe("Orun Platform"); // displayName from metadata
+    expect(rf[3]).toBe("The platform");
+    expect(rf[4]).toBe("group:platform");
+    expect(JSON.parse(rf[6] as string)).toEqual([{ title: "Runbook", url: "https://x", icon: "book" }]);
+    expect(JSON.parse(rf[8] as string)).toEqual({ path: "docs/overview.md", sha: "abc", digest: "sha256:" + "d".repeat(64) });
+    expect(rf[9]).toBe("default/orun/orun"); // entity_ref
   });
 
   it("clears the scope even when the snapshot root is unreadable (head points at a gone object)", async () => {

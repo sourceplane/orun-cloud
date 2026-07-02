@@ -25,8 +25,9 @@ render time.
 
 > **Revised 2026-07-01** to adopt `architecture-review.md`. The thesis is
 > unchanged; the plan is now **phased** (ship the landing from orun-cloud alone,
-> then the cross-repo narrative), the **`Repo` ref is minted from the durable
-> project id** (not an un-normalized remote), **`Product` is deferred** behind the
+> then the cross-repo narrative), the **`Repo` ref is the repo-local
+> `<namespace>/<repo>/<name>` key** (no cloud project id at resolve time; §2c),
+> **`Product` is deferred** behind the
 > single-per-repo `Repo` kind, **docs ride the existing `blob` closure (no new
 > object kind)**, there is **no console-authored `override_overview`**, and there
 > is **no bespoke `/overview` endpoint** (the page is assembled at the read edge).
@@ -80,7 +81,7 @@ no drift, and no live provider call.
 2. `design.md` — the Overview page: IA, section-by-section layout, empty states,
    the sanitizing render pipeline.
 3. `model.md` — **the normative shared model**: the `docs.overview` convention
-   across all kinds, the declared `Repo` kind (ref from the durable project id),
+   across all kinds, the declared `Repo` kind (ref = repo-local `<namespace>/<repo>/<name>`),
    the `doc`-object state model, `state.repo_facet`, the verified `orun →
    orun-cloud` push flow, and the deferred `Product` (§7). (The `orun` repo's copy
    references this.)
@@ -98,10 +99,10 @@ no drift, and no live provider call.
 
 | ID | Phase | Milestone | Repo | Status |
 |----|-------|-----------|------|--------|
-| WO1 | — | Design + decision lock (this epic), cross-repo | both | 🔵 Proposed |
-| WO2 | **1** | **The landing** — `/orgs/{slug}` renders Overview (drop the `/projects` redirect); Overview nav item + breadcrumbs; identity band; signal row (reuse `rollup`/`MetricTiles` + a **composed** Activity tile); right-rail (repos from `projects`+`workspace_links`, recent activity from runs); empty/first-run states. **No CLI, no new object kind, no migration.** | `orun-cloud` | ⚪ Not started |
-| WO3 | 2 | **CLI** — `docs.overview` on the shared docs struct; declared `repo` block + `Repo` kind (**ref from the durable project id**); walk each `docs.overview` into the closure as a content-addressed **blob** read **at the pinned commit** (`doc_ref={path,ref,sha,digest}`); emit `Repo` entities | `orun` | ⚪ Not started |
-| WO4 | 2 | **Projection** — create `state.repo_facet` (keyed by project); `doc_ref` on `org_catalog_entities`; projector projects `Repo`→`repo_facet` + `doc_ref`; scoped read-doc-by-digest; add `Repo` to `lib/catalog-kind.ts`. **No object-kind migration** (docs ride the existing `blob` kind), **no `/overview` endpoint, no org columns.** | `orun-cloud` | ⚪ Not started |
+| WO1 | — | Design + decision lock (this epic), cross-repo | both | ✅ Landed |
+| WO2 | **1** | **The landing** — `/orgs/{slug}` renders Overview (drop the `/projects` redirect); Overview nav item + breadcrumbs; identity band; signal row (reuse `rollup`/`MetricTiles` + a **composed** Activity tile); right-rail (repos from `projects`+`workspace_links`, recent activity from runs); empty/first-run states. **No CLI, no new object kind, no migration.** | `orun-cloud` | ✅ Merged (#272) |
+| WO3 | 2 | **CLI** — `docs.overview` on the shared docs struct; declared `repo` block + `Repo` kind (**ref = repo-local `<namespace>/<repo>/<name>`**); walk each `docs.overview` into the closure as a content-addressed **blob** (`doc_ref={path,sha,digest}`); emit `Repo` entities. (Shipped as WO3a #434 + WO3c #435 + WO3b #436.) | `orun` | ✅ Merged |
+| WO4 | 2 | **Projection** — create `state.repo_facet` (keyed by project); `doc_ref` on `org_catalog_entities`; projector projects `Repo`→`repo_facet` + `doc_ref`; add `Repo` to `lib/catalog-kind.ts`. **No object-kind migration** (docs ride the existing `blob` kind), **no `/overview` endpoint, no org columns.** | `orun-cloud` | 🟡 In progress |
 | WO5 | 2 | **Narrative render + facet surfaces** — resolve primary repo identity (client-side, no endpoint); narrative band (sanitized markdown by digest) + provenance + "N commits behind" staleness; Git Repos list + repo header read `state.repo_facet` | `orun-cloud` | ⚪ Not started |
 | WO6 | 3 (later) | **`Product` + explicit primary** — `products` block + `Product` kind (merges across repos); `primary_project_id` on the org; product cards. Deferred until multi-product/multi-repo workspaces are real. | both | ⚪ Deferred |
 

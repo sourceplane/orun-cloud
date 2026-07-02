@@ -13,8 +13,9 @@
 /** Badge variants understood by `components/ui/badge.tsx`. */
 export type BadgeVariant = "default" | "secondary" | "destructive" | "warning" | "success" | "outline";
 
-/** Canonical catalog kinds, in display casing. */
-const KINDS = ["Component", "API", "Resource", "System", "Domain", "Group"];
+/** Canonical catalog kinds, in display casing. `Repo` is the declared
+ *  self-description kind (saas-workspace-overview WO3/WO4). */
+const KINDS = ["Component", "API", "Resource", "System", "Domain", "Group", "Repo"];
 
 /** One neutral avatar tint for every kind — differentiation is by icon alone. */
 const NEUTRAL_AVATAR = "bg-muted text-muted-foreground";

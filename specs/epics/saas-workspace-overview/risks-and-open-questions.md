@@ -5,7 +5,7 @@ tracks the genuinely open items and the risks worth naming.
 
 > **2026-07-01:** the epic was revised to **adopt** `architecture-review.md`.
 > Several items below moved from "open, leaning X" to **resolved** — the `Repo`
-> ref is minted from the durable project id (Q1), `override_overview` is dropped
+> ref is the repo-local `<namespace>/<repo>/<name>` key (Q1), `override_overview` is dropped
 > (Q5), doc-read auth reuses existing scopes (Q6), and `Product`/explicit primary
 > selection are deferred to WO6 (Q2, Q3). What remains open is genuinely open.
 
@@ -18,9 +18,9 @@ tracks the genuinely open items and the risks worth naming.
   **ships first from orun-cloud alone** (WO2, Phase 1) before the cross-repo
   narrative chain (WO3–WO5, Phase 2).
 - **L3 — `Repo` is a declared catalog kind**, one per `intent.yaml`, with its ref
-  minted from the **durable project id** (not an un-normalized remote). `kind` is
-  free-text TEXT server-side, so no kind-enum migration. **`Product` is deferred**
-  to WO6.
+  the repo-local `<namespace>/<repo>/<name>` key (no cloud project id at resolve
+  time). `kind` is free-text TEXT server-side, so no kind-enum migration.
+  **`Product` is deferred** to WO6.
 - **L4 — `docs.overview` extends the shared docs struct**, spanning all kinds;
   bytes are read **at the pinned commit** and travel as a content-addressed
   **`blob`** in the existing closure — **no new object kind, no CHECK migration**
@@ -37,11 +37,13 @@ tracks the genuinely open items and the risks worth naming.
 `CatalogSnapshot.Repo` is an **un-normalized passthrough** (`sourceplane/orun`,
 no host/scheme), not the normalized `workspace_links.remote_url` — so there is
 nothing on the CLI side to "match", and minting a ref from it would turn ad-hoc
-CLI formatting into a frozen cross-repo contract. **Resolution:** mint the `Repo`
-ref from the **durable project/`ws_` id** the platform already trusts as the join
-key (`model.md §2c`). `state.repo_facet` is keyed `(org_id, source_project_id)`,
-so the repos list and identity resolve by project, not by the ref string; the
-`path/ref/sha` provenance still carries the human remote for "view source".
+CLI formatting into a frozen cross-repo contract. A durable **cloud project id**
+was considered but **does not exist at resolve time** (`orun plan` is offline).
+**Resolution (implemented):** the `Repo` ref is the repo-local entity key
+`<namespace>/<repo>/<name>` (`model.md §2c`), consistent with System/Domain.
+`state.repo_facet` is keyed `(org_id, source_project_id)`, so the repos list and
+identity resolve by project, not by the ref string; the `path/ref/sha` provenance
+still carries the human remote for "view source".
 
 ### Q2 — Primary project selection · **RESOLVED (deferred)**
 

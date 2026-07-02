@@ -80,8 +80,9 @@ the step-by-step; summary of the platform-relevant output:
    `ComponentYAMLDocs`).
 2. `EntityKindRepo` (constant + `allEntityKinds`) + `RepoSpec`; top-level `Repo`
    in `internal/model/intent.go`; **emit** `entities/Repo/*.json`; wire relations
-   into `catalogresolve/graph.go buildGraphs()`. **`Repo` ref is minted from the
-   durable project id** (`model.md §2c`), not `CatalogSnapshot.Repo`.
+   into `catalogresolve/graph.go buildGraphs()`. **`Repo` ref = repo-local
+   `<namespace>/<repo>/<name>`** (`model.md §2c`; no cloud project id at resolve
+   time), not `CatalogSnapshot.Repo`.
 3. Walk each entity's `docs.overview` into the closure as a content-addressed
    **blob**, reading bytes **at the pinned commit** (or refusing on a dirty tree)
    — `model.md §3a`; set `doc_ref = {path, ref, sha, digest}` on the entity JSON.

@@ -21,6 +21,8 @@ import type {
   ListCatalogEntitiesQuery,
   ListOrgCatalogEntitiesQuery,
   OrgCatalogEntity,
+  RepoFacet,
+  UpsertRepoFacetInput,
   StateStorageUsage,
   UpsertOrgCatalogEntityInput,
   ListRunsQuery,
@@ -244,12 +246,31 @@ function mapOrgCatalogEntity(row: Record<string, unknown>): OrgCatalogEntity {
     system: (row.system as string) ?? null,
     language: (row.language as string) ?? null,
     tags: parseJson<string[]>(row.tags) ?? [],
+    docRef: parseJson<Record<string, unknown>>(row.doc_ref) ?? null,
     sourceProjectId: row.source_project_id as string,
     sourceEnvironment: (row.source_environment as string) ?? null,
     sourceCommit: (row.source_commit as string) ?? null,
     headDigest: row.head_digest as string,
     createdAt: toDate(row.created_at),
     updatedAt: toDate(row.updated_at),
+  };
+}
+
+function mapRepoFacet(row: Record<string, unknown>): RepoFacet {
+  return {
+    orgId: row.org_id as string,
+    sourceProjectId: row.source_project_id as string,
+    displayName: (row.display_name as string) ?? null,
+    description: (row.description as string) ?? null,
+    owner: (row.owner as string) ?? null,
+    defaultBranch: (row.default_branch as string) ?? null,
+    links: parseJson<Array<Record<string, unknown>>>(row.links) ?? [],
+    tags: parseJson<string[]>(row.tags) ?? [],
+    docRef: parseJson<Record<string, unknown>>(row.doc_ref) ?? null,
+    entityRef: (row.entity_ref as string) ?? null,
+    headDigest: row.head_digest as string,
+    sourceCommit: (row.source_commit as string) ?? null,
+    syncedAt: toDate(row.synced_at),
   };
 }
 
@@ -944,8 +965,8 @@ export function createStateRepository(executor: SqlExecutor): StateRepository {
              (id, org_id, entity_ref, kind, name, owner, lifecycle, relations,
               description, system, language, tags,
               source_project_id, source_environment, source_commit, head_digest,
-              created_at, updated_at)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, now(), now())
+              doc_ref, created_at, updated_at)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, now(), now())
            ON CONFLICT (org_id, source_project_id, COALESCE(source_environment, ''), entity_ref)
              DO UPDATE SET
                kind = EXCLUDED.kind,
@@ -959,6 +980,7 @@ export function createStateRepository(executor: SqlExecutor): StateRepository {
                tags = EXCLUDED.tags,
                source_commit = EXCLUDED.source_commit,
                head_digest = EXCLUDED.head_digest,
+               doc_ref = EXCLUDED.doc_ref,
                updated_at = now()
            RETURNING *`,
           [
@@ -978,6 +1000,7 @@ export function createStateRepository(executor: SqlExecutor): StateRepository {
             input.sourceEnvironment ?? null,
             input.sourceCommit ?? null,
             input.headDigest,
+            input.docRef ? JSON.stringify(input.docRef) : null,
           ],
         );
         return { ok: true, value: mapOrgCatalogEntity(result.rows[0]!) };
@@ -1036,6 +1059,85 @@ export function createStateRepository(executor: SqlExecutor): StateRepository {
         return { ok: true, value: result.rowCount ?? 0 };
       } catch {
         return safeError("Failed to delete org catalog entities for scope");
+      }
+    },
+
+    async upsertRepoFacet(input: UpsertRepoFacetInput): Promise<StateResult<RepoFacet>> {
+      try {
+        const result = await executor.execute<Record<string, unknown>>(
+          `INSERT INTO state.repo_facet
+             (org_id, source_project_id, display_name, description, owner,
+              default_branch, links, tags, doc_ref, entity_ref, head_digest,
+              source_commit, synced_at)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, now())
+           ON CONFLICT (org_id, source_project_id)
+             DO UPDATE SET
+               display_name = EXCLUDED.display_name,
+               description = EXCLUDED.description,
+               owner = EXCLUDED.owner,
+               default_branch = EXCLUDED.default_branch,
+               links = EXCLUDED.links,
+               tags = EXCLUDED.tags,
+               doc_ref = EXCLUDED.doc_ref,
+               entity_ref = EXCLUDED.entity_ref,
+               head_digest = EXCLUDED.head_digest,
+               source_commit = EXCLUDED.source_commit,
+               synced_at = now()
+           RETURNING *`,
+          [
+            input.orgId,
+            input.sourceProjectId,
+            input.displayName ?? null,
+            input.description ?? null,
+            input.owner ?? null,
+            input.defaultBranch ?? null,
+            JSON.stringify(input.links ?? []),
+            JSON.stringify(input.tags ?? []),
+            input.docRef ? JSON.stringify(input.docRef) : null,
+            input.entityRef ?? null,
+            input.headDigest,
+            input.sourceCommit ?? null,
+          ],
+        );
+        return { ok: true, value: mapRepoFacet(result.rows[0]!) };
+      } catch {
+        return safeError("Failed to upsert repo facet");
+      }
+    },
+
+    async deleteRepoFacetForScope(orgId: Uuid, sourceProjectId: Uuid): Promise<StateResult<number>> {
+      try {
+        const result = await executor.execute(
+          `DELETE FROM state.repo_facet WHERE org_id = $1 AND source_project_id = $2`,
+          [orgId, sourceProjectId],
+        );
+        return { ok: true, value: result.rowCount ?? 0 };
+      } catch {
+        return safeError("Failed to delete repo facet for scope");
+      }
+    },
+
+    async getRepoFacet(orgId: Uuid, sourceProjectId: Uuid): Promise<StateResult<RepoFacet | null>> {
+      try {
+        const result = await executor.execute<Record<string, unknown>>(
+          `SELECT * FROM state.repo_facet WHERE org_id = $1 AND source_project_id = $2`,
+          [orgId, sourceProjectId],
+        );
+        return { ok: true, value: result.rows[0] ? mapRepoFacet(result.rows[0]) : null };
+      } catch {
+        return safeError("Failed to get repo facet");
+      }
+    },
+
+    async listRepoFacets(orgId: Uuid): Promise<StateResult<RepoFacet[]>> {
+      try {
+        const result = await executor.execute<Record<string, unknown>>(
+          `SELECT * FROM state.repo_facet WHERE org_id = $1 ORDER BY synced_at DESC`,
+          [orgId],
+        );
+        return { ok: true, value: result.rows.map(mapRepoFacet) };
+      } catch {
+        return safeError("Failed to list repo facets");
       }
     },
 

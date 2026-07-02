@@ -81,6 +81,9 @@ interface EntityJson {
   ownership?: Record<string, unknown>;
   lifecycle?: Record<string, unknown>;
   spec?: Record<string, unknown>;
+  metadata?: Record<string, unknown>;
+  docs?: Record<string, unknown>;
+  links?: Array<Record<string, unknown>>;
 }
 
 function pickString(obj: Record<string, unknown> | undefined, ...keys: string[]): string | null {
@@ -113,6 +116,16 @@ function portalFields(spec?: Record<string, unknown>, metadata?: Record<string, 
   return { description, language, tags, system };
 }
 
+/** The doc_ref pointer from a docs block: docs.overview may be a bare path
+ *  string (WO3a) or a {path,ref,sha,digest} object (WO3b). Normalize to an
+ *  object (or null) — the digest points at the doc blob in CAS. */
+function docRefOf(docs: Record<string, unknown> | undefined): Record<string, unknown> | null {
+  const ov = docs?.overview;
+  if (typeof ov === "string" && ov.length > 0) return { path: ov };
+  if (ov && typeof ov === "object" && !Array.isArray(ov)) return ov as Record<string, unknown>;
+  return null;
+}
+
 function relationsOf(rels: EntityRelationJson[] | undefined): CatalogEntityRelation[] {
   if (!Array.isArray(rels)) return [];
   const out: CatalogEntityRelation[] = [];
@@ -139,6 +152,11 @@ export interface ProjectedEntity {
   system: string | null;
   language: string | null;
   tags: string[];
+  /** {path,ref,sha,digest} pointer to docs.overview in CAS (WO4), or null. */
+  docRef: Record<string, unknown> | null;
+  /** Repo-entity-only fields, for the state.repo_facet projection (WO4). */
+  displayName?: string | null;
+  links?: Array<Record<string, unknown>>;
 }
 
 function componentEntity(m: ComponentManifestJson): ProjectedEntity | null {
@@ -152,6 +170,7 @@ function componentEntity(m: ComponentManifestJson): ProjectedEntity | null {
     owner: pickString(m.ownership, "owner"),
     lifecycle: pickString(m.lifecycle, "stage", "lifecycle"),
     relations: relationsOf(m.relations),
+    docRef: docRefOf(m.docs),
     ...portal,
   };
 }
@@ -162,6 +181,9 @@ function derivedEntity(e: EntityJson): ProjectedEntity | null {
   if (!entityRef) return null;
   const kind = (typeof e.kind === "string" && e.kind) || pickString(id, "kind");
   if (!kind) return null;
+  // Declared entities (e.g. Repo) carry description/tags/displayName on metadata;
+  // derived ones carry description on spec. Read both so each kind projects.
+  const tags = stringArray(e.spec, "tags").length ? stringArray(e.spec, "tags") : stringArray(e.metadata, "tags");
   return {
     entityRef,
     kind,
@@ -169,10 +191,13 @@ function derivedEntity(e: EntityJson): ProjectedEntity | null {
     owner: pickString(e.ownership, "owner"),
     lifecycle: pickString(e.lifecycle, "stage", "lifecycle"),
     relations: [],
-    description: pickString(e.spec, "description"),
+    description: pickString(e.spec, "description") ?? pickString(e.metadata, "description"),
     system: pickString(e.spec, "system"),
     language: pickString(e.spec, "language"),
-    tags: stringArray(e.spec, "tags"),
+    tags,
+    docRef: docRefOf(e.docs),
+    displayName: pickString(e.metadata, "displayName"),
+    links: Array.isArray(e.links) ? e.links : [],
   };
 }
 
@@ -273,6 +298,10 @@ export async function projectCatalogSnapshot(
     const repo = createStateRepository(executor);
     // Replace the scope: drop the prior projection, then upsert the new set.
     const deleted = await repo.deleteOrgCatalogEntitiesForScope(scope.orgId, scope.projectId, scope.environment);
+    // The repo facet is keyed per project (env-independent): clear it and
+    // re-derive from this snapshot's Repo entity (if any), so dropping the
+    // `repo:` block clears the stale facet — the same bijection.
+    await repo.deleteRepoFacetForScope(scope.orgId, scope.projectId);
     let projected = 0;
     for (const e of entities) {
       const input: UpsertOrgCatalogEntityInput = {
@@ -290,11 +319,29 @@ export async function projectCatalogSnapshot(
         system: e.system,
         language: e.language,
         tags: e.tags,
+        docRef: e.docRef,
         sourceEnvironment: scope.environment,
         sourceCommit: scope.commit,
       };
       const up = await repo.upsertOrgCatalogEntity(input);
       if (up.ok) projected++;
+
+      // The declared Repo entity also drives the per-project repo_facet.
+      if (e.kind === "Repo") {
+        await repo.upsertRepoFacet({
+          orgId: scope.orgId,
+          sourceProjectId: scope.projectId,
+          headDigest: scope.digest,
+          displayName: e.displayName ?? e.name,
+          description: e.description,
+          owner: e.owner,
+          links: e.links ?? [],
+          tags: e.tags,
+          docRef: e.docRef,
+          entityRef: e.entityRef,
+          sourceCommit: scope.commit,
+        });
+      }
     }
     // No success log: the diagnostic signal lives in the warn/error paths
     // above (zero_entities / collect_failed / write_failed). A clean run with
