@@ -9,7 +9,7 @@ Status: Draft (normative once WO1 lands). Grounded against `orun`
 `specs/orun-workspace-overview/` references it and owns the CLI half.
 
 Revised 2026-07-01 to adopt `architecture-review.md`: the `Repo` ref is minted
-from the durable project id (not an un-normalized remote string), doc bytes are
+from the repo-local entity key `<namespace>/<repo>/<name>` (no cloud project id exists at resolve time; §2c), doc bytes are
 read at the pinned commit and **ride the existing `blob` closure (no new object
 kind)**, `Product` is deferred behind the single-per-repo `Repo` kind, and there
 is no console-authored `override_overview`. The architecture review is the
@@ -29,7 +29,7 @@ Git Repos list and the Overview identity.
 |----------|--------|
 | **How does markdown reach the platform?** | As a **content-addressed blob in the existing catalog snapshot closure**. `orun plan` reads each referenced `docs.overview` **at the commit the catalog head is advanced at** and adds it to the object closure as a `blob`; the entity's `doc_ref` is `{path, ref, sha, digest}`. orun-cloud renders the body from R2 **by digest** — no live git call, works for **any git remote**, self-host-portable, and pinned to that commit. Set-difference sync means an unchanged doc is never re-uploaded. **No GitHub App, no token broker, no render-time provider coupling.** |
 | **A new `doc` object kind, or just a `blob`?** | **Just a `blob` — no new object kind.** The snapshot's own constituents already travel as `blob`/`tree` objects, and the `state.objects.kind` CHECK has admitted `blob` since migration `250_state_refs` — so a `docs.overview` file rides the closure exactly like an entity JSON: content-addressed, digest-readable via `GET …/objects/{digest}`, set-difference synced, reachability-GC'd. A distinct `doc` kind was considered and **rejected**: GC is **closure-based** (`gc-reachability.ts` reclaims objects unreachable from the live heads), so superseded doc digests are collected like any other blob — a kind tag buys no lifecycle benefit; and storage attribution ("how many GB are docs") is a join of `state.objects.size` on the entities' `doc_ref.digest`, not a kind filter. Riding `blob` means **no CHECK migration and no CLI↔platform release ordering** (`architecture-review.md §B`). |
-| **How does repo identity enter the catalog?** | As a **first-class declared kind (`Repo`)** emitted from `intent.yaml`, riding the **existing** snapshot → catalog-head → projector path. `kind` is free-text TEXT server-side (verified: no CHECK on `org_catalog_entities.kind`; the projector stores it as-is), so this needs **no kind-enum migration**. The `Repo` ref is minted from the **durable project id**, not a remote string (§2c). |
+| **How does repo identity enter the catalog?** | As a **first-class declared kind (`Repo`)** emitted from `intent.yaml`, riding the **existing** snapshot → catalog-head → projector path. `kind` is free-text TEXT server-side (verified: no CHECK on `org_catalog_entities.kind`; the projector stores it as-is), so this needs **no kind-enum migration**. The `Repo` ref is the repo-local entity key `<namespace>/<repo>/<name>`, not a cloud project id (§2c). |
 | **What about `Product` / multi-product?** | **Deferred to WO6.** In the common single-product workspace the workspace *is* the product; identity is derived from `metadata` + the primary `Repo`. The `Product` kind (namespace-scoped, merges across repos) is fully specified in §7 but ships only when multi-product/multi-repo workspaces are real — the same judgment the epic applies to an explicit primary-project setting. |
 | **Does the console ever author overview content?** | **No.** There is no `override_overview`. A not-yet-linked workspace shows the empty-state CTA (`design.md §4`), which is a better first impression than console-typed placeholder prose and keeps `18-state.md`'s *"the console never writes catalog content; derived, never authored, drift-free"* invariant **verbatim**. |
 
@@ -82,8 +82,8 @@ Verified facts this model relies on (revalidated 2026-07-01):
 - **`CatalogSnapshot.Repo` is an un-normalized passthrough** of
   `ResolverInputs.Repo` (`internal/catalogresolve/catalog_snapshot.go`) — a human
   string like `sourceplane/orun`, **not** the normalized `workspace_links.remote_url`.
-  This is why the `Repo` ref is minted from the durable project id, not from it
-  (§2c).
+  This is why the `Repo` ref is the repo-local `<namespace>/<repo>/<name>` key,
+  not derived from it (§2c).
 - **The cloud projector is kind-agnostic** — no server-side enum;
   `org_catalog_entities.kind` is TEXT with no CHECK; the projector reads `kind`
   from the entity JSON and stores it as-is. Frontend kind styling is a fixed array
@@ -148,23 +148,26 @@ rides the existing `catalog-snapshot` object.
 `Product` (namespace-scoped, merges across repos) is specified in §7 and deferred
 to WO6.
 
-### 2c. The `Repo` ref — minted from the durable project id
+### 2c. The `Repo` ref — repo-local `<namespace>/<repo>/<name>`
 
-The `Repo` entity ref is **derived from the durable project identity the platform
-already trusts as the join key** (`saas-workspace-id`'s `ws_`/project id), not
-from `CatalogSnapshot.Repo` (which is an un-normalized display string, §1). This:
+The `Repo` entity ref is the repo-local entity key **`<namespace>/<repo>/<name>`**
+(`FormatEntityKey`), consistent with how every other entity (System/Domain/…) is
+keyed. It is **not** a cloud project id and **not** the un-normalized
+`CatalogSnapshot.Repo`. This was corrected during implementation:
 
-- avoids inventing a CLI-side remote-normalization that would have to match the
-  server's `workspace_links.remote_url` normalization byte-for-byte and become a
-  frozen cross-repo contract;
-- is stable across renames and remote-URL changes;
-- matches how the projection actually joins — `state.repo_facet` is keyed
-  `(org_id, source_project_id)`, and every projected entity already carries
-  `source_project_id`, so **the repos list and the identity resolve by project,
-  not by the ref string**.
+- **No cloud project id exists at resolve time** (grep-confirmed in `orun`;
+  `orun plan` runs offline, before any scope/link is resolved). An earlier draft
+  said "mint from the durable project id" — not implementable, and it would make
+  the content-addressed snapshot depend on the push scope.
+- Using `CatalogSnapshot.Repo` (an un-normalized display string) would turn ad-hoc
+  CLI formatting into a frozen cross-repo normalization contract — avoided.
+- **The join never needs the ref anyway.** `state.repo_facet` is keyed
+  `(org_id, source_project_id)`, and every projected row already carries
+  `source_project_id` (from the push scope), so the repos list and the Overview
+  identity resolve **by project**, not by the ref string.
 
-The `path/ref/sha` provenance on `doc_ref` still carries the human remote + commit
-for the "view source" link; that is display, not a key.
+The `path/ref/sha` provenance on `doc_ref` carries the human remote + commit for
+the "view source" link; that is display, not a key.
 
 ## 3. Doc bytes — content-addressed objects, read at the pinned commit, rendered by digest
 

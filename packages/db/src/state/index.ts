@@ -34,6 +34,8 @@ export type {
   OrgCatalogEntity,
   UpsertOrgCatalogEntityInput,
   ListOrgCatalogEntitiesQuery,
+  RepoFacet,
+  UpsertRepoFacetInput,
   WorkspaceLinkStatus,
   ProviderIdentity,
   LinkCiSettings,

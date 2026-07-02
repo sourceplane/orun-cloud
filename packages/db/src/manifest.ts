@@ -417,5 +417,14 @@ export const manifest: MigrationManifest = {
       description:
         "Email-scoped invitation discovery — adds a standalone index membership.organization_invitations (email_lower) so a signed-in user can look up every pending invitation for their verified email across all organizations. The invitation-created email carries no token link ('sign in with this email address to view and accept the invitation'); the existing composite (org_id, email_lower) index cannot serve an email-only lookup. Additive + idempotent (CREATE INDEX IF NOT EXISTS); back-compatible.",
     },
+    {
+      id: "460_state_repo_facet",
+      context: "state",
+      path: "460_state_repo_facet/up.sql",
+      checksum:
+        "85b0e6d0b407b37439431206d98ceae745bcabacb64785f87014663497509395",
+      description:
+        "Repo self-description facet + doc_ref pointers (saas-workspace-overview WO4). Adds state.org_catalog_entities.doc_ref JSONB (a nullable {path,ref,sha,digest} pointer to the entity's docs.overview blob in CAS — digest is the content address, the body is read from R2 by digest; no state.objects.kind change since docs ride the existing blob kind) and creates state.repo_facet (org_id, source_project_id PK; display_name, description, owner, default_branch, links, tags, doc_ref, entity_ref, head_digest, source_commit, synced_at) — one row per (org, project) projected from the declared Repo entity, keyed by project so the Git Repos list + Workspace Overview identity join by project. Derived, never authored; delete-then-upsert on catalog.head.advanced. Additive + idempotent.",
+    },
   ],
 };

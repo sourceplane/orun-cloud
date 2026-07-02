@@ -2,9 +2,14 @@ import { kindTone, lifecycleTone } from "@web-console-next/lib/catalog-kind";
 
 describe("kindTone", () => {
   it("canonicalises every catalog kind", () => {
-    for (const kind of ["Component", "API", "Resource", "System", "Domain", "Group"]) {
+    for (const kind of ["Component", "API", "Resource", "System", "Domain", "Group", "Repo"]) {
       expect(kindTone(kind).key).toBe(kind);
     }
+  });
+
+  it("recognises the declared Repo kind (saas-workspace-overview)", () => {
+    expect(kindTone("Repo").key).toBe("Repo");
+    expect(kindTone("repo").key).toBe("Repo");
   });
 
   it("uses one calm neutral tint for every kind (told apart by icon, not colour)", () => {

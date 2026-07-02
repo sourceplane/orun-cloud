@@ -340,6 +340,9 @@ export interface OrgCatalogEntity {
   system: string | null;
   language: string | null;
   tags: string[];
+  /** Nullable {path,ref,sha,digest} pointer to the entity's docs.overview blob
+   *  in CAS (saas-workspace-overview WO4); the body is read from R2 by digest. */
+  docRef: Record<string, unknown> | null;
   sourceProjectId: string;
   sourceEnvironment: string | null;
   sourceCommit: string | null;
@@ -363,7 +366,41 @@ export interface UpsertOrgCatalogEntityInput {
   system?: string | null;
   language?: string | null;
   tags?: string[];
+  docRef?: Record<string, unknown> | null;
   sourceEnvironment?: string | null;
+  sourceCommit?: string | null;
+}
+
+/** A repo self-description row (state.repo_facet), one per (org, project),
+ *  projected from the declared Repo entity (saas-workspace-overview WO4). */
+export interface RepoFacet {
+  orgId: string;
+  sourceProjectId: string;
+  displayName: string | null;
+  description: string | null;
+  owner: string | null;
+  defaultBranch: string | null;
+  links: Array<Record<string, unknown>>;
+  tags: string[];
+  docRef: Record<string, unknown> | null;
+  entityRef: string | null;
+  headDigest: string;
+  sourceCommit: string | null;
+  syncedAt: Date;
+}
+
+export interface UpsertRepoFacetInput {
+  orgId: Uuid;
+  sourceProjectId: Uuid;
+  headDigest: string;
+  displayName?: string | null;
+  description?: string | null;
+  owner?: string | null;
+  defaultBranch?: string | null;
+  links?: Array<Record<string, unknown>>;
+  tags?: string[];
+  docRef?: Record<string, unknown> | null;
+  entityRef?: string | null;
   sourceCommit?: string | null;
 }
 
@@ -624,6 +661,17 @@ export interface StateRepository {
     sourceProjectId: Uuid,
     sourceEnvironment: string | null,
   ): Promise<StateResult<number>>;
+
+  // Repo facet (saas-workspace-overview WO4) — per-(org,project) self-description.
+  /** Idempotently project the repo's self-description (one row per project). */
+  upsertRepoFacet(input: UpsertRepoFacetInput): Promise<StateResult<RepoFacet>>;
+  /** Remove a project's repo_facet row — the "replace the scope" primitive so a
+   *  head advance that drops the `repo:` block clears the stale facet. */
+  deleteRepoFacetForScope(orgId: Uuid, sourceProjectId: Uuid): Promise<StateResult<number>>;
+  /** Read one project's repo facet, or null when none is projected. */
+  getRepoFacet(orgId: Uuid, sourceProjectId: Uuid): Promise<StateResult<RepoFacet | null>>;
+  /** List every projected repo facet for an org (the Git Repos list). */
+  listRepoFacets(orgId: Uuid): Promise<StateResult<RepoFacet[]>>;
 
   /**
    * Current state-plane storage footprint for an org (OV9): live object + log
