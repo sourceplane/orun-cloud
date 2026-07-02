@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import Link from "next/link";
 import { useParams } from "next/navigation";
 import { z } from "zod";
 import { Plus, Users } from "lucide-react";
@@ -35,10 +36,10 @@ const schema = z.object({
 export default function TeamsPage() {
   const params = useParams<{ orgSlug: string }>();
   const slug = params?.orgSlug ?? "";
-  return <OrgScope slug={slug}>{(org) => <Inner orgId={org.id} />}</OrgScope>;
+  return <OrgScope slug={slug}>{(org) => <Inner orgId={org.id} slug={slug} />}</OrgScope>;
 }
 
-function Inner({ orgId }: { orgId: string }) {
+function Inner({ orgId, slug }: { orgId: string; slug: string }) {
   const { client } = useSession();
   const { toast } = useToast();
   const [open, setOpen] = React.useState(false);
@@ -150,7 +151,11 @@ function Inner({ orgId }: { orgId: string }) {
             <TableBody>
               {teams.data.map((t: PublicTeam) => (
                 <TableRow key={t.id}>
-                  <TableCell className="font-medium">{t.name}</TableCell>
+                  <TableCell className="font-medium">
+                    <Link href={`/orgs/${slug}/settings/teams/${t.id}`} className="hover:underline">
+                      {t.name}
+                    </Link>
+                  </TableCell>
                   <TableCell className="text-muted-foreground">{t.slug}</TableCell>
                   <TableCell>
                     <Badge variant={t.status === "active" ? "default" : "secondary"}>{t.status}</Badge>
