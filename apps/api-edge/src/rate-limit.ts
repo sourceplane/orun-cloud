@@ -59,7 +59,8 @@ export type RouteFamily =
   | "notifications"
   | "integrations"
   | "state"
-  | "coordination";
+  | "coordination"
+  | "logs";
 
 interface BucketLimits {
   /** Bucket capacity (max tokens). */
@@ -90,6 +91,13 @@ interface FamilyConfig {
  *     additionally scoped per-run (see `enforceRateLimit`) so one run can't
  *     starve another under the same token. Sized to comfortably clear a
  *     `MAX_JOBS_PER_RUN`-scale fan-out (1000 jobs) at steady state.
+ *   - `logs`: the OP3 log-chunk plane (…/runs/{id}/logs/{jobId} append/read).
+ *     Same profile as coordination — one CI token drives a whole DAG, each job
+ *     streaming many chunks — so the 60/min `state` cap throttles delivery, the
+ *     backlog spills past :complete, and the trailing flush is rejected
+ *     409 lease_lost ("remote log chunk(s) could not be delivered"). Given a
+ *     generous per-run ceiling (also scoped per-run in `enforceRateLimit`) so a
+ *     DAG's log fan-out drains in time and one run can't starve another.
  */
 const LIMITS: Record<RouteFamily, FamilyConfig> = {
   auth: {
@@ -137,6 +145,10 @@ const LIMITS: Record<RouteFamily, FamilyConfig> = {
     org: { limit: 300, windowSec: 60 },
   },
   coordination: {
+    identity: { limit: 1200, windowSec: 60 },
+    org: { limit: 6000, windowSec: 60 },
+  },
+  logs: {
     identity: { limit: 1200, windowSec: 60 },
     org: { limit: 6000, windowSec: 60 },
   },
@@ -248,10 +260,12 @@ export async function enforceRateLimit(
   const url = new URL(request.url);
   const orgId = extractOrgId(url.pathname);
   const identityKey = await deriveIdentityKey(request, routeFamily);
-  // Coordination verbs share one CI/OIDC token across an entire DAG, so scope
-  // the identity bucket per-run: one run's fan-out then can't starve another's
-  // under the same token. Non-coordination families keep the plain token bucket.
-  const runId = routeFamily === "coordination" ? extractRunId(url.pathname) : null;
+  // Coordination verbs and OP3 log-chunk delivery both share one CI/OIDC token
+  // across an entire DAG, so scope the identity bucket per-run: one run's fan-out
+  // then can't starve another's under the same token. Other families keep the
+  // plain token bucket.
+  const runId =
+    routeFamily === "coordination" || routeFamily === "logs" ? extractRunId(url.pathname) : null;
   const identityBucketKey = runId
     ? `${KV_PREFIX}:identity:${routeFamily}:${identityKey}:${runId}`
     : `${KV_PREFIX}:identity:${routeFamily}:${identityKey}`;

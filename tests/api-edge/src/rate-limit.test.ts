@@ -98,6 +98,7 @@ describe("api-edge rate limiter (Task 0097)", () => {
         "billing",
         "audit",
         "coordination",
+        "logs",
       ];
       for (const f of families) {
         expect(__rateLimitConfigForTest[f].org.limit).toBeGreaterThan(0);
@@ -112,6 +113,19 @@ describe("api-edge rate limiter (Task 0097)", () => {
         __rateLimitConfigForTest.state.identity.limit,
       );
       expect(__rateLimitConfigForTest.coordination.org.limit).toBeGreaterThan(
+        __rateLimitConfigForTest.state.org.limit,
+      );
+    });
+
+    it("logs family clears a DAG's concurrent log fan-out (well above state)", () => {
+      // Same rationale as coordination: a whole DAG streams log chunks under one
+      // CI token, so the cap must clear the shared `state` bucket or the trailing
+      // flush throttles → chunks land after :complete → 409 "could not be
+      // delivered".
+      expect(__rateLimitConfigForTest.logs.identity.limit).toBeGreaterThan(
+        __rateLimitConfigForTest.state.identity.limit,
+      );
+      expect(__rateLimitConfigForTest.logs.org.limit).toBeGreaterThan(
         __rateLimitConfigForTest.state.org.limit,
       );
     });
@@ -148,6 +162,40 @@ describe("api-edge rate limiter (Task 0097)", () => {
         "req_b",
         env,
         "coordination",
+      );
+      expect(b.kind).toBe("allowed");
+    });
+  });
+
+  describe("logs family is scoped per-run under one token", () => {
+    const logUrl = (runId: string) =>
+      `https://api.example.com/v1/organizations/org_abc/projects/prj_x/state/runs/${runId}/logs/build`;
+
+    it("draining one run's log bucket does NOT deny another run under the same bearer", async () => {
+      const kv = createFakeKv();
+      const env = makeEnv(kv.binding);
+      const limit = __rateLimitConfigForTest.logs.identity.limit;
+
+      // Exhaust run A's per-run identity bucket by streaming chunks.
+      let deniedA = false;
+      for (let i = 0; i < limit * 2 && !deniedA; i++) {
+        const r = await enforceRateLimit(
+          makeRequest({ url: logUrl("run_AAAAAAAAAAAAAAAAAAAAAAAA"), bearer: "ci_token", method: "POST" }),
+          "req_a",
+          env,
+          "logs",
+        );
+        deniedA = r.kind === "denied";
+      }
+      expect(deniedA).toBe(true);
+
+      // A different run under the SAME CI token still has a full bucket — one
+      // run's log fan-out can't starve another's delivery.
+      const b = await enforceRateLimit(
+        makeRequest({ url: logUrl("run_BBBBBBBBBBBBBBBBBBBBBBBB"), bearer: "ci_token", method: "POST" }),
+        "req_b",
+        env,
+        "logs",
       );
       expect(b.kind).toBe("allowed");
     });
