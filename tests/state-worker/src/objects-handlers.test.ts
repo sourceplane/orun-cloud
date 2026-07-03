@@ -648,6 +648,65 @@ describe("POST …/runs/{runId}/logs/{jobId} — append with lease check", () =>
     expect(res.status).toBe(409);
     expect(((await res.json()) as { error: { code: string } }).error.code).toBe("lease_lost");
   });
+
+  // ── Trailing-flush grace: the runner may flush the tail of its own log stream
+  // just after it self-completes. The lease is cleared on completion, so without
+  // this window the final chunks are wrongly rejected 409 lease_lost → the
+  // "remote log chunk(s) could not be delivered" flake.
+  it("accepts a trailing chunk from the runner that just self-completed (succeeded, lease cleared)", async () => {
+    const bucket = new FakeBucket();
+    const { executor } = fakeExecutor((text) => {
+      if (text.includes("FROM state.runs")) return [runRow()];
+      // Self-completed by THIS runner moments ago; lease already released.
+      if (text.includes("FROM state.run_jobs"))
+        return [jobRow({ status: "succeeded", runner_id: "runner-1", lease_expires_at: null, finished_at: new Date(Date.now() - 2000).toISOString() })];
+      if (text.includes("SELECT * FROM state.log_chunks")) return [];
+      if (text.includes("INSERT INTO state.log_chunks")) return [logChunkRow(0)];
+      return [];
+    });
+    const req = new Request("https://s/logs", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ runnerId: "runner-1", content: HELLO }),
+    });
+    const res = await handleAppendLog(req, createEnv(bucket), "req_1", ACTOR, asUuid(ORG), asUuid(PROJECT), ULID, "build", { executor });
+    expect(res.status).toBe(200);
+    expect(bucket.store.has(`state/${ORG_PUBLIC}/${PROJECT_PUBLIC}/runs/${ULID}/logs/build/0`)).toBe(true);
+  });
+
+  it("409 lease_lost for a trailing chunk once the grace window has lapsed", async () => {
+    const { executor } = fakeExecutor((text) => {
+      if (text.includes("FROM state.runs")) return [runRow()];
+      if (text.includes("FROM state.run_jobs"))
+        return [jobRow({ status: "succeeded", runner_id: "runner-1", lease_expires_at: null, finished_at: new Date(Date.now() - 10 * 60 * 1000).toISOString() })];
+      return [];
+    });
+    const req = new Request("https://s/logs", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ runnerId: "runner-1", content: HELLO }),
+    });
+    const res = await handleAppendLog(req, createEnv(new FakeBucket()), "req_1", ACTOR, asUuid(ORG), asUuid(PROJECT), ULID, "build", { executor });
+    expect(res.status).toBe(409);
+    expect(((await res.json()) as { error: { code: string } }).error.code).toBe("lease_lost");
+  });
+
+  it("409 lease_lost for a system-imposed terminal state (timed_out is not a self-completion)", async () => {
+    const { executor } = fakeExecutor((text) => {
+      if (text.includes("FROM state.runs")) return [runRow()];
+      if (text.includes("FROM state.run_jobs"))
+        return [jobRow({ status: "timed_out", runner_id: "runner-1", lease_expires_at: null, finished_at: new Date(Date.now() - 2000).toISOString() })];
+      return [];
+    });
+    const req = new Request("https://s/logs", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ runnerId: "runner-1", content: HELLO }),
+    });
+    const res = await handleAppendLog(req, createEnv(new FakeBucket()), "req_1", ACTOR, asUuid(ORG), asUuid(PROJECT), ULID, "build", { executor });
+    expect(res.status).toBe(409);
+    expect(((await res.json()) as { error: { code: string } }).error.code).toBe("lease_lost");
+  });
 });
 
 describe("GET …/runs/{runId}/logs/{jobId}?fromSeq= — assembled read", () => {

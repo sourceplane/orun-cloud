@@ -2,7 +2,7 @@
 // the bearer, forwards the actor + the Orun-Contract-Version header to
 // state-worker (which re-checks policy + the version), and proxies the response.
 
-import { isStateRoute, handleStateRoute } from "@api-edge/state-facade";
+import { isStateRoute, handleStateRoute, stateRouteFamily } from "@api-edge/state-facade";
 
 interface FetchCall {
   url: string;
@@ -97,6 +97,38 @@ describe("state facade — route matching", () => {
     expect(isStateRoute("/v1/organizations/org_x/catalog/entities/extra")).toBe(false);
     // The org runs feed is exactly /state/runs — not a run subpath.
     expect(isStateRoute("/v1/organizations/org_x/state/runs/01J0")).toBe(false);
+  });
+});
+
+describe("state facade — rate-limit family selection", () => {
+  const base = "/v1/organizations/org_x/projects/prj_y/state";
+
+  it("routes the coordination verbs to the coordination family", () => {
+    expect(stateRouteFamily(`${base}/runs/01J0/jobs/build:claim`)).toBe("coordination");
+    expect(stateRouteFamily(`${base}/runs/01J0/jobs/build:heartbeat`)).toBe("coordination");
+    expect(stateRouteFamily(`${base}/runs/01J0/jobs/build:complete`)).toBe("coordination");
+    expect(stateRouteFamily(`${base}/runs/01J0:cancel`)).toBe("coordination");
+    expect(stateRouteFamily(`${base}/runs/01J0/log`)).toBe("coordination");
+    expect(stateRouteFamily(`${base}/runs/01J0/frontier`)).toBe("coordination");
+  });
+
+  it("routes the OP3 log-chunk plane (…/logs/{jobId}) to the dedicated logs family", () => {
+    // The append/read hot path a whole DAG drives under one CI token — kept off
+    // the tight shared `state` bucket so a job's trailing flush isn't throttled.
+    expect(stateRouteFamily(`${base}/runs/01J0/logs/build`)).toBe("logs");
+    expect(stateRouteFamily(`${base}/runs/01J0/logs/deploy-prod`)).toBe("logs");
+  });
+
+  it("keeps run-create, object PUT, catalog, and the singular /log distinct from /logs", () => {
+    // Run create is the abuse vector → stays on `state`.
+    expect(stateRouteFamily(`${base}/runs`)).toBe("state");
+    // The singular event-log read is coordination; the plural per-job chunk plane
+    // is logs — the two must not be confused.
+    expect(stateRouteFamily(`${base}/runs/01J0/log`)).toBe("coordination");
+    expect(stateRouteFamily(`${base}/runs/01J0/logs/build`)).toBe("logs");
+    // Object plane + catalog remain on `state`.
+    expect(stateRouteFamily(`${base}/objects/sha256:${"a".repeat(64)}`)).toBe("state");
+    expect(stateRouteFamily(`${base}/catalog/head`)).toBe("state");
   });
 });
 

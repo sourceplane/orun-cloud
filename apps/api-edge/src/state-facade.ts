@@ -37,6 +37,19 @@ const ORG_RUNS_RE = /^\/v1\/organizations\/[^/]+\/state\/runs$/;
 const COORDINATION_ROUTE_RE =
   /^\/v1\/organizations\/[^/]+\/projects\/[^/]+\/state\/runs\/[^/]+(?::cancel|\/jobs\/[^/]+:(?:claim|heartbeat|complete)|\/log|\/frontier)$/;
 
+// OP3 log-chunk plane (state-api-contract §2.3): per-job append/read of streamed
+// log chunks (…/runs/{runId}/logs/{jobId}). Like the coordination verbs, a whole
+// DAG of concurrent jobs drives these under ONE CI token — each job flushing many
+// chunks over its lifetime — so on the shared 60/min `state` bucket the delivery
+// throttles, chunks back up, and a job's trailing flush lands after :complete
+// (rejected 409 lease_lost → "remote log chunk(s) could not be delivered"). They
+// are trusted, lease-gated, and per-run, so they ride the dedicated per-run
+// `logs` family (see rate-limit.ts). Distinct from the singular `/log` event-log
+// read above (that is coordination). NB: `/logs/{jobId}` must be tested BEFORE
+// falling through to `state`.
+const LOG_CHUNK_ROUTE_RE =
+  /^\/v1\/organizations\/[^/]+\/projects\/[^/]+\/state\/runs\/[^/]+\/logs\/[^/]+$/;
+
 // `orun-contract-version` is forwarded so state-worker enforces the major and
 // rejects unsupported skew with 409 contract_version_unsupported. `orun-object-
 // kind` + `content-length` are forwarded for the OP3 object plane's digest-
@@ -64,6 +77,17 @@ export function isStateRoute(pathname: string): boolean {
   );
 }
 
+/** Pick the rate-limit family for a state-plane path. The trusted per-run hot
+ *  paths — coordination verbs and OP3 log-chunk delivery — get their own
+ *  higher, per-run-scoped families; everything else (run create, object PUT,
+ *  catalog, reads) stays on the tighter shared `state` family. Exported so the
+ *  path→family mapping is unit-testable. */
+export function stateRouteFamily(pathname: string): "coordination" | "logs" | "state" {
+  if (COORDINATION_ROUTE_RE.test(pathname)) return "coordination";
+  if (LOG_CHUNK_ROUTE_RE.test(pathname)) return "logs";
+  return "state";
+}
+
 export async function handleStateRoute(
   request: Request,
   env: Env,
@@ -77,7 +101,7 @@ export async function handleStateRoute(
     return errorResponse("unsupported", "Method not allowed", 405, requestId);
   }
 
-  const routeFamily = COORDINATION_ROUTE_RE.test(pathname) ? "coordination" : "state";
+  const routeFamily = stateRouteFamily(pathname);
 
   return replayOrExecute(request, requestId, env, routeFamily, async () => {
     if (!env.IDENTITY_WORKER) {

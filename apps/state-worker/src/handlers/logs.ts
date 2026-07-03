@@ -21,7 +21,7 @@ import { asUuid, type Uuid } from "@saas/db/ids";
 import { errorResponse, successResponse, validationError } from "../http.js";
 import { authorizeRun } from "../authz.js";
 import { generateUuid, orgPublicId, projectPublicId } from "../ids.js";
-import { LOG_CHUNK_MAX_BYTES, LOG_READ_MAX_CHUNKS } from "../constants.js";
+import { LOG_CHUNK_MAX_BYTES, LOG_READ_MAX_CHUNKS, LOG_TRAILING_APPEND_GRACE_MS } from "../constants.js";
 import { logChunkKey, requireBucket } from "../object-store.js";
 import { emitUsage, STATE_METRICS } from "../metering.js";
 
@@ -36,6 +36,11 @@ async function dispose(executor: SqlExecutor): Promise<void> {
 }
 
 const TERMINAL_JOB_STATUSES = new Set(["succeeded", "failed", "timed_out", "canceled"]);
+// Terminal states reached by the RUNNER's own :complete (as opposed to timed_out
+// / canceled, which the system imposes when the runner lost the job). Only these
+// grant the completing runner a trailing-append grace window — it is flushing the
+// tail of its own log stream, not a stale runner writing to a re-queued job.
+const SELF_COMPLETED_JOB_STATUSES = new Set(["succeeded", "failed"]);
 
 // ── POST …/runs/{runId}/logs/{jobId} — append a chunk ───────
 
@@ -93,19 +98,32 @@ export async function handleAppendLog(
     if (!run.ok) return errorResponse("not_found", "Not found", 404, requestId);
     const runRowId = asUuid(run.value.id);
 
-    // ── Live-lease check: the runner must currently own the job's lease. ──
+    // ── Ownership check: the runner must own the job's log stream. ──
     // A chunk from a runner whose lease lapsed or was reassigned is rejected
     // 409 lease_lost — the job already re-queued, the runner must stop. We read
-    // the job row and assert runner ownership + an unexpired, non-terminal lease.
+    // the job row and assert runner ownership in one of two states:
+    //   1. Active — the job is non-terminal and this runner holds a live lease.
+    //   2. Trailing flush — this runner just self-completed the job (succeeded|
+    //      failed) and is flushing the chunks it still had buffered when it called
+    //      :complete. The log stream trails the lifecycle verb, so those chunks
+    //      arrive just after the job goes terminal; without this window that final
+    //      flush is wrongly rejected as a lost lease ("remote log chunk(s) could
+    //      not be delivered"). Bounded by LOG_TRAILING_APPEND_GRACE_MS and gated on
+    //      the SAME runnerId, so a re-queued job (now held by another runner) or a
+    //      system-imposed end (timed_out|canceled) is still rejected.
     const job = await repo.getRunJob(orgId, projectId, runRowId, jobId);
     if (!job.ok) return errorResponse("not_found", "Not found", 404, requestId);
     const j = job.value;
-    const leaseLive =
-      j.runnerId === runnerId &&
+    const now = Date.now();
+    const sameRunner = j.runnerId === runnerId;
+    const activeLease =
       !TERMINAL_JOB_STATUSES.has(j.status) &&
       j.leaseExpiresAt !== null &&
-      j.leaseExpiresAt.getTime() > Date.now();
-    if (!leaseLive) {
+      j.leaseExpiresAt.getTime() > now;
+    const trailingFlush =
+      SELF_COMPLETED_JOB_STATUSES.has(j.status) &&
+      (j.finishedAt === null || now - j.finishedAt.getTime() <= LOG_TRAILING_APPEND_GRACE_MS);
+    if (!(sameRunner && (activeLease || trailingFlush))) {
       return errorResponse(
         "lease_lost",
         "No live lease for this runner on this job; stop appending logs",

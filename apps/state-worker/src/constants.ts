@@ -76,3 +76,11 @@ export const LOG_CHUNK_MAX_BYTES = MIB;
 
 /** Max chunks an assembled log read returns in one page (bounds read cost). */
 export const LOG_READ_MAX_CHUNKS = 512;
+
+/** Grace window after a job's own terminal completion (succeeded|failed) during
+ *  which the completing runner may still append its trailing log chunks. The log
+ *  stream trails the `:complete` lifecycle verb — chunks buffered at completion
+ *  are flushed just after the job goes terminal — so without a grace window that
+ *  final flush is wrongly rejected as a lost lease. Bounded so a stuck/buggy
+ *  runner can't append to an old completed job indefinitely. */
+export const LOG_TRAILING_APPEND_GRACE_MS = 5 * 60 * 1000;
