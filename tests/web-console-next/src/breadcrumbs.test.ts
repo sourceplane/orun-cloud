@@ -21,6 +21,14 @@ describe("buildBreadcrumbs", () => {
     ]);
   });
 
+  it("labels the top-level Secrets & Config surface", () => {
+    const crumbs = buildBreadcrumbs({ ...org, pathname: "/orgs/acme/secrets" });
+    expect(crumbs).toEqual([
+      { label: "Acme Inc", href: "/orgs/acme/projects" },
+      { label: "Secrets & Config" },
+    ]);
+  });
+
   it("labels the org-global catalog index", () => {
     const crumbs = buildBreadcrumbs({ ...org, pathname: "/orgs/acme/catalog" });
     expect(crumbs).toEqual([

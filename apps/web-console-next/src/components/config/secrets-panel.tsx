@@ -197,7 +197,7 @@ export function SecretsPanel({ scope, scopeKey }: { scope: ConfigScope; scopeKey
         <EmptyState
           icon={Lock}
           title="No secrets yet"
-          description="Store provider keys and tokens encrypted at this scope; read them from your product at runtime."
+          description="Store provider keys and tokens encrypted at this scope, or bring an existing set in with orun secrets import. Read them from your product at runtime — values never leave the vault."
           primaryAction={{ label: "New secret", onClick: () => setCreateOpen(true) }}
         />
       ) : (
@@ -246,7 +246,10 @@ export function SecretsPanel({ scope, scopeKey }: { scope: ConfigScope; scopeKey
                     </TableCell>
                     <TableCell className="hidden font-mono text-xs md:table-cell">v{s.version}</TableCell>
                     <TableCell className="hidden md:table-cell">
-                      <Badge variant={rot.tone}>{rot.label}</Badge>
+                      <Badge variant={rot.tone} className="gap-1">
+                        {rot.due ? <TriangleAlert className="h-3 w-3" aria-hidden /> : null}
+                        {rot.label}
+                      </Badge>
                     </TableCell>
                     <TableCell className="hidden text-xs text-muted-foreground lg:table-cell">
                       {s.lastUsedAt ? new Date(s.lastUsedAt).toLocaleDateString() : "never"}
@@ -265,7 +268,7 @@ export function SecretsPanel({ scope, scopeKey }: { scope: ConfigScope; scopeKey
                           <DropdownMenuItem onSelect={() => setSyncsFor(s)}>
                             <Waypoints className="mr-2 h-4 w-4" /> Sync provenance
                           </DropdownMenuItem>
-                          <DropdownMenuItem onSelect={() => setRevealFor(s)}>
+                          <DropdownMenuItem onSelect={() => setRevealFor(s)} className="text-warning">
                             <Eye className="mr-2 h-4 w-4" /> Reveal (break-glass)
                           </DropdownMenuItem>
                           <DropdownMenuSeparator />

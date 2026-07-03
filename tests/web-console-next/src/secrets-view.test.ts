@@ -2,6 +2,7 @@ import {
   parseRotationPolicyDays,
   rotationStatus,
   chainBadges,
+  secretHealthStats,
   revealGuard,
   MIN_REVEAL_REASON_LENGTH,
   policyTestRequest,
@@ -104,6 +105,39 @@ describe("chainBadges", () => {
 
   it("emits nothing without provenance", () => {
     expect(chainBadges(meta({}))).toEqual([]);
+  });
+});
+
+describe("secretHealthStats", () => {
+  it("counts totals, rotation-due, locked, and personal overlays", () => {
+    const stats = secretHealthStats(
+      [
+        // due: rotated 120d ago against a 90d policy.
+        meta({ rotationPolicy: "90d", lastRotatedAt: "2026-03-05T00:00:00Z" }),
+        // within window: not due.
+        meta({ rotationPolicy: "90d", lastRotatedAt: "2026-06-20T00:00:00Z" }),
+        // locked guardrail.
+        meta({ overridable: false }),
+        // personal overlay.
+        meta({ personal: true }),
+      ],
+      NOW,
+    );
+    expect(stats).toEqual({ total: 4, rotationDue: 1, locked: 1, personal: 1 });
+  });
+
+  it("is all-zero (except total) for a policy-free, unlocked set", () => {
+    const stats = secretHealthStats([meta({}), meta({})], NOW);
+    expect(stats).toEqual({ total: 2, rotationDue: 0, locked: 0, personal: 0 });
+  });
+
+  it("handles an empty list", () => {
+    expect(secretHealthStats([], NOW)).toEqual({
+      total: 0,
+      rotationDue: 0,
+      locked: 0,
+      personal: 0,
+    });
   });
 });
 

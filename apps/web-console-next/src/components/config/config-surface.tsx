@@ -2,7 +2,8 @@
 
 import * as React from "react";
 import { z } from "zod";
-import { Plus, SlidersHorizontal, Flag } from "lucide-react";
+import { Plus, SlidersHorizontal, Flag, ScrollText } from "lucide-react";
+import { useParams } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
 import type { ConfigScope } from "@saas/sdk";
 import type {
@@ -33,9 +34,14 @@ import { SecretsPanel } from "./secrets-panel";
 import { SecretPoliciesPanel } from "./secret-policies-panel";
 
 /**
- * The console face of config-worker: settings, feature flags, and secrets at
- * any of the three scopes (organization / project / environment). One shared
- * surface so all scopes behave identically; the page supplies the scope.
+ * The console face of config-worker: secrets, feature flags, settings, and
+ * policies at any of the three scopes (organization / project / environment).
+ * One shared surface so all scopes behave identically; the parent supplies the
+ * scope (the Secrets console owns scope selection).
+ *
+ * Reads secrets-first: the tab order leads with Secrets (the default) so the
+ * surface reads as secret-management-first, with feature flags in their own
+ * clearly-separated home.
  *
  * Secrets are write-only on the wire: list/read responses carry metadata
  * only, and this surface never renders secret material after the create /
@@ -46,28 +52,54 @@ export function ConfigSurface({ scope }: { scope: ConfigScope }) {
   // SecretPolicy documents are org/project-scoped only — no policies tab at env.
   const showPolicies = scope.kind !== "environment";
   return (
-    <Tabs defaultValue="settings">
+    <Tabs defaultValue="secrets">
       <TabsList>
-        <TabsTrigger value="settings">Settings</TabsTrigger>
-        <TabsTrigger value="flags">Feature flags</TabsTrigger>
         <TabsTrigger value="secrets">Secrets</TabsTrigger>
+        <TabsTrigger value="flags">Feature flags</TabsTrigger>
+        <TabsTrigger value="settings">Settings</TabsTrigger>
         {showPolicies ? <TabsTrigger value="policies">Policies</TabsTrigger> : null}
+        <TabsTrigger value="activity">Activity</TabsTrigger>
       </TabsList>
-      <TabsContent value="settings" className="pt-4">
-        <SettingsTab scope={scope} scopeKey={scopeKey} />
+      <TabsContent value="secrets" className="pt-4">
+        <SecretsPanel scope={scope} scopeKey={scopeKey} />
       </TabsContent>
       <TabsContent value="flags" className="pt-4">
         <FlagsTab scope={scope} scopeKey={scopeKey} />
       </TabsContent>
-      <TabsContent value="secrets" className="pt-4">
-        <SecretsPanel scope={scope} scopeKey={scopeKey} />
+      <TabsContent value="settings" className="pt-4">
+        <SettingsTab scope={scope} scopeKey={scopeKey} />
       </TabsContent>
       {showPolicies ? (
         <TabsContent value="policies" className="pt-4">
           <SecretPoliciesPanel scope={scope} scopeKey={scopeKey} />
         </TabsContent>
       ) : null}
+      <TabsContent value="activity" className="pt-4">
+        <SecretActivityTab />
+      </TabsContent>
     </Tabs>
+  );
+}
+
+/**
+ * Activity tab — a prominent doorway into the secret audit stream
+ * (`subjectKind=secret`) already wired on the org audit log. Rendered as a link
+ * rather than an embedded table so the full audit surface (filters, pagination,
+ * every subject) stays the one source of truth.
+ */
+function SecretActivityTab() {
+  const params = useParams<{ orgSlug?: string }>();
+  const orgSlug = params?.orgSlug ?? "";
+  return (
+    <EmptyState
+      icon={ScrollText}
+      title="Secret activity is audited"
+      description="Every create, rotate, revoke, and break-glass reveal is recorded. Open the audit log filtered to secret events for the full history."
+      primaryAction={{
+        label: "Open secret audit log",
+        href: `/orgs/${orgSlug}/settings/audit?subjectKind=secret`,
+      }}
+    />
   );
 }
 

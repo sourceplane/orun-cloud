@@ -5,9 +5,9 @@ import {
 } from "@web-console-next/components/shell/settings-nav";
 
 describe("buildSettingsNav", () => {
-  it("groups settings into Organization, Billing, and Developer", () => {
+  it("groups settings into Organization, Account, Billing, and Developer", () => {
     const ids = buildSettingsNav("acme").map((g) => g.id);
-    expect(ids).toEqual(["organization", "billing", "developer"]);
+    expect(ids).toEqual(["organization", "account", "billing", "developer"]);
   });
 
   it("roots every link under the org settings base", () => {
@@ -31,7 +31,6 @@ describe("buildSettingsNav", () => {
         "/orgs/acme/settings/billing",
         "/orgs/acme/settings/api-keys",
         "/orgs/acme/settings/webhooks",
-        "/orgs/acme/settings/config",
         "/orgs/acme/settings/audit",
       ]),
     );
@@ -40,6 +39,14 @@ describe("buildSettingsNav", () => {
   it("no longer lists Integrations — promoted to the top-level connections hub", () => {
     const hrefs = flattenSettingsNav(buildSettingsNav("acme")).map((l) => l.href);
     expect(hrefs).not.toContain("/orgs/acme/settings/integrations");
+  });
+
+  it("no longer lists Config under Developer — promoted to the top-level Secrets surface", () => {
+    const hrefs = flattenSettingsNav(buildSettingsNav("acme")).map((l) => l.href);
+    expect(hrefs).not.toContain("/orgs/acme/settings/config");
+    // The Developer group survives (api keys, sessions, webhooks, audit remain).
+    const developer = buildSettingsNav("acme").find((g) => g.id === "developer")!;
+    expect(developer.links.length).toBeGreaterThan(0);
   });
 });
 

@@ -42,7 +42,7 @@ describe("buildBaseCommands", () => {
   it("points org-administration commands at the Settings surface", () => {
     const cmds = buildBaseCommands({ ...baseCtx, orgSlug: "acme" });
     const byId = new Map(cmds.map((c) => [c.id, c]));
-    for (const id of ["nav.members", "nav.webhooks", "nav.api-keys", "nav.audit", "nav.config"]) {
+    for (const id of ["nav.members", "nav.webhooks", "nav.api-keys", "nav.audit"]) {
       const cmd = byId.get(id)!;
       expect(cmd.kind).toBe("navigate");
       if (cmd.kind === "navigate") expect(cmd.to).toMatch(/^\/orgs\/acme\/settings\//);
@@ -50,6 +50,17 @@ describe("buildBaseCommands", () => {
     // Create flows for moved resources target the Settings paths too.
     const invite = byId.get("create.invitation")!;
     if (invite.kind === "navigate") expect(invite.to).toBe("/orgs/acme/settings/invitations?new=1");
+  });
+
+  it("exposes Secrets & Config as a top-level navigation command (not under settings)", () => {
+    const cmds = buildBaseCommands({ ...baseCtx, orgSlug: "acme" });
+    const byId = new Map(cmds.map((c) => [c.id, c]));
+    const secrets = byId.get("nav.secrets")!;
+    expect(secrets).toBeDefined();
+    expect(secrets.kind).toBe("navigate");
+    if (secrets.kind === "navigate") expect(secrets.to).toBe("/orgs/acme/secrets");
+    // The old settings-scoped Config command is gone (moved to the top level).
+    expect(byId.has("nav.config")).toBe(false);
   });
 
   it("adds project-scoped commands only when both org and project slugs are present", () => {

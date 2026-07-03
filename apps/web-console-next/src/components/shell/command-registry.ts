@@ -172,10 +172,18 @@ export function buildBaseCommands(ctx: CommandContext): CommandDescriptor[] {
         "endpoint",
         "settings",
       ]),
-      navItem("nav.config", "Config", `${settingsBase}/config`, "Settings", [
+      // Secrets & Config is a top-level product surface (not under settings):
+      // the secret chain, feature flags, settings values, and policies.
+      navItem("nav.secrets", "Secrets & Config", `${orgBase}/secrets`, "KeyRound", [
+        "secret",
+        "secrets",
+        "vault",
         "config",
         "settings",
         "flags",
+        "feature flag",
+        "rotation",
+        "policy",
       ]),
       navItem("nav.audit", "Audit log", `${settingsBase}/audit`, "ScrollText", [
         "audit",
