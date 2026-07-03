@@ -28,12 +28,11 @@ import { authorizeRun } from "./authz.js";
 import { computeDigest, isValidDigest, logChunkPrefix, memoIndexKey, objectKey, requireBucket } from "./object-store.js";
 import { orgPublicId, projectPublicId } from "./ids.js";
 import {
+  ensureRunShard,
   projectAfterVerb,
   proxyCoordinatorFrontier,
   proxyCoordinatorLog,
   proxyCoordinatorVerb,
-  runIsDoBacked,
-  useDoCoordination,
 } from "./coordination-route.js";
 
 /** Authorize, then require a DO-backed run (else 404). Authz precedes the
@@ -50,7 +49,11 @@ async function gate(
 ): Promise<{ ok: true } | { ok: false; response: Response }> {
   const authz = await authorizeRun(env, requestId, actor, orgId, projectId, action);
   if (!authz.ok) return { ok: false, response: authz.response };
-  if (!useDoCoordination(env) || !(await runIsDoBacked(env, runUlid))) {
+  // Require a DO-backed run (else 404). `ensureRunShard` self-heals a run whose
+  // shard was never seeded (a run row exists in Postgres but the create-time seed
+  // was skipped/lost) by rebuilding it from the persisted plan — so the native
+  // verbs stop 404-ing for the life of such a run.
+  if (!(await ensureRunShard(env, orgId, projectId, runUlid))) {
     return { ok: false, response: errorResponse("not_found", "Not found", 404, requestId) };
   }
   return { ok: true };

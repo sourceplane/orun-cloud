@@ -58,7 +58,8 @@ export type RouteFamily =
   | "audit"
   | "notifications"
   | "integrations"
-  | "state";
+  | "state"
+  | "coordination";
 
 interface BucketLimits {
   /** Bucket capacity (max tokens). */
@@ -79,6 +80,16 @@ interface FamilyConfig {
  *   - `auth`: tighter — login/logout flows are the brute-force target.
  *   - everything else (writes/reads): 60/300 per minute identity/org.
  *   - `audit` is read-only and trusted further; raised to 120/600.
+ *   - `coordination`: the run-coordination hot path (:claim/:heartbeat/
+ *     :complete/:cancel + log/frontier). A single CI/OIDC token drives an
+ *     ENTIRE DAG of concurrent jobs, each polling claim + heartbeating every
+ *     ~20s, so the 60/min `state` cap is exhausted in seconds and the runner
+ *     (which does not retry on 429) fails the whole run. These verbs are
+ *     trusted, lease-gated, and idempotent — not the abuse vector run-create
+ *     is — so they get a much higher ceiling, and their identity bucket is
+ *     additionally scoped per-run (see `enforceRateLimit`) so one run can't
+ *     starve another under the same token. Sized to comfortably clear a
+ *     `MAX_JOBS_PER_RUN`-scale fan-out (1000 jobs) at steady state.
  */
 const LIMITS: Record<RouteFamily, FamilyConfig> = {
   auth: {
@@ -124,6 +135,10 @@ const LIMITS: Record<RouteFamily, FamilyConfig> = {
   state: {
     identity: { limit: 60, windowSec: 60 },
     org: { limit: 300, windowSec: 60 },
+  },
+  coordination: {
+    identity: { limit: 1200, windowSec: 60 },
+    org: { limit: 6000, windowSec: 60 },
   },
 };
 
@@ -233,6 +248,13 @@ export async function enforceRateLimit(
   const url = new URL(request.url);
   const orgId = extractOrgId(url.pathname);
   const identityKey = await deriveIdentityKey(request, routeFamily);
+  // Coordination verbs share one CI/OIDC token across an entire DAG, so scope
+  // the identity bucket per-run: one run's fan-out then can't starve another's
+  // under the same token. Non-coordination families keep the plain token bucket.
+  const runId = routeFamily === "coordination" ? extractRunId(url.pathname) : null;
+  const identityBucketKey = runId
+    ? `${KV_PREFIX}:identity:${routeFamily}:${identityKey}:${runId}`
+    : `${KV_PREFIX}:identity:${routeFamily}:${identityKey}`;
 
   const buckets: Array<{
     scope: "org" | "identity";
@@ -248,7 +270,7 @@ export async function enforceRateLimit(
   }
   buckets.push({
     scope: "identity",
-    key: `${KV_PREFIX}:identity:${routeFamily}:${identityKey}`,
+    key: identityBucketKey,
     limits: config.identity,
   });
 
@@ -553,6 +575,15 @@ function buildHeaders(decisions: BucketDecision[]): Record<string, string> {
 
 function extractOrgId(pathname: string): string | null {
   const m = ORG_PATH_RE.exec(pathname);
+  if (!m || !m[1]) return null;
+  return m[1];
+}
+
+const RUN_PATH_RE = /\/state\/runs\/([^/:]+)/;
+
+/** The run ULID from a coordination path (…/state/runs/{runId}[/…|:verb]). */
+function extractRunId(pathname: string): string | null {
+  const m = RUN_PATH_RE.exec(pathname);
   if (!m || !m[1]) return null;
   return m[1];
 }
