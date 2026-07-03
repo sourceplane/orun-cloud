@@ -44,7 +44,7 @@ const config = {
       respectPrefersColorScheme: true,
     },
     metadata: [
-      { name: 'theme-color', content: '#7c3aed' },
+      { name: 'theme-color', content: '#f59e0b' },
       {
         name: 'description',
         content:
@@ -59,7 +59,7 @@ const config = {
         { to: '/api/overview', label: 'API', position: 'left' },
         { to: '/developers/sdk', label: 'SDK', position: 'left' },
         { to: '/developers/cli', label: 'CLI', position: 'left' },
-        { href: 'https://orun.sourceplane.ai', label: 'orun docs', position: 'right' },
+        { href: 'https://orun-docs.pages.dev', label: 'orun docs', position: 'right' },
         { href: 'https://app.orun.dev', label: 'Console', position: 'right' },
         {
           href: 'https://github.com/sourceplane/orun-cloud',
@@ -103,7 +103,7 @@ const config = {
         {
           title: 'Ecosystem',
           items: [
-            { label: 'orun — the intent compiler', href: 'https://orun.sourceplane.ai' },
+            { label: 'orun — the intent compiler', href: 'https://orun-docs.pages.dev' },
             { label: 'Run your own', to: '/self-hosting/deploy-your-own' },
             { label: 'Console', href: 'https://app.orun.dev' },
             { label: 'GitHub', href: 'https://github.com/sourceplane/orun-cloud' },

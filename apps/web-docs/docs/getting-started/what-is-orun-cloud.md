@@ -3,7 +3,7 @@ title: What is Orun Cloud?
 description: The managed backend for orun and a production multi-tenant SaaS control plane — open, forkable, and deployed by orun itself.
 ---
 
-**Orun Cloud** is the managed backend for [orun](https://orun.sourceplane.ai) — the intent compiler — and a production multi-tenant **SaaS control plane** in its own right. It gives orun users remote state, run history, and a catalog of what their platform contains; and it gives every product built on it the SaaS primitives that otherwise get rebuilt from scratch: identity, workspaces, RBAC, projects, configuration, audit, metering, billing, webhooks, notifications, and integrations.
+**Orun Cloud** is the managed backend for [orun](https://orun-docs.pages.dev) — the intent compiler — and a production multi-tenant **SaaS control plane** in its own right. It gives orun users remote state, run history, and a catalog of what their platform contains; and it gives every product built on it the SaaS primitives that otherwise get rebuilt from scratch: identity, workspaces, RBAC, projects, configuration, audit, metering, billing, webhooks, notifications, and integrations.
 
 It is also an **open, forkable baseline**: the whole platform is published at [github.com/sourceplane/orun-cloud](https://github.com/sourceplane/orun-cloud) and is built to be instantiated as new products.
 
@@ -15,7 +15,7 @@ orun compiles your platform's **intent** — `intent.yaml` plus a `component.yam
 - **Runs** — plan and run history per project, browsable in the console.
 - **Catalog** — an inventory of the entities your platform intent declares, per workspace.
 
-The `orun` CLI's cloud surface (`orun cloud link`, `orun cloud check`, `orun cloud open`, and `execution.state` in `intent.yaml`) is documented in the [orun docs](https://orun.sourceplane.ai/cli/orun-cloud); this site documents the Orun Cloud side — the API, the console, and the platform primitives.
+The `orun` CLI's cloud surface (`orun cloud link`, `orun cloud check`, `orun cloud open`, and `execution.state` in `intent.yaml`) is documented in the [orun docs](https://orun-docs.pages.dev/cli/orun-cloud); this site documents the Orun Cloud side — the API, the console, and the platform primitives.
 
 ## The SaaS control plane
 

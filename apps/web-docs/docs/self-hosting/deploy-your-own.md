@@ -6,7 +6,7 @@ description: Orun Cloud is an open, forkable baseline — everything is orun int
 Orun Cloud is not just a hosted product — the repository at
 [github.com/sourceplane/orun-cloud](https://github.com/sourceplane/orun-cloud)
 is a **forkable baseline**: a production multi-tenant SaaS you can rebrand and
-deploy as your own product, converged by [orun](https://orun.sourceplane.ai),
+deploy as your own product, converged by [orun](https://orun-docs.pages.dev),
 the intent compiler this platform is the managed backend for.
 
 ## Everything is intent
@@ -28,7 +28,7 @@ scripts:
   `turbo-package`.
 
 orun compiles these three layers into an explicit plan DAG. For the model, see
-the [orun docs](https://orun.sourceplane.ai).
+the [orun docs](https://orun-docs.pages.dev).
 
 ## CI only plans and converges
 
