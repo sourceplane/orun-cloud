@@ -20,11 +20,19 @@ secrets share one **platform** document.
 | `…/integrations/polar/<env>` | `BILLING_PROVIDER`, `POLAR_SERVER`, `POLAR_PRODUCT_MAP`, `POLAR_SUCCESS_URL`, `POLAR_ACCESS_TOKEN`, `POLAR_WEBHOOK_SECRET` |
 | `…/integrations/cloudflare-email/<env>` | `NOTIFICATIONS_PROVIDER`, `EMAIL_FROM_ADDRESS`, `EMAIL_FROM_NAME` (no secret) |
 | `…/integrations/github-app/<env>` | GitHub App config + secrets — **deferred** until the App is registered (`saas-integrations` D1) |
-| `…/platform-secrets/<env>` | `SECRET_ENCRYPTION_KEY`, `OAUTH_STATE_SECRET`, `INTEGRATIONS_STATE_SECRET` |
+| `…/platform-secrets/<env>` | `SECRET_ENCRYPTION_KEY`, `SECRET_KEK`, `OAUTH_STATE_SECRET`, `INTEGRATIONS_STATE_SECRET` |
 
 **Critical:** `SECRET_ENCRYPTION_KEY` encrypts data at rest — escrow the value
 currently deployed, do NOT generate a new one (a fresh key bricks stored
 webhook endpoints and integration tokens).
+
+**`SECRET_KEK` is the opposite** (saas-secret-manager SM2 — config-worker's
+master key that wraps each workspace's data-encryption key). It is net-new:
+nothing is encrypted under it until it is first present (v:2 envelopes begin
+then; pre-existing v:1 rows keep decrypting under `SECRET_ENCRYPTION_KEY`), so
+**generate a fresh 64-hex value** — `openssl rand -hex 32` — distinct per env.
+Because `put-secret-value` replaces the whole platform document, fetch the
+current doc, add `SECRET_KEK`, and write it back with every existing key intact.
 
 ## Steps (per environment: stage, then prod)
 
