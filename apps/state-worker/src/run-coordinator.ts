@@ -216,29 +216,25 @@ export class RunCoordinator extends DurableObject {
     if (request.method === "POST" && path === "/cancel") return this.cancel(await request.json());
     if (request.method === "GET" && path === "/state") return json(await this.state());
     if (request.method === "GET" && path === "/log") {
-      await this.load();
       const from = Number(url.searchParams.get("from") ?? "0");
       const fromSeq = Number.isFinite(from) ? from : 0;
       const waitRaw = Number(url.searchParams.get("wait") ?? "0");
       const waitMs = (Number.isFinite(waitRaw) ? Math.min(Math.max(waitRaw, 0), MAX_LOG_WAIT_SECONDS) : 0) * 1000;
-      // Only touch storage when the in-memory head is actually past the cursor —
-      // an idle tail (caught up) does zero storage.list. `this.headSeq` is bumped
-      // in-process by concurrent append handlers on this same single-threaded DO.
-      let events = this.headSeq > fromSeq ? await this.readEventsAfter(fromSeq) : [];
-      // Long-poll: park until the head advances past the cursor (a concurrent
-      // :claim/:complete bumps `this.headSeq`), yielding via setTimeout so the DO
-      // resumes other requests each tick, then read ONCE. Polling the in-memory
-      // seq instead of re-running storage.list every tick is what lets a single
-      // run-shard hold ~90 concurrent tails without the list-storm that otherwise
-      // saturates the DO and stalls every verb.
+      // Long-poll re-reads STORAGE each tick (the source of truth) rather than an
+      // in-memory head counter: a dependent job tails this stream to learn when
+      // its deps' JobSucceeded events land, and reading storage guarantees the
+      // event is seen regardless of DO cross-request visibility of `this.headSeq`.
+      // (A previous headSeq-park optimization stalled dependent jobs and was
+      // reverted — correctness of dependency-event delivery comes first.)
+      let events = await this.readEventsAfter(fromSeq);
       if (events.length === 0 && waitMs > 0) {
         const deadline = Date.now() + waitMs;
-        while (this.headSeq <= fromSeq && Date.now() < deadline) {
+        while (events.length === 0 && Date.now() < deadline) {
           await new Promise((r) => setTimeout(r, Math.min(LOG_POLL_INTERVAL_MS, Math.max(deadline - Date.now(), 0))));
+          events = await this.readEventsAfter(fromSeq);
         }
-        if (this.headSeq > fromSeq) events = await this.readEventsAfter(fromSeq);
       }
-      return json({ events, head: { seq: this.headSeq } });
+      return json({ events, head: { seq: await this.seqHead() } });
     }
     return new Response("not found", { status: 404 });
   }
