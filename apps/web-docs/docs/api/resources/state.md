@@ -3,7 +3,7 @@ title: State (orun remote state)
 description: The orun-facing plane — CLI workspace links, run coordination, the object and catalog plane, repo facets, and state storage usage.
 ---
 
-The **state API** is the plane the `orun` CLI talks to when a repository is linked to Orun Cloud: workspace **links** bind a git remote to a workspace + project, and everything under `…/state/` coordinates runs, stores content-addressed objects and logs, and advances the catalog. You normally do not call these routes directly — `orun cloud link`, `orun run`, and CI runners drive them. See [State plane overview](/platform/state-plane/overview) for the model and the [orun cloud CLI docs](https://orun.sourceplane.ai/cli/orun-cloud) for the client-side workflow.
+The **state API** is the plane the `orun` CLI talks to when a repository is linked to Orun Cloud: workspace **links** bind a git remote to a workspace + project, and everything under `…/state/` coordinates runs, stores content-addressed objects and logs, and advances the catalog. You normally do not call these routes directly — `orun cloud link`, `orun run`, and CI runners drive them. See [State plane overview](/platform/state-plane/overview) for the model and the [orun cloud CLI docs](https://orun-docs.pages.dev/cli/orun-cloud) for the client-side workflow.
 
 :::note
 The state plane is **rolling out**. The route groups below are live behind the API edge; surfaces still land incrementally (the project-scoped catalog entity read-model, for example, currently returns `501`).
@@ -134,6 +134,6 @@ curl https://api.orun.dev/v1/organizations/org_7c1f4b2a9d3e48f0a6b5c4d3e2f1a0b9/
 ## Related
 
 - [State plane overview](/platform/state-plane/overview)
-- [orun cloud CLI](https://orun.sourceplane.ai/cli/orun-cloud)
+- [orun cloud CLI](https://orun-docs.pages.dev/cli/orun-cloud)
 - [CLI and CI authentication](/platform/identity/cli-and-ci-auth)
 - [Integrations](/api/resources/integrations)

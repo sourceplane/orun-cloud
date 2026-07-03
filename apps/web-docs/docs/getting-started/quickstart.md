@@ -139,7 +139,7 @@ Every command supports `--output=human|json`. See [CLI](/developers/cli).
 
 ## 8. Where to go next
 
-- **Connect orun remote state.** Point your `intent.yaml` at Orun Cloud so plans, runs, and the catalog are shared across machines and CI — see the [state plane overview](/platform/state-plane/overview) and the [`orun cloud` commands](https://orun.sourceplane.ai/cli/orun-cloud) in the orun docs.
+- **Connect orun remote state.** Point your `intent.yaml` at Orun Cloud so plans, runs, and the catalog are shared across machines and CI — see the [state plane overview](/platform/state-plane/overview) and the [`orun cloud` commands](https://orun-docs.pages.dev/cli/orun-cloud) in the orun docs.
 - **Invite your team** and assign roles — [Members and invitations](/platform/workspaces/members-and-invitations), [RBAC](/platform/access-control/rbac).
 - **Automate from CI** with GitHub Actions OIDC instead of long-lived keys — [CLI and CI auth](/platform/identity/cli-and-ci-auth).
 

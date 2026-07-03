@@ -10,11 +10,11 @@ console and your own integrations call.
 
 :::note
 `orun-cloud` is **not** the `orun` CLI. `orun` is the intent compiler that
-plans and converges platforms ([orun docs](https://orun.sourceplane.ai));
+plans and converges platforms ([orun docs](https://orun-docs.pages.dev));
 `orun-cloud` talks to this control plane's API — workspaces, projects, keys,
 webhooks, billing, audit. The `orun` CLI's cloud surface (`orun cloud link` and
 friends) is documented at
-[orun.sourceplane.ai/cli/orun-cloud](https://orun.sourceplane.ai/cli/orun-cloud).
+[orun-docs.pages.dev/cli/orun-cloud](https://orun-docs.pages.dev/cli/orun-cloud).
 :::
 
 ## Install and run

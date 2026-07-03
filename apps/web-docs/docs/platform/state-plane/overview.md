@@ -3,7 +3,7 @@ title: State plane (orun remote state)
 description: The server side of orun's remote state — run coordination, a content-addressed object and log store, the catalog of record, and workspace links.
 ---
 
-The **state plane** is the server side of [orun](https://orun.sourceplane.ai)'s remote state. When a repo points its `execution.state` at Orun Cloud, the plans, runs, logs, and catalog snapshots that orun produces stop living on one laptop and become durable, workspace-scoped state — shared across machines, CI, and the console.
+The **state plane** is the server side of [orun](https://orun-docs.pages.dev)'s remote state. When a repo points its `execution.state` at Orun Cloud, the plans, runs, logs, and catalog snapshots that orun produces stop living on one laptop and become durable, workspace-scoped state — shared across machines, CI, and the console.
 
 It is four things behind one versioned wire contract:
 
@@ -20,7 +20,7 @@ The state plane is actively rolling out. Run coordination, the object/log plane,
 
 ## Connect a repo
 
-Configuration lives in your repo's `intent.yaml`, and the workflow lives in the `orun` CLI — both are documented in the [orun docs](https://orun.sourceplane.ai/cli/orun-cloud); the short version:
+Configuration lives in your repo's `intent.yaml`, and the workflow lives in the `orun` CLI — both are documented in the [orun docs](https://orun-docs.pages.dev/cli/orun-cloud); the short version:
 
 ```yaml
 # intent.yaml
@@ -35,7 +35,7 @@ Then, on a dev machine:
 1. `orun auth login` — authenticate the CLI against Orun Cloud (browser or device flow).
 2. `orun cloud link` — pick the workspace and project for this repo's git remote. This creates the **workspace link** server-side (creating the project on demand) and is the explicit step that allow-lists the repo.
 
-From that point `orun plan` and `orun run` read and write remote state transparently. See the [orun remote state concepts](https://orun.sourceplane.ai) for how the CLI resolves scope and caches links — this page documents the Orun Cloud side only.
+From that point `orun plan` and `orun run` read and write remote state transparently. See the [orun remote state concepts](https://orun-docs.pages.dev) for how the CLI resolves scope and caches links — this page documents the Orun Cloud side only.
 
 ## CI without credentials
 
