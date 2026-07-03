@@ -63,7 +63,9 @@ export function buildBreadcrumbs(args: {
 }): Crumb[] {
   const { orgSlug, orgName, pathname } = args;
   const base = `/orgs/${orgSlug}`;
-  const crumbs: Crumb[] = [{ label: orgName, href: `${base}/projects` }];
+  // The org crumb links to the Workspace home — the Overview (org root), which is
+  // the default landing on both desktop and mobile — not Git Repos.
+  const crumbs: Crumb[] = [{ label: orgName, href: base }];
 
   if (!pathname || !pathname.startsWith(`${base}`)) {
     // Foreign path (shouldn't happen inside OrgScope) — org crumb only.

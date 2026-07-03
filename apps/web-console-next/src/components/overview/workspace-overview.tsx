@@ -107,7 +107,7 @@ export function WorkspaceOverview({ orgId, orgSlug }: { orgId: string; orgSlug: 
   });
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-5 sm:space-y-6">
       <IdentityBand
         orgSlug={orgSlug}
         state={state}
@@ -199,7 +199,7 @@ function IdentityBand({
   repos: number;
 }) {
   return (
-    <section className="relative overflow-hidden rounded-xl border border-border bg-card px-6 py-6">
+    <section className="relative overflow-hidden rounded-xl border border-border bg-card px-4 py-5 sm:px-6 sm:py-6">
       <div
         aria-hidden
         className="pointer-events-none absolute -right-24 -top-24 h-56 w-56 rounded-full"
@@ -207,7 +207,9 @@ function IdentityBand({
       />
       <div className="relative">
         <div className={LABEL}>Workspace</div>
-        <h1 className="mt-1 text-2xl font-semibold tracking-tight text-foreground">{displayName || orgSlug}</h1>
+        <h1 className="mt-1 text-xl font-semibold tracking-tight text-foreground sm:text-2xl">
+          {displayName || orgSlug}
+        </h1>
         {/* Git-authored one-line description from the primary repo facet (WO5). */}
         {description && <p className="mt-1.5 max-w-2xl text-sm text-muted-foreground">{description}</p>}
         {state !== "no-repo" && (
@@ -221,11 +223,12 @@ function IdentityBand({
             <Fact n={repos} one="repo" many="repos" />
           </p>
         )}
-        <div className="mt-4 flex flex-wrap gap-2">
-          <Button asChild size="sm">
+        {/* Full-width, thumb-friendly buttons stacked on mobile; inline row from sm up. */}
+        <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:flex-wrap">
+          <Button asChild size="sm" className="w-full sm:w-auto">
             <Link href={`/orgs/${orgSlug}/catalog`}>Open catalog</Link>
           </Button>
-          <Button asChild size="sm" variant="outline">
+          <Button asChild size="sm" variant="outline" className="w-full sm:w-auto">
             <Link href={`/orgs/${orgSlug}/activities`}>View activity</Link>
           </Button>
         </div>

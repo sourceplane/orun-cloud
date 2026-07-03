@@ -69,7 +69,7 @@ export function SidebarOrgSwitcher({ onNavigate }: { onNavigate?: () => void } =
           const accountName = orgs ? accountNameFor(o, orgs) : null;
           const selected = o.slug === orgSlug;
           return (
-            <DropdownMenuItem key={o.id} onSelect={() => go(`/orgs/${o.slug}/projects`)}>
+            <DropdownMenuItem key={o.id} onSelect={() => go(`/orgs/${o.slug}`)}>
               <Building2 className="h-4 w-4 opacity-70" />
               <span className="flex min-w-0 flex-col">
                 <span className="truncate">{o.name}</span>
