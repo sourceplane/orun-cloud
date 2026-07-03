@@ -122,6 +122,45 @@ export function chainBadges(
 }
 
 // ---------------------------------------------------------------------------
+// Health overview
+// ---------------------------------------------------------------------------
+
+export interface SecretHealthStats {
+  /** Total secrets served at the current scope (chain rows at env scope). */
+  total: number;
+  /** Secrets whose rotation policy has elapsed (see `rotationStatus`). */
+  rotationDue: number;
+  /** Locked guardrails a lower scope cannot override (`overridable === false`). */
+  locked: number;
+  /** Personal overlays visible only to their owner (`personal === true`). */
+  personal: number;
+}
+
+/**
+ * Derive the glanceable health tiles for the Secrets console from a secrets
+ * list/chain response. Metadata-only: no value is read or returned — the counts
+ * come purely from the rotation policy, lock, and personal-overlay flags already
+ * present on each row.
+ */
+export function secretHealthStats(
+  secrets: Pick<
+    PublicSecretMetadata,
+    "rotationPolicy" | "lastRotatedAt" | "createdAt" | "overridable" | "personal"
+  >[],
+  now: Date,
+): SecretHealthStats {
+  let rotationDue = 0;
+  let locked = 0;
+  let personal = 0;
+  for (const s of secrets) {
+    if (rotationStatus(s, now).due) rotationDue += 1;
+    if (s.overridable === false) locked += 1;
+    if (s.personal) personal += 1;
+  }
+  return { total: secrets.length, rotationDue, locked, personal };
+}
+
+// ---------------------------------------------------------------------------
 // Break-glass reveal reason guard
 // ---------------------------------------------------------------------------
 

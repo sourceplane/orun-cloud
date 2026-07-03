@@ -1,9 +1,11 @@
 "use client";
 
 import * as React from "react";
+import Link from "next/link";
 import { useParams } from "next/navigation";
 import { SlidersHorizontal } from "lucide-react";
 import { OrgScope } from "@/components/shell/org-scope";
+import { Button } from "@/components/ui/button";
 import { Card, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ConfigSurface } from "@/components/config/config-surface";
@@ -17,12 +19,12 @@ export default function ProjectConfigPage() {
   const projectSlug = params?.projectSlug ?? "";
   return (
     <OrgScope slug={orgSlug}>
-      {(org) => <Inner orgId={org.id} projectSlug={projectSlug} />}
+      {(org) => <Inner orgId={org.id} orgSlug={org.slug} projectSlug={projectSlug} />}
     </OrgScope>
   );
 }
 
-function Inner({ orgId, projectSlug }: { orgId: string; projectSlug: string }) {
+function Inner({ orgId, orgSlug, projectSlug }: { orgId: string; orgSlug: string; projectSlug: string }) {
   const { client } = useSession();
   const projects = useApiQuery(qk.projects(orgId), () =>
     wrap(async () => (await client.projects.list(orgId)).projects),
@@ -43,15 +45,21 @@ function Inner({ orgId, projectSlug }: { orgId: string; projectSlug: string }) {
 
   return (
     <div className="space-y-5">
-      <header>
-        <div className="flex items-center gap-2">
-          <SlidersHorizontal className="h-5 w-5 text-muted-foreground" />
-          <h1 className="text-xl font-semibold tracking-tight">Config · {project.name}</h1>
+      <header className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <div className="flex items-center gap-2">
+            <SlidersHorizontal className="h-5 w-5 text-muted-foreground" />
+            <h1 className="text-xl font-semibold tracking-tight">Config · {project.name}</h1>
+          </div>
+          <p className="text-sm text-muted-foreground">
+            Project-scoped secrets, feature flags, and settings for this repo.
+          </p>
         </div>
-        <p className="text-sm text-muted-foreground">
-          Project-scoped settings, feature flags, and secrets. Environment scope lives on each
-          environment&apos;s page.
-        </p>
+        <Button asChild variant="outline" size="sm">
+          <Link href={`/orgs/${orgSlug}/secrets?project=${projectSlug}`}>
+            Open in Secrets console
+          </Link>
+        </Button>
       </header>
       <ConfigSurface scope={{ kind: "project", orgId, projectId: project.id }} />
     </div>

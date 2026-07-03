@@ -47,6 +47,8 @@ describe("buildNavSections", () => {
     expect(hrefs).toContain("/orgs/acme/activities");
     // Integrations is a first-class connections hub in the product nav.
     expect(hrefs).toContain("/orgs/acme/integrations");
+    // Secrets & Config is a dedicated top-level product surface.
+    expect(hrefs).toContain("/orgs/acme/secrets");
     expect(org.footer ?? false).toBe(false);
     expect(org.label).toBe("Workspace · acme");
     // The "manage" surfaces moved to the pinned footer group, not this section.
@@ -63,6 +65,20 @@ describe("buildNavSections", () => {
     // It is ordered after the product section so it renders below it.
     expect(sections.findIndex((s) => s.id === "org-manage")).toBeGreaterThan(
       sections.findIndex((s) => s.id === "org"),
+    );
+  });
+
+  it("promotes Secrets & Config to a top-level product surface with the KeyRound icon", () => {
+    const org = buildNavSections({ orgSlug: "acme" }).find((s) => s.id === "org")!;
+    const secrets = org.links.find((l) => l.href === "/orgs/acme/secrets")!;
+    expect(secrets).toBeDefined();
+    expect(secrets.label).toBe("Secrets");
+    expect(secrets.icon).toBe("KeyRound");
+    // It is a plain surface link, not a sub-panel, and sits after Integrations.
+    expect(secrets.subPanel ?? false).toBe(false);
+    const hrefs = org.links.map((l) => l.href);
+    expect(hrefs.indexOf("/orgs/acme/secrets")).toBeGreaterThan(
+      hrefs.indexOf("/orgs/acme/integrations"),
     );
   });
 

@@ -69,6 +69,10 @@ export function buildNavSections(scope: NavScope): NavSection[] {
         // Integrations is a first-class connections hub (GitHub today; Supabase,
         // Cloudflare, Slack on the roadmap), promoted out of Settings.
         { href: `${orgBase}/integrations`, label: "Integrations", icon: "Plug" },
+        // Secrets & Config is a dedicated product surface — the secret chain,
+        // rotation health, feature flags, settings, and policies at any scope —
+        // promoted out of Settings › Developer › Config and the per-repo tabs.
+        { href: `${orgBase}/secrets`, label: "Secrets", icon: "KeyRound" },
       ],
     });
 

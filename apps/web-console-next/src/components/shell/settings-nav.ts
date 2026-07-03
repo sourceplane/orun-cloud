@@ -152,12 +152,9 @@ export function buildSettingsNav(orgSlug: string): SettingsNavGroup[] {
           icon: "Webhook",
           description: "Signed event deliveries",
         },
-        {
-          href: `${base}/config`,
-          label: "Config",
-          icon: "SlidersHorizontal",
-          description: "Flags and configuration",
-        },
+        // Config (settings, flags, secrets, policies) was promoted to the
+        // dedicated top-level "Secrets" surface (`/orgs/:slug/secrets`), so it
+        // no longer appears under Settings › Developer.
         {
           href: `${base}/audit`,
           label: "Audit log",
