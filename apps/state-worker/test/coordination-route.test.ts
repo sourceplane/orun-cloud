@@ -6,7 +6,6 @@ import { beforeEach, describe, expect, it } from "vitest";
 import type { Env } from "../src/env.js";
 import {
   __resetDoBackedCache,
-  __resetProjectorReadyCache,
   ensureRunShard,
   initCoordinator,
   planFromJobs,
@@ -105,118 +104,30 @@ describe("initCoordinator — idempotent run shard init", () => {
   });
 });
 
-// ── ensureRunShard — lazy self-heal of a run whose shard was never seeded ──
-// An executor that serves the run + run_jobs a lazy seed needs. `readiness`
-// controls the projectorReady probe (throw ⇒ not ready); `runFound` controls
-// whether getRunByUlid returns a row.
-function seedExecutor(opts: { readiness: boolean; runFound: boolean }): {
-  exec: SqlExecutor;
-  calls: () => number;
-} {
-  let n = 0;
-  const now = new Date().toISOString();
-  const exec: SqlExecutor = {
-    async execute(text: string) {
-      n += 1;
-      if (/SELECT last_seq/.test(text)) {
-        if (!opts.readiness) throw new Error("state.runs.last_seq missing");
-        return { rows: [] as never[], rowCount: 0 };
-      }
-      if (/run_ulid/.test(text)) {
-        if (!opts.runFound) return { rows: [] as never[], rowCount: 0 };
-        return {
-          rows: [
-            {
-              id: "00000000-0000-0000-0000-0000000000c3",
-              org_id: "o",
-              project_id: "p",
-              environment: "prod",
-              run_ulid: "01JRUN",
-              plan_digest: "sha256:" + "p".repeat(64),
-              source: "ci",
-              status: "pending",
-              git_commit: null,
-              git_dirty: false,
-              labels: null,
-              created_at: now,
-              updated_at: now,
-            },
-          ] as never[],
-          rowCount: 1,
-        };
-      }
-      if (/run_jobs/.test(text)) {
-        return {
-          rows: [
-            { id: "j1", org_id: "o", project_id: "p", run_id: "00000000-0000-0000-0000-0000000000c3", job_id: "a", deps: "[]", component: null, status: "queued", attempt: 0, created_at: now, updated_at: now },
-            { id: "j2", org_id: "o", project_id: "p", run_id: "00000000-0000-0000-0000-0000000000c3", job_id: "b", deps: '["a"]', component: null, status: "queued", attempt: 0, created_at: now, updated_at: now },
-          ] as never[],
-          rowCount: 2,
-        };
-      }
-      return { rows: [] as never[], rowCount: 0 };
-    },
-  } as unknown as SqlExecutor;
-  return { exec, calls: () => n };
-}
+// ── ensureRunShard — check-only gate (NO lazy-seed) ──
+// The lazy-seed-from-run_jobs was removed: it re-seeded the shard from a
+// possibly-partial run_jobs read (createRun inserts those rows one-by-one), and
+// because the DO's init is idempotent by planDigest the partial plan stuck and
+// createRun's full seed was dropped — jobs outside the subset then :claim →
+// not_found forever. ensureRunShard now only ASKS "is this run DO-backed?".
+describe("ensureRunShard — check-only, never seeds", () => {
+  beforeEach(() => __resetDoBackedCache());
 
-describe("ensureRunShard — self-heal an unseeded run", () => {
-  beforeEach(() => {
-    __resetProjectorReadyCache();
-    __resetDoBackedCache();
-  });
-  const O = "o" as Uuid;
-  const P = "p" as Uuid;
-
-  // /state reports the shard as unseeded (fold.runId !== runUlid) so the seed path
-  // runs; /init acknowledges. Records whether /init was posted with which plan.
-  function unseededEnv() {
-    return fakeEnv("do", (call) => {
-      if (call.url.endsWith("/state")) return new Response(JSON.stringify({ runId: "" }), { status: 200 });
-      if (call.url.endsWith("/init")) return new Response(JSON.stringify({ runId: "01JRUN", head: { seq: 1 } }), { status: 200 });
-      return new Response("{}", { status: 200 });
-    });
-  }
-
-  it("rebuilds the shard from persisted run + run_jobs, then reports backed", async () => {
-    const { env, calls } = unseededEnv();
-    const { exec } = seedExecutor({ readiness: true, runFound: true });
-    const ok = await ensureRunShard(env, O, P, "01JRUN", exec);
-    expect(ok).toBe(true);
-    const init = calls.find((c) => c.url.endsWith("/init"));
-    expect(init).toBeDefined();
-    // Plan reconstructed from the two run_jobs rows (a, b→deps[a]).
-    expect(init!.body).toMatchObject({ runId: "01JRUN", plan: { jobs: { a: { deps: [] }, b: { deps: ["a"] } } } });
-  });
-
-  it("returns true WITHOUT touching the DB when the shard is already seeded", async () => {
-    // /state reports the run as backed → short-circuit before any DB read.
+  it("true when the run is DO-backed, and never posts /init (createRun is the sole seeder)", async () => {
     const { env, calls } = fakeEnv("do", () => new Response(JSON.stringify({ runId: "01JRUN" }), { status: 200 }));
-    const { exec, calls: dbCalls } = seedExecutor({ readiness: true, runFound: true });
-    const ok = await ensureRunShard(env, O, P, "01JRUN", exec);
-    expect(ok).toBe(true);
-    expect(dbCalls()).toBe(0); // no DB touch on the common path
-    expect(calls.some((c) => c.url.endsWith("/init"))).toBe(false); // no re-seed
-  });
-
-  it("does NOT seed (404s) when the projector is not ready — avoids split-brain", async () => {
-    const { env, calls } = unseededEnv();
-    const { exec } = seedExecutor({ readiness: false, runFound: true });
-    const ok = await ensureRunShard(env, O, P, "01JRUN", exec);
-    expect(ok).toBe(false);
+    expect(await ensureRunShard(env, "01JRUN")).toBe(true);
     expect(calls.some((c) => c.url.endsWith("/init"))).toBe(false);
   });
 
-  it("returns false when the run does not exist in Postgres", async () => {
-    const { env } = unseededEnv();
-    const { exec } = seedExecutor({ readiness: true, runFound: false });
-    expect(await ensureRunShard(env, O, P, "01JRUN", exec)).toBe(false);
+  it("false (→ transient 404, client retries) when the shard is not yet seeded — no partial re-seed", async () => {
+    const { env, calls } = fakeEnv("do", () => new Response(JSON.stringify({ runId: "" }), { status: 200 }));
+    expect(await ensureRunShard(env, "01JRUN")).toBe(false);
+    expect(calls.some((c) => c.url.endsWith("/init"))).toBe(false);
   });
 
-  it("returns false when the DO backend is disabled", async () => {
+  it("false when the DO backend is disabled", async () => {
     const { env } = fakeEnv("op2", () => new Response("{}", { status: 200 }));
-    const { exec } = seedExecutor({ readiness: true, runFound: true });
-    expect(await ensureRunShard(env, O, P, "01JRUN", exec)).toBe(false);
+    expect(await ensureRunShard(env, "01JRUN")).toBe(false);
   });
 });
 

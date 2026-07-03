@@ -71,11 +71,12 @@ async function gate(
 ): Promise<{ ok: true } | { ok: false; response: Response }> {
   const authz = await authorizeRun(env, requestId, actor, orgId, projectId, action);
   if (!authz.ok) return { ok: false, response: authz.response };
-  // Require a DO-backed run (else 404). `ensureRunShard` self-heals a run whose
-  // shard was never seeded (a run row exists in Postgres but the create-time seed
-  // was skipped/lost) by rebuilding it from the persisted plan — so the native
-  // verbs stop 404-ing for the life of such a run.
-  if (!(await ensureRunShard(env, orgId, projectId, runUlid))) {
+  // Require a DO-backed run (else 404). `ensureRunShard` only CHECKS backing now
+  // (no lazy-seed): createRun is the sole seeder, with the complete plan from the
+  // request body. A claim that arrives before createRun finishes seeding gets a
+  // transient 404 and the client retries — correct, and it avoids the partial
+  // run_jobs re-seed that used to poison the plan.
+  if (!(await ensureRunShard(env, runUlid))) {
     return { ok: false, response: errorResponse("not_found", "Not found", 404, requestId) };
   }
   return { ok: true };

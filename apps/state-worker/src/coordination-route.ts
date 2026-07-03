@@ -8,9 +8,8 @@
 
 import type { RunFoldState } from "@saas/contracts/coordination";
 import { planProjection } from "@saas/contracts/coordination-projector";
-import { applyProjection, createStateRepository, type ProjectionScope } from "@saas/db/state";
+import { applyProjection, type ProjectionScope } from "@saas/db/state";
 import { createSqlExecutor, type SqlExecutor } from "@saas/db/hyperdrive";
-import { asUuid, type Uuid } from "@saas/db/ids";
 import type { Env } from "./env.js";
 
 /** Plan job as parsed from a create-run body. */
@@ -153,66 +152,21 @@ export async function runIsDoBacked(env: Env, runId: string): Promise<boolean> {
 }
 
 /**
- * Ensure the run's DO shard exists so the native coordination verbs can serve it,
- * self-healing the "run row in Postgres but shard never seeded" gap that otherwise
- * 404s every claim for the life of the run.
+ * Gate for the native coordination verbs: is this run served by a DO shard?
  *
- * Returns true when the DO backend is active AND the run is (now) shard-backed:
- *   - already seeded → true (the common path; a single GET /state, no DB touch);
- *   - not seeded but the run exists in Postgres → rebuild the shard from the
- *     persisted run + run_jobs (idempotent RunCreated, using the run's stored
- *     planDigest so a concurrent real seed can't 409) → true;
- *   - no such run, or the DO backend is off → false (the caller 404s).
- *
- * Seeding is guarded on `projectorReady`: we never lazily seed a shard the
- * projector can't sync into Postgres, which would freeze the read model into a
- * DO/Postgres split-brain. On a correctly-migrated env the create path already
- * seeds, so this lazy path only fires for pre-cutover runs or a seed that didn't
- * land — and only ever touches the DB on that miss.
+ * DELIBERATELY does NOT lazy-seed. An earlier version rebuilt a missing shard
+ * from the persisted `run_jobs`, but `createRun` inserts those rows one-by-one,
+ * so a claim racing an in-flight create read a PARTIAL `run_jobs` set and seeded
+ * the shard with a subset of the plan. Because the DO's `init` is idempotent by
+ * planDigest and the partial seed reused the FULL plan's digest, the partial plan
+ * stuck and `createRun`'s later full seed was silently dropped — jobs outside the
+ * subset then `:claim` → `not_found` forever (the CI stall). `createRun` already
+ * seeds the complete plan from the request body, and its fail-fast guard means a
+ * created run is always seeded, so the only correct answer here is "is it backed
+ * yet?" — a not-yet-seeded run transiently 404s and the client retries.
  */
-export async function ensureRunShard(
-  env: Env,
-  orgId: Uuid,
-  projectId: Uuid,
-  runUlid: string,
-  injectedExecutor?: SqlExecutor,
-): Promise<boolean> {
-  if (!useDoCoordination(env)) return false;
-  if (await runIsDoBacked(env, runUlid)) return true;
-  if (!injectedExecutor && !env.PLATFORM_DB) return false;
-
-  const executor = injectedExecutor ?? createSqlExecutor(env.PLATFORM_DB!);
-  const ownsExecutor = !injectedExecutor;
-  try {
-    // Fail closed to "no shard" (→ 404) if the projector can't keep the read
-    // model in sync — seeding here would strand status/jobs reads at creation.
-    if (!(await projectorReady(executor))) return false;
-    const repo = createStateRepository(executor);
-    const run = await repo.getRunByUlid(orgId, projectId, runUlid);
-    if (!run.ok) return false;
-    const jobs = await repo.listRunJobs(orgId, projectId, asUuid(run.value.id));
-    if (!jobs.ok) return false;
-    const plan = planFromJobs(
-      jobs.value.map((j) => ({ jobId: j.jobId, deps: j.deps, component: j.component })),
-    );
-    const initRes = await initCoordinator(env, runUlid, {
-      plan,
-      planDigest: run.value.planDigest,
-      sourceHash: run.value.gitCommit ?? run.value.planDigest,
-      environment: run.value.environment,
-    });
-    if (initRes.status < 300) {
-      markDoBacked(runUlid); // just seeded → skip the GET /state probe next verb
-      return true;
-    }
-    return false;
-  } catch {
-    return false;
-  } finally {
-    if (ownsExecutor && "dispose" in executor) {
-      await (executor as unknown as { dispose: () => Promise<void> }).dispose();
-    }
-  }
+export async function ensureRunShard(env: Env, runUlid: string): Promise<boolean> {
+  return useDoCoordination(env) && (await runIsDoBacked(env, runUlid));
 }
 
 // ── Projection trigger (BM3c) ───────────────────────────────────────────────
