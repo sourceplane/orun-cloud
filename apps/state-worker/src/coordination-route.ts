@@ -8,8 +8,9 @@
 
 import type { RunFoldState } from "@saas/contracts/coordination";
 import { planProjection } from "@saas/contracts/coordination-projector";
-import { applyProjection, type ProjectionScope } from "@saas/db/state";
+import { applyProjection, createStateRepository, type ProjectionScope } from "@saas/db/state";
 import { createSqlExecutor, type SqlExecutor } from "@saas/db/hyperdrive";
+import { asUuid, type Uuid } from "@saas/db/ids";
 import type { Env } from "./env.js";
 
 /** Plan job as parsed from a create-run body. */
@@ -116,6 +117,65 @@ export async function runIsDoBacked(env: Env, runId: string): Promise<boolean> {
   if (env.COORDINATOR === undefined) return false;
   const fold = await readCoordinatorState(env, runId);
   return fold !== null && fold.runId === runId;
+}
+
+/**
+ * Ensure the run's DO shard exists so the native coordination verbs can serve it,
+ * self-healing the "run row in Postgres but shard never seeded" gap that otherwise
+ * 404s every claim for the life of the run.
+ *
+ * Returns true when the DO backend is active AND the run is (now) shard-backed:
+ *   - already seeded → true (the common path; a single GET /state, no DB touch);
+ *   - not seeded but the run exists in Postgres → rebuild the shard from the
+ *     persisted run + run_jobs (idempotent RunCreated, using the run's stored
+ *     planDigest so a concurrent real seed can't 409) → true;
+ *   - no such run, or the DO backend is off → false (the caller 404s).
+ *
+ * Seeding is guarded on `projectorReady`: we never lazily seed a shard the
+ * projector can't sync into Postgres, which would freeze the read model into a
+ * DO/Postgres split-brain. On a correctly-migrated env the create path already
+ * seeds, so this lazy path only fires for pre-cutover runs or a seed that didn't
+ * land — and only ever touches the DB on that miss.
+ */
+export async function ensureRunShard(
+  env: Env,
+  orgId: Uuid,
+  projectId: Uuid,
+  runUlid: string,
+  injectedExecutor?: SqlExecutor,
+): Promise<boolean> {
+  if (!useDoCoordination(env)) return false;
+  if (await runIsDoBacked(env, runUlid)) return true;
+  if (!injectedExecutor && !env.PLATFORM_DB) return false;
+
+  const executor = injectedExecutor ?? createSqlExecutor(env.PLATFORM_DB!);
+  const ownsExecutor = !injectedExecutor;
+  try {
+    // Fail closed to "no shard" (→ 404) if the projector can't keep the read
+    // model in sync — seeding here would strand status/jobs reads at creation.
+    if (!(await projectorReady(executor))) return false;
+    const repo = createStateRepository(executor);
+    const run = await repo.getRunByUlid(orgId, projectId, runUlid);
+    if (!run.ok) return false;
+    const jobs = await repo.listRunJobs(orgId, projectId, asUuid(run.value.id));
+    if (!jobs.ok) return false;
+    const plan = planFromJobs(
+      jobs.value.map((j) => ({ jobId: j.jobId, deps: j.deps, component: j.component })),
+    );
+    const initRes = await initCoordinator(env, runUlid, {
+      plan,
+      planDigest: run.value.planDigest,
+      sourceHash: run.value.gitCommit ?? run.value.planDigest,
+      environment: run.value.environment,
+    });
+    return initRes.status < 300;
+  } catch {
+    return false;
+  } finally {
+    if (ownsExecutor && "dispose" in executor) {
+      await (executor as unknown as { dispose: () => Promise<void> }).dispose();
+    }
+  }
 }
 
 // ── Projection trigger (BM3c) ───────────────────────────────────────────────

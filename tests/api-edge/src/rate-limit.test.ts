@@ -97,11 +97,59 @@ describe("api-edge rate limiter (Task 0097)", () => {
         "metering",
         "billing",
         "audit",
+        "coordination",
       ];
       for (const f of families) {
         expect(__rateLimitConfigForTest[f].org.limit).toBeGreaterThan(0);
         expect(__rateLimitConfigForTest[f].identity.limit).toBeGreaterThan(0);
       }
+    });
+
+    it("coordination family clears a large concurrent DAG fan-out (well above state)", () => {
+      // A whole DAG of jobs drives :claim/:heartbeat under one CI token; the cap
+      // must comfortably exceed the state family so the run doesn't 429 mid-flight.
+      expect(__rateLimitConfigForTest.coordination.identity.limit).toBeGreaterThan(
+        __rateLimitConfigForTest.state.identity.limit,
+      );
+      expect(__rateLimitConfigForTest.coordination.org.limit).toBeGreaterThan(
+        __rateLimitConfigForTest.state.org.limit,
+      );
+    });
+  });
+
+  describe("coordination family is scoped per-run under one token", () => {
+    const claimUrl = (runId: string) =>
+      `https://api.example.com/v1/organizations/org_abc/projects/prj_x/state/runs/${runId}/jobs/build:claim`;
+
+    it("draining one run's identity bucket does NOT deny another run under the same bearer", async () => {
+      const kv = createFakeKv();
+      const env = makeEnv(kv.binding);
+      const limit = __rateLimitConfigForTest.coordination.identity.limit;
+
+      // Exhaust run A's per-run identity bucket (org bucket is far larger, so the
+      // identity scope is the one that trips here). Drain until denied rather than
+      // a fixed count, since the bucket refills in real time during the loop.
+      let deniedA = false;
+      for (let i = 0; i < limit * 2 && !deniedA; i++) {
+        const r = await enforceRateLimit(
+          makeRequest({ url: claimUrl("run_AAAAAAAAAAAAAAAAAAAAAAAA"), bearer: "ci_token" }),
+          "req_a",
+          env,
+          "coordination",
+        );
+        deniedA = r.kind === "denied";
+      }
+      expect(deniedA).toBe(true);
+
+      // A different run under the SAME token still has a full identity bucket —
+      // one run's fan-out can't starve another sharing the CI/OIDC token.
+      const b = await enforceRateLimit(
+        makeRequest({ url: claimUrl("run_BBBBBBBBBBBBBBBBBBBBBBBB"), bearer: "ci_token" }),
+        "req_b",
+        env,
+        "coordination",
+      );
+      expect(b.kind).toBe("allowed");
     });
   });
 

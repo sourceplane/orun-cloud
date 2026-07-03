@@ -28,6 +28,14 @@ const ORG_STATE_USAGE_RE = /^\/v1\/organizations\/[^/]+\/state\/usage$/;
 // Org-global runs feed: org-scoped (no project) — the console "Activities"
 // surface. Distinct from the project-scoped /projects/{id}/state/runs.
 const ORG_RUNS_RE = /^\/v1\/organizations\/[^/]+\/state\/runs$/;
+// Coordination hot path (coordination-api.md §2/§3): the per-job colon-verbs
+// (:claim/:heartbeat/:complete), run :cancel, and the event-log/frontier reads.
+// A whole DAG of concurrent jobs drives these under one CI token, so they ride a
+// dedicated, higher rate-limit family (see rate-limit.ts). Run CREATE stays on
+// the tighter `state` family — it's the real abuse vector, not the trusted,
+// lease-gated verbs.
+const COORDINATION_ROUTE_RE =
+  /^\/v1\/organizations\/[^/]+\/projects\/[^/]+\/state\/runs\/[^/]+(?::cancel|\/jobs\/[^/]+:(?:claim|heartbeat|complete)|\/log|\/frontier)$/;
 
 // `orun-contract-version` is forwarded so state-worker enforces the major and
 // rejects unsupported skew with 409 contract_version_unsupported. `orun-object-
@@ -69,7 +77,9 @@ export async function handleStateRoute(
     return errorResponse("unsupported", "Method not allowed", 405, requestId);
   }
 
-  return replayOrExecute(request, requestId, env, "state", async () => {
+  const routeFamily = COORDINATION_ROUTE_RE.test(pathname) ? "coordination" : "state";
+
+  return replayOrExecute(request, requestId, env, routeFamily, async () => {
     if (!env.IDENTITY_WORKER) {
       return errorResponse("internal_error", "Authentication service unavailable", 503, requestId);
     }

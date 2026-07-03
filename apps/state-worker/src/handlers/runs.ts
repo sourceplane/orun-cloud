@@ -245,6 +245,22 @@ export async function handleCreateRun(
       return successResponse(payload, requestId, 200);
     }
 
+    // ── Fail-fast cutover guard. If this environment routes coordination to the
+    //    DO but the projector can't sync it into Postgres (migration 350 →
+    //    state.runs.last_seq missing), a created run could never be claimed — the
+    //    native verbs have no non-DO fallback, so every :claim 404s and the runner
+    //    hangs ~2 min — and its read model would freeze at creation. Refuse the
+    //    run LOUDLY with a 503 (before writing any row) instead of returning a 201
+    //    for a run that can never make progress. On a correctly-migrated env this
+    //    is a single cached probe and never trips. ──
+    if (useDoCoordination(env) && !(await projectorReady(executor))) {
+      console.error(
+        `[coordination] createRun ${runId}: COORDINATION_BACKEND=do but projector not ready ` +
+          `(state.runs.last_seq missing — apply migration 350); refusing run with 503`,
+      );
+      return errorResponse("internal_error", "Coordination backend not ready", 503, requestId);
+    }
+
     // ── Over-quota gate (OV9, OFF by default). Block a new run ONLY when a HARD
     //    state.runs quota is configured AND exceeded; a soft quota or no quota
     //    passes (the metering-worker records the soft-violation trail). Fail-OPEN
@@ -361,28 +377,18 @@ export async function handleCreateRun(
     //    if the shard was never seeded. The Postgres rows above remain the read
     //    model; the projector reconciles them from the DO log. ──
     if (useDoCoordination(env)) {
-      // Fail-closed cutover gate: only seed a DO shard if the projector can keep
-      // the read model in sync (migration 350 → state.runs.last_seq applied).
-      // Otherwise this run would write to the DO while its read model froze at
-      // creation — the silent split-brain. Skip seeding so the run stays on the
-      // fully-functional OP2 relational path, and log loudly so the missing
-      // migration gets fixed.
-      if (await projectorReady(executor)) {
-        const initRes = await initCoordinator(env, run.runUlid, {
-          plan: planFromJobs(planJobs ?? []),
-          planDigest,
-          sourceHash: gitCommit ?? planDigest,
-          environment,
-          actor: { id: actor.subjectId, type: actor.subjectType },
-        });
-        if (initRes.status >= 300) {
-          return errorResponse("internal_error", "Coordinator init failed", 503, requestId);
-        }
-      } else {
-        console.error(
-          `[coordination] run ${run.runUlid}: COORDINATION_BACKEND=do but projector not ready ` +
-            `(state.runs.last_seq missing — apply migration 350); shard not seeded, run stays on OP2`,
-        );
+      // Projector-readiness is already asserted by the fail-fast guard above, so
+      // seeding here is unconditional: a created run is ALWAYS shard-backed, which
+      // is what makes the native claim path (its only claim surface) reachable.
+      const initRes = await initCoordinator(env, run.runUlid, {
+        plan: planFromJobs(planJobs ?? []),
+        planDigest,
+        sourceHash: gitCommit ?? planDigest,
+        environment,
+        actor: { id: actor.subjectId, type: actor.subjectType },
+      });
+      if (initRes.status >= 300) {
+        return errorResponse("internal_error", "Coordinator init failed", 503, requestId);
       }
     }
 

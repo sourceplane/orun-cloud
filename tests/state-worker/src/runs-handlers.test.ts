@@ -12,6 +12,7 @@ import {
   handleRunnableJobs,
 } from "@state-worker/handlers/runs";
 import type { Env } from "@state-worker/env";
+import { __resetProjectorReadyCache } from "@state-worker/coordination-route";
 import type { SqlExecutor, SqlExecutorResult, SqlRow } from "@saas/db/hyperdrive";
 import { asUuid } from "@saas/db";
 
@@ -171,6 +172,29 @@ describe("POST …/state/runs — create", () => {
     expect(body.data.run.jobCounts).toEqual(COUNTS);
     expect(body.meta.requestId).toBe("req_1");
     expect(body.meta.cursor).toBeNull();
+  });
+
+  it("fails fast with 503 (no row written) when COORDINATION_BACKEND=do but the projector is not ready", async () => {
+    // Migration 350 (state.runs.last_seq) not applied → projectorReady false. A
+    // created run could never be claimed (native verbs have no non-DO fallback),
+    // so createRun must refuse LOUDLY with 503 instead of returning a 201 that
+    // strands the runner for ~2 min.
+    __resetProjectorReadyCache();
+    const { executor, queries } = fakeExecutor((text) => {
+      if (text.includes("last_seq")) throw new Error('column "last_seq" does not exist');
+      if (text.startsWith("SELECT * FROM state.runs WHERE org_id = $1 AND project_id = $2 AND run_ulid")) return []; // not a replay
+      return [];
+    });
+    const env = { ...createEnv(), COORDINATION_BACKEND: "do", COORDINATOR: {} } as unknown as Env;
+    const req = new Request("https://state.test/v1/organizations/x/projects/y/state/runs", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ runId: ULID, planDigest: PLAN, source: "ci", git: { commit: "abc", ref: "refs/heads/main", dirty: false } }),
+    });
+    const res = await handleCreateRun(req, env, "req_1", ACTOR, asUuid(ORG), asUuid(PROJECT), { executor });
+    expect(res.status).toBe(503);
+    // The guard runs before any write — no run row was inserted.
+    expect(queries.some((q) => q.text.includes("INSERT INTO state.runs"))).toBe(false);
   });
 
   it("blocks a new run with 412 when a HARD state.runs quota is exceeded (OV9)", async () => {

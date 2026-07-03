@@ -1,10 +1,12 @@
 import { COORDINATION_EVENT_TYPES as K, reduce, type CoordinationEvent } from "@saas/contracts/coordination";
 import type { SqlExecutor } from "@saas/db/hyperdrive";
 import type { Uuid } from "@saas/db/ids";
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 
 import type { Env } from "../src/env.js";
 import {
+  __resetProjectorReadyCache,
+  ensureRunShard,
   initCoordinator,
   planFromJobs,
   projectCoordinatorRun,
@@ -98,6 +100,118 @@ describe("initCoordinator — idempotent run shard init", () => {
     });
     expect(calls[0]!.url).toBe("https://coordinator/init");
     expect(calls[0]!.body).toMatchObject({ runId: "run-1", planDigest: "sha256:p", plan: { jobs: { a: { deps: [] } } } });
+  });
+});
+
+// ── ensureRunShard — lazy self-heal of a run whose shard was never seeded ──
+// An executor that serves the run + run_jobs a lazy seed needs. `readiness`
+// controls the projectorReady probe (throw ⇒ not ready); `runFound` controls
+// whether getRunByUlid returns a row.
+function seedExecutor(opts: { readiness: boolean; runFound: boolean }): {
+  exec: SqlExecutor;
+  calls: () => number;
+} {
+  let n = 0;
+  const now = new Date().toISOString();
+  const exec: SqlExecutor = {
+    async execute(text: string) {
+      n += 1;
+      if (/SELECT last_seq/.test(text)) {
+        if (!opts.readiness) throw new Error("state.runs.last_seq missing");
+        return { rows: [] as never[], rowCount: 0 };
+      }
+      if (/run_ulid/.test(text)) {
+        if (!opts.runFound) return { rows: [] as never[], rowCount: 0 };
+        return {
+          rows: [
+            {
+              id: "00000000-0000-0000-0000-0000000000c3",
+              org_id: "o",
+              project_id: "p",
+              environment: "prod",
+              run_ulid: "01JRUN",
+              plan_digest: "sha256:" + "p".repeat(64),
+              source: "ci",
+              status: "pending",
+              git_commit: null,
+              git_dirty: false,
+              labels: null,
+              created_at: now,
+              updated_at: now,
+            },
+          ] as never[],
+          rowCount: 1,
+        };
+      }
+      if (/run_jobs/.test(text)) {
+        return {
+          rows: [
+            { id: "j1", org_id: "o", project_id: "p", run_id: "00000000-0000-0000-0000-0000000000c3", job_id: "a", deps: "[]", component: null, status: "queued", attempt: 0, created_at: now, updated_at: now },
+            { id: "j2", org_id: "o", project_id: "p", run_id: "00000000-0000-0000-0000-0000000000c3", job_id: "b", deps: '["a"]', component: null, status: "queued", attempt: 0, created_at: now, updated_at: now },
+          ] as never[],
+          rowCount: 2,
+        };
+      }
+      return { rows: [] as never[], rowCount: 0 };
+    },
+  } as unknown as SqlExecutor;
+  return { exec, calls: () => n };
+}
+
+describe("ensureRunShard — self-heal an unseeded run", () => {
+  beforeEach(() => __resetProjectorReadyCache());
+  const O = "o" as Uuid;
+  const P = "p" as Uuid;
+
+  // /state reports the shard as unseeded (fold.runId !== runUlid) so the seed path
+  // runs; /init acknowledges. Records whether /init was posted with which plan.
+  function unseededEnv() {
+    return fakeEnv("do", (call) => {
+      if (call.url.endsWith("/state")) return new Response(JSON.stringify({ runId: "" }), { status: 200 });
+      if (call.url.endsWith("/init")) return new Response(JSON.stringify({ runId: "01JRUN", head: { seq: 1 } }), { status: 200 });
+      return new Response("{}", { status: 200 });
+    });
+  }
+
+  it("rebuilds the shard from persisted run + run_jobs, then reports backed", async () => {
+    const { env, calls } = unseededEnv();
+    const { exec } = seedExecutor({ readiness: true, runFound: true });
+    const ok = await ensureRunShard(env, O, P, "01JRUN", exec);
+    expect(ok).toBe(true);
+    const init = calls.find((c) => c.url.endsWith("/init"));
+    expect(init).toBeDefined();
+    // Plan reconstructed from the two run_jobs rows (a, b→deps[a]).
+    expect(init!.body).toMatchObject({ runId: "01JRUN", plan: { jobs: { a: { deps: [] }, b: { deps: ["a"] } } } });
+  });
+
+  it("returns true WITHOUT touching the DB when the shard is already seeded", async () => {
+    // /state reports the run as backed → short-circuit before any DB read.
+    const { env, calls } = fakeEnv("do", () => new Response(JSON.stringify({ runId: "01JRUN" }), { status: 200 }));
+    const { exec, calls: dbCalls } = seedExecutor({ readiness: true, runFound: true });
+    const ok = await ensureRunShard(env, O, P, "01JRUN", exec);
+    expect(ok).toBe(true);
+    expect(dbCalls()).toBe(0); // no DB touch on the common path
+    expect(calls.some((c) => c.url.endsWith("/init"))).toBe(false); // no re-seed
+  });
+
+  it("does NOT seed (404s) when the projector is not ready — avoids split-brain", async () => {
+    const { env, calls } = unseededEnv();
+    const { exec } = seedExecutor({ readiness: false, runFound: true });
+    const ok = await ensureRunShard(env, O, P, "01JRUN", exec);
+    expect(ok).toBe(false);
+    expect(calls.some((c) => c.url.endsWith("/init"))).toBe(false);
+  });
+
+  it("returns false when the run does not exist in Postgres", async () => {
+    const { env } = unseededEnv();
+    const { exec } = seedExecutor({ readiness: true, runFound: false });
+    expect(await ensureRunShard(env, O, P, "01JRUN", exec)).toBe(false);
+  });
+
+  it("returns false when the DO backend is disabled", async () => {
+    const { env } = fakeEnv("op2", () => new Response("{}", { status: 200 }));
+    const { exec } = seedExecutor({ readiness: true, runFound: true });
+    expect(await ensureRunShard(env, O, P, "01JRUN", exec)).toBe(false);
   });
 });
 
