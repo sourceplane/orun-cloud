@@ -105,6 +105,33 @@ export async function proxyCoordinatorFrontier(env: Env, runId: string): Promise
 
 // ── Run backing check ───────────────────────────────────────────────────────
 
+// Isolate-local set of run ULIDs confirmed DO-backed. Backing is MONOTONIC — a
+// run, once seeded, stays shard-backed for its entire life (the shard is never
+// torn down mid-run) — so a positive result is safe to cache for the isolate's
+// lifetime. This is the hot-path fix for high-concurrency runs: the native gate
+// runs `runIsDoBacked` on EVERY verb (claim/heartbeat/complete AND every log
+// long-poll and frontier read), and without the cache each call is a full
+// `GET /state` on the single-threaded per-run DO, which serializes the ENTIRE
+// run fold every time. With ~90 runners on one run-shard (CI fans a whole DAG
+// onto one exec-id) that fold-serialization storm saturates the shard and the
+// verbs stall. Caching collapses it to one `GET /state` per run per isolate.
+// A negative result is never cached, so a not-yet-seeded run still self-heals.
+const doBackedRuns = new Set<string>();
+// Hygiene bound: isolates are recycled often and entries are short ULIDs, but
+// cap the set so a very long-lived isolate seeing many runs can't grow it
+// without limit. Clearing only forces a re-probe (one GET /state), never wrong.
+const DO_BACKED_CACHE_CAP = 20_000;
+
+function markDoBacked(runId: string): void {
+  if (doBackedRuns.size >= DO_BACKED_CACHE_CAP) doBackedRuns.clear();
+  doBackedRuns.add(runId);
+}
+
+/** Test seam: drop the isolate-local backed-run cache so each case starts cold. */
+export function __resetDoBackedCache(): void {
+  doBackedRuns.clear();
+}
+
 /**
  * True iff this run has an initialized DO shard, so its verbs route to the DO.
  * The coordination backend is sticky PER RUN: a run created on OP2 (no shard)
@@ -112,11 +139,17 @@ export async function proxyCoordinatorFrontier(env: Env, runId: string): Promise
  * using the DO even if the flag flips back. useDoCoordination only governs
  * whether a NEW run (createRun) seeds a shard — so flipping the flag never breaks
  * an in-flight run. A run is DO-backed exactly when /state reports its runId.
+ *
+ * Result is cached per isolate once positive (backing is monotonic) so the
+ * per-verb existence check stops re-serializing the DO fold under load.
  */
 export async function runIsDoBacked(env: Env, runId: string): Promise<boolean> {
   if (env.COORDINATOR === undefined) return false;
+  if (doBackedRuns.has(runId)) return true;
   const fold = await readCoordinatorState(env, runId);
-  return fold !== null && fold.runId === runId;
+  const backed = fold !== null && fold.runId === runId;
+  if (backed) markDoBacked(runId);
+  return backed;
 }
 
 /**
@@ -168,7 +201,11 @@ export async function ensureRunShard(
       sourceHash: run.value.gitCommit ?? run.value.planDigest,
       environment: run.value.environment,
     });
-    return initRes.status < 300;
+    if (initRes.status < 300) {
+      markDoBacked(runUlid); // just seeded → skip the GET /state probe next verb
+      return true;
+    }
+    return false;
   } catch {
     return false;
   } finally {
