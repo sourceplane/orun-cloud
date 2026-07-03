@@ -198,6 +198,20 @@ export class RunCoordinator extends DurableObject {
   }
 
   async fetch(request: Request): Promise<Response> {
+    // Coordination diagnostics (temporary): time every DO request; log the ones
+    // that are slow (shard contention) so a stalled run shows which verbs the
+    // single-threaded shard is spending its time on. Fast requests stay silent.
+    const t0 = Date.now();
+    const res = await this.route(request);
+    const ms = Date.now() - t0;
+    if (ms > 300) {
+      // eslint-disable-next-line no-console -- temporary coordination diagnostics
+      console.log(JSON.stringify({ m: "coorddiag", src: "do", path: new URL(request.url).pathname, ms, headSeq: this.headSeq, phase: this.fold?.phase, status: res.status }));
+    }
+    return res;
+  }
+
+  private async route(request: Request): Promise<Response> {
     const url = new URL(request.url);
     const path = url.pathname;
 
@@ -364,7 +378,13 @@ export class RunCoordinator extends DurableObject {
   async alarm(): Promise<void> {
     const state = await this.state();
     const intents = sweepLeases(state, new Date().toISOString());
-    if (intents.length > 0) await this.appendAll(intents, { id: "system:state-sweep", type: "system" }, state.runId);
+    if (intents.length > 0) {
+      await this.appendAll(intents, { id: "system:state-sweep", type: "system" }, state.runId);
+      // Diagnostics: a run that churns leases (repeated expire→re-queue) starves
+      // forward progress — surface each non-empty sweep with the intent kinds.
+      // eslint-disable-next-line no-console -- temporary coordination diagnostics
+      console.log(JSON.stringify({ m: "coorddiag", src: "sweep", runId: state.runId, intents: intents.length, kinds: intents.map((i) => i.kind) }));
+    }
     const next = await this.state();
     const active = Object.values(next.jobs).some((j) => j.phase === "claimed" || j.phase === "queued");
     if (active && next.phase !== "canceled") {
