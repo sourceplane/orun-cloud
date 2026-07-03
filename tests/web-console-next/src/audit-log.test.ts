@@ -2,12 +2,14 @@ import {
   appendAuditPage,
   auditEntriesToNdjson,
   buildAuditQuery,
+  buildSecretActivityQuery,
   EMPTY_AUDIT_FILTERS,
   EMPTY_AUDIT_LOG,
   formatAuditActor,
   formatAuditTimestamp,
   hasActiveAuditFilters,
   hasMoreAudit,
+  SECRET_SUBJECT_KIND,
   type AuditFilterFormValues,
   type AuditLogState,
 } from "@web-console-next/components/audit/audit-log";
@@ -155,6 +157,18 @@ describe("hasMoreAudit", () => {
   it("reflects cursor presence", () => {
     expect(hasMoreAudit({ entries: [], cursor: "c1" })).toBe(true);
     expect(hasMoreAudit({ entries: [], cursor: null })).toBe(false);
+  });
+});
+
+describe("buildSecretActivityQuery", () => {
+  it("scopes the org stream to secret subjects", () => {
+    const q = buildSecretActivityQuery();
+    expect(q).toEqual({ by: "org", subjectKind: SECRET_SUBJECT_KIND });
+  });
+
+  it("threads a cursor for load-more", () => {
+    const q = buildSecretActivityQuery("cur_2");
+    expect(q).toMatchObject({ by: "org", subjectKind: "secret", cursor: "cur_2" });
   });
 });
 

@@ -1,5 +1,12 @@
-import type { Setting, FeatureFlag, SecretMetadata, SecretVersion, SecretSync } from "@saas/db/config";
-import type { PublicSetting, PublicFeatureFlag, PublicSecretMetadata, PublicSecretVersion } from "@saas/contracts/config";
+import type { Setting, FeatureFlag, SecretMetadata, SecretVersion, SecretSync, SecretPolicyRecord } from "@saas/db/config";
+import type {
+  PublicSetting,
+  PublicFeatureFlag,
+  PublicSecretMetadata,
+  PublicSecretVersion,
+  PublicSecretSync,
+  PublicSecretPolicy,
+} from "@saas/contracts/config";
 import type { ResolutionSource, SecretServesFrom } from "./config-resolver.js";
 import {
   orgPublicId,
@@ -141,22 +148,9 @@ export function toPublicSecretVersion(v: SecretVersion): PublicSecretVersion {
 
 /**
  * Public shape of a materialization-provenance row (saas-secret-manager SM5).
- * Metadata only — references + lifecycle, never a secret value.
+ * Metadata only — references + lifecycle, never a secret value. The type is
+ * owned by `@saas/contracts/config` (`PublicSecretSync`).
  */
-export interface PublicSecretSync {
-  id: string;
-  secretId: string;
-  orgId: string;
-  projectId: string | null;
-  environmentId: string | null;
-  version: number;
-  target: string;
-  entityRef: string;
-  runId: string;
-  status: string;
-  syncedAt: string;
-}
-
 export function toPublicSecretSync(s: SecretSync): PublicSecretSync {
   return {
     id: secretSyncPublicId(s.id),
@@ -168,5 +162,23 @@ export function toPublicSecretSync(s: SecretSync): PublicSecretSync {
     runId: s.runId,
     status: s.status,
     syncedAt: toISOString(s.syncedAt),
+  };
+}
+
+/**
+ * Public shape of a stored SecretPolicy document (saas-secret-manager SM3).
+ * The document body (the validated `{ rules: [...] }` spec) is metadata only —
+ * conditions, never a secret value. Tenancy scope is derived from the row's
+ * projectId (NULL = workspace-wide).
+ */
+export function toPublicSecretPolicy(p: SecretPolicyRecord): PublicSecretPolicy {
+  return {
+    name: p.name,
+    tier: p.tier,
+    source: p.source,
+    scope: p.projectId ? "project" : "organization",
+    documentHash: p.documentHash,
+    document: p.document,
+    createdAt: toISOString(p.createdAt),
   };
 }
