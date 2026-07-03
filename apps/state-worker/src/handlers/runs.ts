@@ -230,6 +230,13 @@ export async function handleCreateRun(
 
   if (Object.keys(fields).length > 0) return validationError(requestId, fields);
 
+  // DIAG (temporary): what plan THIS runner sent in its create body. Every CI
+  // job calls createRun with the same runId (idempotent, first-wins seeds the
+  // plan); if a runner sends only a partial DAG, jobs outside it later claim →
+  // reason:"not_found" and hang. Logs the sent job ids so we can see whether the
+  // FULL matrix or a subset is being submitted, and which runner won the seed.
+  console.log(JSON.stringify({ m: "coorddiag", v: "create", runId, source, jobCount: (planJobs ?? []).length, jobIds: (planJobs ?? []).map((j) => j.jobId).slice(0, 40) }));
+
   const executor = deps?.executor ?? createSqlExecutor(env.PLATFORM_DB!);
   const owned = !deps?.executor;
   try {
@@ -238,6 +245,9 @@ export async function handleCreateRun(
     // ── Replay short-circuit: a known ULID returns the existing run (200). ──
     const existing = await repo.getRunByUlid(orgId, projectId, runId as string);
     if (existing.ok) {
+      // DIAG: this runner LOST the seed race — its plan (jobCount above) was NOT
+      // applied; the run keeps whatever the winning runner seeded.
+      console.log(JSON.stringify({ m: "coorddiag", v: "create.replay", runId, sentJobCount: (planJobs ?? []).length }));
       const counts = await repo.getRunJobCounts(orgId, projectId, asUuid(existing.value.id));
       const payload: CreateRunResponse = {
         run: toPublicRun(existing.value, counts.ok ? counts.value : zeroCounts()),
@@ -380,8 +390,13 @@ export async function handleCreateRun(
       // Projector-readiness is already asserted by the fail-fast guard above, so
       // seeding here is unconditional: a created run is ALWAYS shard-backed, which
       // is what makes the native claim path (its only claim surface) reachable.
+      const seededPlan = planFromJobs(planJobs ?? []);
+      // DIAG: this runner WON the seed race — these exact job ids become the run's
+      // plan. Compare against the 12 the CI matrix launches: any job not listed
+      // here will get reason:"not_found" on claim and hang.
+      console.log(JSON.stringify({ m: "coorddiag", v: "create.seed", runId: run.runUlid, jobCount: Object.keys(seededPlan.jobs).length, jobIds: Object.keys(seededPlan.jobs).slice(0, 40) }));
       const initRes = await initCoordinator(env, run.runUlid, {
-        plan: planFromJobs(planJobs ?? []),
+        plan: seededPlan,
         planDigest,
         sourceHash: gitCommit ?? planDigest,
         environment,

@@ -254,6 +254,14 @@ export class RunCoordinator extends DurableObject {
   }
 
   private async init(body: InitBody): Promise<Response> {
+    // DIAG: what plan the DO actually receives + stores at seed (compare to the
+    // edge `create.seed` and to the 12-job CI matrix; and note whether this is a
+    // fresh seed or an idempotent re-init that keeps the existing plan).
+    {
+      const jobs = Object.keys(body.plan?.jobs ?? {});
+      // eslint-disable-next-line no-console -- temporary coordination diagnostics
+      console.log(JSON.stringify({ m: "coorddiag", src: "do", v: "init", runId: body.runId, n: jobs.length, jobs: jobs.slice(0, 40) }));
+    }
     const existing = await this.ctx.storage.get<string>("planDigest");
     if (existing !== undefined) {
       if (existing !== body.planDigest) return json({ error: "run_exists_different_plan" }, 409);
@@ -316,7 +324,16 @@ export class RunCoordinator extends DurableObject {
       { leaseSeconds: this.leaseSecondsCfg },
     );
     // §3 claim reject reasons are deps_not_ready | job_held | run_terminal.
-    if (!d.ok) return json({ claimed: false, reason: d.reason === "terminal" ? "run_terminal" : d.reason });
+    if (!d.ok) {
+      // DIAG: on a not_found reject, dump the run's ACTUAL plan keys so the
+      // mismatch (requested jobId absent from the seeded plan) is unambiguous.
+      if (d.reason === "not_found") {
+        const planJobs = Object.keys(this.planCache?.jobs ?? {});
+        // eslint-disable-next-line no-console -- temporary coordination diagnostics
+        console.log(JSON.stringify({ m: "coorddiag", src: "do", v: "claim.notfound", runId, jobId: body.jobId, planN: planJobs.length, planJobs: planJobs.slice(0, 40) }));
+      }
+      return json({ claimed: false, reason: d.reason === "terminal" ? "run_terminal" : d.reason });
+    }
     await this.appendAll(d.appends, body.actor ?? SYSTEM_ACTOR, runId);
     await this.ensureAlarm();
     if (d.cached) return json({ claimed: false, cached: true, result: { digest: body.memoResultDigest } });
