@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 
 import type { Env } from "../src/env.js";
 import {
+  __resetDoBackedCache,
   __resetProjectorReadyCache,
   ensureRunShard,
   initCoordinator,
@@ -12,6 +13,7 @@ import {
   projectCoordinatorRun,
   proxyCoordinatorLog,
   proxyCoordinatorVerb,
+  runIsDoBacked,
   useDoCoordination,
 } from "../src/coordination-route.js";
 
@@ -159,7 +161,10 @@ function seedExecutor(opts: { readiness: boolean; runFound: boolean }): {
 }
 
 describe("ensureRunShard — self-heal an unseeded run", () => {
-  beforeEach(() => __resetProjectorReadyCache());
+  beforeEach(() => {
+    __resetProjectorReadyCache();
+    __resetDoBackedCache();
+  });
   const O = "o" as Uuid;
   const P = "p" as Uuid;
 
@@ -212,6 +217,29 @@ describe("ensureRunShard — self-heal an unseeded run", () => {
     const { env } = fakeEnv("op2", () => new Response("{}", { status: 200 }));
     const { exec } = seedExecutor({ readiness: true, runFound: true });
     expect(await ensureRunShard(env, O, P, "01JRUN", exec)).toBe(false);
+  });
+});
+
+describe("runIsDoBacked — isolate cache removes the per-verb GET /state", () => {
+  beforeEach(() => __resetDoBackedCache());
+
+  it("probes the DO once, then serves subsequent verbs from cache (no more /state)", async () => {
+    // A backed run: /state reports its own runId.
+    const { env, calls } = fakeEnv("do", () => new Response(JSON.stringify({ runId: "01JRUN" }), { status: 200 }));
+    expect(await runIsDoBacked(env, "01JRUN")).toBe(true);
+    expect(await runIsDoBacked(env, "01JRUN")).toBe(true);
+    expect(await runIsDoBacked(env, "01JRUN")).toBe(true);
+    // Only the FIRST call hit the DO; the rest short-circuited on the cache — the
+    // hot-path fix that stops ~90 concurrent runners re-serializing the fold.
+    const stateCalls = calls.filter((c) => c.url.endsWith("/state"));
+    expect(stateCalls.length).toBe(1);
+  });
+
+  it("does NOT cache a negative result — an unseeded run keeps re-probing", async () => {
+    const { env, calls } = fakeEnv("do", () => new Response(JSON.stringify({ runId: "" }), { status: 200 }));
+    expect(await runIsDoBacked(env, "01JRUN")).toBe(false);
+    expect(await runIsDoBacked(env, "01JRUN")).toBe(false);
+    expect(calls.filter((c) => c.url.endsWith("/state")).length).toBe(2);
   });
 });
 
