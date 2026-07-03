@@ -35,6 +35,28 @@ import {
   proxyCoordinatorVerb,
 } from "./coordination-route.js";
 
+// ── Coordination diagnostics (temporary; observability-only) ────────────────
+// Structured, greppable log lines to pinpoint the single-run-shard stall under
+// concurrent runners (all CI jobs share one exec-id ⇒ one RunCoordinator DO).
+// Lifecycle verbs (claim/complete) always log with edge→DO round-trip latency +
+// the decision; the high-frequency verbs (heartbeat/log poll) log only when slow
+// or non-2xx, to keep volume sane. Tail with: grep '"m":"coorddiag"'.
+const SLOW_MS = 400;
+
+function diag(fields: Record<string, unknown>): void {
+  // eslint-disable-next-line no-console -- temporary coordination diagnostics
+  console.log(JSON.stringify({ m: "coorddiag", ...fields }));
+}
+
+/** Peek a proxied verb response body without consuming the original. */
+async function peekBody(res: Response): Promise<Record<string, unknown>> {
+  try {
+    return (await res.clone().json()) as Record<string, unknown>;
+  } catch {
+    return {};
+  }
+}
+
 /** Authorize, then require a DO-backed run (else 404). Authz precedes the
  *  existence probe so a cross-tenant caller can never distinguish "no run" from
  *  "not yours". */
@@ -166,8 +188,13 @@ export async function handleNativeClaim(
   deps?: RunHandlerDeps,
   ctx?: ExecutionContext,
 ): Promise<Response> {
+  const gateT0 = Date.now();
   const g = await gate(env, requestId, actor, orgId, projectId, runUlid, STATE_POLICY_ACTIONS.RUN_WRITE);
-  if (!g.ok) return g.response;
+  const gateMs = Date.now() - gateT0;
+  if (!g.ok) {
+    diag({ v: "claim", runId: runUlid, jobId, gateMs, status: g.response.status, gated: true });
+    return g.response;
+  }
   const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
   const runnerId = typeof body.runnerId === "string" ? body.runnerId : "";
   if (!runnerId) return validationError(requestId, { runnerId: ["Required; non-empty string"] });
@@ -188,7 +215,15 @@ export async function handleNativeClaim(
     }
     verbBody.memoResultDigest = body.memoResultDigest;
   }
+  const doT0 = Date.now();
   const res = await proxyCoordinatorVerb(env, runUlid, "claim", verbBody);
+  const doMs = Date.now() - doT0;
+  const b = await peekBody(res);
+  // Every claim logs: how long the DO round-trip took, and the decision — a stall
+  // shows here as either a slow doMs (shard contention) or a repeated
+  // claimed:false/deps_not_ready (a runner spinning on a frontier that never
+  // advances). gateMs isolates the ensureRunShard/isolate-cache cost.
+  diag({ v: "claim", runId: runUlid, jobId, runnerId, gateMs, doMs, status: res.status, claimed: b.claimed, reason: b.reason, seq: b.seq });
   await projectAfterVerb(env, deps, { orgId, projectId }, runUlid, ctx);
   return res;
 }
@@ -212,7 +247,12 @@ export async function handleNativeHeartbeat(
   const leaseEpoch = typeof body.leaseEpoch === "number" ? body.leaseEpoch : NaN;
   if (!runnerId) return validationError(requestId, { runnerId: ["Required; non-empty string"] });
   if (!Number.isFinite(leaseEpoch)) return validationError(requestId, { leaseEpoch: ["Required; number"] });
+  const doT0 = Date.now();
   const res = await proxyCoordinatorVerb(env, runUlid, "heartbeat", { jobId, runnerId, leaseEpoch, actor: stampOf(actor) });
+  const doMs = Date.now() - doT0;
+  // Heartbeat is high-frequency (every ~20s per runner); log only anomalies: a
+  // slow DO round-trip (contention) or a lease_lost/error (churn).
+  if (doMs > SLOW_MS || res.status !== 200) diag({ v: "heartbeat", runId: runUlid, jobId, runnerId, doMs, status: res.status });
   // No read-model projection on heartbeat — deliberately. A heartbeat only renews
   // the lease, which the DO owns and enforces; the only projected field it would
   // touch is `leaseExpiresAt`. At ~1000 concurrent jobs a per-heartbeat DO fold +
@@ -260,7 +300,9 @@ export async function handleNativeComplete(
       // unsealed (still retrievable chunk-by-chunk via the OP3 log read).
     }
   }
+  const doT0 = Date.now();
   const res = await proxyCoordinatorVerb(env, runUlid, "complete", verbBody);
+  diag({ v: "complete", runId: runUlid, jobId, runnerId, outcome, doMs: Date.now() - doT0, status: res.status });
   // Index jobInputHash → resultDigest so a later hermetic claim with the same
   // inputs is served from cache (BM1). Only on a recorded success that carries
   // both; best-effort and never blocks the response.
@@ -307,12 +349,21 @@ export async function handleNativeLog(
   // cursor, the shard holds the request until one is appended or the wait lapses
   // (live-tail for `status --watch` / `logs --follow` without busy polling).
   const wait = Number(params.get("wait") ?? "0");
-  return proxyCoordinatorLog(
+  const doT0 = Date.now();
+  const res = await proxyCoordinatorLog(
     env,
     runUlid,
     Number.isFinite(from) ? from : 0,
     Number.isFinite(wait) && wait > 0 ? wait : 0,
   );
+  const body = await peekBody(res);
+  const events = Array.isArray(body.events) ? body.events.length : undefined;
+  // The tail is how a dependent runner learns its deps finished. Log every poll:
+  // `from` cursor, wait budget, DO round-trip, #events returned, and the head seq.
+  // A stuck dependent shows as repeated polls that return 0 events while the head
+  // has actually advanced past its cursor.
+  diag({ v: "log", runId: runUlid, from: Number.isFinite(from) ? from : 0, wait, doMs: Date.now() - doT0, events, head: (body.head as { seq?: number } | undefined)?.seq, status: res.status });
+  return res;
 }
 
 /** GET …/runs/{runId}/frontier — the currently-runnable job ids. */
@@ -326,5 +377,13 @@ export async function handleNativeFrontier(
 ): Promise<Response> {
   const g = await gate(env, requestId, actor, orgId, projectId, runUlid, STATE_POLICY_ACTIONS.RUN_READ);
   if (!g.ok) return g.response;
-  return proxyCoordinatorFrontier(env, runUlid);
+  const doT0 = Date.now();
+  const res = await proxyCoordinatorFrontier(env, runUlid);
+  const body = await peekBody(res);
+  const jobs = Array.isArray(body.jobs) ? (body.jobs as string[]) : undefined;
+  // Frontier drives which job a runner claims next. If runnable jobs never appear
+  // here despite deps completing, claims stall — this shows the projected
+  // frontier a runner sees each poll.
+  diag({ v: "frontier", runId: runUlid, doMs: Date.now() - doT0, runnable: jobs?.length, jobs: jobs?.slice(0, 20), status: res.status });
+  return res;
 }
