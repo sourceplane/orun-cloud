@@ -19,6 +19,7 @@ import { handleListSecretChain } from "./handlers/list-secret-chain.js";
 import { handleListSecretVersions } from "./handlers/list-secret-versions.js";
 import { handlePutSecretPolicy } from "./handlers/put-secret-policy.js";
 import { handleEvaluateSecretPolicy } from "./handlers/evaluate-secret-policy.js";
+import { handleListSecretPolicies } from "./handlers/list-secret-policies.js";
 import { handleRecordSecretSync } from "./handlers/record-secret-sync.js";
 import { handleListSecretSyncs } from "./handlers/list-secret-syncs.js";
 import { handleInternalResolveSecrets } from "./handlers/internal-resolve-secrets.js";
@@ -570,13 +571,18 @@ export async function route(request: Request, env: Env): Promise<Response> {
       return handleResolveSetting(request, env, requestId, actor, matchedResolve.scope);
     }
 
-    // SecretPolicy routes (SM3): PUT push, POST evaluate (dry-run).
+    // SecretPolicy routes (SM3): GET list, PUT push, POST evaluate (dry-run).
     if (matchedSecretPolicies) {
       if (matchedSecretPolicies.action === "evaluate") {
         if (request.method !== "POST") {
           return methodNotAllowed(requestId);
         }
         return handleEvaluateSecretPolicy(request, env, requestId, actor, matchedSecretPolicies.scope);
+      }
+      // The bare collection serves GET (list the tier-ordered documents) and
+      // PUT (push a document).
+      if (request.method === "GET") {
+        return handleListSecretPolicies(request, env, requestId, actor, matchedSecretPolicies.scope);
       }
       if (request.method !== "PUT") {
         return methodNotAllowed(requestId);

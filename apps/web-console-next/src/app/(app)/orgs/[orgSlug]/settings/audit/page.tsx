@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { useParams } from "next/navigation";
+import { useParams, useSearchParams } from "next/navigation";
 import {
   Bell,
   Building2,
@@ -107,6 +107,10 @@ export default function AuditPage() {
 
 function Inner({ orgId }: { orgId: string }) {
   const { client } = useSession();
+  // Deep-link seed: `?subjectKind=secret` (the Secrets surface's "secret
+  // activity" shortcut) pre-scopes the stream and opens the advanced row.
+  const searchParams = useSearchParams();
+  const seededSubjectKind = searchParams?.get("subjectKind") ?? "";
 
   // Toolbar filter state. Selects apply instantly; text inputs are debounced.
   const [category, setCategory] = React.useState("all");
@@ -115,9 +119,9 @@ function Inner({ orgId }: { orgId: string }) {
   const [customFrom, setCustomFrom] = React.useState("");
   const [customTo, setCustomTo] = React.useState("");
   const [eventTypeInput, setEventTypeInput] = React.useState("");
-  const [advancedOpen, setAdvancedOpen] = React.useState(false);
+  const [advancedOpen, setAdvancedOpen] = React.useState(seededSubjectKind.length > 0);
   const [actorIdInput, setActorIdInput] = React.useState("");
-  const [subjectKindInput, setSubjectKindInput] = React.useState("");
+  const [subjectKindInput, setSubjectKindInput] = React.useState(seededSubjectKind);
   const [subjectIdInput, setSubjectIdInput] = React.useState("");
   // Bumped by Refresh; re-anchors relative presets ("last hour") to now.
   const [refreshNonce, setRefreshNonce] = React.useState(0);

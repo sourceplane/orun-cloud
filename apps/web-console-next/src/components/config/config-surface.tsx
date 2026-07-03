@@ -2,21 +2,17 @@
 
 import * as React from "react";
 import { z } from "zod";
-import { Plus, SlidersHorizontal, Flag, Lock } from "lucide-react";
+import { Plus, SlidersHorizontal, Flag } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import type { ConfigScope } from "@saas/sdk";
 import type {
   PublicSetting,
   PublicFeatureFlag,
-  PublicSecretMetadata,
 } from "@saas/contracts/config";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
-import { Skeleton } from "@/components/ui/skeleton";
-import { Badge } from "@/components/ui/badge";
+import { Card } from "@/components/ui/card";
 import { Switch } from "@/components/ui/switch";
 import { EmptyState } from "@/components/ui/empty-state";
-import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import {
   Dialog,
   DialogContent,
@@ -32,6 +28,9 @@ import { useApiQuery, qk } from "@/lib/query";
 import { useToast } from "@/components/ui/toast";
 import { wrap } from "@/lib/api";
 import { parseConfigValueInput, formatConfigValue, configScopeKey } from "./value";
+import { ListSkeleton, LoadError } from "./config-shared";
+import { SecretsPanel } from "./secrets-panel";
+import { SecretPoliciesPanel } from "./secret-policies-panel";
 
 /**
  * The console face of config-worker: settings, feature flags, and secrets at
@@ -44,12 +43,15 @@ import { parseConfigValueInput, formatConfigValue, configScopeKey } from "./valu
  */
 export function ConfigSurface({ scope }: { scope: ConfigScope }) {
   const scopeKey = configScopeKey(scope);
+  // SecretPolicy documents are org/project-scoped only — no policies tab at env.
+  const showPolicies = scope.kind !== "environment";
   return (
     <Tabs defaultValue="settings">
       <TabsList>
         <TabsTrigger value="settings">Settings</TabsTrigger>
         <TabsTrigger value="flags">Feature flags</TabsTrigger>
         <TabsTrigger value="secrets">Secrets</TabsTrigger>
+        {showPolicies ? <TabsTrigger value="policies">Policies</TabsTrigger> : null}
       </TabsList>
       <TabsContent value="settings" className="pt-4">
         <SettingsTab scope={scope} scopeKey={scopeKey} />
@@ -58,8 +60,13 @@ export function ConfigSurface({ scope }: { scope: ConfigScope }) {
         <FlagsTab scope={scope} scopeKey={scopeKey} />
       </TabsContent>
       <TabsContent value="secrets" className="pt-4">
-        <SecretsTab scope={scope} scopeKey={scopeKey} />
+        <SecretsPanel scope={scope} scopeKey={scopeKey} />
       </TabsContent>
+      {showPolicies ? (
+        <TabsContent value="policies" className="pt-4">
+          <SecretPoliciesPanel scope={scope} scopeKey={scopeKey} />
+        </TabsContent>
+      ) : null}
     </Tabs>
   );
 }
@@ -349,206 +356,3 @@ function FlagsTab({ scope, scopeKey }: { scope: ConfigScope; scopeKey: string })
   );
 }
 
-// ---------------------------------------------------------------------------
-// Secrets
-// ---------------------------------------------------------------------------
-
-const secretSchema = z.object({
-  secretKey: z.string().min(1).max(128),
-  value: z.string().min(1),
-  displayName: z.string().max(128).optional(),
-});
-const rotateSchema = z.object({ value: z.string().min(1) });
-
-function SecretsTab({ scope, scopeKey }: { scope: ConfigScope; scopeKey: string }) {
-  const { client } = useSession();
-  const { toast } = useToast();
-  const secrets = useApiQuery(qk.configSecrets(scopeKey), () =>
-    wrap(async () => (await client.config.listSecretMetadata(scope)).secrets),
-  );
-  const [createOpen, setCreateOpen] = React.useState(false);
-  const [rotating, setRotating] = React.useState<PublicSecretMetadata | null>(null);
-  const [revoking, setRevoking] = React.useState<PublicSecretMetadata | null>(null);
-
-  const revoke = async (secretId: string) => {
-    // Address by public id (sec_…): the worker's item route rejects bare keys.
-    const r = await wrap(() => client.config.revokeSecret(scope, secretId));
-    if (!r.ok) {
-      toast({ kind: "error", title: "Revoke failed", description: r.error.message });
-      return;
-    }
-    toast({ kind: "success", title: "Secret revoked" });
-    secrets.reload();
-  };
-
-  return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between gap-4">
-        <p className="text-sm text-muted-foreground">
-          Values are encrypted at rest and write-only — they never appear here again.
-        </p>
-        <Dialog open={createOpen} onOpenChange={setCreateOpen}>
-          <Button onClick={() => setCreateOpen(true)}>
-            <Plus className="mr-1.5 h-4 w-4" /> New secret
-          </Button>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>Create secret</DialogTitle>
-              <DialogDescription>
-                The value is encrypted before storage and never shown again — keep your own copy.
-              </DialogDescription>
-            </DialogHeader>
-            <ZodForm
-              schema={secretSchema}
-              defaultValues={{ secretKey: "", value: "", displayName: "" }}
-              fields={[
-                { name: "secretKey", label: "Key", placeholder: "stripe_api_key" },
-                { name: "value", label: "Value", type: "password", autoComplete: "off" },
-                { name: "displayName", label: "Display name", placeholder: "Optional" },
-              ]}
-              submitLabel="Create secret"
-              cancel={{ label: "Cancel", onClick: () => setCreateOpen(false) }}
-              onSubmit={async (v) => {
-                const r = await wrap(() =>
-                  client.config.createSecretMetadata(scope, {
-                    secretKey: v.secretKey,
-                    value: v.value,
-                    displayName: v.displayName || null,
-                  }),
-                );
-                if (!r.ok) {
-                  toast({ kind: "error", title: "Create failed", description: r.error.message });
-                  return;
-                }
-                setCreateOpen(false);
-                toast({ kind: "success", title: "Secret stored", description: "The value is encrypted and not retrievable." });
-                secrets.reload();
-              }}
-            />
-          </DialogContent>
-        </Dialog>
-      </div>
-
-      <Dialog open={rotating !== null} onOpenChange={(o) => !o && setRotating(null)}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Rotate secret</DialogTitle>
-            <DialogDescription className="font-mono text-xs">{rotating?.secretKey}</DialogDescription>
-          </DialogHeader>
-          {rotating ? (
-            <ZodForm
-              schema={rotateSchema}
-              defaultValues={{ value: "" }}
-              fields={[{ name: "value", label: "New value", type: "password", autoComplete: "off" }]}
-              submitLabel="Rotate"
-              cancel={{ label: "Cancel", onClick: () => setRotating(null) }}
-              onSubmit={async (v) => {
-                const r = await wrap(() =>
-                  client.config.rotateSecret(scope, rotating.id, { value: v.value }),
-                );
-                if (!r.ok) {
-                  toast({ kind: "error", title: "Rotate failed", description: r.error.message });
-                  return;
-                }
-                setRotating(null);
-                toast({ kind: "success", title: "Secret rotated" });
-                secrets.reload();
-              }}
-            />
-          ) : null}
-        </DialogContent>
-      </Dialog>
-
-      <ConfirmDialog
-        open={revoking !== null}
-        onOpenChange={(o) => !o && setRevoking(null)}
-        title="Revoke secret"
-        description="Consumers reading this secret stop resolving it immediately. This cannot be undone."
-        resourceName={revoking?.secretKey}
-        confirmLabel="Revoke secret"
-        onConfirm={() => (revoking ? revoke(revoking.id) : undefined)}
-      />
-
-      {secrets.loading ? (
-        <ListSkeleton />
-      ) : secrets.error ? (
-        <LoadError title="Failed to load secrets" message={secrets.error.message} />
-      ) : !secrets.data || secrets.data.length === 0 ? (
-        <EmptyState
-          icon={Lock}
-          title="No secrets yet"
-          description="Store provider keys and tokens encrypted at this scope; read them from your product at runtime."
-          primaryAction={{ label: "New secret", onClick: () => setCreateOpen(true) }}
-        />
-      ) : (
-        <Card>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Key</TableHead>
-                <TableHead className="hidden md:table-cell">Status</TableHead>
-                <TableHead className="hidden md:table-cell">Version</TableHead>
-                <TableHead className="hidden md:table-cell">Last rotated</TableHead>
-                <TableHead className="text-right">Actions</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {secrets.data.map((s) => (
-                <TableRow key={s.id}>
-                  <TableCell>
-                    <div className="font-mono text-xs">{s.secretKey}</div>
-                    {s.displayName ? (
-                      <div className="text-[11px] text-muted-foreground">{s.displayName}</div>
-                    ) : null}
-                  </TableCell>
-                  <TableCell className="hidden md:table-cell">
-                    <Badge variant={s.status === "active" ? "success" : "warning"}>{s.status}</Badge>
-                  </TableCell>
-                  <TableCell className="hidden font-mono text-xs md:table-cell">v{s.version}</TableCell>
-                  <TableCell className="hidden text-xs text-muted-foreground md:table-cell">
-                    {s.lastRotatedAt ? new Date(s.lastRotatedAt).toLocaleDateString() : "never"}
-                  </TableCell>
-                  <TableCell className="space-x-1 text-right">
-                    <Button size="sm" variant="ghost" onClick={() => setRotating(s)}>
-                      Rotate
-                    </Button>
-                    <Button size="sm" variant="ghost" onClick={() => setRevoking(s)}>
-                      Revoke
-                    </Button>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </Card>
-      )}
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Shared bits
-// ---------------------------------------------------------------------------
-
-function ListSkeleton() {
-  return (
-    <Card>
-      <CardContent className="space-y-2 pt-6">
-        {Array.from({ length: 4 }).map((_, i) => (
-          <Skeleton key={i} className="h-9 w-full" />
-        ))}
-      </CardContent>
-    </Card>
-  );
-}
-
-function LoadError({ title, message }: { title: string; message: string }) {
-  return (
-    <Card>
-      <CardContent className="pt-6">
-        <div className="text-sm font-medium text-destructive">{title}</div>
-        <div className="text-xs text-muted-foreground">{message}</div>
-      </CardContent>
-    </Card>
-  );
-}

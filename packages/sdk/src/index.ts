@@ -134,7 +134,7 @@ export {
   type ListSecurityEventsQuery,
   type SecurityEventsPage,
 } from "./securityEvents.js";
-export { ConfigClient, type ConfigScope } from "./config.js";
+export { ConfigClient, type ConfigScope, type SecretSyncFilter } from "./config.js";
 export { NotificationsClient } from "./notifications.js";
 export { AuthClient } from "./auth.js";
 export { CliSessionsClient } from "./cliSessions.js";
@@ -353,6 +353,27 @@ export type {
   RotateSecretRequest,
   RotateSecretMetadataResponse,
   RevokeSecretMetadataResponse,
+  PublicSecretVersion,
+  ListSecretVersionsResponse,
+  RevealSecretRequest,
+  RevealSecretResponse,
+  PublicSecretSync,
+  ListSecretSyncsResponse,
+  SecretPolicyTier,
+  SecretPolicyScopeKind,
+  PublicSecretPolicy,
+  ListSecretPoliciesResponse,
+  PutSecretPolicyRequest,
+  PutSecretPolicyResponse,
+  SecretPolicyPlatform,
+  SecretPolicySubjectKind,
+  SecretPolicyServesFrom,
+  EvaluateSecretPolicySubject,
+  EvaluateSecretPolicyComponent,
+  EvaluateSecretPolicyTrigger,
+  EvaluateSecretPolicyRequest,
+  SecretPolicyLayerDecision,
+  EvaluateSecretPolicyResponse,
 } from "@saas/contracts/config";
 
 export type {

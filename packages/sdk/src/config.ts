@@ -5,9 +5,18 @@ import type {
   CreateSecretRequest,
   CreateSettingRequest,
   CreateSettingResponse,
+  EvaluateSecretPolicyRequest,
+  EvaluateSecretPolicyResponse,
   ListFeatureFlagsResponse,
   ListSecretMetadataResponse,
+  ListSecretPoliciesResponse,
+  ListSecretSyncsResponse,
+  ListSecretVersionsResponse,
   ListSettingsResponse,
+  PutSecretPolicyRequest,
+  PutSecretPolicyResponse,
+  RevealSecretRequest,
+  RevealSecretResponse,
   RevokeSecretMetadataResponse,
   RotateSecretMetadataResponse,
   RotateSecretRequest,
@@ -203,6 +212,138 @@ export class ConfigClient {
       opts,
     );
   }
+
+  // -------------------------------------------------------------------------
+  // Secret chain / history / provenance / reveal (SM1 / SM5 / SEC7)
+  // -------------------------------------------------------------------------
+
+  /**
+   * GET <environment-scope>/config/secrets?chain=true — the chain read
+   * (saas-secret-manager SM1). Walks the scope-resolution chain (personal ->
+   * environment -> project -> workspace -> account) and returns each key's
+   * serving head with its `servesFrom` rung + `overridable` flag. Metadata only.
+   * Only meaningful at environment scope.
+   */
+  listSecretChain(
+    scope: ConfigScope,
+    opts: RequestOptions = {},
+  ): Promise<ListSecretMetadataResponse> {
+    return this.transport.request<ListSecretMetadataResponse>(
+      { method: "GET", path: `${scopeBase(scope)}/secrets`, query: { chain: "true" } },
+      opts,
+    );
+  }
+
+  /** GET <scope>/config/secrets/:secretId/versions — append-only version history (metadata only). */
+  listSecretVersions(
+    scope: ConfigScope,
+    secretId: string,
+    opts: RequestOptions = {},
+  ): Promise<ListSecretVersionsResponse> {
+    return this.transport.request<ListSecretVersionsResponse>(
+      {
+        method: "GET",
+        path: `${scopeBase(scope)}/secrets/${encodeURIComponent(secretId)}/versions`,
+      },
+      opts,
+    );
+  }
+
+  /**
+   * GET <scope>/config/secrets/syncs — materialization provenance (SM5).
+   * Optionally filtered per-entity (`entityRef`), per-component (`secretKey`),
+   * or by lifecycle `status`. Metadata only — never a secret value.
+   */
+  listSecretSyncs(
+    scope: ConfigScope,
+    filter: SecretSyncFilter = {},
+    opts: RequestOptions = {},
+  ): Promise<ListSecretSyncsResponse> {
+    return this.transport.request<ListSecretSyncsResponse>(
+      {
+        method: "GET",
+        path: `${scopeBase(scope)}/secrets/syncs`,
+        query: {
+          ...(filter.entityRef !== undefined ? { entityRef: filter.entityRef } : {}),
+          ...(filter.secretKey !== undefined ? { secretKey: filter.secretKey } : {}),
+          ...(filter.status !== undefined ? { status: filter.status } : {}),
+        },
+      },
+      opts,
+    );
+  }
+
+  /**
+   * POST <scope>/config/secrets/:secretId/reveal — the ONE value-returning route
+   * (saas-secret-manager SEC7). Elevated + audited break-glass: a non-empty
+   * `reason` is mandatory and every reveal emits an alert-worthy audit row. The
+   * returned value is transient — never cache or persist it.
+   */
+  revealSecret(
+    scope: ConfigScope,
+    secretId: string,
+    body: RevealSecretRequest,
+    opts: RequestOptions = {},
+  ): Promise<RevealSecretResponse> {
+    return this.transport.request<RevealSecretResponse>(
+      {
+        method: "POST",
+        path: `${scopeBase(scope)}/secrets/${encodeURIComponent(secretId)}/reveal`,
+        body,
+      },
+      opts,
+    );
+  }
+
+  // -------------------------------------------------------------------------
+  // Secret policies (SM3, Layer 2) — org / project scope only
+  // -------------------------------------------------------------------------
+
+  /** GET <scope>/config/secret-policies — the tier-ordered documents in scope. */
+  listSecretPolicies(
+    scope: ConfigScope,
+    opts: RequestOptions = {},
+  ): Promise<ListSecretPoliciesResponse> {
+    return this.transport.request<ListSecretPoliciesResponse>(
+      { method: "GET", path: `${scopeBase(scope)}/secret-policies` },
+      opts,
+    );
+  }
+
+  /** PUT <scope>/config/secret-policies — push a tier-tagged document (idempotent by hash). */
+  putSecretPolicy(
+    scope: ConfigScope,
+    body: PutSecretPolicyRequest,
+    opts: RequestOptions = {},
+  ): Promise<PutSecretPolicyResponse> {
+    return this.transport.request<PutSecretPolicyResponse>(
+      { method: "PUT", path: `${scopeBase(scope)}/secret-policies`, body },
+      opts,
+    );
+  }
+
+  /**
+   * POST <scope>/config/secret-policies/evaluate — the dry-run behind
+   * `orun policy test`. Reports BOTH layers (Layer-1 RBAC + Layer-2 SecretPolicy)
+   * for a hypothetical resolve without serving any value.
+   */
+  evaluateSecretPolicy(
+    scope: ConfigScope,
+    body: EvaluateSecretPolicyRequest,
+    opts: RequestOptions = {},
+  ): Promise<EvaluateSecretPolicyResponse> {
+    return this.transport.request<EvaluateSecretPolicyResponse>(
+      { method: "POST", path: `${scopeBase(scope)}/secret-policies/evaluate`, body },
+      opts,
+    );
+  }
+}
+
+/** Metadata-only filters for a secret-sync list (SM5). */
+export interface SecretSyncFilter {
+  entityRef?: string;
+  secretKey?: string;
+  status?: "synced" | "superseded" | "orphaned";
 }
 
 function scopeBase(scope: ConfigScope): string {

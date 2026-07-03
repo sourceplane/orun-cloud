@@ -266,3 +266,160 @@ export interface SecretKeyStatus {
 export interface SecretKeyStatusResponse {
   keyStatus: SecretKeyStatus;
 }
+
+// ---------------------------------------------------------------------------
+// Break-glass reveal (saas-secret-manager SEC7)
+// ---------------------------------------------------------------------------
+// The reveal route is the ONE human-facing response that returns a secret
+// VALUE. It is elevated + audited (a non-empty `reason` is mandatory) — see
+// apps/config-worker/src/handlers/reveal-secret.ts. The value materializes only
+// transiently in the caller (the console's break-glass dialog); it is never
+// cached, logged, or persisted.
+
+export interface RevealSecretRequest {
+  /** Mandatory, non-empty justification. Recorded to the audit row — never the value. */
+  reason: string;
+}
+
+export interface RevealSecretResponse {
+  secret: {
+    /** The decrypted plaintext. Transient — show once, never store. */
+    value: string;
+    version: number;
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Materialization provenance (saas-secret-manager SM5)
+// ---------------------------------------------------------------------------
+// Mirrors apps/config-worker/src/mappers.ts `toPublicSecretSync`. References +
+// lifecycle only — a secret VALUE never appears.
+
+export interface PublicSecretSync {
+  id: string;
+  secretId: string;
+  orgId: string;
+  projectId: string | null;
+  environmentId: string | null;
+  version: number;
+  /** The adapter the value was materialized onto (e.g. a provider store). */
+  target: string;
+  /** The provisioned catalog entity the value was written into. */
+  entityRef: string;
+  runId: string;
+  /** Lifecycle: `synced` (current) -> `superseded` -> `orphaned`. */
+  status: string;
+  syncedAt: string;
+}
+
+export interface ListSecretSyncsResponse {
+  syncs: PublicSecretSync[];
+}
+
+// ---------------------------------------------------------------------------
+// Secret policies (saas-secret-manager SM3, Layer 2)
+// ---------------------------------------------------------------------------
+// Tier-tagged, portable SecretPolicy documents — the who/what/where/how
+// conditions the resolve evaluates. NEVER any secret value. Backed by
+// apps/config-worker/src/handlers/{list,put,evaluate}-secret-policy.ts.
+
+export type SecretPolicyTier = "composition" | "stack" | "intent";
+
+/** Tenancy scope a policy document lives at. Workspace-wide documents always
+ *  join a project's evaluation; there is no environment-scoped policy. */
+export type SecretPolicyScopeKind = "organization" | "project";
+
+/** A stored SecretPolicy document as surfaced by the read/list surface. The
+ *  `document` is the validated `{ rules: [...] }` spec; its tenancy scope comes
+ *  from the route, not the body. */
+export interface PublicSecretPolicy {
+  name: string;
+  tier: SecretPolicyTier;
+  source: string;
+  scope: SecretPolicyScopeKind;
+  documentHash: string;
+  document: Record<string, unknown>;
+  createdAt: string;
+}
+
+export interface ListSecretPoliciesResponse {
+  policies: PublicSecretPolicy[];
+}
+
+/** Push (PUT) a tier-tagged document. Idempotent by document hash. */
+export interface PutSecretPolicyRequest {
+  name: string;
+  tier: SecretPolicyTier;
+  source: string;
+  document: Record<string, unknown>;
+}
+
+export interface PutSecretPolicyResponse {
+  policy: {
+    name: string;
+    tier: SecretPolicyTier;
+    source: string;
+    scope: SecretPolicyScopeKind;
+    documentHash: string;
+    /** `false` when the pushed document was byte-identical to the stored one. */
+    updated: boolean;
+  };
+}
+
+// ── Policy evaluation (dry-run — the console face of `orun policy test`) ──
+// The request body is FLAT (matches evaluate-secret-policy.ts): the facts sit
+// alongside `key`, not nested under a `facts` envelope.
+
+export type SecretPolicyPlatform = "local-cli" | "ci-oidc" | "service";
+export type SecretPolicySubjectKind = "user" | "service_principal" | "workflow";
+export type SecretPolicyServesFrom = "environment" | "project" | "workspace" | "account";
+
+export interface EvaluateSecretPolicySubject {
+  id?: string;
+  kind?: SecretPolicySubjectKind;
+  teams?: string[];
+}
+
+export interface EvaluateSecretPolicyComponent {
+  type?: string;
+  domain?: string;
+  name?: string;
+  labels?: Record<string, string>;
+}
+
+export interface EvaluateSecretPolicyTrigger {
+  event?: string;
+  action?: string;
+  branch?: string;
+  baseBranch?: string;
+  tag?: string;
+  declared?: boolean;
+  actor?: string;
+  repository?: string;
+}
+
+export interface EvaluateSecretPolicyRequest {
+  key: string;
+  env: string;
+  platform: SecretPolicyPlatform;
+  subject?: EvaluateSecretPolicySubject;
+  servesFrom?: SecretPolicyServesFrom;
+  component?: EvaluateSecretPolicyComponent;
+  trigger?: EvaluateSecretPolicyTrigger;
+}
+
+/** One layer's decision. `ruleId` is present when a concrete rule decided it. */
+export interface SecretPolicyLayerDecision {
+  allow: boolean;
+  ruleId?: string;
+  reason: string;
+}
+
+export interface EvaluateSecretPolicyResponse {
+  /** Layer-1 role×scope RBAC probe of the resolve action (`secret.value.use`). */
+  layer1: { action: string; allow: boolean; reason: string };
+  /** Layer-2 SecretPolicy condition decision. */
+  layer2: SecretPolicyLayerDecision;
+  /** The combined outcome (`layer1.allow && layer2.allow`). */
+  decision: { allow: boolean };
+}

@@ -86,6 +86,25 @@ export function buildAuditQuery(
   } as ListAuditEntriesQuery;
 }
 
+/**
+ * The audit `subjectKind` secret events carry (secret.accessed / revealed /
+ * denied / sync.recorded / rotation_due / expiring all name the secret as the
+ * subject). The Secrets surface links here to answer "who read what, when".
+ */
+export const SECRET_SUBJECT_KIND = "secret";
+
+/**
+ * Build the org-scoped audit query narrowed to secret activity (Part 5 — secret
+ * activity view). Threads `cursor` for "Load more". Reuses `buildAuditQuery` so
+ * the trim/normalize rules stay in one place.
+ */
+export function buildSecretActivityQuery(cursor?: string): ListAuditEntriesQuery {
+  return buildAuditQuery(
+    { ...EMPTY_AUDIT_FILTERS, subjectKind: SECRET_SUBJECT_KIND },
+    cursor,
+  );
+}
+
 /** Whether the form has at least one active filter. */
 export function hasActiveAuditFilters(values: AuditFilterFormValues): boolean {
   return (
