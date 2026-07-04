@@ -24,50 +24,50 @@ export interface WorkspaceScope {
 export interface CreateSpecInput {
   slug: string;
   title: string;
-  docRef?: string;
-  labels?: Record<string, string>;
+  docRef?: string | undefined;
+  labels?: Record<string, string> | undefined;
   actor: Actor;
-  at?: string;
+  at?: string | undefined;
 }
 
 export interface CreateTaskInput {
   prefix: string; // 2–5 uppercase; key allocates PREFIX-<seq>
-  specKey?: string;
+  specKey?: string | undefined;
   title: string;
-  contract?: Contract;
-  labels?: Record<string, string>;
+  contract?: Contract | undefined;
+  labels?: Record<string, string> | undefined;
   actor: Actor;
-  at?: string;
+  at?: string | undefined;
 }
 
 export interface EditItemInput {
   key: string;
-  title?: string;
-  labels?: Record<string, string>;
-  docRef?: string;
+  title?: string | undefined;
+  labels?: Record<string, string> | undefined;
+  docRef?: string | undefined;
   actor: Actor;
-  at?: string;
+  at?: string | undefined;
 }
 
 export interface EditContractInput {
   key: string;
   contract: Contract;
   actor: Actor;
-  at?: string;
+  at?: string | undefined;
 }
 
 export interface AssignInput {
   key: string;
   subject: string; // membership subject id (usr_/sp_/team_)
   actor: Actor;
-  at?: string;
+  at?: string | undefined;
 }
 
 export interface CommentInput {
   key: string;
   body: string;
   actor: Actor;
-  at?: string;
+  at?: string | undefined;
 }
 
 export interface OrderInput {
@@ -75,21 +75,21 @@ export interface OrderInput {
   view: string; // per-view ordering (priority is coordination, not a rung)
   order: number;
   actor: Actor;
-  at?: string;
+  at?: string | undefined;
 }
 
 export interface PinInput {
   key: string;
   rung: Rung | null; // null unpins
-  note?: string;
+  note?: string | undefined;
   actor: Actor;
-  at?: string;
+  at?: string | undefined;
 }
 
 export interface CancelInput {
   key: string;
   actor: Actor;
-  at?: string;
+  at?: string | undefined;
 }
 
 export interface CommitOutcome {

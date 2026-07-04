@@ -24,6 +24,7 @@
     "./notifications": "./src/notifications.ts",
     "./integrations": "./src/integrations.ts",
     "./state": "./src/state.ts",
+    "./work": "./src/work.ts",
     "./coordination": "./src/coordination.ts",
     "./coordination-core": "./src/coordination-core.ts",
     "./coordination-projection": "./src/coordination-projection.ts",

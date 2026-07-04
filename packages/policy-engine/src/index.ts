@@ -79,6 +79,8 @@ const ORG_ROLE_PERMISSIONS: Record<OrganizationRole, readonly string[]> = {
     "team.role.revoke",
     "team.owner_handle.set",
     "team.owner_handle.remove",
+    "work.read",
+    "work.write",
   ],
   admin: [
     "organization.read",
@@ -141,6 +143,8 @@ const ORG_ROLE_PERMISSIONS: Record<OrganizationRole, readonly string[]> = {
     "team.role.revoke",
     "team.owner_handle.set",
     "team.owner_handle.remove",
+    "work.read",
+    "work.write",
   ],
   builder: [
     "organization.read",
@@ -166,6 +170,8 @@ const ORG_ROLE_PERMISSIONS: Record<OrganizationRole, readonly string[]> = {
     "secret.read",
     "secret.value.use",
     "org.cli.link",
+    "work.read",
+    "work.write",
   ],
   viewer: [
     "organization.read",
@@ -182,6 +188,7 @@ const ORG_ROLE_PERMISSIONS: Record<OrganizationRole, readonly string[]> = {
     "state.object.read",
     "catalog.read",
     "secret.read",
+    "work.read",
   ],
   billing_admin: [
     "organization.read",

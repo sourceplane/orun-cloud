@@ -42,6 +42,14 @@ import {
   handleListOrgCatalogEntities,
 } from "./handlers/catalog.js";
 import { handleListOrgRepoFacets, handleGetOrgRepoFacet, handleGetOrgCatalogDoc } from "./handlers/repo-facets.js";
+import {
+  handleCreateWorkSpec,
+  handleCreateWorkTask,
+  handleListWorkEvents,
+  handleWorkImport,
+  handleWorkSummary,
+  handleWorkTaskAction,
+} from "./handlers/work.js";
 import { handleGetOrgStateStorage } from "./handlers/state-usage.js";
 import { handleGetStateGcReport } from "./handlers/gc-report.js";
 import { handleCollectStateGc } from "./handlers/gc-collect.js";
@@ -160,6 +168,15 @@ const ORG_STATE_USAGE_RE = /^\/v1\/organizations\/([^/]+)\/state\/usage$/;
 // merged run history across every project. Distinct from the project-scoped
 // /projects/{id}/state/runs below (no project segment ⇒ disjoint paths).
 const ORG_RUNS_RE = /^\/v1\/organizations\/([^/]+)\/state\/runs$/;
+
+// orun-work v2 (WP1) — the work lens: fold query API + coordination mutators.
+// Workspace-scoped (no project segment); lifecycle is derived on every read.
+const ORG_WORK_RE = /^\/v1\/organizations\/([^/]+)\/work$/;
+const ORG_WORK_EVENTS_RE = /^\/v1\/organizations\/([^/]+)\/work\/events$/;
+const ORG_WORK_SPECS_RE = /^\/v1\/organizations\/([^/]+)\/work\/specs$/;
+const ORG_WORK_TASKS_RE = /^\/v1\/organizations\/([^/]+)\/work\/tasks$/;
+const ORG_WORK_TASK_ACTION_RE = /^\/v1\/organizations\/([^/]+)\/work\/tasks\/([^/]+)\/(comment|assign|pin|cancel|contract)$/;
+const ORG_WORK_IMPORT_RE = /^\/v1\/organizations\/([^/]+)\/work\/import$/;
 
 // OV1 — hosted RefStore (design-v2 §2). Ref names carry slashes
 // (catalogs/current, executions/by-id/<id>), so the name is a greedy tail.
@@ -292,6 +309,59 @@ export async function route(request: Request, env: Env, ctx?: ExecutionContext):
     if (!orgId) return notFound(requestId, pathname);
     if (request.method !== "GET") return methodNotAllowed(requestId);
     return handleListOrgRuns(request, env, requestId, actor, orgId);
+  }
+
+  // ── orun-work v2 (WP1) — the work lens. ──
+  m = pathname.match(ORG_WORK_RE);
+  if (m) {
+    const orgId = parseOrgPublicId(m[1]!);
+    if (!orgId) return notFound(requestId, pathname);
+    if (request.method !== "GET") return methodNotAllowed(requestId);
+    return handleWorkSummary(request, env, requestId, actor, orgId);
+  }
+
+  m = pathname.match(ORG_WORK_EVENTS_RE);
+  if (m) {
+    const orgId = parseOrgPublicId(m[1]!);
+    if (!orgId) return notFound(requestId, pathname);
+    if (request.method !== "GET") return methodNotAllowed(requestId);
+    return handleListWorkEvents(request, env, requestId, actor, orgId);
+  }
+
+  m = pathname.match(ORG_WORK_SPECS_RE);
+  if (m) {
+    const orgId = parseOrgPublicId(m[1]!);
+    if (!orgId) return notFound(requestId, pathname);
+    if (request.method !== "POST") return methodNotAllowed(requestId);
+    return handleCreateWorkSpec(request, env, requestId, actor, orgId);
+  }
+
+  m = pathname.match(ORG_WORK_TASKS_RE);
+  if (m) {
+    const orgId = parseOrgPublicId(m[1]!);
+    if (!orgId) return notFound(requestId, pathname);
+    if (request.method !== "POST") return methodNotAllowed(requestId);
+    return handleCreateWorkTask(request, env, requestId, actor, orgId);
+  }
+
+  m = pathname.match(ORG_WORK_TASK_ACTION_RE);
+  if (m) {
+    const orgId = parseOrgPublicId(m[1]!);
+    if (!orgId) return notFound(requestId, pathname);
+    if (request.method !== "POST") return methodNotAllowed(requestId);
+    return handleWorkTaskAction(
+      request, env, requestId, actor, orgId,
+      decodeURIComponent(m[2]!),
+      m[3]! as "comment" | "assign" | "pin" | "cancel" | "contract",
+    );
+  }
+
+  m = pathname.match(ORG_WORK_IMPORT_RE);
+  if (m) {
+    const orgId = parseOrgPublicId(m[1]!);
+    if (!orgId) return notFound(requestId, pathname);
+    if (request.method !== "POST") return methodNotAllowed(requestId);
+    return handleWorkImport(request, env, requestId, actor, orgId);
   }
 
   // ── OP2 — Run coordination plane (§2). ──

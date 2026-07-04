@@ -45,6 +45,7 @@ describe("buildNavSections", () => {
     expect(hrefs).toContain("/orgs/acme/projects");
     expect(hrefs).toContain("/orgs/acme/catalog");
     expect(hrefs).toContain("/orgs/acme/activities");
+    expect(hrefs).toContain("/orgs/acme/work");
     // Integrations is a first-class connections hub in the product nav.
     expect(hrefs).toContain("/orgs/acme/integrations");
     // Secrets & Config is a dedicated top-level product surface.

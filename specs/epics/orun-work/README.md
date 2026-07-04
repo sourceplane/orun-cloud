@@ -75,8 +75,8 @@ conformance-oracle pattern (Go model ↔ TS mirror over shared fixtures).
 
 | ID | Cloud deliverable | Status |
 |----|-------------------|--------|
-| WP0 | `work` context v2 schema + mutators + fold + query API + read-only console list; import target for `orun work import` | 🏗️ In progress — substrate landed (`560_work_foundation_v2`, `@saas/db/work` v2: model+fold replaying the shared conformance fixtures, memory+Postgres repositories, one-event-per-mutator, observation dedupe); query API + console list ride WP1 |
-| WP1 | Local-first console store (snapshot + cursor replay over SSE), optimistic apply + verdicts, pins, activity feed | 🗓️ Not started |
+| WP0 | `work` context v2 schema + mutators + fold + query API + read-only console list; import target for `orun work import` | ✅ Shipped — substrate (#318: `560_work_foundation_v2`, `@saas/db/work` v2 model+fold+repositories) + read surface (WP1 PR: fold query API with evidence, mutator routes with verdicts, import apply, SDK `WorkClient`, console Work page) |
+| WP1 | Local-first console store (snapshot + cursor replay over SSE), optimistic apply + verdicts, pins, activity feed | 🏗️ In progress — the read half landed with WP0's surface PR (summary + events cursor endpoint, read-only Work page); optimistic store + SSE replay + pin/comment UI pending |
 | WP2 | GitHub webhook ingester (+ affected-set producer contract), claim join, drift inbox | 🗓️ Not started |
 | WP3 | Run-stream `gate_result` + overlay `revision_live` ingesters; Done/Released rungs light up | 🗓️ Not started |
 | WP4 | Seal/pull support (workspace-routed refs) | 🗓️ Not started |

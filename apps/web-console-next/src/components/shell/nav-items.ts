@@ -65,6 +65,7 @@ export function buildNavSections(scope: NavScope): NavSection[] {
         { href: orgBase, label: "Overview", icon: "LayoutDashboard" },
         { href: `${orgBase}/catalog`, label: "Catalog", icon: "Boxes" },
         { href: `${orgBase}/activities`, label: "Activities", icon: "Activity" },
+        { href: `${orgBase}/work`, label: "Work", icon: "ListChecks" },
         // Teams — the human-scale organizing primitive, promoted out of Settings
         // to a first-class product surface (à la Datadog Teams).
         { href: `${orgBase}/teams`, label: "Teams", icon: "UsersRound" },
