@@ -14,6 +14,7 @@
     "./policy": "./src/policy.ts",
     "./projects": "./src/projects.ts",
     "./events": "./src/events.ts",
+    "./event-catalog": "./src/event-catalog.ts",
     "./security-events": "./src/security-events.ts",
     "./api-keys": "./src/api-keys.ts",
     "./service-principal": "./src/service-principal.ts",

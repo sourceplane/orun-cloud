@@ -525,5 +525,14 @@ export const manifest: MigrationManifest = {
       description:
         "Durable catalog-projection outbox (saas-workspace-overview projection reliability). Creates state.catalog_projection (org_id, project_id, environment; projected_digest, projected_at, attempts, last_error, updated_at) recording the last head digest whose read-model projection committed, with a unique index on (org_id, project_id, COALESCE(environment,'')). The cron catalog-projection-sweep drives from state.catalog_heads LEFT JOIN this table and re-projects any scope whose projected_digest lags its current head — the reliable backstop for the on-advance ctx.waitUntil projection that can be torn down when state-worker is invoked over a service binding (leaving org_catalog_entities + repo_facet frozen). A scope stale before this table existed is detected on the first pass (projected_digest NULL) — no backfill. Additive + idempotent.",
     },
+    {
+      id: "580_event_streams_foundation",
+      context: "events",
+      path: "580_event_streams_foundation/up.sql",
+      checksum:
+        "e6c317e08a17ae53f4f6e18009e0b4492db3331a048f52fac1bdcb2824c69039",
+      description:
+        "Event streams foundation (saas-event-streaming ES0) — lays the shared substrate for the spec-09 router that was never built: events.subscriber_lanes (the lane registry — a lane is a named, at-least-once, cursored subscription over event_log; pausing one is the operational kill switch), events.lane_cursors (per-(lane, org) keyset dispatch positions — the events-owned generalization of webhooks.webhook_dispatch_cursor, which the webhooks lane adopts in ES1), events.dead_letters (poisoned deliveries as pointer + forensics with a (lane, event) uniqueness so retries update rather than fork), events.notification_rules + events.rule_targets (org/project-scoped routing rules with mandatory throttle fields, evaluated from ES2; target_kind forward-defined for team/inbox), and events.event_groups + events.event_group_members (the dedup/correlation read-model — one open story per (org, rendered dedup key) via a partial unique index, activated in ES4). Tables only; nothing reads or writes them until the owning milestones land. Additive + idempotent; no cross-context FKs.",
+    },
   ],
 };

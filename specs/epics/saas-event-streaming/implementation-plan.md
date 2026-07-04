@@ -13,7 +13,7 @@ each; the spine is strictly ordered, the tails are detachable.
 - CI guard in `tests/contracts`: every event type literal passed to
   `appendEvent`/`appendEventWithAudit` across the workspace is registered in
   the catalog; unregistered types fail the build.
-- Migration `470_event_streams_foundation` (schema `events`, manifest entry,
+- Migration `580_event_streams_foundation` (schema `events`, manifest entry,
   checksum): `subscriber_lanes`, `lane_cursors`, `dead_letters`,
   `notification_rules`, `rule_targets`, `event_groups`, `event_group_members`
   per design §§4–5, §7 — tables only, nothing reads them yet.
@@ -45,7 +45,7 @@ notifications-worker test suite; no runtime behavior changes anywhere else
   `'notifications'` (handler lands in ES2; registered paused).
 - webhooks-worker cutover to `events.lane_cursors`: backfill from
   `webhooks.webhook_dispatch_cursor` in one migration
-  (`490_webhooks_lane_adoption`), read/write the shared table, drop the old
+  (`600_webhooks_lane_adoption`), read/write the shared table, drop the old
   one after a verified soak — zero lost or duplicated deliveries (R6 protocol:
   copy → dual-read assert → cutover → drop).
 - Dead-letter lifecycle: `event.delivery_failed`, `dead_letter.created`,
@@ -92,7 +92,7 @@ are covered by worker tests; a throttled rule provably caps at
 
 ## ES3 — Channels: provider seam + Slack — 🗓️ Planned
 
-- Migration `480_notification_channels`: `notification_channels` table +
+- Migration `590_notification_channels`: `notification_channels` table +
   channel CHECK lift (`'email'` → `'email','slack'`) across the four
   notification tables (design §6).
 - `ChannelProvider` seam in `apps/notifications-worker/src/channels/`

@@ -1,3 +1,5 @@
+import { createSqlExecutor } from "@saas/db/hyperdrive";
+import { createEventsRepository } from "@saas/db/events";
 import type { Env } from "./env.js";
 
 /**
@@ -25,61 +27,65 @@ export interface NotificationEventInput {
 }
 
 /**
- * Forward an audit-safe event to events-worker over the internal binding.
+ * Append a notification lifecycle event to the canonical event log with its
+ * audit projection — the same direct `@saas/db/events` write path every other
+ * bounded context uses (saas-event-streaming ES0). The previous incarnation
+ * of this seam POSTed the envelope to an events-worker route that never
+ * existed, so `notification.*` events silently vanished; writing the log
+ * directly makes notification delivery auditable as spec 14 requires.
  *
  * Best-effort: failures do NOT propagate to the caller. The events seam is
  * an audit sink, not a critical path for the enqueue/send happy path; the
  * caller has already persisted the lifecycle row authoritatively.
  *
- * In environments where EVENTS_WORKER is not bound (local, tests) this
- * function is a no-op.
+ * In environments without a PLATFORM_DB binding (local, tests) this function
+ * is a no-op — tests inject a stub via the handlers' `deps.emit` seam.
  */
 export async function emitEvent(env: Env, input: NotificationEventInput): Promise<void> {
-  if (!env.EVENTS_WORKER) return;
+  if (!env.PLATFORM_DB) return;
 
-  const url = "https://events.internal/v1/internal/events";
-  const body = {
-    event: {
-      id: cryptoRandomEventId(),
-      type: input.type,
-      version: 1,
-      source: "notifications-worker",
-      occurredAt: input.occurredAt.toISOString(),
-      actor: { type: input.actorType, id: input.actorId },
-      tenant: { orgId: input.orgId },
-      subject: { kind: input.subjectKind, id: input.subjectId },
-      trace: {
+  let executor: Awaited<ReturnType<typeof createSqlExecutor>> | null = null;
+  try {
+    executor = createSqlExecutor(env.PLATFORM_DB);
+    const events = createEventsRepository(executor);
+    await events.appendEventWithAudit({
+      event: {
+        id: cryptoRandomEventId(),
+        type: input.type,
+        version: 1,
+        source: "notifications-worker",
+        occurredAt: input.occurredAt,
+        actorType: input.actorType,
+        actorId: input.actorId,
+        orgId: input.orgId,
+        subjectKind: input.subjectKind,
+        subjectId: input.subjectId,
         requestId: input.requestId,
         correlationId: input.correlationId ?? null,
+        payload: input.payload,
       },
-      payload: input.payload,
-    },
-    audit: {
-      category: "notifications",
-      description: input.description,
-    },
-  };
-
-  try {
-    await env.EVENTS_WORKER.fetch(url, {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        "x-request-id": input.requestId,
-        "x-actor-subject-id": input.actorId,
-        "x-actor-subject-type": input.actorType,
-        "x-internal-actor": "notifications-worker",
+      audit: {
+        id: cryptoRandomEventId(),
+        category: "notifications",
+        description: input.description,
       },
-      body: JSON.stringify(body),
     });
   } catch {
     // Audit sink failures must not break the call site.
+  } finally {
+    if (executor) {
+      try {
+        await executor.dispose();
+      } catch {
+        // Disposal failures are as non-critical as the write itself.
+      }
+    }
   }
 }
 
 function cryptoRandomEventId(): string {
-  // Hex random — events-worker accepts any opaque event id; this avoids
-  // leaking provider message ids into the envelope.
+  // Hex random — the event log accepts any opaque id; this avoids leaking
+  // provider message ids into the envelope.
   const buf = new Uint8Array(16);
   crypto.getRandomValues(buf);
   let hex = "";

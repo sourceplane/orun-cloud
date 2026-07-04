@@ -8,7 +8,7 @@ has shipped yet.
 
 | ID | Status |
 |----|--------|
-| ES0 — Foundation (catalog, `470_event_streams_foundation`, repo layer, notifications emit fix, spec 09/14 amendments) | 🗓️ Planned |
+| ES0 — Foundation (catalog, `580_event_streams_foundation`, repo layer, notifications emit fix, spec 09/14 amendments) | 🗓️ Planned |
 | ES1 — Router: shared lanes + dead letters + webhooks cutover | 🗓️ Planned |
 | ES2 — Notification rules | 🗓️ Planned |
 | ES3 — Channels: provider seam + Slack incoming webhook + async retry | 🗓️ Planned |
@@ -28,8 +28,6 @@ has shipped yet.
   `idempotency_key` present since `030_events_audit_core` and unconsumed;
   notification channel CHECKs hard-locked to `'email'` across all four tables
   (`120_notifications_core`).
-- 2026-07-02: Migration numbers `470`/`480`/`490` reserved by this plan
-  against current head `460_state_repo_facet`; renumber at ES0 landing if the
-  head has moved.
+- 2026-07-02: Migration numbers `470`/`480`/`490` were reserved against head `460_state_repo_facet`; parallel work consumed 470-570, so ES0 landed as `580_event_streams_foundation` (follow-ons renumbered `590`/`600`).
 - Decision gates D1–D4 are open with defaults recommended; none block the
   spine (see `risks-and-open-questions.md`).

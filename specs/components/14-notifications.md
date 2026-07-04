@@ -1,6 +1,6 @@
 # Notifications
 
-Status: Shipped — live on main (trust code over this doc). Owning work epic: see specs/epics/ + specs/roadmap.md.
+Status: Shipped (email V1) — live on main (trust code over this doc). The deferred "rich notification routing" is owned by `specs/epics/saas-event-streaming/` (ES2 rules, ES3 channel seam + Slack). As of ES0 the `notification.*` lifecycle events write the canonical event log directly via `@saas/db/events` (the previous HTTP emit targeted a route that never existed), making delivery auditable as this spec requires.
 
 Primary monorepo targets:
 

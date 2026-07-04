@@ -8,6 +8,7 @@ export * from "./auth.js";
 export * from "./membership.js";
 export * from "./policy.js";
 export * from "./events.js";
+export * from "./event-catalog.js";
 export * from "./projects.js";
 export * from "./config.js";
 export * from "./security-events.js";

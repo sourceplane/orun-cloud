@@ -1,0 +1,401 @@
+import type { SqlExecutor } from "../hyperdrive/executor.js";
+import type {
+  EventsCursorPosition,
+  EventsPagedResult,
+  EventsPageQueryParams,
+  EventsResult,
+} from "./types.js";
+
+// ---------------------------------------------------------------------------
+// Notification rules storage (saas-event-streaming ES0): org/project-scoped
+// routing rules and their delivery targets. Storage primitives only — the
+// matching engine that evaluates them lands in ES2.
+// ---------------------------------------------------------------------------
+
+export type NotificationRuleStatus = "enabled" | "disabled" | "suppressed";
+export type RuleTargetKind = "email" | "slack_channel" | "webhook_endpoint";
+export type RuleFilterOp = "eq" | "neq" | "in";
+
+export interface RuleAttributeFilter {
+  /** Dot path into the event payload (e.g. "repoFullName"). */
+  path: string;
+  op: RuleFilterOp;
+  value: unknown;
+}
+
+export interface StoredNotificationRule {
+  id: string;
+  orgId: string;
+  projectId: string | null;
+  name: string;
+  status: NotificationRuleStatus;
+  eventTypes: string[];
+  minSeverity: string;
+  sources: string[] | null;
+  attributeFilters: RuleAttributeFilter[] | null;
+  throttleWindowSeconds: number;
+  throttleMax: number;
+  createdBy: string;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface CreateNotificationRuleInput {
+  id: string;
+  orgId: string;
+  projectId?: string | null;
+  name: string;
+  eventTypes: string[];
+  minSeverity?: string;
+  sources?: string[] | null;
+  attributeFilters?: RuleAttributeFilter[] | null;
+  throttleWindowSeconds?: number;
+  throttleMax?: number;
+  createdBy: string;
+}
+
+export interface UpdateNotificationRulePatch {
+  name?: string;
+  status?: NotificationRuleStatus;
+  projectId?: string | null;
+  eventTypes?: string[];
+  minSeverity?: string;
+  sources?: string[] | null;
+  attributeFilters?: RuleAttributeFilter[] | null;
+  throttleWindowSeconds?: number;
+  throttleMax?: number;
+}
+
+export interface StoredRuleTarget {
+  id: string;
+  ruleId: string;
+  orgId: string;
+  targetKind: RuleTargetKind;
+  targetRef: string;
+  enabled: boolean;
+  createdAt: Date;
+}
+
+export interface AddRuleTargetInput {
+  id: string;
+  ruleId: string;
+  orgId: string;
+  targetKind: RuleTargetKind;
+  targetRef: string;
+  enabled?: boolean;
+}
+
+export interface NotificationRulesRepository {
+  createRule(input: CreateNotificationRuleInput): Promise<EventsResult<StoredNotificationRule>>;
+  getRule(orgId: string, id: string): Promise<EventsResult<StoredNotificationRule | null>>;
+  listRulesByOrg(
+    orgId: string,
+    params: EventsPageQueryParams,
+  ): Promise<EventsResult<EventsPagedResult<StoredNotificationRule>>>;
+  /** All enabled rules for an org — the lane handler's working set (small N). */
+  listEnabledRulesByOrg(orgId: string): Promise<EventsResult<StoredNotificationRule[]>>;
+  updateRule(
+    orgId: string,
+    id: string,
+    patch: UpdateNotificationRulePatch,
+  ): Promise<EventsResult<StoredNotificationRule | null>>;
+  deleteRule(orgId: string, id: string): Promise<EventsResult<boolean>>;
+
+  addTarget(input: AddRuleTargetInput): Promise<EventsResult<StoredRuleTarget>>;
+  listTargetsByRule(ruleId: string): Promise<EventsResult<StoredRuleTarget[]>>;
+  listTargetsForRules(ruleIds: string[]): Promise<EventsResult<StoredRuleTarget[]>>;
+  removeTarget(ruleId: string, targetId: string): Promise<EventsResult<boolean>>;
+}
+
+// ---------------------------------------------------------------------------
+// Row mappers
+// ---------------------------------------------------------------------------
+
+function parseJsonArrayColumn(value: unknown): unknown[] | null {
+  if (value === null || value === undefined) return null;
+  if (typeof value === "string") {
+    const parsed = JSON.parse(value);
+    return Array.isArray(parsed) ? (parsed as unknown[]) : null;
+  }
+  if (Array.isArray(value)) return value as unknown[];
+  return null;
+}
+
+function mapRule(row: Record<string, unknown>): StoredNotificationRule {
+  return {
+    id: row.id as string,
+    orgId: row.org_id as string,
+    projectId: (row.project_id as string) ?? null,
+    name: row.name as string,
+    status: row.status as NotificationRuleStatus,
+    eventTypes: (parseJsonArrayColumn(row.event_types) as string[]) ?? [],
+    minSeverity: row.min_severity as string,
+    sources: (parseJsonArrayColumn(row.sources) as string[] | null) ?? null,
+    attributeFilters:
+      (parseJsonArrayColumn(row.attribute_filters) as RuleAttributeFilter[] | null) ?? null,
+    throttleWindowSeconds: row.throttle_window_seconds as number,
+    throttleMax: row.throttle_max as number,
+    createdBy: row.created_by as string,
+    createdAt: new Date(row.created_at as string),
+    updatedAt: new Date(row.updated_at as string),
+  };
+}
+
+function mapTarget(row: Record<string, unknown>): StoredRuleTarget {
+  return {
+    id: row.id as string,
+    ruleId: row.rule_id as string,
+    orgId: row.org_id as string,
+    targetKind: row.target_kind as RuleTargetKind,
+    targetRef: row.target_ref as string,
+    enabled: row.enabled as boolean,
+    createdAt: new Date(row.created_at as string),
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+function isUniqueViolation(err: unknown): boolean {
+  return (
+    typeof err === "object" &&
+    err !== null &&
+    "code" in err &&
+    (err as { code: string }).code === "23505"
+  );
+}
+
+function safeError(message: string): EventsResult<never> {
+  return { ok: false, error: { kind: "internal", message } };
+}
+
+function buildCreatedCursorCondition(
+  cursor: EventsCursorPosition | null,
+  startParam: number,
+): { clause: string; params: unknown[] } {
+  if (!cursor) return { clause: "", params: [] };
+  return {
+    clause: ` AND (created_at, id) < ($${startParam}, $${startParam + 1})`,
+    params: [cursor.occurredAt, cursor.id],
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Factory
+// ---------------------------------------------------------------------------
+
+export function createNotificationRulesRepository(executor: SqlExecutor): NotificationRulesRepository {
+  return {
+    async createRule(input) {
+      try {
+        const result = await executor.execute<Record<string, unknown>>(
+          `INSERT INTO events.notification_rules (
+             id, org_id, project_id, name, event_types, min_severity,
+             sources, attribute_filters, throttle_window_seconds, throttle_max, created_by
+           ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+           RETURNING *`,
+          [
+            input.id,
+            input.orgId,
+            input.projectId ?? null,
+            input.name,
+            JSON.stringify(input.eventTypes),
+            input.minSeverity ?? "info",
+            input.sources ? JSON.stringify(input.sources) : null,
+            input.attributeFilters ? JSON.stringify(input.attributeFilters) : null,
+            input.throttleWindowSeconds ?? 300,
+            input.throttleMax ?? 10,
+            input.createdBy,
+          ],
+        );
+        return { ok: true, value: mapRule(result.rows[0]!) };
+      } catch (err) {
+        if (isUniqueViolation(err)) {
+          return { ok: false, error: { kind: "conflict", entity: "notification_rule" } };
+        }
+        return safeError("Failed to create notification rule");
+      }
+    },
+
+    async getRule(orgId, id) {
+      try {
+        const result = await executor.execute<Record<string, unknown>>(
+          `SELECT * FROM events.notification_rules WHERE org_id = $1 AND id = $2`,
+          [orgId, id],
+        );
+        return { ok: true, value: result.rows.length ? mapRule(result.rows[0]!) : null };
+      } catch {
+        return safeError("Failed to read notification rule");
+      }
+    },
+
+    async listRulesByOrg(orgId, params) {
+      try {
+        const values: unknown[] = [orgId];
+        const cursorCondition = buildCreatedCursorCondition(params.cursor, 2);
+        values.push(...cursorCondition.params);
+        values.push(params.limit + 1);
+
+        const result = await executor.execute<Record<string, unknown>>(
+          `SELECT * FROM events.notification_rules
+           WHERE org_id = $1${cursorCondition.clause}
+           ORDER BY created_at DESC, id DESC
+           LIMIT $${values.length}`,
+          values,
+        );
+        const mapped = result.rows.map(mapRule);
+        if (mapped.length > params.limit) {
+          const trimmed = mapped.slice(0, params.limit);
+          const last = trimmed[trimmed.length - 1]!;
+          return {
+            ok: true,
+            value: {
+              items: trimmed,
+              nextCursor: { occurredAt: last.createdAt.toISOString(), id: last.id },
+            },
+          };
+        }
+        return { ok: true, value: { items: mapped, nextCursor: null } };
+      } catch {
+        return safeError("Failed to list notification rules");
+      }
+    },
+
+    async listEnabledRulesByOrg(orgId) {
+      try {
+        const result = await executor.execute<Record<string, unknown>>(
+          `SELECT * FROM events.notification_rules
+           WHERE org_id = $1 AND status = 'enabled'
+           ORDER BY created_at ASC, id ASC`,
+          [orgId],
+        );
+        return { ok: true, value: result.rows.map(mapRule) };
+      } catch {
+        return safeError("Failed to list enabled notification rules");
+      }
+    },
+
+    async updateRule(orgId, id, patch) {
+      try {
+        const sets: string[] = [];
+        const values: unknown[] = [orgId, id];
+        const push = (fragment: string, value: unknown) => {
+          values.push(value);
+          sets.push(`${fragment} = $${values.length}`);
+        };
+        if (patch.name !== undefined) push("name", patch.name);
+        if (patch.status !== undefined) push("status", patch.status);
+        if (patch.projectId !== undefined) push("project_id", patch.projectId);
+        if (patch.eventTypes !== undefined) push("event_types", JSON.stringify(patch.eventTypes));
+        if (patch.minSeverity !== undefined) push("min_severity", patch.minSeverity);
+        if (patch.sources !== undefined) {
+          push("sources", patch.sources ? JSON.stringify(patch.sources) : null);
+        }
+        if (patch.attributeFilters !== undefined) {
+          push(
+            "attribute_filters",
+            patch.attributeFilters ? JSON.stringify(patch.attributeFilters) : null,
+          );
+        }
+        if (patch.throttleWindowSeconds !== undefined) {
+          push("throttle_window_seconds", patch.throttleWindowSeconds);
+        }
+        if (patch.throttleMax !== undefined) push("throttle_max", patch.throttleMax);
+        if (sets.length === 0) {
+          const current = await executor.execute<Record<string, unknown>>(
+            `SELECT * FROM events.notification_rules WHERE org_id = $1 AND id = $2`,
+            [orgId, id],
+          );
+          return { ok: true, value: current.rows.length ? mapRule(current.rows[0]!) : null };
+        }
+        const result = await executor.execute<Record<string, unknown>>(
+          `UPDATE events.notification_rules
+           SET ${sets.join(", ")}, updated_at = now()
+           WHERE org_id = $1 AND id = $2
+           RETURNING *`,
+          values,
+        );
+        return { ok: true, value: result.rows.length ? mapRule(result.rows[0]!) : null };
+      } catch (err) {
+        if (isUniqueViolation(err)) {
+          return { ok: false, error: { kind: "conflict", entity: "notification_rule" } };
+        }
+        return safeError("Failed to update notification rule");
+      }
+    },
+
+    async deleteRule(orgId, id) {
+      try {
+        const result = await executor.execute<Record<string, unknown>>(
+          `DELETE FROM events.notification_rules WHERE org_id = $1 AND id = $2 RETURNING id`,
+          [orgId, id],
+        );
+        return { ok: true, value: result.rows.length > 0 };
+      } catch {
+        return safeError("Failed to delete notification rule");
+      }
+    },
+
+    async addTarget(input) {
+      try {
+        const result = await executor.execute<Record<string, unknown>>(
+          `INSERT INTO events.rule_targets (id, rule_id, org_id, target_kind, target_ref, enabled)
+           VALUES ($1, $2, $3, $4, $5, $6)
+           RETURNING *`,
+          [
+            input.id,
+            input.ruleId,
+            input.orgId,
+            input.targetKind,
+            input.targetRef,
+            input.enabled ?? true,
+          ],
+        );
+        return { ok: true, value: mapTarget(result.rows[0]!) };
+      } catch (err) {
+        if (isUniqueViolation(err)) {
+          return { ok: false, error: { kind: "conflict", entity: "rule_target" } };
+        }
+        return safeError("Failed to add rule target");
+      }
+    },
+
+    async listTargetsByRule(ruleId) {
+      try {
+        const result = await executor.execute<Record<string, unknown>>(
+          `SELECT * FROM events.rule_targets WHERE rule_id = $1 ORDER BY created_at ASC, id ASC`,
+          [ruleId],
+        );
+        return { ok: true, value: result.rows.map(mapTarget) };
+      } catch {
+        return safeError("Failed to list rule targets");
+      }
+    },
+
+    async listTargetsForRules(ruleIds) {
+      if (ruleIds.length === 0) return { ok: true, value: [] };
+      try {
+        const result = await executor.execute<Record<string, unknown>>(
+          `SELECT * FROM events.rule_targets WHERE rule_id = ANY($1) ORDER BY created_at ASC, id ASC`,
+          [ruleIds],
+        );
+        return { ok: true, value: result.rows.map(mapTarget) };
+      } catch {
+        return safeError("Failed to list rule targets");
+      }
+    },
+
+    async removeTarget(ruleId, targetId) {
+      try {
+        const result = await executor.execute<Record<string, unknown>>(
+          `DELETE FROM events.rule_targets WHERE rule_id = $1 AND id = $2 RETURNING id`,
+          [ruleId, targetId],
+        );
+        return { ok: true, value: result.rows.length > 0 };
+      } catch {
+        return safeError("Failed to remove rule target");
+      }
+    },
+  };
+}
