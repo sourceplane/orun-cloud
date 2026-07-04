@@ -88,11 +88,27 @@ interface Capture {
   deletes: number;
   upserts: unknown[][];
   repoFacets: unknown[][];
+  projectionSuccess: unknown[][];
+  projectionFailure: unknown[][];
 }
 function captureExecutor(): Capture {
-  const cap: Capture = { executor: undefined as unknown as SqlExecutor, deletes: 0, upserts: [], repoFacets: [] };
+  const cap: Capture = {
+    executor: undefined as unknown as SqlExecutor,
+    deletes: 0,
+    upserts: [],
+    repoFacets: [],
+    projectionSuccess: [],
+    projectionFailure: [],
+  };
   cap.executor = {
     execute<T extends SqlRow = SqlRow>(text: string, params: unknown[] = []): Promise<SqlExecutorResult<T>> {
+      if (text.includes("INSERT INTO state.catalog_projection")) {
+        // Distinguish the success upsert (records projected_digest) from the
+        // failure upsert (bumps attempts) by the columns each writes.
+        if (text.includes("projected_at")) cap.projectionSuccess.push(params);
+        else cap.projectionFailure.push(params);
+        return Promise.resolve({ rows: [] as unknown as T[], rowCount: 1 });
+      }
       if (text.includes("DELETE FROM state.org_catalog_entities")) {
         cap.deletes++;
         return Promise.resolve({ rows: [] as unknown as T[], rowCount: 2 });
@@ -264,5 +280,33 @@ describe("projectCatalogSnapshot (OV6.2b)", () => {
   it("is a dormant no-op when neither R2 nor a DB executor is available", async () => {
     const summary = await projectCatalogSnapshot({} as Env, scope(), {});
     expect(summary).toBeNull();
+  });
+
+  it("records a success mark on the outbox so the sweep stops re-projecting the scope", async () => {
+    const { rootDigest, store } = buildRepoSnapshot();
+    const cap = captureExecutor();
+    await projectCatalogSnapshot({} as Env, scope({ digest: rootDigest }), {
+      executor: cap.executor,
+      fetcher: fetcherOf(store),
+    });
+    // recordCatalogProjectionSuccess(orgId, projectId, environment, digest).
+    expect(cap.projectionSuccess).toHaveLength(1);
+    expect(cap.projectionSuccess[0]).toEqual([asUuid(ORG), asUuid(PROJECT), null, rootDigest]);
+    expect(cap.projectionFailure).toHaveLength(0);
+  });
+
+  it("records a failure mark (attempts++) when the snapshot is unreadable, then rethrows", async () => {
+    const cap = captureExecutor();
+    await expect(
+      projectCatalogSnapshot({} as Env, scope(), {
+        executor: cap.executor,
+        fetcher: () => Promise.reject(new Error("r2 down")),
+      }),
+    ).rejects.toThrow("r2 down");
+    expect(cap.projectionFailure).toHaveLength(1);
+    expect(cap.projectionSuccess).toHaveLength(0);
+    // No writes committed — the scope stays pending for the sweep to retry.
+    expect(cap.deletes).toBe(0);
+    expect(cap.upserts).toHaveLength(0);
   });
 });

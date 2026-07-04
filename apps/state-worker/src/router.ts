@@ -36,6 +36,7 @@ import {
 import {
   handleAdvanceCatalogHead,
   handleGetCatalogHead,
+  handleReprojectCatalogHead,
   handleCatalogHeadHistory,
   handleListCatalogEntities,
   handleListOrgCatalogEntities,
@@ -138,6 +139,7 @@ const OBJECT_UPLOAD_COMPLETE_RE = new RegExp(
   `^${STATE_BASE}/objects/(sha256:[0-9a-f]{64})/uploads/([^/]+)/complete$`,
 );
 const CATALOG_HEAD_RE = new RegExp(`^${STATE_BASE}/catalog/head$`);
+const CATALOG_REPROJECT_RE = new RegExp(`^${STATE_BASE}/catalog/reproject$`);
 const CATALOG_HEADS_HISTORY_RE = new RegExp(`^${STATE_BASE}/catalog/heads/history$`);
 const CATALOG_ENTITIES_RE = new RegExp(`^${STATE_BASE}/catalog/entities$`);
 // OV9 — object GC reachability report (report-only; no deletion).
@@ -524,6 +526,15 @@ async function routeObjectAndCatalog(
       return handleGetCatalogHead(request, env, requestId, actor, scope.orgId, scope.projectId);
     }
     return methodNotAllowed(requestId);
+  }
+
+  // POST …/state/catalog/reproject — force re-projection of the current head.
+  m = pathname.match(CATALOG_REPROJECT_RE);
+  if (m) {
+    const scope = parseScope(m[1]!, m[2]!);
+    if (!scope) return notFound(requestId, pathname);
+    if (request.method !== "POST") return methodNotAllowed(requestId);
+    return handleReprojectCatalogHead(request, env, requestId, actor, scope.orgId, scope.projectId);
   }
 
   // GET …/state/catalog/heads/history?cursor= — advance history.

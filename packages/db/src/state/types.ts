@@ -404,6 +404,16 @@ export interface UpsertRepoFacetInput {
   sourceCommit?: string | null;
 }
 
+/** One scope needing (re)projection: the current head the read model must catch
+ *  up to. Returned by listPendingCatalogProjections (the cron-sweep drive set). */
+export interface PendingCatalogProjection {
+  orgId: string;
+  projectId: string;
+  environment: string | null;
+  digest: string; // the current head digest the read model must reach
+  commit: string | null;
+}
+
 /** Org-global browse filters (all optional; provenance + facets). */
 export interface ListOrgCatalogEntitiesQuery {
   sourceProjectId?: Uuid;
@@ -672,6 +682,31 @@ export interface StateRepository {
   getRepoFacet(orgId: Uuid, sourceProjectId: Uuid): Promise<StateResult<RepoFacet | null>>;
   /** List every projected repo facet for an org (the Git Repos list). */
   listRepoFacets(orgId: Uuid): Promise<StateResult<RepoFacet[]>>;
+
+  // Catalog-projection outbox (projection reliability) — records which head each
+  // scope's read model has caught up to, so a stuck projection is self-healing.
+  /** Record that a scope's read model was successfully projected at `digest`
+   *  (clears the failure counter). */
+  recordCatalogProjectionSuccess(
+    orgId: Uuid,
+    projectId: Uuid,
+    environment: string | null,
+    digest: string,
+  ): Promise<StateResult<void>>;
+  /** Record a failed projection attempt for a scope (increments attempts, keeps
+   *  the last good projected_digest so the sweep keeps retrying). */
+  recordCatalogProjectionFailure(
+    orgId: Uuid,
+    projectId: Uuid,
+    environment: string | null,
+    error: string,
+  ): Promise<StateResult<void>>;
+  /** The cron-sweep drive set: scopes whose current catalog head has not been
+   *  projected (projected_digest lags the head), capped by attempts and bounded. */
+  listPendingCatalogProjections(
+    limit: number,
+    maxAttempts: number,
+  ): Promise<StateResult<PendingCatalogProjection[]>>;
 
   /**
    * Current state-plane storage footprint for an org (OV9): live object + log

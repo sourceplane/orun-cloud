@@ -23,6 +23,7 @@ import type {
   OrgCatalogEntity,
   RepoFacet,
   UpsertRepoFacetInput,
+  PendingCatalogProjection,
   StateStorageUsage,
   UpsertOrgCatalogEntityInput,
   ListRunsQuery,
@@ -1138,6 +1139,96 @@ export function createStateRepository(executor: SqlExecutor): StateRepository {
         return { ok: true, value: result.rows.map(mapRepoFacet) };
       } catch {
         return safeError("Failed to list repo facets");
+      }
+    },
+
+    async recordCatalogProjectionSuccess(
+      orgId: Uuid,
+      projectId: Uuid,
+      environment: string | null,
+      digest: string,
+    ): Promise<StateResult<void>> {
+      try {
+        await executor.execute(
+          `INSERT INTO state.catalog_projection
+             (org_id, project_id, environment, projected_digest, projected_at, attempts, last_error, updated_at)
+           VALUES ($1, $2, $3, $4, now(), 0, NULL, now())
+           ON CONFLICT (org_id, project_id, COALESCE(environment, ''))
+             DO UPDATE SET projected_digest = EXCLUDED.projected_digest,
+                           projected_at = now(), attempts = 0, last_error = NULL, updated_at = now()`,
+          [orgId, projectId, environment, digest],
+        );
+        return { ok: true, value: undefined };
+      } catch {
+        return safeError("Failed to record catalog projection success");
+      }
+    },
+
+    async recordCatalogProjectionFailure(
+      orgId: Uuid,
+      projectId: Uuid,
+      environment: string | null,
+      error: string,
+    ): Promise<StateResult<void>> {
+      try {
+        // Keep the last good projected_digest so the sweep keeps the scope pending
+        // and retries; just bump the counter and record why.
+        await executor.execute(
+          `INSERT INTO state.catalog_projection
+             (org_id, project_id, environment, projected_digest, attempts, last_error, updated_at)
+           VALUES ($1, $2, $3, NULL, 1, $4, now())
+           ON CONFLICT (org_id, project_id, COALESCE(environment, ''))
+             DO UPDATE SET attempts = state.catalog_projection.attempts + 1,
+                           last_error = EXCLUDED.last_error, updated_at = now()`,
+          [orgId, projectId, environment, error.slice(0, 2000)],
+        );
+        return { ok: true, value: undefined };
+      } catch {
+        return safeError("Failed to record catalog projection failure");
+      }
+    },
+
+    async listPendingCatalogProjections(
+      limit: number,
+      maxAttempts: number,
+    ): Promise<StateResult<PendingCatalogProjection[]>> {
+      try {
+        // Drive from catalog_heads (the authoritative desired head, latest per
+        // scope) LEFT JOIN the outbox. A scope is pending when its read model has
+        // not caught up to its current head — including scopes with no outbox row
+        // yet (projected_digest IS NULL), so a head that advanced before the
+        // outbox existed self-heals on the first pass. Poison scopes are parked
+        // after maxAttempts consecutive failures (still visible via last_error).
+        const result = await executor.execute<Record<string, unknown>>(
+          `WITH latest AS (
+             SELECT DISTINCT ON (org_id, project_id, COALESCE(environment, ''))
+                    org_id, project_id, environment, digest, commit, advanced_at
+               FROM state.catalog_heads
+              ORDER BY org_id, project_id, COALESCE(environment, ''), advanced_at DESC
+           )
+           SELECT l.org_id, l.project_id, l.environment, l.digest, l.commit
+             FROM latest l
+             LEFT JOIN state.catalog_projection p
+               ON p.org_id = l.org_id AND p.project_id = l.project_id
+              AND COALESCE(p.environment, '') = COALESCE(l.environment, '')
+            WHERE p.projected_digest IS DISTINCT FROM l.digest
+              AND COALESCE(p.attempts, 0) < $1
+            ORDER BY l.advanced_at ASC
+            LIMIT $2`,
+          [maxAttempts, limit],
+        );
+        return {
+          ok: true,
+          value: result.rows.map((r) => ({
+            orgId: r.org_id as string,
+            projectId: r.project_id as string,
+            environment: (r.environment as string | null) ?? null,
+            digest: r.digest as string,
+            commit: (r.commit as string | null) ?? null,
+          })),
+        };
+      } catch {
+        return safeError("Failed to list pending catalog projections");
       }
     },
 
