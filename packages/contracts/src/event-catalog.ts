@@ -236,6 +236,11 @@ export const EVENT_CATALOG: Readonly<Record<string, CatalogEntry>> = Object.from
   entry({ type: "event.delivery_failed", version: 1, category: "system", severity: "warning", title: "Lane delivery failed for event {payload.eventId}", audit: true }),
   entry({ type: "dead_letter.created", version: 1, category: "system", severity: "error", title: "Event dead-lettered on lane {payload.laneKey}", audit: true }),
   entry({ type: "dead_letter.replayed", version: 1, category: "system", severity: "notice", title: "Dead letter replayed on lane {payload.laneKey}", audit: true }),
+
+  // --- notification rules (events-worker; emitted from ES2) -----------------
+  entry({ type: "notification_rule.created", version: 1, category: "activity", severity: "info", title: "Notification rule {subject.name} created", audit: true }),
+  entry({ type: "notification_rule.updated", version: 1, category: "activity", severity: "info", title: "Notification rule {subject.name} updated", audit: true }),
+  entry({ type: "notification_rule.deleted", version: 1, category: "activity", severity: "notice", title: "Notification rule {subject.name} deleted", audit: true }),
 ] as Array<[string, CatalogEntry]>);
 
 // ---------------------------------------------------------------------------
@@ -295,4 +300,51 @@ export function matchesEventTypeGlob(type: string, glob: string): boolean {
 export function matchesAnyEventTypeGlob(type: string, globs: readonly string[]): boolean {
   if (globs.length === 0) return true;
   return globs.some((glob) => matchesEventTypeGlob(type, glob));
+}
+
+/**
+ * The effective severity of a concrete event: the catalog default, escalated
+ * (never de-escalated) by a valid `severity` field in the payload. Unregistered
+ * types fall back to "info".
+ */
+export function effectiveEventSeverity(type: string, payload: Record<string, unknown>): EventSeverity {
+  const base = catalogEntryFor(type)?.severity ?? "info";
+  const claimed = payload["severity"];
+  if (typeof claimed === "string" && (EVENT_SEVERITIES as readonly string[]).includes(claimed)) {
+    const claimedSeverity = claimed as EventSeverity;
+    if (severityRank(claimedSeverity) > severityRank(base)) return claimedSeverity;
+  }
+  return base;
+}
+
+/**
+ * Render a catalog title template against an envelope-shaped view. Supported
+ * placeholders: `{subject.name}`, `{subject.id}`, `{subject.kind}`,
+ * `{tenant.orgId}`, `{payload.<dotted.path>}`. Unresolvable placeholders
+ * render as their trailing path segment in brackets, never throwing —
+ * rendering is a display concern and must not fail routing.
+ */
+export function renderEventTitle(
+  template: string,
+  view: {
+    subject?: { kind?: string; id?: string; name?: string | null };
+    tenant?: { orgId?: string };
+    payload?: Record<string, unknown>;
+  },
+): string {
+  return template.replace(/\{([a-zA-Z0-9_.]+)\}/g, (_match, rawPath: string) => {
+    const parts = rawPath.split(".");
+    let target: unknown = view;
+    for (const part of parts) {
+      if (target && typeof target === "object" && part in (target as Record<string, unknown>)) {
+        target = (target as Record<string, unknown>)[part];
+      } else {
+        target = undefined;
+        break;
+      }
+    }
+    if (target === undefined || target === null) return `[${parts[parts.length - 1]!}]`;
+    if (typeof target === "object") return `[${parts[parts.length - 1]!}]`;
+    return String(target);
+  });
 }

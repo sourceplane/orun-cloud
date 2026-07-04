@@ -543,5 +543,14 @@ export const manifest: MigrationManifest = {
       description:
         "Webhooks lane adoption (saas-event-streaming ES1) — seeds the subscriber-lane registry with the two launch lanes ('webhooks' active, owned by webhooks-worker with delivery mechanics unchanged; 'notifications' PAUSED until the ES2 rules engine lands) and backfills events.lane_cursors from webhooks.webhook_dispatch_cursor (one-time one-directional copy INTO the events context per the R6 cutover protocol: copy -> dual-read -> cutover -> drop later; the legacy table stays intact as the runtime read-through fallback and rollback path). Idempotent via ON CONFLICT DO NOTHING throughout; no cross-context foreign keys.",
     },
+    {
+      id: "600_notification_rule_throttle",
+      context: "events",
+      path: "600_notification_rule_throttle/up.sql",
+      checksum:
+        "0f356cd02a0ec20588aa8f40f34c5596a3f8608a2ab48a7b809d4c1ab3e15f84",
+      description:
+        "Notification-rule throttle state + notifications lane activation (saas-event-streaming ES2) — creates events.rule_throttle_state (one row per rule; fixed window anchored at first fire; fired_count consumed via a single atomic upsert so overlapping cron ticks cannot double-admit — the ledger behind the mandatory throttle_window_seconds/throttle_max rule fields, R1 storm control) and flips the 'notifications' subscriber lane from its seeded PAUSED state to active now that the ES2 rules engine gives the lane a handler. Operators keep the pause switch via subscriber_lanes.status. Additive + idempotent; same-context FK only.",
+    },
   ],
 };

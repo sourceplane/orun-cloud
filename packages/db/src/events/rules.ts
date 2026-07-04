@@ -107,6 +107,19 @@ export interface NotificationRulesRepository {
   ): Promise<EventsResult<StoredNotificationRule | null>>;
   deleteRule(orgId: string, id: string): Promise<EventsResult<boolean>>;
 
+  /**
+   * Atomically consume one firing from the rule's fixed throttle window.
+   * Returns true when the firing is admitted (fired_count within
+   * throttleMax), false when the window is saturated. A window opens at the
+   * first fire and rolls when windowSeconds have elapsed. Single-statement
+   * upsert — overlapping cron ticks cannot double-admit.
+   */
+  tryConsumeThrottle(
+    ruleId: string,
+    windowSeconds: number,
+    throttleMax: number,
+  ): Promise<EventsResult<boolean>>;
+
   addTarget(input: AddRuleTargetInput): Promise<EventsResult<StoredRuleTarget>>;
   listTargetsByRule(ruleId: string): Promise<EventsResult<StoredRuleTarget[]>>;
   listTargetsForRules(ruleIds: string[]): Promise<EventsResult<StoredRuleTarget[]>>;
@@ -351,6 +364,36 @@ export function createNotificationRulesRepository(executor: SqlExecutor): Notifi
         return { ok: true, value: result.rows.length > 0 };
       } catch {
         return safeError("Failed to delete notification rule");
+      }
+    },
+
+    async tryConsumeThrottle(ruleId, windowSeconds, throttleMax) {
+      // windowSeconds 0 disables throttling entirely.
+      if (windowSeconds <= 0) return { ok: true, value: true };
+      try {
+        const result = await executor.execute<Record<string, unknown>>(
+          `INSERT INTO events.rule_throttle_state (rule_id, window_started_at, fired_count, updated_at)
+           VALUES ($1, now(), 1, now())
+           ON CONFLICT (rule_id) DO UPDATE SET
+             fired_count = CASE
+               WHEN events.rule_throttle_state.window_started_at < now() - make_interval(secs => $2)
+               THEN 1
+               ELSE events.rule_throttle_state.fired_count + 1
+             END,
+             window_started_at = CASE
+               WHEN events.rule_throttle_state.window_started_at < now() - make_interval(secs => $2)
+               THEN now()
+               ELSE events.rule_throttle_state.window_started_at
+             END,
+             updated_at = now()
+           RETURNING fired_count`,
+          [ruleId, windowSeconds],
+        );
+        const firedCount = result.rows[0]!.fired_count as number;
+        return { ok: true, value: firedCount <= throttleMax };
+      } catch {
+        // Fail-closed: an unknown throttle state must not admit a storm.
+        return safeError("Failed to consume rule throttle");
       }
     },
 
