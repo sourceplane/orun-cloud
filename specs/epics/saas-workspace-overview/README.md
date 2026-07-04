@@ -37,7 +37,7 @@ render time.
 
 | Field | Value |
 |-------|-------|
-| Status | **Proposed** — design complete, cross-repo; no code landed |
+| Status | **✅ Shipped (WO1–WO5)** — the Workspace Overview is live: design (#245, #256), the landing (#272), the CLI half in `orun` (WO3a/b/c #434/#435/#436), projection → `state.repo_facet` + `doc_ref` (#276), console repo-facet reads + doc-by-digest (#277), narrative render + facet surfaces (#278), and Overview as the default landing + mobile tabs (#312). **WO6** (`Product` + explicit primary) remains **deferred** by design. |
 | Cluster | **WO** (workspace overview — presentation + catalog-model layer over **WS** `saas-workspaces`, **CP** `saas-catalog-portal`, **OP** state/`18-state.md`, and the runs feed) |
 | Repos | `sourceplane/orun-cloud` (platform, TS) · `sourceplane/orun` (CLI/engine, Go) |
 | Owner(s) | `apps/state-worker` + `apps/web-console-next` + `packages/{contracts,db}` (platform) · `internal/catalogmodel` + `internal/model` + `cmd/orun` (CLI) |
@@ -102,8 +102,8 @@ no drift, and no live provider call.
 | WO1 | — | Design + decision lock (this epic), cross-repo | both | ✅ Landed |
 | WO2 | **1** | **The landing** — `/orgs/{slug}` renders Overview (drop the `/projects` redirect); Overview nav item + breadcrumbs; identity band; signal row (reuse `rollup`/`MetricTiles` + a **composed** Activity tile); right-rail (repos from `projects`+`workspace_links`, recent activity from runs); empty/first-run states. **No CLI, no new object kind, no migration.** | `orun-cloud` | ✅ Merged (#272) |
 | WO3 | 2 | **CLI** — `docs.overview` on the shared docs struct; declared `repo` block + `Repo` kind (**ref = repo-local `<namespace>/<repo>/<name>`**); walk each `docs.overview` into the closure as a content-addressed **blob** (`doc_ref={path,sha,digest}`); emit `Repo` entities. (Shipped as WO3a #434 + WO3c #435 + WO3b #436.) | `orun` | ✅ Merged |
-| WO4 | 2 | **Projection** — create `state.repo_facet` (keyed by project); `doc_ref` on `org_catalog_entities`; projector projects `Repo`→`repo_facet` + `doc_ref`; add `Repo` to `lib/catalog-kind.ts`. **No object-kind migration** (docs ride the existing `blob` kind), **no `/overview` endpoint, no org columns.** | `orun-cloud` | 🟡 In progress |
-| WO5 | 2 | **Narrative render + facet surfaces** — resolve primary repo identity (client-side, no endpoint); narrative band (sanitized markdown by digest) + provenance + "N commits behind" staleness; Git Repos list + repo header read `state.repo_facet` | `orun-cloud` | ⚪ Not started |
+| WO4 | 2 | **Projection** — create `state.repo_facet` (keyed by project); `doc_ref` on `org_catalog_entities`; projector projects `Repo`→`repo_facet` + `doc_ref`; add `Repo` to `lib/catalog-kind.ts`. **No object-kind migration** (docs ride the existing `blob` kind), **no `/overview` endpoint, no org columns.** | `orun-cloud` | ✅ Merged (#276; migration `460_state_repo_facet`) |
+| WO5 | 2 | **Narrative render + facet surfaces** — resolve primary repo identity (client-side, no endpoint); narrative band (sanitized markdown by digest) + provenance + "N commits behind" staleness; Git Repos list + repo header read `state.repo_facet` | `orun-cloud` | ✅ Merged (WO5a #277 reads + doc-by-digest · WO5b #278 render) |
 | WO6 | 3 (later) | **`Product` + explicit primary** — `products` block + `Product` kind (merges across repos); `primary_project_id` on the org; product cards. Deferred until multi-product/multi-repo workspaces are real. | both | ⚪ Deferred |
 
 ## Scope boundary

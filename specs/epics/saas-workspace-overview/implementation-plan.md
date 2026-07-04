@@ -1,7 +1,8 @@
 # saas-workspace-overview — Implementation plan
 
-Status: Draft (revised 2026-07-01 to adopt `architecture-review.md`). Each
-milestone lists its repo and a concrete **done when**.
+Status: **Shipped WO1–WO5** (revised 2026-07-01 to adopt `architecture-review.md`;
+status reconciled 2026-07-04 against merged code). WO6 deferred. Each milestone
+lists its repo and a concrete **done when**.
 
 **Delivery is phased so the front door ships before the cross-repo chain:**
 
@@ -94,7 +95,7 @@ the step-by-step; summary of the platform-relevant output:
 uploads the doc blob once (unchanged re-push is a no-op), the snapshot carries a
 `Repo` entity with `doc_ref.digest`, and `orun catalog list --kind Repo` shows it.
 
-### WO4 — Platform: projection (`sourceplane/orun-cloud`) · no `/overview` endpoint
+### WO4 — Platform: projection (`sourceplane/orun-cloud`) · no `/overview` endpoint · ✅ Merged (#276)
 
 1. **Migration:** create `state.repo_facet` (`model.md §4a`, keyed `(org_id,
    source_project_id)`); add `doc_ref JSONB` to `state.org_catalog_entities`.
@@ -116,7 +117,7 @@ uploads the doc blob once (unchanged re-push is a no-op), the snapshot carries a
 body by digest; the catalog portal renders the `Repo` kind. No cross-context
 endpoint was added.
 
-### WO5 — Narrative render + repo-facet surfaces (`sourceplane/orun-cloud`)
+### WO5 — Narrative render + repo-facet surfaces (`sourceplane/orun-cloud`) · ✅ Merged (WO5a #277 · WO5b #278; default landing #312)
 
 1. **Overview identity (upgrade WO2's band):** resolve the primary project
    (most-recently-synced active `workspace_links` project — `model.md §4c`) and
