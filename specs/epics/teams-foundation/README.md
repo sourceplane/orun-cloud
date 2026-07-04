@@ -13,7 +13,7 @@ Part of the [`teams-platform`](../teams-platform/) program. **Plane: Access (ent
 
 | Field | Value |
 |-------|-------|
-| Status | **Draft** — depends on `saas-teams` **TM1–TM3** (the `teams`/`team_members` tables + `subject_type='team'` grants + authz expansion). TF is *additive over TM*: it enriches the entity and its management, it does **not** re-model the grant machinery. |
+| Status | **✅ Shipped** (TF1–TF5) — additive over `saas-teams` **TM**: enriches the entity and its management without re-modelling grants. As-built in [`IMPLEMENTATION-STATUS.md`](./IMPLEMENTATION-STATUS.md). |
 | Cluster | **TF** (teams-foundation — the entity) |
 | Owner(s) | `packages/db` (schema) · `apps/membership-worker` (team CRUD + team-role checks) · `apps/api-edge` + `packages/contracts`/`sdk`/`cli` · `apps/web-console-next` |
 | Builds on | `saas-teams` **TM** (`membership.teams`, `membership.team_members`, `subject_type='team'` in `role_assignments`, the authz-context expansion); `saas-workspace-id` **WID6** (account RBAC — who may manage teams); the existing member-management console chrome |
@@ -34,11 +34,11 @@ hinge the whole program swings on.
 
 | ID | Milestone | Status |
 |----|-----------|--------|
-| TF1 | **Team entity**: `team_` public id + `handle` (account-unique, immutable-preferred) + `name`/`description`/`avatar`; profile CRUD | Draft |
-| TF2 | **Team-management roles**: `team_admin`/`team_member` on `team_members`; team-self-management authority distinct from platform-grant authority | Draft |
-| TF3 | **Access-principal integration**: verify TM grants bind to the `team_` entity id; the entity is the single subject of `subject_type='team'` rows | Draft |
-| TF4 | **Effective-access + provenance**: "who can do what here, via which team/grant" + `grantedVia` on every listed grant (promotes `saas-teams` TM6) | Draft |
-| TF5 | **Audit/events**: emit `team.*` on create/update/delete/member-add/remove/role-change/grant/revoke (also backfills the `grant-account-role` audit gap) | Draft |
+| TF1 | **Team entity**: `team_` public id + `handle` (account-unique, immutable-preferred) + `name`/`description`/`avatar`; profile CRUD | ✅ Shipped |
+| TF2 | **Team-management roles**: `team_admin`/`team_member` on `team_members`; team-self-management authority distinct from platform-grant authority | ✅ Shipped |
+| TF3 | **Access-principal integration**: verify TM grants bind to the `team_` entity id; the entity is the single subject of `subject_type='team'` rows | ✅ Shipped |
+| TF4 | **Effective-access + provenance**: "who can do what here, via which team/grant" + `grantedVia` on every listed grant (promotes `saas-teams` TM6) | ✅ Shipped |
+| TF5 | **Audit/events**: emit `team.*` on create/update/delete/member-add/remove/role-change/grant/revoke | ✅ Shipped |
 
 ## Scope boundary
 
