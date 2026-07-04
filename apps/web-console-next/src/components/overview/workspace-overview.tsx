@@ -252,7 +252,7 @@ function NarrativeBand({ orgId, facet, now }: { orgId: string; facet: RepoFacet;
   const digest = docDigestOf(facet);
   const doc = useApiQuery(
     qk.docObject(orgId, facet.projectId, digest ?? ""),
-    () => wrap(() => client.state.readObjectText(orgId, facet.projectId, digest!)),
+    () => wrap(() => client.state.readCatalogDoc(orgId, digest!)),
     { enabled: !!digest },
   );
 

@@ -41,7 +41,7 @@ import {
   handleListCatalogEntities,
   handleListOrgCatalogEntities,
 } from "./handlers/catalog.js";
-import { handleListOrgRepoFacets, handleGetOrgRepoFacet } from "./handlers/repo-facets.js";
+import { handleListOrgRepoFacets, handleGetOrgRepoFacet, handleGetOrgCatalogDoc } from "./handlers/repo-facets.js";
 import { handleGetOrgStateStorage } from "./handlers/state-usage.js";
 import { handleGetStateGcReport } from "./handlers/gc-report.js";
 import { handleCollectStateGc } from "./handlers/gc-collect.js";
@@ -151,6 +151,9 @@ const ORG_CATALOG_ENTITIES_RE = /^\/v1\/organizations\/([^/]+)\/catalog\/entitie
 // WO5 — repo self-description read model (org-scoped list + per-project get).
 const ORG_REPO_FACETS_RE = /^\/v1\/organizations\/([^/]+)\/repo-facets$/;
 const ORG_REPO_FACET_RE = /^\/v1\/organizations\/([^/]+)\/repo-facets\/([^/]+)$/;
+// WO5 — console-facing overview doc read (org catalog-scoped, deframed; digest as
+// a query param so its `sha256:` colon decodes normally).
+const ORG_CATALOG_DOC_RE = /^\/v1\/organizations\/([^/]+)\/catalog\/doc$/;
 // OV9 — org state-plane storage footprint (no project scope): the STOCK gauge.
 const ORG_STATE_USAGE_RE = /^\/v1\/organizations\/([^/]+)\/state\/usage$/;
 // Org-global runs feed (no project scope): the console "Activities" surface, the
@@ -260,6 +263,13 @@ export async function route(request: Request, env: Env, ctx?: ExecutionContext):
     if (!orgId) return notFound(requestId, pathname);
     if (request.method !== "GET") return methodNotAllowed(requestId);
     return handleListOrgRepoFacets(request, env, requestId, actor, orgId);
+  }
+  m = pathname.match(ORG_CATALOG_DOC_RE);
+  if (m) {
+    const orgId = parseOrgPublicId(m[1]!);
+    if (!orgId) return notFound(requestId, pathname);
+    if (request.method !== "GET") return methodNotAllowed(requestId);
+    return handleGetOrgCatalogDoc(request, env, requestId, actor, orgId);
   }
 
   // GET /v1/organizations/{orgId}/state/usage — org state-plane storage footprint

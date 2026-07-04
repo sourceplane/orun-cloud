@@ -260,6 +260,24 @@ export class StateClient {
   }
 
   /**
+   * Read a git-authored overview doc by content digest (WO5) — the console-facing
+   * doc read. Org catalog-scoped and server-deframed: returns the raw markdown
+   * body (not the framed object), gated on catalog.read (the same authorization
+   * as the identity/facets), with the digest as a query param so its `sha256:`
+   * colon is not path-encoded. Prefer this over readObjectText for the overview.
+   */
+  readCatalogDoc(orgId: string, digest: string, opts: RequestOptions = {}): Promise<string> {
+    return this.transport.requestText(
+      {
+        method: "GET",
+        path: `/v1/organizations/${encodeURIComponent(orgId)}/catalog/doc`,
+        query: { digest },
+      },
+      opts,
+    );
+  }
+
+  /**
    * GET /v1/organizations/:orgId/state/usage — the org's current state-plane
    * storage footprint (OV9): live object + log-chunk counts and bytes. A STOCK
    * gauge (distinct from the metering FLOW metrics). Policy: catalog.read.
