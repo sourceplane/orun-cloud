@@ -139,6 +139,9 @@ export async function handleGetOrgCatalogDoc(
   const owned = !deps?.executor;
   try {
     const repo = createStateRepository(executor);
+    // findCatalogDocProject resolves the digest against this org's catalog read
+    // model — encoding-agnostic, so it matches whether doc_ref is stored as a
+    // proper JSONB object or a double-encoded string scalar (packages/db).
     const scope = await repo.findCatalogDocProject(orgId, digest);
     if (!scope.ok) return errorResponse("internal_error", "Service unavailable", 503, requestId);
     if (!scope.value) return errorResponse("not_found", "Not found", 404, requestId);
