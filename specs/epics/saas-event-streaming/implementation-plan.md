@@ -3,7 +3,7 @@
 Status: Draft. Milestones are PR-sized coherent units with one primary outcome
 each; the spine is strictly ordered, the tails are detachable.
 
-## ES0 — Foundation (dormant) — 🗓️ Planned
+## ES0 — Foundation (dormant) — ✅ Shipped (#325)
 
 - `packages/contracts/src/event-catalog.ts`: `CatalogEntry`, `EventCategory`,
   `EventSeverity`, `EVENT_CATALOG` covering every currently-emitted type
@@ -34,7 +34,7 @@ the catalog CI guard passes with every existing emitter registered;
 notifications-worker test suite; no runtime behavior changes anywhere else
 (webhooks fan-out and audit reads byte-identical).
 
-## ES1 — The router: shared lanes + dead letters — 🗓️ Planned
+## ES1 — The router: shared lanes + dead letters — In review
 
 - events-worker gains `scheduled()` (cron `* * * * *`, matching the shipped
   drains) + the lane dispatcher: per active lane × org, batch-read past the
@@ -45,7 +45,7 @@ notifications-worker test suite; no runtime behavior changes anywhere else
   `'notifications'` (handler lands in ES2; registered paused).
 - webhooks-worker cutover to `events.lane_cursors`: backfill from
   `webhooks.webhook_dispatch_cursor` in one migration
-  (`600_webhooks_lane_adoption`), read/write the shared table, drop the old
+  (`590_webhooks_lane_adoption`), read/write the shared table, drop the old
   one after a verified soak — zero lost or duplicated deliveries (R6 protocol:
   copy → dual-read assert → cutover → drop).
 - Dead-letter lifecycle: `event.delivery_failed`, `dead_letter.created`,

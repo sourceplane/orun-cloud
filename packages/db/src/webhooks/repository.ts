@@ -632,15 +632,43 @@ export function createWebhookRepository(executor: SqlExecutor): WebhookRepositor
 
     // ── Dispatch cursor ─────────────────────────────────────
 
+    // As of ES1 (saas-event-streaming) the dispatch cursor lives on the
+    // shared, events-owned lane table (events.lane_cursors) seeded by
+    // migration 590_webhooks_lane_adoption. Reads fall back to the legacy
+    // webhooks.webhook_dispatch_cursor row so a cursor advanced by
+    // pre-cutover code between migrate and deploy is never lost; writes go
+    // to the shared table only, so the fallback ages out naturally. The
+    // legacy table is dropped in a later migration once the soak proves
+    // parity (R6 protocol).
     async getDispatchCursor(orgId: string, lane = "webhooks"): Promise<WebhookResult<DispatchCursor>> {
       try {
-        const result = await executor.execute<Record<string, unknown>>(
+        const shared = await executor.execute<Record<string, unknown>>(
+          `SELECT lane_key, org_id, last_event_id, last_occurred_at, updated_at
+           FROM events.lane_cursors
+           WHERE lane_key = $2 AND org_id = $1`,
+          [orgId, lane],
+        );
+        if (shared.rowCount > 0) {
+          const row = shared.rows[0]!;
+          return {
+            ok: true,
+            value: {
+              orgId: row.org_id as string,
+              subscriberLane: row.lane_key as string,
+              lastEventId: (row.last_event_id as string) ?? null,
+              lastOccurredAt: (row.last_occurred_at as string) ?? null,
+              updatedAt: new Date(row.updated_at as string),
+            },
+          };
+        }
+
+        const legacy = await executor.execute<Record<string, unknown>>(
           `SELECT org_id, subscriber_lane, last_event_id, last_occurred_at, updated_at
            FROM webhooks.webhook_dispatch_cursor
            WHERE org_id = $1 AND subscriber_lane = $2`,
           [orgId, lane],
         );
-        if (result.rowCount === 0) {
+        if (legacy.rowCount === 0) {
           // Return a "zero" cursor — org hasn't been dispatched yet
           return {
             ok: true,
@@ -653,7 +681,7 @@ export function createWebhookRepository(executor: SqlExecutor): WebhookRepositor
             },
           };
         }
-        const row = result.rows[0]!;
+        const row = legacy.rows[0]!;
         return {
           ok: true,
           value: {
@@ -672,9 +700,9 @@ export function createWebhookRepository(executor: SqlExecutor): WebhookRepositor
     async advanceDispatchCursor(orgId: string, lastEventId: string, lastOccurredAt: string, lane = "webhooks"): Promise<WebhookResult<DispatchCursor>> {
       try {
         const result = await executor.execute<Record<string, unknown>>(
-          `INSERT INTO webhooks.webhook_dispatch_cursor (org_id, subscriber_lane, last_event_id, last_occurred_at, updated_at)
-           VALUES ($1, $2, $3, $4, now())
-           ON CONFLICT (org_id, subscriber_lane)
+          `INSERT INTO events.lane_cursors (lane_key, org_id, last_event_id, last_occurred_at, updated_at)
+           VALUES ($2, $1, $3, $4, now())
+           ON CONFLICT (lane_key, org_id)
            DO UPDATE SET last_event_id = $3, last_occurred_at = $4, updated_at = now()
            RETURNING *`,
           [orgId, lane, lastEventId, lastOccurredAt],
@@ -684,7 +712,7 @@ export function createWebhookRepository(executor: SqlExecutor): WebhookRepositor
           ok: true,
           value: {
             orgId: row.org_id as string,
-            subscriberLane: row.subscriber_lane as string,
+            subscriberLane: row.lane_key as string,
             lastEventId: (row.last_event_id as string) ?? null,
             lastOccurredAt: (row.last_occurred_at as string) ?? null,
             updatedAt: new Date(row.updated_at as string),
