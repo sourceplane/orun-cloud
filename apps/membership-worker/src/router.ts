@@ -12,7 +12,7 @@ import { handleListAccountMembers } from "./handlers/list-account-members.js";
 import { handleRevokeAccountRole } from "./handlers/revoke-account-role.js";
 import { handleGrantTeamRole } from "./handlers/grant-team-role.js";
 import { handleRevokeTeamRole } from "./handlers/revoke-team-role.js";
-import { handleCreateTeam, handleListTeams, handleGetTeam, handleDeleteTeam, handleUpdateTeam, handleListTeamMembers, handleAddTeamMember, handleRemoveTeamMember, handleUpdateTeamMemberRole, handleListTeamGrants } from "./handlers/teams.js";
+import { handleCreateTeam, handleListTeams, handleMyTeams, handleGetTeam, handleDeleteTeam, handleUpdateTeam, handleListTeamMembers, handleAddTeamMember, handleRemoveTeamMember, handleUpdateTeamMemberRole, handleListTeamGrants } from "./handlers/teams.js";
 import { handleRemoveMember } from "./handlers/remove-member.js";
 import { handleCreateInvitation } from "./handlers/create-invitation.js";
 import { handleListInvitations } from "./handlers/list-invitations.js";
@@ -73,6 +73,7 @@ const ORG_EFFECTIVE_ACCESS_RE = /^\/v1\/organizations\/([^/]+)\/effective-access
 const ORG_OWNER_HANDLES_RE = /^\/v1\/organizations\/([^/]+)\/owner-handles$/;
 const ORG_OWNER_HANDLE_ID_RE = /^\/v1\/organizations\/([^/]+)\/owner-handles\/([^/]+)$/;
 const ORG_RESOLVE_OWNERS_RE = /^\/v1\/organizations\/([^/]+)\/resolve-owners$/;
+const ORG_MY_TEAMS_RE = /^\/v1\/organizations\/([^/]+)\/my-teams$/;
 const SP_BINDINGS_PATH = "/v1/internal/membership/service-principal-bindings";
 const SP_BINDING_ID_RE = /^\/v1\/internal\/membership\/service-principal-bindings\/([^/]+)$/;
 
@@ -418,6 +419,19 @@ export async function route(request: Request, env: Env): Promise<Response> {
       }
       if (request.method === "PUT" || request.method === "POST") {
         return handleSetOwnerHandle(request, env, requestId, actor, ownerHandlesMatch[1]!);
+      }
+      return methodNotAllowed(requestId);
+    }
+
+    // My Teams (teams-ownership TO3): the caller's own team memberships.
+    const myTeamsMatch = url.pathname.match(ORG_MY_TEAMS_RE);
+    if (myTeamsMatch) {
+      const actor = resolveActor(request);
+      if (!actor) {
+        return errorResponse("unauthenticated", "Authentication required", 401, requestId);
+      }
+      if (request.method === "GET") {
+        return handleMyTeams(env, requestId, actor, myTeamsMatch[1]!);
       }
       return methodNotAllowed(requestId);
     }

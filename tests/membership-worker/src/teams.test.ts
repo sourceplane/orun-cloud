@@ -1,4 +1,4 @@
-import { handleCreateTeam, handleListTeams, handleGetTeam, handleDeleteTeam, handleUpdateTeam, handleAddTeamMember, handleRemoveTeamMember, handleUpdateTeamMemberRole, handleListTeamMembers, handleListTeamGrants } from "@membership-worker/handlers/teams";
+import { handleCreateTeam, handleListTeams, handleMyTeams, handleGetTeam, handleDeleteTeam, handleUpdateTeam, handleAddTeamMember, handleRemoveTeamMember, handleUpdateTeamMemberRole, handleListTeamMembers, handleListTeamGrants } from "@membership-worker/handlers/teams";
 import { orgPublicId, teamPublicId } from "@membership-worker/ids";
 import type { Env } from "@membership-worker/env";
 import type { MembershipRepository, Organization, RoleAssignment, Team, TeamMember, CreateTeamInput, CreateTeamMemberInput } from "@saas/db/membership";
@@ -53,6 +53,7 @@ function makeRepo(cfg: {
   updateConflict?: boolean;
   removeMissing?: boolean;
   actorTeamRole?: string;   // teams-foundation TF2 — actor's team_role for the team-admin fallback
+  myTeamsList?: Team[];     // teams-ownership TO3 — the caller's teams
   roleChanges?: Array<{ subjectId: string; teamRole: string }>;
 }): { repo: MembershipRepository; created: CreateTeamInput[]; updated: Array<Record<string, unknown>>; revokedTeams: string[]; addedMembers: CreateTeamMemberInput[]; removedMembers: string[]; roleChanges: Array<{ subjectId: string; teamRole: string }> } {
   const created: CreateTeamInput[] = [];
@@ -129,6 +130,9 @@ function makeRepo(cfg: {
     },
     async listTeamGrants() {
       return { ok: true as const, value: cfg.grants ?? [] };
+    },
+    async listTeamsForSubject() {
+      return { ok: true as const, value: cfg.myTeamsList ?? [] };
     },
   } as unknown as MembershipRepository;
   return { repo, created, updated, revokedTeams, addedMembers, removedMembers, roleChanges };
@@ -478,5 +482,23 @@ describe("teams: team-management roles (teams-foundation TF2)", () => {
     const res = await handleUpdateTeamMemberRole(request, env(), "r", actor, orgPublicId(ACCOUNT), teamPublicId(TEAM_UUID), "usr_x", { repo });
     expect(res.status).toBe(422);
     expect(roleChanges).toHaveLength(0);
+  });
+});
+
+// teams-ownership TO3 — the "My Teams" lens.
+describe("teams: my-teams (teams-ownership TO3)", () => {
+  it("returns the caller's own team memberships", async () => {
+    const { repo } = makeRepo({ orgs: { [ACCOUNT]: org(ACCOUNT, null) }, myTeamsList: [team(TEAM_UUID, ACCOUNT)] });
+    const res = await handleMyTeams(env(), "r", actor, orgPublicId(ACCOUNT), { repo });
+    expect(res.status).toBe(200);
+    const json = await res.json() as { data: { teams: Array<{ id: string }> } };
+    expect(json.data.teams).toHaveLength(1);
+    expect(json.data.teams[0]!.id).toBe(teamPublicId(TEAM_UUID));
+  });
+
+  it("404s an unknown org", async () => {
+    const { repo } = makeRepo({ orgs: {}, myTeamsList: [] });
+    const res = await handleMyTeams(env(), "r", actor, orgPublicId(ACCOUNT), { repo });
+    expect(res.status).toBe(404);
   });
 });

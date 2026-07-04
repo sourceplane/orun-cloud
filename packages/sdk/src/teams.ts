@@ -44,6 +44,14 @@ export class TeamsClient {
     );
   }
 
+  /** GET /v1/organizations/:orgId/my-teams — the caller's own teams (teams-ownership TO3). */
+  myTeams(orgId: string, opts: RequestOptions = {}): Promise<ListTeamsResponse> {
+    return this.transport.request<ListTeamsResponse>(
+      { method: "GET", path: `/v1/organizations/${encodeURIComponent(orgId)}/my-teams` },
+      opts,
+    );
+  }
+
   /** POST /v1/organizations/:orgId/teams */
   createTeam(orgId: string, body: CreateTeamRequest, opts: RequestOptions = {}): Promise<CreateTeamResponse> {
     return this.transport.request<CreateTeamResponse>(

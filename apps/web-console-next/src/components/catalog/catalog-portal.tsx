@@ -156,12 +156,18 @@ export function CatalogPortal({ orgId, orgSlug }: { orgId: string; orgSlug: stri
     return annotateOwnership(rawServices, byOwner);
   }, [rawServices, resolutions]);
 
+  // teams-ownership TO3 — the viewer's own teams, for the "My services" lens.
+  const { data: myTeams } = useApiQuery(["myTeams", orgId] as const, () =>
+    wrap(async () => (await client.teams.myTeams(orgId)).teams),
+  );
+  const myTeamIds = React.useMemo(() => new Set((myTeams ?? []).map((t) => t.id)), [myTeams]);
+
   const ctx = React.useMemo(() => buildContext(services), [services]);
   const metrics = React.useMemo(() => rollup(services), [services]);
 
   const filtered = React.useMemo(
-    () => sortServices(filterServices(services, effectiveFilters), sortKey, sortDir),
-    [services, effectiveFilters, sortKey, sortDir],
+    () => sortServices(filterServices(services, effectiveFilters, myTeamIds), sortKey, sortDir),
+    [services, effectiveFilters, myTeamIds, sortKey, sortDir],
   );
   const grouped = React.useMemo(() => groupServices(filtered, group), [filtered, group]);
   const board = React.useMemo(() => buildBoard(filtered), [filtered]);
@@ -264,7 +270,13 @@ export function CatalogPortal({ orgId, orgSlug }: { orgId: string; orgSlug: stri
   const removeChip = React.useCallback((field: keyof CatalogFilters) => {
     setFiltersState((f) => ({
       ...f,
-      ...(field === "attention" ? { attention: false } : field === "query" ? { query: "" } : { [field]: "all" }),
+      ...(field === "attention"
+        ? { attention: false }
+        : field === "mine"
+          ? { mine: false }
+          : field === "query"
+            ? { query: "" }
+            : { [field]: "all" }),
     }));
   }, []);
 

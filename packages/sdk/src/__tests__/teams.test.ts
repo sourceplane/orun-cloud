@@ -88,6 +88,13 @@ describe("TeamsClient (saas-teams TM4c)", () => {
     expect(JSON.parse(calls[0]!.init.body as string)).toEqual({ owners: ["payments", "search"] });
   });
 
+  it("myTeams → GET /my-teams (teams-ownership TO3)", async () => {
+    const { client: c, calls } = client({ teams: [] });
+    await c.teams.myTeams("org_1");
+    expect(calls[0]!.url).toBe("https://api.test/v1/organizations/org_1/my-teams");
+    expect(calls[0]!.init.method).toBe("GET");
+  });
+
   it("addTeamMember → POST /teams/:id/members with body", async () => {
     const { client: c, calls } = client({ member: { subjectId: "usr_a" } });
     await c.teams.addTeamMember("org_1", "team_x", { subjectId: "usr_a" });

@@ -28,6 +28,12 @@ export interface CatalogFilters {
   health: string;
   /** Restrict to entities needing attention. */
   attention: boolean;
+  /**
+   * teams-ownership TO3 — restrict to the viewer's teams' owned services ("My
+   * Services"). Evaluated against the resolved `ownerTeam.teamId` and the viewer's
+   * team-id set passed to {@link filterServices}.
+   */
+  mine: boolean;
 }
 
 export const EMPTY_FILTERS: CatalogFilters = {
@@ -36,16 +42,26 @@ export const EMPTY_FILTERS: CatalogFilters = {
   lifecycle: "all",
   health: "all",
   attention: false,
+  mine: false,
 };
 
-/** Apply the toolbar filters, matching the design's `filtered()`. */
-export function filterServices(services: CatalogService[], f: CatalogFilters): CatalogService[] {
+/**
+ * Apply the toolbar filters, matching the design's `filtered()`. `myTeamIds` is
+ * the viewer's set of `team_` ids (teams-ownership TO3), used only when
+ * `f.mine` is set to narrow to their teams' owned services.
+ */
+export function filterServices(
+  services: CatalogService[],
+  f: CatalogFilters,
+  myTeamIds?: ReadonlySet<string>,
+): CatalogService[] {
   const q = f.query.trim().toLowerCase();
   return services.filter((s) => {
     if (f.kind !== "all" && s.kind.toLowerCase() !== f.kind.toLowerCase()) return false;
     if (f.lifecycle !== "all" && lifecycleKey(s.lifecycle) !== f.lifecycle) return false;
     if (f.health !== "all" && healthOf(s) !== f.health) return false;
     if (f.attention && !needsAttention(s)) return false;
+    if (f.mine && !(s.ownerTeam && myTeamIds?.has(s.ownerTeam.teamId))) return false;
     if (q) {
       // teams-ownership TO2 — search resolved team name + handle alongside the raw owner.
       const ownerHay = s.ownerTeam ? `${s.ownerTeam.name} ${s.ownerTeam.handle ?? ""}` : ownerLabel(s.owner);
@@ -136,10 +152,11 @@ export function activeChips(f: CatalogFilters): FilterChip[] {
   if (f.lifecycle !== "all") chips.push({ field: "lifecycle", kind: "lifecycle", label: f.lifecycle });
   if (f.health !== "all") chips.push({ field: "health", kind: "health", label: f.health });
   if (f.attention) chips.push({ field: "attention", kind: "", label: "Needs attention" });
+  if (f.mine) chips.push({ field: "mine", kind: "", label: "My services" });
   if (f.query.trim()) chips.push({ field: "query", kind: "search", label: `“${f.query.trim()}”` });
   return chips;
 }
 
 export function hasActiveFilters(f: CatalogFilters): boolean {
-  return f.kind !== "all" || f.lifecycle !== "all" || f.health !== "all" || f.attention || f.query.trim() !== "";
+  return f.kind !== "all" || f.lifecycle !== "all" || f.health !== "all" || f.attention || f.mine || f.query.trim() !== "";
 }

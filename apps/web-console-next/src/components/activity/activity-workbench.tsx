@@ -30,6 +30,7 @@ import { wrap } from "@/lib/api";
 import { useSession } from "@/lib/session";
 import { useApiQuery, qk } from "@/lib/query";
 import { defaultEnvironment } from "@/lib/environment-rank";
+import { collectOrgCatalog } from "@/lib/catalog-portal/fetch";
 import {
   decorateRun,
   summarize,
@@ -83,7 +84,38 @@ export function ActivityWorkbench({ orgId, orgSlug }: { orgId: string; orgSlug: 
   const [repo, setRepo] = React.useState("all");
   const [env, setEnv] = React.useState<string>(ENV_DEFAULT);
   const [statusFacet, setStatusFacet] = React.useState<"all" | RunStatus>("all");
+  const [mine, setMine] = React.useState(false);
   const userPickedEnv = React.useRef(false);
+
+  // teams-ownership TO3 — "My teams' activity": the set of projects that host a
+  // service owned by one of the viewer's teams. Runs carry a projectId (not a
+  // component), so ownership narrows at project granularity. Reuses the catalog +
+  // owner-resolution caches shared with the catalog page (no extra cost there).
+  const myTeams = useApiQuery(["myTeams", orgId] as const, () =>
+    wrap(async () => (await client.teams.myTeams(orgId)).teams),
+  );
+  const catalog = useApiQuery(qk.orgCatalog(orgId), () =>
+    wrap(() => collectOrgCatalog((query) => client.state.listOrgCatalogEntities(orgId, query))),
+  );
+  const ownerStrings = React.useMemo(
+    () => [...new Set((catalog.data ?? []).map((e) => e.owner).filter((o): o is string => !!o))],
+    [catalog.data],
+  );
+  const ownerResolutions = useApiQuery(
+    ["ownerResolutions", orgId, ownerStrings.join("\n")] as const,
+    () => wrap(async () => (await client.teams.resolveOwners(orgId, { owners: ownerStrings })).resolutions),
+  );
+  const ownedProjectIds = React.useMemo(() => {
+    const myTeamIds = new Set((myTeams.data ?? []).map((t) => t.id));
+    const byOwner = new Map((ownerResolutions.data ?? []).map((r) => [r.owner, r]));
+    const ids = new Set<string>();
+    for (const e of catalog.data ?? []) {
+      if (!e.owner) continue;
+      const r = byOwner.get(e.owner);
+      if (r && r.state === "owned" && r.teamId && myTeamIds.has(r.teamId)) ids.add(e.sourceProjectId);
+    }
+    return ids;
+  }, [catalog.data, ownerResolutions.data, myTeams.data]);
 
   // Discovered env facet options (grown across loaded pages).
   const [envOptions, setEnvOptions] = React.useState<string[]>([]);
@@ -169,7 +201,11 @@ export function ActivityWorkbench({ orgId, orgSlug }: { orgId: string; orgSlug: 
   );
   const summary = React.useMemo(() => summarize(rows, runs, now), [rows, runs, now]);
   const facets = React.useMemo(() => buildFacets(rows, statusFacet), [rows, statusFacet]);
-  const visibleRows = React.useMemo(() => applyFacet(rows, statusFacet), [rows, statusFacet]);
+  const visibleRows = React.useMemo(() => {
+    const faceted = applyFacet(rows, statusFacet);
+    // teams-ownership TO3 — narrow to the viewer's teams' owned services' projects.
+    return mine ? faceted.filter((r) => ownedProjectIds.has(r.projectId)) : faceted;
+  }, [rows, statusFacet, mine, ownedProjectIds]);
   const { live, done } = React.useMemo(() => splitRuns(visibleRows), [visibleRows]);
   const hasLive = rows.some((r) => r.live);
 
@@ -181,12 +217,13 @@ export function ActivityWorkbench({ orgId, orgSlug }: { orgId: string; orgSlug: 
     return () => clearInterval(id);
   }, [hasLive, pages, loadFirstPage]);
 
-  const filtersActive = repo !== "all" || (env !== ENV_DEFAULT && env !== ENV_ALL) || statusFacet !== "all";
+  const filtersActive = repo !== "all" || (env !== ENV_DEFAULT && env !== ENV_ALL) || statusFacet !== "all" || mine;
   const clearAll = () => {
     setRepo("all");
     userPickedEnv.current = true; // explicit reset to "all", not auto-resolve
     setEnv(ENV_ALL);
     setStatusFacet("all");
+    setMine(false);
   };
 
   // The env filter is still resolving its default until it leaves the sentinel.
@@ -240,6 +277,15 @@ export function ActivityWorkbench({ orgId, orgSlug }: { orgId: string; orgSlug: 
           <div className="flex flex-wrap items-center gap-[9px]">
             <StatusFacets facets={facets} onSelect={setStatusFacet} />
             <span className="mx-1 h-[22px] w-px bg-border" aria-hidden="true" />
+            {/* teams-ownership TO3 — My teams' activity (owned services' projects). */}
+            <button
+              type="button"
+              onClick={() => setMine((v) => !v)}
+              aria-pressed={mine}
+              className={`h-8 rounded-md border px-2.5 text-xs outline-none ${mine ? "border-primary bg-primary/10 text-foreground" : "border-border bg-card text-muted-foreground hover:text-foreground"}`}
+            >
+              My teams
+            </button>
             <Select value={repo} onValueChange={setRepo}>
               <SelectTrigger className="h-8 w-[180px] text-xs" aria-label="Repo">
                 <SelectValue placeholder="Repo" />

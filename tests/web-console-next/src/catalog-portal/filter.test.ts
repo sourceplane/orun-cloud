@@ -32,6 +32,18 @@ describe("filterServices", () => {
     expect(filterServices(services, { ...EMPTY_FILTERS, query: "go" }).map((s) => s.name)).toEqual(["api"]);
     expect(filterServices(services, { ...EMPTY_FILTERS, query: "growth" }).map((s) => s.name)).toEqual(["search"]);
   });
+
+  it("filters to My services by the viewer's team ids (teams-ownership TO3)", () => {
+    const byOwner = new Map<string, OwnerResolution>([
+      ["payments", { owner: "payments", state: "owned", teamId: "team_pay", name: "Payments" }],
+      ["search", { owner: "search", state: "owned", teamId: "team_srch", name: "Search" }],
+    ]);
+    const annotated = annotateOwnership(services, byOwner);
+    const mineNames = filterServices(annotated, { ...EMPTY_FILTERS, mine: true }, new Set(["team_pay"])).map((s) => s.name);
+    expect(mineNames).toEqual(["api"]); // only the Payments-owned entity
+    // no team ids → nothing is "mine"
+    expect(filterServices(annotated, { ...EMPTY_FILTERS, mine: true }, new Set()).length).toBe(0);
+  });
 });
 
 describe("sortServices", () => {
@@ -90,9 +102,9 @@ describe("teams-ownership TO2: resolved ownership grouping", () => {
 
 describe("chips", () => {
   it("builds a chip per active facet", () => {
-    const f = { query: "x", kind: "API", lifecycle: "all", health: "down", attention: true };
+    const f = { query: "x", kind: "API", lifecycle: "all", health: "down", attention: true, mine: true };
     const chips = activeChips(f);
-    expect(chips.map((c) => c.field)).toEqual(["kind", "health", "attention", "query"]);
+    expect(chips.map((c) => c.field)).toEqual(["kind", "health", "attention", "mine", "query"]);
     expect(hasActiveFilters(f)).toBe(true);
     expect(hasActiveFilters(EMPTY_FILTERS)).toBe(false);
   });
