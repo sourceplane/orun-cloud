@@ -8,7 +8,7 @@
 
 | | |
 |---|---|
-| **Status** | Draft (v2 spec landed; implementation not started) |
+| **Status** | In progress — WP0–WP3 shipped, WP4/WP5 shipped orun-side; WP1b console depth + the WP4 remote leg + the P2-gated overlay call site remain |
 | **Repos** | `sourceplane/orun` (model/fold oracle, CLI, import), `sourceplane/orun-cloud` (logs, ingesters, query API, console) |
 | **Cluster** | **WP** (`WP0 → WP5`, plan in `orun/specs/orun-work/implementation-plan.md`) |
 | **Pairs with** | `saas-resources-runtime` (P2 — `liveObservation` → `revision_live`), `saas-integration-tenancy` (IT — the webhook ingester's tenancy), `teams-ownership` (TO — owner→team routing for blast radius), `saas-console-ux` (U — the board surfaces) |
@@ -79,8 +79,8 @@ conformance-oracle pattern (Go model ↔ TS mirror over shared fixtures).
 | WP1 | Local-first console store (snapshot + cursor replay over SSE), optimistic apply + verdicts, pins, activity feed | 🏗️ In progress — the read half landed with WP0's surface PR (summary + events cursor endpoint, read-only Work page); optimistic store + SSE replay + pin/comment UI pending |
 | WP2 | GitHub webhook ingester (+ affected-set producer contract), claim join, drift inbox | ✅ Shipped — the inbox drain projects normalized scm.* PR/branch events into `work.observations` in the same delivery transaction (semantic dedupe keys, task keys parsed from branch/title); `POST …/work/observations` admits the named `ci` producer for affected sets; claim join (key parse + unambiguous overlap) and the drift inbox were already in the WP0 fold and now light up from live facts |
 | WP3 | Run-stream `gate_result` + overlay `revision_live` ingesters; Done/Released rungs light up | 🏗️ Mostly shipped — the run projector emits `gate_result` facts from terminal job phases keyed to the run's git revision (P-3: orun execution truth, never GitHub statuses; idempotent per run/job/phase), and the `deploy-overlay → revision_live` bridge is built + tested; the Done→Released walk is proven from facts. Remaining: the runtime call site for `workObservationFromLiveDeployment` awaits `saas-resources-runtime` (P2, not started) — Released lights up the moment that feed lands, no rework |
-| WP4 | Seal/pull support (workspace-routed refs) | 🗓️ Not started |
-| WP5 | MCP write path through the same mutators | 🗓️ Not started |
+| WP4 | Seal/pull support (workspace-routed refs) | 🏗️ Orun-side shipped (orun #458): seal core (canonical JSON, ContentID, intent-only SpecSnapshot, chained log segments) + `orun spec pull` with pin verification, sealed client-side from this repo's fold API. Remaining here: server-side sealing + the refs/work remote leg |
+| WP5 | MCP write path through the same mutators | ✅ Shipped orun-side (orun WP5 PR): `orun mcp serve` — reads with evidence + sealed briefs; exactly four write tools through this repo's WP1 mutator routes; no lifecycle/pin tool exists (asserted). This repo's mutators already enforce the server-side guardrails (agent-pin 422) |
 
 ## Design rules this repo must not break
 
