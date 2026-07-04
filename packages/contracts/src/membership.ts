@@ -116,6 +116,11 @@ export interface PublicTeam {
 export interface PublicTeamMember {
   subjectId: string;
   subjectType: string;
+  /**
+   * Team-management role (teams-foundation TF2): `team_admin` or `team_member`.
+   * Added additively; TM-era members read back as `team_member`.
+   */
+  teamRole?: string;
   status: string;
   createdAt: string;
 }
@@ -156,9 +161,21 @@ export interface AddTeamMemberRequest {
   subjectId: string;
   /** "user" | "service_principal" — defaults to "user". */
   subjectType?: string;
+  /** "team_admin" | "team_member" — defaults to "team_member" (teams-foundation TF2). */
+  teamRole?: string;
 }
 
 export interface AddTeamMemberResponse {
+  member: PublicTeamMember;
+}
+
+/** Change a member's team-management role (teams-foundation TF2). */
+export interface UpdateTeamMemberRoleRequest {
+  /** "team_admin" | "team_member". */
+  teamRole: string;
+}
+
+export interface UpdateTeamMemberRoleResponse {
   member: PublicTeamMember;
 }
 

@@ -1,4 +1,4 @@
-import { handleCreateTeam, handleListTeams, handleGetTeam, handleDeleteTeam, handleUpdateTeam, handleAddTeamMember, handleRemoveTeamMember, handleListTeamMembers, handleListTeamGrants } from "@membership-worker/handlers/teams";
+import { handleCreateTeam, handleListTeams, handleGetTeam, handleDeleteTeam, handleUpdateTeam, handleAddTeamMember, handleRemoveTeamMember, handleUpdateTeamMemberRole, handleListTeamMembers, handleListTeamGrants } from "@membership-worker/handlers/teams";
 import { orgPublicId, teamPublicId } from "@membership-worker/ids";
 import type { Env } from "@membership-worker/env";
 import type { MembershipRepository, Organization, RoleAssignment, Team, TeamMember, CreateTeamInput, CreateTeamMemberInput } from "@saas/db/membership";
@@ -38,8 +38,8 @@ function orgRole(orgId: string, role: string): RoleAssignment {
   return { id: "ra", orgId, subjectId: ACTOR, subjectType: "user", role, scopeKind: "organization", scopeRef: null, createdAt: NOW, revokedAt: null };
 }
 
-function member(subjectId: string, subjectType = "user"): TeamMember {
-  return { teamId: TEAM_UUID, subjectId, subjectType, status: "active", createdAt: NOW };
+function member(subjectId: string, subjectType = "user", teamRole = "team_member"): TeamMember {
+  return { teamId: TEAM_UUID, subjectId, subjectType, teamRole, status: "active", createdAt: NOW };
 }
 
 function makeRepo(cfg: {
@@ -52,10 +52,13 @@ function makeRepo(cfg: {
   createConflict?: boolean;
   updateConflict?: boolean;
   removeMissing?: boolean;
-}): { repo: MembershipRepository; created: CreateTeamInput[]; updated: Array<Record<string, unknown>>; revokedTeams: string[]; addedMembers: CreateTeamMemberInput[]; removedMembers: string[] } {
+  actorTeamRole?: string;   // teams-foundation TF2 — actor's team_role for the team-admin fallback
+  roleChanges?: Array<{ subjectId: string; teamRole: string }>;
+}): { repo: MembershipRepository; created: CreateTeamInput[]; updated: Array<Record<string, unknown>>; revokedTeams: string[]; addedMembers: CreateTeamMemberInput[]; removedMembers: string[]; roleChanges: Array<{ subjectId: string; teamRole: string }> } {
   const created: CreateTeamInput[] = [];
   const updated: Array<Record<string, unknown>> = [];
   const revokedTeams: string[] = [];
+  const roleChanges: Array<{ subjectId: string; teamRole: string }> = [];
   const addedMembers: CreateTeamMemberInput[] = [];
   const removedMembers: string[] = [];
   const repo = {
@@ -114,11 +117,21 @@ function makeRepo(cfg: {
     async listTeamMembers() {
       return { ok: true as const, value: cfg.members ?? [] };
     },
+    async getTeamMember(_teamId: string, subjectId: string) {
+      if (cfg.actorTeamRole && subjectId === ACTOR) {
+        return { ok: true as const, value: member(ACTOR, "user", cfg.actorTeamRole) };
+      }
+      return { ok: false as const, error: { kind: "not_found" as const } };
+    },
+    async updateTeamMemberRole(_teamId: string, subjectId: string, teamRole: string) {
+      roleChanges.push({ subjectId, teamRole });
+      return { ok: true as const, value: member(subjectId, "user", teamRole) };
+    },
     async listTeamGrants() {
       return { ok: true as const, value: cfg.grants ?? [] };
     },
   } as unknown as MembershipRepository;
-  return { repo, created, updated, revokedTeams, addedMembers, removedMembers };
+  return { repo, created, updated, revokedTeams, addedMembers, removedMembers, roleChanges };
 }
 
 function makeEvents(): { events: Array<{ type: string }>; eventsRepo: Pick<EventsRepository, "appendEventWithAudit"> } {
@@ -392,5 +405,78 @@ describe("teams: members (saas-teams TM4b2)", () => {
     expect(res.status).toBe(200);
     const json = await res.json() as { data: { members: unknown[] } };
     expect(json.data.members).toHaveLength(2);
+  });
+});
+
+// teams-foundation TF2 — team-management roles: team_admin self-management,
+// distinct from account-admin authority.
+describe("teams: team-management roles (teams-foundation TF2)", () => {
+  const memberBody = (subjectId: string, teamRole?: string) =>
+    new Request(`http://mw/v1/organizations/${orgPublicId(ACCOUNT)}/teams/${teamPublicId(TEAM_UUID)}/members`, {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ subjectId, ...(teamRole ? { teamRole } : {}) }),
+    });
+
+  it("an account_admin adds a member as team_admin (role persisted)", async () => {
+    const { repo, addedMembers } = makeRepo({ orgs: { [ACCOUNT]: org(ACCOUNT, null) }, roles: { [`${ACCOUNT}|${ACTOR}`]: [accountRole("account_admin")] }, teams: { [TEAM_UUID]: team(TEAM_UUID, ACCOUNT) } });
+    const res = await handleAddTeamMember(memberBody("usr_new", "team_admin"), env(), "r", actor, orgPublicId(ACCOUNT), teamPublicId(TEAM_UUID), { repo });
+    expect(res.status).toBe(201);
+    expect(addedMembers[0]!.teamRole).toBe("team_admin");
+  });
+
+  it("rejects an invalid teamRole on add (422)", async () => {
+    const { repo, addedMembers } = makeRepo({ orgs: { [ACCOUNT]: org(ACCOUNT, null) }, roles: { [`${ACCOUNT}|${ACTOR}`]: [accountRole("account_admin")] }, teams: { [TEAM_UUID]: team(TEAM_UUID, ACCOUNT) } });
+    const res = await handleAddTeamMember(memberBody("usr_new", "owner"), env(), "r", actor, orgPublicId(ACCOUNT), teamPublicId(TEAM_UUID), { repo });
+    expect(res.status).toBe(422);
+    expect(addedMembers).toHaveLength(0);
+  });
+
+  it("a team_admin (no account role) can add a member", async () => {
+    const { repo, addedMembers } = makeRepo({
+      orgs: { [ACCOUNT]: org(ACCOUNT, null) },
+      roles: { [`${ACCOUNT}|${ACTOR}`]: [] },   // NOT an account admin
+      teams: { [TEAM_UUID]: team(TEAM_UUID, ACCOUNT) },
+      actorTeamRole: "team_admin",
+    });
+    const res = await handleAddTeamMember(memberBody("usr_new"), env(), "r", actor, orgPublicId(ACCOUNT), teamPublicId(TEAM_UUID), { repo });
+    expect(res.status).toBe(201);
+    expect(addedMembers).toHaveLength(1);
+  });
+
+  it("a plain team_member cannot add a member (404)", async () => {
+    const { repo, addedMembers } = makeRepo({
+      orgs: { [ACCOUNT]: org(ACCOUNT, null) },
+      roles: { [`${ACCOUNT}|${ACTOR}`]: [] },
+      teams: { [TEAM_UUID]: team(TEAM_UUID, ACCOUNT) },
+      actorTeamRole: "team_member",
+    });
+    const res = await handleAddTeamMember(memberBody("usr_new"), env(), "r", actor, orgPublicId(ACCOUNT), teamPublicId(TEAM_UUID), { repo });
+    expect(res.status).toBe(404);
+    expect(addedMembers).toHaveLength(0);
+  });
+
+  it("a team_admin promotes another member + emits team.member.role_changed", async () => {
+    const { repo, roleChanges } = makeRepo({
+      orgs: { [ACCOUNT]: org(ACCOUNT, null) },
+      roles: { [`${ACCOUNT}|${ACTOR}`]: [] },
+      teams: { [TEAM_UUID]: team(TEAM_UUID, ACCOUNT) },
+      actorTeamRole: "team_admin",
+    });
+    const { events, eventsRepo } = makeEvents();
+    const request = new Request(`http://mw/v1/organizations/${orgPublicId(ACCOUNT)}/teams/${teamPublicId(TEAM_UUID)}/members/usr_x`, {
+      method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ teamRole: "team_admin" }),
+    });
+    const res = await handleUpdateTeamMemberRole(request, env(), "r", actor, orgPublicId(ACCOUNT), teamPublicId(TEAM_UUID), "usr_x", { repo, eventsRepo, now: () => NOW });
+    expect(res.status).toBe(200);
+    expect(roleChanges).toEqual([{ subjectId: "usr_x", teamRole: "team_admin" }]);
+    expect(events.map((e) => e.type)).toContain("team.member.role_changed");
+  });
+
+  it("rejects an invalid teamRole on role change (422)", async () => {
+    const { repo, roleChanges } = makeRepo({ orgs: { [ACCOUNT]: org(ACCOUNT, null) }, roles: { [`${ACCOUNT}|${ACTOR}`]: [accountRole("account_admin")] }, teams: { [TEAM_UUID]: team(TEAM_UUID, ACCOUNT) } });
+    const request = new Request(`http://mw/x`, { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ teamRole: "nope" }) });
+    const res = await handleUpdateTeamMemberRole(request, env(), "r", actor, orgPublicId(ACCOUNT), teamPublicId(TEAM_UUID), "usr_x", { repo });
+    expect(res.status).toBe(422);
+    expect(roleChanges).toHaveLength(0);
   });
 });

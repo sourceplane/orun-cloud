@@ -6,6 +6,8 @@ import type {
   UpdateTeamRequest,
   AddTeamMemberRequest,
   AddTeamMemberResponse,
+  UpdateTeamMemberRoleRequest,
+  UpdateTeamMemberRoleResponse,
   ListTeamMembersResponse,
   GrantTeamRoleRequest,
   GrantTeamRoleResponse,
@@ -93,6 +95,14 @@ export class TeamsClient {
   removeTeamMember(orgId: string, teamId: string, subjectId: string, opts: RequestOptions = {}): Promise<AddTeamMemberResponse> {
     return this.transport.request<AddTeamMemberResponse>(
       { method: "DELETE", path: `/v1/organizations/${encodeURIComponent(orgId)}/teams/${encodeURIComponent(teamId)}/members/${encodeURIComponent(subjectId)}` },
+      opts,
+    );
+  }
+
+  /** PATCH /v1/organizations/:orgId/teams/:teamId/members/:subjectId (teams-foundation TF2) */
+  updateTeamMemberRole(orgId: string, teamId: string, subjectId: string, body: UpdateTeamMemberRoleRequest, opts: RequestOptions = {}): Promise<UpdateTeamMemberRoleResponse> {
+    return this.transport.request<UpdateTeamMemberRoleResponse>(
+      { method: "PATCH", path: `/v1/organizations/${encodeURIComponent(orgId)}/teams/${encodeURIComponent(teamId)}/members/${encodeURIComponent(subjectId)}`, body },
       opts,
     );
   }

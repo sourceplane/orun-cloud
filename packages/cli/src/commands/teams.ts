@@ -126,23 +126,43 @@ export async function teamMembersCommand(ctx: CommandContext): Promise<CommandRe
   }
   ctx.stdout(formatOutput({
     mode: "human",
-    columns: ["subject", "status"],
-    rows: result.members.map((m) => ({ subject: `${m.subjectType}:${m.subjectId}`, status: m.status })),
+    columns: ["subject", "role", "status"],
+    rows: result.members.map((m) => ({ subject: `${m.subjectType}:${m.subjectId}`, role: m.teamRole ?? "team_member", status: m.status })),
     title: `Members of ${teamId}`,
   }));
   return { exitCode: 0 };
 }
 
-// team member-add <teamId> <subjectId> [--type=user|service_principal]
+const TEAM_ROLES = new Set(["team_admin", "team_member"]);
+
+// team member-add <teamId> <subjectId> [--type=user|service_principal] [--role=team_admin|team_member]
 export async function teamMemberAddCommand(ctx: CommandContext): Promise<CommandResult> {
-  const teamId = requireArg(ctx.args[0], "usage: orun-cloud team member-add <teamId> <subjectId> [--type=user|service_principal] [--org=ORG_ID]");
-  const subjectId = requireArg(ctx.args[1], "usage: orun-cloud team member-add <teamId> <subjectId> [--type=user|service_principal] [--org=ORG_ID]");
+  const teamId = requireArg(ctx.args[0], "usage: orun-cloud team member-add <teamId> <subjectId> [--type=user|service_principal] [--role=team_admin|team_member] [--org=ORG_ID]");
+  const subjectId = requireArg(ctx.args[1], "usage: orun-cloud team member-add <teamId> <subjectId> [--type=user|service_principal] [--role=team_admin|team_member] [--org=ORG_ID]");
   const subjectType = strFlag(ctx, "type");
+  const teamRole = strFlag(ctx, "role");
+  if (teamRole !== undefined && !TEAM_ROLES.has(teamRole)) {
+    throw new UsageError("--role must be team_admin or team_member");
+  }
   const orgId = await resolveOrgId(ctx, true);
   const idempotencyKey = readIdempotencyKey(ctx);
   const sdk = await ctx.sdk();
-  const result = await sdk.teams.addTeamMember(orgId, teamId, { subjectId, ...(subjectType ? { subjectType } : {}) }, idempotencyKey !== undefined ? { idempotencyKey } : {});
-  emitRecord(ctx, { subject: `${result.member.subjectType}:${result.member.subjectId}`, status: result.member.status }, result, "Member added");
+  const result = await sdk.teams.addTeamMember(orgId, teamId, { subjectId, ...(subjectType ? { subjectType } : {}), ...(teamRole ? { teamRole } : {}) }, idempotencyKey !== undefined ? { idempotencyKey } : {});
+  emitRecord(ctx, { subject: `${result.member.subjectType}:${result.member.subjectId}`, role: result.member.teamRole ?? "team_member", status: result.member.status }, result, "Member added");
+  return { exitCode: 0 };
+}
+
+// team member-role <teamId> <subjectId> <team_admin|team_member>
+export async function teamMemberRoleCommand(ctx: CommandContext): Promise<CommandResult> {
+  const usage = "usage: orun-cloud team member-role <teamId> <subjectId> <team_admin|team_member> [--org=ORG_ID]";
+  const teamId = requireArg(ctx.args[0], usage);
+  const subjectId = requireArg(ctx.args[1], usage);
+  const teamRole = requireArg(ctx.args[2], usage);
+  if (!TEAM_ROLES.has(teamRole)) throw new UsageError("role must be team_admin or team_member");
+  const orgId = await resolveOrgId(ctx, true);
+  const sdk = await ctx.sdk();
+  const result = await sdk.teams.updateTeamMemberRole(orgId, teamId, subjectId, { teamRole });
+  emitRecord(ctx, { subject: `${result.member.subjectType}:${result.member.subjectId}`, role: result.member.teamRole ?? "team_member" }, result, "Member role updated");
   return { exitCode: 0 };
 }
 

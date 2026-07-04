@@ -90,6 +90,7 @@ function Inner({ orgId, slug, teamId }: { orgId: string; slug: string; teamId: s
   const [addOpen, setAddOpen] = React.useState(false);
   const [subjectId, setSubjectId] = React.useState("");
   const [subjectType, setSubjectType] = React.useState("user");
+  const [memberRole, setMemberRole] = React.useState("team_member");
   const [busy, setBusy] = React.useState(false);
   const [pendingRemove, setPendingRemove] = React.useState<string | null>(null);
 
@@ -103,6 +104,7 @@ function Inner({ orgId, slug, teamId }: { orgId: string; slug: string; teamId: s
       client.teams.addTeamMember(orgId, teamId, {
         subjectId: subjectId.trim(),
         ...(subjectType !== "user" ? { subjectType } : {}),
+        ...(memberRole !== "team_member" ? { teamRole: memberRole } : {}),
       }),
     );
     setBusy(false);
@@ -113,6 +115,18 @@ function Inner({ orgId, slug, teamId }: { orgId: string; slug: string; teamId: s
     toast({ kind: "success", title: "Member added" });
     setAddOpen(false);
     setSubjectId("");
+    setMemberRole("team_member");
+    members.reload();
+  };
+
+  // teams-foundation TF2 — promote/demote a member's team-management role.
+  const changeMemberRole = async (subject: string, teamRole: string) => {
+    const r = await wrap(() => client.teams.updateTeamMemberRole(orgId, teamId, subject, { teamRole }));
+    if (!r.ok) {
+      toast({ kind: "error", title: "Role change failed", description: r.error.message });
+      return;
+    }
+    toast({ kind: "success", title: teamRole === "team_admin" ? "Promoted to team admin" : "Set to team member" });
     members.reload();
   };
 
@@ -302,6 +316,18 @@ function Inner({ orgId, slug, teamId }: { orgId: string; slug: string; teamId: s
                     </SelectContent>
                   </Select>
                 </div>
+                <div className="space-y-2">
+                  <Label>Team role</Label>
+                  <Select value={memberRole} onValueChange={setMemberRole}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="team_member">team_member — plain member</SelectItem>
+                      <SelectItem value="team_admin">team_admin — manages the team + roster</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
                 <div className="flex justify-end gap-2">
                   <Button variant="ghost" onClick={() => setAddOpen(false)} disabled={busy}>Cancel</Button>
                   <Button onClick={addMember} disabled={busy}>Add member</Button>
@@ -334,25 +360,39 @@ function Inner({ orgId, slug, teamId }: { orgId: string; slug: string; teamId: s
                 <TableRow>
                   <TableHead>Subject</TableHead>
                   <TableHead>Type</TableHead>
+                  <TableHead>Team role</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {members.data.map((m) => (
-                  <TableRow key={m.subjectId}>
-                    <TableCell className="font-mono text-xs">{m.subjectId}</TableCell>
-                    <TableCell className="text-muted-foreground">{m.subjectType}</TableCell>
-                    <TableCell>
-                      <Badge variant={m.status === "active" ? "default" : "secondary"}>{m.status}</Badge>
-                    </TableCell>
-                    <TableCell className="text-right">
-                      <Button variant="ghost" size="sm" onClick={() => setPendingRemove(m.subjectId)}>
-                        Remove
-                      </Button>
-                    </TableCell>
-                  </TableRow>
-                ))}
+                {members.data.map((m) => {
+                  const isAdmin = (m.teamRole ?? "team_member") === "team_admin";
+                  return (
+                    <TableRow key={m.subjectId}>
+                      <TableCell className="font-mono text-xs">{m.subjectId}</TableCell>
+                      <TableCell className="text-muted-foreground">{m.subjectType}</TableCell>
+                      <TableCell>
+                        <Badge variant={isAdmin ? "default" : "secondary"}>{m.teamRole ?? "team_member"}</Badge>
+                      </TableCell>
+                      <TableCell>
+                        <Badge variant={m.status === "active" ? "default" : "secondary"}>{m.status}</Badge>
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => changeMemberRole(m.subjectId, isAdmin ? "team_member" : "team_admin")}
+                        >
+                          {isAdmin ? "Make member" : "Make admin"}
+                        </Button>
+                        <Button variant="ghost" size="sm" onClick={() => setPendingRemove(m.subjectId)}>
+                          Remove
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
               </TableBody>
             </Table>
           </Card>

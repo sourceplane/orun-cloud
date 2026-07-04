@@ -122,7 +122,7 @@ export async function handleOrgRoute(
     return errorResponse("unsupported", "Method not allowed", 405, requestId);
   }
 
-  if (ORG_TEAM_MEMBER_ID_RE.test(pathname) && request.method !== "DELETE") {
+  if (ORG_TEAM_MEMBER_ID_RE.test(pathname) && request.method !== "DELETE" && request.method !== "PATCH") {
     return errorResponse("unsupported", "Method not allowed", 405, requestId);
   }
 

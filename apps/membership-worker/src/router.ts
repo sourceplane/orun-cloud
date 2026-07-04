@@ -12,7 +12,7 @@ import { handleListAccountMembers } from "./handlers/list-account-members.js";
 import { handleRevokeAccountRole } from "./handlers/revoke-account-role.js";
 import { handleGrantTeamRole } from "./handlers/grant-team-role.js";
 import { handleRevokeTeamRole } from "./handlers/revoke-team-role.js";
-import { handleCreateTeam, handleListTeams, handleGetTeam, handleDeleteTeam, handleUpdateTeam, handleListTeamMembers, handleAddTeamMember, handleRemoveTeamMember, handleListTeamGrants } from "./handlers/teams.js";
+import { handleCreateTeam, handleListTeams, handleGetTeam, handleDeleteTeam, handleUpdateTeam, handleListTeamMembers, handleAddTeamMember, handleRemoveTeamMember, handleUpdateTeamMemberRole, handleListTeamGrants } from "./handlers/teams.js";
 import { handleRemoveMember } from "./handlers/remove-member.js";
 import { handleCreateInvitation } from "./handlers/create-invitation.js";
 import { handleListInvitations } from "./handlers/list-invitations.js";
@@ -352,6 +352,10 @@ export async function route(request: Request, env: Env): Promise<Response> {
       }
       if (request.method === "DELETE") {
         return handleRemoveTeamMember(env, requestId, actor, teamMemberIdMatch[1]!, teamMemberIdMatch[2]!, teamMemberIdMatch[3]!);
+      }
+      // teams-foundation TF2 — change a member's team_role.
+      if (request.method === "PATCH") {
+        return handleUpdateTeamMemberRole(request, env, requestId, actor, teamMemberIdMatch[1]!, teamMemberIdMatch[2]!, teamMemberIdMatch[3]!);
       }
       return methodNotAllowed(requestId);
     }

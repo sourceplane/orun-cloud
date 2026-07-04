@@ -1856,6 +1856,7 @@ describe("MembershipRepository", () => {
       team_id: "00000000-0000-0000-0000-0000000000a1",
       subject_id: "usr-001",
       subject_type: "user",
+      team_role: "team_member",
       status: "active",
       created_at: NOW.toISOString(),
     };
@@ -2009,8 +2010,56 @@ describe("MembershipRepository", () => {
         expect(queries[0]!.text).toContain("INSERT INTO membership.team_members");
         expect(queries[0]!.text).toContain("ON CONFLICT (team_id, subject_id)");
         expect(queries[0]!.text).toContain("status = 'active'");
+        // teams-foundation TF2 — team_role defaults to 'team_member'.
+        expect(queries[0]!.params).toEqual([SAMPLE_TEAM_ROW.id, "usr-001", "user", "team_member", NOW.toISOString()]);
         expect(result.ok).toBe(true);
-        if (result.ok) expect(result.value.subjectId).toBe("usr-001");
+        if (result.ok) {
+          expect(result.value.subjectId).toBe("usr-001");
+          expect(result.value.teamRole).toBe("team_member");
+        }
+      });
+
+      it("addTeamMember persists an explicit team_admin role (teams-foundation TF2)", async () => {
+        const { executor, queries } = createFakeExecutor({ rows: [{ ...SAMPLE_TEAM_MEMBER_ROW, team_role: "team_admin" }] });
+        const repo = createMembershipRepository(executor);
+
+        const result = await repo.addTeamMember({
+          teamId: asUuid(SAMPLE_TEAM_ROW.id),
+          subjectId: "usr-001",
+          subjectType: "user",
+          teamRole: "team_admin",
+          createdAt: NOW,
+        });
+
+        expect(queries[0]!.text).toContain("team_role");
+        expect(queries[0]!.params).toEqual([SAMPLE_TEAM_ROW.id, "usr-001", "user", "team_admin", NOW.toISOString()]);
+        expect(result.ok).toBe(true);
+        if (result.ok) expect(result.value.teamRole).toBe("team_admin");
+      });
+
+      it("getTeamMember returns the active membership (teams-foundation TF2)", async () => {
+        const { executor, queries } = createFakeExecutor({ rows: [SAMPLE_TEAM_MEMBER_ROW] });
+        const repo = createMembershipRepository(executor);
+
+        const result = await repo.getTeamMember(asUuid(SAMPLE_TEAM_ROW.id), "usr-001");
+
+        expect(queries[0]!.text).toContain("FROM membership.team_members");
+        expect(queries[0]!.text).toContain("status = 'active'");
+        expect(queries[0]!.params).toEqual([SAMPLE_TEAM_ROW.id, "usr-001"]);
+        expect(result.ok).toBe(true);
+      });
+
+      it("updateTeamMemberRole sets team_role on an active member (teams-foundation TF2)", async () => {
+        const { executor, queries } = createFakeExecutor({ rows: [{ ...SAMPLE_TEAM_MEMBER_ROW, team_role: "team_admin" }] });
+        const repo = createMembershipRepository(executor);
+
+        const result = await repo.updateTeamMemberRole(asUuid(SAMPLE_TEAM_ROW.id), "usr-001", "team_admin");
+
+        expect(queries[0]!.text).toContain("SET team_role = $3");
+        expect(queries[0]!.text).toContain("status = 'active'");
+        expect(queries[0]!.params).toEqual([SAMPLE_TEAM_ROW.id, "usr-001", "team_admin"]);
+        expect(result.ok).toBe(true);
+        if (result.ok) expect(result.value.teamRole).toBe("team_admin");
       });
 
       it("removeTeamMember soft-removes an active member", async () => {

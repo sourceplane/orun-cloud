@@ -43,6 +43,7 @@ import {
   teamDeleteCommand,
   teamMembersCommand,
   teamMemberAddCommand,
+  teamMemberRoleCommand,
   teamMemberRemoveCommand,
   teamGrantCommand,
   teamRevokeCommand,
@@ -228,6 +229,7 @@ function buildRouter(opts: RunOptions): Router {
   r.register(["team", "delete"], "Delete a team (revokes its grants)", teamDeleteCommand);
   r.register(["team", "members"], "List a team's members", teamMembersCommand);
   r.register(["team", "member-add"], "Add a subject to a team", teamMemberAddCommand);
+  r.register(["team", "member-role"], "Change a member's team role (team_admin|team_member)", teamMemberRoleCommand);
   r.register(["team", "member-remove"], "Remove a subject from a team", teamMemberRemoveCommand);
   r.register(["team", "grant"], "Grant a team a role at account|workspace|project scope", teamGrantCommand);
   r.register(["team", "revoke"], "Revoke a team's role grant", teamRevokeCommand);
