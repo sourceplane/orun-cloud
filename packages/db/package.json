@@ -23,6 +23,8 @@
     "./resources": "./src/resources/index.ts",
     "./resources/model": "./src/resources/model.ts",
     "./state": "./src/state/index.ts",
+    "./work": "./src/work/index.ts",
+    "./work/model": "./src/work/model.ts",
     "./runner": "./src/runner/index.ts"
   },
   "bin": {

@@ -507,5 +507,14 @@ export const manifest: MigrationManifest = {
       description:
         "Owner-handle → team resolver map (teams-ownership TO1) — creates membership.team_owner_handles (account_org_id, owner_handle, team_id text = team_<hex>, timestamps) with an account-unique case-insensitive index on lower(owner_handle) and a team_id index. Binds a git-authored catalog `owner:` string to a team entity as ORG METADATA (never catalog content — 18-state intact); resolution is read-time (TO2) and defaults to owner==team.handle, so this table captures aliases only. Additive + idempotent.",
     },
+    {
+      id: "560_work_foundation_v2",
+      context: "work",
+      path: "560_work_foundation_v2/up.sql",
+      checksum:
+        "0db67ca1ebe87eb890c4c48812c90985c876ba80cc384b44dbd33b8dcaf1ff24",
+      description:
+        "The work lens — two append-only logs (orun-work v2 WP0). Recreates the work schema (v1 dropped by 490_work_teardown) as: work.specs + work.tasks (droppable fold caches of the coordination log — intent envelopes only), work.events (the authored coordination log: closed 9-kind vocabulary with NO lifecycle-write kind, mandatory typed actor, per-workspace seq = the sync cursor), work.observations (the world-authored fact log: closed 6-kind vocabulary, named versioned source, dedupe_key idempotency), and work.sequences (task-key PREFIX-n + the two log counters). No status/lifecycle/gate/released column exists anywhere — lifecycle is a derived query (WP-3); workspace-scoped tenancy, no project partition (WP-7). Additive + idempotent.",
+    },
   ],
 };
