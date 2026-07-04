@@ -85,7 +85,7 @@ behavior uninvited.
 
 | ID | Milestone | Status |
 |----|-----------|--------|
-| ES0 | Foundation (dormant): typed event catalog in `packages/contracts`, `470_event_streams_foundation` migration (lanes, cursors, dead letters, rules, channels, groups), repo layer, fix the silent-404 notifications→events emit, spec 09/14 amendments — no live behavior | 🗓️ Planned |
+| ES0 | Foundation (dormant): typed event catalog in `packages/contracts`, `580_event_streams_foundation` migration (lanes, cursors, dead letters, rules, channels, groups), repo layer, fix the silent-404 notifications→events emit, spec 09/14 amendments — no live behavior | 🗓️ Planned |
 | ES1 | The router: events-worker cron + shared lane dispatch, webhooks lane adopts the shared cursor contract (backfilled, zero delivery loss), dead-letter capture + `event.delivery_failed`/`dead_letter.created`, replay API | 🗓️ Planned |
 | ES2 | Notification rules: CRUD + RBAC + entitlements, multi-segment glob/severity/attribute matching in the router, targets = email + existing B5 webhook endpoints, per-rule throttle windows | 🗓️ Planned |
 | ES3 | Channels: provider seam in notifications-worker, Slack incoming-webhook channel (encrypted config, test send), channel CHECK lift `email→email\|slack`, async delivery with cron retry ladder | 🗓️ Planned |
