@@ -11,7 +11,7 @@ the catalog's git-authored invariant.** **Plane: Ownership.**
 
 | Field | Value |
 |-------|-------|
-| Status | **Draft** — depends on `teams-foundation` **TF1** (the `team_` entity + handle) and the `saas-service-catalog`/`saas-catalog-portal` **owner** projection (already shipped: `state.org_catalog_entities.owner`, the console `group-by: team` dimension). |
+| Status | **✅ Shipped** (TO1–TO5) — the owner→team resolver + the My Teams/My Services lens, additive over `teams-foundation` **TF1** and the catalog `owner` projection; the catalog read-model is never written (`18-state` intact). As-built in [`IMPLEMENTATION-STATUS.md`](./IMPLEMENTATION-STATUS.md). |
 | Cluster | **TO** (teams-ownership — the resolver + the lens) |
 | Owner(s) | `apps/membership-worker` (owner-map registry) · `apps/state-worker` + `apps/api-edge` (resolution at read) · `packages/contracts`/`sdk` · `apps/web-console-next` (My Teams / My Services) |
 | Builds on | `teams-foundation` **TF1** (handle); `saas-service-catalog` **SC6** (owner enrichment intent) + **SC8** ("My services" intent); `saas-catalog-portal` (`group-by: team`, owner-avatar rendering, "Unowned" state); the `18-state` *derived-never-authored* invariant |
@@ -38,11 +38,11 @@ notifications) becomes reachable.
 
 | ID | Milestone | Status |
 |----|-----------|--------|
-| TO1 | **Owner-map registry**: account-authored `owner_handle → team_id` map (table + CRUD + audit); collision + unmapped policy | Draft |
-| TO2 | **Read-time resolution**: catalog reads resolve `owner` → `{team_, handle, name, avatar}` or "Unowned"; `group-by: team` groups on resolved identity | Draft |
-| TO3 | **"My Teams / My Services" lens**: filter catalog + the flat Activities feed to the viewer's teams' owned entities (delivers SC8) | Draft |
-| TO4 | **Ownership scorecards**: the SC5/SC6 `owner`/`on-call` checks resolve against real teams; "Unowned" fails legibly | Draft |
-| TO5 | **Ownership insights**: per-team owned-entity counts, unowned-surface report, ownership coverage — the data TH's team page renders | Draft |
+| TO1 | **Owner-map registry**: account-authored `owner_handle → team_id` map (table + CRUD + audit); collision + unmapped policy | ✅ Shipped |
+| TO2 | **Read-time resolution**: catalog reads resolve `owner` → `{team_, handle, name, avatar}` or "Unowned"; `group-by: team` groups on resolved identity | ✅ Shipped |
+| TO3 | **"My Teams / My Services" lens**: filter catalog + the flat Activities feed to the viewer's teams' owned entities (delivers SC8) | ✅ Shipped |
+| TO4 | **Ownership scorecards**: the `owner` check resolves against real teams; unmapped/unowned fail with distinct remediation | ✅ Shipped |
+| TO5 | **Ownership insights**: per-team owned-entity counts, unmapped-owner backlog, ownership coverage — the data TH's team page renders | ✅ Shipped |
 
 ## Scope boundary
 
