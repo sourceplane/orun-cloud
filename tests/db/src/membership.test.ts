@@ -1845,6 +1845,9 @@ describe("MembershipRepository", () => {
       account_org_id: ORG1,
       name: "Platform",
       slug_lower: "platform",
+      handle: "platform",
+      description: "Platform engineering",
+      avatar_ref: null,
       status: "active",
       created_at: NOW.toISOString(),
       updated_at: NOW.toISOString(),
@@ -1871,18 +1874,54 @@ describe("MembershipRepository", () => {
         });
 
         expect(queries[0]!.text).toContain("INSERT INTO membership.teams");
+        // teams-foundation TF1 — handle/description/avatar_ref default to NULL
+        // when the caller omits them (TM-era create path stays valid).
         expect(queries[0]!.params).toEqual([
           SAMPLE_TEAM_ROW.id,
           ORG1,
           "Platform",
           "platform",
+          null,
+          null,
+          null,
           NOW.toISOString(),
         ]);
         expect(result.ok).toBe(true);
         if (result.ok) {
           expect(result.value.accountOrgId).toBe(ORG1);
           expect(result.value.slugLower).toBe("platform");
+          expect(result.value.handle).toBe("platform");
+          expect(result.value.description).toBe("Platform engineering");
+          expect(result.value.avatarRef).toBeNull();
         }
+      });
+
+      it("persists handle/description/avatar_ref when supplied (teams-foundation TF1)", async () => {
+        const { executor, queries } = createFakeExecutor({ rows: [SAMPLE_TEAM_ROW] });
+        const repo = createMembershipRepository(executor);
+
+        await repo.createTeam({
+          id: SAMPLE_TEAM_ROW.id,
+          accountOrgId: ORG1,
+          name: "Platform",
+          slugLower: "platform",
+          handle: "platform",
+          description: "Platform engineering",
+          avatarRef: "avatar_ref_1",
+          createdAt: NOW,
+        });
+
+        expect(queries[0]!.text).toContain("handle, description, avatar_ref");
+        expect(queries[0]!.params).toEqual([
+          SAMPLE_TEAM_ROW.id,
+          ORG1,
+          "Platform",
+          "platform",
+          "platform",
+          "Platform engineering",
+          "avatar_ref_1",
+          NOW.toISOString(),
+        ]);
       });
 
       it("maps a unique-violation to a conflict error", async () => {

@@ -35,7 +35,7 @@ function org(id: string, parentOrgId: string | null): Organization {
   return { id, name: "n", slug: "s", slugLower: "s", publicRef: "ws_TESTREF1", status: "active", parentOrgId, createdAt: NOW, updatedAt: NOW };
 }
 function team(id: string, accountOrgId: string): Team {
-  return { id, accountOrgId, name: "Platform", slugLower: "platform", status: "active", createdAt: NOW, updatedAt: NOW };
+  return { id, accountOrgId, name: "Platform", slugLower: "platform", handle: null, description: null, avatarRef: null, status: "active", createdAt: NOW, updatedAt: NOW };
 }
 function grant(orgId: string, subjectId: string, role: string, scopeKind: string): RoleAssignment {
   return { id: `ra-${role}`, orgId, subjectId, subjectType: "team", role, scopeKind, scopeRef: null, createdAt: NOW, revokedAt: null };

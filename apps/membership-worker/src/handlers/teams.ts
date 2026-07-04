@@ -27,6 +27,9 @@ function publicTeam(t: Team): Record<string, unknown> {
     id: teamPublicId(t.id),
     name: t.name,
     slug: t.slugLower,
+    handle: t.handle,
+    description: t.description,
+    avatar: t.avatarRef,
     status: t.status,
     createdAt: t.createdAt.toISOString(),
   };
@@ -34,6 +37,67 @@ function publicTeam(t: Team): Record<string, unknown> {
 
 function slugify(input: string): string {
   return input.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+}
+
+// teams-foundation TF1 — a handle is the account-unique, mentionable key
+// (`@payments`). Lower-kebab, 2–39 chars, cannot start with a hyphen (TF-A default
+// lean). Stored lower-cased; the DB partial-unique index on lower(handle) enforces
+// per-account, case-insensitive uniqueness among live teams.
+const HANDLE_RE = /^[a-z0-9][a-z0-9-]{1,38}$/;
+const MAX_DESCRIPTION_LEN = 500;
+
+/**
+ * Validate/normalize the optional handle/description/avatar profile fields shared
+ * by create + update. Returns the normalized values, or a `field → messages`
+ * object to surface as a 422. `undefined` means "not supplied" (leave unchanged).
+ */
+function parseProfileFields(body: {
+  handle?: unknown;
+  description?: unknown;
+  avatar?: unknown;
+}): { ok: true; handle?: string; description?: string; avatar?: string } | { ok: false; errors: Record<string, string[]> } {
+  const errors: Record<string, string[]> = {};
+  let handle: string | undefined;
+  let description: string | undefined;
+  let avatar: string | undefined;
+
+  if (body.handle !== undefined && body.handle !== null) {
+    if (typeof body.handle !== "string") {
+      errors.handle = ["Must be a string"];
+    } else {
+      const normalized = body.handle.trim().toLowerCase();
+      if (!HANDLE_RE.test(normalized)) {
+        errors.handle = [
+          "Must be 2–39 characters of lower-case letters, digits, and hyphens, and cannot start with a hyphen",
+        ];
+      } else {
+        handle = normalized;
+      }
+    }
+  }
+  if (body.description !== undefined && body.description !== null) {
+    if (typeof body.description !== "string") {
+      errors.description = ["Must be a string"];
+    } else if (body.description.length > MAX_DESCRIPTION_LEN) {
+      errors.description = [`Must be at most ${MAX_DESCRIPTION_LEN} characters`];
+    } else {
+      description = body.description;
+    }
+  }
+  if (body.avatar !== undefined && body.avatar !== null) {
+    if (typeof body.avatar !== "string") {
+      errors.avatar = ["Must be a string"];
+    } else {
+      avatar = body.avatar;
+    }
+  }
+
+  if (Object.keys(errors).length > 0) return { ok: false, errors };
+  const out: { ok: true; handle?: string; description?: string; avatar?: string } = { ok: true };
+  if (handle !== undefined) out.handle = handle;
+  if (description !== undefined) out.description = description;
+  if (avatar !== undefined) out.avatar = avatar;
+  return out;
 }
 
 function publicMember(m: TeamMember): Record<string, unknown> {
@@ -116,6 +180,8 @@ export async function handleCreateTeam(
   if (slugLower.length === 0) {
     return validationError(requestId, { slug: ["Could not derive a slug"] });
   }
+  const profile = parseProfileFields(body as Record<string, unknown>);
+  if (!profile.ok) return validationError(requestId, profile.errors);
 
   const executor = deps ? null : createSqlExecutor(env.PLATFORM_DB!);
   try {
@@ -133,6 +199,9 @@ export async function handleCreateTeam(
         accountOrgId: authz.accountUuid,
         name: name.trim(),
         slugLower,
+        ...(profile.handle !== undefined ? { handle: profile.handle } : {}),
+        ...(profile.description !== undefined ? { description: profile.description } : {}),
+        ...(profile.avatar !== undefined ? { avatarRef: profile.avatar } : {}),
         createdAt: now,
       });
       if (!created.ok) return created;
@@ -142,7 +211,7 @@ export async function handleCreateTeam(
             id: genId(), type: "team.created", version: 1, source: "membership-worker",
             occurredAt: now, actorType: actor.subjectType, actorId: actor.subjectId,
             orgId: authz.accountUuid, subjectKind: "team", subjectId: teamPublicId(teamUuid),
-            requestId, payload: { teamId: teamPublicId(teamUuid), name: name.trim(), slug: slugLower },
+            requestId, payload: { teamId: teamPublicId(teamUuid), name: name.trim(), slug: slugLower, ...(profile.handle !== undefined ? { handle: profile.handle } : {}) },
           },
           audit: { id: genId(), category: "membership", description: `Team ${teamPublicId(teamUuid)} created` },
         });
@@ -157,7 +226,7 @@ export async function handleCreateTeam(
       result = await run(repo, deps?.eventsRepo ?? null);
     }
     if (!result.ok) {
-      if (result.error.kind === "conflict") return errorResponse("conflict", "A team with that slug already exists", 409, requestId);
+      if (result.error.kind === "conflict") return errorResponse("conflict", "A team with that slug or handle already exists", 409, requestId);
       return errorResponse("internal_error", "An unexpected error occurred", 500, requestId);
     }
     return successResponse({ team: publicTeam(result.value) }, requestId, 201);
@@ -373,15 +442,29 @@ export async function handleUpdateTeam(
     return validationError(requestId, { body: ["Invalid JSON"] });
   }
   if (!body || typeof body !== "object") return validationError(requestId, { body: ["Request body must be an object"] });
-  const { name, slug } = body as { name?: unknown; slug?: unknown };
+  const { name, slug, handle, description, avatar } = body as {
+    name?: unknown;
+    slug?: unknown;
+    handle?: unknown;
+    description?: unknown;
+    avatar?: unknown;
+  };
   if (name !== undefined && (typeof name !== "string" || name.trim().length === 0)) {
     return validationError(requestId, { name: ["Must be a non-empty string"] });
   }
   if (slug !== undefined && typeof slug !== "string") {
     return validationError(requestId, { slug: ["Must be a string"] });
   }
-  if (name === undefined && slug === undefined) {
-    return validationError(requestId, { body: ["Provide name and/or slug"] });
+  const profile = parseProfileFields({ handle, description, avatar });
+  if (!profile.ok) return validationError(requestId, profile.errors);
+  if (
+    name === undefined &&
+    slug === undefined &&
+    profile.handle === undefined &&
+    profile.description === undefined &&
+    profile.avatar === undefined
+  ) {
+    return validationError(requestId, { body: ["Provide at least one of name, slug, handle, description, avatar"] });
   }
   const nextName = typeof name === "string" ? name.trim() : undefined;
   const nextSlug = typeof slug === "string" ? slugify(slug) : undefined;
@@ -408,6 +491,9 @@ export async function handleUpdateTeam(
       const updated = await r.updateTeam(teamUuid, {
         ...(nextName !== undefined ? { name: nextName } : {}),
         ...(nextSlug !== undefined ? { slugLower: nextSlug } : {}),
+        ...(profile.handle !== undefined ? { handle: profile.handle } : {}),
+        ...(profile.description !== undefined ? { description: profile.description } : {}),
+        ...(profile.avatar !== undefined ? { avatarRef: profile.avatar } : {}),
         updatedAt: now,
       });
       if (!updated.ok) return updated;
@@ -417,7 +503,7 @@ export async function handleUpdateTeam(
             id: genId(), type: "team.updated", version: 1, source: "membership-worker",
             occurredAt: now, actorType: actor.subjectType, actorId: actor.subjectId,
             orgId: authz.accountUuid, subjectKind: "team", subjectId: teamPub,
-            requestId, payload: { teamId: teamPub, ...(nextName !== undefined ? { name: nextName } : {}), ...(nextSlug !== undefined ? { slug: nextSlug } : {}) },
+            requestId, payload: { teamId: teamPub, ...(nextName !== undefined ? { name: nextName } : {}), ...(nextSlug !== undefined ? { slug: nextSlug } : {}), ...(profile.handle !== undefined ? { handle: profile.handle } : {}) },
           },
           audit: { id: genId(), category: "membership", description: `Team ${teamPub} updated` },
         });
@@ -432,7 +518,7 @@ export async function handleUpdateTeam(
       result = await run(repo, deps?.eventsRepo ?? null);
     }
     if (!result.ok) {
-      if (result.error.kind === "conflict") return errorResponse("conflict", "A team with that slug already exists", 409, requestId);
+      if (result.error.kind === "conflict") return errorResponse("conflict", "A team with that slug or handle already exists", 409, requestId);
       return errorResponse("not_found", "Team not found", 404, requestId);
     }
     return successResponse({ team: publicTeam(result.value) }, requestId);

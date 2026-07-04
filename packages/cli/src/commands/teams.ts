@@ -39,22 +39,29 @@ export async function teamListCommand(ctx: CommandContext): Promise<CommandResul
   }
   ctx.stdout(formatOutput({
     mode: "human",
-    columns: ["id", "name", "slug", "status"],
-    rows: result.teams.map((t) => ({ id: t.id, name: t.name, slug: t.slug, status: t.status })),
+    columns: ["id", "name", "handle", "slug", "status"],
+    rows: result.teams.map((t) => ({ id: t.id, name: t.name, handle: t.handle ?? "", slug: t.slug, status: t.status })),
     title: `Teams in ${orgId}`,
   }));
   return { exitCode: 0 };
 }
 
-// team create <name> [--slug=SLUG]
+// team create <name> [--slug=SLUG] [--handle=HANDLE] [--description=TEXT] [--avatar=REF]
 export async function teamCreateCommand(ctx: CommandContext): Promise<CommandResult> {
-  const name = requireArg(ctx.args[0], "usage: orun-cloud team create <name> [--slug=SLUG] [--org=ORG_ID]");
+  const name = requireArg(ctx.args[0], "usage: orun-cloud team create <name> [--slug=SLUG] [--handle=HANDLE] [--description=TEXT] [--avatar=REF] [--org=ORG_ID]");
   const slug = strFlag(ctx, "slug");
+  const handle = strFlag(ctx, "handle");
+  const description = strFlag(ctx, "description");
+  const avatar = strFlag(ctx, "avatar");
   const orgId = await resolveOrgId(ctx, true);
   const idempotencyKey = readIdempotencyKey(ctx);
   const sdk = await ctx.sdk();
-  const result = await sdk.teams.createTeam(orgId, { name, ...(slug ? { slug } : {}) }, idempotencyKey !== undefined ? { idempotencyKey } : {});
-  emitRecord(ctx, { id: result.team.id, name: result.team.name, slug: result.team.slug }, result, "Team created");
+  const result = await sdk.teams.createTeam(
+    orgId,
+    { name, ...(slug ? { slug } : {}), ...(handle ? { handle } : {}), ...(description ? { description } : {}), ...(avatar ? { avatar } : {}) },
+    idempotencyKey !== undefined ? { idempotencyKey } : {},
+  );
+  emitRecord(ctx, { id: result.team.id, name: result.team.name, handle: result.team.handle ?? "", slug: result.team.slug }, result, "Team created");
   return { exitCode: 0 };
 }
 
@@ -64,22 +71,36 @@ export async function teamGetCommand(ctx: CommandContext): Promise<CommandResult
   const orgId = await resolveOrgId(ctx, true);
   const sdk = await ctx.sdk();
   const result = await sdk.teams.getTeam(orgId, teamId);
-  emitRecord(ctx, { id: result.team.id, name: result.team.name, slug: result.team.slug, status: result.team.status }, result, "Team");
+  emitRecord(
+    ctx,
+    { id: result.team.id, name: result.team.name, handle: result.team.handle ?? "", slug: result.team.slug, description: result.team.description ?? "", status: result.team.status },
+    result,
+    "Team",
+  );
   return { exitCode: 0 };
 }
 
-// team update <teamId> [--name=NAME] [--slug=SLUG]
+// team update <teamId> [--name=NAME] [--slug=SLUG] [--handle=HANDLE] [--description=TEXT] [--avatar=REF]
 export async function teamUpdateCommand(ctx: CommandContext): Promise<CommandResult> {
-  const teamId = requireArg(ctx.args[0], "usage: orun-cloud team update <teamId> [--name=NAME] [--slug=SLUG] [--org=ORG_ID]");
+  const teamId = requireArg(ctx.args[0], "usage: orun-cloud team update <teamId> [--name=NAME] [--slug=SLUG] [--handle=HANDLE] [--description=TEXT] [--avatar=REF] [--org=ORG_ID]");
   const name = strFlag(ctx, "name");
   const slug = strFlag(ctx, "slug");
-  if (name === undefined && slug === undefined) {
-    throw new UsageError("team update requires --name and/or --slug");
+  const handle = strFlag(ctx, "handle");
+  const description = strFlag(ctx, "description");
+  const avatar = strFlag(ctx, "avatar");
+  if (name === undefined && slug === undefined && handle === undefined && description === undefined && avatar === undefined) {
+    throw new UsageError("team update requires at least one of --name, --slug, --handle, --description, --avatar");
   }
   const orgId = await resolveOrgId(ctx, true);
   const sdk = await ctx.sdk();
-  const result = await sdk.teams.updateTeam(orgId, teamId, { ...(name ? { name } : {}), ...(slug ? { slug } : {}) });
-  emitRecord(ctx, { id: result.team.id, name: result.team.name, slug: result.team.slug }, result, "Team updated");
+  const result = await sdk.teams.updateTeam(orgId, teamId, {
+    ...(name ? { name } : {}),
+    ...(slug ? { slug } : {}),
+    ...(handle ? { handle } : {}),
+    ...(description ? { description } : {}),
+    ...(avatar ? { avatar } : {}),
+  });
+  emitRecord(ctx, { id: result.team.id, name: result.team.name, handle: result.team.handle ?? "", slug: result.team.slug }, result, "Team updated");
   return { exitCode: 0 };
 }
 

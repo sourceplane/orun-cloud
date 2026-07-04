@@ -99,6 +99,16 @@ export interface PublicTeam {
   id: string;
   name: string;
   slug: string;
+  /**
+   * Account-unique, case-insensitive, mentionable handle (teams-foundation TF1),
+   * e.g. `payments` → `@payments`. Added additively; `null` for TM-era teams that
+   * predate the profile columns. Grants bind to `id`, never this mutable handle.
+   */
+  handle?: string | null;
+  /** Free-text profile blurb (teams-foundation TF1); `null` when unset. */
+  description?: string | null;
+  /** Opaque avatar reference (teams-foundation TF1); `null` → initials+colour. */
+  avatar?: string | null;
   status: string;
   createdAt: string;
 }
@@ -113,11 +123,21 @@ export interface PublicTeamMember {
 export interface CreateTeamRequest {
   name: string;
   slug?: string;
+  /** Optional account-unique handle (teams-foundation TF1). */
+  handle?: string;
+  /** Optional profile blurb (teams-foundation TF1). */
+  description?: string;
+  /** Optional opaque avatar reference (teams-foundation TF1). */
+  avatar?: string;
 }
 
 export interface UpdateTeamRequest {
   name?: string;
   slug?: string;
+  /** Rename the handle (teams-foundation TF1); omit to leave unchanged. */
+  handle?: string;
+  description?: string;
+  avatar?: string;
 }
 
 export interface CreateTeamResponse {

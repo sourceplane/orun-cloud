@@ -87,6 +87,9 @@ function mapTeam(row: Record<string, unknown>): Team {
     accountOrgId: row.account_org_id as string,
     name: row.name as string,
     slugLower: row.slug_lower as string,
+    handle: (row.handle as string | null) ?? null,
+    description: (row.description as string | null) ?? null,
+    avatarRef: (row.avatar_ref as string | null) ?? null,
     status: row.status as string,
     createdAt: new Date(row.created_at as string),
     updatedAt: new Date(row.updated_at as string),
@@ -980,10 +983,19 @@ export function createMembershipRepository(executor: SqlExecutor): MembershipRep
     async createTeam(input: CreateTeamInput): Promise<MembershipResult<Team>> {
       try {
         const result = await executor.execute<Record<string, unknown>>(
-          `INSERT INTO membership.teams (id, account_org_id, name, slug_lower, created_at, updated_at)
-           VALUES ($1, $2, $3, $4, $5, $5)
+          `INSERT INTO membership.teams (id, account_org_id, name, slug_lower, handle, description, avatar_ref, created_at, updated_at)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $8)
            RETURNING *`,
-          [input.id, input.accountOrgId, input.name, input.slugLower, input.createdAt.toISOString()],
+          [
+            input.id,
+            input.accountOrgId,
+            input.name,
+            input.slugLower,
+            input.handle ?? null,
+            input.description ?? null,
+            input.avatarRef ?? null,
+            input.createdAt.toISOString(),
+          ],
         );
         return { ok: true, value: mapTeam(result.rows[0]!) };
       } catch (err) {
@@ -1041,10 +1053,21 @@ export function createMembershipRepository(executor: SqlExecutor): MembershipRep
           `UPDATE membership.teams
            SET name = COALESCE($2, name),
                slug_lower = COALESCE($3, slug_lower),
-               updated_at = $4
+               handle = COALESCE($4, handle),
+               description = COALESCE($5, description),
+               avatar_ref = COALESCE($6, avatar_ref),
+               updated_at = $7
            WHERE id = $1 AND status <> 'deleted'
            RETURNING *`,
-          [id, input.name ?? null, input.slugLower ?? null, input.updatedAt.toISOString()],
+          [
+            id,
+            input.name ?? null,
+            input.slugLower ?? null,
+            input.handle ?? null,
+            input.description ?? null,
+            input.avatarRef ?? null,
+            input.updatedAt.toISOString(),
+          ],
         );
         if (result.rowCount === 0) return { ok: false, error: { kind: "not_found" } };
         return { ok: true, value: mapTeam(result.rows[0]!) };

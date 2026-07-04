@@ -247,10 +247,18 @@ function Inner({ orgId, slug, teamId }: { orgId: string; slug: string; teamId: s
           </CardHeader>
         </Card>
       ) : team.data ? (
-        <header className="flex items-center gap-3">
-          <h1 className="text-xl font-semibold tracking-tight">{team.data.name}</h1>
-          <Badge variant="outline" className="font-mono text-xs">@{team.data.slug}</Badge>
-          <Badge variant={team.data.status === "active" ? "default" : "secondary"}>{team.data.status}</Badge>
+        <header className="space-y-1.5">
+          <div className="flex items-center gap-3">
+            <h1 className="text-xl font-semibold tracking-tight">{team.data.name}</h1>
+            {team.data.handle ? (
+              <Badge variant="outline" className="font-mono text-xs">@{team.data.handle}</Badge>
+            ) : null}
+            <Badge variant="secondary" className="font-mono text-xs">{team.data.slug}</Badge>
+            <Badge variant={team.data.status === "active" ? "default" : "secondary"}>{team.data.status}</Badge>
+          </div>
+          {team.data.description ? (
+            <p className="text-sm text-muted-foreground">{team.data.description}</p>
+          ) : null}
         </header>
       ) : null}
 

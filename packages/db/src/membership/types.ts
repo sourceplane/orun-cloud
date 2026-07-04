@@ -108,6 +108,17 @@ export interface Team {
   accountOrgId: string;
   name: string;
   slugLower: string;
+  /**
+   * Account-unique, case-insensitive, mentionable handle (teams-foundation TF1),
+   * e.g. `payments` → `@payments`. `null` for TM-era teams that predate the
+   * profile columns. Grants and every cross-surface reference bind to the
+   * immutable `team_<hex>` id, never this mutable handle.
+   */
+  handle: string | null;
+  /** Free-text team profile blurb (teams-foundation TF1). */
+  description: string | null;
+  /** Opaque avatar reference (teams-foundation TF1); `null` → initials+colour. */
+  avatarRef: string | null;
   status: string;
   createdAt: Date;
   updatedAt: Date;
@@ -127,12 +138,22 @@ export interface CreateTeamInput {
   accountOrgId: Uuid;
   name: string;
   slugLower: string;
+  /** Optional account-unique handle (teams-foundation TF1). */
+  handle?: string | null;
+  /** Optional profile blurb (teams-foundation TF1). */
+  description?: string | null;
+  /** Optional opaque avatar reference (teams-foundation TF1). */
+  avatarRef?: string | null;
   createdAt: Date;
 }
 
 export interface UpdateTeamInput {
   name?: string;
   slugLower?: string;
+  /** Rename the handle (teams-foundation TF1); omit to leave unchanged. */
+  handle?: string;
+  description?: string;
+  avatarRef?: string;
   updatedAt: Date;
 }
 

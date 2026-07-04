@@ -29,7 +29,7 @@ function org(id: string, parentOrgId: string | null): Organization {
   return { id, name: "n", slug: "s", slugLower: "s", publicRef: "ws_TESTREF1", status: "active", parentOrgId, createdAt: NOW, updatedAt: NOW };
 }
 function team(id: string, accountOrgId: string): Team {
-  return { id, accountOrgId, name: "Platform", slugLower: "platform", status: "active", createdAt: NOW, updatedAt: NOW };
+  return { id, accountOrgId, name: "Platform", slugLower: "platform", handle: null, description: null, avatarRef: null, status: "active", createdAt: NOW, updatedAt: NOW };
 }
 function accountRole(role: string): RoleAssignment {
   return { id: "ra", orgId: ACCOUNT, subjectId: ACTOR, subjectType: "user", role, scopeKind: "account", scopeRef: null, createdAt: NOW, revokedAt: null };
@@ -52,8 +52,9 @@ function makeRepo(cfg: {
   createConflict?: boolean;
   updateConflict?: boolean;
   removeMissing?: boolean;
-}): { repo: MembershipRepository; created: CreateTeamInput[]; revokedTeams: string[]; addedMembers: CreateTeamMemberInput[]; removedMembers: string[] } {
+}): { repo: MembershipRepository; created: CreateTeamInput[]; updated: Array<Record<string, unknown>>; revokedTeams: string[]; addedMembers: CreateTeamMemberInput[]; removedMembers: string[] } {
   const created: CreateTeamInput[] = [];
+  const updated: Array<Record<string, unknown>> = [];
   const revokedTeams: string[] = [];
   const addedMembers: CreateTeamMemberInput[] = [];
   const removedMembers: string[] = [];
@@ -78,10 +79,21 @@ function makeRepo(cfg: {
       const t = cfg.teams?.[id];
       return t ? { ok: true as const, value: t } : { ok: false as const, error: { kind: "not_found" as const } };
     },
-    async updateTeam(id: string, input: { name?: string; slugLower?: string }) {
+    async updateTeam(id: string, input: { name?: string; slugLower?: string; handle?: string; description?: string; avatarRef?: string }) {
       if (cfg.updateConflict) return { ok: false as const, error: { kind: "conflict" as const, entity: "team" } };
+      updated.push({ id, ...input });
       const base = team(id, ACCOUNT);
-      return { ok: true as const, value: { ...base, name: input.name ?? base.name, slugLower: input.slugLower ?? base.slugLower } };
+      return {
+        ok: true as const,
+        value: {
+          ...base,
+          name: input.name ?? base.name,
+          slugLower: input.slugLower ?? base.slugLower,
+          handle: input.handle ?? base.handle,
+          description: input.description ?? base.description,
+          avatarRef: input.avatarRef ?? base.avatarRef,
+        },
+      };
     },
     async deleteTeam(id: string) {
       return { ok: true as const, value: { ...team(id, ACCOUNT), status: "deleted" } };
@@ -106,7 +118,7 @@ function makeRepo(cfg: {
       return { ok: true as const, value: cfg.grants ?? [] };
     },
   } as unknown as MembershipRepository;
-  return { repo, created, revokedTeams, addedMembers, removedMembers };
+  return { repo, created, updated, revokedTeams, addedMembers, removedMembers };
 }
 
 function makeEvents(): { events: Array<{ type: string }>; eventsRepo: Pick<EventsRepository, "appendEventWithAudit"> } {
@@ -166,6 +178,25 @@ describe("teams: create (saas-teams TM4b)", () => {
     const { repo } = makeRepo({ orgs: { [ACCOUNT]: org(ACCOUNT, null) }, roles: { [`${ACCOUNT}|${ACTOR}`]: [accountRole("account_admin")] }, createConflict: true });
     const res = await handleCreateTeam(req(ACCOUNT, { name: "Platform" }), env(), "r", actor, orgPublicId(ACCOUNT), { repo });
     expect(res.status).toBe(409);
+  });
+
+  // teams-foundation TF1 — handle + profile.
+  it("persists a handle + description (lower-cased) when supplied", async () => {
+    const { repo, created } = makeRepo({ orgs: { [ACCOUNT]: org(ACCOUNT, null) }, roles: { [`${ACCOUNT}|${ACTOR}`]: [accountRole("account_admin")] } });
+    const res = await handleCreateTeam(
+      req(ACCOUNT, { name: "Platform", handle: "Platform-Eng", description: "Owns the platform" }),
+      env(), "r", actor, orgPublicId(ACCOUNT), { repo },
+    );
+    expect(res.status).toBe(201);
+    expect(created[0]!.handle).toBe("platform-eng");
+    expect(created[0]!.description).toBe("Owns the platform");
+  });
+
+  it("rejects an invalid handle (422) and does not create", async () => {
+    const { repo, created } = makeRepo({ orgs: { [ACCOUNT]: org(ACCOUNT, null) }, roles: { [`${ACCOUNT}|${ACTOR}`]: [accountRole("account_admin")] } });
+    const res = await handleCreateTeam(req(ACCOUNT, { name: "Platform", handle: "-nope_bad" }), env(), "r", actor, orgPublicId(ACCOUNT), { repo });
+    expect(res.status).toBe(422);
+    expect(created).toHaveLength(0);
   });
 });
 
@@ -287,6 +318,26 @@ describe("teams: update (saas-teams TM4b2)", () => {
     const request = new Request(`http://mw/x`, { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ name: "X" }) });
     const res = await handleUpdateTeam(request, env(), "r", actor, orgPublicId(ACCOUNT), teamPublicId(TEAM_UUID), { repo });
     expect(res.status).toBe(404);
+  });
+
+  // teams-foundation TF1 — a profile-only patch (handle/description) is allowed.
+  it("renames the handle alone (lower-cased) without name/slug", async () => {
+    const { repo, updated } = makeRepo({ orgs: { [ACCOUNT]: org(ACCOUNT, null) }, roles: admins, teams: { [TEAM_UUID]: team(TEAM_UUID, ACCOUNT) } });
+    const request = new Request(`http://mw/x`, { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ handle: "Payments" }) });
+    const res = await handleUpdateTeam(request, env(), "r", actor, orgPublicId(ACCOUNT), teamPublicId(TEAM_UUID), { repo });
+    expect(res.status).toBe(200);
+    expect(updated).toHaveLength(1);
+    expect(updated[0]!.handle).toBe("payments");
+    const json = await res.json() as { data: { team: { handle: string } } };
+    expect(json.data.team.handle).toBe("payments");
+  });
+
+  it("rejects an invalid handle on update (422)", async () => {
+    const { repo, updated } = makeRepo({ orgs: { [ACCOUNT]: org(ACCOUNT, null) }, roles: admins, teams: { [TEAM_UUID]: team(TEAM_UUID, ACCOUNT) } });
+    const request = new Request(`http://mw/x`, { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ handle: "Has Space" }) });
+    const res = await handleUpdateTeam(request, env(), "r", actor, orgPublicId(ACCOUNT), teamPublicId(TEAM_UUID), { repo });
+    expect(res.status).toBe(422);
+    expect(updated).toHaveLength(0);
   });
 });
 

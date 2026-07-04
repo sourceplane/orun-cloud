@@ -31,6 +31,12 @@ import type { PublicTeam } from "@saas/contracts/membership";
 const schema = z.object({
   name: z.string().min(1, "Enter a team name"),
   slug: z.string().optional(),
+  handle: z
+    .string()
+    .regex(/^[a-z0-9][a-z0-9-]{1,38}$/, "2–39 chars: lower-case letters, digits, hyphens; no leading hyphen")
+    .optional()
+    .or(z.literal("")),
+  description: z.string().max(500, "At most 500 characters").optional(),
 });
 
 export default function TeamsPage() {
@@ -91,16 +97,23 @@ function Inner({ orgId, slug }: { orgId: string; slug: string }) {
             </DialogHeader>
             <ZodForm
               schema={schema}
-              defaultValues={{ name: "", slug: "" }}
+              defaultValues={{ name: "", slug: "", handle: "", description: "" }}
               fields={[
                 { name: "name", label: "Name", placeholder: "Platform Engineering" },
+                { name: "handle", label: "Handle", hint: "Optional — mentionable @handle, e.g. platform", placeholder: "platform" },
                 { name: "slug", label: "Slug", hint: "Optional — derived from the name if omitted" },
+                { name: "description", label: "Description", hint: "Optional" },
               ]}
               submitLabel="Create team"
               cancel={{ label: "Cancel", onClick: () => setOpen(false) }}
               onSubmit={async (v) => {
                 const r = await wrap(() =>
-                  client.teams.createTeam(orgId, { name: v.name, ...(v.slug ? { slug: v.slug } : {}) }),
+                  client.teams.createTeam(orgId, {
+                    name: v.name,
+                    ...(v.slug ? { slug: v.slug } : {}),
+                    ...(v.handle ? { handle: v.handle } : {}),
+                    ...(v.description ? { description: v.description } : {}),
+                  }),
                 );
                 if (!r.ok) {
                   toast({ kind: "error", title: "Create failed", description: r.error.message });
@@ -143,6 +156,7 @@ function Inner({ orgId, slug }: { orgId: string; slug: string }) {
             <TableHeader>
               <TableRow>
                 <TableHead>Name</TableHead>
+                <TableHead>Handle</TableHead>
                 <TableHead>Slug</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead className="text-right">Actions</TableHead>
@@ -156,6 +170,7 @@ function Inner({ orgId, slug }: { orgId: string; slug: string }) {
                       {t.name}
                     </Link>
                   </TableCell>
+                  <TableCell className="text-muted-foreground">{t.handle ? `@${t.handle}` : "—"}</TableCell>
                   <TableCell className="text-muted-foreground">{t.slug}</TableCell>
                   <TableCell>
                     <Badge variant={t.status === "active" ? "default" : "secondary"}>{t.status}</Badge>
