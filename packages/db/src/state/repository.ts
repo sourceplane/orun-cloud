@@ -1147,12 +1147,22 @@ export function createStateRepository(executor: SqlExecutor): StateRepository {
         // The digest must be referenced as a doc_ref by this org's catalog read
         // model — that IS the authorization (a user who can read the catalog can
         // read the docs it points at) and yields the object's project scope.
+        //
+        // Match on doc_ref cast to text with a substring on the (globally unique,
+        // `sha256:`-prefixed) digest, NOT `doc_ref->>'digest'`: doc_ref is written
+        // by upsertRepoFacet/upsertOrgCatalogEntity as a bare JSON.stringify param
+        // into a jsonb column, so the pg driver stores it as a jsonb *string value*
+        // (double-encoded) and `->>'digest'` yields NULL (see the `::text::jsonb`
+        // note on the run-jobs deps insert). The text match is encoding-agnostic —
+        // it works whether doc_ref is a proper object or a string scalar, so no
+        // re-projection is needed. `$2` carries the `sha256:` prefix, so it can
+        // never collide with the sibling `sha` (bare-hex) field.
         const result = await executor.execute<Record<string, unknown>>(
           `SELECT source_project_id FROM state.repo_facet
-             WHERE org_id = $1 AND doc_ref->>'digest' = $2
+             WHERE org_id = $1 AND doc_ref::text LIKE '%' || $2 || '%'
            UNION
            SELECT source_project_id FROM state.org_catalog_entities
-             WHERE org_id = $1 AND doc_ref->>'digest' = $2
+             WHERE org_id = $1 AND doc_ref::text LIKE '%' || $2 || '%'
            LIMIT 1`,
           [orgId, digest],
         );
