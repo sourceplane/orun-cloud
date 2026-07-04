@@ -534,5 +534,14 @@ export const manifest: MigrationManifest = {
       description:
         "Event streams foundation (saas-event-streaming ES0) — lays the shared substrate for the spec-09 router that was never built: events.subscriber_lanes (the lane registry — a lane is a named, at-least-once, cursored subscription over event_log; pausing one is the operational kill switch), events.lane_cursors (per-(lane, org) keyset dispatch positions — the events-owned generalization of webhooks.webhook_dispatch_cursor, which the webhooks lane adopts in ES1), events.dead_letters (poisoned deliveries as pointer + forensics with a (lane, event) uniqueness so retries update rather than fork), events.notification_rules + events.rule_targets (org/project-scoped routing rules with mandatory throttle fields, evaluated from ES2; target_kind forward-defined for team/inbox), and events.event_groups + events.event_group_members (the dedup/correlation read-model — one open story per (org, rendered dedup key) via a partial unique index, activated in ES4). Tables only; nothing reads or writes them until the owning milestones land. Additive + idempotent; no cross-context FKs.",
     },
+    {
+      id: "590_webhooks_lane_adoption",
+      context: "events",
+      path: "590_webhooks_lane_adoption/up.sql",
+      checksum:
+        "0bdabe9ef1ea1e4adf0719138956326547ff0626ef4c7c880e71f52b6106aa97",
+      description:
+        "Webhooks lane adoption (saas-event-streaming ES1) — seeds the subscriber-lane registry with the two launch lanes ('webhooks' active, owned by webhooks-worker with delivery mechanics unchanged; 'notifications' PAUSED until the ES2 rules engine lands) and backfills events.lane_cursors from webhooks.webhook_dispatch_cursor (one-time one-directional copy INTO the events context per the R6 cutover protocol: copy -> dual-read -> cutover -> drop later; the legacy table stays intact as the runtime read-through fallback and rollback path). Idempotent via ON CONFLICT DO NOTHING throughout; no cross-context foreign keys.",
+    },
   ],
 };

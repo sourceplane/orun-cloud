@@ -81,6 +81,21 @@ export function isWebhookLifecycleEvent(eventType: string): boolean {
 }
 
 /**
+ * Recursion guard for fanout (generalized in saas-event-streaming ES1):
+ * webhook lifecycle events plus the event-streaming meta namespaces
+ * (`event.*` lane-delivery failures, `dead_letter.*`) are suppressed from
+ * delivery — meta-events about moving events must never generate more
+ * event movement.
+ */
+export function isFanoutSuppressedEvent(eventType: string): boolean {
+  return (
+    isWebhookLifecycleEvent(eventType) ||
+    eventType.startsWith("event.") ||
+    eventType.startsWith("dead_letter.")
+  );
+}
+
+/**
  * Build a safe metadata payload for a delivery lifecycle event.
  * Excludes secrets, raw responses, stack traces, and customer data.
  */
@@ -365,11 +380,12 @@ export async function dispatchNewEvents(ctx: DeliveryContext): Promise<{ dispatc
     let lastEvent: StoredEvent | null = null;
 
     for (const event of eventsResult.value) {
-      // ── Recursion guard: skip webhook lifecycle events to prevent unbounded loops ──
-      // Delivering webhook.delivery_succeeded, webhook.delivery_failed, or webhook.disabled
-      // would create new delivery attempts → new lifecycle events → infinite recursion.
-      if (isWebhookLifecycleEvent(event.type)) {
-        lastEvent = event; // still advance cursor past lifecycle events
+      // ── Recursion guard: skip webhook lifecycle + event-streaming meta events ──
+      // Delivering webhook.delivery_succeeded/failed/disabled would create new
+      // delivery attempts → new lifecycle events → infinite recursion; the same
+      // holds for the ES1 `event.*`/`dead_letter.*` meta namespaces.
+      if (isFanoutSuppressedEvent(event.type)) {
+        lastEvent = event; // still advance cursor past suppressed events
         continue;
       }
 

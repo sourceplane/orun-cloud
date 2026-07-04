@@ -94,6 +94,12 @@ export interface NotificationRulesRepository {
   ): Promise<EventsResult<EventsPagedResult<StoredNotificationRule>>>;
   /** All enabled rules for an org — the lane handler's working set (small N). */
   listEnabledRulesByOrg(orgId: string): Promise<EventsResult<StoredNotificationRule[]>>;
+  /**
+   * Orgs with at least one enabled rule — the notifications lane's org
+   * discovery (mirrors webhooks' listActiveOrgIds: only orgs that can match
+   * anything get their cursor advanced).
+   */
+  listOrgIdsWithEnabledRules(): Promise<EventsResult<string[]>>;
   updateRule(
     orgId: string,
     id: string,
@@ -273,6 +279,17 @@ export function createNotificationRulesRepository(executor: SqlExecutor): Notifi
         return { ok: true, value: result.rows.map(mapRule) };
       } catch {
         return safeError("Failed to list enabled notification rules");
+      }
+    },
+
+    async listOrgIdsWithEnabledRules() {
+      try {
+        const result = await executor.execute<Record<string, unknown>>(
+          `SELECT DISTINCT org_id FROM events.notification_rules WHERE status = 'enabled'`,
+        );
+        return { ok: true, value: result.rows.map((row) => row.org_id as string) };
+      } catch {
+        return safeError("Failed to list orgs with enabled notification rules");
       }
     },
 
