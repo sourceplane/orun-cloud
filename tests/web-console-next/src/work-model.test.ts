@@ -1,7 +1,7 @@
 // Work-lens presentation model (orun-work v2 WP1) — pure logic only, per the
 // console test convention (no React render harness).
 
-import { groupTasksBySpec, rungBadgeVariant, rungLabel } from "@web-console-next/lib/work/model";
+import { RUNGS_PINNABLE, groupTasksBySpec, rungBadgeVariant, rungLabel } from "@web-console-next/lib/work/model";
 import type { WorkTaskView } from "@saas/contracts/work";
 
 function task(key: string, spec: string | undefined, rung: WorkTaskView["lifecycle"]["rung"]): WorkTaskView {
@@ -31,5 +31,12 @@ describe("work model", () => {
     ]);
     expect(groups.map((g) => g.spec)).toEqual(["a-spec", "b-spec", null]);
     expect(groups[0]!.tasks.map((t) => t.key)).toEqual(["ORN-3", "ORN-2"]);
+  });
+});
+
+describe("pinnable rungs", () => {
+  it("excludes canceled (authored via cancel, never a pin)", () => {
+    expect(RUNGS_PINNABLE).not.toContain("canceled");
+    expect(RUNGS_PINNABLE).toContain("done");
   });
 });

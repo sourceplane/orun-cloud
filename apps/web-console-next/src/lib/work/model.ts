@@ -76,3 +76,6 @@ export function groupTasksBySpec(tasks: WorkTaskView[]): SpecGroup[] {
     });
   return groups;
 }
+
+/** Rungs a human may pin to (canceled is authored via cancel, not a pin). */
+export const RUNGS_PINNABLE: WorkRung[] = ["draft", "ready", "in_progress", "in_review", "done", "released"];
