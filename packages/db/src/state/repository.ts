@@ -1142,6 +1142,27 @@ export function createStateRepository(executor: SqlExecutor): StateRepository {
       }
     },
 
+    async findCatalogDocProject(orgId: Uuid, digest: string): Promise<StateResult<Uuid | null>> {
+      try {
+        // The digest must be referenced as a doc_ref by this org's catalog read
+        // model — that IS the authorization (a user who can read the catalog can
+        // read the docs it points at) and yields the object's project scope.
+        const result = await executor.execute<Record<string, unknown>>(
+          `SELECT source_project_id FROM state.repo_facet
+             WHERE org_id = $1 AND doc_ref->>'digest' = $2
+           UNION
+           SELECT source_project_id FROM state.org_catalog_entities
+             WHERE org_id = $1 AND doc_ref->>'digest' = $2
+           LIMIT 1`,
+          [orgId, digest],
+        );
+        if (result.rowCount === 0) return { ok: true, value: null };
+        return { ok: true, value: result.rows[0]!.source_project_id as Uuid };
+      } catch {
+        return safeError("Failed to resolve catalog doc project");
+      }
+    },
+
     async recordCatalogProjectionSuccess(
       orgId: Uuid,
       projectId: Uuid,

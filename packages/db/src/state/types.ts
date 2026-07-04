@@ -682,6 +682,11 @@ export interface StateRepository {
   getRepoFacet(orgId: Uuid, sourceProjectId: Uuid): Promise<StateResult<RepoFacet | null>>;
   /** List every projected repo facet for an org (the Git Repos list). */
   listRepoFacets(orgId: Uuid): Promise<StateResult<RepoFacet[]>>;
+  /** Resolve a doc blob digest to the project that references it in this org's
+   *  catalog read model (repo_facet or org_catalog_entities doc_ref) — both the
+   *  authorization ("is this a catalog doc in my org?") and the object's scope
+   *  for the read. Returns null when the digest is not a catalog doc here. */
+  findCatalogDocProject(orgId: Uuid, digest: string): Promise<StateResult<Uuid | null>>;
 
   // Catalog-projection outbox (projection reliability) — records which head each
   // scope's read model has caught up to, so a stuck projection is self-healing.
