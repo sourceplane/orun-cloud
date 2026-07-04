@@ -21,6 +21,8 @@ import { cn } from "@/lib/cn";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   buildContext,
+  annotateOwnership,
+  ownershipCoverage,
   buildSelected,
   decorateService,
   rollup,
@@ -134,13 +136,45 @@ export function CatalogPortal({ orgId, orgSlug }: { orgId: string; orgSlug: stri
     [filters, debouncedQuery],
   );
 
-  const services = React.useMemo(() => toServices(entities ?? []), [entities]);
+  const rawServices = React.useMemo(() => toServices(entities ?? []), [entities]);
+
+  // teams-ownership TO2 — resolve the page's git owner strings to team identity
+  // at read time (never touching the catalog projection). Batched + cached; a
+  // short staleTime gives the TO-C bounded-staleness window (ownership is
+  // display, not authorization). Falls through to raw owner labels until loaded.
+  const distinctOwners = React.useMemo(
+    () => [...new Set(rawServices.map((s) => s.owner).filter((o): o is string => !!o))],
+    [rawServices],
+  );
+  const ownersKey = distinctOwners.join("\n");
+  const { data: resolutions } = useApiQuery(
+    ["ownerResolutions", orgId, ownersKey] as const,
+    () => wrap(async () => (await client.teams.resolveOwners(orgId, { owners: distinctOwners })).resolutions),
+  );
+  const services = React.useMemo(() => {
+    if (!resolutions) return rawServices;
+    const byOwner = new Map(resolutions.map((r) => [r.owner, r]));
+    return annotateOwnership(rawServices, byOwner);
+  }, [rawServices, resolutions]);
+
+  // teams-ownership TO3 — the viewer's own teams, for the "My services" lens.
+  const { data: myTeams } = useApiQuery(["myTeams", orgId] as const, () =>
+    wrap(async () => (await client.teams.myTeams(orgId)).teams),
+  );
+  const myTeamIds = React.useMemo(() => new Set((myTeams ?? []).map((t) => t.id)), [myTeams]);
+
   const ctx = React.useMemo(() => buildContext(services), [services]);
   const metrics = React.useMemo(() => rollup(services), [services]);
+  // teams-ownership TO5 — ownership coverage + the unmapped-owner backlog. Only
+  // meaningful once resolution has run (services carry ownerState).
+  const coverage = React.useMemo(
+    () => (resolutions ? ownershipCoverage(services) : null),
+    [services, resolutions],
+  );
 
   const filtered = React.useMemo(
-    () => sortServices(filterServices(services, effectiveFilters), sortKey, sortDir),
-    [services, effectiveFilters, sortKey, sortDir],
+    () => sortServices(filterServices(services, effectiveFilters, myTeamIds), sortKey, sortDir),
+    [services, effectiveFilters, myTeamIds, sortKey, sortDir],
   );
   const grouped = React.useMemo(() => groupServices(filtered, group), [filtered, group]);
   const board = React.useMemo(() => buildBoard(filtered), [filtered]);
@@ -243,7 +277,13 @@ export function CatalogPortal({ orgId, orgSlug }: { orgId: string; orgSlug: stri
   const removeChip = React.useCallback((field: keyof CatalogFilters) => {
     setFiltersState((f) => ({
       ...f,
-      ...(field === "attention" ? { attention: false } : field === "query" ? { query: "" } : { [field]: "all" }),
+      ...(field === "attention"
+        ? { attention: false }
+        : field === "mine"
+          ? { mine: false }
+          : field === "query"
+            ? { query: "" }
+            : { [field]: "all" }),
     }));
   }, []);
 
@@ -257,6 +297,26 @@ export function CatalogPortal({ orgId, orgSlug }: { orgId: string; orgSlug: stri
           attention={filters.attention}
           onToggleAttention={() => setFilters({ attention: !filters.attention })}
         />
+        {/* teams-ownership TO5 — unmapped-owner backlog: owner strings declared in
+            git that don't resolve to a team (an account-admin action item). */}
+        {coverage && coverage.unmappedOwners.length > 0 ? (
+          <div className="rounded-lg border border-amber-500/40 bg-amber-500/5 px-3.5 py-2.5 text-[13px]">
+            <span className="font-medium text-foreground">
+              {coverage.coveragePct}% ownership coverage
+            </span>
+            <span className="text-muted-foreground">
+              {" "}· {coverage.unmapped} {coverage.unmapped === 1 ? "entity has" : "entities have"} an unmapped owner:{" "}
+              {coverage.unmappedOwners.slice(0, 6).map((u, i) => (
+                <span key={u.owner}>
+                  {i > 0 ? ", " : ""}
+                  <code className="text-foreground">{u.owner}</code>
+                  {u.count > 1 ? ` (${u.count})` : ""}
+                </span>
+              ))}
+              {coverage.unmappedOwners.length > 6 ? `, +${coverage.unmappedOwners.length - 6} more` : ""}. Map them to a team on the Teams page.
+            </span>
+          </div>
+        ) : null}
       </div>
 
       {/* toolbar */}

@@ -12,7 +12,7 @@ import { handleListAccountMembers } from "./handlers/list-account-members.js";
 import { handleRevokeAccountRole } from "./handlers/revoke-account-role.js";
 import { handleGrantTeamRole } from "./handlers/grant-team-role.js";
 import { handleRevokeTeamRole } from "./handlers/revoke-team-role.js";
-import { handleCreateTeam, handleListTeams, handleGetTeam, handleDeleteTeam, handleUpdateTeam, handleListTeamMembers, handleAddTeamMember, handleRemoveTeamMember, handleUpdateTeamMemberRole, handleListTeamGrants } from "./handlers/teams.js";
+import { handleCreateTeam, handleListTeams, handleMyTeams, handleGetTeam, handleDeleteTeam, handleUpdateTeam, handleListTeamMembers, handleAddTeamMember, handleRemoveTeamMember, handleUpdateTeamMemberRole, handleListTeamGrants } from "./handlers/teams.js";
 import { handleRemoveMember } from "./handlers/remove-member.js";
 import { handleCreateInvitation } from "./handlers/create-invitation.js";
 import { handleListInvitations } from "./handlers/list-invitations.js";
@@ -22,6 +22,7 @@ import { handleAcceptInvitation } from "./handlers/accept-invitation.js";
 import { handleAcceptMyInvitation } from "./handlers/accept-my-invitation.js";
 import { handleAuthorizationContext } from "./handlers/authorization-context.js";
 import { handleEffectiveAccess, handleOrgEffectiveAccess } from "./handlers/effective-access.js";
+import { handleListOwnerHandles, handleSetOwnerHandle, handleDeleteOwnerHandle, handleResolveOwners } from "./handlers/owner-handles.js";
 import { handleSubjectOrgs } from "./handlers/subject-orgs.js";
 import { handleSyncAccountChildren } from "./handlers/sync-account-children.js";
 import { handleResolveBillingParent } from "./handlers/resolve-billing-parent.js";
@@ -69,6 +70,10 @@ const ORG_TEAM_MEMBERS_RE = /^\/v1\/organizations\/([^/]+)\/teams\/([^/]+)\/memb
 const ORG_TEAM_GRANTS_RE = /^\/v1\/organizations\/([^/]+)\/teams\/([^/]+)\/grants$/;
 const ORG_TEAM_MEMBER_ID_RE = /^\/v1\/organizations\/([^/]+)\/teams\/([^/]+)\/members\/([^/]+)$/;
 const ORG_EFFECTIVE_ACCESS_RE = /^\/v1\/organizations\/([^/]+)\/effective-access$/;
+const ORG_OWNER_HANDLES_RE = /^\/v1\/organizations\/([^/]+)\/owner-handles$/;
+const ORG_OWNER_HANDLE_ID_RE = /^\/v1\/organizations\/([^/]+)\/owner-handles\/([^/]+)$/;
+const ORG_RESOLVE_OWNERS_RE = /^\/v1\/organizations\/([^/]+)\/resolve-owners$/;
+const ORG_MY_TEAMS_RE = /^\/v1\/organizations\/([^/]+)\/my-teams$/;
 const SP_BINDINGS_PATH = "/v1/internal/membership/service-principal-bindings";
 const SP_BINDING_ID_RE = /^\/v1\/internal\/membership\/service-principal-bindings\/([^/]+)$/;
 
@@ -386,6 +391,61 @@ export async function route(request: Request, env: Env): Promise<Response> {
       }
       if (request.method === "GET") {
         return handleOrgEffectiveAccess(env, requestId, actor, effectiveAccessMatch[1]!, url);
+      }
+      return methodNotAllowed(requestId);
+    }
+
+    // Owner-handle map (teams-ownership TO1): the account-authored
+    // owner-string → team alias map. Delete of a specific handle first.
+    const ownerHandleIdMatch = url.pathname.match(ORG_OWNER_HANDLE_ID_RE);
+    if (ownerHandleIdMatch) {
+      const actor = resolveActor(request);
+      if (!actor) {
+        return errorResponse("unauthenticated", "Authentication required", 401, requestId);
+      }
+      if (request.method === "DELETE") {
+        return handleDeleteOwnerHandle(env, requestId, actor, ownerHandleIdMatch[1]!, ownerHandleIdMatch[2]!);
+      }
+      return methodNotAllowed(requestId);
+    }
+    const ownerHandlesMatch = url.pathname.match(ORG_OWNER_HANDLES_RE);
+    if (ownerHandlesMatch) {
+      const actor = resolveActor(request);
+      if (!actor) {
+        return errorResponse("unauthenticated", "Authentication required", 401, requestId);
+      }
+      if (request.method === "GET") {
+        return handleListOwnerHandles(env, requestId, actor, ownerHandlesMatch[1]!);
+      }
+      if (request.method === "PUT" || request.method === "POST") {
+        return handleSetOwnerHandle(request, env, requestId, actor, ownerHandlesMatch[1]!);
+      }
+      return methodNotAllowed(requestId);
+    }
+
+    // My Teams (teams-ownership TO3): the caller's own team memberships.
+    const myTeamsMatch = url.pathname.match(ORG_MY_TEAMS_RE);
+    if (myTeamsMatch) {
+      const actor = resolveActor(request);
+      if (!actor) {
+        return errorResponse("unauthenticated", "Authentication required", 401, requestId);
+      }
+      if (request.method === "GET") {
+        return handleMyTeams(env, requestId, actor, myTeamsMatch[1]!);
+      }
+      return methodNotAllowed(requestId);
+    }
+
+    // Read-time owner → team resolution (teams-ownership TO2): batch-resolve a
+    // page of catalog owner strings to team identity without touching the catalog.
+    const resolveOwnersMatch = url.pathname.match(ORG_RESOLVE_OWNERS_RE);
+    if (resolveOwnersMatch) {
+      const actor = resolveActor(request);
+      if (!actor) {
+        return errorResponse("unauthenticated", "Authentication required", 401, requestId);
+      }
+      if (request.method === "POST") {
+        return handleResolveOwners(request, env, requestId, actor, resolveOwnersMatch[1]!);
       }
       return methodNotAllowed(requestId);
     }

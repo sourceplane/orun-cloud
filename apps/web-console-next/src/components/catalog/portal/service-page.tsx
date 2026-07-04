@@ -483,14 +483,18 @@ function ScorecardTab({ page }: { page: ServicePage }) {
         {page.checks.map((ck) => {
           const c = CHECK_COLOR[ck.status];
           return (
-            <div key={ck.id} className="flex items-center gap-3 border-b border-b-border px-2.5 py-2.5">
-              <span className="grid h-[18px] w-[18px] shrink-0 place-items-center rounded-[5px]" style={{ background: c.bg }}>
-                <PathIcon d={CHECK_MARK[ck.status]} size={11} strokeWidth={3} style={{ color: c.c }} />
-              </span>
-              <span className="flex-1 text-[13px] text-foreground/90">{ck.label}</span>
-              <span className="text-[11.5px] capitalize" style={{ color: c.c }}>
-                {ck.status}
-              </span>
+            <div key={ck.id} className="flex flex-col gap-1 border-b border-b-border px-2.5 py-2.5">
+              <div className="flex items-center gap-3">
+                <span className="grid h-[18px] w-[18px] shrink-0 place-items-center rounded-[5px]" style={{ background: c.bg }}>
+                  <PathIcon d={CHECK_MARK[ck.status]} size={11} strokeWidth={3} style={{ color: c.c }} />
+                </span>
+                <span className="flex-1 text-[13px] text-foreground/90">{ck.label}</span>
+                <span className="text-[11.5px] capitalize" style={{ color: c.c }}>
+                  {ck.status}
+                </span>
+              </div>
+              {/* teams-ownership TO4 — remediation copy on a failing check. */}
+              {ck.detail ? <span className="ml-[30px] text-[11.5px] text-muted-foreground">{ck.detail}</span> : null}
             </div>
           );
         })}

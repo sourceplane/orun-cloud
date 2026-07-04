@@ -48,6 +48,9 @@ import {
   teamGrantCommand,
   teamRevokeCommand,
   teamAccessCommand,
+  teamOwnerListCommand,
+  teamOwnerSetCommand,
+  teamOwnerRemoveCommand,
 } from "./commands/teams.js";
 import {
   accountWorkspacesCommand,
@@ -234,6 +237,10 @@ function buildRouter(opts: RunOptions): Router {
   r.register(["team", "grant"], "Grant a team a role at account|workspace|project scope", teamGrantCommand);
   r.register(["team", "revoke"], "Revoke a team's role grant", teamRevokeCommand);
   r.register(["team", "access"], "Show effective access (permitted actions + provenance) for you or a subject", teamAccessCommand);
+  // Owner-handle map (teams-ownership TO1) — alias git owner strings to a team.
+  r.register(["team", "owner-list"], "List the account's owner-handle → team aliases", teamOwnerListCommand);
+  r.register(["team", "owner-set"], "Alias a git owner string to a team", teamOwnerSetCommand);
+  r.register(["team", "owner-remove"], "Remove an owner-handle alias", teamOwnerRemoveCommand);
   // Account Hub (teams-hub TH1d) — the account above the workspaces.
   r.register(["account", "workspaces"], "List the workspaces under the active account", accountWorkspacesCommand);
   r.register(["account", "members"], "List the derived account-member roster (origin-tagged)", accountMembersCommand);

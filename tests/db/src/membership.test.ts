@@ -2163,5 +2163,66 @@ describe("MembershipRepository", () => {
         if (result.ok) expect(result.value).toHaveLength(2);
       });
     });
+
+    describe("owner-handle map (teams-ownership TO1)", () => {
+      const TEAM_PUB = "team_00000000000000000000000000000a1b";
+      const OH_ROW = {
+        account_org_id: ORG1,
+        owner_handle: "payments",
+        team_id: TEAM_PUB,
+        created_at: NOW.toISOString(),
+        updated_at: NOW.toISOString(),
+      };
+
+      it("upserts an alias keyed on lower(owner_handle) (last-writer-wins)", async () => {
+        const { executor, queries } = createFakeExecutor({ rows: [OH_ROW] });
+        const repo = createMembershipRepository(executor);
+
+        const result = await repo.upsertTeamOwnerHandle({ accountOrgId: ORG1, ownerHandle: "payments", teamId: TEAM_PUB, createdAt: NOW });
+
+        expect(queries[0]!.text).toContain("INSERT INTO membership.team_owner_handles");
+        expect(queries[0]!.text).toContain("ON CONFLICT (account_org_id, lower(owner_handle))");
+        expect(queries[0]!.params).toEqual([ORG1, "payments", TEAM_PUB, NOW.toISOString()]);
+        expect(result.ok).toBe(true);
+        if (result.ok) expect(result.value.teamId).toBe(TEAM_PUB);
+      });
+
+      it("lists an account's aliases ordered by handle", async () => {
+        const { executor, queries } = createFakeExecutor({ rows: [OH_ROW] });
+        const repo = createMembershipRepository(executor);
+        await repo.listTeamOwnerHandles(ORG1);
+        expect(queries[0]!.text).toContain("FROM membership.team_owner_handles");
+        expect(queries[0]!.text).toContain("account_org_id = $1");
+        expect(queries[0]!.params).toEqual([ORG1]);
+      });
+
+      it("deletes an alias case-insensitively by (account, handle)", async () => {
+        const { executor, queries } = createFakeExecutor({ rows: [OH_ROW] });
+        const repo = createMembershipRepository(executor);
+        const result = await repo.deleteTeamOwnerHandle(ORG1, "Payments");
+        expect(queries[0]!.text).toContain("DELETE FROM membership.team_owner_handles");
+        expect(queries[0]!.text).toContain("lower(owner_handle) = lower($2)");
+        expect(queries[0]!.params).toEqual([ORG1, "Payments"]);
+        expect(result.ok).toBe(true);
+      });
+
+      it("resolves a batch of handles with a parameterized IN-list (no N+1)", async () => {
+        const { executor, queries } = createFakeExecutor({ rows: [OH_ROW] });
+        const repo = createMembershipRepository(executor);
+        const result = await repo.resolveTeamOwnerHandles(ORG1, ["payments", "billing"]);
+        expect(queries[0]!.text).toContain("lower(owner_handle) IN ($2, $3)");
+        expect(queries[0]!.params).toEqual([ORG1, "payments", "billing"]);
+        expect(result.ok).toBe(true);
+      });
+
+      it("short-circuits an empty batch with no query", async () => {
+        const { executor, queries } = createFakeExecutor({ rows: [] });
+        const repo = createMembershipRepository(executor);
+        const result = await repo.resolveTeamOwnerHandles(ORG1, []);
+        expect(queries).toHaveLength(0);
+        expect(result.ok).toBe(true);
+        if (result.ok) expect(result.value).toEqual([]);
+      });
+    });
   });
 });

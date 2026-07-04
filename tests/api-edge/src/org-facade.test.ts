@@ -100,6 +100,15 @@ describe("api-edge org facade", () => {
       expect(isOrgRoute("/v1/organizations/org_abc/effective-access")).toBe(true);
     });
 
+    it("matches owner-handle map routes (teams-ownership TO1)", () => {
+      expect(isOrgRoute("/v1/organizations/org_abc/owner-handles")).toBe(true);
+      expect(isOrgRoute("/v1/organizations/org_abc/owner-handles/payments")).toBe(true);
+    });
+
+    it("matches the resolve-owners route (teams-ownership TO2)", () => {
+      expect(isOrgRoute("/v1/organizations/org_abc/resolve-owners")).toBe(true);
+    });
+
     it("matches account-surface routes (teams-hub TH1c)", () => {
       expect(isOrgRoute("/v1/organizations/org_abc/account-roles")).toBe(true);
       expect(isOrgRoute("/v1/organizations/org_abc/account-members")).toBe(true);

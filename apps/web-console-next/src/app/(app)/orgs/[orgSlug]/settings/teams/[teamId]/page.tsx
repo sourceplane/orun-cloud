@@ -31,6 +31,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { wrap } from "@/lib/api";
+import { collectOrgCatalog } from "@/lib/catalog-portal/fetch";
 import { useSession } from "@/lib/session";
 import { useApiQuery, qk } from "@/lib/query";
 import { useToast } from "@/components/ui/toast";
@@ -69,6 +70,32 @@ function Inner({ orgId, slug, teamId }: { orgId: string; slug: string; teamId: s
   const grants = useApiQuery(qk.teamGrants(orgId, teamId), () =>
     wrap(async () => (await client.teams.listTeamGrants(orgId, teamId)).grants),
   );
+  // teams-ownership TO1 — owner-handle aliases pointing at this team.
+  const ownerHandles = useApiQuery(qk.ownerHandles(orgId), () =>
+    wrap(async () => (await client.teams.listOwnerHandles(orgId)).ownerHandles),
+  );
+  // teams-ownership TO5 — how many catalog entities this team owns (resolved).
+  // Reuses the catalog + owner-resolution caches shared with the catalog page.
+  const catalog = useApiQuery(qk.orgCatalog(orgId), () =>
+    wrap(() => collectOrgCatalog((query) => client.state.listOrgCatalogEntities(orgId, query))),
+  );
+  const ownerStrings = React.useMemo(
+    () => [...new Set((catalog.data ?? []).map((e) => e.owner).filter((o): o is string => !!o))],
+    [catalog.data],
+  );
+  const ownerResolutions = useApiQuery(["ownerResolutions", orgId, ownerStrings.join("\n")] as const, () =>
+    wrap(async () => (await client.teams.resolveOwners(orgId, { owners: ownerStrings })).resolutions),
+  );
+  const ownedCount = React.useMemo(() => {
+    const byOwner = new Map((ownerResolutions.data ?? []).map((r) => [r.owner, r]));
+    let n = 0;
+    for (const e of catalog.data ?? []) {
+      if (!e.owner) continue;
+      const r = byOwner.get(e.owner);
+      if (r && r.state === "owned" && r.teamId === teamId) n++;
+    }
+    return n;
+  }, [catalog.data, ownerResolutions.data, teamId]);
   const workspaces = useApiQuery(qk.accountWorkspaces(orgId), () =>
     wrap(async () => (await client.account.workspaces(orgId)).workspaces),
   );
@@ -221,6 +248,37 @@ function Inner({ orgId, slug, teamId }: { orgId: string; slug: string; teamId: s
     setRole(scope === "account" ? "account_admin" : "builder");
   }, [scope]);
 
+  // ── owner-alias state (TO1) ──
+  const [aliasInput, setAliasInput] = React.useState("");
+  const teamAliases = React.useMemo(
+    () => (ownerHandles.data ?? []).filter((h) => h.teamId === teamId),
+    [ownerHandles.data, teamId],
+  );
+  const addAlias = async () => {
+    const handle = aliasInput.trim();
+    if (!handle) {
+      toast({ kind: "error", title: "Enter an owner string" });
+      return;
+    }
+    const r = await wrap(() => client.teams.setOwnerHandle(orgId, { ownerHandle: handle, teamId }));
+    if (!r.ok) {
+      toast({ kind: "error", title: "Alias failed", description: r.error.message });
+      return;
+    }
+    toast({ kind: "success", title: "Owner alias set" });
+    setAliasInput("");
+    ownerHandles.reload();
+  };
+  const removeAlias = async (handle: string) => {
+    const r = await wrap(() => client.teams.deleteOwnerHandle(orgId, handle));
+    if (!r.ok) {
+      toast({ kind: "error", title: "Remove failed", description: r.error.message });
+      return;
+    }
+    toast({ kind: "success", title: "Owner alias removed" });
+    ownerHandles.reload();
+  };
+
   return (
     <div className="space-y-5">
       <ConfirmDialog
@@ -269,6 +327,8 @@ function Inner({ orgId, slug, teamId }: { orgId: string; slug: string; teamId: s
             ) : null}
             <Badge variant="secondary" className="font-mono text-xs">{team.data.slug}</Badge>
             <Badge variant={team.data.status === "active" ? "default" : "secondary"}>{team.data.status}</Badge>
+            {/* teams-ownership TO5 — resolved owned-service count. */}
+            <Badge variant="outline">{ownedCount} owned {ownedCount === 1 ? "service" : "services"}</Badge>
           </div>
           {team.data.description ? (
             <p className="text-sm text-muted-foreground">{team.data.description}</p>
@@ -539,6 +599,57 @@ function Inner({ orgId, slug, teamId }: { orgId: string; slug: string; teamId: s
             </Table>
           </Card>
         )}
+      </section>
+
+      {/* ── Ownership aliases (teams-ownership TO1) ── */}
+      <section className="space-y-3">
+        <div>
+          <h2 className="text-base font-semibold">Ownership aliases</h2>
+          <p className="text-sm text-muted-foreground">
+            Git <code>owner:</code> strings that resolve to this team. By default an entity whose
+            owner matches this team&apos;s handle is already owned — add an alias only for legacy or
+            differently-spelled owner strings. Ownership is accountability, not access.
+          </p>
+        </div>
+        <Card>
+          <CardContent className="pt-6 space-y-3">
+            <div className="flex gap-2">
+              <Input
+                placeholder="owner string, e.g. group:payments or legacy-payments"
+                value={aliasInput}
+                onChange={(e) => setAliasInput(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && addAlias()}
+              />
+              <Button onClick={addAlias}>Add alias</Button>
+            </div>
+            {ownerHandles.loading ? (
+              <Skeleton className="h-9 w-full" />
+            ) : teamAliases.length === 0 ? (
+              <p className="text-sm text-muted-foreground">No aliases — this team is resolved by its handle.</p>
+            ) : (
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Owner string</TableHead>
+                    <TableHead className="text-right">Actions</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {teamAliases.map((h) => (
+                    <TableRow key={h.ownerHandle}>
+                      <TableCell className="font-mono text-xs">{h.ownerHandle}</TableCell>
+                      <TableCell className="text-right">
+                        <Button variant="ghost" size="sm" onClick={() => removeAlias(h.ownerHandle)}>
+                          Remove
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            )}
+          </CardContent>
+        </Card>
       </section>
 
       {/* ── Recent activity (TH4) — across the account's workspace set. Shows

@@ -240,6 +240,15 @@ export function CatalogToolbar({
                 <option value="system">Group by system</option>
                 <option value="lifecycle">Group by lifecycle</option>
               </SheetSelect>
+              {/* teams-ownership TO3 — My services toggle. */}
+              <button
+                type="button"
+                onClick={() => setFilters({ mine: !filters.mine })}
+                aria-pressed={filters.mine}
+                className={`h-11 rounded-lg border px-3 text-left text-[14px] outline-none ${filters.mine ? "border-primary bg-primary/10 text-foreground" : "border-border bg-card text-muted-foreground"}`}
+              >
+                My services{filters.mine ? " ✓" : ""}
+              </button>
               <div className="flex flex-col gap-1.5">
                 <span className="font-mono text-[10.5px] uppercase tracking-[0.1em] text-muted-foreground/80">Sort by</span>
                 <div className="flex gap-2">
@@ -330,6 +339,16 @@ export function CatalogToolbar({
         <option value="degraded">Degraded</option>
         <option value="down">Down</option>
       </PortalSelect>
+
+      {/* teams-ownership TO3 — My services (the viewer's teams' owned entities). */}
+      <button
+        type="button"
+        onClick={() => setFilters({ mine: !filters.mine })}
+        aria-pressed={filters.mine}
+        className={`h-[34px] rounded-lg border px-3 text-[13px] outline-none ${filters.mine ? "border-primary bg-primary/10 text-foreground" : "border-border bg-card text-muted-foreground hover:text-foreground"}`}
+      >
+        My services
+      </button>
 
       <span className="mx-0.5 h-[22px] w-px bg-border" />
 

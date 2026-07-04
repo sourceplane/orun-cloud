@@ -18,6 +18,7 @@ export const qk = {
   team: (orgId: string, teamId: string) => ["team", orgId, teamId] as const,
   teamMembers: (orgId: string, teamId: string) => ["teamMembers", orgId, teamId] as const,
   teamGrants: (orgId: string, teamId: string) => ["teamGrants", orgId, teamId] as const,
+  ownerHandles: (orgId: string) => ["ownerHandles", orgId] as const,
   effectiveAccess: (orgId: string) => ["effectiveAccess", orgId] as const,
   invitations: (orgId: string) => ["invitations", orgId] as const,
   myInvitations: () => ["myInvitations"] as const,

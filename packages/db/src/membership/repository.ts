@@ -23,6 +23,8 @@ import type {
   CreateTeamInput,
   UpdateTeamInput,
   CreateTeamMemberInput,
+  TeamOwnerHandle,
+  UpsertTeamOwnerHandleInput,
 } from "./types.js";
 
 function mapOrganization(row: Record<string, unknown>): Organization {
@@ -104,6 +106,16 @@ function mapTeamMember(row: Record<string, unknown>): TeamMember {
     teamRole: (row.team_role as string | null) ?? "team_member",
     status: row.status as string,
     createdAt: new Date(row.created_at as string),
+  };
+}
+
+function mapTeamOwnerHandle(row: Record<string, unknown>): TeamOwnerHandle {
+  return {
+    accountOrgId: row.account_org_id as string,
+    ownerHandle: row.owner_handle as string,
+    teamId: row.team_id as string,
+    createdAt: new Date(row.created_at as string),
+    updatedAt: new Date(row.updated_at as string),
   };
 }
 
@@ -1139,6 +1151,71 @@ export function createMembershipRepository(executor: SqlExecutor): MembershipRep
         return { ok: true, value: mapTeamMember(result.rows[0]!) };
       } catch (err) {
         return safeError("Failed to update team member role", err);
+      }
+    },
+
+    // ── Owner-handle map (teams-ownership TO1) ──────────────────────
+    async upsertTeamOwnerHandle(input: UpsertTeamOwnerHandleInput): Promise<MembershipResult<TeamOwnerHandle>> {
+      try {
+        // One handle → at most one team per account (last-writer-wins on the
+        // account-unique lower(owner_handle) index); the worker audits the change.
+        const result = await executor.execute<Record<string, unknown>>(
+          `INSERT INTO membership.team_owner_handles (account_org_id, owner_handle, team_id, created_at, updated_at)
+           VALUES ($1, $2, $3, $4, $4)
+           ON CONFLICT (account_org_id, lower(owner_handle))
+           DO UPDATE SET team_id = EXCLUDED.team_id, owner_handle = EXCLUDED.owner_handle, updated_at = EXCLUDED.updated_at
+           RETURNING *`,
+          [input.accountOrgId, input.ownerHandle, input.teamId, input.createdAt.toISOString()],
+        );
+        return { ok: true, value: mapTeamOwnerHandle(result.rows[0]!) };
+      } catch (err) {
+        return safeError("Failed to upsert team owner handle", err);
+      }
+    },
+
+    async listTeamOwnerHandles(accountOrgId: string): Promise<MembershipResult<TeamOwnerHandle[]>> {
+      try {
+        const result = await executor.execute<Record<string, unknown>>(
+          `SELECT * FROM membership.team_owner_handles
+           WHERE account_org_id = $1
+           ORDER BY lower(owner_handle) ASC`,
+          [accountOrgId],
+        );
+        return { ok: true, value: result.rows.map(mapTeamOwnerHandle) };
+      } catch (err) {
+        return safeError("Failed to list team owner handles", err);
+      }
+    },
+
+    async deleteTeamOwnerHandle(accountOrgId: string, ownerHandle: string): Promise<MembershipResult<TeamOwnerHandle>> {
+      try {
+        const result = await executor.execute<Record<string, unknown>>(
+          `DELETE FROM membership.team_owner_handles
+           WHERE account_org_id = $1 AND lower(owner_handle) = lower($2)
+           RETURNING *`,
+          [accountOrgId, ownerHandle],
+        );
+        if (result.rowCount === 0) return { ok: false, error: { kind: "not_found" } };
+        return { ok: true, value: mapTeamOwnerHandle(result.rows[0]!) };
+      } catch (err) {
+        return safeError("Failed to delete team owner handle", err);
+      }
+    },
+
+    async resolveTeamOwnerHandles(accountOrgId: string, ownerHandlesLower: string[]): Promise<MembershipResult<TeamOwnerHandle[]>> {
+      try {
+        if (ownerHandlesLower.length === 0) return { ok: true, value: [] };
+        // Parameterized IN-list (the pg driver runs fetch_types:false, so array
+        // params fail at bind time — mirror listRoleAssignmentsForSubjects).
+        const placeholders = ownerHandlesLower.map((_, i) => `$${i + 2}`).join(", ");
+        const result = await executor.execute<Record<string, unknown>>(
+          `SELECT * FROM membership.team_owner_handles
+           WHERE account_org_id = $1 AND lower(owner_handle) IN (${placeholders})`,
+          [accountOrgId, ...ownerHandlesLower],
+        );
+        return { ok: true, value: result.rows.map(mapTeamOwnerHandle) };
+      } catch (err) {
+        return safeError("Failed to resolve team owner handles", err);
       }
     },
 

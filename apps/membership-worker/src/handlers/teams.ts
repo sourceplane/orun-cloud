@@ -325,6 +325,36 @@ export async function handleListTeams(
   }
 }
 
+// ── my teams (teams-ownership TO3 — the "My Teams" lens) ────────────
+// The caller's own active team memberships in the account. No authz gate beyond
+// authentication + a resolvable org: it discloses only the caller's own
+// memberships, which powers the "My Services / My Teams' activity" filters.
+export async function handleMyTeams(
+  env: Env,
+  requestId: string,
+  actor: ActorContext,
+  orgIdParam: string,
+  deps?: TeamsDeps,
+): Promise<Response> {
+  const orgUuid = parseOrgPublicId(orgIdParam);
+  if (!orgUuid) return errorResponse("not_found", "Organization not found", 404, requestId);
+  if (!deps && !env.PLATFORM_DB) return errorResponse("internal_error", "Database not configured", 503, requestId);
+
+  const executor = deps ? null : createSqlExecutor(env.PLATFORM_DB!);
+  try {
+    const repo = deps ? deps.repo : createMembershipRepository(executor!);
+    const acct = await resolveAccount(repo, orgUuid, requestId);
+    if (!acct.ok) return acct.res;
+    const teams = await repo.listTeamsForSubject(acct.accountUuid, actor.subjectId);
+    if (!teams.ok) return errorResponse("internal_error", "An unexpected error occurred", 500, requestId);
+    return successResponse({ teams: teams.value.map(publicTeam) }, requestId);
+  } catch {
+    return errorResponse("internal_error", "An unexpected error occurred", 500, requestId);
+  } finally {
+    if (executor) await executor.dispose();
+  }
+}
+
 // ── get ─────────────────────────────────────────────────────────────
 export async function handleGetTeam(
   env: Env,

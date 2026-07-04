@@ -9,6 +9,8 @@ export type {
   CreateTeamInput,
   UpdateTeamInput,
   CreateTeamMemberInput,
+  TeamOwnerHandle,
+  UpsertTeamOwnerHandleInput,
   CreateOrganizationInput,
   CreateOrganizationMemberInput,
   CreateInvitationInput,

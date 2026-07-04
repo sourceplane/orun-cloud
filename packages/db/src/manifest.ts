@@ -498,5 +498,14 @@ export const manifest: MigrationManifest = {
       description:
         "Team-management roles (teams-foundation TF2) — adds membership.team_members.team_role (DEFAULT 'team_member', CHECK team_role IN ('team_admin','team_member') via a guarded DO-block) so a team is self-managed: a team_admin manages the team object + roster, distinct from the platform roles the team is granted via role_assignments (a roster edit never escalates the team's power). Every TM-era row backfills to 'team_member'. Additive + idempotent over 440_membership_teams.",
     },
+    {
+      id: "550_membership_team_owner_handles",
+      context: "membership",
+      path: "550_membership_team_owner_handles/up.sql",
+      checksum:
+        "52a6d48ca298f4d0d78623ab3629bd3ab95f0264820ffa56e5cb870c72131bee",
+      description:
+        "Owner-handle → team resolver map (teams-ownership TO1) — creates membership.team_owner_handles (account_org_id, owner_handle, team_id text = team_<hex>, timestamps) with an account-unique case-insensitive index on lower(owner_handle) and a team_id index. Binds a git-authored catalog `owner:` string to a team entity as ORG METADATA (never catalog content — 18-state intact); resolution is read-time (TO2) and defaults to owner==team.handle, so this table captures aliases only. Additive + idempotent.",
+    },
   ],
 };

@@ -42,6 +42,14 @@ export interface CatalogService {
   system: string;
   /** Owner ref/string, or null when unowned. */
   owner: string | null;
+  /**
+   * teams-ownership TO2 — the read-time resolved owning team, when the git owner
+   * string resolves (by handle or alias). Undefined until resolution runs; null
+   * when the owner is declared-but-unmapped or absent.
+   */
+  ownerTeam?: { teamId: string; name: string; handle: string | null } | null;
+  /** Resolution state: owned | unmapped (declared, no team) | unowned (no owner). */
+  ownerState?: "owned" | "unmapped" | "unowned";
   /** Implementation language, or null. */
   language: string | null;
   /** Raw lifecycle string from the snapshot, or null. */
@@ -149,6 +157,102 @@ export function toService(e: OrgCatalogEntity): CatalogService {
   };
 }
 
+/** teams-ownership TO2 — one owner string's read-time resolution. */
+export interface OwnerResolution {
+  owner: string;
+  state: "owned" | "unmapped" | "unowned";
+  teamId?: string;
+  handle?: string | null;
+  name?: string;
+  avatar?: string | null;
+}
+
+/**
+ * Stamp each service with its resolved owning team (teams-ownership TO2), from a
+ * batch resolution keyed by the raw owner string. Returns new service objects; a
+ * service whose owner did not resolve gets `ownerTeam: null` and the resolution's
+ * state (`unmapped` | `unowned`).
+ */
+export function annotateOwnership(
+  services: CatalogService[],
+  byOwner: Map<string, OwnerResolution>,
+): CatalogService[] {
+  return services.map((s) => {
+    const r = s.owner != null ? byOwner.get(s.owner) : undefined;
+    if (!r) return { ...s, ownerTeam: null, ownerState: s.owner ? "unmapped" : "unowned" };
+    if (r.state === "owned" && r.teamId && r.name != null) {
+      return { ...s, ownerTeam: { teamId: r.teamId, name: r.name, handle: r.handle ?? null }, ownerState: "owned" };
+    }
+    return { ...s, ownerTeam: null, ownerState: r.state };
+  });
+}
+
+/**
+ * The display label for a service's owner (teams-ownership TO2): the resolved team
+ * name when owned, else a legible unmapped/unowned label distinct from each other.
+ */
+export function resolvedOwnerLabel(s: CatalogService): string {
+  if (s.ownerTeam) return s.ownerTeam.name;
+  if (s.ownerState === "unmapped" && s.owner) return `Unmapped: ${ownerLabel(s.owner)}`;
+  if (s.ownerState === undefined && s.owner) return ownerLabel(s.owner);
+  return "Unowned";
+}
+
+/**
+ * teams-ownership TO5 — ownership coverage over a set of (resolved) services:
+ * per-team owned counts, the unmapped-owner backlog (the action list), and the
+ * account-level coverage %. This is the data the TH team page + TG access review
+ * render — computed once here. Only entities carrying a resolution
+ * (`ownerState` set) are counted; call after {@link annotateOwnership}.
+ */
+export interface OwnershipCoverage {
+  total: number;
+  owned: number;
+  unmapped: number;
+  unowned: number;
+  /** owned / total, 0–100 (0 when there are no entities). */
+  coveragePct: number;
+  /** Per-team owned counts, most-owned first. */
+  perTeam: Array<{ teamId: string; name: string; count: number }>;
+  /** Distinct declared-but-unmapped owner strings + how many entities each. */
+  unmappedOwners: Array<{ owner: string; count: number }>;
+}
+
+export function ownershipCoverage(services: CatalogService[]): OwnershipCoverage {
+  let owned = 0;
+  let unmapped = 0;
+  let unowned = 0;
+  const perTeam = new Map<string, { name: string; count: number }>();
+  const unmappedOwners = new Map<string, number>();
+  for (const s of services) {
+    if (s.ownerTeam && s.ownerState === "owned") {
+      owned++;
+      const e = perTeam.get(s.ownerTeam.teamId);
+      if (e) e.count++;
+      else perTeam.set(s.ownerTeam.teamId, { name: s.ownerTeam.name, count: 1 });
+    } else if (s.ownerState === "unmapped") {
+      unmapped++;
+      if (s.owner) unmappedOwners.set(s.owner, (unmappedOwners.get(s.owner) ?? 0) + 1);
+    } else {
+      unowned++;
+    }
+  }
+  const total = services.length;
+  return {
+    total,
+    owned,
+    unmapped,
+    unowned,
+    coveragePct: total ? Math.round((owned / total) * 100) : 0,
+    perTeam: [...perTeam.entries()]
+      .map(([teamId, v]) => ({ teamId, name: v.name, count: v.count }))
+      .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name)),
+    unmappedOwners: [...unmappedOwners.entries()]
+      .map(([owner, count]) => ({ owner, count }))
+      .sort((a, b) => b.count - a.count || a.owner.localeCompare(b.owner)),
+  };
+}
+
 /** Map a loaded page of entities into services. */
 export function toServices(entities: OrgCatalogEntity[]): CatalogService[] {
   return entities.map(toService);
@@ -172,6 +276,8 @@ export interface CheckResult {
   id: string;
   label: string;
   status: CheckStatus;
+  /** Remediation copy shown on a failing check (teams-ownership TO4). */
+  detail?: string;
 }
 
 /**
@@ -181,13 +287,37 @@ export interface CheckResult {
  * when the signal is not yet wired — never a false `pass`.
  */
 export function computeChecks(s: CatalogService): CheckResult[] {
-  return CHECKS.map(({ id, label }) => ({ id, label, status: checkStatus(id, s) }));
+  return CHECKS.map(({ id, label }) => {
+    const status = checkStatus(id, s);
+    const detail = checkDetail(id, s);
+    return detail ? { id, label, status, detail } : { id, label, status };
+  });
+}
+
+/**
+ * teams-ownership TO4 — remediation copy for a failing check, distinguishing an
+ * owner declared-but-unmapped (add an alias) from no owner declared at all.
+ */
+function checkDetail(id: string, s: CatalogService): string | undefined {
+  if (id !== "owner") return undefined;
+  if (s.ownerState === "unmapped") {
+    return `Owner “${ownerLabel(s.owner)}” isn’t mapped to a team — set the team’s handle to match, or add an owner alias.`;
+  }
+  if (s.ownerState === "unowned" || (s.ownerState === undefined && !s.owner)) {
+    return "No owner declared in git (add an `owner:` to the entity).";
+  }
+  return undefined;
 }
 
 function checkStatus(id: string, s: CatalogService): CheckStatus {
   switch (id) {
     case "owner":
-      return s.owner ? "pass" : "fail";
+      // teams-ownership TO4 — ownership is honest only when the git owner
+      // resolves to a real team. Unmapped or unowned both fail (with distinct
+      // remediation above). Before resolution runs (ownerState undefined), fall
+      // back to "a string is present" so the score doesn't flicker.
+      if (s.ownerState === undefined) return s.owner ? "pass" : "fail";
+      return s.ownerState === "owned" ? "pass" : "fail";
     case "docs":
       return s.description && s.description.trim() ? "pass" : "fail";
     case "oncall":
@@ -333,9 +463,11 @@ export function decorateService(s: CatalogService, ctx: CatalogContext): Decorat
     iconD: iconForKind(s.kind),
     language: s.language,
     system: s.system,
-    ownerName: ownerLabel(s.owner),
-    ownerInitials: ownerInitials(s.owner),
-    owned: !!s.owner,
+    // teams-ownership TO2 — prefer the resolved team identity when available;
+    // fall back to the raw owner label before resolution runs.
+    ownerName: s.ownerTeam ? s.ownerTeam.name : resolvedOwnerLabel(s),
+    ownerInitials: ownerInitials(s.ownerTeam ? s.ownerTeam.name : s.owner),
+    owned: s.ownerState ? s.ownerState === "owned" : !!s.owner,
     lifeKey: lk,
     lifeShow: !!life,
     lifeLabel: s.lifecycle ?? "",
@@ -380,7 +512,9 @@ export interface CatalogRollup {
 
 export function rollup(services: CatalogService[]): CatalogRollup {
   const comps = services.filter((s) => !isResource(s));
-  const owned = services.filter((s) => !!s.owner).length;
+  // teams-ownership TO5 — count RESOLVED ownership (a real team), falling back to
+  // "a string is present" before resolution runs.
+  const owned = services.filter((s) => (s.ownerState ? s.ownerState === "owned" : !!s.owner)).length;
   const scored = comps.length;
   const ready = comps.filter((s) => (scoreOf(s) ?? 0) >= 70).length;
   const attention = services.filter(needsAttention).length;

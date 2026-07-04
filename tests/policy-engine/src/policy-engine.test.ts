@@ -725,8 +725,9 @@ describe("listEffectivePermissions", () => {
     expect(result.derivedScope.orgId).toBe("org_1");
 
     const allowed = result.permissions.filter((p) => p.allow);
-    // 42 base + 7 saas-teams TM4 team.* actions + secret.reveal (SM1).
-    expect(allowed.length).toBe(50);
+    // 42 base + 7 saas-teams TM4 team.* actions + secret.reveal (SM1)
+    // + 2 teams-ownership TO1 team.owner_handle.* actions.
+    expect(allowed.length).toBe(52);
   });
 
   it("returns limited permissions for viewer", () => {

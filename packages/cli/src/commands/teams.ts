@@ -177,6 +177,46 @@ export async function teamMemberRemoveCommand(ctx: CommandContext): Promise<Comm
   return { exitCode: 0 };
 }
 
+// team owner-list — the account's owner-handle → team aliases (teams-ownership TO1)
+export async function teamOwnerListCommand(ctx: CommandContext): Promise<CommandResult> {
+  const orgId = await resolveOrgId(ctx, true);
+  const sdk = await ctx.sdk();
+  const result = await sdk.teams.listOwnerHandles(orgId);
+  if (ctx.outputMode === "json") {
+    ctx.stdout(formatOutput({ mode: "json", data: result }));
+    return { exitCode: 0 };
+  }
+  ctx.stdout(formatOutput({
+    mode: "human",
+    columns: ["ownerHandle", "teamId"],
+    rows: result.ownerHandles.map((h) => ({ ownerHandle: h.ownerHandle, teamId: h.teamId })),
+    title: `Owner aliases in ${orgId}`,
+  }));
+  return { exitCode: 0 };
+}
+
+// team owner-set <ownerHandle> <teamId>
+export async function teamOwnerSetCommand(ctx: CommandContext): Promise<CommandResult> {
+  const usage = "usage: orun-cloud team owner-set <ownerHandle> <teamId> [--org=ORG_ID]";
+  const ownerHandle = requireArg(ctx.args[0], usage);
+  const teamId = requireArg(ctx.args[1], usage);
+  const orgId = await resolveOrgId(ctx, true);
+  const sdk = await ctx.sdk();
+  const result = await sdk.teams.setOwnerHandle(orgId, { ownerHandle, teamId });
+  emitRecord(ctx, { ownerHandle: result.ownerHandle.ownerHandle, teamId: result.ownerHandle.teamId }, result, "Owner alias set");
+  return { exitCode: 0 };
+}
+
+// team owner-remove <ownerHandle>
+export async function teamOwnerRemoveCommand(ctx: CommandContext): Promise<CommandResult> {
+  const ownerHandle = requireArg(ctx.args[0], "usage: orun-cloud team owner-remove <ownerHandle> [--org=ORG_ID]");
+  const orgId = await resolveOrgId(ctx, true);
+  const sdk = await ctx.sdk();
+  const result = await sdk.teams.deleteOwnerHandle(orgId, ownerHandle);
+  emitRecord(ctx, { ownerHandle: result.ownerHandle.ownerHandle, teamId: result.ownerHandle.teamId }, result, "Owner alias removed");
+  return { exitCode: 0 };
+}
+
 function formatVia(via?: { kind: string; teamId?: string }): string {
   if (!via) return "";
   if (via.kind === "team") return `team ${via.teamId ?? ""}`.trim();

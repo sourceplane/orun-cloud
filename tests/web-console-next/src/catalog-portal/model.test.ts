@@ -73,6 +73,23 @@ describe("scorecard engine", () => {
     expect(checks.find((c) => c.id === "docs")!.status).toBe("fail");
   });
 
+  it("resolves the owner check against a real team with distinct remediation (teams-ownership TO4)", () => {
+    const owned = service({ entityRef: "component:default/a", owner: "payments" }, { ownerState: "owned", ownerTeam: { teamId: "team_p", name: "Payments", handle: "payments" } });
+    const ownedChk = computeChecks(owned).find((c) => c.id === "owner")!;
+    expect(ownedChk.status).toBe("pass");
+    expect(ownedChk.detail).toBeUndefined();
+
+    const unmapped = service({ entityRef: "component:default/b", owner: "legacy" }, { ownerState: "unmapped", ownerTeam: null });
+    const unmappedChk = computeChecks(unmapped).find((c) => c.id === "owner")!;
+    expect(unmappedChk.status).toBe("fail");
+    expect(unmappedChk.detail).toMatch(/isn.t mapped/i);
+
+    const unowned = service({ entityRef: "component:default/c" }, { ownerState: "unowned", ownerTeam: null });
+    const unownedChk = computeChecks(unowned).find((c) => c.id === "owner")!;
+    expect(unownedChk.status).toBe("fail");
+    expect(unownedChk.detail).toMatch(/No owner declared/i);
+  });
+
   it("uses real runtime signals when wired", () => {
     const s = service(
       { entityRef: "component:default/api", owner: "p", description: "d" },

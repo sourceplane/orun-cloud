@@ -183,6 +183,57 @@ export interface ListTeamMembersResponse {
   members: PublicTeamMember[];
 }
 
+// ── Owner-handle map (teams-ownership TO1) ──────────────────────────
+/**
+ * An account-authored owner-handle → team alias: resolves a git-authored catalog
+ * `owner:` string to a team entity. Org metadata, never catalog content.
+ */
+export interface PublicOwnerHandle {
+  ownerHandle: string;
+  /** The `team_<hex>` id the handle resolves to. */
+  teamId: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ListOwnerHandlesResponse {
+  ownerHandles: PublicOwnerHandle[];
+}
+
+export interface SetOwnerHandleRequest {
+  ownerHandle: string;
+  teamId: string;
+}
+
+export interface SetOwnerHandleResponse {
+  ownerHandle: PublicOwnerHandle;
+}
+
+/**
+ * The resolution of one git-authored `owner:` string (teams-ownership TO2):
+ * - `owned`    — resolves to a team (by handle or alias);
+ * - `unmapped` — an owner was declared but no team/alias matches (an action item);
+ * - `unowned`  — no owner was declared.
+ */
+export interface OwnerResolution {
+  /** The original git string as authored (echoed back for the caller to key on). */
+  owner: string;
+  state: "owned" | "unmapped" | "unowned";
+  /** The resolved team's `team_<hex>` id, handle, name, avatar (when `owned`). */
+  teamId?: string;
+  handle?: string | null;
+  name?: string;
+  avatar?: string | null;
+}
+
+export interface ResolveOwnersRequest {
+  owners: string[];
+}
+
+export interface ResolveOwnersResponse {
+  resolutions: OwnerResolution[];
+}
+
 /** Grant a team a role at account | organization (workspace) | project scope. */
 export interface GrantTeamRoleRequest {
   teamId: string;

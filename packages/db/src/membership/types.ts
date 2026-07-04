@@ -172,6 +172,27 @@ export interface CreateTeamMemberInput {
   createdAt: Date;
 }
 
+/**
+ * An account-authored owner-handle → team alias (teams-ownership TO1): resolves a
+ * git-authored catalog `owner:` string to a team entity. Org metadata, never
+ * catalog content (18-state intact).
+ */
+export interface TeamOwnerHandle {
+  accountOrgId: string;
+  ownerHandle: string;
+  /** The team's public id (`team_<hex>`) the handle resolves to. */
+  teamId: string;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface UpsertTeamOwnerHandleInput {
+  accountOrgId: Uuid;
+  ownerHandle: string;
+  teamId: string;
+  createdAt: Date;
+}
+
 export interface CreateOrganizationInput {
   id: string;
   name: string;
@@ -349,6 +370,21 @@ export interface MembershipRepository {
   getTeamMember(teamId: Uuid, subjectId: string): Promise<MembershipResult<TeamMember>>;
   /** Change an active member's team_role (teams-foundation TF2). */
   updateTeamMemberRole(teamId: Uuid, subjectId: string, teamRole: string): Promise<MembershipResult<TeamMember>>;
+
+  // ── Owner-handle map (teams-ownership TO1) ──────────────────────
+  /** Upsert an owner-handle → team alias (account-unique, case-insensitive). */
+  upsertTeamOwnerHandle(input: UpsertTeamOwnerHandleInput): Promise<MembershipResult<TeamOwnerHandle>>;
+  /** All owner-handle aliases authored under an account. */
+  listTeamOwnerHandles(accountOrgId: Uuid): Promise<MembershipResult<TeamOwnerHandle[]>>;
+  /** Remove an owner-handle alias by (account, handle) — case-insensitive. */
+  deleteTeamOwnerHandle(accountOrgId: Uuid, ownerHandle: string): Promise<MembershipResult<TeamOwnerHandle>>;
+  /**
+   * Resolve a batch of normalized (lower-cased) owner handles for an account to
+   * their alias rows in one query (teams-ownership TO2, no N+1). Direct
+   * `owner == team.handle` resolution is handled separately against the teams
+   * table; this covers the alias map only.
+   */
+  resolveTeamOwnerHandles(accountOrgId: Uuid, ownerHandlesLower: string[]): Promise<MembershipResult<TeamOwnerHandle[]>>;
   /** Active teams (within an account) a subject is an active member of. */
   listTeamsForSubject(accountOrgId: Uuid, subjectId: string): Promise<MembershipResult<Team[]>>;
 

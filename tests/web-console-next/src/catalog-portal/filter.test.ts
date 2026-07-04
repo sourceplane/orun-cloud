@@ -6,6 +6,7 @@ import {
   hasActiveFilters,
   sortServices,
 } from "@web-console-next/lib/catalog-portal/filter";
+import { annotateOwnership, ownershipCoverage, type OwnerResolution } from "@web-console-next/lib/catalog-portal/model";
 import { service } from "./fixture";
 
 const services = [
@@ -30,6 +31,18 @@ describe("filterServices", () => {
   it("matches free text across name, owner, language, system", () => {
     expect(filterServices(services, { ...EMPTY_FILTERS, query: "go" }).map((s) => s.name)).toEqual(["api"]);
     expect(filterServices(services, { ...EMPTY_FILTERS, query: "growth" }).map((s) => s.name)).toEqual(["search"]);
+  });
+
+  it("filters to My services by the viewer's team ids (teams-ownership TO3)", () => {
+    const byOwner = new Map<string, OwnerResolution>([
+      ["payments", { owner: "payments", state: "owned", teamId: "team_pay", name: "Payments" }],
+      ["search", { owner: "search", state: "owned", teamId: "team_srch", name: "Search" }],
+    ]);
+    const annotated = annotateOwnership(services, byOwner);
+    const mineNames = filterServices(annotated, { ...EMPTY_FILTERS, mine: true }, new Set(["team_pay"])).map((s) => s.name);
+    expect(mineNames).toEqual(["api"]); // only the Payments-owned entity
+    // no team ids → nothing is "mine"
+    expect(filterServices(annotated, { ...EMPTY_FILTERS, mine: true }, new Set()).length).toBe(0);
   });
 });
 
@@ -65,11 +78,58 @@ describe("groupServices", () => {
   });
 });
 
+describe("teams-ownership TO2: resolved ownership grouping", () => {
+  it("groups by resolved team; unmapped and unowned bucket distinctly", () => {
+    const raw = [
+      service({ entityRef: "component:default/api", owner: "payments" }),
+      service({ entityRef: "component:default/web", owner: "group:payments" }),
+      service({ entityRef: "component:default/old", owner: "legacy" }),
+      service({ entityRef: "resource:default/db" }), // no owner
+    ];
+    const byOwner = new Map<string, OwnerResolution>([
+      ["payments", { owner: "payments", state: "owned", teamId: "team_p", name: "Payments", handle: "payments" }],
+      ["group:payments", { owner: "group:payments", state: "owned", teamId: "team_p", name: "Payments", handle: "payments" }],
+      ["legacy", { owner: "legacy", state: "unmapped" }],
+    ]);
+    const groups = groupServices(annotateOwnership(raw, byOwner), "team")!;
+    const labels = groups.map((g) => g.label);
+    expect(labels).toContain("Payments");
+    expect(groups.find((g) => g.label === "Payments")!.count).toBe(2); // both spellings → one team
+    expect(labels).toContain("Unmapped: legacy");
+    expect(labels[labels.length - 1]).toBe("Unowned"); // truly unowned sinks last
+  });
+});
+
+describe("teams-ownership TO5: ownership coverage", () => {
+  it("computes coverage %, per-team counts, and the unmapped backlog", () => {
+    const raw = [
+      service({ entityRef: "component:default/a", owner: "payments" }),
+      service({ entityRef: "component:default/b", owner: "payments" }),
+      service({ entityRef: "component:default/c", owner: "search" }),
+      service({ entityRef: "component:default/d", owner: "legacy" }),   // unmapped
+      service({ entityRef: "component:default/e", owner: "legacy" }),   // unmapped (same string)
+      service({ entityRef: "resource:default/db" }),                    // unowned
+    ];
+    const byOwner = new Map<string, OwnerResolution>([
+      ["payments", { owner: "payments", state: "owned", teamId: "team_pay", name: "Payments" }],
+      ["search", { owner: "search", state: "owned", teamId: "team_srch", name: "Search" }],
+      ["legacy", { owner: "legacy", state: "unmapped" }],
+    ]);
+    const cov = ownershipCoverage(annotateOwnership(raw, byOwner));
+    expect(cov).toMatchObject({ total: 6, owned: 3, unmapped: 2, unowned: 1, coveragePct: 50 });
+    expect(cov.perTeam).toEqual([
+      { teamId: "team_pay", name: "Payments", count: 2 },
+      { teamId: "team_srch", name: "Search", count: 1 },
+    ]);
+    expect(cov.unmappedOwners).toEqual([{ owner: "legacy", count: 2 }]);
+  });
+});
+
 describe("chips", () => {
   it("builds a chip per active facet", () => {
-    const f = { query: "x", kind: "API", lifecycle: "all", health: "down", attention: true };
+    const f = { query: "x", kind: "API", lifecycle: "all", health: "down", attention: true, mine: true };
     const chips = activeChips(f);
-    expect(chips.map((c) => c.field)).toEqual(["kind", "health", "attention", "query"]);
+    expect(chips.map((c) => c.field)).toEqual(["kind", "health", "attention", "mine", "query"]);
     expect(hasActiveFilters(f)).toBe(true);
     expect(hasActiveFilters(EMPTY_FILTERS)).toBe(false);
   });
