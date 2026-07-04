@@ -221,6 +221,8 @@ export interface CheckResult {
   id: string;
   label: string;
   status: CheckStatus;
+  /** Remediation copy shown on a failing check (teams-ownership TO4). */
+  detail?: string;
 }
 
 /**
@@ -230,13 +232,37 @@ export interface CheckResult {
  * when the signal is not yet wired — never a false `pass`.
  */
 export function computeChecks(s: CatalogService): CheckResult[] {
-  return CHECKS.map(({ id, label }) => ({ id, label, status: checkStatus(id, s) }));
+  return CHECKS.map(({ id, label }) => {
+    const status = checkStatus(id, s);
+    const detail = checkDetail(id, s);
+    return detail ? { id, label, status, detail } : { id, label, status };
+  });
+}
+
+/**
+ * teams-ownership TO4 — remediation copy for a failing check, distinguishing an
+ * owner declared-but-unmapped (add an alias) from no owner declared at all.
+ */
+function checkDetail(id: string, s: CatalogService): string | undefined {
+  if (id !== "owner") return undefined;
+  if (s.ownerState === "unmapped") {
+    return `Owner “${ownerLabel(s.owner)}” isn’t mapped to a team — set the team’s handle to match, or add an owner alias.`;
+  }
+  if (s.ownerState === "unowned" || (s.ownerState === undefined && !s.owner)) {
+    return "No owner declared in git (add an `owner:` to the entity).";
+  }
+  return undefined;
 }
 
 function checkStatus(id: string, s: CatalogService): CheckStatus {
   switch (id) {
     case "owner":
-      return s.owner ? "pass" : "fail";
+      // teams-ownership TO4 — ownership is honest only when the git owner
+      // resolves to a real team. Unmapped or unowned both fail (with distinct
+      // remediation above). Before resolution runs (ownerState undefined), fall
+      // back to "a string is present" so the score doesn't flicker.
+      if (s.ownerState === undefined) return s.owner ? "pass" : "fail";
+      return s.ownerState === "owned" ? "pass" : "fail";
     case "docs":
       return s.description && s.description.trim() ? "pass" : "fail";
     case "oncall":

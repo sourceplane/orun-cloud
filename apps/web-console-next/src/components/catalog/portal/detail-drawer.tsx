@@ -203,17 +203,23 @@ export function DetailDrawer({
                 {sel.checks.map((ck) => {
                   const c = CHECK_COLOR[ck.status];
                   return (
-                    <div key={ck.id} className="flex items-center gap-2.5 py-1.5">
-                      <span
-                        className="grid h-4 w-4 shrink-0 place-items-center rounded-[5px]"
-                        style={{ background: c.bg, color: c.c }}
-                      >
-                        <PathIcon d={CHECK_MARK[ck.status]} size={10} strokeWidth={3} />
-                      </span>
-                      <span className="flex-1 text-[12.5px] text-foreground/90">{ck.label}</span>
-                      <span className="text-[11px] capitalize" style={{ color: c.c }}>
-                        {ck.status}
-                      </span>
+                    <div key={ck.id} className="flex flex-col gap-0.5 py-1.5">
+                      <div className="flex items-center gap-2.5">
+                        <span
+                          className="grid h-4 w-4 shrink-0 place-items-center rounded-[5px]"
+                          style={{ background: c.bg, color: c.c }}
+                        >
+                          <PathIcon d={CHECK_MARK[ck.status]} size={10} strokeWidth={3} />
+                        </span>
+                        <span className="flex-1 text-[12.5px] text-foreground/90">{ck.label}</span>
+                        <span className="text-[11px] capitalize" style={{ color: c.c }}>
+                          {ck.status}
+                        </span>
+                      </div>
+                      {/* teams-ownership TO4 — remediation copy on a failing check. */}
+                      {ck.detail ? (
+                        <span className="ml-[26px] text-[11px] text-muted-foreground">{ck.detail}</span>
+                      ) : null}
                     </div>
                   );
                 })}
