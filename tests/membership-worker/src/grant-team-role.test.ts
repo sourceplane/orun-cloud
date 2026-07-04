@@ -219,6 +219,36 @@ describe("grant-team-role (saas-teams TM2)", () => {
       createFakeEnv(), "r8", actor, orgPublicId(CHILD_UUID), { repo });
     expect(res.status).toBe(422);
   });
+
+  // teams-foundation TF3 — access-principal integration: grants may only bind to
+  // a LIVE team_ entity, and always by the immutable id (never the handle).
+  it("rejects granting a soft-deleted team (404, TF3 live invariant)", async () => {
+    const { repo, created } = makeRepo({
+      orgs: { [CHILD_UUID]: org(CHILD_UUID, ACCOUNT_UUID) },
+      teams: { [TEAM_UUID]: { ...team(ACCOUNT_UUID), status: "deleted" } },
+      roles: { [CHILD_UUID]: [role(CHILD_UUID, ACTOR_ID, "admin", "organization")] },
+    });
+    const res = await handleGrantTeamRole(
+      grantReq(CHILD_UUID, { teamId: TEAM_PUB, role: "builder", scopeKind: "organization" }),
+      createFakeEnv(), "r-del", actor, orgPublicId(CHILD_UUID), { repo });
+    expect(res.status).toBe(404);
+    expect(created).toHaveLength(0);
+  });
+
+  it("binds the grant to the immutable team_ id, never the handle (TF3 id-bound)", async () => {
+    const { repo, created } = makeRepo({
+      orgs: { [ACCOUNT_UUID]: org(ACCOUNT_UUID, null) },
+      teams: { [TEAM_UUID]: { ...team(ACCOUNT_UUID), handle: "payments" } },
+      roles: { [ACCOUNT_UUID]: [role(ACCOUNT_UUID, ACTOR_ID, "account_admin", "account")] },
+    });
+    const res = await handleGrantTeamRole(
+      grantReq(ACCOUNT_UUID, { teamId: TEAM_PUB, role: "account_admin", scopeKind: "account" }),
+      createFakeEnv(), "r-idbound", actor, orgPublicId(ACCOUNT_UUID), { repo });
+    expect(res.status).toBe(201);
+    expect(created[0]!.subjectId).toBe(TEAM_PUB);       // the team_<hex> id …
+    expect(created[0]!.subjectId).not.toBe("payments"); // … never the handle
+    expect(created[0]!.subjectType).toBe("team");
+  });
 });
 
 describe("revoke-team-role (saas-teams TM2)", () => {

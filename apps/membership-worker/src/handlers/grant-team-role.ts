@@ -116,9 +116,18 @@ export async function handleGrantTeamRole(
     }
     const accountUuid = asUuid(effectiveBillingOrgId(orgResult.value));
 
-    // The team must exist and belong to this account.
+    // TF3 access-principal invariant — a subject_type='team' grant may only bind
+    // to a LIVE team_ entity in this account: the id decodes to a real team
+    // (parseTeamPublicId above), the team is not soft-deleted, and it belongs to
+    // the target org's account. getTeamById already filters status<>'deleted',
+    // but we assert `active` explicitly so the invariant holds even if that query
+    // ever changes — no dangling or cross-account team grants can be written.
     const teamResult = await repo.getTeamById(teamUuid);
-    if (!teamResult.ok || teamResult.value.accountOrgId !== accountUuid) {
+    if (
+      !teamResult.ok ||
+      teamResult.value.accountOrgId !== accountUuid ||
+      teamResult.value.status !== "active"
+    ) {
       return errorResponse("not_found", "Team not found", 404, requestId);
     }
 
