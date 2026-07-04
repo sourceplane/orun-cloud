@@ -8,6 +8,9 @@ import type {
   AddTeamMemberResponse,
   UpdateTeamMemberRoleRequest,
   UpdateTeamMemberRoleResponse,
+  ListOwnerHandlesResponse,
+  SetOwnerHandleRequest,
+  SetOwnerHandleResponse,
   ListTeamMembersResponse,
   GrantTeamRoleRequest,
   GrantTeamRoleResponse,
@@ -103,6 +106,34 @@ export class TeamsClient {
   updateTeamMemberRole(orgId: string, teamId: string, subjectId: string, body: UpdateTeamMemberRoleRequest, opts: RequestOptions = {}): Promise<UpdateTeamMemberRoleResponse> {
     return this.transport.request<UpdateTeamMemberRoleResponse>(
       { method: "PATCH", path: `/v1/organizations/${encodeURIComponent(orgId)}/teams/${encodeURIComponent(teamId)}/members/${encodeURIComponent(subjectId)}`, body },
+      opts,
+    );
+  }
+
+  // -------------------------------------------------------------------------
+  // Owner-handle map (teams-ownership TO1)
+  // -------------------------------------------------------------------------
+
+  /** GET /v1/organizations/:orgId/owner-handles — the account's owner→team aliases. */
+  listOwnerHandles(orgId: string, opts: RequestOptions = {}): Promise<ListOwnerHandlesResponse> {
+    return this.transport.request<ListOwnerHandlesResponse>(
+      { method: "GET", path: `/v1/organizations/${encodeURIComponent(orgId)}/owner-handles` },
+      opts,
+    );
+  }
+
+  /** PUT /v1/organizations/:orgId/owner-handles — upsert an owner→team alias. */
+  setOwnerHandle(orgId: string, body: SetOwnerHandleRequest, opts: RequestOptions = {}): Promise<SetOwnerHandleResponse> {
+    return this.transport.request<SetOwnerHandleResponse>(
+      { method: "PUT", path: `/v1/organizations/${encodeURIComponent(orgId)}/owner-handles`, body },
+      opts,
+    );
+  }
+
+  /** DELETE /v1/organizations/:orgId/owner-handles/:ownerHandle — remove an alias. */
+  deleteOwnerHandle(orgId: string, ownerHandle: string, opts: RequestOptions = {}): Promise<SetOwnerHandleResponse> {
+    return this.transport.request<SetOwnerHandleResponse>(
+      { method: "DELETE", path: `/v1/organizations/${encodeURIComponent(orgId)}/owner-handles/${encodeURIComponent(ownerHandle)}` },
       opts,
     );
   }

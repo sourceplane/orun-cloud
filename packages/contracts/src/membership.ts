@@ -183,6 +183,32 @@ export interface ListTeamMembersResponse {
   members: PublicTeamMember[];
 }
 
+// ── Owner-handle map (teams-ownership TO1) ──────────────────────────
+/**
+ * An account-authored owner-handle → team alias: resolves a git-authored catalog
+ * `owner:` string to a team entity. Org metadata, never catalog content.
+ */
+export interface PublicOwnerHandle {
+  ownerHandle: string;
+  /** The `team_<hex>` id the handle resolves to. */
+  teamId: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ListOwnerHandlesResponse {
+  ownerHandles: PublicOwnerHandle[];
+}
+
+export interface SetOwnerHandleRequest {
+  ownerHandle: string;
+  teamId: string;
+}
+
+export interface SetOwnerHandleResponse {
+  ownerHandle: PublicOwnerHandle;
+}
+
 /** Grant a team a role at account | organization (workspace) | project scope. */
 export interface GrantTeamRoleRequest {
   teamId: string;

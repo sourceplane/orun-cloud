@@ -20,6 +20,10 @@ export function teamRepoStubs(): Pick<
   | "listTeamMembers"
   | "getTeamMember"
   | "updateTeamMemberRole"
+  | "upsertTeamOwnerHandle"
+  | "listTeamOwnerHandles"
+  | "deleteTeamOwnerHandle"
+  | "resolveTeamOwnerHandles"
   | "listTeamsForSubject"
   | "revokeTeamGrant"
   | "revokeAllTeamGrants"
@@ -40,6 +44,10 @@ export function teamRepoStubs(): Pick<
     async listTeamMembers() { return { ok: true as const, value: [] }; },
     async getTeamMember() { return notFound; },
     async updateTeamMemberRole() { return notFound; },
+    async upsertTeamOwnerHandle() { return notFound; },
+    async listTeamOwnerHandles() { return { ok: true as const, value: [] }; },
+    async deleteTeamOwnerHandle() { return notFound; },
+    async resolveTeamOwnerHandles() { return { ok: true as const, value: [] }; },
     async listTeamsForSubject() { return { ok: true as const, value: [] }; },
     async revokeTeamGrant() { return notFound; },
     async revokeAllTeamGrants() { return { ok: true as const, value: [] }; },

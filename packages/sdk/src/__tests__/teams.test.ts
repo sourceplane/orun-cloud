@@ -66,6 +66,20 @@ describe("TeamsClient (saas-teams TM4c)", () => {
     expect(JSON.parse(calls[0]!.init.body as string)).toEqual({ teamRole: "team_admin" });
   });
 
+  it("owner-handle map: list/set/delete (teams-ownership TO1)", async () => {
+    const { client: c, calls } = client({ ownerHandles: [], ownerHandle: { ownerHandle: "payments", teamId: "team_x" } });
+    await c.teams.listOwnerHandles("org_1");
+    expect(calls[0]!.url).toBe("https://api.test/v1/organizations/org_1/owner-handles");
+    expect(calls[0]!.init.method).toBe("GET");
+    await c.teams.setOwnerHandle("org_1", { ownerHandle: "payments", teamId: "team_x" });
+    expect(calls[1]!.url).toBe("https://api.test/v1/organizations/org_1/owner-handles");
+    expect(calls[1]!.init.method).toBe("PUT");
+    expect(JSON.parse(calls[1]!.init.body as string)).toEqual({ ownerHandle: "payments", teamId: "team_x" });
+    await c.teams.deleteOwnerHandle("org_1", "payments");
+    expect(calls[2]!.url).toBe("https://api.test/v1/organizations/org_1/owner-handles/payments");
+    expect(calls[2]!.init.method).toBe("DELETE");
+  });
+
   it("addTeamMember → POST /teams/:id/members with body", async () => {
     const { client: c, calls } = client({ member: { subjectId: "usr_a" } });
     await c.teams.addTeamMember("org_1", "team_x", { subjectId: "usr_a" });

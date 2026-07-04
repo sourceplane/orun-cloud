@@ -77,6 +77,8 @@ const ORG_ROLE_PERMISSIONS: Record<OrganizationRole, readonly string[]> = {
     "team.member.remove",
     "team.role.grant",
     "team.role.revoke",
+    "team.owner_handle.set",
+    "team.owner_handle.remove",
   ],
   admin: [
     "organization.read",
@@ -137,6 +139,8 @@ const ORG_ROLE_PERMISSIONS: Record<OrganizationRole, readonly string[]> = {
     "team.member.remove",
     "team.role.grant",
     "team.role.revoke",
+    "team.owner_handle.set",
+    "team.owner_handle.remove",
   ],
   builder: [
     "organization.read",
@@ -353,6 +357,9 @@ const ALL_KNOWN_ACTIONS: ReadonlySet<string> = new Set([
   "team.member.remove",
   "team.role.grant",
   "team.role.revoke",
+  // teams-ownership TO1 — manage the account-authored owner-handle → team map.
+  "team.owner_handle.set",
+  "team.owner_handle.remove",
 ]);
 
 function isOrgRole(role: string): role is OrganizationRole {
