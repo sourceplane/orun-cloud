@@ -6,6 +6,8 @@
 // mutation surfaces as a typed OrunCloudError carrying the mutator's verdict.
 
 import type {
+  IngestWorkObservationRequest,
+  IngestWorkObservationResponse,
   CreateWorkSpecRequest,
   CreateWorkSpecResponse,
   CreateWorkTaskRequest,
@@ -81,6 +83,16 @@ export class WorkClient {
 
   editContract(orgId: string, key: string, body: WorkContractRequest, opts: RequestOptions = {}): Promise<WorkMutationResponse> {
     return this.taskAction(orgId, key, "contract", body, opts);
+  }
+
+  /** Posts a world-authored fact from the "ci" producer (the affected-set
+   *  feed: a CI run attaches Result.Affected to a PR observation). Idempotent
+   *  by dedupeKey. */
+  ingestObservation(orgId: string, body: IngestWorkObservationRequest, opts: RequestOptions = {}): Promise<IngestWorkObservationResponse> {
+    return this.transport.request<IngestWorkObservationResponse>(
+      { method: "POST", path: `${workBase(orgId)}/observations`, body },
+      opts,
+    );
   }
 
   /** Applies an `orun work import --dry-run` plan (idempotent on re-import;
