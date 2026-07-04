@@ -100,6 +100,8 @@ export interface NotificationRulesRepository {
    * anything get their cursor advanced).
    */
   listOrgIdsWithEnabledRules(): Promise<EventsResult<string[]>>;
+  /** Total rules for the org (any status) — the entitlement limit gate. */
+  countRulesByOrg(orgId: string): Promise<EventsResult<number>>;
   updateRule(
     orgId: string,
     id: string,
@@ -364,6 +366,18 @@ export function createNotificationRulesRepository(executor: SqlExecutor): Notifi
         return { ok: true, value: result.rows.length > 0 };
       } catch {
         return safeError("Failed to delete notification rule");
+      }
+    },
+
+    async countRulesByOrg(orgId) {
+      try {
+        const result = await executor.execute<Record<string, unknown>>(
+          `SELECT count(*)::int AS total FROM events.notification_rules WHERE org_id = $1`,
+          [orgId],
+        );
+        return { ok: true, value: (result.rows[0]?.total as number) ?? 0 };
+      } catch {
+        return safeError("Failed to count notification rules");
       }
     },
 

@@ -12,6 +12,8 @@ spec:
   dependsOn:
     - component: membership-worker
     - component: policy-worker
+    - component: billing-worker
+    - component: notifications-worker
   subscribe:
     environments:
       - name: dev

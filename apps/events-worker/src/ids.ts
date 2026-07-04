@@ -31,6 +31,16 @@ export function isDeadLetterId(id: string): boolean {
   return DEAD_LETTER_ID_RE.test(id);
 }
 
+/** Notification-rule public id (rule_<32hex>) — the TEXT PK. */
+export function generateRuleId(): string {
+  return `rule_${randomHex(16)}`;
+}
+
+/** Rule-target public id (rtgt_<32hex>) — the TEXT PK. */
+export function generateRuleTargetId(): string {
+  return `rtgt_${randomHex(16)}`;
+}
+
 export function parseOrgPublicId(publicId: string): string | null {
   if (!publicId.startsWith("org_")) return null;
   return hexToUuid(publicId.slice(4));

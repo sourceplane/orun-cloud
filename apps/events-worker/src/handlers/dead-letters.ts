@@ -6,7 +6,11 @@ import type {
   EventStreamsRepository,
   StoredDeadLetter,
 } from "@saas/db/events";
-import { createEventsRepository, createEventStreamsRepository } from "@saas/db/events";
+import {
+  createEventsRepository,
+  createEventStreamsRepository,
+  createNotificationRulesRepository,
+} from "@saas/db/events";
 import { createSqlExecutor } from "@saas/db/hyperdrive";
 import { createTimings } from "@saas/contracts/timing";
 import { fetchAuthorizationContext } from "../membership-client.js";
@@ -171,7 +175,12 @@ export async function handleReplayDeadLetter(
   try {
     const streamsRepo = deps?.streamsRepo ?? createEventStreamsRepository(executor);
     const eventsRepo = deps?.eventsRepo ?? createEventsRepository(executor);
-    const handlers = deps?.handlers ?? buildLaneHandlers();
+    const handlers =
+      deps?.handlers ??
+      buildLaneHandlers(env, {
+        rulesRepo: createNotificationRulesRepository(executor),
+        requestId,
+      });
 
     // Replay is a mutation with side effects: authorize strictly BEFORE any
     // work (no speculative execution; only the deny path stays leak-free 404).

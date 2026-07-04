@@ -101,6 +101,10 @@ export const PLAN_CATALOG: PlanDefinition[] = [
       // regress the free tier.)
       { entitlementKey: "feature.integrations.github", valueType: "boolean", enabled: true, limitValue: null },
       { entitlementKey: "limit.repo_links", valueType: "quantity", enabled: true, limitValue: 1 },
+      // Event routing (saas-event-streaming ES2, D3 defaults): rules are an
+      // activation feature — enabled on free with a conservative cap.
+      { entitlementKey: "feature.event_routing", valueType: "boolean", enabled: true, limitValue: null },
+      { entitlementKey: "limit.notification_rules", valueType: "quantity", enabled: true, limitValue: 10 },
     ],
   },
   {
@@ -120,6 +124,8 @@ export const PLAN_CATALOG: PlanDefinition[] = [
       { entitlementKey: "limit.organizations", valueType: "quantity", enabled: true, limitValue: 1 },
       { entitlementKey: "feature.integrations.github", valueType: "boolean", enabled: true, limitValue: null },
       { entitlementKey: "limit.repo_links", valueType: "quantity", enabled: true, limitValue: 10 },
+      { entitlementKey: "feature.event_routing", valueType: "boolean", enabled: true, limitValue: null },
+      { entitlementKey: "limit.notification_rules", valueType: "quantity", enabled: true, limitValue: 50 },
     ],
   },
   {
@@ -139,6 +145,8 @@ export const PLAN_CATALOG: PlanDefinition[] = [
       { entitlementKey: "limit.organizations", valueType: "quantity", enabled: true, limitValue: 5 },
       { entitlementKey: "feature.integrations.github", valueType: "boolean", enabled: true, limitValue: null },
       { entitlementKey: "limit.repo_links", valueType: "quantity", enabled: true, limitValue: 50 },
+      { entitlementKey: "feature.event_routing", valueType: "boolean", enabled: true, limitValue: null },
+      { entitlementKey: "limit.notification_rules", valueType: "quantity", enabled: true, limitValue: 200 },
     ],
   },
   {
@@ -158,6 +166,8 @@ export const PLAN_CATALOG: PlanDefinition[] = [
       { entitlementKey: "limit.organizations", valueType: "quantity", enabled: true, limitValue: null },
       { entitlementKey: "feature.integrations.github", valueType: "boolean", enabled: true, limitValue: null },
       { entitlementKey: "limit.repo_links", valueType: "quantity", enabled: true, limitValue: null },
+      { entitlementKey: "feature.event_routing", valueType: "boolean", enabled: true, limitValue: null },
+      { entitlementKey: "limit.notification_rules", valueType: "quantity", enabled: true, limitValue: null },
     ],
   },
 ];

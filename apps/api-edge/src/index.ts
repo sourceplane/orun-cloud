@@ -8,6 +8,7 @@ import { isOrgRoute, handleOrgRoute } from "./org-facade";
 import { isProjectRoute, handleProjectRoute } from "./project-facade";
 import { isAuditRoute, handleAuditRoute } from "./audit-facade";
 import { isDeadLettersRoute, handleDeadLettersRoute } from "./dead-letters-facade";
+import { isNotificationRulesRoute, handleNotificationRulesRoute } from "./notification-rules-facade";
 import { isConfigRoute, handleConfigRoute } from "./config-facade";
 import { isWebhooksRoute, handleWebhooksRoute } from "./webhooks-facade";
 import { isMeteringRoute, handleMeteringRoute } from "./metering-facade";
@@ -77,6 +78,8 @@ export default {
       response = await handleAuditRoute(routedRequest, env, requestId, pathname);
     } else if (isDeadLettersRoute(pathname)) {
       response = await handleDeadLettersRoute(routedRequest, env, requestId, pathname);
+    } else if (isNotificationRulesRoute(pathname)) {
+      response = await handleNotificationRulesRoute(routedRequest, env, requestId, pathname);
     } else if (isConfigRoute(pathname)) {
       response = await handleConfigRoute(routedRequest, env, requestId, pathname);
     } else if (isIntegrationsIngressRoute(pathname)) {
