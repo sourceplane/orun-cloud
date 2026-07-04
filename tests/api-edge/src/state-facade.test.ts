@@ -68,6 +68,10 @@ describe("state facade — route matching", () => {
     expect(isStateRoute("/v1/organizations/org_x/repo-facets/prj_y")).toBe(true);
   });
 
+  it("matches the WO5 overview doc read route (org-scoped catalog/doc)", () => {
+    expect(isStateRoute("/v1/organizations/org_x/catalog/doc")).toBe(true);
+  });
+
   it("matches the OP3 object plane, logs, and catalog routes", () => {
     const base = "/v1/organizations/org_x/projects/prj_y/state";
     const digest = `sha256:${"a".repeat(64)}`;
