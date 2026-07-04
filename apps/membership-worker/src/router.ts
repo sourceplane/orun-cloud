@@ -22,7 +22,7 @@ import { handleAcceptInvitation } from "./handlers/accept-invitation.js";
 import { handleAcceptMyInvitation } from "./handlers/accept-my-invitation.js";
 import { handleAuthorizationContext } from "./handlers/authorization-context.js";
 import { handleEffectiveAccess, handleOrgEffectiveAccess } from "./handlers/effective-access.js";
-import { handleListOwnerHandles, handleSetOwnerHandle, handleDeleteOwnerHandle } from "./handlers/owner-handles.js";
+import { handleListOwnerHandles, handleSetOwnerHandle, handleDeleteOwnerHandle, handleResolveOwners } from "./handlers/owner-handles.js";
 import { handleSubjectOrgs } from "./handlers/subject-orgs.js";
 import { handleSyncAccountChildren } from "./handlers/sync-account-children.js";
 import { handleResolveBillingParent } from "./handlers/resolve-billing-parent.js";
@@ -72,6 +72,7 @@ const ORG_TEAM_MEMBER_ID_RE = /^\/v1\/organizations\/([^/]+)\/teams\/([^/]+)\/me
 const ORG_EFFECTIVE_ACCESS_RE = /^\/v1\/organizations\/([^/]+)\/effective-access$/;
 const ORG_OWNER_HANDLES_RE = /^\/v1\/organizations\/([^/]+)\/owner-handles$/;
 const ORG_OWNER_HANDLE_ID_RE = /^\/v1\/organizations\/([^/]+)\/owner-handles\/([^/]+)$/;
+const ORG_RESOLVE_OWNERS_RE = /^\/v1\/organizations\/([^/]+)\/resolve-owners$/;
 const SP_BINDINGS_PATH = "/v1/internal/membership/service-principal-bindings";
 const SP_BINDING_ID_RE = /^\/v1\/internal\/membership\/service-principal-bindings\/([^/]+)$/;
 
@@ -417,6 +418,20 @@ export async function route(request: Request, env: Env): Promise<Response> {
       }
       if (request.method === "PUT" || request.method === "POST") {
         return handleSetOwnerHandle(request, env, requestId, actor, ownerHandlesMatch[1]!);
+      }
+      return methodNotAllowed(requestId);
+    }
+
+    // Read-time owner → team resolution (teams-ownership TO2): batch-resolve a
+    // page of catalog owner strings to team identity without touching the catalog.
+    const resolveOwnersMatch = url.pathname.match(ORG_RESOLVE_OWNERS_RE);
+    if (resolveOwnersMatch) {
+      const actor = resolveActor(request);
+      if (!actor) {
+        return errorResponse("unauthenticated", "Authentication required", 401, requestId);
+      }
+      if (request.method === "POST") {
+        return handleResolveOwners(request, env, requestId, actor, resolveOwnersMatch[1]!);
       }
       return methodNotAllowed(requestId);
     }

@@ -38,6 +38,8 @@ const ORG_EFFECTIVE_ACCESS_RE = /^\/v1\/organizations\/[^/]+\/effective-access$/
 // teams-ownership TO1 — owner-handle → team alias map (proxied to membership-worker).
 const ORG_OWNER_HANDLES_RE = /^\/v1\/organizations\/[^/]+\/owner-handles$/;
 const ORG_OWNER_HANDLE_ID_RE = /^\/v1\/organizations\/[^/]+\/owner-handles\/[^/]+$/;
+// teams-ownership TO2 — batch owner → team resolution (read-time overlay).
+const ORG_RESOLVE_OWNERS_RE = /^\/v1\/organizations\/[^/]+\/resolve-owners$/;
 
 const FORWARDED_HEADERS = [
   "content-type",
@@ -47,7 +49,7 @@ const FORWARDED_HEADERS = [
 ];
 
 export function isOrgRoute(pathname: string): boolean {
-  return pathname in ORG_ROUTES || ME_INVITATIONS_RE.test(pathname) || ME_INVITATION_ACCEPT_RE.test(pathname) || ORG_ID_RE.test(pathname) || ORG_MEMBERS_RE.test(pathname) || ORG_MEMBER_ID_RE.test(pathname) || ORG_WORKSPACES_RE.test(pathname) || ORG_INVITATIONS_ACCEPT_RE.test(pathname) || ORG_INVITATIONS_RE.test(pathname) || ORG_INVITATION_ID_RE.test(pathname) || ORG_API_KEYS_RE.test(pathname) || ORG_API_KEY_ID_RE.test(pathname) || ORG_ACCOUNT_ROLES_RE.test(pathname) || ORG_ACCOUNT_MEMBERS_RE.test(pathname) || ORG_TEAM_ROLES_RE.test(pathname) || ORG_TEAMS_RE.test(pathname) || ORG_TEAM_ID_RE.test(pathname) || ORG_TEAM_MEMBERS_RE.test(pathname) || ORG_TEAM_MEMBER_ID_RE.test(pathname) || ORG_TEAM_GRANTS_RE.test(pathname) || ORG_EFFECTIVE_ACCESS_RE.test(pathname) || ORG_OWNER_HANDLES_RE.test(pathname) || ORG_OWNER_HANDLE_ID_RE.test(pathname);
+  return pathname in ORG_ROUTES || ME_INVITATIONS_RE.test(pathname) || ME_INVITATION_ACCEPT_RE.test(pathname) || ORG_ID_RE.test(pathname) || ORG_MEMBERS_RE.test(pathname) || ORG_MEMBER_ID_RE.test(pathname) || ORG_WORKSPACES_RE.test(pathname) || ORG_INVITATIONS_ACCEPT_RE.test(pathname) || ORG_INVITATIONS_RE.test(pathname) || ORG_INVITATION_ID_RE.test(pathname) || ORG_API_KEYS_RE.test(pathname) || ORG_API_KEY_ID_RE.test(pathname) || ORG_ACCOUNT_ROLES_RE.test(pathname) || ORG_ACCOUNT_MEMBERS_RE.test(pathname) || ORG_TEAM_ROLES_RE.test(pathname) || ORG_TEAMS_RE.test(pathname) || ORG_TEAM_ID_RE.test(pathname) || ORG_TEAM_MEMBERS_RE.test(pathname) || ORG_TEAM_MEMBER_ID_RE.test(pathname) || ORG_TEAM_GRANTS_RE.test(pathname) || ORG_EFFECTIVE_ACCESS_RE.test(pathname) || ORG_OWNER_HANDLES_RE.test(pathname) || ORG_OWNER_HANDLE_ID_RE.test(pathname) || ORG_RESOLVE_OWNERS_RE.test(pathname);
 }
 
 export async function handleOrgRoute(
@@ -147,6 +149,10 @@ export async function handleOrgRoute(
   }
 
   if (ORG_OWNER_HANDLE_ID_RE.test(pathname) && request.method !== "DELETE") {
+    return errorResponse("unsupported", "Method not allowed", 405, requestId);
+  }
+
+  if (ORG_RESOLVE_OWNERS_RE.test(pathname) && request.method !== "POST") {
     return errorResponse("unsupported", "Method not allowed", 405, requestId);
   }
 

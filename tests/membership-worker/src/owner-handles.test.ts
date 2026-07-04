@@ -1,4 +1,4 @@
-import { handleListOwnerHandles, handleSetOwnerHandle, handleDeleteOwnerHandle } from "@membership-worker/handlers/owner-handles";
+import { handleListOwnerHandles, handleSetOwnerHandle, handleDeleteOwnerHandle, handleResolveOwners } from "@membership-worker/handlers/owner-handles";
 import { orgPublicId, teamPublicId } from "@membership-worker/ids";
 import type { Env } from "@membership-worker/env";
 import type { MembershipRepository, Organization, RoleAssignment, Team, TeamOwnerHandle, UpsertTeamOwnerHandleInput } from "@saas/db/membership";
@@ -43,6 +43,8 @@ function makeRepo(cfg: {
   roles?: Record<string, RoleAssignment[]>;
   teams?: Record<string, Team>;
   handles?: TeamOwnerHandle[];
+  teamsList?: Team[];
+  aliases?: TeamOwnerHandle[];
   deleteMissing?: boolean;
 }): { repo: MembershipRepository; upserts: UpsertTeamOwnerHandleInput[]; deletes: string[] } {
   const upserts: UpsertTeamOwnerHandleInput[] = [];
@@ -62,6 +64,13 @@ function makeRepo(cfg: {
     },
     async listTeamOwnerHandles() {
       return { ok: true as const, value: cfg.handles ?? [] };
+    },
+    async listTeams() {
+      return { ok: true as const, value: cfg.teamsList ?? [] };
+    },
+    async resolveTeamOwnerHandles(_accountOrgId: string, keys: string[]) {
+      const rows = (cfg.aliases ?? []).filter((a) => keys.includes(a.ownerHandle.toLowerCase()));
+      return { ok: true as const, value: rows };
     },
     async upsertTeamOwnerHandle(input: UpsertTeamOwnerHandleInput) {
       upserts.push(input);
@@ -152,6 +161,54 @@ describe("owner-handles: set (teams-ownership TO1)", () => {
   it("rejects an empty owner string (422)", async () => {
     const { repo } = makeRepo({ orgs: { [ACCOUNT]: org(ACCOUNT, null) }, roles: admins, teams: { [TEAM_UUID]: team(TEAM_UUID, ACCOUNT) } });
     const res = await handleSetOwnerHandle(setReq({ ownerHandle: "  ", teamId: TEAM_PUB }), env(), "r", actor, orgPublicId(ACCOUNT), { repo });
+    expect(res.status).toBe(422);
+  });
+});
+
+describe("resolve-owners (teams-ownership TO2)", () => {
+  function resolveReq(owners: string[]): Request {
+    return new Request(`http://mw/v1/organizations/${orgPublicId(ACCOUNT)}/resolve-owners`, {
+      method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ owners }),
+    });
+  }
+  type Res = { owner: string; state: string; teamId?: string; name?: string };
+  async function resolve(repo: MembershipRepository, owners: string[]): Promise<Res[]> {
+    const res = await handleResolveOwners(resolveReq(owners), env(), "r", actor, orgPublicId(ACCOUNT), { repo });
+    expect(res.status).toBe(200);
+    return (await res.json() as { data: { resolutions: Res[] } }).data.resolutions;
+  }
+
+  it("resolves by handle (convention), by alias, and marks unmapped / unowned", async () => {
+    const { repo } = makeRepo({
+      orgs: { [ACCOUNT]: org(ACCOUNT, null) },
+      roles: admins,
+      teamsList: [team(TEAM_UUID, ACCOUNT)],                 // handle 'platform'
+      aliases: [ownerHandle("legacy-platform")],            // alias → TEAM_PUB
+    });
+    const out = await resolve(repo, ["platform", "group:platform", "legacy-platform", "nobody", ""]);
+    // by handle (bare + prefixed both normalize to 'platform')
+    expect(out[0]).toMatchObject({ owner: "platform", state: "owned", teamId: TEAM_PUB, name: "Platform" });
+    expect(out[1]).toMatchObject({ owner: "group:platform", state: "owned", teamId: TEAM_PUB });
+    // by alias
+    expect(out[2]).toMatchObject({ owner: "legacy-platform", state: "owned", teamId: TEAM_PUB });
+    // declared but unmapped
+    expect(out[3]).toMatchObject({ owner: "nobody", state: "unmapped" });
+    // no owner
+    expect(out[4]).toMatchObject({ owner: "", state: "unowned" });
+  });
+
+  it("a non-member cannot resolve (404)", async () => {
+    const { repo } = makeRepo({ orgs: { [ACCOUNT]: org(ACCOUNT, null) }, roles: { [`${ACCOUNT}|${ACTOR}`]: [] }, teamsList: [team(TEAM_UUID, ACCOUNT)] });
+    const res = await handleResolveOwners(resolveReq(["platform"]), env(), "r", actor, orgPublicId(ACCOUNT), { repo });
+    expect(res.status).toBe(404);
+  });
+
+  it("rejects a non-array body (422)", async () => {
+    const { repo } = makeRepo({ orgs: { [ACCOUNT]: org(ACCOUNT, null) }, roles: admins });
+    const req = new Request(`http://mw/v1/organizations/${orgPublicId(ACCOUNT)}/resolve-owners`, {
+      method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ owners: "x" }),
+    });
+    const res = await handleResolveOwners(req, env(), "r", actor, orgPublicId(ACCOUNT), { repo });
     expect(res.status).toBe(422);
   });
 });

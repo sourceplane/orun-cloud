@@ -80,6 +80,14 @@ describe("TeamsClient (saas-teams TM4c)", () => {
     expect(calls[2]!.init.method).toBe("DELETE");
   });
 
+  it("resolveOwners → POST /resolve-owners with owners (teams-ownership TO2)", async () => {
+    const { client: c, calls } = client({ resolutions: [] });
+    await c.teams.resolveOwners("org_1", { owners: ["payments", "search"] });
+    expect(calls[0]!.url).toBe("https://api.test/v1/organizations/org_1/resolve-owners");
+    expect(calls[0]!.init.method).toBe("POST");
+    expect(JSON.parse(calls[0]!.init.body as string)).toEqual({ owners: ["payments", "search"] });
+  });
+
   it("addTeamMember → POST /teams/:id/members with body", async () => {
     const { client: c, calls } = client({ member: { subjectId: "usr_a" } });
     await c.teams.addTeamMember("org_1", "team_x", { subjectId: "usr_a" });

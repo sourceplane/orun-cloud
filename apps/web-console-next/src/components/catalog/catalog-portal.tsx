@@ -21,6 +21,7 @@ import { cn } from "@/lib/cn";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   buildContext,
+  annotateOwnership,
   buildSelected,
   decorateService,
   rollup,
@@ -134,7 +135,27 @@ export function CatalogPortal({ orgId, orgSlug }: { orgId: string; orgSlug: stri
     [filters, debouncedQuery],
   );
 
-  const services = React.useMemo(() => toServices(entities ?? []), [entities]);
+  const rawServices = React.useMemo(() => toServices(entities ?? []), [entities]);
+
+  // teams-ownership TO2 — resolve the page's git owner strings to team identity
+  // at read time (never touching the catalog projection). Batched + cached; a
+  // short staleTime gives the TO-C bounded-staleness window (ownership is
+  // display, not authorization). Falls through to raw owner labels until loaded.
+  const distinctOwners = React.useMemo(
+    () => [...new Set(rawServices.map((s) => s.owner).filter((o): o is string => !!o))],
+    [rawServices],
+  );
+  const ownersKey = distinctOwners.join("\n");
+  const { data: resolutions } = useApiQuery(
+    ["ownerResolutions", orgId, ownersKey] as const,
+    () => wrap(async () => (await client.teams.resolveOwners(orgId, { owners: distinctOwners })).resolutions),
+  );
+  const services = React.useMemo(() => {
+    if (!resolutions) return rawServices;
+    const byOwner = new Map(resolutions.map((r) => [r.owner, r]));
+    return annotateOwnership(rawServices, byOwner);
+  }, [rawServices, resolutions]);
+
   const ctx = React.useMemo(() => buildContext(services), [services]);
   const metrics = React.useMemo(() => rollup(services), [services]);
 

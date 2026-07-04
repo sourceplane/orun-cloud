@@ -42,6 +42,14 @@ export interface CatalogService {
   system: string;
   /** Owner ref/string, or null when unowned. */
   owner: string | null;
+  /**
+   * teams-ownership TO2 — the read-time resolved owning team, when the git owner
+   * string resolves (by handle or alias). Undefined until resolution runs; null
+   * when the owner is declared-but-unmapped or absent.
+   */
+  ownerTeam?: { teamId: string; name: string; handle: string | null } | null;
+  /** Resolution state: owned | unmapped (declared, no team) | unowned (no owner). */
+  ownerState?: "owned" | "unmapped" | "unowned";
   /** Implementation language, or null. */
   language: string | null;
   /** Raw lifecycle string from the snapshot, or null. */
@@ -147,6 +155,47 @@ export function toService(e: OrgCatalogEntity): CatalogService {
     deps: e.relations.filter((r) => !systemRefs.has(r.targetRef)).map((r) => r.targetRef),
     relations: e.relations,
   };
+}
+
+/** teams-ownership TO2 — one owner string's read-time resolution. */
+export interface OwnerResolution {
+  owner: string;
+  state: "owned" | "unmapped" | "unowned";
+  teamId?: string;
+  handle?: string | null;
+  name?: string;
+  avatar?: string | null;
+}
+
+/**
+ * Stamp each service with its resolved owning team (teams-ownership TO2), from a
+ * batch resolution keyed by the raw owner string. Returns new service objects; a
+ * service whose owner did not resolve gets `ownerTeam: null` and the resolution's
+ * state (`unmapped` | `unowned`).
+ */
+export function annotateOwnership(
+  services: CatalogService[],
+  byOwner: Map<string, OwnerResolution>,
+): CatalogService[] {
+  return services.map((s) => {
+    const r = s.owner != null ? byOwner.get(s.owner) : undefined;
+    if (!r) return { ...s, ownerTeam: null, ownerState: s.owner ? "unmapped" : "unowned" };
+    if (r.state === "owned" && r.teamId && r.name != null) {
+      return { ...s, ownerTeam: { teamId: r.teamId, name: r.name, handle: r.handle ?? null }, ownerState: "owned" };
+    }
+    return { ...s, ownerTeam: null, ownerState: r.state };
+  });
+}
+
+/**
+ * The display label for a service's owner (teams-ownership TO2): the resolved team
+ * name when owned, else a legible unmapped/unowned label distinct from each other.
+ */
+export function resolvedOwnerLabel(s: CatalogService): string {
+  if (s.ownerTeam) return s.ownerTeam.name;
+  if (s.ownerState === "unmapped" && s.owner) return `Unmapped: ${ownerLabel(s.owner)}`;
+  if (s.ownerState === undefined && s.owner) return ownerLabel(s.owner);
+  return "Unowned";
 }
 
 /** Map a loaded page of entities into services. */
@@ -333,9 +382,11 @@ export function decorateService(s: CatalogService, ctx: CatalogContext): Decorat
     iconD: iconForKind(s.kind),
     language: s.language,
     system: s.system,
-    ownerName: ownerLabel(s.owner),
-    ownerInitials: ownerInitials(s.owner),
-    owned: !!s.owner,
+    // teams-ownership TO2 — prefer the resolved team identity when available;
+    // fall back to the raw owner label before resolution runs.
+    ownerName: s.ownerTeam ? s.ownerTeam.name : resolvedOwnerLabel(s),
+    ownerInitials: ownerInitials(s.ownerTeam ? s.ownerTeam.name : s.owner),
+    owned: s.ownerState ? s.ownerState === "owned" : !!s.owner,
     lifeKey: lk,
     lifeShow: !!life,
     lifeLabel: s.lifecycle ?? "",

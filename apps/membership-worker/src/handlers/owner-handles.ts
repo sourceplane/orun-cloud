@@ -9,7 +9,7 @@ import { asUuid, type Uuid } from "@saas/db/ids";
 import { authorizeViaPolicy } from "../policy-client.js";
 import { successResponse, errorResponse, validationError } from "../http.js";
 import { parseOrgPublicId, parseTeamPublicId, teamPublicId } from "../ids.js";
-import { normalizeOwnerHandle } from "../owner-handle.js";
+import { normalizeOwnerHandle, ownerHandleKey } from "../owner-handle.js";
 
 // teams-ownership TO1 — the account-authored owner-handle → team alias map.
 // This is ORG METADATA, not catalog content (18-state intact): it binds a
@@ -177,6 +177,88 @@ export async function handleSetOwnerHandle(
     }
     if (!result.ok) return errorResponse("internal_error", "An unexpected error occurred", 500, requestId);
     return successResponse({ ownerHandle: publicOwnerHandle(result.value) }, requestId, 201);
+  } catch {
+    return errorResponse("internal_error", "An unexpected error occurred", 500, requestId);
+  } finally {
+    if (executor) await executor.dispose();
+  }
+}
+
+// ── resolve (read-time owner → team, batched — teams-ownership TO2) ──
+// Resolves a batch of git-authored `owner:` strings for the account to team
+// identity (or Unowned). This binds ownership at READ time and never touches the
+// catalog projection (18-state intact). Resolution order per string: normalize
+// (strip a group:/team: prefix, lower-case), then match `owner == team.handle`
+// (the convention — no alias row needed), else the account's alias map (TO1).
+export async function handleResolveOwners(
+  request: Request,
+  env: Env,
+  requestId: string,
+  actor: ActorContext,
+  orgIdParam: string,
+  deps?: OwnerHandlesDeps,
+): Promise<Response> {
+  const orgUuid = parseOrgPublicId(orgIdParam);
+  if (!orgUuid) return errorResponse("not_found", "Organization not found", 404, requestId);
+  const pf = preflight(env, deps, requestId);
+  if (pf) return pf;
+
+  let body: unknown;
+  try {
+    body = await request.json();
+  } catch {
+    return validationError(requestId, { body: ["Invalid JSON"] });
+  }
+  if (!body || typeof body !== "object") return validationError(requestId, { body: ["Request body must be an object"] });
+  const { owners } = body as { owners?: unknown };
+  if (!Array.isArray(owners) || owners.some((o) => typeof o !== "string")) {
+    return validationError(requestId, { owners: ["Must be an array of strings"] });
+  }
+  const ownerStrings = owners as string[];
+
+  const executor = deps ? null : createSqlExecutor(env.PLATFORM_DB!);
+  try {
+    const repo = deps ? deps.repo : createMembershipRepository(executor!);
+    // Read gate: an account member (same gate as listing teams). Ownership is
+    // display metadata, so this is the correct tenant-safe boundary.
+    const authz = await authorizeOnAccount(env, repo, actor, orgUuid, "organization.member.list", requestId);
+    if (!authz.ok) return authz.res;
+
+    // Distinct normalized keys we actually need to resolve.
+    const keys = [...new Set(ownerStrings.map(ownerHandleKey).filter((k) => k.length > 0))];
+
+    // Two batched queries: the account's teams (handle + id → identity) and the
+    // alias rows for these keys. No N+1.
+    const teamsResult = await repo.listTeams(authz.accountUuid);
+    if (!teamsResult.ok) return errorResponse("internal_error", "An unexpected error occurred", 500, requestId);
+    const aliasResult = await repo.resolveTeamOwnerHandles(authz.accountUuid, keys);
+    if (!aliasResult.ok) return errorResponse("internal_error", "An unexpected error occurred", 500, requestId);
+
+    const byHandle = new Map<string, (typeof teamsResult.value)[number]>();
+    const byPubId = new Map<string, (typeof teamsResult.value)[number]>();
+    for (const t of teamsResult.value) {
+      if (t.handle) byHandle.set(t.handle.toLowerCase(), t);
+      byPubId.set(teamPublicId(t.id), t);
+    }
+    const teamIdByKey = new Map<string, string>();
+    for (const a of aliasResult.value) teamIdByKey.set(a.ownerHandle.toLowerCase(), a.teamId);
+
+    const resolutions = ownerStrings.map((owner) => {
+      const key = ownerHandleKey(owner);
+      if (key.length === 0) return { owner, state: "unowned" as const };
+      const team = byHandle.get(key) ?? (teamIdByKey.has(key) ? byPubId.get(teamIdByKey.get(key)!) : undefined);
+      if (!team) return { owner, state: "unmapped" as const };
+      return {
+        owner,
+        state: "owned" as const,
+        teamId: teamPublicId(team.id),
+        handle: team.handle,
+        name: team.name,
+        avatar: team.avatarRef,
+      };
+    });
+
+    return successResponse({ resolutions }, requestId);
   } catch {
     return errorResponse("internal_error", "An unexpected error occurred", 500, requestId);
   } finally {

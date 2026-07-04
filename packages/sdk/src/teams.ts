@@ -11,6 +11,8 @@ import type {
   ListOwnerHandlesResponse,
   SetOwnerHandleRequest,
   SetOwnerHandleResponse,
+  ResolveOwnersRequest,
+  ResolveOwnersResponse,
   ListTeamMembersResponse,
   GrantTeamRoleRequest,
   GrantTeamRoleResponse,
@@ -134,6 +136,14 @@ export class TeamsClient {
   deleteOwnerHandle(orgId: string, ownerHandle: string, opts: RequestOptions = {}): Promise<SetOwnerHandleResponse> {
     return this.transport.request<SetOwnerHandleResponse>(
       { method: "DELETE", path: `/v1/organizations/${encodeURIComponent(orgId)}/owner-handles/${encodeURIComponent(ownerHandle)}` },
+      opts,
+    );
+  }
+
+  /** POST /v1/organizations/:orgId/resolve-owners — batch-resolve owner strings → team identity (teams-ownership TO2). */
+  resolveOwners(orgId: string, body: ResolveOwnersRequest, opts: RequestOptions = {}): Promise<ResolveOwnersResponse> {
+    return this.transport.request<ResolveOwnersResponse>(
+      { method: "POST", path: `/v1/organizations/${encodeURIComponent(orgId)}/resolve-owners`, body },
       opts,
     );
   }

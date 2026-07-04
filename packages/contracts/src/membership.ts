@@ -209,6 +209,31 @@ export interface SetOwnerHandleResponse {
   ownerHandle: PublicOwnerHandle;
 }
 
+/**
+ * The resolution of one git-authored `owner:` string (teams-ownership TO2):
+ * - `owned`    — resolves to a team (by handle or alias);
+ * - `unmapped` — an owner was declared but no team/alias matches (an action item);
+ * - `unowned`  — no owner was declared.
+ */
+export interface OwnerResolution {
+  /** The original git string as authored (echoed back for the caller to key on). */
+  owner: string;
+  state: "owned" | "unmapped" | "unowned";
+  /** The resolved team's `team_<hex>` id, handle, name, avatar (when `owned`). */
+  teamId?: string;
+  handle?: string | null;
+  name?: string;
+  avatar?: string | null;
+}
+
+export interface ResolveOwnersRequest {
+  owners: string[];
+}
+
+export interface ResolveOwnersResponse {
+  resolutions: OwnerResolution[];
+}
+
 /** Grant a team a role at account | organization (workspace) | project scope. */
 export interface GrantTeamRoleRequest {
   teamId: string;

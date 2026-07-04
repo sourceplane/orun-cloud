@@ -6,6 +6,7 @@ import {
   hasActiveFilters,
   sortServices,
 } from "@web-console-next/lib/catalog-portal/filter";
+import { annotateOwnership, type OwnerResolution } from "@web-console-next/lib/catalog-portal/model";
 import { service } from "./fixture";
 
 const services = [
@@ -62,6 +63,28 @@ describe("groupServices", () => {
     expect(byTeam[byTeam.length - 1]!.label).toBe("Unowned");
     const byLife = groupServices(services, "lifecycle")!;
     expect(byLife[byLife.length - 1]!.label).toBe("No lifecycle");
+  });
+});
+
+describe("teams-ownership TO2: resolved ownership grouping", () => {
+  it("groups by resolved team; unmapped and unowned bucket distinctly", () => {
+    const raw = [
+      service({ entityRef: "component:default/api", owner: "payments" }),
+      service({ entityRef: "component:default/web", owner: "group:payments" }),
+      service({ entityRef: "component:default/old", owner: "legacy" }),
+      service({ entityRef: "resource:default/db" }), // no owner
+    ];
+    const byOwner = new Map<string, OwnerResolution>([
+      ["payments", { owner: "payments", state: "owned", teamId: "team_p", name: "Payments", handle: "payments" }],
+      ["group:payments", { owner: "group:payments", state: "owned", teamId: "team_p", name: "Payments", handle: "payments" }],
+      ["legacy", { owner: "legacy", state: "unmapped" }],
+    ]);
+    const groups = groupServices(annotateOwnership(raw, byOwner), "team")!;
+    const labels = groups.map((g) => g.label);
+    expect(labels).toContain("Payments");
+    expect(groups.find((g) => g.label === "Payments")!.count).toBe(2); // both spellings → one team
+    expect(labels).toContain("Unmapped: legacy");
+    expect(labels[labels.length - 1]).toBe("Unowned"); // truly unowned sinks last
   });
 });
 

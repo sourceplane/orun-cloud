@@ -12,6 +12,7 @@ import {
   lifecycleKey,
   needsAttention,
   ownerLabel,
+  resolvedOwnerLabel,
   scoreOf,
 } from "./model";
 import type { HealthKey } from "./palette";
@@ -46,7 +47,9 @@ export function filterServices(services: CatalogService[], f: CatalogFilters): C
     if (f.health !== "all" && healthOf(s) !== f.health) return false;
     if (f.attention && !needsAttention(s)) return false;
     if (q) {
-      const hay = `${s.name} ${s.ref} ${ownerLabel(s.owner)} ${s.language ?? ""} ${s.system}`.toLowerCase();
+      // teams-ownership TO2 — search resolved team name + handle alongside the raw owner.
+      const ownerHay = s.ownerTeam ? `${s.ownerTeam.name} ${s.ownerTeam.handle ?? ""}` : ownerLabel(s.owner);
+      const hay = `${s.name} ${s.ref} ${ownerHay} ${s.language ?? ""} ${s.system}`.toLowerCase();
       if (!hay.includes(q)) return false;
     }
     return true;
@@ -89,7 +92,9 @@ const SINK_LABELS = new Set(["Unowned", "No lifecycle"]);
 export function groupServices(services: CatalogService[], key: GroupKey): CatalogGroup[] | null {
   if (key === "none") return null;
   const keyOf = (s: CatalogService): string => {
-    if (key === "team") return s.owner ? ownerLabel(s.owner) : "Unowned";
+    // teams-ownership TO2 — group by RESOLVED team identity, not the raw owner
+    // string. Unmapped owners bucket distinctly from truly unowned entities.
+    if (key === "team") return resolvedOwnerLabel(s);
     if (key === "system") return s.system;
     const lk = lifecycleKey(s.lifecycle);
     return lk ? lk[0]!.toUpperCase() + lk.slice(1) : "No lifecycle";
