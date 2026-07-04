@@ -74,7 +74,7 @@ function Inner({ org, slug }: { org: PublicOrganization; slug: string }) {
         <StatCard label="Workspaces" value={workspaces.data?.length} href={`${base}/account/workspaces`} loading={workspaces.loading} />
         <StatCard label="Account members" value={members.data?.length} href={`${base}/account/members`} loading={members.loading} />
         <StatCard label="Account roles" value={roles.data?.length} href={`${base}/account/roles`} loading={roles.loading} />
-        <StatCard label="Teams" value={teams.data?.length} href={`${base}/teams`} loading={teams.loading} />
+        <StatCard label="Teams" value={teams.data?.length} href={`/orgs/${slug}/teams`} loading={teams.loading} />
       </div>
 
       <Card>

@@ -19,6 +19,7 @@ const SEGMENT_LABELS: Record<string, string> = {
   projects: "Git Repos",
   catalog: "Catalog",
   activities: "Activities",
+  teams: "Teams",
   integrations: "Integrations",
   secrets: "Secrets & Config",
   environments: "Environments",

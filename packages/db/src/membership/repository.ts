@@ -93,6 +93,7 @@ function mapTeam(row: Record<string, unknown>): Team {
     description: (row.description as string | null) ?? null,
     avatarRef: (row.avatar_ref as string | null) ?? null,
     status: row.status as string,
+    ...(row.member_count != null ? { memberCount: Number(row.member_count) } : {}),
     createdAt: new Date(row.created_at as string),
     updatedAt: new Date(row.updated_at as string),
   };
@@ -1048,10 +1049,15 @@ export function createMembershipRepository(executor: SqlExecutor): MembershipRep
 
     async listTeams(accountOrgId: string): Promise<MembershipResult<Team[]>> {
       try {
+        // teams-platform — carry the active-member count so the Teams directory
+        // renders it without an N+1 (one correlated subquery per row).
         const result = await executor.execute<Record<string, unknown>>(
-          `SELECT * FROM membership.teams
-           WHERE account_org_id = $1 AND status <> 'deleted'
-           ORDER BY created_at ASC, id ASC`,
+          `SELECT t.*,
+                  (SELECT count(*)::int FROM membership.team_members tm
+                    WHERE tm.team_id = t.id AND tm.status = 'active') AS member_count
+             FROM membership.teams t
+            WHERE t.account_org_id = $1 AND t.status <> 'deleted'
+            ORDER BY t.created_at ASC, t.id ASC`,
           [accountOrgId],
         );
         return { ok: true, value: result.rows.map(mapTeam) };
