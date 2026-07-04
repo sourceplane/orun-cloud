@@ -656,6 +656,45 @@ describe("authorize", () => {
     });
   });
 
+  // teams-foundation TF3 — access-principal integration. The engine is unchanged:
+  // it never inspects a team's handle or entity, only the facts it is handed. A
+  // team-derived fact is keyed by the immutable team_ id (grantedVia.teamId), so a
+  // rename (handle change, which never appears in a fact) cannot affect the
+  // decision, and a deleted team simply produces no fact — conferring nothing.
+  describe("team-derived facts are id-bound (TF3)", () => {
+    function teamFact(role: string, orgId: string, teamId: string): MembershipFact {
+      return {
+        kind: "role_assignment",
+        role: role as TenancyRole,
+        scope: { kind: "organization", orgId },
+        grantedVia: { kind: "team", teamId },
+      };
+    }
+
+    it("authorizes via a team fact and reports the team_ id (not a handle) in via", () => {
+      const result = authorize(authReq("organization.read", "org_1", [teamFact("admin", "org_1", "team_abc123")]));
+      expect(result.allow).toBe(true);
+      expect(result.via).toEqual({ kind: "team", teamId: "team_abc123" });
+    });
+
+    it("is rename-safe: the decision depends only on the fact's team_ id, never a handle", () => {
+      // A handle rename never touches role_assignments, so the fact the engine sees
+      // is byte-identical before and after — same id, same allow.
+      const before = authorize(authReq("organization.read", "org_1", [teamFact("admin", "org_1", "team_abc123")]));
+      const after = authorize(authReq("organization.read", "org_1", [teamFact("admin", "org_1", "team_abc123")]));
+      expect(before.allow).toBe(true);
+      expect(after).toEqual(before);
+    });
+
+    it("is delete-safe: a deleted team produces no fact, so it confers nothing", () => {
+      // Expansion drops a deleted team's grants, so the engine is handed no team
+      // fact — deny-by-default.
+      const result = authorize(authReq("organization.read", "org_1", []));
+      expect(result.allow).toBe(false);
+      expect(result.reason).toBe("no_matching_role");
+    });
+  });
+
   describe("policyVersion and derivedScope", () => {
     it("always returns policyVersion 1", () => {
       const result = authorize(authReq("organization.read", "org_1", [orgFact("owner", "org_1")]));

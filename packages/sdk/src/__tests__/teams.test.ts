@@ -58,6 +58,14 @@ describe("TeamsClient (saas-teams TM4c)", () => {
     expect(calls[0]!.url).toBe("https://api.test/v1/organizations/org_1/teams/team_x");
   });
 
+  it("updateTeamMemberRole → PATCH /teams/:id/members/:subjectId (TF2)", async () => {
+    const { client: c, calls } = client({ member: { subjectId: "usr_1", teamRole: "team_admin" } });
+    await c.teams.updateTeamMemberRole("org_1", "team_x", "usr_1", { teamRole: "team_admin" });
+    expect(calls[0]!.url).toBe("https://api.test/v1/organizations/org_1/teams/team_x/members/usr_1");
+    expect(calls[0]!.init.method).toBe("PATCH");
+    expect(JSON.parse(calls[0]!.init.body as string)).toEqual({ teamRole: "team_admin" });
+  });
+
   it("addTeamMember → POST /teams/:id/members with body", async () => {
     const { client: c, calls } = client({ member: { subjectId: "usr_a" } });
     await c.teams.addTeamMember("org_1", "team_x", { subjectId: "usr_a" });

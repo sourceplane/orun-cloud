@@ -99,6 +99,16 @@ export interface PublicTeam {
   id: string;
   name: string;
   slug: string;
+  /**
+   * Account-unique, case-insensitive, mentionable handle (teams-foundation TF1),
+   * e.g. `payments` → `@payments`. Added additively; `null` for TM-era teams that
+   * predate the profile columns. Grants bind to `id`, never this mutable handle.
+   */
+  handle?: string | null;
+  /** Free-text profile blurb (teams-foundation TF1); `null` when unset. */
+  description?: string | null;
+  /** Opaque avatar reference (teams-foundation TF1); `null` → initials+colour. */
+  avatar?: string | null;
   status: string;
   createdAt: string;
 }
@@ -106,6 +116,11 @@ export interface PublicTeam {
 export interface PublicTeamMember {
   subjectId: string;
   subjectType: string;
+  /**
+   * Team-management role (teams-foundation TF2): `team_admin` or `team_member`.
+   * Added additively; TM-era members read back as `team_member`.
+   */
+  teamRole?: string;
   status: string;
   createdAt: string;
 }
@@ -113,11 +128,21 @@ export interface PublicTeamMember {
 export interface CreateTeamRequest {
   name: string;
   slug?: string;
+  /** Optional account-unique handle (teams-foundation TF1). */
+  handle?: string;
+  /** Optional profile blurb (teams-foundation TF1). */
+  description?: string;
+  /** Optional opaque avatar reference (teams-foundation TF1). */
+  avatar?: string;
 }
 
 export interface UpdateTeamRequest {
   name?: string;
   slug?: string;
+  /** Rename the handle (teams-foundation TF1); omit to leave unchanged. */
+  handle?: string;
+  description?: string;
+  avatar?: string;
 }
 
 export interface CreateTeamResponse {
@@ -136,9 +161,21 @@ export interface AddTeamMemberRequest {
   subjectId: string;
   /** "user" | "service_principal" — defaults to "user". */
   subjectType?: string;
+  /** "team_admin" | "team_member" — defaults to "team_member" (teams-foundation TF2). */
+  teamRole?: string;
 }
 
 export interface AddTeamMemberResponse {
+  member: PublicTeamMember;
+}
+
+/** Change a member's team-management role (teams-foundation TF2). */
+export interface UpdateTeamMemberRoleRequest {
+  /** "team_admin" | "team_member". */
+  teamRole: string;
+}
+
+export interface UpdateTeamMemberRoleResponse {
   member: PublicTeamMember;
 }
 

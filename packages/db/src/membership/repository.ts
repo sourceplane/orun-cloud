@@ -87,6 +87,9 @@ function mapTeam(row: Record<string, unknown>): Team {
     accountOrgId: row.account_org_id as string,
     name: row.name as string,
     slugLower: row.slug_lower as string,
+    handle: (row.handle as string | null) ?? null,
+    description: (row.description as string | null) ?? null,
+    avatarRef: (row.avatar_ref as string | null) ?? null,
     status: row.status as string,
     createdAt: new Date(row.created_at as string),
     updatedAt: new Date(row.updated_at as string),
@@ -98,6 +101,7 @@ function mapTeamMember(row: Record<string, unknown>): TeamMember {
     teamId: row.team_id as string,
     subjectId: row.subject_id as string,
     subjectType: row.subject_type as string,
+    teamRole: (row.team_role as string | null) ?? "team_member",
     status: row.status as string,
     createdAt: new Date(row.created_at as string),
   };
@@ -980,10 +984,19 @@ export function createMembershipRepository(executor: SqlExecutor): MembershipRep
     async createTeam(input: CreateTeamInput): Promise<MembershipResult<Team>> {
       try {
         const result = await executor.execute<Record<string, unknown>>(
-          `INSERT INTO membership.teams (id, account_org_id, name, slug_lower, created_at, updated_at)
-           VALUES ($1, $2, $3, $4, $5, $5)
+          `INSERT INTO membership.teams (id, account_org_id, name, slug_lower, handle, description, avatar_ref, created_at, updated_at)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $8)
            RETURNING *`,
-          [input.id, input.accountOrgId, input.name, input.slugLower, input.createdAt.toISOString()],
+          [
+            input.id,
+            input.accountOrgId,
+            input.name,
+            input.slugLower,
+            input.handle ?? null,
+            input.description ?? null,
+            input.avatarRef ?? null,
+            input.createdAt.toISOString(),
+          ],
         );
         return { ok: true, value: mapTeam(result.rows[0]!) };
       } catch (err) {
@@ -1041,10 +1054,21 @@ export function createMembershipRepository(executor: SqlExecutor): MembershipRep
           `UPDATE membership.teams
            SET name = COALESCE($2, name),
                slug_lower = COALESCE($3, slug_lower),
-               updated_at = $4
+               handle = COALESCE($4, handle),
+               description = COALESCE($5, description),
+               avatar_ref = COALESCE($6, avatar_ref),
+               updated_at = $7
            WHERE id = $1 AND status <> 'deleted'
            RETURNING *`,
-          [id, input.name ?? null, input.slugLower ?? null, input.updatedAt.toISOString()],
+          [
+            id,
+            input.name ?? null,
+            input.slugLower ?? null,
+            input.handle ?? null,
+            input.description ?? null,
+            input.avatarRef ?? null,
+            input.updatedAt.toISOString(),
+          ],
         );
         if (result.rowCount === 0) return { ok: false, error: { kind: "not_found" } };
         return { ok: true, value: mapTeam(result.rows[0]!) };
@@ -1075,16 +1099,46 @@ export function createMembershipRepository(executor: SqlExecutor): MembershipRep
     async addTeamMember(input: CreateTeamMemberInput): Promise<MembershipResult<TeamMember>> {
       try {
         const result = await executor.execute<Record<string, unknown>>(
-          `INSERT INTO membership.team_members (team_id, subject_id, subject_type, status, created_at)
-           VALUES ($1, $2, $3, 'active', $4)
+          `INSERT INTO membership.team_members (team_id, subject_id, subject_type, team_role, status, created_at)
+           VALUES ($1, $2, $3, $4, 'active', $5)
            ON CONFLICT (team_id, subject_id)
-           DO UPDATE SET status = 'active', subject_type = EXCLUDED.subject_type
+           DO UPDATE SET status = 'active', subject_type = EXCLUDED.subject_type, team_role = EXCLUDED.team_role
            RETURNING *`,
-          [input.teamId, input.subjectId, input.subjectType, input.createdAt.toISOString()],
+          [input.teamId, input.subjectId, input.subjectType, input.teamRole ?? "team_member", input.createdAt.toISOString()],
         );
         return { ok: true, value: mapTeamMember(result.rows[0]!) };
       } catch (err) {
         return safeError("Failed to add team member", err);
+      }
+    },
+
+    async getTeamMember(teamId: string, subjectId: string): Promise<MembershipResult<TeamMember>> {
+      try {
+        const result = await executor.execute<Record<string, unknown>>(
+          `SELECT * FROM membership.team_members
+           WHERE team_id = $1 AND subject_id = $2 AND status = 'active'`,
+          [teamId, subjectId],
+        );
+        if (result.rowCount === 0) return { ok: false, error: { kind: "not_found" } };
+        return { ok: true, value: mapTeamMember(result.rows[0]!) };
+      } catch (err) {
+        return safeError("Failed to get team member", err);
+      }
+    },
+
+    async updateTeamMemberRole(teamId: string, subjectId: string, teamRole: string): Promise<MembershipResult<TeamMember>> {
+      try {
+        const result = await executor.execute<Record<string, unknown>>(
+          `UPDATE membership.team_members
+           SET team_role = $3
+           WHERE team_id = $1 AND subject_id = $2 AND status = 'active'
+           RETURNING *`,
+          [teamId, subjectId, teamRole],
+        );
+        if (result.rowCount === 0) return { ok: false, error: { kind: "not_found" } };
+        return { ok: true, value: mapTeamMember(result.rows[0]!) };
+      } catch (err) {
+        return safeError("Failed to update team member role", err);
       }
     },
 

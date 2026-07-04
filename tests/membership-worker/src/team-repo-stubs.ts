@@ -18,6 +18,8 @@ export function teamRepoStubs(): Pick<
   | "addTeamMember"
   | "removeTeamMember"
   | "listTeamMembers"
+  | "getTeamMember"
+  | "updateTeamMemberRole"
   | "listTeamsForSubject"
   | "revokeTeamGrant"
   | "revokeAllTeamGrants"
@@ -36,6 +38,8 @@ export function teamRepoStubs(): Pick<
     async addTeamMember() { return notFound; },
     async removeTeamMember() { return notFound; },
     async listTeamMembers() { return { ok: true as const, value: [] }; },
+    async getTeamMember() { return notFound; },
+    async updateTeamMemberRole() { return notFound; },
     async listTeamsForSubject() { return { ok: true as const, value: [] }; },
     async revokeTeamGrant() { return notFound; },
     async revokeAllTeamGrants() { return { ok: true as const, value: [] }; },

@@ -108,6 +108,17 @@ export interface Team {
   accountOrgId: string;
   name: string;
   slugLower: string;
+  /**
+   * Account-unique, case-insensitive, mentionable handle (teams-foundation TF1),
+   * e.g. `payments` → `@payments`. `null` for TM-era teams that predate the
+   * profile columns. Grants and every cross-surface reference bind to the
+   * immutable `team_<hex>` id, never this mutable handle.
+   */
+  handle: string | null;
+  /** Free-text team profile blurb (teams-foundation TF1). */
+  description: string | null;
+  /** Opaque avatar reference (teams-foundation TF1); `null` → initials+colour. */
+  avatarRef: string | null;
   status: string;
   createdAt: Date;
   updatedAt: Date;
@@ -118,6 +129,12 @@ export interface TeamMember {
   teamId: string;
   subjectId: string;
   subjectType: string;
+  /**
+   * Team-management role (teams-foundation TF2): `team_admin` (manages the team
+   * object + roster) or `team_member`. Distinct from the platform roles the team
+   * is granted via `role_assignments`. TM-era rows backfill to `team_member`.
+   */
+  teamRole: string;
   status: string;
   createdAt: Date;
 }
@@ -127,12 +144,22 @@ export interface CreateTeamInput {
   accountOrgId: Uuid;
   name: string;
   slugLower: string;
+  /** Optional account-unique handle (teams-foundation TF1). */
+  handle?: string | null;
+  /** Optional profile blurb (teams-foundation TF1). */
+  description?: string | null;
+  /** Optional opaque avatar reference (teams-foundation TF1). */
+  avatarRef?: string | null;
   createdAt: Date;
 }
 
 export interface UpdateTeamInput {
   name?: string;
   slugLower?: string;
+  /** Rename the handle (teams-foundation TF1); omit to leave unchanged. */
+  handle?: string;
+  description?: string;
+  avatarRef?: string;
   updatedAt: Date;
 }
 
@@ -140,6 +167,8 @@ export interface CreateTeamMemberInput {
   teamId: Uuid;
   subjectId: string;
   subjectType: string;
+  /** Team-management role (teams-foundation TF2); defaults to `team_member`. */
+  teamRole?: string;
   createdAt: Date;
 }
 
@@ -313,6 +342,13 @@ export interface MembershipRepository {
   addTeamMember(input: CreateTeamMemberInput): Promise<MembershipResult<TeamMember>>;
   removeTeamMember(teamId: Uuid, subjectId: string): Promise<MembershipResult<TeamMember>>;
   listTeamMembers(teamId: Uuid): Promise<MembershipResult<TeamMember[]>>;
+  /**
+   * A single active team membership, or not_found. Powers the team-management
+   * authority check (teams-foundation TF2): is the actor a `team_admin` here?
+   */
+  getTeamMember(teamId: Uuid, subjectId: string): Promise<MembershipResult<TeamMember>>;
+  /** Change an active member's team_role (teams-foundation TF2). */
+  updateTeamMemberRole(teamId: Uuid, subjectId: string, teamRole: string): Promise<MembershipResult<TeamMember>>;
   /** Active teams (within an account) a subject is an active member of. */
   listTeamsForSubject(accountOrgId: Uuid, subjectId: string): Promise<MembershipResult<Team[]>>;
 

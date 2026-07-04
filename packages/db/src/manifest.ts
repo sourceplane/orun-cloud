@@ -480,5 +480,23 @@ export const manifest: MigrationManifest = {
       description:
         "Rotation/expiry reminder bookkeeping (saas-secret-manager SEC7, pairs orun-secrets SD-3) — adds config.secret_metadata.last_reminded_at TIMESTAMPTZ (NULL = never reminded), the idempotency stamp the rotation/expiry cron writes after emitting a secret.rotation_due / secret.expiring event so a still-overdue secret is not re-notified every tick. Adds a partial index (last_reminded_at) WHERE status='active' AND (rotation_policy IS NOT NULL OR expires_at IS NOT NULL) so the periodic due-scan is O(candidates). Reminder bookkeeping over metadata only — no secret value. Additive + idempotent.",
     },
+    {
+      id: "530_membership_teams_foundation",
+      context: "membership",
+      path: "530_membership_teams_foundation/up.sql",
+      checksum:
+        "8e206b84026e0fb6a035bd995c1c364f1a7dbe62065c5de1ccfd2a23cb202dad",
+      description:
+        "Promote a Team into a first-class entity (teams-foundation TF1) — adds membership.teams.handle (account-unique, case-insensitive, mentionable — e.g. 'payments' → @payments; nullable so TM-era teams stay valid), description, and avatar_ref (opaque; NULL renders initials+colour client-side). A partial unique index teams_account_handle_idx (account_org_id, lower(handle)) WHERE handle IS NOT NULL AND status <> 'deleted' enforces per-account uniqueness among live teams and frees a deleted team's handle. Grants/owner-maps/routing bind to the immutable team_<hex> id, never the mutable handle. Additive + idempotent over 440_membership_teams.",
+    },
+    {
+      id: "540_membership_team_roles",
+      context: "membership",
+      path: "540_membership_team_roles/up.sql",
+      checksum:
+        "24e8cfb37a227da07ad82021c20d3d78cb4687d35a43bfedbe8ac03c8aadd74c",
+      description:
+        "Team-management roles (teams-foundation TF2) — adds membership.team_members.team_role (DEFAULT 'team_member', CHECK team_role IN ('team_admin','team_member') via a guarded DO-block) so a team is self-managed: a team_admin manages the team object + roster, distinct from the platform roles the team is granted via role_assignments (a roster edit never escalates the team's power). Every TM-era row backfills to 'team_member'. Additive + idempotent over 440_membership_teams.",
+    },
   ],
 };

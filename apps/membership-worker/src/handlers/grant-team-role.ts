@@ -1,8 +1,10 @@
 import type { Env } from "../env.js";
 import type { ActorContext } from "../router.js";
 import type { MembershipRepository } from "@saas/db/membership";
+import type { EventsRepository } from "@saas/db/events";
 import { createSqlExecutor } from "@saas/db/hyperdrive";
 import { createMembershipRepository, effectiveBillingOrgId } from "@saas/db/membership";
+import { createEventsRepository } from "@saas/db/events";
 import { asUuid } from "@saas/db/ids";
 import { ACCOUNT_ROLES, ORGANIZATION_ROLES } from "@saas/contracts/membership";
 import { authorizeViaPolicy } from "../policy-client.js";
@@ -17,6 +19,7 @@ export interface GrantTeamRoleDeps {
     MembershipRepository,
     "getOrganizationById" | "getTeamById" | "listRoleAssignments" | "createRoleAssignment"
   >;
+  eventsRepo?: Pick<EventsRepository, "appendEventWithAudit">;
   now?: () => Date;
   generateId?: () => string;
 }
@@ -116,9 +119,18 @@ export async function handleGrantTeamRole(
     }
     const accountUuid = asUuid(effectiveBillingOrgId(orgResult.value));
 
-    // The team must exist and belong to this account.
+    // TF3 access-principal invariant — a subject_type='team' grant may only bind
+    // to a LIVE team_ entity in this account: the id decodes to a real team
+    // (parseTeamPublicId above), the team is not soft-deleted, and it belongs to
+    // the target org's account. getTeamById already filters status<>'deleted',
+    // but we assert `active` explicitly so the invariant holds even if that query
+    // ever changes — no dangling or cross-account team grants can be written.
     const teamResult = await repo.getTeamById(teamUuid);
-    if (!teamResult.ok || teamResult.value.accountOrgId !== accountUuid) {
+    if (
+      !teamResult.ok ||
+      teamResult.value.accountOrgId !== accountUuid ||
+      teamResult.value.status !== "active"
+    ) {
       return errorResponse("not_found", "Team not found", 404, requestId);
     }
 
@@ -146,16 +158,42 @@ export async function handleGrantTeamRole(
     const now = deps?.now ? deps.now() : new Date();
     const genId = deps?.generateId ?? (() => crypto.randomUUID());
 
-    const created = await repo.createRoleAssignment({
-      id: genId(),
-      orgId: grantOrg,
-      subjectId: teamId,
-      subjectType: "team",
-      role,
-      scopeKind,
-      scopeRef: scopeRefValue,
-      createdAt: now,
-    });
+    // TF5 — write the grant and its team.role.granted event/audit atomically.
+    const run = async (
+      r: Pick<MembershipRepository, "createRoleAssignment">,
+      ev: Pick<EventsRepository, "appendEventWithAudit"> | null,
+    ) => {
+      const createdRow = await r.createRoleAssignment({
+        id: genId(),
+        orgId: grantOrg,
+        subjectId: teamId,
+        subjectType: "team",
+        role,
+        scopeKind,
+        scopeRef: scopeRefValue,
+        createdAt: now,
+      });
+      if (!createdRow.ok) return createdRow;
+      if (ev) {
+        await ev.appendEventWithAudit({
+          event: {
+            id: genId(), type: "team.role.granted", version: 1, source: "membership-worker",
+            occurredAt: now, actorType: actor.subjectType, actorId: actor.subjectId,
+            orgId: grantOrg, subjectKind: "team", subjectId: teamId,
+            requestId, payload: { teamId, role, scopeKind, scopeRef: scopeRefValue },
+          },
+          audit: { id: genId(), category: "membership", description: `Team ${teamId} granted ${role} at ${scopeKind} scope` },
+        });
+      }
+      return createdRow;
+    };
+
+    let created;
+    if (executor && "transaction" in executor) {
+      created = await executor.transaction(async (tx) => run(createMembershipRepository(tx), createEventsRepository(tx)));
+    } else {
+      created = await run(repo, deps?.eventsRepo ?? null);
+    }
     if (!created.ok) {
       return errorResponse("internal_error", "An unexpected error occurred", 500, requestId);
     }

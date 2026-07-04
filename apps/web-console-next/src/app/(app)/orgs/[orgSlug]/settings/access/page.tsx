@@ -20,10 +20,12 @@ export default function AccessPage() {
   return <OrgScope slug={slug}>{(org) => <Inner orgId={org.id} />}</OrgScope>;
 }
 
-function ProvenanceBadge({ via }: { via: FactOrigin | undefined }) {
+function ProvenanceBadge({ via, teamName }: { via: FactOrigin | undefined; teamName: (id: string) => string }) {
   if (!via) return <span className="text-muted-foreground">—</span>;
   if (via.kind === "team") {
-    return <Badge variant="default">via team {via.teamId ?? ""}</Badge>;
+    // teams-foundation TF4 — legible provenance: resolve the immutable team_ id to
+    // the team's display name ("via Team Payments") rather than the raw id.
+    return <Badge variant="default">via Team {via.teamId ? teamName(via.teamId) : ""}</Badge>;
   }
   if (via.kind === "account_cascade") {
     return <Badge variant="secondary">account</Badge>;
@@ -35,6 +37,18 @@ function Inner({ orgId }: { orgId: string }) {
   const { client } = useSession();
   const access = useApiQuery(qk.effectiveAccess(orgId), () =>
     wrap(async () => (await client.teams.effectiveAccess(orgId)).permissions),
+  );
+  // TF4 — resolve team_ ids in provenance to legible names/handles.
+  const teams = useApiQuery(qk.teams(orgId), () =>
+    wrap(async () => (await client.teams.listTeams(orgId)).teams),
+  );
+  const teamName = React.useCallback(
+    (id: string): string => {
+      const t = (teams.data ?? []).find((x) => x.id === id);
+      if (!t) return id;
+      return t.handle ? `${t.name} (@${t.handle})` : t.name;
+    },
+    [teams.data],
   );
 
   const allowed = React.useMemo(
@@ -86,7 +100,7 @@ function Inner({ orgId }: { orgId: string }) {
               {allowed.map((p) => (
                 <TableRow key={p.action}>
                   <TableCell className="font-mono text-xs">{p.action}</TableCell>
-                  <TableCell><ProvenanceBadge via={p.via} /></TableCell>
+                  <TableCell><ProvenanceBadge via={p.via} teamName={teamName} /></TableCell>
                 </TableRow>
               ))}
             </TableBody>

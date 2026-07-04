@@ -519,7 +519,7 @@ function org(id: string, parentOrgId: string | null): Organization {
 }
 function team(id: string, accountOrgId: string): Team {
   return {
-    id, accountOrgId, name: "Platform", slugLower: "platform", status: "active",
+    id, accountOrgId, name: "Platform", slugLower: "platform", handle: null, description: null, avatarRef: null, status: "active",
     createdAt: new Date("2026-01-01"), updatedAt: new Date("2026-01-01"),
   };
 }

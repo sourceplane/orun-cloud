@@ -39,22 +39,29 @@ export async function teamListCommand(ctx: CommandContext): Promise<CommandResul
   }
   ctx.stdout(formatOutput({
     mode: "human",
-    columns: ["id", "name", "slug", "status"],
-    rows: result.teams.map((t) => ({ id: t.id, name: t.name, slug: t.slug, status: t.status })),
+    columns: ["id", "name", "handle", "slug", "status"],
+    rows: result.teams.map((t) => ({ id: t.id, name: t.name, handle: t.handle ?? "", slug: t.slug, status: t.status })),
     title: `Teams in ${orgId}`,
   }));
   return { exitCode: 0 };
 }
 
-// team create <name> [--slug=SLUG]
+// team create <name> [--slug=SLUG] [--handle=HANDLE] [--description=TEXT] [--avatar=REF]
 export async function teamCreateCommand(ctx: CommandContext): Promise<CommandResult> {
-  const name = requireArg(ctx.args[0], "usage: orun-cloud team create <name> [--slug=SLUG] [--org=ORG_ID]");
+  const name = requireArg(ctx.args[0], "usage: orun-cloud team create <name> [--slug=SLUG] [--handle=HANDLE] [--description=TEXT] [--avatar=REF] [--org=ORG_ID]");
   const slug = strFlag(ctx, "slug");
+  const handle = strFlag(ctx, "handle");
+  const description = strFlag(ctx, "description");
+  const avatar = strFlag(ctx, "avatar");
   const orgId = await resolveOrgId(ctx, true);
   const idempotencyKey = readIdempotencyKey(ctx);
   const sdk = await ctx.sdk();
-  const result = await sdk.teams.createTeam(orgId, { name, ...(slug ? { slug } : {}) }, idempotencyKey !== undefined ? { idempotencyKey } : {});
-  emitRecord(ctx, { id: result.team.id, name: result.team.name, slug: result.team.slug }, result, "Team created");
+  const result = await sdk.teams.createTeam(
+    orgId,
+    { name, ...(slug ? { slug } : {}), ...(handle ? { handle } : {}), ...(description ? { description } : {}), ...(avatar ? { avatar } : {}) },
+    idempotencyKey !== undefined ? { idempotencyKey } : {},
+  );
+  emitRecord(ctx, { id: result.team.id, name: result.team.name, handle: result.team.handle ?? "", slug: result.team.slug }, result, "Team created");
   return { exitCode: 0 };
 }
 
@@ -64,22 +71,36 @@ export async function teamGetCommand(ctx: CommandContext): Promise<CommandResult
   const orgId = await resolveOrgId(ctx, true);
   const sdk = await ctx.sdk();
   const result = await sdk.teams.getTeam(orgId, teamId);
-  emitRecord(ctx, { id: result.team.id, name: result.team.name, slug: result.team.slug, status: result.team.status }, result, "Team");
+  emitRecord(
+    ctx,
+    { id: result.team.id, name: result.team.name, handle: result.team.handle ?? "", slug: result.team.slug, description: result.team.description ?? "", status: result.team.status },
+    result,
+    "Team",
+  );
   return { exitCode: 0 };
 }
 
-// team update <teamId> [--name=NAME] [--slug=SLUG]
+// team update <teamId> [--name=NAME] [--slug=SLUG] [--handle=HANDLE] [--description=TEXT] [--avatar=REF]
 export async function teamUpdateCommand(ctx: CommandContext): Promise<CommandResult> {
-  const teamId = requireArg(ctx.args[0], "usage: orun-cloud team update <teamId> [--name=NAME] [--slug=SLUG] [--org=ORG_ID]");
+  const teamId = requireArg(ctx.args[0], "usage: orun-cloud team update <teamId> [--name=NAME] [--slug=SLUG] [--handle=HANDLE] [--description=TEXT] [--avatar=REF] [--org=ORG_ID]");
   const name = strFlag(ctx, "name");
   const slug = strFlag(ctx, "slug");
-  if (name === undefined && slug === undefined) {
-    throw new UsageError("team update requires --name and/or --slug");
+  const handle = strFlag(ctx, "handle");
+  const description = strFlag(ctx, "description");
+  const avatar = strFlag(ctx, "avatar");
+  if (name === undefined && slug === undefined && handle === undefined && description === undefined && avatar === undefined) {
+    throw new UsageError("team update requires at least one of --name, --slug, --handle, --description, --avatar");
   }
   const orgId = await resolveOrgId(ctx, true);
   const sdk = await ctx.sdk();
-  const result = await sdk.teams.updateTeam(orgId, teamId, { ...(name ? { name } : {}), ...(slug ? { slug } : {}) });
-  emitRecord(ctx, { id: result.team.id, name: result.team.name, slug: result.team.slug }, result, "Team updated");
+  const result = await sdk.teams.updateTeam(orgId, teamId, {
+    ...(name ? { name } : {}),
+    ...(slug ? { slug } : {}),
+    ...(handle ? { handle } : {}),
+    ...(description ? { description } : {}),
+    ...(avatar ? { avatar } : {}),
+  });
+  emitRecord(ctx, { id: result.team.id, name: result.team.name, handle: result.team.handle ?? "", slug: result.team.slug }, result, "Team updated");
   return { exitCode: 0 };
 }
 
@@ -105,23 +126,43 @@ export async function teamMembersCommand(ctx: CommandContext): Promise<CommandRe
   }
   ctx.stdout(formatOutput({
     mode: "human",
-    columns: ["subject", "status"],
-    rows: result.members.map((m) => ({ subject: `${m.subjectType}:${m.subjectId}`, status: m.status })),
+    columns: ["subject", "role", "status"],
+    rows: result.members.map((m) => ({ subject: `${m.subjectType}:${m.subjectId}`, role: m.teamRole ?? "team_member", status: m.status })),
     title: `Members of ${teamId}`,
   }));
   return { exitCode: 0 };
 }
 
-// team member-add <teamId> <subjectId> [--type=user|service_principal]
+const TEAM_ROLES = new Set(["team_admin", "team_member"]);
+
+// team member-add <teamId> <subjectId> [--type=user|service_principal] [--role=team_admin|team_member]
 export async function teamMemberAddCommand(ctx: CommandContext): Promise<CommandResult> {
-  const teamId = requireArg(ctx.args[0], "usage: orun-cloud team member-add <teamId> <subjectId> [--type=user|service_principal] [--org=ORG_ID]");
-  const subjectId = requireArg(ctx.args[1], "usage: orun-cloud team member-add <teamId> <subjectId> [--type=user|service_principal] [--org=ORG_ID]");
+  const teamId = requireArg(ctx.args[0], "usage: orun-cloud team member-add <teamId> <subjectId> [--type=user|service_principal] [--role=team_admin|team_member] [--org=ORG_ID]");
+  const subjectId = requireArg(ctx.args[1], "usage: orun-cloud team member-add <teamId> <subjectId> [--type=user|service_principal] [--role=team_admin|team_member] [--org=ORG_ID]");
   const subjectType = strFlag(ctx, "type");
+  const teamRole = strFlag(ctx, "role");
+  if (teamRole !== undefined && !TEAM_ROLES.has(teamRole)) {
+    throw new UsageError("--role must be team_admin or team_member");
+  }
   const orgId = await resolveOrgId(ctx, true);
   const idempotencyKey = readIdempotencyKey(ctx);
   const sdk = await ctx.sdk();
-  const result = await sdk.teams.addTeamMember(orgId, teamId, { subjectId, ...(subjectType ? { subjectType } : {}) }, idempotencyKey !== undefined ? { idempotencyKey } : {});
-  emitRecord(ctx, { subject: `${result.member.subjectType}:${result.member.subjectId}`, status: result.member.status }, result, "Member added");
+  const result = await sdk.teams.addTeamMember(orgId, teamId, { subjectId, ...(subjectType ? { subjectType } : {}), ...(teamRole ? { teamRole } : {}) }, idempotencyKey !== undefined ? { idempotencyKey } : {});
+  emitRecord(ctx, { subject: `${result.member.subjectType}:${result.member.subjectId}`, role: result.member.teamRole ?? "team_member", status: result.member.status }, result, "Member added");
+  return { exitCode: 0 };
+}
+
+// team member-role <teamId> <subjectId> <team_admin|team_member>
+export async function teamMemberRoleCommand(ctx: CommandContext): Promise<CommandResult> {
+  const usage = "usage: orun-cloud team member-role <teamId> <subjectId> <team_admin|team_member> [--org=ORG_ID]";
+  const teamId = requireArg(ctx.args[0], usage);
+  const subjectId = requireArg(ctx.args[1], usage);
+  const teamRole = requireArg(ctx.args[2], usage);
+  if (!TEAM_ROLES.has(teamRole)) throw new UsageError("role must be team_admin or team_member");
+  const orgId = await resolveOrgId(ctx, true);
+  const sdk = await ctx.sdk();
+  const result = await sdk.teams.updateTeamMemberRole(orgId, teamId, subjectId, { teamRole });
+  emitRecord(ctx, { subject: `${result.member.subjectType}:${result.member.subjectId}`, role: result.member.teamRole ?? "team_member" }, result, "Member role updated");
   return { exitCode: 0 };
 }
 
