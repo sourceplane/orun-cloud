@@ -198,6 +198,61 @@ export function resolvedOwnerLabel(s: CatalogService): string {
   return "Unowned";
 }
 
+/**
+ * teams-ownership TO5 — ownership coverage over a set of (resolved) services:
+ * per-team owned counts, the unmapped-owner backlog (the action list), and the
+ * account-level coverage %. This is the data the TH team page + TG access review
+ * render — computed once here. Only entities carrying a resolution
+ * (`ownerState` set) are counted; call after {@link annotateOwnership}.
+ */
+export interface OwnershipCoverage {
+  total: number;
+  owned: number;
+  unmapped: number;
+  unowned: number;
+  /** owned / total, 0–100 (0 when there are no entities). */
+  coveragePct: number;
+  /** Per-team owned counts, most-owned first. */
+  perTeam: Array<{ teamId: string; name: string; count: number }>;
+  /** Distinct declared-but-unmapped owner strings + how many entities each. */
+  unmappedOwners: Array<{ owner: string; count: number }>;
+}
+
+export function ownershipCoverage(services: CatalogService[]): OwnershipCoverage {
+  let owned = 0;
+  let unmapped = 0;
+  let unowned = 0;
+  const perTeam = new Map<string, { name: string; count: number }>();
+  const unmappedOwners = new Map<string, number>();
+  for (const s of services) {
+    if (s.ownerTeam && s.ownerState === "owned") {
+      owned++;
+      const e = perTeam.get(s.ownerTeam.teamId);
+      if (e) e.count++;
+      else perTeam.set(s.ownerTeam.teamId, { name: s.ownerTeam.name, count: 1 });
+    } else if (s.ownerState === "unmapped") {
+      unmapped++;
+      if (s.owner) unmappedOwners.set(s.owner, (unmappedOwners.get(s.owner) ?? 0) + 1);
+    } else {
+      unowned++;
+    }
+  }
+  const total = services.length;
+  return {
+    total,
+    owned,
+    unmapped,
+    unowned,
+    coveragePct: total ? Math.round((owned / total) * 100) : 0,
+    perTeam: [...perTeam.entries()]
+      .map(([teamId, v]) => ({ teamId, name: v.name, count: v.count }))
+      .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name)),
+    unmappedOwners: [...unmappedOwners.entries()]
+      .map(([owner, count]) => ({ owner, count }))
+      .sort((a, b) => b.count - a.count || a.owner.localeCompare(b.owner)),
+  };
+}
+
 /** Map a loaded page of entities into services. */
 export function toServices(entities: OrgCatalogEntity[]): CatalogService[] {
   return entities.map(toService);
@@ -457,7 +512,9 @@ export interface CatalogRollup {
 
 export function rollup(services: CatalogService[]): CatalogRollup {
   const comps = services.filter((s) => !isResource(s));
-  const owned = services.filter((s) => !!s.owner).length;
+  // teams-ownership TO5 — count RESOLVED ownership (a real team), falling back to
+  // "a string is present" before resolution runs.
+  const owned = services.filter((s) => (s.ownerState ? s.ownerState === "owned" : !!s.owner)).length;
   const scored = comps.length;
   const ready = comps.filter((s) => (scoreOf(s) ?? 0) >= 70).length;
   const attention = services.filter(needsAttention).length;

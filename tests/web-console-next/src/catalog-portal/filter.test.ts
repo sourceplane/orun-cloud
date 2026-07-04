@@ -6,7 +6,7 @@ import {
   hasActiveFilters,
   sortServices,
 } from "@web-console-next/lib/catalog-portal/filter";
-import { annotateOwnership, type OwnerResolution } from "@web-console-next/lib/catalog-portal/model";
+import { annotateOwnership, ownershipCoverage, type OwnerResolution } from "@web-console-next/lib/catalog-portal/model";
 import { service } from "./fixture";
 
 const services = [
@@ -97,6 +97,31 @@ describe("teams-ownership TO2: resolved ownership grouping", () => {
     expect(groups.find((g) => g.label === "Payments")!.count).toBe(2); // both spellings → one team
     expect(labels).toContain("Unmapped: legacy");
     expect(labels[labels.length - 1]).toBe("Unowned"); // truly unowned sinks last
+  });
+});
+
+describe("teams-ownership TO5: ownership coverage", () => {
+  it("computes coverage %, per-team counts, and the unmapped backlog", () => {
+    const raw = [
+      service({ entityRef: "component:default/a", owner: "payments" }),
+      service({ entityRef: "component:default/b", owner: "payments" }),
+      service({ entityRef: "component:default/c", owner: "search" }),
+      service({ entityRef: "component:default/d", owner: "legacy" }),   // unmapped
+      service({ entityRef: "component:default/e", owner: "legacy" }),   // unmapped (same string)
+      service({ entityRef: "resource:default/db" }),                    // unowned
+    ];
+    const byOwner = new Map<string, OwnerResolution>([
+      ["payments", { owner: "payments", state: "owned", teamId: "team_pay", name: "Payments" }],
+      ["search", { owner: "search", state: "owned", teamId: "team_srch", name: "Search" }],
+      ["legacy", { owner: "legacy", state: "unmapped" }],
+    ]);
+    const cov = ownershipCoverage(annotateOwnership(raw, byOwner));
+    expect(cov).toMatchObject({ total: 6, owned: 3, unmapped: 2, unowned: 1, coveragePct: 50 });
+    expect(cov.perTeam).toEqual([
+      { teamId: "team_pay", name: "Payments", count: 2 },
+      { teamId: "team_srch", name: "Search", count: 1 },
+    ]);
+    expect(cov.unmappedOwners).toEqual([{ owner: "legacy", count: 2 }]);
   });
 });
 

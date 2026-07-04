@@ -22,6 +22,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import {
   buildContext,
   annotateOwnership,
+  ownershipCoverage,
   buildSelected,
   decorateService,
   rollup,
@@ -164,6 +165,12 @@ export function CatalogPortal({ orgId, orgSlug }: { orgId: string; orgSlug: stri
 
   const ctx = React.useMemo(() => buildContext(services), [services]);
   const metrics = React.useMemo(() => rollup(services), [services]);
+  // teams-ownership TO5 — ownership coverage + the unmapped-owner backlog. Only
+  // meaningful once resolution has run (services carry ownerState).
+  const coverage = React.useMemo(
+    () => (resolutions ? ownershipCoverage(services) : null),
+    [services, resolutions],
+  );
 
   const filtered = React.useMemo(
     () => sortServices(filterServices(services, effectiveFilters, myTeamIds), sortKey, sortDir),
@@ -290,6 +297,26 @@ export function CatalogPortal({ orgId, orgSlug }: { orgId: string; orgSlug: stri
           attention={filters.attention}
           onToggleAttention={() => setFilters({ attention: !filters.attention })}
         />
+        {/* teams-ownership TO5 — unmapped-owner backlog: owner strings declared in
+            git that don't resolve to a team (an account-admin action item). */}
+        {coverage && coverage.unmappedOwners.length > 0 ? (
+          <div className="rounded-lg border border-amber-500/40 bg-amber-500/5 px-3.5 py-2.5 text-[13px]">
+            <span className="font-medium text-foreground">
+              {coverage.coveragePct}% ownership coverage
+            </span>
+            <span className="text-muted-foreground">
+              {" "}· {coverage.unmapped} {coverage.unmapped === 1 ? "entity has" : "entities have"} an unmapped owner:{" "}
+              {coverage.unmappedOwners.slice(0, 6).map((u, i) => (
+                <span key={u.owner}>
+                  {i > 0 ? ", " : ""}
+                  <code className="text-foreground">{u.owner}</code>
+                  {u.count > 1 ? ` (${u.count})` : ""}
+                </span>
+              ))}
+              {coverage.unmappedOwners.length > 6 ? `, +${coverage.unmappedOwners.length - 6} more` : ""}. Map them to a team on the Teams page.
+            </span>
+          </div>
+        ) : null}
       </div>
 
       {/* toolbar */}

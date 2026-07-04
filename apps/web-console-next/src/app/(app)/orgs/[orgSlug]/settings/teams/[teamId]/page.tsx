@@ -31,6 +31,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { wrap } from "@/lib/api";
+import { collectOrgCatalog } from "@/lib/catalog-portal/fetch";
 import { useSession } from "@/lib/session";
 import { useApiQuery, qk } from "@/lib/query";
 import { useToast } from "@/components/ui/toast";
@@ -73,6 +74,28 @@ function Inner({ orgId, slug, teamId }: { orgId: string; slug: string; teamId: s
   const ownerHandles = useApiQuery(qk.ownerHandles(orgId), () =>
     wrap(async () => (await client.teams.listOwnerHandles(orgId)).ownerHandles),
   );
+  // teams-ownership TO5 — how many catalog entities this team owns (resolved).
+  // Reuses the catalog + owner-resolution caches shared with the catalog page.
+  const catalog = useApiQuery(qk.orgCatalog(orgId), () =>
+    wrap(() => collectOrgCatalog((query) => client.state.listOrgCatalogEntities(orgId, query))),
+  );
+  const ownerStrings = React.useMemo(
+    () => [...new Set((catalog.data ?? []).map((e) => e.owner).filter((o): o is string => !!o))],
+    [catalog.data],
+  );
+  const ownerResolutions = useApiQuery(["ownerResolutions", orgId, ownerStrings.join("\n")] as const, () =>
+    wrap(async () => (await client.teams.resolveOwners(orgId, { owners: ownerStrings })).resolutions),
+  );
+  const ownedCount = React.useMemo(() => {
+    const byOwner = new Map((ownerResolutions.data ?? []).map((r) => [r.owner, r]));
+    let n = 0;
+    for (const e of catalog.data ?? []) {
+      if (!e.owner) continue;
+      const r = byOwner.get(e.owner);
+      if (r && r.state === "owned" && r.teamId === teamId) n++;
+    }
+    return n;
+  }, [catalog.data, ownerResolutions.data, teamId]);
   const workspaces = useApiQuery(qk.accountWorkspaces(orgId), () =>
     wrap(async () => (await client.account.workspaces(orgId)).workspaces),
   );
@@ -304,6 +327,8 @@ function Inner({ orgId, slug, teamId }: { orgId: string; slug: string; teamId: s
             ) : null}
             <Badge variant="secondary" className="font-mono text-xs">{team.data.slug}</Badge>
             <Badge variant={team.data.status === "active" ? "default" : "secondary"}>{team.data.status}</Badge>
+            {/* teams-ownership TO5 — resolved owned-service count. */}
+            <Badge variant="outline">{ownedCount} owned {ownedCount === 1 ? "service" : "services"}</Badge>
           </div>
           {team.data.description ? (
             <p className="text-sm text-muted-foreground">{team.data.description}</p>
