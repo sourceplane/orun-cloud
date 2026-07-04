@@ -15,6 +15,7 @@ import { AuthClient } from "./auth.js";
 import { CliSessionsClient } from "./cliSessions.js";
 import { IntegrationsClient } from "./integrations.js";
 import { StateClient } from "./state.js";
+import { WorkClient } from "./work.js";
 import { BillingClient } from "./billing.js";
 import { ConfigClient } from "./config.js";
 import { EnvironmentsClient } from "./environments.js";
@@ -71,6 +72,7 @@ export class OrunCloud {
   readonly cliSessions: CliSessionsClient;
   readonly integrations: IntegrationsClient;
   readonly state: StateClient;
+  readonly work: WorkClient;
   /** Underlying HTTP transport. Exposed for advanced extension. */
   readonly transport: Transport;
 
@@ -97,6 +99,7 @@ export class OrunCloud {
     this.cliSessions = new CliSessionsClient(this.transport);
     this.integrations = new IntegrationsClient(this.transport);
     this.state = new StateClient(this.transport);
+    this.work = new WorkClient(this.transport);
   }
 }
 
@@ -437,3 +440,5 @@ export type {
   ApproveCliGrantResponse,
   DenyCliGrantResponse,
 } from "@saas/contracts/auth";
+
+export { WorkClient };

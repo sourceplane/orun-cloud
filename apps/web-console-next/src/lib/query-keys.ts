@@ -43,6 +43,7 @@ export const qk = {
   configSecrets: (scopeKey: string) => ["configSecrets", scopeKey] as const,
   orgCatalog: (orgId: string) => ["orgCatalog", orgId] as const,
   orgRuns: (orgId: string) => ["orgRuns", orgId] as const,
+  orgWork: (orgId: string) => ["orgWork", orgId] as const,
   accountRuns: (orgId: string) => ["accountRuns", orgId] as const,
   repoFacets: (orgId: string) => ["repoFacets", orgId] as const,
   docObject: (orgId: string, projectId: string, digest: string) =>

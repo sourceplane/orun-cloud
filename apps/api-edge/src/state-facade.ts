@@ -31,6 +31,9 @@ const ORG_STATE_USAGE_RE = /^\/v1\/organizations\/[^/]+\/state\/usage$/;
 // Org-global runs feed: org-scoped (no project) — the console "Activities"
 // surface. Distinct from the project-scoped /projects/{id}/state/runs.
 const ORG_RUNS_RE = /^\/v1\/organizations\/[^/]+\/state\/runs$/;
+// orun-work v2 (WP1) — the work lens: fold query API + coordination mutators,
+// served by state-worker. Workspace-scoped; lifecycle derives on every read.
+const ORG_WORK_RE = /^\/v1\/organizations\/[^/]+\/work(\/.*)?$/;
 // Coordination hot path (coordination-api.md §2/§3): the per-job colon-verbs
 // (:claim/:heartbeat/:complete), run :cancel, and the event-log/frontier reads.
 // A whole DAG of concurrent jobs drives these under one CI token, so they ride a
@@ -64,6 +67,7 @@ export function isStateRoute(pathname: string): boolean {
     ORG_CATALOG_DOC_RE.test(pathname) ||
     ORG_STATE_USAGE_RE.test(pathname) ||
     ORG_RUNS_RE.test(pathname) ||
+    ORG_WORK_RE.test(pathname) ||
     STATE_PLANE_RE.test(pathname)
   );
 }
