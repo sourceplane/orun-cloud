@@ -1,8 +1,10 @@
 import type { Env } from "../env.js";
 import type { ActorContext } from "../router.js";
 import type { MembershipRepository } from "@saas/db/membership";
+import type { EventsRepository } from "@saas/db/events";
 import { createSqlExecutor } from "@saas/db/hyperdrive";
 import { createMembershipRepository, effectiveBillingOrgId } from "@saas/db/membership";
+import { createEventsRepository } from "@saas/db/events";
 import { asUuid } from "@saas/db/ids";
 import { authorizeViaPolicy } from "../policy-client.js";
 import { successResponse, errorResponse, validationError } from "../http.js";
@@ -15,7 +17,9 @@ export interface RevokeTeamRoleDeps {
     MembershipRepository,
     "getOrganizationById" | "getTeamById" | "listRoleAssignments" | "revokeTeamGrant"
   >;
+  eventsRepo?: Pick<EventsRepository, "appendEventWithAudit">;
   now?: () => Date;
+  generateId?: () => string;
 }
 
 /**
@@ -106,7 +110,35 @@ export async function handleRevokeTeamRole(
     }
 
     const now = deps?.now ? deps.now() : new Date();
-    const revoked = await repo.revokeTeamGrant(authorityOrg, teamId, role, scopeKind, scopeRefValue, now);
+    const genId = deps?.generateId ?? (() => crypto.randomUUID());
+
+    // TF5 — revoke and emit team.role.revoked event/audit atomically.
+    const run = async (
+      r: Pick<MembershipRepository, "revokeTeamGrant">,
+      ev: Pick<EventsRepository, "appendEventWithAudit"> | null,
+    ) => {
+      const revokedRow = await r.revokeTeamGrant(authorityOrg, teamId, role, scopeKind, scopeRefValue, now);
+      if (!revokedRow.ok) return revokedRow;
+      if (ev) {
+        await ev.appendEventWithAudit({
+          event: {
+            id: genId(), type: "team.role.revoked", version: 1, source: "membership-worker",
+            occurredAt: now, actorType: actor.subjectType, actorId: actor.subjectId,
+            orgId: authorityOrg, subjectKind: "team", subjectId: teamId,
+            requestId, payload: { teamId, role, scopeKind, scopeRef: scopeRefValue },
+          },
+          audit: { id: genId(), category: "membership", description: `Team ${teamId} revoked ${role} at ${scopeKind} scope` },
+        });
+      }
+      return revokedRow;
+    };
+
+    let revoked;
+    if (executor && "transaction" in executor) {
+      revoked = await executor.transaction(async (tx) => run(createMembershipRepository(tx), createEventsRepository(tx)));
+    } else {
+      revoked = await run(repo, deps?.eventsRepo ?? null);
+    }
     if (!revoked.ok) {
       if (revoked.error.kind === "not_found") {
         return errorResponse("not_found", "Grant not found", 404, requestId);

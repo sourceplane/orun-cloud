@@ -103,6 +103,17 @@ function makeRepo(opts: {
   return { repo, created, revoked };
 }
 
+function makeEvents(): { events: string[]; eventsRepo: { appendEventWithAudit: (input: { event: { type: string } }) => Promise<unknown> } } {
+  const events: string[] = [];
+  const eventsRepo = {
+    async appendEventWithAudit(input: { event: { type: string } }) {
+      events.push(input.event.type);
+      return { ok: true as const, value: { event: input.event, audit: {} } };
+    },
+  };
+  return { events, eventsRepo };
+}
+
 function grantReq(orgUuid: string, body: unknown, method = "POST"): Request {
   return new Request(`http://mw/v1/organizations/${orgPublicId(orgUuid)}/team-roles`, {
     method, headers: { "content-type": "application/json" }, body: JSON.stringify(body),
@@ -249,6 +260,21 @@ describe("grant-team-role (saas-teams TM2)", () => {
     expect(created[0]!.subjectId).not.toBe("payments"); // … never the handle
     expect(created[0]!.subjectType).toBe("team");
   });
+
+  it("emits team.role.granted on a successful grant (TF5)", async () => {
+    const { repo } = makeRepo({
+      orgs: { [ACCOUNT_UUID]: org(ACCOUNT_UUID, null) },
+      teams: { [TEAM_UUID]: team(ACCOUNT_UUID) },
+      roles: { [ACCOUNT_UUID]: [role(ACCOUNT_UUID, ACTOR_ID, "account_admin", "account")] },
+    });
+    const { events, eventsRepo } = makeEvents();
+    const res = await handleGrantTeamRole(
+      grantReq(ACCOUNT_UUID, { teamId: TEAM_PUB, role: "account_admin", scopeKind: "account" }),
+      createFakeEnv(), "r-ev", actor, orgPublicId(ACCOUNT_UUID),
+      { repo, eventsRepo: eventsRepo as never });
+    expect(res.status).toBe(201);
+    expect(events).toContain("team.role.granted");
+  });
 });
 
 describe("revoke-team-role (saas-teams TM2)", () => {
@@ -262,6 +288,21 @@ describe("revoke-team-role (saas-teams TM2)", () => {
       grantReq(CHILD_UUID, { teamId: TEAM_PUB, role: "builder", scopeKind: "organization" }, "DELETE"),
       createFakeEnv(), "r9", actor, orgPublicId(CHILD_UUID), { repo });
     expect(res.status).toBe(200);
+  });
+
+  it("emits team.role.revoked on a successful revoke (TF5)", async () => {
+    const { repo } = makeRepo({
+      orgs: { [CHILD_UUID]: org(CHILD_UUID, ACCOUNT_UUID) },
+      teams: { [TEAM_UUID]: team(ACCOUNT_UUID) },
+      roles: { [CHILD_UUID]: [role(CHILD_UUID, ACTOR_ID, "admin", "organization")] },
+    });
+    const { events, eventsRepo } = makeEvents();
+    const res = await handleRevokeTeamRole(
+      grantReq(CHILD_UUID, { teamId: TEAM_PUB, role: "builder", scopeKind: "organization" }, "DELETE"),
+      createFakeEnv(), "r-rev-ev", actor, orgPublicId(CHILD_UUID),
+      { repo, eventsRepo: eventsRepo as never });
+    expect(res.status).toBe(200);
+    expect(events).toContain("team.role.revoked");
   });
 
   it("a non-admin cannot revoke (404)", async () => {
