@@ -1,0 +1,12 @@
+// The work lens (orun-work v2) — barrel.
+//
+// Authoritative spec: orun repo specs/orun-work/ (v2); cloud half:
+// specs/epics/orun-work/. The Go package internal/worklens is the
+// conformance oracle; fixtures/conformance.json is shared byte-identical.
+
+export * from "./model.js";
+export * from "./types.js";
+export { buildEnvelopes } from "./envelopes.js";
+export type { Envelopes, ItemCreatedPayload, ItemEditedPayload, ContractEditedPayload } from "./envelopes.js";
+export { MemoryWorkRepository } from "./memory.js";
+export { createWorkRepository } from "./repository.js";
