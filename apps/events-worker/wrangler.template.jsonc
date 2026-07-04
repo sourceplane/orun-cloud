@@ -8,6 +8,11 @@
   "compatibility_flags": ["nodejs_compat"],
   "main": "src/index.ts",
   "minify": false,
+  // Lane dispatcher (saas-event-streaming ES1) — minutely, matching the
+  // webhooks/integrations drains.
+  "triggers": {
+    "crons": ["* * * * *"]
+  },
   "vars": {
     "ENVIRONMENT": "local"
   },

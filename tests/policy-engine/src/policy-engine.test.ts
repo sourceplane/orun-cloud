@@ -727,7 +727,7 @@ describe("listEffectivePermissions", () => {
     const allowed = result.permissions.filter((p) => p.allow);
     // 42 base + 7 saas-teams TM4 team.* actions + secret.reveal (SM1)
     // + 2 teams-ownership TO1 team.owner_handle.* actions.
-    expect(allowed.length).toBe(52);
+    expect(allowed.length).toBe(54);
   });
 
   it("returns limited permissions for viewer", () => {
@@ -947,6 +947,47 @@ describe("audit.read authorization", () => {
     expect(result.allow).toBe(false);
     expect(result.reason).toBe("no_matching_role");
   });
+});
+
+describe("dead_letter authorization (saas-event-streaming ES1)", () => {
+  for (const action of ["dead_letter.read", "dead_letter.replay"] as const) {
+    it(`allows organization owner for ${action}`, () => {
+      const result = authorize(authReq(action, "org_1", [orgFact("owner", "org_1")]));
+      expect(result.allow).toBe(true);
+      expect(result.reason).toBe("org_owner");
+    });
+
+    it(`allows organization admin for ${action}`, () => {
+      const result = authorize(authReq(action, "org_1", [orgFact("admin", "org_1")]));
+      expect(result.allow).toBe(true);
+      expect(result.reason).toBe("org_admin");
+    });
+
+    it(`denies builder for ${action}`, () => {
+      const result = authorize(authReq(action, "org_1", [orgFact("builder", "org_1")]));
+      expect(result.allow).toBe(false);
+    });
+
+    it(`denies viewer for ${action}`, () => {
+      const result = authorize(authReq(action, "org_1", [orgFact("viewer", "org_1")]));
+      expect(result.allow).toBe(false);
+    });
+
+    it(`denies billing_admin for ${action}`, () => {
+      const result = authorize(authReq(action, "org_1", [orgFact("billing_admin", "org_1")]));
+      expect(result.allow).toBe(false);
+    });
+
+    it(`denies project-scoped roles for ${action}`, () => {
+      const result = authorize(authReq(action, "org_1", [projectFact("project_admin", "org_1", "prj_1")]));
+      expect(result.allow).toBe(false);
+    });
+
+    it(`denies cross-org memberships for ${action}`, () => {
+      const result = authorize(authReq(action, "org_1", [orgFact("owner", "org_other")]));
+      expect(result.allow).toBe(false);
+    });
+  }
 });
 
 describe("service-principal binding actions", () => {

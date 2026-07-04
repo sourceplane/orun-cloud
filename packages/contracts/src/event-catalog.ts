@@ -267,3 +267,32 @@ export function catalogEntryFor(type: string): CatalogEntry | null {
 export function isCatalogedEventType(type: string): boolean {
   return catalogEntryFor(type) !== null;
 }
+
+/**
+ * Event-type glob matching shared by lane type-filters (ES1) and
+ * notification-rule matching (ES2). Deliberately small vocabulary:
+ *
+ * - `*`            — every type
+ * - exact type     — that type only
+ * - `prefix.*`     — every type under the prefix, across ANY number of
+ *                    segments (`scm.*` matches `scm.push` AND
+ *                    `scm.pull_request.opened`) — strictly more expressive
+ *                    than the webhook subscriptions' single-level wildcard.
+ *
+ * Mid-pattern wildcards (`scm.*.opened`) are NOT supported; expressiveness
+ * grows by demonstrated need (design §11).
+ */
+export function matchesEventTypeGlob(type: string, glob: string): boolean {
+  if (glob === "*") return true;
+  if (glob === type) return true;
+  if (glob.endsWith(".*")) {
+    return type.startsWith(glob.slice(0, -1));
+  }
+  return false;
+}
+
+/** True when the type matches ANY glob in the list; an empty list matches all. */
+export function matchesAnyEventTypeGlob(type: string, globs: readonly string[]): boolean {
+  if (globs.length === 0) return true;
+  return globs.some((glob) => matchesEventTypeGlob(type, glob));
+}

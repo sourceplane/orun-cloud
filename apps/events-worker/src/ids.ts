@@ -1,14 +1,34 @@
 import { hexToUuid, uuidToHex } from "@saas/db/ids";
 
 
-export function generateRequestId(): string {
-  const buf = new Uint8Array(12);
+function randomHex(bytes: number): string {
+  const buf = new Uint8Array(bytes);
   crypto.getRandomValues(buf);
   let hex = "";
   for (let i = 0; i < buf.length; i++) {
     hex += buf[i]!.toString(16).padStart(2, "0");
   }
-  return `req_${hex}`;
+  return hex;
+}
+
+export function generateRequestId(): string {
+  return `req_${randomHex(12)}`;
+}
+
+/** Dead-letter public id (dl_<32hex>) — the TEXT PK, no uuid conversion. */
+export function generateDeadLetterId(): string {
+  return `dl_${randomHex(16)}`;
+}
+
+/** Opaque event/audit row id, matching the platform's evt_<hex> convention. */
+export function generateEventId(): string {
+  return `evt_${randomHex(16)}`;
+}
+
+const DEAD_LETTER_ID_RE = /^dl_[0-9a-f]{32}$/;
+
+export function isDeadLetterId(id: string): boolean {
+  return DEAD_LETTER_ID_RE.test(id);
 }
 
 export function parseOrgPublicId(publicId: string): string | null {

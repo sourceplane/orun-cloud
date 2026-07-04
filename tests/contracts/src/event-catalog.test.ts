@@ -8,6 +8,8 @@ import {
   EVENT_TYPE_PATTERN,
   catalogEntryFor,
   isCatalogedEventType,
+  matchesAnyEventTypeGlob,
+  matchesEventTypeGlob,
   severityRank,
 } from "@saas/contracts/event-catalog";
 import { NOTIFICATION_EVENT_TYPES } from "@saas/contracts/notifications";
@@ -163,6 +165,35 @@ describe("event catalog registry invariants", () => {
     expect(catalogEntryFor("billing.totally_new_thing")).toBeNull();
     expect(isCatalogedEventType("custom")).toBe(false);
     expect(isCatalogedEventType("custom.UPPER")).toBe(false);
+  });
+});
+
+describe("event type glob matching", () => {
+  it("* matches everything", () => {
+    expect(matchesEventTypeGlob("scm.push", "*")).toBe(true);
+  });
+
+  it("exact types match only themselves", () => {
+    expect(matchesEventTypeGlob("scm.push", "scm.push")).toBe(true);
+    expect(matchesEventTypeGlob("scm.push", "scm.pull_request.opened")).toBe(false);
+  });
+
+  it("prefix globs span multiple segments (unlike webhook single-level wildcards)", () => {
+    expect(matchesEventTypeGlob("scm.push", "scm.*")).toBe(true);
+    expect(matchesEventTypeGlob("scm.pull_request.opened", "scm.*")).toBe(true);
+    expect(matchesEventTypeGlob("state.run.completed", "scm.*")).toBe(false);
+    // Prefix boundary is the dot: "scm.*" must not match "scmx.push".
+    expect(matchesEventTypeGlob("scmx.push", "scm.*")).toBe(false);
+  });
+
+  it("mid-pattern wildcards are not supported", () => {
+    expect(matchesEventTypeGlob("scm.pull_request.opened", "scm.*.opened")).toBe(false);
+  });
+
+  it("empty glob lists match all; otherwise any-of", () => {
+    expect(matchesAnyEventTypeGlob("scm.push", [])).toBe(true);
+    expect(matchesAnyEventTypeGlob("scm.push", ["billing.*", "scm.*"])).toBe(true);
+    expect(matchesAnyEventTypeGlob("scm.push", ["billing.*"])).toBe(false);
   });
 });
 

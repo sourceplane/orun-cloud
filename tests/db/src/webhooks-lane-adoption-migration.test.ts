@@ -40,7 +40,9 @@ describe("590_webhooks_lane_adoption migration", () => {
 
   it("is idempotent (ON CONFLICT DO NOTHING on both inserts)", () => {
     const inserts = sql.match(/INSERT INTO/g) ?? [];
-    const conflicts = sql.match(/ON CONFLICT [^;]*DO NOTHING/g) ?? [];
+    // Parenthesized conflict targets only — the prose header also mentions
+    // the phrase, which must not count.
+    const conflicts = sql.match(/ON CONFLICT \([^)]+\) DO NOTHING/g) ?? [];
     expect(inserts.length).toBe(2);
     expect(conflicts.length).toBe(2);
   });
