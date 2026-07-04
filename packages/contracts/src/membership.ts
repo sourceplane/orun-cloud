@@ -109,6 +109,8 @@ export interface PublicTeam {
   description?: string | null;
   /** Opaque avatar reference (teams-foundation TF1); `null` → initials+colour. */
   avatar?: string | null;
+  /** Active member count — present on the teams list (list endpoint only). */
+  memberCount?: number;
   status: string;
   createdAt: string;
 }

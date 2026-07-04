@@ -28,6 +28,7 @@ import {
   Play,
   HardDrive,
   Activity,
+  UsersRound,
   type LucideIcon,
 } from "lucide-react";
 import { cn } from "@/lib/cn";
@@ -60,6 +61,7 @@ const ICONS: Record<string, LucideIcon> = {
   Play,
   HardDrive,
   Activity,
+  UsersRound,
 };
 
 /**

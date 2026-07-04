@@ -31,6 +31,7 @@ function publicTeam(t: Team): Record<string, unknown> {
     description: t.description,
     avatar: t.avatarRef,
     status: t.status,
+    ...(t.memberCount !== undefined ? { memberCount: t.memberCount } : {}),
     createdAt: t.createdAt.toISOString(),
   };
 }

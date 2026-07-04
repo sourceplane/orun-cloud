@@ -37,6 +37,7 @@ import {
   HardDrive,
   Activity,
   Plug,
+  UsersRound,
   type LucideIcon,
 } from "lucide-react";
 import {
@@ -72,6 +73,7 @@ const ICONS: Record<string, LucideIcon> = {
   HardDrive,
   Activity,
   Plug,
+  UsersRound,
 };
 
 // --- Registration context --------------------------------------------------

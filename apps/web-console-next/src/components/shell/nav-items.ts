@@ -65,6 +65,9 @@ export function buildNavSections(scope: NavScope): NavSection[] {
         { href: orgBase, label: "Overview", icon: "LayoutDashboard" },
         { href: `${orgBase}/catalog`, label: "Catalog", icon: "Boxes" },
         { href: `${orgBase}/activities`, label: "Activities", icon: "Activity" },
+        // Teams — the human-scale organizing primitive, promoted out of Settings
+        // to a first-class product surface (à la Datadog Teams).
+        { href: `${orgBase}/teams`, label: "Teams", icon: "UsersRound" },
         { href: `${orgBase}/projects`, label: "Git Repos", icon: "FolderKanban" },
         // Integrations is a first-class connections hub (GitHub today; Supabase,
         // Cloudflare, Slack on the roadmap), promoted out of Settings.

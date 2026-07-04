@@ -121,6 +121,7 @@ export function buildBaseCommands(ctx: CommandContext): CommandDescriptor[] {
         "history",
         "feed",
       ]),
+      navItem("nav.teams", "Teams", `${orgBase}/teams`, "UsersRound", ["team", "people", "group", "ownership", "members"]),
       navItem("nav.projects", "Git Repos", `${orgBase}/projects`, "FolderKanban", ["repo", "project", "git"]),
       navItem("nav.integrations", "Integrations", `${orgBase}/integrations`, "Plug", [
         "integration",
