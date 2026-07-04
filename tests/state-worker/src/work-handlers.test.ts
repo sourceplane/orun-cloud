@@ -10,6 +10,7 @@ import type { Env } from "@state-worker/env";
 import type { ActorContext } from "@state-worker/router";
 import {
   handleCreateWorkSpec,
+  handleIngestWorkObservation,
   handleCreateWorkTask,
   handleListWorkEvents,
   handleWorkImport,
@@ -254,5 +255,56 @@ describe("import (the dogfood path)", () => {
     expect(body.data).toEqual({ specsCreated: 0, specsSkipped: 1, tasksCreated: 0, tasksSkipped: 2 });
     const ws = await repo.getWorkSet({ orgId: ORG });
     expect(ws.tasks.length).toBe(2);
+  });
+});
+
+describe("CI observation producer (the affected-set feed)", () => {
+  it("admits only the named ci source and dedupes by key", async () => {
+    const repo = new MemoryWorkRepository(fixedClock);
+    await seedTask(repo);
+    const env = createEnv();
+    const org = asUuid(ORG);
+
+    const badSource = await handleIngestWorkObservation(
+      post("/x", { source: "github-webhook", kind: "pr_opened", dedupeKey: "k" }),
+      env, "r", USER, org, { repo },
+    );
+    expect(badSource.status).toBe(422);
+
+    const body = {
+      source: "ci",
+      sourceVersion: 1,
+      kind: "pr_opened",
+      dedupeKey: "ci:pr:o/r#9:affected",
+      payload: { pr: "o/r#9", affected: ["ns/repo/api"] },
+    };
+    const first = await handleIngestWorkObservation(post("/x", body), env, "r", USER, org, { repo });
+    expect(first.status).toBe(201);
+    const second = await handleIngestWorkObservation(post("/x", body), env, "r", USER, org, { repo });
+    expect(second.status).toBe(200);
+    const sBody = (await second.json()) as { data: { deduped: boolean } };
+    expect(sBody.data.deduped).toBe(true);
+  });
+
+  it("an affected set claims the single matching open task (overlap join)", async () => {
+    const repo = new MemoryWorkRepository(fixedClock);
+    const key = await seedTask(repo); // contract.affects = ["ns/repo/api"]
+    const env = createEnv();
+    const org = asUuid(ORG);
+    await handleIngestWorkObservation(
+      post("/x", {
+        source: "ci",
+        sourceVersion: 1,
+        kind: "pr_opened",
+        dedupeKey: "ci:pr:o/r#9:opened",
+        payload: { pr: "o/r#9", affected: ["ns/repo/api"] },
+      }),
+      env, "r", USER, org, { repo },
+    );
+    const res = await handleWorkSummary(get("/x"), env, "r", USER, org, { repo });
+    const body = (await res.json()) as { data: { tasks: Array<{ key: string; lifecycle: { rung: string; evidence?: string[] } }> } };
+    const task = body.data.tasks.find((t) => t.key === key)!;
+    expect(task.lifecycle.rung).toBe("in_review");
+    expect(task.lifecycle.evidence).toEqual(["PR o/r#9 open"]);
   });
 });

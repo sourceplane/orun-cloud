@@ -18,6 +18,7 @@ import {
   type IntegrationsRepository,
 } from "@saas/db/integrations";
 import { createEventsRepository, type EventsRepository } from "@saas/db/events";
+import { insertWorkObservation, workObservationsFromScm } from "@saas/db/work";
 import type { SqlExecutor } from "@saas/db/hyperdrive";
 import { asUuid } from "@saas/db/ids";
 import { generateUuid, inboundDeliveryPublicId, orgPublicId, projectPublicId } from "./ids.js";
@@ -391,7 +392,13 @@ async function emitScmEvents(
   targets: Array<{ orgId: string; projectId: string | null; environment: string | null }>,
 ): Promise<DeliveryOutcome> {
   const firstEventId = generateUuid();
-  const build = async (events: EventsRepository, repo: IntegrationsRepository): Promise<void> => {
+  // orun-work v2 (WP2): the same normalized delivery projects into the work
+  // plane's observation log — one ingester, one transaction, dedupe-idempotent
+  // (a redelivered webhook folds identically). Task keys parse from the
+  // branch/PR title; the affected set arrives via the orun/CI producer later.
+  const workDrafts = workObservationsFromScm(normalized.type, normalized.payload, ctx.now().toISOString());
+  const workOrgIds = [...new Set(targets.map((t) => t.orgId))];
+  const build = async (events: EventsRepository, repo: IntegrationsRepository, tx: SqlExecutor): Promise<void> => {
     for (let i = 0; i < targets.length; i++) {
       const target = targets[i]!;
       const appended = await events.appendEventWithAudit({
@@ -424,6 +431,11 @@ async function emitScmEvents(
       });
       if (!appended.ok) throw new Error("event_append_failed");
     }
+    for (const orgId of workOrgIds) {
+      for (const draft of workDrafts) {
+        await insertWorkObservation(tx, orgId, { ...draft, workspace: orgId });
+      }
+    }
     const marked = await repo.markInboundDelivery(asUuid(delivery.id), {
       status: "emitted",
       orgId: asUuid(connection.orgId),
@@ -440,10 +452,10 @@ async function emitScmEvents(
     };
     if (typeof executor.transaction === "function") {
       await executor.transaction(async (tx) => {
-        await build(createEventsRepository(tx), createIntegrationsRepository(tx));
+        await build(createEventsRepository(tx), createIntegrationsRepository(tx), tx);
       });
     } else {
-      await build(ctx.events, ctx.repo);
+      await build(ctx.events, ctx.repo, ctx.executor);
     }
     return { kind: "emitted", eventType: normalized.type };
   } catch {

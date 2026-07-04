@@ -46,6 +46,7 @@ import {
   handleCreateWorkSpec,
   handleCreateWorkTask,
   handleListWorkEvents,
+  handleIngestWorkObservation,
   handleWorkImport,
   handleWorkSummary,
   handleWorkTaskAction,
@@ -177,6 +178,7 @@ const ORG_WORK_SPECS_RE = /^\/v1\/organizations\/([^/]+)\/work\/specs$/;
 const ORG_WORK_TASKS_RE = /^\/v1\/organizations\/([^/]+)\/work\/tasks$/;
 const ORG_WORK_TASK_ACTION_RE = /^\/v1\/organizations\/([^/]+)\/work\/tasks\/([^/]+)\/(comment|assign|pin|cancel|contract)$/;
 const ORG_WORK_IMPORT_RE = /^\/v1\/organizations\/([^/]+)\/work\/import$/;
+const ORG_WORK_OBSERVATIONS_RE = /^\/v1\/organizations\/([^/]+)\/work\/observations$/;
 
 // OV1 — hosted RefStore (design-v2 §2). Ref names carry slashes
 // (catalogs/current, executions/by-id/<id>), so the name is a greedy tail.
@@ -354,6 +356,14 @@ export async function route(request: Request, env: Env, ctx?: ExecutionContext):
       decodeURIComponent(m[2]!),
       m[3]! as "comment" | "assign" | "pin" | "cancel" | "contract",
     );
+  }
+
+  m = pathname.match(ORG_WORK_OBSERVATIONS_RE);
+  if (m) {
+    const orgId = parseOrgPublicId(m[1]!);
+    if (!orgId) return notFound(requestId, pathname);
+    if (request.method !== "POST") return methodNotAllowed(requestId);
+    return handleIngestWorkObservation(request, env, requestId, actor, orgId);
   }
 
   m = pathname.match(ORG_WORK_IMPORT_RE);

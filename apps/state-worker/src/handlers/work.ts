@@ -38,6 +38,7 @@ import { WORK_POLICY_ACTIONS } from "@saas/contracts/work";
 import {
   WorkError,
   buildEnvelopes,
+  insertWorkObservation,
   contractComplete,
   createWorkRepository,
   fold,
@@ -355,6 +356,60 @@ export async function handleWorkTaskAction(
     }
     const payload: WorkMutationResponse = { key: out.key, seq: out.event.seq };
     return successResponse(payload, requestId);
+  } catch (err) {
+    if (err instanceof WorkError) return workErrorResponse(err, requestId);
+    return errorResponse("internal_error", "Service unavailable", 503, requestId);
+  } finally {
+    await dispose(owned);
+  }
+}
+
+// ── CI observation producer (the affected-set feed) ─────────────────────────
+
+const CI_OBSERVATION_KINDS = new Set(["branch_seen", "pr_opened", "pr_merged", "pr_closed"]);
+
+export async function handleIngestWorkObservation(
+  request: Request,
+  env: Env,
+  requestId: string,
+  actor: ActorContext,
+  orgId: Uuid,
+  deps?: WorkHandlerDeps,
+): Promise<Response> {
+  const authz = await authorizeOrg(env, requestId, actor, orgId, WORK_POLICY_ACTIONS.WORK_WRITE);
+  if (!authz.ok) return authz.response;
+  const body = await parseBody<{
+    source?: string;
+    sourceVersion?: number;
+    kind?: string;
+    at?: string;
+    dedupeKey?: string;
+    payload?: Record<string, unknown>;
+  }>(request);
+  // The public API admits exactly one named producer: "ci" (the orun-side
+  // affected-set feed). Internal ingesters (github-webhook, run-stream,
+  // deploy-overlay) never come through this route.
+  if (!body || body.source !== "ci" || !body.kind || !CI_OBSERVATION_KINDS.has(body.kind)) {
+    return validationError(requestId, { source: ["must be \"ci\""], kind: ["branch_seen|pr_opened|pr_merged|pr_closed"] });
+  }
+  if (!body.dedupeKey) {
+    return validationError(requestId, { dedupeKey: ["required (invariant 4)"] });
+  }
+  const { repo, owned } = repoOf(env, deps);
+  try {
+    const out = await repo.ingestObservation(
+      { orgId },
+      {
+        workspace: orgId,
+        source: "ci",
+        sourceVersion: body.sourceVersion ?? 1,
+        kind: body.kind as "pr_opened",
+        at: body.at ?? new Date().toISOString(),
+        dedupeKey: body.dedupeKey,
+        payload: body.payload,
+      },
+    );
+    return successResponse({ deduped: out.deduped, seq: out.observation?.seq ?? null }, requestId, out.deduped ? 200 : 201);
   } catch (err) {
     if (err instanceof WorkError) return workErrorResponse(err, requestId);
     return errorResponse("internal_error", "Service unavailable", 503, requestId);

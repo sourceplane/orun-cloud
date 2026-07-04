@@ -605,3 +605,93 @@ function mapDelivery(row: Record<string, unknown>): InboundDelivery {
     updatedAt: new Date(row.updated_at as string),
   };
 }
+
+// ── orun-work v2 (WP2): the drain projects scm.* into work.observations ────
+
+describe("inbox drain — work-plane observation projection (orun-work WP2)", () => {
+  function prDelivery(action: string, merged = false): Record<string, unknown> {
+    return deliveryRow({
+      event_type: "pull_request",
+      action,
+      payload: {
+        action,
+        repository: { id: 777001, full_name: "acme/storefront" },
+        installation: { id: INSTALLATION_ID },
+        pull_request: {
+          number: 41,
+          title: "ORN-7 route reads",
+          merged,
+          html_url: "https://github.com/acme/storefront/pull/41",
+          user: { login: "octocat" },
+          head: { ref: "feat/ORN-7-route", sha: "headsha1" },
+          base: { ref: "main", sha: "basesha1" },
+        },
+      },
+    });
+  }
+
+  it("projects an opened PR into a pr_opened observation with parsed task keys, same tx", async () => {
+    const { ctx, queries } = drainCtx((text) => {
+      if (text.includes("FROM integrations.github_installations WHERE installation_id"))
+        return [installationRow()];
+      if (text.includes("FROM integrations.connections WHERE id = $1")) return [connectionRow()];
+      if (text.includes("events.event_log")) return [EVENT_ROW];
+      if (text.includes("work.sequences")) return [{ value: 1 }];
+      if (text.includes("INSERT INTO work.observations")) return [{ obs_id: "o1", source: "github-webhook", source_version: 1, kind: "pr_opened", at: NOW.toISOString(), dedupe_key: "k", payload: {}, seq: 1 }];
+      if (text.includes("UPDATE integrations.inbound_deliveries"))
+        return [deliveryRow({ status: "emitted" })];
+      return [];
+    });
+
+    const outcome = await processDelivery(ctx, mapDelivery(prDelivery("opened")));
+    expect(outcome).toEqual({ kind: "emitted", eventType: "scm.pull_request.opened" });
+
+    const obsInsert = queries.find((q) => q.text.includes("INSERT INTO work.observations"));
+    expect(obsInsert).toBeDefined();
+    expect(obsInsert!.params[1]).toBe("github-webhook"); // named versioned source (P-2)
+    expect(obsInsert!.params[3]).toBe("pr_opened");
+    expect(obsInsert!.params[5]).toBe("gh:pr:acme/storefront#41:opened"); // semantic dedupe key
+    const payload = JSON.parse(String(obsInsert!.params[6]));
+    expect(payload.pr).toBe("acme/storefront#41");
+    expect(payload.taskKeys).toEqual(["ORN-7"]); // parsed from branch + title
+  });
+
+  it("projects a merged PR into pr_merged carrying the head revision", async () => {
+    const { ctx, queries } = drainCtx((text) => {
+      if (text.includes("FROM integrations.github_installations WHERE installation_id"))
+        return [installationRow()];
+      if (text.includes("FROM integrations.connections WHERE id = $1")) return [connectionRow()];
+      if (text.includes("events.event_log")) return [EVENT_ROW];
+      if (text.includes("work.sequences")) return [{ value: 2 }];
+      if (text.includes("INSERT INTO work.observations")) return [{ obs_id: "o2", source: "github-webhook", source_version: 1, kind: "pr_merged", at: NOW.toISOString(), dedupe_key: "k", payload: {}, seq: 2 }];
+      if (text.includes("UPDATE integrations.inbound_deliveries"))
+        return [deliveryRow({ status: "emitted" })];
+      return [];
+    });
+
+    const outcome = await processDelivery(ctx, mapDelivery(prDelivery("closed", true)));
+    expect(outcome).toEqual({ kind: "emitted", eventType: "scm.pull_request.merged" });
+
+    const obsInsert = queries.find((q) => q.text.includes("INSERT INTO work.observations"));
+    expect(obsInsert!.params[3]).toBe("pr_merged");
+    expect(obsInsert!.params[5]).toBe("gh:pr:acme/storefront#41:merged");
+    const payload = JSON.parse(String(obsInsert!.params[6]));
+    expect(payload.revision).toBe("headsha1");
+  });
+
+  it("skips work projection for pushes to branches carrying no task key (noise filter)", async () => {
+    const { ctx, queries } = drainCtx((text) => {
+      if (text.includes("FROM integrations.github_installations WHERE installation_id"))
+        return [installationRow()];
+      if (text.includes("FROM integrations.connections WHERE id = $1")) return [connectionRow()];
+      if (text.includes("events.event_log")) return [EVENT_ROW];
+      if (text.includes("UPDATE integrations.inbound_deliveries"))
+        return [deliveryRow({ status: "emitted" })];
+      return [];
+    });
+
+    const outcome = await processDelivery(ctx, mapDelivery(deliveryRow())); // push to main
+    expect(outcome).toEqual({ kind: "emitted", eventType: "scm.push" });
+    expect(queries.find((q) => q.text.includes("work.observations"))).toBeUndefined();
+  });
+});

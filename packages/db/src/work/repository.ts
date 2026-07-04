@@ -157,6 +157,33 @@ async function keyExists(tx: SqlExecutor, orgId: string, key: string): Promise<b
   return res.rowCount > 0;
 }
 
+/**
+ * Executor-level observation insert — the only fact writer, usable inside an
+ * existing transaction (the webhook drain projects scm.* events through this
+ * in the same tx that emits the platform event). Idempotent by
+ * (org_id, dedupe_key): the same world fact twice folds identically
+ * (invariant 4).
+ */
+export async function insertWorkObservation(
+  tx: SqlExecutor,
+  orgId: string,
+  input: IngestObservationInput,
+): Promise<IngestOutcome> {
+  validateObservation({ ...input, workspace: orgId, seq: 0 });
+  const seq = await nextSeq(tx, orgId, "#observations");
+  const res = await tx.execute(
+    `INSERT INTO work.observations (org_id, source, source_version, kind, at, dedupe_key, payload, seq)
+     VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8)
+     ON CONFLICT (org_id, dedupe_key) DO NOTHING
+     RETURNING *`,
+    [orgId, input.source, input.sourceVersion, input.kind, input.at, input.dedupeKey, JSON.stringify(input.payload ?? {}), seq],
+  );
+  if (res.rowCount === 0) {
+    return { observation: null, deduped: true };
+  }
+  return { observation: mapObservation(orgId, res.rows[0]!), deduped: false };
+}
+
 export function createWorkRepository(
   sql: TransactionalSqlExecutor,
   now: () => string = () => new Date().toISOString(),
@@ -346,21 +373,7 @@ export function createWorkRepository(
     },
 
     async ingestObservation(scope, input: IngestObservationInput): Promise<IngestOutcome> {
-      validateObservation({ ...input, seq: 0 });
-      return sql.transaction(async (tx) => {
-        const seq = await nextSeq(tx, scope.orgId, "#observations");
-        const res = await tx.execute(
-          `INSERT INTO work.observations (org_id, source, source_version, kind, at, dedupe_key, payload, seq)
-           VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8)
-           ON CONFLICT (org_id, dedupe_key) DO NOTHING
-           RETURNING *`,
-          [scope.orgId, input.source, input.sourceVersion, input.kind, input.at, input.dedupeKey, JSON.stringify(input.payload ?? {}), seq],
-        );
-        if (res.rowCount === 0) {
-          return { observation: null, deduped: true };
-        }
-        return { observation: mapObservation(scope.orgId, res.rows[0]!), deduped: false };
-      });
+      return sql.transaction(async (tx) => insertWorkObservation(tx, scope.orgId, input));
     },
 
     async getWorkSet(scope): Promise<WorkSet> {

@@ -198,6 +198,25 @@ export interface WorkImportResponse {
   tasksSkipped: number;
 }
 
+// ── CI observation producer (the affected-set feed) ─────────────────────────
+
+/** A world-authored fact posted by a named external producer (orun/CI).
+ *  The only source admitted over the public API is "ci" — the webhook drain
+ *  and the WP3 run/overlay feeds are internal ingesters. */
+export interface IngestWorkObservationRequest {
+  source: "ci";
+  sourceVersion: number;
+  kind: "branch_seen" | "pr_opened" | "pr_merged" | "pr_closed";
+  at?: string | undefined;
+  dedupeKey: string;
+  payload?: Record<string, unknown> | undefined;
+}
+
+export interface IngestWorkObservationResponse {
+  deduped: boolean;
+  seq: number | null;
+}
+
 // ── Policy actions ──────────────────────────────────────────────────────────
 
 export const WORK_POLICY_ACTIONS = {

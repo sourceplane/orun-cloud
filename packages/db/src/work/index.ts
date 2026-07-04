@@ -9,4 +9,6 @@ export * from "./types.js";
 export { buildEnvelopes } from "./envelopes.js";
 export type { Envelopes, ItemCreatedPayload, ItemEditedPayload, ContractEditedPayload } from "./envelopes.js";
 export { MemoryWorkRepository } from "./memory.js";
-export { createWorkRepository } from "./repository.js";
+export { createWorkRepository, insertWorkObservation } from "./repository.js";
+export { workObservationsFromScm, WORK_SCM_SOURCE, WORK_SCM_SOURCE_VERSION } from "./scm.js";
+export type { WorkObservationDraft, ScmWorkPayload } from "./scm.js";
