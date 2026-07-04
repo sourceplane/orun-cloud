@@ -23,12 +23,40 @@ import { wrap } from "@/lib/api";
 import { qk, useApiQuery } from "@/lib/query";
 import { useSession } from "@/lib/session";
 import { rungBadgeVariant, rungLabel, groupTasksBySpec } from "@/lib/work/model";
+import { TaskActions } from "@/components/work/task-actions";
 
 export function WorkWorkbench({ orgId }: { orgId: string }) {
   const { client } = useSession();
   const summary = useApiQuery(qk.orgWork(orgId), () =>
     wrap(async () => client.work.summary(orgId)),
   );
+
+  // WP1b live-ness: the coordination log IS the sync signal. Poll the
+  // events endpoint from the last seen cursor; any new event (another tab,
+  // a teammate, an agent via the MCP) triggers one summary refetch. The
+  // mutation/verdict seam stays transport-agnostic — SSE can replace this
+  // poll without touching anything else.
+  const cursor = React.useRef(0);
+  React.useEffect(() => {
+    if (summary.data) cursor.current = Math.max(cursor.current, summary.data.coordSeq);
+  }, [summary.data]);
+  const reload = summary.reload;
+  React.useEffect(() => {
+    const t = setInterval(() => {
+      void (async () => {
+        try {
+          const page = await client.work.listEvents(orgId, cursor.current);
+          if (page.events.length > 0) {
+            cursor.current = page.seq;
+            reload();
+          }
+        } catch {
+          // transient — the next tick retries
+        }
+      })();
+    }, 12_000);
+    return () => clearInterval(t);
+  }, [client, orgId, reload]);
 
   if (summary.loading) {
     return (
@@ -57,10 +85,10 @@ export function WorkWorkbench({ orgId }: { orgId: string }) {
       </Card>
     );
   }
-  return <WorkSummary data={data} />;
+  return <WorkSummary data={data} orgId={orgId} onMutated={summary.reload} />;
 }
 
-function WorkSummary({ data }: { data: WorkSummaryResponse }) {
+function WorkSummary({ data, orgId, onMutated }: { data: WorkSummaryResponse; orgId: string; onMutated: () => void }) {
   const groups = groupTasksBySpec(data.tasks);
   const specTitles = new Map(data.specs.map((s) => [s.key, s.title]));
 
@@ -81,7 +109,7 @@ function WorkSummary({ data }: { data: WorkSummaryResponse }) {
           <CardContent>
             <ul className="divide-y divide-border">
               {group.tasks.map((task) => (
-                <TaskRow key={task.key} task={task} />
+                <TaskRow key={task.key} task={task} orgId={orgId} onMutated={onMutated} />
               ))}
             </ul>
           </CardContent>
@@ -91,7 +119,7 @@ function WorkSummary({ data }: { data: WorkSummaryResponse }) {
   );
 }
 
-function TaskRow({ task }: { task: WorkTaskView }) {
+function TaskRow({ task, orgId, onMutated }: { task: WorkTaskView; orgId: string; onMutated: () => void }) {
   const lc = task.lifecycle;
   return (
     <li className="flex flex-wrap items-center gap-2 py-2">
@@ -107,6 +135,7 @@ function TaskRow({ task }: { task: WorkTaskView }) {
       {lc.evidence?.length ? (
         <span className="w-full pl-1 text-xs text-muted-foreground sm:w-auto">{lc.evidence[0]}</span>
       ) : null}
+      <TaskActions orgId={orgId} task={task} onMutated={onMutated} />
     </li>
   );
 }

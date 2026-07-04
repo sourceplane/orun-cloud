@@ -373,6 +373,10 @@ const ALL_KNOWN_ACTIONS: ReadonlySet<string> = new Set([
   // teams-ownership TO1 — manage the account-authored owner-handle → team map.
   "team.owner_handle.set",
   "team.owner_handle.remove",
+  // orun-work v2 WP1 — the work lens (workspace-scoped; lifecycle is a
+  // derived query, so there is exactly one read and one write action).
+  "work.read",
+  "work.write",
 ]);
 
 function isOrgRole(role: string): role is OrganizationRole {

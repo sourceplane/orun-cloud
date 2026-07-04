@@ -726,8 +726,9 @@ describe("listEffectivePermissions", () => {
 
     const allowed = result.permissions.filter((p) => p.allow);
     // 42 base + 7 saas-teams TM4 team.* actions + secret.reveal (SM1)
-    // + 2 teams-ownership TO1 team.owner_handle.* actions.
-    expect(allowed.length).toBe(54);
+    // + 2 teams-ownership TO1 team.owner_handle.* actions
+    // + 2 events ES1 events.* actions + 2 orun-work WP1 work.* actions.
+    expect(allowed.length).toBe(56);
   });
 
   it("returns limited permissions for viewer", () => {
@@ -750,6 +751,7 @@ describe("listEffectivePermissions", () => {
       "secret.read",
       "state.object.read",
       "state.run.read",
+      "work.read",
     ]);
   });
 
@@ -1311,5 +1313,23 @@ describe("effective-access provenance (TM6b)", () => {
     expect(read?.via).toEqual({ kind: "team", teamId: "team_abc" });
     const denied = res.permissions.find((p) => !p.allow);
     if (denied) expect(denied.via).toBeUndefined();
+  });
+});
+
+describe("orun-work actions (WP1 — the unknown_action regression)", () => {
+  it("work.read and work.write are known and granted, not unknown_action", () => {
+    const req = (action: string, role: string): AuthorizationRequest => ({
+      subject,
+      action,
+      resource: { kind: "organization", orgId: "org_1" },
+      context: { memberships: [orgFact(role, "org_1")] },
+    });
+    expect(authorize(req("work.read", "viewer"))).toMatchObject({ allow: true });
+    expect(authorize(req("work.write", "viewer"))).toMatchObject({ allow: false });
+    const viewerWrite = authorize(req("work.write", "viewer"));
+    expect((viewerWrite as { reason?: string }).reason).not.toBe("unknown_action");
+    expect(authorize(req("work.write", "builder"))).toMatchObject({ allow: true });
+    expect(authorize(req("work.write", "admin"))).toMatchObject({ allow: true });
+    expect(authorize(req("work.read", "owner"))).toMatchObject({ allow: true });
   });
 });
