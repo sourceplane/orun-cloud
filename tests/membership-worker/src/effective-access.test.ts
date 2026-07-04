@@ -109,6 +109,22 @@ describe("effective-access (saas-teams TM6b2)", () => {
     expect(read?.via).toEqual({ kind: "direct" });
   });
 
+  // teams-foundation TF4 — the third provenance origin: an account-scope role
+  // reaching a child workspace reads as account_cascade.
+  it("attributes a permission cascaded from an account role (via.kind = account_cascade)", async () => {
+    const CHILD = "00000000-0000-0000-0000-0000000000c1";
+    const accountAdmin: RoleAssignment = { id: "ra-acc", orgId: ACCOUNT, subjectId: USER, subjectType: "user", role: "account_admin", scopeKind: "account", scopeRef: null, createdAt: NOW, revokedAt: null };
+    const repo = makeRepo({
+      orgs: { [CHILD]: org(CHILD, ACCOUNT), [ACCOUNT]: org(ACCOUNT, null) },
+      directRoles: { [`${ACCOUNT}|${USER}`]: [accountAdmin] },
+    });
+    const res = await handleEffectiveAccess(req(CHILD), env(), "r-acc", { repo });
+    const json = (await res.json()) as { data: { permissions: Perm[] } };
+    const read = json.data.permissions.find((p) => p.action === "organization.read");
+    expect(read?.allow).toBe(true);
+    expect(read?.via).toEqual({ kind: "account_cascade" });
+  });
+
   it("returns all-denied (no via) for an actor with no grants", async () => {
     const repo = makeRepo({ orgs: { [ACCOUNT]: org(ACCOUNT, null) } });
     const res = await handleEffectiveAccess(req(ACCOUNT), env(), "r3", { repo });
