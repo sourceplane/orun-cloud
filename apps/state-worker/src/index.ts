@@ -4,6 +4,7 @@ import { runScmDrain } from "./scm-bridge.js";
 import { runRunWriteback } from "./run-writeback.js";
 import { runEnvArchiveSweep } from "./env-archive-sweep.js";
 import { runProjectionSweep } from "./projection-sweep.js";
+import { runCatalogProjectionSweep } from "./catalog-projection-sweep.js";
 
 // Per-run coordination Durable Object (BM2b/BM4). Re-exported here so the runtime
 // can resolve the COORDINATOR binding's class_name; bound in wrangler.template.
@@ -82,6 +83,22 @@ export default {
           }
         } catch (err) {
           console.error(`[scheduled] projection-sweep failed: ${String(err)}`);
+        }
+        // Phase 6 — catalog-projection reliability sweep (saas-workspace-overview).
+        // Coalesced into this same cron slot (risk R9), after the coordination
+        // sweep. Re-projects any catalog scope whose org read model + repo_facet
+        // lag their current head — the backstop for the on-advance ctx.waitUntil
+        // projection that can be torn down under a service-binding invoke. Dormant
+        // (returns null) without Postgres; never breaks the prior phases or cron.
+        try {
+          const cat = await runCatalogProjectionSweep(env);
+          if (cat && cat.projected > 0) {
+            console.warn(
+              `[scheduled] catalog-projection-sweep: ${cat.projected} projected / ${cat.scanned} scanned`,
+            );
+          }
+        } catch (err) {
+          console.error(`[scheduled] catalog-projection-sweep failed: ${String(err)}`);
         }
       })(),
     );

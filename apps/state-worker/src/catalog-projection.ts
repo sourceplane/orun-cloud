@@ -276,26 +276,29 @@ export async function projectCatalogSnapshot(
         .then(async (o) => (o ? new Uint8Array(await o.arrayBuffer()) : null));
   }
 
-  let entities: ProjectedEntity[];
-  try {
-    entities = await collectEntities(fetcher, scope.digest);
-  } catch (err) {
-    // Snapshot unreadable (R2 miss / bad bytes) or a parse error walking the
-    // tree. Surface it, then rethrow so caller behavior is unchanged.
-    console.error(JSON.stringify({ level: "error", reason: "collect_failed", error: String(err), ...base }));
-    throw err;
-  }
-  if (entities.length === 0) {
-    // Root unreadable (readTree → null) or a snapshot carrying no components/
-    // entities. Either way the console stays empty for this scope.
-    console.warn(JSON.stringify({ level: "warn", reason: "zero_entities", ...base }));
-  }
-
   if (!deps?.executor && !env.PLATFORM_DB) return null;
   const executor = deps?.executor ?? (await import("@saas/db/hyperdrive")).createSqlExecutor(env.PLATFORM_DB!);
   const owned = !deps?.executor;
+  const repo = createStateRepository(executor);
+
+  // Track which phase failed so the diagnostic reason stays precise, and so any
+  // failure is recorded on the catalog_projection outbox (attempts++). The cron
+  // sweep drives from that outbox: it keeps re-projecting a scope whose read
+  // model lags its head, then parks a poison scope after maxAttempts. This is
+  // what closes the "frozen read model" gap when the on-advance ctx.waitUntil
+  // projection is torn down mid-flight (state-worker invoked over a service
+  // binding — migration 570).
+  let phase: "collect" | "write" = "collect";
   try {
-    const repo = createStateRepository(executor);
+    const entities = await collectEntities(fetcher, scope.digest);
+    if (entities.length === 0) {
+      // Root unreadable (readTree → null) or a snapshot carrying no components/
+      // entities. A valid-but-empty snapshot still "catches up" this scope's
+      // read model to the head, so it is recorded as a success below.
+      console.warn(JSON.stringify({ level: "warn", reason: "zero_entities", ...base }));
+    }
+
+    phase = "write";
     // Replace the scope: drop the prior projection, then upsert the new set.
     const deleted = await repo.deleteOrgCatalogEntitiesForScope(scope.orgId, scope.projectId, scope.environment);
     // The repo facet is keyed per project (env-independent): clear it and
@@ -343,12 +346,25 @@ export async function projectCatalogSnapshot(
         });
       }
     }
-    // No success log: the diagnostic signal lives in the warn/error paths
-    // above (zero_entities / collect_failed / write_failed). A clean run with
-    // entities projected leaves no log and a populated console.
+    // Durably record that this scope's read model has caught up to `digest` (and
+    // reset the failure counter) so the cron sweep stops re-projecting it. A
+    // clean run otherwise leaves no log — a populated console is the signal.
+    await repo.recordCatalogProjectionSuccess(scope.orgId, scope.projectId, scope.environment, scope.digest);
     return { deleted: deleted.ok ? deleted.value : 0, projected };
   } catch (err) {
-    console.error(JSON.stringify({ level: "error", reason: "write_failed", error: String(err), ...base }));
+    console.error(
+      JSON.stringify({
+        level: "error",
+        reason: phase === "collect" ? "collect_failed" : "write_failed",
+        error: String(err),
+        ...base,
+      }),
+    );
+    // Best-effort: record the failure so the sweep tracks attempts; never mask
+    // the original error.
+    await repo
+      .recordCatalogProjectionFailure(scope.orgId, scope.projectId, scope.environment, String(err))
+      .catch(() => {});
     throw err;
   } finally {
     if (owned && "dispose" in executor && typeof (executor as { dispose?: unknown }).dispose === "function") {

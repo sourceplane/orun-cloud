@@ -516,5 +516,14 @@ export const manifest: MigrationManifest = {
       description:
         "The work lens — two append-only logs (orun-work v2 WP0). Recreates the work schema (v1 dropped by 490_work_teardown) as: work.specs + work.tasks (droppable fold caches of the coordination log — intent envelopes only), work.events (the authored coordination log: closed 9-kind vocabulary with NO lifecycle-write kind, mandatory typed actor, per-workspace seq = the sync cursor), work.observations (the world-authored fact log: closed 6-kind vocabulary, named versioned source, dedupe_key idempotency), and work.sequences (task-key PREFIX-n + the two log counters). No status/lifecycle/gate/released column exists anywhere — lifecycle is a derived query (WP-3); workspace-scoped tenancy, no project partition (WP-7). Additive + idempotent.",
     },
+    {
+      id: "570_state_catalog_projection",
+      context: "state",
+      path: "570_state_catalog_projection/up.sql",
+      checksum:
+        "014eecc8aa5349b45702f861fe3ed6ece094dff0a3767cb22042329c067523b6",
+      description:
+        "Durable catalog-projection outbox (saas-workspace-overview projection reliability). Creates state.catalog_projection (org_id, project_id, environment; projected_digest, projected_at, attempts, last_error, updated_at) recording the last head digest whose read-model projection committed, with a unique index on (org_id, project_id, COALESCE(environment,'')). The cron catalog-projection-sweep drives from state.catalog_heads LEFT JOIN this table and re-projects any scope whose projected_digest lags its current head — the reliable backstop for the on-advance ctx.waitUntil projection that can be torn down when state-worker is invoked over a service binding (leaving org_catalog_entities + repo_facet frozen). A scope stale before this table existed is detected on the first pass (projected_digest NULL) — no backfill. Additive + idempotent.",
+    },
   ],
 };
