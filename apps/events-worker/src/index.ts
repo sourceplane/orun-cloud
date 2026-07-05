@@ -1,7 +1,11 @@
 import type { Env } from "./env.js";
 import { route } from "./router.js";
 import { createSqlExecutor } from "@saas/db/hyperdrive";
-import { createEventsRepository, createEventStreamsRepository } from "@saas/db/events";
+import {
+  createEventsRepository,
+  createEventStreamsRepository,
+  createNotificationRulesRepository,
+} from "@saas/db/events";
 import { runLaneDispatch } from "./lanes/dispatcher.js";
 import { buildLaneHandlers } from "./lanes/registry.js";
 import { generateRequestId } from "./ids.js";
@@ -22,11 +26,15 @@ export default {
     }
     const executor = createSqlExecutor(env.PLATFORM_DB);
     try {
+      const requestId = generateRequestId();
       const summary = await runLaneDispatch({
         streamsRepo: createEventStreamsRepository(executor),
         eventsRepo: createEventsRepository(executor),
-        handlers: buildLaneHandlers(),
-        requestId: generateRequestId(),
+        handlers: buildLaneHandlers(env, {
+          rulesRepo: createNotificationRulesRepository(executor),
+          requestId,
+        }),
+        requestId,
       });
       if (summary.errors > 0 || summary.eventsDeadLettered > 0 || summary.orgsStalled > 0) {
         console.warn(

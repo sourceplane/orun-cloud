@@ -2,7 +2,6 @@ import type { CloudflareEmailSender } from "./providers/cloudflare-email.js";
 
 export interface Env {
   PLATFORM_DB?: Hyperdrive;
-  EVENTS_WORKER?: Fetcher;
   /** Cloudflare Email Service send_email binding (cloudflare-email provider). */
   EMAIL?: CloudflareEmailSender;
   ENVIRONMENT: string;

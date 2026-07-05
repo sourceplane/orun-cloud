@@ -8,8 +8,8 @@ eventing stack (events/notifications/webhooks/integrations workers).
 | ID | Status |
 |----|--------|
 | ES0 — Foundation (catalog, `580_event_streams_foundation`, repo layer, notifications emit fix, spec 09/14 amendments) | ✅ Shipped (#325) |
-| ES1 — Router: shared lanes + dead letters + webhooks cutover | In review |
-| ES2 — Notification rules | 🗓️ Planned |
+| ES1 — Router: shared lanes + dead letters + webhooks cutover | ✅ Shipped (#331) |
+| ES2 — Notification rules | In review |
 | ES3 — Channels: provider seam + Slack incoming webhook + async retry | 🗓️ Planned |
 | ES4 — Correlation & dedup (event groups) | 🗓️ Planned |
 | ES5 — Custom event ingest + SDK/CLI | 🗓️ Planned |
@@ -38,5 +38,20 @@ eventing stack (events/notifications/webhooks/integrations workers).
   webhook_dispatch_cursor table intact per R6; the drop is a follow-up
   migration after the soak. The dispatcher ships dark (no events-owned lane
   handler until ES2; 'notifications' lane seeded paused).
+- 2026-07-04: ES1 shipped (#331) — dispatcher live (dark), webhooks cursor on
+  the shared lane table with dual-read fallback, dead-letter list/replay
+  surface end-to-end.
+- 2026-07-04: ES2 scope amendment — `webhook_endpoint` rule targets deferred
+  to ES3. Implementation audit showed B5's webhook_delivery_attempts requires
+  a NOT NULL subscription_id with (subscription, event, attempt) uniqueness
+  and subscription-keyed replay; a subscription-less rule delivery would need
+  invasive changes to the shipped delivery plane. Under "rules route,
+  channels deliver", a webhook endpoint becomes a channel-kind delivery in
+  ES3's provider seam instead (own retry mechanics via the notifications
+  cron). ES2 ships email targets live; slack_channel/webhook_endpoint kinds
+  are schema-live, CRUD-rejected. Entitlements seeded: feature.event_routing
+  all tiers, limit.notification_rules 10/50/200/unlimited (D3 defaults);
+  events-worker added to billing's internal-caller allow-list; notifications
+  lane flipped active by 600_notification_rule_throttle.
 - Decision gates D1–D4 are open with defaults recommended; none block the
   spine (see `risks-and-open-questions.md`).

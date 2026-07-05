@@ -279,6 +279,41 @@ describe("notification rules repository", () => {
     expect(queries[0]!.text).toContain("status = 'enabled'");
   });
 
+  it("countRulesByOrg returns the org total", async () => {
+    const { executor, queries } = createFakeExecutor({ rows: [{ total: 7 }] });
+    const repo = createNotificationRulesRepository(executor);
+    const result = await repo.countRulesByOrg("org-001");
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.value).toBe(7);
+    expect(queries[0]!.text).toContain("count(*)::int");
+  });
+
+  it("tryConsumeThrottle is a single atomic upsert with window rollover", async () => {
+    const { executor, queries } = createFakeExecutor({ rows: [{ fired_count: 3 }] });
+    const repo = createNotificationRulesRepository(executor);
+    const result = await repo.tryConsumeThrottle(SAMPLE_RULE_ROW.id, 300, 10);
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.value).toBe(true);
+    expect(queries).toHaveLength(1);
+    expect(queries[0]!.text).toContain("INSERT INTO events.rule_throttle_state");
+    expect(queries[0]!.text).toContain("ON CONFLICT (rule_id) DO UPDATE");
+    expect(queries[0]!.text).toContain("make_interval(secs => $2)");
+    expect(queries[0]!.params).toEqual([SAMPLE_RULE_ROW.id, 300]);
+  });
+
+  it("tryConsumeThrottle denies past the window max and skips DB when disabled", async () => {
+    const { executor, queries } = createFakeExecutor({ rows: [{ fired_count: 11 }] });
+    const repo = createNotificationRulesRepository(executor);
+    const denied = await repo.tryConsumeThrottle(SAMPLE_RULE_ROW.id, 300, 10);
+    expect(denied.ok).toBe(true);
+    if (denied.ok) expect(denied.value).toBe(false);
+
+    const disabled = await repo.tryConsumeThrottle(SAMPLE_RULE_ROW.id, 0, 10);
+    expect(disabled.ok).toBe(true);
+    if (disabled.ok) expect(disabled.value).toBe(true);
+    expect(queries).toHaveLength(1); // windowSeconds=0 issues no query
+  });
+
   it("targets: add, list-for-rules, remove", async () => {
     const { executor, queries } = createFakeExecutor({ rows: [SAMPLE_TARGET_ROW] });
     const repo = createNotificationRulesRepository(executor);

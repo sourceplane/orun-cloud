@@ -48,12 +48,6 @@
           "binding": "PLATFORM_DB",
           "id": "@@wiring(cloudflare-hyperdrive/stage:hyperdrive_id)@@"
         }
-      ],
-      "services": [
-        {
-          "binding": "EVENTS_WORKER",
-          "service": "events-worker-stage"
-        }
       ]
     },
     "prod": {
@@ -75,12 +69,6 @@
         {
           "binding": "PLATFORM_DB",
           "id": "@@wiring(cloudflare-hyperdrive/prod:hyperdrive_id)@@"
-        }
-      ],
-      "services": [
-        {
-          "binding": "EVENTS_WORKER",
-          "service": "events-worker-prod"
         }
       ]
     }

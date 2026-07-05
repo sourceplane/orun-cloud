@@ -66,3 +66,4 @@
 570_state_catalog_projection
 580_event_streams_foundation
 590_webhooks_lane_adoption
+600_notification_rule_throttle

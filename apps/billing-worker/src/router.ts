@@ -36,6 +36,9 @@ const ALLOWED_INTERNAL_CALLERS: ReadonlySet<string> = new Set([
   "projects-worker",
   "membership-worker",
   "integrations-worker",
+  // events-worker gates notification-rule creation on feature.event_routing +
+  // limit.notification_rules (saas-event-streaming ES2).
+  "events-worker",
   // api-edge forwards verified-at-source-of-truth inbound provider webhooks
   // (it streams the raw body here; this worker verifies the signature).
   "api-edge",

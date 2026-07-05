@@ -727,8 +727,9 @@ describe("listEffectivePermissions", () => {
     const allowed = result.permissions.filter((p) => p.allow);
     // 42 base + 7 saas-teams TM4 team.* actions + secret.reveal (SM1)
     // + 2 teams-ownership TO1 team.owner_handle.* actions
-    // + 2 events ES1 events.* actions + 2 orun-work WP1 work.* actions.
-    expect(allowed.length).toBe(56);
+    // + 2 ES1 dead_letter.* actions + 2 orun-work WP1 work.* actions
+    // + 2 ES2 organization.notification_rule.* actions.
+    expect(allowed.length).toBe(58);
   });
 
   it("returns limited permissions for viewer", () => {
@@ -744,6 +745,7 @@ describe("listEffectivePermissions", () => {
       "organization.config.read",
       "organization.integration.read",
       "organization.metering.read",
+      "organization.notification_rule.read",
       "organization.read",
       "organization.webhook.read",
       "project.list",

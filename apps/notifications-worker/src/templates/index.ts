@@ -219,10 +219,55 @@ const renderInvitationAccepted: TemplateRenderer = (data, opts) => {
   return { subject, html, text };
 };
 
+/**
+ * Rule-routed event notification (saas-event-streaming ES2): the generic
+ * email a matched notification rule sends. Data is redaction-safe metadata
+ * only — title (pre-rendered from the event catalog), event type, severity,
+ * rule name, occurrence time, and the source event id. Never raw payloads.
+ */
+const renderEventNotification: TemplateRenderer = (data, opts) => {
+  const title = str(data, "title") || str(data, "eventType") || "Platform event";
+  const eventType = str(data, "eventType");
+  const severity = str(data, "severity");
+  const ruleName = str(data, "ruleName");
+  const occurredAt = formatTimestamp(str(data, "occurredAt"));
+  const brand = opts.brandName ?? "";
+  const subject = severity && severity !== "info" ? `[${severity}] ${title}` : title;
+
+  const detailLines = [
+    eventType ? `Event: ${eventType}` : "",
+    severity ? `Severity: ${severity}` : "",
+    occurredAt ? `Occurred: ${occurredAt}` : "",
+    ruleName ? `Matched rule: ${ruleName}` : "",
+  ].filter(Boolean);
+
+  const text = [title, "", ...detailLines].join("\n");
+
+  const html = htmlShell(
+    escapeHtml(title),
+    [
+      '<table role="presentation" style="border-collapse:collapse;font-size:13px;color:#3b3b4f;">',
+      ...detailLines.map((line) => {
+        const [label, ...rest] = line.split(": ");
+        return `<tr><td style="padding:2px 12px 2px 0;color:#6b6b80;">${escapeHtml(label ?? "")}</td><td style="padding:2px 0;">${escapeHtml(rest.join(": "))}</td></tr>`;
+      }),
+      "</table>",
+    ].join(""),
+    escapeHtml(
+      brand
+        ? `Sent by ${brand} because a notification rule you configured matched this event.`
+        : "Sent because a notification rule you configured matched this event.",
+    ),
+  );
+
+  return { subject, html, text };
+};
+
 const TEMPLATES: Record<string, TemplateRenderer> = {
   "auth.magic_link": renderMagicLink,
   "invitation.created": renderInvitationCreated,
   "invitation.accepted": renderInvitationAccepted,
+  "event.notification": renderEventNotification,
 };
 
 /**

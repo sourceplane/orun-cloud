@@ -8,8 +8,10 @@ import {
   EVENT_TYPE_PATTERN,
   catalogEntryFor,
   isCatalogedEventType,
+  effectiveEventSeverity,
   matchesAnyEventTypeGlob,
   matchesEventTypeGlob,
+  renderEventTitle,
   severityRank,
 } from "@saas/contracts/event-catalog";
 import { NOTIFICATION_EVENT_TYPES } from "@saas/contracts/notifications";
@@ -194,6 +196,24 @@ describe("event type glob matching", () => {
     expect(matchesAnyEventTypeGlob("scm.push", [])).toBe(true);
     expect(matchesAnyEventTypeGlob("scm.push", ["billing.*", "scm.*"])).toBe(true);
     expect(matchesAnyEventTypeGlob("scm.push", ["billing.*"])).toBe(false);
+  });
+});
+
+describe("title rendering and effective severity (ES2)", () => {
+  it("renders subject/tenant/payload placeholders and tolerates gaps", () => {
+    const rendered = renderEventTitle("Check {payload.checkName} completed: {payload.conclusion}", {
+      payload: { checkName: "ci", conclusion: "success" },
+    });
+    expect(rendered).toBe("Check ci completed: success");
+    expect(renderEventTitle("Org {subject.name} created", { subject: { name: "Acme" } })).toBe("Org Acme created");
+    expect(renderEventTitle("Missing {payload.absent}", { payload: {} })).toBe("Missing [absent]");
+  });
+
+  it("payload severity escalates the catalog default but never lowers it", () => {
+    expect(effectiveEventSeverity("scm.push", {})).toBe("info");
+    expect(effectiveEventSeverity("scm.push", { severity: "critical" })).toBe("critical");
+    expect(effectiveEventSeverity("dead_letter.created", { severity: "info" })).toBe("error");
+    expect(effectiveEventSeverity("scm.push", { severity: "bogus" })).toBe("info");
   });
 });
 

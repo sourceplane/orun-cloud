@@ -34,7 +34,7 @@ the catalog CI guard passes with every existing emitter registered;
 notifications-worker test suite; no runtime behavior changes anywhere else
 (webhooks fan-out and audit reads byte-identical).
 
-## ES1 — The router: shared lanes + dead letters — In review
+## ES1 — The router: shared lanes + dead letters — ✅ Shipped (#331)
 
 - events-worker gains `scheduled()` (cron `* * * * *`, matching the shipped
   drains) + the lane dispatcher: per active lane × org, batch-read past the
@@ -61,7 +61,7 @@ cutover-soak assertion; a lane handler that throws on one event dead-letters
 that event, advances past it, and the replay route re-processes it
 successfully; pausing a lane halts its dispatch within one cron tick.
 
-## ES2 — Notification rules — 🗓️ Planned
+## ES2 — Notification rules — In review
 
 - Rules/targets CRUD on events-worker + api-edge facade:
   `GET/POST /v1/organizations/{orgId}/notification-rules`,
@@ -73,10 +73,14 @@ successfully; pausing a lane halts its dispatch within one cron tick.
   `min_severity` (catalog ladder) → org/project scope → conjunctive attribute
   filters (`eq|neq|in`), cheapest-first; per-rule throttle windows enforced via
   a small `rule_throttle_state` upsert.
-- Targets V1: `email` (address) and `webhook_endpoint` (existing B5 endpoint —
-  the rule enqueues a delivery attempt through the shipped webhooks machinery
-  rather than a second HTTP path). `slack_channel` kind is schema-live but
-  rejected until ES3.
+- Targets V1: `email` (address), delivered through B2. **Amended at
+  implementation:** `webhook_endpoint` moves to ES3 with the channel seam —
+  B5's `webhook_delivery_attempts` carries a NOT NULL `subscription_id`, a
+  `(subscription_id, event_id, attempt_number)` uniqueness, and replay
+  semantics keyed on the subscription; reusing it for subscription-less rule
+  deliveries would invade the shipped delivery plane (see
+  IMPLEMENTATION-STATUS 2026-07-04). Both `slack_channel` and
+  `webhook_endpoint` kinds are schema-live but rejected at CRUD until ES3.
 - Enqueue path: one notification per surviving `(rule, target)` via
   `packages/notifications-client` with deterministic
   `idempotencyKey = hash(ruleId, targetId, eventId)` — cron overlap cannot
