@@ -12,7 +12,7 @@ import {
   handleRunnableJobs,
 } from "@state-worker/handlers/runs";
 import type { Env } from "@state-worker/env";
-import { __resetProjectorReadyCache } from "@state-worker/coordination-route";
+import { __resetDoBackedCache, __resetProjectorReadyCache } from "@state-worker/coordination-route";
 import type { SqlExecutor, SqlExecutorResult, SqlRow } from "@saas/db/hyperdrive";
 import { asUuid } from "@saas/db";
 
@@ -271,6 +271,107 @@ describe("POST …/state/runs — create", () => {
     const body = (await res.json()) as { data: { run: { runId: string; status: string } } };
     expect(body.data.run.runId).toBe(ULID);
     expect(body.data.run.status).toBe("running");
+  });
+
+  // ── Replay shard self-heal (the poisoned-run gap). createRun is not atomic
+  //    (run row → run_jobs → DO seed); if the original creator dies mid-way the
+  //    row exists but the shard was never seeded, and — because the claim gate
+  //    deliberately never lazy-seeds — every :claim 404s forever while replayed
+  //    createRuns return 200. The replay must detect the unseeded shard and
+  //    re-seed it from ITS OWN complete plan body. ──
+  describe("replay shard self-heal (COORDINATION_BACKEND=do)", () => {
+    function fakeCoordinatorNs(handlers: { state?: () => Response; init?: () => Response }) {
+      const calls: { method: string; path: string; body?: unknown }[] = [];
+      const stub = {
+        fetch: (input: RequestInfo | URL, init?: RequestInit) => {
+          const url = new URL(String(input));
+          const method = init?.method ?? "GET";
+          const body = init?.body === undefined ? undefined : (JSON.parse(String(init.body)) as unknown);
+          calls.push({ method, path: url.pathname, body });
+          if (url.pathname === "/state") return Promise.resolve(handlers.state ? handlers.state() : new Response("not found", { status: 404 }));
+          if (url.pathname === "/init") return Promise.resolve(handlers.init ? handlers.init() : Response.json({ seq: 1 }));
+          return Promise.resolve(new Response("not found", { status: 404 }));
+        },
+      };
+      const ns = { idFromName: (name: string) => name, get: () => stub };
+      return { ns, calls };
+    }
+
+    function replayExecutor() {
+      return fakeExecutor((text) => {
+        if (text.startsWith("SELECT * FROM state.runs WHERE org_id = $1 AND project_id = $2 AND run_ulid")) return [runRow({ status: "running" })];
+        if (text.includes("COUNT(*) FILTER")) return [COUNTS];
+        return [];
+      });
+    }
+
+    const JOBS = [
+      { jobId: "build", component: "api", deps: [] },
+      { jobId: "deploy", component: "api", deps: ["build"] },
+    ];
+
+    function replayRequest(jobs?: typeof JOBS): Request {
+      return new Request("https://state.test/.../runs", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          runId: ULID,
+          planDigest: PLAN,
+          environment: "production",
+          source: "ci",
+          git: { commit: "abc123", ref: "refs/heads/main", dirty: false },
+          ...(jobs ? { jobs } : {}),
+        }),
+      });
+    }
+
+    beforeEach(() => {
+      __resetDoBackedCache();
+    });
+
+    it("re-seeds an unseeded shard from the replay's own plan body and returns 200", async () => {
+      const { ns, calls } = fakeCoordinatorNs({}); // /state 404s (unseeded) · /init succeeds
+      const env = { ...createEnv(), COORDINATION_BACKEND: "do", COORDINATOR: ns } as unknown as Env;
+      const { executor } = replayExecutor();
+      const res = await handleCreateRun(replayRequest(JOBS), env, "req_1", ACTOR, asUuid(ORG), asUuid(PROJECT), { executor });
+      expect(res.status).toBe(200);
+      const init = calls.find((c) => c.path === "/init");
+      expect(init).toBeDefined();
+      const initBody = init!.body as { runId: string; plan: { jobs: Record<string, { deps: string[] }> }; planDigest: string; sourceHash: string };
+      // The seed carries the request's COMPLETE plan — never partial DB rows.
+      expect(initBody.runId).toBe(ULID);
+      expect(initBody.plan.jobs).toEqual({ build: { deps: [] }, deploy: { deps: ["build"] } });
+      expect(initBody.planDigest).toBe(PLAN);
+      expect(initBody.sourceHash).toBe("abc123");
+    });
+
+    it("returns 503 — not a poisoned 200 — when the heal seed itself fails", async () => {
+      const { ns } = fakeCoordinatorNs({ init: () => new Response("boom", { status: 500 }) });
+      const env = { ...createEnv(), COORDINATION_BACKEND: "do", COORDINATOR: ns } as unknown as Env;
+      const { executor } = replayExecutor();
+      const res = await handleCreateRun(replayRequest(JOBS), env, "req_1", ACTOR, asUuid(ORG), asUuid(PROJECT), { executor });
+      expect(res.status).toBe(503);
+      const body = (await res.json()) as { error: { code: string } };
+      expect(body.error.code).toBe("internal_error");
+    });
+
+    it("leaves an already-backed shard alone (no /init on a healthy replay)", async () => {
+      const { ns, calls } = fakeCoordinatorNs({ state: () => Response.json({ runId: ULID, frontier: [] }) });
+      const env = { ...createEnv(), COORDINATION_BACKEND: "do", COORDINATOR: ns } as unknown as Env;
+      const { executor } = replayExecutor();
+      const res = await handleCreateRun(replayRequest(JOBS), env, "req_1", ACTOR, asUuid(ORG), asUuid(PROJECT), { executor });
+      expect(res.status).toBe(200);
+      expect(calls.some((c) => c.path === "/init")).toBe(false);
+    });
+
+    it("skips the heal when the replay body carries no jobs (nothing safe to seed from)", async () => {
+      const { ns, calls } = fakeCoordinatorNs({});
+      const env = { ...createEnv(), COORDINATION_BACKEND: "do", COORDINATOR: ns } as unknown as Env;
+      const { executor } = replayExecutor();
+      const res = await handleCreateRun(replayRequest(), env, "req_1", ACTOR, asUuid(ORG), asUuid(PROJECT), { executor });
+      expect(res.status).toBe(200);
+      expect(calls).toHaveLength(0);
+    });
   });
 
   it("returns 412 object_missing when the plan digest is absent", async () => {

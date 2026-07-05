@@ -48,6 +48,7 @@ import {
   initCoordinator,
   projectorReady,
   planFromJobs,
+  runIsDoBacked,
   useDoCoordination,
 } from "../coordination-route.js";
 
@@ -235,9 +236,46 @@ export async function handleCreateRun(
   try {
     const repo = createStateRepository(executor);
 
+    // ── Shard self-heal for replays (the poisoned-run gap). createRun is not
+    //    atomic: the run row lands first, then run_jobs one-by-one, then the DO
+    //    shard seed. If the ORIGINAL creator's request dies mid-way (isolate
+    //    eviction, CPU/time limits on a wide DAG), the row exists but the shard
+    //    was never seeded — and since the native claim gate DELIBERATELY never
+    //    lazy-seeds from the (possibly partial) run_jobs rows, every :claim
+    //    404s forever while every replayed createRun happily returns 200: the
+    //    exact distributed-matrix CI stall. The heal is safe where lazy-seeding
+    //    was not, because it seeds from THIS REQUEST's complete plan body (the
+    //    same bytes every matrix job carries), never from partial DB rows; the
+    //    DO init is idempotent by planDigest, so concurrent healers and the
+    //    original creator's late seed all converge. Fail the replay loudly if
+    //    the seed fails — a 200 for an unclaimable run is the bug this fixes.
+    const healShardIfUnseeded = async (): Promise<Response | null> => {
+      if (!useDoCoordination(env) || !planJobs || planJobs.length === 0) return null;
+      if (await runIsDoBacked(env, runId as string)) return null;
+      const initRes = await initCoordinator(env, runId as string, {
+        plan: planFromJobs(planJobs),
+        planDigest,
+        sourceHash: gitCommit ?? planDigest,
+        environment,
+        actor: { id: actor.subjectId, type: actor.subjectType },
+      });
+      if (initRes.status >= 300) {
+        console.error(
+          `[coordination] createRun ${runId}: replay found run row without a DO shard and the heal seed failed (${initRes.status})`,
+        );
+        return errorResponse("internal_error", "Coordinator init failed", 503, requestId);
+      }
+      console.warn(
+        `[coordination] createRun ${runId}: healed an unseeded coordination shard on replay (original create died mid-way)`,
+      );
+      return null;
+    };
+
     // ── Replay short-circuit: a known ULID returns the existing run (200). ──
     const existing = await repo.getRunByUlid(orgId, projectId, runId as string);
     if (existing.ok) {
+      const healFail = await healShardIfUnseeded();
+      if (healFail) return healFail;
       const counts = await repo.getRunJobCounts(orgId, projectId, asUuid(existing.value.id));
       const payload: CreateRunResponse = {
         run: toPublicRun(existing.value, counts.ok ? counts.value : zeroCounts()),
@@ -332,7 +370,10 @@ export async function handleCreateRun(
     if (!created.ok) return errorResponse("internal_error", "Service unavailable", 503, requestId);
 
     if (!created.value.created) {
-      // Lost the create race to a concurrent replay — return the existing run.
+      // Lost the create race to a concurrent replay — return the existing run
+      // (healing the shard first if the winner hasn't seeded it yet).
+      const healFail = await healShardIfUnseeded();
+      if (healFail) return healFail;
       const counts = await repo.getRunJobCounts(orgId, projectId, asUuid(created.value.run.id));
       const payload: CreateRunResponse = {
         run: toPublicRun(created.value.run, counts.ok ? counts.value : zeroCounts()),
