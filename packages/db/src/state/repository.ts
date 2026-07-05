@@ -23,6 +23,9 @@ import type {
   OrgCatalogEntity,
   RepoFacet,
   UpsertRepoFacetInput,
+  CatalogDoc,
+  UpsertCatalogDocInput,
+  ListCatalogDocsQuery,
   PendingCatalogProjection,
   StateStorageUsage,
   UpsertOrgCatalogEntityInput,
@@ -272,6 +275,29 @@ function mapRepoFacet(row: Record<string, unknown>): RepoFacet {
     headDigest: row.head_digest as string,
     sourceCommit: (row.source_commit as string) ?? null,
     syncedAt: toDate(row.synced_at),
+  };
+}
+
+function mapCatalogDoc(row: Record<string, unknown>): CatalogDoc {
+  return {
+    id: row.id as string,
+    orgId: row.org_id as string,
+    sourceProjectId: row.source_project_id as string,
+    sourceEnvironment: (row.source_environment as string) ?? null,
+    entityRef: row.entity_ref as string,
+    entityKind: row.entity_kind as string,
+    entityName: row.entity_name as string,
+    docKey: row.doc_key as string,
+    title: row.title as string,
+    role: row.role as string,
+    path: row.path as string,
+    commitSha: (row.commit_sha as string) ?? null,
+    digest: row.digest as string,
+    sizeBytes: row.size_bytes == null ? null : Number(row.size_bytes),
+    position: Number(row.position ?? 0),
+    headDigest: row.head_digest as string,
+    syncedAt: toDate(row.synced_at),
+    createdAt: toDate(row.created_at),
   };
 }
 
@@ -1142,11 +1168,117 @@ export function createStateRepository(executor: SqlExecutor): StateRepository {
       }
     },
 
+    async upsertCatalogDoc(input: UpsertCatalogDocInput): Promise<StateResult<CatalogDoc>> {
+      try {
+        const result = await executor.execute<Record<string, unknown>>(
+          `INSERT INTO state.catalog_docs
+             (id, org_id, source_project_id, source_environment, entity_ref,
+              entity_kind, entity_name, doc_key, title, role, path, commit_sha,
+              digest, size_bytes, position, head_digest, synced_at, created_at)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, now(), now())
+           ON CONFLICT (org_id, source_project_id, COALESCE(source_environment, ''), entity_ref, doc_key)
+             DO UPDATE SET
+               entity_kind = EXCLUDED.entity_kind,
+               entity_name = EXCLUDED.entity_name,
+               title = EXCLUDED.title,
+               role = EXCLUDED.role,
+               path = EXCLUDED.path,
+               commit_sha = EXCLUDED.commit_sha,
+               digest = EXCLUDED.digest,
+               size_bytes = EXCLUDED.size_bytes,
+               position = EXCLUDED.position,
+               head_digest = EXCLUDED.head_digest,
+               synced_at = now()
+           RETURNING *`,
+          [
+            input.id,
+            input.orgId,
+            input.sourceProjectId,
+            input.sourceEnvironment ?? null,
+            input.entityRef,
+            input.entityKind,
+            input.entityName,
+            input.docKey,
+            input.title,
+            input.role,
+            input.path,
+            input.commitSha ?? null,
+            input.digest,
+            input.sizeBytes ?? null,
+            input.position,
+            input.headDigest,
+          ],
+        );
+        return { ok: true, value: mapCatalogDoc(result.rows[0]!) };
+      } catch {
+        return safeError("Failed to upsert catalog doc");
+      }
+    },
+
+    async deleteCatalogDocsForScope(
+      orgId: Uuid,
+      sourceProjectId: Uuid,
+      sourceEnvironment: string | null,
+    ): Promise<StateResult<number>> {
+      try {
+        const result = await executor.execute(
+          `DELETE FROM state.catalog_docs
+            WHERE org_id = $1 AND source_project_id = $2
+              AND COALESCE(source_environment, '') = COALESCE($3, '')`,
+          [orgId, sourceProjectId, sourceEnvironment],
+        );
+        return { ok: true, value: result.rowCount ?? 0 };
+      } catch {
+        return safeError("Failed to delete catalog docs for scope");
+      }
+    },
+
+    async listCatalogDocs(
+      orgId: Uuid,
+      params: PageQueryParams,
+      query?: ListCatalogDocsQuery,
+    ): Promise<StateResult<PagedResult<CatalogDoc>>> {
+      const values: unknown[] = [orgId];
+      let sql = `SELECT * FROM state.catalog_docs WHERE org_id = $1`;
+      if (query?.sourceProjectId) {
+        values.push(query.sourceProjectId);
+        sql += ` AND source_project_id = $${values.length}`;
+      }
+      if (query?.sourceEnvironment !== undefined) {
+        if (query.sourceEnvironment === null) {
+          sql += ` AND source_environment IS NULL`;
+        } else {
+          values.push(query.sourceEnvironment);
+          sql += ` AND source_environment = $${values.length}`;
+        }
+      }
+      if (query?.entityKind) {
+        values.push(query.entityKind);
+        sql += ` AND entity_kind = $${values.length}`;
+      }
+      if (query?.entityRef) {
+        values.push(query.entityRef);
+        sql += ` AND entity_ref = $${values.length}`;
+      }
+      if (query?.role) {
+        values.push(query.role);
+        sql += ` AND role = $${values.length}`;
+      }
+      if (query?.q) {
+        values.push(`%${query.q}%`);
+        sql += ` AND (title ILIKE $${values.length} OR path ILIKE $${values.length} OR entity_name ILIKE $${values.length})`;
+      }
+      return pagedList(executor, sql, values, params.limit, params.cursor, mapCatalogDoc);
+    },
+
     async findCatalogDocProject(orgId: Uuid, digest: string): Promise<StateResult<Uuid | null>> {
       try {
-        // The digest must be referenced as a doc_ref by this org's catalog read
-        // model — that IS the authorization (a user who can read the catalog can
-        // read the docs it points at) and yields the object's project scope.
+        // The digest must be referenced by this org's catalog read model —
+        // that IS the authorization (a user who can read the catalog can read
+        // the docs it points at) and yields the object's project scope. The
+        // catalog_docs index (CD3) is the first, exact-match leg: every
+        // attached doc (overview + pages) has a row there; the doc_ref legs
+        // remain for read models projected before the doc index existed.
         //
         // Match on doc_ref cast to text with a substring on the (globally unique,
         // `sha256:`-prefixed) digest, NOT `doc_ref->>'digest'`: doc_ref is written
@@ -1158,7 +1290,10 @@ export function createStateRepository(executor: SqlExecutor): StateRepository {
         // re-projection is needed. `$2` carries the `sha256:` prefix, so it can
         // never collide with the sibling `sha` (bare-hex) field.
         const result = await executor.execute<Record<string, unknown>>(
-          `SELECT source_project_id FROM state.repo_facet
+          `SELECT source_project_id FROM state.catalog_docs
+             WHERE org_id = $1 AND digest = $2
+           UNION
+           SELECT source_project_id FROM state.repo_facet
              WHERE org_id = $1 AND doc_ref::text LIKE '%' || $2 || '%'
            UNION
            SELECT source_project_id FROM state.org_catalog_entities

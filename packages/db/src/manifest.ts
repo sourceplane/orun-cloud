@@ -561,5 +561,14 @@ export const manifest: MigrationManifest = {
       description:
         "Notification channels + async-retry scaffolding (saas-event-streaming ES3) — creates notifications.notification_channels (per-org channel config; config_ciphertext holds an AES-GCM CiphertextEnvelope of a bearer credential like a Slack incoming-webhook URL, write-only and never returned on CRUD reads, mirroring webhooks.webhook_endpoints.secret_ciphertext), lifts the channel CHECK from ('email') to ('email','slack') across the three channel-bearing tables (preferences, notifications, suppressions; attempts has no channel column), and adds next_retry_at + attempt_count to notifications plus a partial retry index so the new notifications-worker cron can drain and re-send failed rows on the webhooks-style backoff ladder (synchronous enqueue send = attempt 1). Additive + idempotent (DROP CONSTRAINT IF EXISTS before re-add, ADD COLUMN IF NOT EXISTS); no cross-context FKs.",
     },
+    {
+      id: "620_state_catalog_docs",
+      context: "state",
+      path: "620_state_catalog_docs/up.sql",
+      checksum:
+        "d4540e32c92f559482c4fe03a0ec6864810472c20486f45f81796c5fad717aeb",
+      description:
+        "Org-wide catalog doc index (saas-catalog-docs CD3) — creates state.catalog_docs: one row per attached (digest-bearing) doc of every catalog entity (the reserved overview + the ordered docs.pages set from CLI CD1/CD2), keyed (org, project, env, entity_ref, doc_key) with denormalized entity kind/name for the Docs-hub browse, role/title/path/commit provenance, the CAS digest the console renders the body by, and (org, digest) + (org, kind, role) + keyset indexes. Projected in the same delete-then-upsert pass as org_catalog_entities and swept by the migration-570 outbox. Derived, never authored; additive + idempotent.",
+    },
   ],
 };

@@ -26,6 +26,9 @@ const ORG_REPO_FACETS_RE = /^\/v1\/organizations\/[^/]+\/repo-facets(\/[^/]+)?$/
 // WO5 — console-facing overview doc read: org-scoped, deframed markdown by digest
 // (?digest=). Distinct from the project-scoped /state/objects/{digest} object GET.
 const ORG_CATALOG_DOC_RE = /^\/v1\/organizations\/[^/]+\/catalog\/doc$/;
+// CD3 — the org-wide catalog doc index (Docs hub browse); plural, disjoint from
+// the singular body read above.
+const ORG_CATALOG_DOCS_RE = /^\/v1\/organizations\/[^/]+\/catalog\/docs$/;
 // OV9 — org state-plane storage footprint: org-scoped (no project) STOCK gauge.
 const ORG_STATE_USAGE_RE = /^\/v1\/organizations\/[^/]+\/state\/usage$/;
 // Org-global runs feed: org-scoped (no project) — the console "Activities"
@@ -65,6 +68,7 @@ export function isStateRoute(pathname: string): boolean {
     ORG_CATALOG_ENTITIES_RE.test(pathname) ||
     ORG_REPO_FACETS_RE.test(pathname) ||
     ORG_CATALOG_DOC_RE.test(pathname) ||
+    ORG_CATALOG_DOCS_RE.test(pathname) ||
     ORG_STATE_USAGE_RE.test(pathname) ||
     ORG_RUNS_RE.test(pathname) ||
     ORG_WORK_RE.test(pathname) ||

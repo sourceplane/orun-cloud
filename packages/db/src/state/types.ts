@@ -404,6 +404,59 @@ export interface UpsertRepoFacetInput {
   sourceCommit?: string | null;
 }
 
+/** One row in the org-wide catalog doc index (state.catalog_docs) — one
+ *  attached doc of one entity's doc set (saas-catalog-docs CD3). Identity is
+ *  (entityRef, docKey); digest is the CAS content address the body reads by. */
+export interface CatalogDoc {
+  id: string;
+  orgId: string;
+  sourceProjectId: string;
+  sourceEnvironment: string | null;
+  entityRef: string;
+  entityKind: string;
+  entityName: string;
+  docKey: string;
+  title: string;
+  role: string;
+  path: string;
+  commitSha: string | null;
+  digest: string;
+  sizeBytes: number | null;
+  position: number;
+  headDigest: string;
+  syncedAt: Date;
+  createdAt: Date;
+}
+
+export interface UpsertCatalogDocInput {
+  id: string;
+  orgId: Uuid;
+  sourceProjectId: Uuid;
+  sourceEnvironment?: string | null;
+  entityRef: string;
+  entityKind: string;
+  entityName: string;
+  docKey: string;
+  title: string;
+  role: string;
+  path: string;
+  commitSha?: string | null;
+  digest: string;
+  sizeBytes?: number | null;
+  position: number;
+  headDigest: string;
+}
+
+/** Docs-hub browse filters (all optional). */
+export interface ListCatalogDocsQuery {
+  sourceProjectId?: Uuid;
+  sourceEnvironment?: string | null;
+  entityKind?: string;
+  entityRef?: string;
+  role?: string;
+  q?: string;
+}
+
 /** One scope needing (re)projection: the current head the read model must catch
  *  up to. Returned by listPendingCatalogProjections (the cron-sweep drive set). */
 export interface PendingCatalogProjection {
@@ -687,6 +740,23 @@ export interface StateRepository {
    *  authorization ("is this a catalog doc in my org?") and the object's scope
    *  for the read. Returns null when the digest is not a catalog doc here. */
   findCatalogDocProject(orgId: Uuid, digest: string): Promise<StateResult<Uuid | null>>;
+
+  // Catalog doc index (saas-catalog-docs CD3) — one row per attached doc.
+  /** Idempotently project one attached doc of an entity's doc set. */
+  upsertCatalogDoc(input: UpsertCatalogDocInput): Promise<StateResult<CatalogDoc>>;
+  /** Remove a scope's doc rows — the "replace the scope" primitive, run in the
+   *  same projection pass as deleteOrgCatalogEntitiesForScope. */
+  deleteCatalogDocsForScope(
+    orgId: Uuid,
+    sourceProjectId: Uuid,
+    sourceEnvironment: string | null,
+  ): Promise<StateResult<number>>;
+  /** Browse the org-wide doc index (Docs hub / entity Docs tab), keyset-paged. */
+  listCatalogDocs(
+    orgId: Uuid,
+    params: PageQueryParams,
+    query?: ListCatalogDocsQuery,
+  ): Promise<StateResult<PagedResult<CatalogDoc>>>;
 
   // Catalog-projection outbox (projection reliability) — records which head each
   // scope's read model has caught up to, so a stuck projection is self-healing.
