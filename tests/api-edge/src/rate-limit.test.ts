@@ -97,12 +97,27 @@ describe("api-edge rate limiter (Task 0097)", () => {
         "metering",
         "billing",
         "audit",
+        "objects",
         "coordination",
       ];
       for (const f of families) {
         expect(__rateLimitConfigForTest[f].org.limit).toBeGreaterThan(0);
         expect(__rateLimitConfigForTest[f].identity.limit).toBeGreaterThan(0);
       }
+    });
+
+    it("objects family clears a catalog-sync burst (well above state)", () => {
+      // A catalog autopush uploads hundreds of digest-negotiated blobs in
+      // seconds under one token; the CLI does not retry a 429 (best-effort
+      // skip), so the cap must comfortably exceed the state family — a first
+      // doc-set push for a 46-component repo is ~150 puts.
+      expect(__rateLimitConfigForTest.objects.identity.limit).toBeGreaterThanOrEqual(600);
+      expect(__rateLimitConfigForTest.objects.identity.limit).toBeGreaterThan(
+        __rateLimitConfigForTest.state.identity.limit,
+      );
+      expect(__rateLimitConfigForTest.objects.org.limit).toBeGreaterThan(
+        __rateLimitConfigForTest.state.org.limit,
+      );
     });
 
     it("coordination family clears a large concurrent DAG fan-out (well above state)", () => {
