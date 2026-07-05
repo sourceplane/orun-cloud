@@ -418,3 +418,46 @@ export interface EventLogQueryFilters {
   from?: string;
   to?: string;
 }
+
+// ---------------------------------------------------------------------------
+// Public Event Group (dedup/correlation read projection, ES4)
+// ---------------------------------------------------------------------------
+
+export type EventGroupStatus = "open" | "closed";
+
+/**
+ * A dedup/correlation "story" as seen at the API boundary. Matches the JSON
+ * emitted by the events-worker event-groups handler (`toPublicGroup`): the
+ * internal org UUID is projected to its public `org_<hex>` form and every
+ * timestamp is an ISO-8601 string.
+ */
+export interface PublicEventGroup {
+  id: string;
+  orgId: string;
+  groupKey: string;
+  status: EventGroupStatus;
+  eventCount: number;
+  maxSeverity: string;
+  firstAt: string;
+  lastAt: string;
+  closedAt: string | null;
+}
+
+/**
+ * A single member of an event group's timeline (`toPublicMember`): the member
+ * event id and the moment it was appended to the group.
+ */
+export interface PublicEventGroupMember {
+  eventId: string;
+  addedAt: string;
+}
+
+export interface ListEventGroupsResponse {
+  data: { eventGroups: PublicEventGroup[] };
+  meta: { requestId: string; cursor: string | null };
+}
+
+export interface GetEventGroupResponse {
+  data: { eventGroup: PublicEventGroup; members: PublicEventGroupMember[] };
+  meta: { requestId: string };
+}

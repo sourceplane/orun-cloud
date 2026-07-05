@@ -2,6 +2,7 @@ import type { Env } from "@events-worker/env";
 import { handleIngestEvent } from "@events-worker/handlers/ingest-event";
 import { route } from "@events-worker/router";
 import type { AppendEventInput, EventsRepository, StoredEvent } from "@saas/db/events";
+import type { MeteringRepository, RecordUsageInput } from "@saas/db/metering";
 
 const TEST_ORG_UUID = "a1b2c3d4-e5f6-7890-abcd-ef1234567890";
 const TEST_ORG_PUBLIC_ID = "org_a1b2c3d4e5f67890abcdef1234567890";
@@ -60,6 +61,17 @@ function fakeEventsRepo(options?: FakeRepoOptions): { repo: EventsRepository; ap
     },
   } as unknown as EventsRepository;
   return { repo, appended };
+}
+
+function fakeMeteringRepo(): { repo: MeteringRepository; recorded: RecordUsageInput[] } {
+  const recorded: RecordUsageInput[] = [];
+  const repo = {
+    async recordUsage(input: RecordUsageInput) {
+      recorded.push(input);
+      return { ok: true as const, value: { id: input.id } as never };
+    },
+  } as unknown as MeteringRepository;
+  return { repo, recorded };
 }
 
 function createMockFetcher(handler?: (req: Request) => Promise<Response>): Fetcher {
@@ -195,6 +207,7 @@ describe("custom event ingest", () => {
 
   it("201s on success, persisting with source custom-ingest and mapping to a PublicEvent", async () => {
     const { repo, appended } = fakeEventsRepo();
+    const metering = fakeMeteringRepo();
     const res = await handleIngestEvent(
       req(PATH, "POST", {
         type: "custom.order.placed",
@@ -206,7 +219,7 @@ describe("custom event ingest", () => {
       REQUEST_ID,
       TEST_ACTOR,
       TEST_ORG_UUID,
-      { eventsRepo: repo },
+      { eventsRepo: repo, meteringRepo: metering.repo },
     );
     expect(res.status).toBe(201);
     const body = (await res.json()) as { data: { event: Record<string, unknown> } };
@@ -218,6 +231,42 @@ describe("custom event ingest", () => {
     expect(appended).toHaveLength(1);
     expect(appended[0]!.source).toBe("custom-ingest");
     expect(appended[0]!.orgId).toBe(TEST_ORG_UUID);
+    // ES5b: one custom_events_ingested usage unit is recorded on success, keyed
+    // on the event id so replays never double-count.
+    expect(metering.recorded).toHaveLength(1);
+    expect(metering.recorded[0]!.metric).toBe("custom_events_ingested");
+    expect(metering.recorded[0]!.orgId).toBe(TEST_ORG_UUID);
+    expect(metering.recorded[0]!.idempotencyKey).toBe(`custom_event:${appended[0]!.id}`);
+  });
+
+  it("does not record usage on idempotent replay (returns the original, no double-count)", async () => {
+    const existing = storedFromInput({
+      id: "evt_0123456789abcdef0123456789abcdef",
+      type: "custom.order.placed",
+      version: 1,
+      source: "custom-ingest",
+      occurredAt: NOW,
+      actorType: "user",
+      actorId: "usr_abc123",
+      orgId: TEST_ORG_UUID,
+      subjectKind: "custom",
+      subjectId: "custom",
+      requestId: "req_prev",
+      idempotencyKey: "idem-1",
+      payload: {},
+    });
+    const { repo } = fakeEventsRepo({ existingByIdemKey: existing });
+    const metering = fakeMeteringRepo();
+    const res = await handleIngestEvent(
+      req(PATH, "POST", { type: "custom.order.placed", idempotencyKey: "idem-1" }),
+      createEnv(),
+      REQUEST_ID,
+      TEST_ACTOR,
+      TEST_ORG_UUID,
+      { eventsRepo: repo, meteringRepo: metering.repo },
+    );
+    expect(res.status).toBe(200);
+    expect(metering.recorded).toHaveLength(0);
   });
 
   it("returns the existing event (200) on idempotent replay", async () => {

@@ -1,5 +1,9 @@
 import type { EventGroupsRepository, EventsRepository, StoredEvent } from "@saas/db/events";
-import { eventDedupKey, effectiveEventSeverity } from "@saas/contracts/event-catalog";
+import {
+  CUSTOM_EVENT_NAMESPACE,
+  eventDedupKey,
+  effectiveEventSeverity,
+} from "@saas/contracts/event-catalog";
 import type { LaneHandler } from "./types.js";
 import { generateGroupId } from "../ids.js";
 
@@ -56,11 +60,17 @@ export function createGroupingLaneHandler(deps: GroupingLaneDeps): LaneHandler {
         await deps.groupsRepo.closeInactiveGroups(cutoff);
       }
 
-      const key = eventDedupKey(event.type, {
-        subject: { kind: event.subjectKind, id: event.subjectId, name: event.subjectName },
-        tenant: { orgId: event.orgId },
-        payload: event.payload,
-      });
+      // First try the catalog dedup-key templates (ES4). When the catalog has
+      // no template for this type, fall back to the caller-supplied custom
+      // dedupKey (ES5b): a `custom.*` event whose ingest payload carries a
+      // non-empty `dedupKey` groups on `custom:{orgId}:{dedupKey}`. Catalog
+      // grouping is unchanged.
+      const key =
+        eventDedupKey(event.type, {
+          subject: { kind: event.subjectKind, id: event.subjectId, name: event.subjectName },
+          tenant: { orgId: event.orgId },
+          payload: event.payload,
+        }) ?? customDedupKey(event);
       // No authored dedup key (or a missing field) ⇒ this event never groups.
       if (!key) return;
 
@@ -96,4 +106,18 @@ export function createGroupingLaneHandler(deps: GroupingLaneDeps): LaneHandler {
       if (!appended.ok) throw new Error("group_append_failed");
     },
   };
+}
+
+/**
+ * Group key for a caller-authored custom event (ES5b). The ingest handler
+ * threads the caller's `dedupKey` into the stored payload under the reserved
+ * `dedupKey` field; a `custom.*` event that carries a non-empty string there
+ * groups on `custom:{orgId}:{dedupKey}`. Any non-custom type, or a missing /
+ * empty / non-string dedupKey, returns `null` (never groups off this path).
+ */
+function customDedupKey(event: StoredEvent): string | null {
+  if (!event.type.startsWith(CUSTOM_EVENT_NAMESPACE)) return null;
+  const raw = event.payload?.["dedupKey"];
+  if (typeof raw !== "string" || raw.length === 0) return null;
+  return `custom:${event.orgId}:${raw}`;
 }

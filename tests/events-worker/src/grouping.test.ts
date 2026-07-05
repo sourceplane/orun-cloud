@@ -169,6 +169,31 @@ describe("grouping lane", () => {
   it("keeps the inactivity window as the documented default", () => {
     expect(GROUP_INACTIVITY_SECONDS).toBe(30 * 60);
   });
+
+  // ES5b: custom-namespaced events with no catalog dedup template still group
+  // when the caller supplied a `payload.dedupKey`.
+  it("opens then appends a custom.* story keyed on the caller dedupKey", async () => {
+    const { repo, calls } = fakeGroupsRepo({ openGroup: null });
+    const handler = createGroupingLaneHandler({ groupsRepo: repo, eventsRepo: fakeEventsRepo(), now: () => NOW });
+    const custom = (id: string): StoredEvent =>
+      event({ id, type: "custom.order.placed", source: "custom-ingest", payload: { dedupKey: "order-42", title: "t", severity: "info" } });
+    await handler.handleEvent(custom("evt-c1"));
+    await handler.handleEvent(custom("evt-c2"));
+    // First event opens the group; second finds it open and appends.
+    expect(calls.created).toHaveLength(1);
+    expect((calls.created[0] as { groupKey: string }).groupKey).toBe(`custom:${ORG}:order-42`);
+    expect(calls.appended).toHaveLength(1);
+  });
+
+  it("does NOT group a custom.* event with no dedupKey", async () => {
+    const { repo, calls } = fakeGroupsRepo();
+    const handler = createGroupingLaneHandler({ groupsRepo: repo, eventsRepo: fakeEventsRepo(), now: () => NOW });
+    await handler.handleEvent(
+      event({ id: "evt-c3", type: "custom.order.placed", source: "custom-ingest", payload: { title: "t", severity: "info" } }),
+    );
+    expect(calls.created).toHaveLength(0);
+    expect(calls.appended).toHaveLength(0);
+  });
 });
 
 // ---------------------------------------------------------------------------
