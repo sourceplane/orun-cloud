@@ -259,6 +259,23 @@ export interface InternalTeamMembersResponse {
   members: InternalTeamMember[];
 }
 
+/**
+ * Internal (service-binding only) request to resolve a team `@handle` mention to
+ * its `team_<hex>` id (teams-collaboration TC2). `orgId` scopes the lookup to the
+ * org's account (handles are account-unique); `handle` may carry a leading `@`.
+ */
+export interface ResolveTeamHandleRequest {
+  orgId: string;
+  handle: string;
+}
+
+export interface ResolveTeamHandleResponse {
+  /** The resolved team's public id, or `null` when no team owns that handle. */
+  teamId: string | null;
+  handle: string | null;
+  name: string | null;
+}
+
 /** Grant a team a role at account | organization (workspace) | project scope. */
 export interface GrantTeamRoleRequest {
   teamId: string;

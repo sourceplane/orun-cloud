@@ -18,7 +18,7 @@ import type { Env } from "../env.js";
 import { notificationPublicId, parseNotificationPublicId, parseOrgIdInput } from "../ids.js";
 import { emitEvent } from "../events-client.js";
 import { deliverAttempt } from "./dispatch.js";
-import { expandTeamRecipients } from "../team-expansion.js";
+import { expandTeamRecipients, resolveTeamHandle } from "../team-expansion.js";
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const ALLOWED_CATEGORIES = new Set(["invitation", "billing", "security", "support", "product"]);
@@ -245,6 +245,7 @@ async function deliverToRecipient(
   now: Date,
   genUuid: () => string,
   emit: NonNullable<NotificationsServiceDeps["emit"]>,
+  opts?: { preferenceSkip?: boolean },
 ): Promise<{ outcome: EnqueueOutcome } | { error: { code: string; status: number; message: string } }> {
   const { repo, provider } = deps;
 
@@ -264,9 +265,14 @@ async function deliverToRecipient(
     }
   }
 
-  // Suppression short-circuit.
-  const suppressed = await repo.isSuppressed(orgUuid, recipient.channel, recipient.address);
-  if (suppressed.ok && suppressed.value) {
+  // Suppression short-circuit. Two paths land here: an address-level org
+  // suppression (bounce/complaint — the absolute ceiling) or a TC2 preference
+  // opt-out (`preferenceSkip`). Either records a `suppressed` row (auditable,
+  // never sent) rather than a live delivery.
+  const addressSuppressed = await repo.isSuppressed(orgUuid, recipient.channel, recipient.address);
+  const suppress = opts?.preferenceSkip === true || (addressSuppressed.ok && addressSuppressed.value);
+  if (suppress) {
+    const reason = opts?.preferenceSkip ? "preference opt-out" : "suppression";
     const id = genUuid();
     const create = await repo.createNotification({
       id,
@@ -297,7 +303,7 @@ async function deliverToRecipient(
       requestId: deps.requestId,
       correlationId: request.correlationId ?? null,
       category: "notifications",
-      description: `Notification ${notificationPublicId(create.value.id)} short-circuited by suppression`,
+      description: `Notification ${notificationPublicId(create.value.id)} short-circuited by ${reason}`,
       payload: {
         orgId: request.orgId,
         category: request.category,
@@ -429,6 +435,53 @@ async function deliverToRecipient(
 }
 
 /**
+ * Read one preference row's toggle for a category. Returns `null` when the row
+ * (or the category key) is not configured — the cascade treats that as "defer
+ * to the next level", not as an opt-out.
+ */
+async function categoryToggle(
+  repo: NotificationsRepository,
+  orgUuid: Uuid,
+  subjectKind: "user" | "team" | "organization",
+  subjectId: string,
+  category: string,
+  channel: string,
+): Promise<boolean | null> {
+  const list = await repo.listPreferences(orgUuid, subjectKind, subjectId, channel);
+  if (!list.ok || list.value.length === 0) return null;
+  // The (org, subjectKind, subjectId, channel) index is unique — at most one row.
+  const categories = list.value[0]!.categories as Record<string, boolean | null | undefined>;
+  const v = categories[category];
+  return v === true || v === false ? v : null;
+}
+
+/**
+ * teams-collaboration TC2: resolve whether a team member wants a category on a
+ * channel, by the preference cascade — member-override → team-default →
+ * org-default → opt-in default. The first level that has an explicit toggle
+ * wins; an unset level defers downward. Org suppression is enforced separately
+ * (in deliverToRecipient) as the absolute ceiling, so it is not part of this
+ * opt-in/opt-out resolution.
+ */
+async function memberWantsCategory(
+  repo: NotificationsRepository,
+  orgUuid: Uuid,
+  orgPublicId: string,
+  teamId: string,
+  memberSubjectId: string,
+  category: string,
+  channel: string,
+): Promise<boolean> {
+  const member = await categoryToggle(repo, orgUuid, "user", memberSubjectId, category, channel);
+  if (member !== null) return member;
+  const team = await categoryToggle(repo, orgUuid, "team", teamId, category, channel);
+  if (team !== null) return team;
+  const org = await categoryToggle(repo, orgUuid, "organization", orgPublicId, category, channel);
+  if (org !== null) return org;
+  return true; // no level configured ⇒ transactional opt-in default.
+}
+
+/**
  * Expand a team target to its active members and send one notification per
  * member (teams-collaboration TC1). Each leg records a per-member `user`
  * delivery row and is gated by org suppression independently, so org
@@ -436,6 +489,12 @@ async function deliverToRecipient(
  * (`<base>:<subjectId>`) keeps re-sends idempotent while letting a roster grow
  * between sends. The aggregate response carries the first delivery as
  * `notification` and the full set as `deliveries`.
+ *
+ * teams-collaboration TC2: before each leg, the preference cascade
+ * (member-override → team-default → org-default) decides whether the member
+ * wants this category. An opted-out member is skipped — they leave no delivery
+ * row and stay on the team. Org suppression remains the absolute ceiling
+ * (checked in deliverToRecipient), independent of any team default.
  */
 async function enqueueTeamFanOut(
   deps: NotificationsServiceDeps,
@@ -445,7 +504,18 @@ async function enqueueTeamFanOut(
   genUuid: () => string,
   emit: NonNullable<NotificationsServiceDeps["emit"]>,
 ): Promise<{ outcome: EnqueueOutcome } | { error: { code: string; status: number; message: string } }> {
-  const teamId = request.recipient.subjectId!;
+  // TC2: the target may be a `team_<hex>` id or an `@handle` mention. Resolve a
+  // handle to its team id first (unknown handle ⇒ 422, transport failure ⇒ 503).
+  let teamId = request.recipient.subjectId!;
+  if (!teamId.startsWith("team_")) {
+    const resolved = await resolveTeamHandle(deps.env.MEMBERSHIP_WORKER, request.orgId, teamId, deps.requestId);
+    if (!resolved.ok) {
+      return resolved.reason === "not_found"
+        ? { error: { code: "not_found", status: 422, message: "No team owns that handle" } }
+        : { error: { code: "service_unavailable", status: 503, message: "Team handle resolution unavailable" } };
+    }
+    teamId = resolved.teamId;
+  }
   const expansion = await expandTeamRecipients(deps.env.MEMBERSHIP_WORKER, deps.env.IDENTITY_WORKER, teamId, deps.requestId);
   if (!expansion.ok) {
     return { error: { code: "service_unavailable", status: 503, message: "Team roster resolution unavailable" } };
@@ -457,6 +527,18 @@ async function enqueueTeamFanOut(
   const deliveries: NotificationDeliveryStatus[] = [];
   let lastError: { code: string; status: number; message: string } | undefined;
   for (const member of expansion.recipients) {
+    // TC2 preference cascade: an opted-out member gets a `suppressed` row
+    // (auditable, never sent) while remaining on the team. Org suppression is
+    // enforced below in deliverToRecipient regardless of this decision.
+    const wants = await memberWantsCategory(
+      deps.repo,
+      orgUuid,
+      request.orgId,
+      teamId,
+      member.subjectId,
+      request.category,
+      "email",
+    );
     const perMemberKey = request.idempotencyKey ? `${request.idempotencyKey}:${member.subjectId}` : undefined;
     const res = await deliverToRecipient(
       deps,
@@ -467,6 +549,7 @@ async function enqueueTeamFanOut(
       now,
       genUuid,
       emit,
+      wants ? undefined : { preferenceSkip: true },
     );
     if ("error" in res) {
       lastError = res.error;

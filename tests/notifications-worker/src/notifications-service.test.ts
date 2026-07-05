@@ -499,19 +499,30 @@ function jsonEnvelope(data: unknown, status = 200): Response {
   });
 }
 
-/** Fake membership-worker returning a team's active roster. */
+/**
+ * Fake membership-worker. Routes by path: `team-members` returns the roster;
+ * `resolve-team-handle` maps a handle → team id from `handleMap` (TC2).
+ */
 function fakeMembershipWorker(
   members: Array<{ subjectId: string; subjectType?: string; teamRole?: string }>,
+  handleMap: Record<string, string> = {},
 ) {
   return {
-    fetch: async () =>
-      jsonEnvelope({
+    fetch: async (url: string, init?: { body?: string }) => {
+      if (url.includes("resolve-team-handle")) {
+        const body = JSON.parse(init?.body ?? "{}") as { handle: string };
+        const key = body.handle.replace(/^@/, "").toLowerCase();
+        const teamId = handleMap[key] ?? null;
+        return jsonEnvelope({ teamId, handle: teamId ? key : null, name: teamId ? key : null });
+      }
+      return jsonEnvelope({
         members: members.map((m) => ({
           subjectId: m.subjectId,
           subjectType: m.subjectType ?? "user",
           teamRole: m.teamRole ?? "team_member",
         })),
-      }),
+      });
+    },
   };
 }
 
@@ -712,5 +723,108 @@ describe("enqueueNotification — team fan-out (TC1)", () => {
 
     // Re-send is idempotent per member: still exactly 2 rows, not 4.
     expect([...repo._store.notifications.values()]).toHaveLength(2);
+  });
+});
+
+// ── teams-collaboration TC2: preference cascade + @handle resolution ──
+const TEAM_ID = "team_00000000000000000000000000000abc";
+
+async function seedPref(
+  repo: ReturnType<typeof createFakeRepo>,
+  subjectKind: "user" | "team" | "organization",
+  subjectId: string,
+  categories: Record<string, boolean | null>,
+) {
+  await repo.upsertPreference({
+    id: `pref-${subjectKind}-${subjectId}`,
+    orgId: ORG_UUID,
+    subjectKind,
+    subjectId,
+    channel: "email",
+    categories,
+    updatedAt: fixedNow,
+  });
+}
+
+function runTeamSend(repo: ReturnType<typeof createFakeRepo>, membership: unknown, identity: unknown, req = teamRequest) {
+  return enqueueNotification(
+    { repo, provider: createLocalDebugProvider(), env: teamEnv(membership, identity), actorType: "service", actorId: "events-worker", requestId: "req_tc2", now: () => fixedNow, generateUuid: () => crypto.randomUUID(), emit: createCapturingEmitter().emit },
+    req,
+  );
+}
+
+describe("enqueueNotification — TC2 preference cascade", () => {
+  const roster = fakeMembershipWorker([{ subjectId: "usr_a" }, { subjectId: "usr_b" }]);
+  const identity = fakeIdentityWorker({ usr_a: "a@x.com", usr_b: "b@x.com" });
+
+  it("lets a member opt out of a category without leaving the team", async () => {
+    const repo = createFakeRepo();
+    await seedPref(repo, "user", "usr_b", { product: false });
+    const result = await runTeamSend(repo, roster, identity);
+    if (!("outcome" in result)) throw new Error("expected outcome");
+    const byAddr = new Map(result.outcome.response.deliveries!.map((d) => [d.recipient.address, d.status]));
+    expect(byAddr.get("a@x.com")).toBe("sent");
+    expect(byAddr.get("b@x.com")).toBe("suppressed"); // opted out, still on roster
+  });
+
+  it("applies a team default when a member has no override", async () => {
+    const repo = createFakeRepo();
+    await seedPref(repo, "team", TEAM_ID, { product: false });
+    const result = await runTeamSend(repo, roster, identity);
+    if (!("outcome" in result)) throw new Error("expected outcome");
+    expect(result.outcome.response.deliveries!.every((d) => d.status === "suppressed")).toBe(true);
+  });
+
+  it("a member override beats a team default (opt back in)", async () => {
+    const repo = createFakeRepo();
+    await seedPref(repo, "team", TEAM_ID, { product: false });
+    await seedPref(repo, "user", "usr_a", { product: true });
+    const result = await runTeamSend(repo, roster, identity);
+    if (!("outcome" in result)) throw new Error("expected outcome");
+    const byAddr = new Map(result.outcome.response.deliveries!.map((d) => [d.recipient.address, d.status]));
+    expect(byAddr.get("a@x.com")).toBe("sent"); // override wins
+    expect(byAddr.get("b@x.com")).toBe("suppressed"); // inherits team default
+  });
+
+  it("falls back to the org default when neither member nor team is set", async () => {
+    const repo = createFakeRepo();
+    await seedPref(repo, "organization", ORG_UUID, { product: false });
+    const result = await runTeamSend(repo, roster, identity);
+    if (!("outcome" in result)) throw new Error("expected outcome");
+    expect(result.outcome.response.deliveries!.every((d) => d.status === "suppressed")).toBe(true);
+  });
+
+  it("org suppression is the absolute ceiling — a team default of true cannot override it", async () => {
+    const repo = createFakeRepo();
+    await seedPref(repo, "team", TEAM_ID, { product: true }); // team says send
+    await repo.createSuppression({ id: "77777777-7777-4777-8777-777777777777", orgId: ORG_UUID, channel: "email", address: "b@x.com", reason: "bounce", createdAt: fixedNow });
+    const result = await runTeamSend(repo, roster, identity);
+    if (!("outcome" in result)) throw new Error("expected outcome");
+    const byAddr = new Map(result.outcome.response.deliveries!.map((d) => [d.recipient.address, d.status]));
+    expect(byAddr.get("a@x.com")).toBe("sent");
+    expect(byAddr.get("b@x.com")).toBe("suppressed"); // suppression wins over team default
+  });
+});
+
+describe("enqueueNotification — TC2 @handle target resolution", () => {
+  it("resolves an @handle target to a team and fans out to its members", async () => {
+    const repo = createFakeRepo();
+    const membership = fakeMembershipWorker([{ subjectId: "usr_a" }, { subjectId: "usr_b" }], { payments: TEAM_ID });
+    const identity = fakeIdentityWorker({ usr_a: "a@x.com", usr_b: "b@x.com" });
+    const req = { ...teamRequest, recipient: { ...teamRequest.recipient, subjectId: "@payments" } };
+    const result = await runTeamSend(repo, membership, identity, req);
+    if (!("outcome" in result)) throw new Error("expected outcome");
+    expect(result.outcome.response.deliveries).toHaveLength(2);
+    expect(result.outcome.response.deliveries!.every((d) => d.status === "sent")).toBe(true);
+  });
+
+  it("returns 422 when the @handle resolves to no team", async () => {
+    const repo = createFakeRepo();
+    const membership = fakeMembershipWorker([{ subjectId: "usr_a" }], {}); // no handle mapping
+    const identity = fakeIdentityWorker({ usr_a: "a@x.com" });
+    const req = { ...teamRequest, recipient: { ...teamRequest.recipient, subjectId: "@ghost" } };
+    const result = await runTeamSend(repo, membership, identity, req);
+    if (!("error" in result)) throw new Error("expected error");
+    expect(result.error.status).toBe(422);
   });
 });

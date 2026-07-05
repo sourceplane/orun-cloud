@@ -1,4 +1,4 @@
-import type { InternalTeamMembersResponse } from "@saas/contracts/membership";
+import type { InternalTeamMembersResponse, ResolveTeamHandleResponse } from "@saas/contracts/membership";
 import type { ResolveEmailsResponse } from "@saas/contracts/auth";
 
 /**
@@ -35,6 +35,39 @@ async function readData(response: Response): Promise<unknown | null> {
   }
   if (!parsed || typeof parsed !== "object" || !("data" in parsed)) return null;
   return (parsed as { data: unknown }).data;
+}
+
+export type ResolveHandleResult =
+  | { ok: true; teamId: string }
+  | { ok: false; reason: "unavailable" | "not_found" };
+
+/**
+ * teams-collaboration TC2: resolve a team `@handle` notification target to its
+ * `team_<hex>` id via membership. `not_found` is a clean miss (unknown handle);
+ * `unavailable` is a transport failure the caller surfaces as a 503.
+ */
+export async function resolveTeamHandle(
+  membershipWorker: Fetcher | undefined,
+  orgId: string,
+  handle: string,
+  requestId: string,
+): Promise<ResolveHandleResult> {
+  if (!membershipWorker) return { ok: false, reason: "unavailable" };
+  let response: Response;
+  try {
+    response = await membershipWorker.fetch("http://membership-worker/v1/internal/membership/resolve-team-handle", {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-request-id": requestId },
+      body: JSON.stringify({ orgId, handle }),
+    });
+  } catch {
+    return { ok: false, reason: "unavailable" };
+  }
+  const data = await readData(response);
+  if (!data || typeof data !== "object" || !("teamId" in data)) return { ok: false, reason: "unavailable" };
+  const typed = data as ResolveTeamHandleResponse;
+  if (typeof typed.teamId !== "string" || typed.teamId.length === 0) return { ok: false, reason: "not_found" };
+  return { ok: true, teamId: typed.teamId };
 }
 
 /** Fetch the active roster's subject ids (user subjects only). */
