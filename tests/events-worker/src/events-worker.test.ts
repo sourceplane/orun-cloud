@@ -199,6 +199,9 @@ describe("events-worker list-audit handler", () => {
       listScmEventsSince: async () => ({ ok: true as const, value: [] }),
       listRunResultEventsSince: async () => ({ ok: true as const, value: [] }),
       listRecentlyActiveOrgIds: async () => ({ ok: true as const, value: [] }),
+      queryEventLogByOrg: async () => ({ ok: true as const, value: { items: [], nextCursor: null } }),
+      findEventByIdempotencyKey: async () => ({ ok: true as const, value: null }),
+      countCustomEventsSince: async () => ({ ok: true as const, value: 0 }),
     };
 
     const env = createEnv();
@@ -237,6 +240,9 @@ describe("events-worker list-audit handler", () => {
       listScmEventsSince: async () => ({ ok: true as const, value: [] }),
       listRunResultEventsSince: async () => ({ ok: true as const, value: [] }),
       listRecentlyActiveOrgIds: async () => ({ ok: true as const, value: [] }),
+      queryEventLogByOrg: async () => ({ ok: true as const, value: { items: [], nextCursor: null } }),
+      findEventByIdempotencyKey: async () => ({ ok: true as const, value: null }),
+      countCustomEventsSince: async () => ({ ok: true as const, value: 0 }),
     };
 
     const env = createEnv();
@@ -263,6 +269,9 @@ describe("events-worker list-audit handler", () => {
       listScmEventsSince: async () => ({ ok: true as const, value: [] }),
       listRunResultEventsSince: async () => ({ ok: true as const, value: [] }),
       listRecentlyActiveOrgIds: async () => ({ ok: true as const, value: [] }),
+      queryEventLogByOrg: async () => ({ ok: true as const, value: { items: [], nextCursor: null } }),
+      findEventByIdempotencyKey: async () => ({ ok: true as const, value: null }),
+      countCustomEventsSince: async () => ({ ok: true as const, value: 0 }),
     };
 
     const env = createEnv();
@@ -291,6 +300,9 @@ describe("events-worker list-audit handler", () => {
       listScmEventsSince: async () => ({ ok: true as const, value: [] }),
       listRunResultEventsSince: async () => ({ ok: true as const, value: [] }),
       listRecentlyActiveOrgIds: async () => ({ ok: true as const, value: [] }),
+      queryEventLogByOrg: async () => ({ ok: true as const, value: { items: [], nextCursor: null } }),
+      findEventByIdempotencyKey: async () => ({ ok: true as const, value: null }),
+      countCustomEventsSince: async () => ({ ok: true as const, value: 0 }),
     };
 
     const env = createEnv();
@@ -345,6 +357,9 @@ describe("events-worker list-audit handler", () => {
       listScmEventsSince: async () => ({ ok: true as const, value: [] }),
       listRunResultEventsSince: async () => ({ ok: true as const, value: [] }),
       listRecentlyActiveOrgIds: async () => ({ ok: true as const, value: [] }),
+      queryEventLogByOrg: async () => ({ ok: true as const, value: { items: [], nextCursor: null } }),
+      findEventByIdempotencyKey: async () => ({ ok: true as const, value: null }),
+      countCustomEventsSince: async () => ({ ok: true as const, value: 0 }),
     };
 
     const env = createEnv();
@@ -409,6 +424,9 @@ describe("events-worker list-audit handler", () => {
       listScmEventsSince: async () => ({ ok: true as const, value: [] }),
       listRunResultEventsSince: async () => ({ ok: true as const, value: [] }),
       listRecentlyActiveOrgIds: async () => ({ ok: true as const, value: [] }),
+      queryEventLogByOrg: async () => ({ ok: true as const, value: { items: [], nextCursor: null } }),
+      findEventByIdempotencyKey: async () => ({ ok: true as const, value: null }),
+      countCustomEventsSince: async () => ({ ok: true as const, value: 0 }),
     };
 
     const env = createEnv();
@@ -472,6 +490,9 @@ describe("events-worker list-audit handler", () => {
       listScmEventsSince: async () => ({ ok: true as const, value: [] }),
       listRunResultEventsSince: async () => ({ ok: true as const, value: [] }),
       listRecentlyActiveOrgIds: async () => ({ ok: true as const, value: [] }),
+      queryEventLogByOrg: async () => ({ ok: true as const, value: { items: [], nextCursor: null } }),
+      findEventByIdempotencyKey: async () => ({ ok: true as const, value: null }),
+      countCustomEventsSince: async () => ({ ok: true as const, value: 0 }),
     };
 
     const env = createEnv();
@@ -506,6 +527,9 @@ describe("events-worker list-audit handler", () => {
       listScmEventsSince: async () => ({ ok: true as const, value: [] }),
       listRunResultEventsSince: async () => ({ ok: true as const, value: [] }),
       listRecentlyActiveOrgIds: async () => ({ ok: true as const, value: [] }),
+      queryEventLogByOrg: async () => ({ ok: true as const, value: { items: [], nextCursor: null } }),
+      findEventByIdempotencyKey: async () => ({ ok: true as const, value: null }),
+      countCustomEventsSince: async () => ({ ok: true as const, value: 0 }),
     };
 
     const env = createEnv();
@@ -540,6 +564,9 @@ describe("events-worker list-audit handler", () => {
       listScmEventsSince: async () => ({ ok: true as const, value: [] }),
       listRunResultEventsSince: async () => ({ ok: true as const, value: [] }),
       listRecentlyActiveOrgIds: async () => ({ ok: true as const, value: [] }),
+      queryEventLogByOrg: async () => ({ ok: true as const, value: { items: [], nextCursor: null } }),
+      findEventByIdempotencyKey: async () => ({ ok: true as const, value: null }),
+      countCustomEventsSince: async () => ({ ok: true as const, value: 0 }),
     };
 
     const env = createEnv();
@@ -562,6 +589,9 @@ describe("events-worker list-audit handler", () => {
       listScmEventsSince: async () => ({ ok: true as const, value: [] }),
       listRunResultEventsSince: async () => ({ ok: true as const, value: [] }),
       listRecentlyActiveOrgIds: async () => ({ ok: true as const, value: [] }),
+      queryEventLogByOrg: async () => ({ ok: true as const, value: { items: [], nextCursor: null } }),
+      findEventByIdempotencyKey: async () => ({ ok: true as const, value: null }),
+      countCustomEventsSince: async () => ({ ok: true as const, value: 0 }),
     };
 
     const env = createEnv();
@@ -588,6 +618,9 @@ describe("events-worker list-audit handler", () => {
       listScmEventsSince: async () => ({ ok: true as const, value: [] }),
       listRunResultEventsSince: async () => ({ ok: true as const, value: [] }),
       listRecentlyActiveOrgIds: async () => ({ ok: true as const, value: [] }),
+      queryEventLogByOrg: async () => ({ ok: true as const, value: { items: [], nextCursor: null } }),
+      findEventByIdempotencyKey: async () => ({ ok: true as const, value: null }),
+      countCustomEventsSince: async () => ({ ok: true as const, value: 0 }),
     };
 
     const env = createEnv();
@@ -641,6 +674,9 @@ describe("events-worker list-audit handler", () => {
       listScmEventsSince: async () => ({ ok: true as const, value: [] }),
       listRunResultEventsSince: async () => ({ ok: true as const, value: [] }),
       listRecentlyActiveOrgIds: async () => ({ ok: true as const, value: [] }),
+      queryEventLogByOrg: async () => ({ ok: true as const, value: { items: [], nextCursor: null } }),
+      findEventByIdempotencyKey: async () => ({ ok: true as const, value: null }),
+      countCustomEventsSince: async () => ({ ok: true as const, value: 0 }),
     };
 
     const env = createEnv({
@@ -673,6 +709,9 @@ describe("events-worker list-audit handler", () => {
       listScmEventsSince: async () => ({ ok: true as const, value: [] }),
       listRunResultEventsSince: async () => ({ ok: true as const, value: [] }),
       listRecentlyActiveOrgIds: async () => ({ ok: true as const, value: [] }),
+      queryEventLogByOrg: async () => ({ ok: true as const, value: { items: [], nextCursor: null } }),
+      findEventByIdempotencyKey: async () => ({ ok: true as const, value: null }),
+      countCustomEventsSince: async () => ({ ok: true as const, value: 0 }),
     };
 
     const env = createEnv();

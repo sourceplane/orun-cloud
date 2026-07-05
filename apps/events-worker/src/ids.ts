@@ -25,6 +25,17 @@ export function generateEventId(): string {
   return `evt_${randomHex(16)}`;
 }
 
+/**
+ * The event_log row id format — `evt_` + 32 hex (the TEXT PK minted by
+ * {@link generateEventId}, no uuid conversion). The ES5 explorer's single-event
+ * route validates the caller-supplied id against this before any DB read.
+ */
+export const EVENT_ID_RE = /^evt_[0-9a-f]{32}$/;
+
+export function isEventId(id: string): boolean {
+  return EVENT_ID_RE.test(id);
+}
+
 const DEAD_LETTER_ID_RE = /^dl_[0-9a-f]{32}$/;
 
 export function isDeadLetterId(id: string): boolean {
