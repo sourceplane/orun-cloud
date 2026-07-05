@@ -30,7 +30,7 @@ an entity Docs tab that shows what git actually produced.
 
 | Field | Value |
 |-------|-------|
-| Status | **Draft** — design complete (CD0 in review); no code landed |
+| Status | **✅ Shipped (CD0–CD6)** — CD0 design (orun-cloud #337 · orun #462 · ogpic #23); CD1 doc set + universal walk + pinned-commit provenance + caps (orun #463); CD2 enrichment (orun #464); CD3 `state.catalog_docs` + endpoint + SDK (#340); CD4 real entity Docs tab, synthesized files deleted (#341); CD5 Docs hub + reader + nav + Overview docs card (#342); CD6 sibling links (#343). **CD7 deferred** by design. As-built: `IMPLEMENTATION-STATUS.md` (incl. recorded deviations). |
 | Cluster | **CD** (catalog docs — the doc-object model + docs surfaces over **WO** `saas-workspace-overview`, **CP** `saas-catalog-portal`, **OP** `18-state.md`) |
 | Repos | `sourceplane/orun-cloud` (platform, TS) · `sourceplane/orun` (CLI/engine, Go) · `sourceplane/ogpic` (reference adopter) |
 | Owner(s) | `apps/state-worker` + `apps/web-console-next` + `packages/{contracts,sdk,db}` (platform) · `internal/{catalogmodel,catalogresolve,objplan,nodes}` + `cmd/orun` (CLI) |
@@ -85,18 +85,20 @@ no CMS, no sync job, no provider API, no second source of truth.
 5. `implementation-plan.md` — CD0–CD7 in three phases, split by repo, each with
    "done when".
 6. `risks-and-open-questions.md` — what is genuinely open.
+7. `IMPLEMENTATION-STATUS.md` — the as-built record (PRs per milestone + the
+   recorded deviations from the design docs).
 
 ## Milestones at a glance
 
 | ID | Phase | Milestone | Repo | Status |
 |----|-------|-----------|------|--------|
-| CD0 | — | Design + decision lock (this epic + the `orun` mirror + WO review) | all | 🔵 In review |
-| CD1 | **1** | **CLI: the doc set** — `docs.pages` on the shared struct; walk **every** emitted entity's docs through `PendingDocs` (not just `Repo`); `commit` provenance + pinned-commit read / dirty-path refusal (closes WO F1/F3/F4); caps + logged truncation (closes WO Q4); `orun catalog docs <entity>` lists the set | `orun` | ⚪ Planned |
-| CD2 | 1 | **CLI: enrichment** — `catalog.entities` block; merge metadata + docs onto derived `System`/`Domain` (+ `Group`/`Environment`); *enrich-never-create* validation (closes WO F6) | `orun` | ⚪ Planned |
-| CD3 | **2** | **Platform: the doc index** — migration `state.catalog_docs`; projector emits doc rows in the same pass as entities; widen `findCatalogDocProject` to page digests; contracts + SDK + `GET …/catalog/docs` | `orun-cloud` | ⚪ Planned |
-| CD4 | 2 | **Entity Docs tab goes real** — the service page reads the entity's doc set; fabricated `README.md`/`ARCHITECTURE.md`/… removed; computed facts survive only as a badged **derived card**; empty-state nudge with a copy-paste `docs.pages` snippet (closes WO F2) | `orun-cloud` | ⚪ Planned |
-| CD5 | 2 | **The Docs hub** — `/orgs/{slug}/docs` (browse: kind/role/search) + `/orgs/{slug}/docs/{entityKey}/{docKey}` (reader: sanitized render, ToC, provenance + view-source, sibling rail); **Docs** nav item; Workspace Overview right-rail docs card (ships WO design §3's promised card, against real data) | `orun-cloud` | ⚪ Planned |
-| CD6 | 3 | **Cross-doc links** — sibling-link rewriting within the pinned doc set; staleness polish ("N commits behind" when push events supply the tip) | `orun-cloud` | ⚪ Planned |
+| CD0 | — | Design + decision lock (this epic + the `orun` mirror + WO review) | all | ✅ Merged (#337 · orun #462 · ogpic #23) |
+| CD1 | **1** | **CLI: the doc set** — `docs.pages` on the shared struct; walk **every** emitted entity's docs through `PendingDocs` (not just `Repo`); `commit` provenance + pinned-commit read / dirty-path refusal (closes WO F1/F3/F4); caps + logged truncation (closes WO Q4); `orun catalog docs <entity>` lists the set | `orun` | ✅ Merged (orun #463) |
+| CD2 | 1 | **CLI: enrichment** — `catalog.entities` block; merge metadata + docs onto derived `System`/`Domain` (+ `Group`/`Environment`); *enrich-never-create* validation (closes WO F6) | `orun` | ✅ Merged (orun #464) |
+| CD3 | **2** | **Platform: the doc index** — migration `state.catalog_docs`; projector emits doc rows in the same pass as entities; widen `findCatalogDocProject` to page digests; contracts + SDK + `GET …/catalog/docs` | `orun-cloud` | ✅ Merged (#340) |
+| CD4 | 2 | **Entity Docs tab goes real** — the service page reads the entity's doc set; fabricated `README.md`/`ARCHITECTURE.md`/… removed; computed facts survive only as a badged **derived card**; empty-state nudge with a copy-paste `docs.pages` snippet (closes WO F2) | `orun-cloud` | ✅ Merged (#341) |
+| CD5 | 2 | **The Docs hub** — `/orgs/{slug}/docs` (browse: kind/role/search) + `/orgs/{slug}/docs/{entityKey}/{docKey}` (reader: sanitized render, ToC, provenance + view-source, sibling rail); **Docs** nav item; Workspace Overview right-rail docs card (ships WO design §3's promised card, against real data) | `orun-cloud` | ✅ Merged (#342) |
+| CD6 | 3 | **Cross-doc links** — sibling-link rewriting within the pinned doc set; staleness polish ("N commits behind" when push events supply the tip) | `orun-cloud` | ✅ Merged (#343 — sibling links; staleness deferred with CD7, see `IMPLEMENTATION-STATUS.md` deviation 3) |
 | CD7 | 3 (later) | **Deferred** — body full-text search (tsvector projection), doc-coverage as a scorecard signal (SC5), `Product` docs (rides WO6) | both | ⚪ Deferred |
 
 ## Scope boundary

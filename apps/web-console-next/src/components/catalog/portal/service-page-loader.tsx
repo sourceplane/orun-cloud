@@ -64,7 +64,7 @@ export function ServicePageLoader({
   if (page) {
     return (
       <div className="md:h-[calc(100dvh-3rem)] md:overflow-hidden">
-        <ServicePage page={page} orgId={orgId} orgLabel={orgSlug} onBack={onBack} onViewMap={onViewMap} onSelectRef={onSelectRef} />
+        <ServicePage page={page} orgId={orgId} orgSlug={orgSlug} orgLabel={orgSlug} onBack={onBack} onViewMap={onViewMap} onSelectRef={onSelectRef} />
       </div>
     );
   }

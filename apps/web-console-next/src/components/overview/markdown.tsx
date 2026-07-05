@@ -13,6 +13,7 @@
  */
 
 import * as React from "react";
+import Link from "next/link";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeSanitize from "rehype-sanitize";
@@ -33,18 +34,36 @@ const PROSE =
   "[&_td]:border [&_td]:border-border [&_td]:px-2 [&_td]:py-1 " +
   "[&_hr]:my-5 [&_hr]:border-border [&_img]:hidden";
 
-export function Markdown({ children, className }: { children: string; className?: string }) {
+export function Markdown({
+  children,
+  className,
+  resolveLink,
+}: {
+  children: string;
+  className?: string;
+  /** Optional in-app link resolver (saas-catalog-docs CD6): return an app
+   *  route for an href to render it as an internal navigation (no new tab, no
+   *  nofollow — it's ours), or null to keep the sanitized external treatment.
+   *  Used for sibling-doc links inside an entity's doc set. */
+  resolveLink?: (href: string) => string | null;
+}) {
   return (
     <div className={cn(PROSE, className)}>
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
         rehypePlugins={[rehypeSanitize]}
         components={{
-          a: ({ href, children: c }) => (
-            <a href={href} target="_blank" rel="noopener nofollow ugc">
-              {c}
-            </a>
-          ),
+          a: ({ href, children: c }) => {
+            const internal = href && resolveLink ? resolveLink(href) : null;
+            if (internal) {
+              return <Link href={internal}>{c}</Link>;
+            }
+            return (
+              <a href={href} target="_blank" rel="noopener nofollow ugc">
+                {c}
+              </a>
+            );
+          },
         }}
       >
         {children}
