@@ -14,13 +14,11 @@ import { ruleMatchesEvent } from "./rule-match.js";
  * deterministic idempotency key — so at-least-once dispatch, cron overlap,
  * and dead-letter replay all collapse to one notification row.
  *
- * Target kinds: `email` delivers via notifications-worker (B2).
- * `slack_channel` unlocks in ES3 (channel seam); `webhook_endpoint` is
- * deferred to ES3 as a channel-owned delivery — reusing B5's
- * webhook_delivery_attempts would violate its NOT NULL subscription
- * invariant and its replay semantics (see the epic's IMPLEMENTATION-STATUS
- * note). Both kinds are already rejected at CRUD; skipping here is defense
- * in depth.
+ * Target kinds: `email` and `slack_channel` deliver via notifications-worker
+ * (ES3 channel seam — email address / chan_<hex> channel id). `webhook_endpoint`
+ * remains deferred (reusing B5's webhook_delivery_attempts would violate its
+ * NOT NULL subscription invariant and replay semantics); it is rejected at
+ * CRUD and skipped here as defense in depth.
  */
 
 export const EVENT_NOTIFICATION_TEMPLATE_KEY = "event.notification";
@@ -98,8 +96,11 @@ export function createNotificationsLaneHandler(deps: NotificationsLaneDeps): Lan
       for (const rule of rules) {
         if (!ruleMatchesEvent(rule, event)) continue;
 
+        // ES3: email + slack_channel targets deliver via notifications-worker
+        // (email address / chan_<hex> channel id). webhook_endpoint stays
+        // deferred and is skipped here as defense in depth.
         const targets = (targetsByRule.get(rule.id) ?? []).filter(
-          (t) => t.enabled && t.targetKind === "email",
+          (t) => t.enabled && (t.targetKind === "email" || t.targetKind === "slack_channel"),
         );
         if (targets.length === 0) continue;
 
@@ -138,7 +139,10 @@ export function createNotificationsLaneHandler(deps: NotificationsLaneDeps): Lan
                 occurredAt: event.occurredAt.toISOString(),
                 sourceEventId: event.id,
               },
-              recipient: { channel: "email", address: target.targetRef },
+              recipient: {
+                channel: target.targetKind === "slack_channel" ? "slack" : "email",
+                address: target.targetRef,
+              },
               idempotencyKey: buildRuleNotificationIdempotencyKey(rule.id, target.id, event.id),
               correlationId: event.correlationId ?? event.id,
             },

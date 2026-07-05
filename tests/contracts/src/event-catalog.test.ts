@@ -229,6 +229,17 @@ describe("event catalog totality (CI guard)", () => {
     expect(missing).toEqual([]);
   });
 
+  it("registers the ES3 notification_channel.* lifecycle events", () => {
+    for (const t of [
+      "notification_channel.created",
+      "notification_channel.updated",
+      "notification_channel.deleted",
+      "notification_channel.verified",
+    ]) {
+      expect(EVENT_CATALOG[t]).toBeDefined();
+    }
+  });
+
   it("registers the config-worker secret event vocabulary", () => {
     const missing = SECRET_EVENT_TYPES_SNAPSHOT.filter((t) => !EVENT_CATALOG[t]);
     expect(missing).toEqual([]);

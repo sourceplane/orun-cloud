@@ -61,7 +61,7 @@ cutover-soak assertion; a lane handler that throws on one event dead-letters
 that event, advances past it, and the replay route re-processes it
 successfully; pausing a lane halts its dispatch within one cron tick.
 
-## ES2 — Notification rules — In review
+## ES2 — Notification rules — ✅ Shipped (#334)
 
 - Rules/targets CRUD on events-worker + api-edge facade:
   `GET/POST /v1/organizations/{orgId}/notification-rules`,
@@ -94,9 +94,9 @@ and an email target delivers exactly one email per matching event on stage
 are covered by worker tests; a throttled rule provably caps at
 `throttle_max` per window; the entitlement gate 412s beyond the plan limit.
 
-## ES3 — Channels: provider seam + Slack — 🗓️ Planned
+## ES3 — Channels: provider seam + Slack — In review
 
-- Migration `590_notification_channels`: `notification_channels` table +
+- Migration `610_notification_channels`: `notification_channels` table +
   channel CHECK lift (`'email'` → `'email','slack'`) across the four
   notification tables (design §6).
 - `ChannelProvider` seam in `apps/notifications-worker/src/channels/`

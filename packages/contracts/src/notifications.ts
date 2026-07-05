@@ -25,10 +25,17 @@
 /**
  * Notification channels that may carry a transactional notification.
  *
- * V1 ships with email only; the type is widened here so future channels
- * (sms, push, in-app) can be added without breaking the contract.
+ * V1 shipped email only; saas-event-streaming ES3 adds `slack` (delivered via
+ * a configured incoming-webhook channel). Further channels (sms, push,
+ * in-app) can be added without breaking the contract.
  */
-export type NotificationChannel = "email";
+export type NotificationChannel = "email" | "slack";
+
+/**
+ * Configured delivery-channel kinds (ES3). A channel row holds an encrypted
+ * bearer credential; `slack_incoming_webhook` is the first kind.
+ */
+export type NotificationChannelKind = "slack_incoming_webhook";
 
 /**
  * High-level routing category. Used for preferences and audit categorisation.

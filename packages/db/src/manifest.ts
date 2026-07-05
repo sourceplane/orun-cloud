@@ -552,5 +552,14 @@ export const manifest: MigrationManifest = {
       description:
         "Notification-rule throttle state + notifications lane activation (saas-event-streaming ES2) — creates events.rule_throttle_state (one row per rule; fixed window anchored at first fire; fired_count consumed via a single atomic upsert so overlapping cron ticks cannot double-admit — the ledger behind the mandatory throttle_window_seconds/throttle_max rule fields, R1 storm control) and flips the 'notifications' subscriber lane from its seeded PAUSED state to active now that the ES2 rules engine gives the lane a handler. Operators keep the pause switch via subscriber_lanes.status. Additive + idempotent; same-context FK only.",
     },
+    {
+      id: "610_notification_channels",
+      context: "notifications",
+      path: "610_notification_channels/up.sql",
+      checksum:
+        "e60a7ee8d80931638963f9917e78cbe2aff5897dfb16e6f099ed3d3f1f64deb0",
+      description:
+        "Notification channels + async-retry scaffolding (saas-event-streaming ES3) — creates notifications.notification_channels (per-org channel config; config_ciphertext holds an AES-GCM CiphertextEnvelope of a bearer credential like a Slack incoming-webhook URL, write-only and never returned on CRUD reads, mirroring webhooks.webhook_endpoints.secret_ciphertext), lifts the channel CHECK from ('email') to ('email','slack') across the three channel-bearing tables (preferences, notifications, suppressions; attempts has no channel column), and adds next_retry_at + attempt_count to notifications plus a partial retry index so the new notifications-worker cron can drain and re-send failed rows on the webhooks-style backoff ladder (synchronous enqueue send = attempt 1). Additive + idempotent (DROP CONSTRAINT IF EXISTS before re-add, ADD COLUMN IF NOT EXISTS); no cross-context FKs.",
+    },
   ],
 };

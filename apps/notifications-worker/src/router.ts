@@ -5,6 +5,13 @@ import { handleGetNotification } from "./handlers/get-notification.js";
 import { handleGetPreferences } from "./handlers/get-preferences.js";
 import { handlePutPreferences } from "./handlers/put-preferences.js";
 import { handleCreateSuppression } from "./handlers/create-suppression.js";
+import {
+  handleListChannels,
+  handleCreateChannel,
+  handleUpdateChannel,
+  handleDeleteChannel,
+  handleTestChannel,
+} from "./handlers/channels.js";
 import { errorResponse, notFound, methodNotAllowed } from "./http.js";
 import { generateRequestId } from "./ids.js";
 import { NOTIFICATIONS_INTERNAL_ACTOR_VALUES } from "@saas/contracts/notifications";
@@ -20,6 +27,12 @@ const NOTIFICATIONS_LIST_PATH = "/v1/notifications";
 const PREFERENCES_PATH = "/v1/notifications/preferences";
 const NOTIFICATION_ID_RE = /^\/v1\/notifications\/([^/]+)$/;
 const SUPPRESS_RE = /^\/v1\/notifications\/recipients\/([^/]+)\/suppress$/;
+// Channels (ES3): org-scoped so the worker can policy-check the path org
+// (mirrors the events-worker notification-rules surface). Forwarded from
+// api-edge with x-internal-actor=api-edge + the resolved session actor.
+const CHANNELS_RE = /^\/v1\/organizations\/([^/]+)\/notification-channels$/;
+const CHANNEL_RE = /^\/v1\/organizations\/([^/]+)\/notification-channels\/([^/]+)$/;
+const CHANNEL_TEST_RE = /^\/v1\/organizations\/([^/]+)\/notification-channels\/([^/]+)\/test$/;
 
 export interface InternalActor {
   subjectId: string;
@@ -49,6 +62,31 @@ export async function route(request: Request, env: Env): Promise<Response> {
   try {
     if (url.pathname === "/health" && request.method === "GET") {
       return handleHealth(env, requestId);
+    }
+
+    // Channels CRUD (ES3) — org-scoped.
+    const channelTestMatch = url.pathname.match(CHANNEL_TEST_RE);
+    if (channelTestMatch) {
+      const actor = resolveInternalActor(request);
+      if (!actor) return errorResponse("forbidden", "Internal service-binding required", 403, requestId);
+      if (request.method !== "POST") return methodNotAllowed(requestId);
+      return handleTestChannel(env, requestId, actor, channelTestMatch[1]!, channelTestMatch[2]!);
+    }
+    const channelMatch = url.pathname.match(CHANNEL_RE);
+    if (channelMatch) {
+      const actor = resolveInternalActor(request);
+      if (!actor) return errorResponse("forbidden", "Internal service-binding required", 403, requestId);
+      if (request.method === "PATCH") return handleUpdateChannel(request, env, requestId, actor, channelMatch[1]!, channelMatch[2]!);
+      if (request.method === "DELETE") return handleDeleteChannel(env, requestId, actor, channelMatch[1]!, channelMatch[2]!);
+      return methodNotAllowed(requestId);
+    }
+    const channelsMatch = url.pathname.match(CHANNELS_RE);
+    if (channelsMatch) {
+      const actor = resolveInternalActor(request);
+      if (!actor) return errorResponse("forbidden", "Internal service-binding required", 403, requestId);
+      if (request.method === "GET") return handleListChannels(env, requestId, actor, channelsMatch[1]!);
+      if (request.method === "POST") return handleCreateChannel(request, env, requestId, actor, channelsMatch[1]!);
+      return methodNotAllowed(requestId);
     }
 
     // Preferences: GET (list) / PUT (upsert)

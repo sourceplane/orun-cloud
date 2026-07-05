@@ -246,24 +246,60 @@ describe("notification rules CRUD", () => {
     expect(emitted).toEqual(["notification_rule.created"]);
   });
 
-  it("rejects slack_channel and webhook_endpoint targets until ES3", async () => {
+  it("accepts a slack_channel target with a chan_ ref (ES3)", async () => {
+    const { repo, calls } = fakeRulesRepo();
+    const { repo: eventsRepo } = fakeEventsRepo();
+    const res = await handleCreateRule(
+      req(`/v1/organizations/${TEST_ORG_PUBLIC_ID}/notification-rules`, "POST", {
+        name: "PR to Slack",
+        eventTypes: ["scm.pull_request.*"],
+        targets: [{ kind: "slack_channel", ref: "chan_0123456789abcdef0123456789abcdef" }],
+      }),
+      createEnv(),
+      REQUEST_ID,
+      TEST_ACTOR,
+      TEST_ORG_UUID,
+      { rulesRepo: repo, eventsRepo },
+    );
+    expect(res.status).toBe(201);
+    expect(calls.targets).toHaveLength(1);
+    expect((calls.targets[0] as { targetKind: string }).targetKind).toBe("slack_channel");
+  });
+
+  it("rejects a slack_channel target with a non-channel ref", async () => {
     const { repo } = fakeRulesRepo();
     const { repo: eventsRepo } = fakeEventsRepo();
-    for (const kind of ["slack_channel", "webhook_endpoint"]) {
-      const res = await handleCreateRule(
-        req(`/v1/organizations/${TEST_ORG_PUBLIC_ID}/notification-rules`, "POST", {
-          name: "x",
-          eventTypes: ["*"],
-          targets: [{ kind, ref: "something" }],
-        }),
-        createEnv(),
-        REQUEST_ID,
-        TEST_ACTOR,
-        TEST_ORG_UUID,
-        { rulesRepo: repo, eventsRepo },
-      );
-      expect(res.status).toBe(422);
-    }
+    const res = await handleCreateRule(
+      req(`/v1/organizations/${TEST_ORG_PUBLIC_ID}/notification-rules`, "POST", {
+        name: "x",
+        eventTypes: ["*"],
+        targets: [{ kind: "slack_channel", ref: "not-a-channel" }],
+      }),
+      createEnv(),
+      REQUEST_ID,
+      TEST_ACTOR,
+      TEST_ORG_UUID,
+      { rulesRepo: repo, eventsRepo },
+    );
+    expect(res.status).toBe(422);
+  });
+
+  it("still rejects webhook_endpoint targets (deferred)", async () => {
+    const { repo } = fakeRulesRepo();
+    const { repo: eventsRepo } = fakeEventsRepo();
+    const res = await handleCreateRule(
+      req(`/v1/organizations/${TEST_ORG_PUBLIC_ID}/notification-rules`, "POST", {
+        name: "x",
+        eventTypes: ["*"],
+        targets: [{ kind: "webhook_endpoint", ref: "wh_x" }],
+      }),
+      createEnv(),
+      REQUEST_ID,
+      TEST_ACTOR,
+      TEST_ORG_UUID,
+      { rulesRepo: repo, eventsRepo },
+    );
+    expect(res.status).toBe(422);
   });
 
   it("412s when the feature entitlement is disabled", async () => {

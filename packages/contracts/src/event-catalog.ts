@@ -241,6 +241,12 @@ export const EVENT_CATALOG: Readonly<Record<string, CatalogEntry>> = Object.from
   entry({ type: "notification_rule.created", version: 1, category: "activity", severity: "info", title: "Notification rule {subject.name} created", audit: true }),
   entry({ type: "notification_rule.updated", version: 1, category: "activity", severity: "info", title: "Notification rule {subject.name} updated", audit: true }),
   entry({ type: "notification_rule.deleted", version: 1, category: "activity", severity: "notice", title: "Notification rule {subject.name} deleted", audit: true }),
+
+  // --- notification channels (notifications-worker; emitted from ES3) -------
+  entry({ type: "notification_channel.created", version: 1, category: "activity", severity: "notice", title: "Notification channel {subject.name} created", audit: true }),
+  entry({ type: "notification_channel.updated", version: 1, category: "activity", severity: "info", title: "Notification channel {subject.name} updated", audit: true }),
+  entry({ type: "notification_channel.deleted", version: 1, category: "activity", severity: "notice", title: "Notification channel {subject.name} deleted", audit: true }),
+  entry({ type: "notification_channel.verified", version: 1, category: "activity", severity: "info", title: "Notification channel {subject.name} verified", audit: true }),
 ] as Array<[string, CatalogEntry]>);
 
 // ---------------------------------------------------------------------------

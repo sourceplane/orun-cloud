@@ -34,6 +34,24 @@ export function orgPublicId(uuid: string): string {
   return `org_${uuidToHex(uuid)}`;
 }
 
+export function generateChannelId(): string {
+  return crypto.randomUUID();
+}
+
+const CHANNEL_PUBLIC_RE = /^chan_[0-9a-f]{32}$/;
+
+export function channelPublicId(uuid: string): string {
+  return `chan_${uuidToHex(uuid)}`;
+}
+
+export function parseChannelPublicId(publicId: string): string | null {
+  if (CHANNEL_PUBLIC_RE.test(publicId)) {
+    return hexToUuid(publicId.slice(5));
+  }
+  if (UUID_RE.test(publicId)) return publicId.toLowerCase();
+  return null;
+}
+
 export function parseOrgIdInput(value: string): Uuid | null {
   if (value.startsWith("org_")) {
     return uuidFromPublicId(value, "org");

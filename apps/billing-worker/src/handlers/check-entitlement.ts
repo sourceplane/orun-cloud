@@ -64,6 +64,9 @@ const DEFAULT_TIER_ENTITLEMENTS: Record<string, number> = {
   // tier with a conservative cap; catalog rows override once materialized.
   "feature.event_routing": 1,
   "limit.notification_rules": 10,
+  // saas-event-streaming ES3: Slack channels available on the default tier.
+  "feature.notifications.slack": 1,
+  "limit.notification_channels": 3,
 };
 
 

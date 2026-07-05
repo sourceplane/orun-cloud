@@ -4,6 +4,18 @@ export interface Env {
   PLATFORM_DB?: Hyperdrive;
   /** Cloudflare Email Service send_email binding (cloudflare-email provider). */
   EMAIL?: CloudflareEmailSender;
+  /** Authorization context for channel CRUD (ES3). */
+  MEMBERSHIP_WORKER?: Fetcher;
+  /** Policy decisions for channel CRUD (ES3). */
+  POLICY_WORKER?: Fetcher;
+  /** Entitlement checks for Slack channels (ES3). */
+  BILLING_WORKER?: Fetcher;
+  /**
+   * Hex-encoded 256-bit key for AES-256-GCM encryption of channel bearer
+   * credentials (Slack incoming-webhook URLs). Set out-of-band via
+   * `wrangler secret put SECRET_ENCRYPTION_KEY --env <env>`; absent locally.
+   */
+  SECRET_ENCRYPTION_KEY?: string;
   ENVIRONMENT: string;
   /** Provider selector: "local-debug" (default) or "cloudflare-email". */
   NOTIFICATIONS_PROVIDER?: string;

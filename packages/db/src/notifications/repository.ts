@@ -56,6 +56,8 @@ function mapNotification(row: Record<string, unknown>): StoredNotification {
     sentAt: row.sent_at ? new Date(row.sent_at as string) : null,
     failedAt: row.failed_at ? new Date(row.failed_at as string) : null,
     updatedAt: new Date(row.updated_at as string),
+    nextRetryAt: row.next_retry_at ? new Date(row.next_retry_at as string) : null,
+    attemptCount: (row.attempt_count as number) ?? 0,
   };
 }
 
@@ -195,6 +197,10 @@ export function createNotificationsRepository(executor: SqlExecutor): Notificati
 
     async markNotificationStatus(input: MarkNotificationStatusInput) {
       try {
+        // next_retry_at / attempt_count use a sentinel so `undefined` leaves
+        // the column untouched while an explicit `null`/number overwrites it.
+        const setNextRetry = input.nextRetryAt !== undefined;
+        const setAttemptCount = input.attemptCount !== undefined;
         const result = await executor.execute<Record<string, unknown>>(
           `UPDATE notifications.notifications
            SET status = $3,
@@ -202,7 +208,9 @@ export function createNotificationsRepository(executor: SqlExecutor): Notificati
                last_error = $5,
                sent_at = COALESCE($6, sent_at),
                failed_at = COALESCE($7, failed_at),
-               updated_at = $8
+               updated_at = $8,
+               next_retry_at = CASE WHEN $9 THEN $10 ELSE next_retry_at END,
+               attempt_count = CASE WHEN $11 THEN $12 ELSE attempt_count END
            WHERE id = $1 AND org_id = $2
            RETURNING *`,
           [
@@ -214,6 +222,10 @@ export function createNotificationsRepository(executor: SqlExecutor): Notificati
             input.sentAt ? input.sentAt.toISOString() : null,
             input.failedAt ? input.failedAt.toISOString() : null,
             input.updatedAt.toISOString(),
+            setNextRetry,
+            input.nextRetryAt ? input.nextRetryAt.toISOString() : null,
+            setAttemptCount,
+            input.attemptCount ?? 0,
           ],
         );
         if (result.rows.length === 0) {
@@ -363,6 +375,23 @@ export function createNotificationsRepository(executor: SqlExecutor): Notificati
         return { ok: true, value: mapSuppression(result.rows[0]!) };
       } catch {
         return safeError("Failed to create suppression");
+      }
+    },
+
+    async listRetryableNotifications(limit: number) {
+      try {
+        const result = await executor.execute<Record<string, unknown>>(
+          `SELECT * FROM notifications.notifications
+           WHERE status = 'failed'
+             AND next_retry_at IS NOT NULL
+             AND next_retry_at <= now()
+           ORDER BY next_retry_at ASC
+           LIMIT $1`,
+          [limit],
+        );
+        return { ok: true, value: result.rows.map(mapNotification) };
+      } catch {
+        return safeError("Failed to list retryable notifications");
       }
     },
   };

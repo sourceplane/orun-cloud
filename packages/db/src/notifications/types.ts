@@ -38,6 +38,10 @@ export interface StoredNotification {
   sentAt: Date | null;
   failedAt: Date | null;
   updatedAt: Date;
+  /** Retry-drain schedule (ES3): set when status='failed' and retries remain. */
+  nextRetryAt: Date | null;
+  /** Monotone attempt counter across the synchronous send + async retries. */
+  attemptCount: number;
 }
 
 export interface StoredNotificationAttempt {
@@ -111,6 +115,14 @@ export interface MarkNotificationStatusInput {
   sentAt?: Date | null;
   failedAt?: Date | null;
   updatedAt: Date;
+  /**
+   * Retry schedule (ES3). Pass a Date to schedule a retry, or `null` to clear
+   * it (terminal success or exhausted retries). Omit (`undefined`) to leave
+   * the existing value untouched.
+   */
+  nextRetryAt?: Date | null;
+  /** New absolute attempt count; omit to leave untouched. */
+  attemptCount?: number;
 }
 
 export interface UpsertNotificationPreferenceInput {
@@ -176,4 +188,13 @@ export interface NotificationsRepository {
   createSuppression(
     input: CreateNotificationSuppressionInput,
   ): Promise<NotificationsResult<StoredNotificationSuppression>>;
+
+  /**
+   * Failed notifications whose retry is due (status='failed', next_retry_at
+   * set and in the past), oldest-due first — the async retry cron's drain
+   * query (ES3). Mirrors the webhooks listRetryableDeliveries pattern.
+   */
+  listRetryableNotifications(
+    limit: number,
+  ): Promise<NotificationsResult<StoredNotification[]>>;
 }
