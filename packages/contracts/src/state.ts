@@ -346,6 +346,56 @@ export interface ListRepoFacetsResponse {
   repoFacets: RepoFacet[];
 }
 
+/**
+ * One row in the org-wide catalog doc index (saas-catalog-docs CD3): one
+ * attached document of one entity's doc set (the reserved `overview` + the
+ * ordered `docs.pages` entries). Identity is (entityRef, docKey) — stable
+ * across content changes; `digest` is the CAS content address the body is
+ * read by (GET …/catalog/doc?digest=). Derived from the snapshot at
+ * head-advance, never authored.
+ */
+export interface CatalogDoc {
+  orgId: string;
+  /** Provenance — the project (repo) this doc was projected from (`prj_…`). */
+  projectId: string;
+  sourceEnvironment: string | null;
+  /** The owning entity (e.g. `acme/repo/api`) and its kind/name, denormalized
+   *  for kind-grouped browse. */
+  entityRef: string;
+  entityKind: string;
+  entityName: string;
+  /** The doc's key within the entity's set (`overview` | a page slug). */
+  docKey: string;
+  title: string;
+  /** `overview` for the front page; a free role slug for pages (well-known:
+   *  guide · architecture · runbook · adr · reference · changelog · faq ·
+   *  onboarding — unknown slugs render neutrally). */
+  role: string;
+  /** Repo-relative source path (the view-source provenance). */
+  path: string;
+  /** The commit the bytes were read at, or null when the resolve had no git
+   *  state (no wrong provenance is ever claimed). */
+  commitSha: string | null;
+  /** CAS content address of the body (immutable — cache forever). */
+  digest: string;
+  sizeBytes: number | null;
+  /** Declared order within the entity's set (overview = 0). */
+  position: number;
+  headDigest: string;
+  syncedAt: string;
+}
+
+/**
+ * GET /v1/organizations/{orgId}/catalog/docs — the org-wide doc index browse
+ * (the Docs hub / entity Docs tab read). Filters: `project`, `environment`,
+ * `kind` (entity kind), `entityRef`, `role`, `q` (title/path/entity name);
+ * keyset-paged, newest first.
+ */
+export interface ListCatalogDocsResponse {
+  docs: CatalogDoc[];
+  nextCursor: StateCursor | null;
+}
+
 export interface GetRepoFacetResponse {
   repoFacet: RepoFacet | null;
 }

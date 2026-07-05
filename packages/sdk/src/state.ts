@@ -5,6 +5,7 @@ import type {
   WorkspaceLink,
   ListOrgCatalogEntitiesResponse,
   ListRepoFacetsResponse,
+  ListCatalogDocsResponse,
   GetRepoFacetResponse,
   GetStateStorageResponse,
   GetStateGcReportResponse,
@@ -57,6 +58,22 @@ export interface OrgCatalogEntitiesQuery {
   /** Keyset cursor from a prior page. */
   cursor?: string;
   /** Page size. */
+  limit?: number;
+}
+
+/** Filters for the org-wide catalog doc index (CD3). */
+export interface CatalogDocsQuery {
+  project?: string;
+  environment?: string;
+  /** Entity kind (Component | Repo | System | Domain | …). */
+  kind?: string;
+  /** Narrow to one entity's doc set (the entity Docs tab read). */
+  entityRef?: string;
+  /** Role slug (overview | guide | runbook | architecture | …). */
+  role?: string;
+  /** Matches title, path, or entity name. */
+  q?: string;
+  cursor?: string;
   limit?: number;
 }
 
@@ -218,6 +235,35 @@ export class StateClient {
    * declared Repo entity. Drives the Git Repos list + the Workspace Overview
    * identity. Policy: catalog.read.
    */
+  /**
+   * GET /v1/organizations/:orgId/catalog/docs — the org-wide catalog doc index
+   * (saas-catalog-docs CD3): one row per attached doc across every entity kind.
+   * The body reads separately by digest via readOverviewDoc (immutable).
+   */
+  listCatalogDocs(
+    orgId: string,
+    query: CatalogDocsQuery = {},
+    opts: RequestOptions = {},
+  ): Promise<ListCatalogDocsResponse> {
+    return this.transport.request<ListCatalogDocsResponse>(
+      {
+        method: "GET",
+        path: `/v1/organizations/${encodeURIComponent(orgId)}/catalog/docs`,
+        query: {
+          project: query.project,
+          environment: query.environment,
+          kind: query.kind,
+          entityRef: query.entityRef,
+          role: query.role,
+          q: query.q,
+          cursor: query.cursor,
+          limit: query.limit,
+        },
+      },
+      opts,
+    );
+  }
+
   listRepoFacets(orgId: string, opts: RequestOptions = {}): Promise<ListRepoFacetsResponse> {
     return this.transport.request<ListRepoFacetsResponse>(
       { method: "GET", path: `/v1/organizations/${encodeURIComponent(orgId)}/repo-facets` },

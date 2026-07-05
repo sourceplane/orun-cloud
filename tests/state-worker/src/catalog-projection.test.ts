@@ -88,6 +88,8 @@ interface Capture {
   deletes: number;
   upserts: unknown[][];
   repoFacets: unknown[][];
+  catalogDocs: unknown[][];
+  docDeletes: number;
   projectionSuccess: unknown[][];
   projectionFailure: unknown[][];
 }
@@ -97,6 +99,8 @@ function captureExecutor(): Capture {
     deletes: 0,
     upserts: [],
     repoFacets: [],
+    catalogDocs: [],
+    docDeletes: 0,
     projectionSuccess: [],
     projectionFailure: [],
   };
@@ -108,6 +112,21 @@ function captureExecutor(): Capture {
         if (text.includes("projected_at")) cap.projectionSuccess.push(params);
         else cap.projectionFailure.push(params);
         return Promise.resolve({ rows: [] as unknown as T[], rowCount: 1 });
+      }
+      if (text.includes("DELETE FROM state.catalog_docs")) {
+        cap.docDeletes++;
+        return Promise.resolve({ rows: [] as unknown as T[], rowCount: 0 });
+      }
+      if (text.includes("INSERT INTO state.catalog_docs")) {
+        cap.catalogDocs.push(params);
+        const row = {
+          id: params[0], org_id: params[1], source_project_id: params[2], source_environment: params[3],
+          entity_ref: params[4], entity_kind: params[5], entity_name: params[6], doc_key: params[7],
+          title: params[8], role: params[9], path: params[10], commit_sha: params[11],
+          digest: params[12], size_bytes: params[13], position: params[14], head_digest: params[15],
+          synced_at: "2026-07-05T00:00:00.000Z", created_at: "2026-07-05T00:00:00.000Z",
+        };
+        return Promise.resolve({ rows: [row] as unknown as T[], rowCount: 1 });
       }
       if (text.includes("DELETE FROM state.org_catalog_entities")) {
         cap.deletes++;
@@ -308,5 +327,71 @@ describe("projectCatalogSnapshot (OV6.2b)", () => {
     // No writes committed — the scope stays pending for the sweep to retry.
     expect(cap.deletes).toBe(0);
     expect(cap.upserts).toHaveLength(0);
+  });
+});
+
+
+// CD3 — a snapshot whose component carries a full doc set (attached overview +
+// attached page + declared-only page), exercising the org doc index projection.
+function buildDocSetSnapshot(): { rootDigest: string; store: Record<string, Uint8Array> } {
+  const comp = hx("a");
+  const compsTree = hx("c");
+  const entitiesTree = hx("e");
+  const root = hx("f");
+  const componentBlob = frame(
+    "blob",
+    JSON.stringify({
+      kind: "ComponentManifest",
+      identity: { componentKey: "ns/repo/api", name: "api", namespace: "ns", repo: "repo" },
+      docs: {
+        overview: { path: "apps/api/docs/overview.md", commit: "c0ffee", sha: "aa", digest: "sha256:" + "1".repeat(64) },
+        pages: [
+          { key: "runbook", title: "On-call runbook", role: "runbook", path: "apps/api/docs/runbook.md", commit: "c0ffee", size: 42, digest: "sha256:" + "2".repeat(64) },
+          { key: "missing", path: "docs/missing.md", reason: "unreadable: file not found" },
+        ],
+      },
+    }),
+  );
+  const store: Record<string, Uint8Array> = {
+    [`sha256:${comp}`]: componentBlob,
+    [`sha256:${compsTree}`]: frame("tree", entry("blob", "api.json", comp)),
+    [`sha256:${entitiesTree}`]: frame("tree", new Uint8Array()),
+    [`sha256:${root}`]: frame("tree", concat(entry("tree", "components", compsTree), entry("tree", "entities", entitiesTree))),
+  };
+  return { rootDigest: `sha256:${root}`, store };
+}
+
+describe("projectCatalogSnapshot doc index (saas-catalog-docs CD3)", () => {
+  it("indexes each attached doc and skips declared-only entries", async () => {
+    const { rootDigest, store } = buildDocSetSnapshot();
+    const cap = captureExecutor();
+    const summary = await projectCatalogSnapshot({} as Env, scope({ digest: rootDigest }), {
+      executor: cap.executor,
+      fetcher: fetcherOf(store),
+    });
+    expect(summary?.projected).toBe(1);
+    expect(cap.docDeletes).toBe(1); // replace-the-scope for the doc index too
+
+    // params: [id, orgId, projectId, env, entityRef, entityKind, entityName,
+    //          docKey, title, role, path, commitSha, digest, sizeBytes, position, headDigest]
+    expect(cap.catalogDocs).toHaveLength(2); // overview + runbook; "missing" has no digest
+    const byKey = new Map(cap.catalogDocs.map((p) => [p[7] as string, p]));
+
+    const ov = byKey.get("overview")!;
+    expect(ov[4]).toBe("ns/repo/api");
+    expect(ov[5]).toBe("Component");
+    expect(ov[8]).toBe("Overview");
+    expect(ov[9]).toBe("overview");
+    expect(ov[10]).toBe("apps/api/docs/overview.md");
+    expect(ov[11]).toBe("c0ffee");
+    expect(ov[12]).toBe("sha256:" + "1".repeat(64));
+    expect(ov[14]).toBe(0); // overview leads the shelf
+
+    const rb = byKey.get("runbook")!;
+    expect(rb[8]).toBe("On-call runbook");
+    expect(rb[9]).toBe("runbook");
+    expect(rb[13]).toBe(42); // sizeBytes
+    expect(rb[14]).toBe(1); // declared order
+    expect(byKey.has("missing")).toBe(false);
   });
 });
