@@ -114,7 +114,7 @@ export function DocReader({
             </span>
           </div>
           <div className="px-5 py-5 md:px-7 md:py-6">
-            <DocBody orgId={orgId} doc={active} />
+            <DocBody orgId={orgId} doc={active} orgSlug={orgSlug} siblings={docs} />
           </div>
         </div>
       </div>

@@ -42,6 +42,7 @@ type TabKey = (typeof TABS)[number]["key"];
 export function ServicePage({
   page,
   orgId,
+  orgSlug,
   orgLabel,
   onBack,
   onViewMap,
@@ -49,6 +50,7 @@ export function ServicePage({
 }: {
   page: ServicePage;
   orgId: string;
+  orgSlug: string;
   orgLabel: string;
   onBack: () => void;
   onViewMap: () => void;
@@ -124,11 +126,12 @@ export function ServicePage({
           {/* two column */}
           <div className="grid grid-cols-1 items-start gap-[26px] xl:grid-cols-[minmax(0,1fr)_290px]">
             <div className="flex min-w-0 flex-col gap-4">
-              {tab === "overview" ? <OverviewTab page={page} orgId={orgId} docs={docs} /> : null}
+              {tab === "overview" ? <OverviewTab page={page} orgId={orgId} orgSlug={orgSlug} docs={docs} /> : null}
               {tab === "docs" ? (
                 <DocsTab
                   page={page}
                   orgId={orgId}
+                  orgSlug={orgSlug}
                   docs={docs}
                   docsLoading={docsLoading}
                   activeDocKey={docKey}
@@ -258,7 +261,17 @@ function OpsTile({ label, value, valueColor, sub }: { label: string; value: stri
 
 // ── Overview tab ─────────────────────────────────────────────────
 
-function OverviewTab({ page, orgId, docs }: { page: ServicePage; orgId: string; docs: CatalogDoc[] }) {
+function OverviewTab({
+  page,
+  orgId,
+  orgSlug,
+  docs,
+}: {
+  page: ServicePage;
+  orgId: string;
+  orgSlug: string;
+  docs: CatalogDoc[];
+}) {
   // The real git-authored overview leads when the entity attached one; the
   // badged derived card is the fallback — never presented as a file (the
   // honesty rule, saas-catalog-docs design.md §4).
@@ -274,7 +287,7 @@ function OverviewTab({ page, orgId, docs }: { page: ServicePage; orgId: string; 
           </span>
         </div>
         <div className="px-[26px] py-[22px]">
-          <DocBody orgId={orgId} doc={overview} />
+          <DocBody orgId={orgId} doc={overview} orgSlug={orgSlug} siblings={docs} />
         </div>
       </div>
     );
@@ -332,6 +345,7 @@ function DocsNudge({ page }: { page: ServicePage }) {
 function DocsTab({
   page,
   orgId,
+  orgSlug,
   docs,
   docsLoading,
   activeDocKey,
@@ -339,6 +353,7 @@ function DocsTab({
 }: {
   page: ServicePage;
   orgId: string;
+  orgSlug: string;
   docs: CatalogDoc[];
   docsLoading: boolean;
   activeDocKey: string | null;
@@ -373,7 +388,7 @@ function DocsTab({
           </span>
         </div>
         <div className="px-[26px] py-[22px]">
-          <DocBody orgId={orgId} doc={active} />
+          <DocBody orgId={orgId} doc={active} orgSlug={orgSlug} siblings={docs} />
         </div>
       </div>
     </div>

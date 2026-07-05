@@ -18,6 +18,7 @@ import { useSession } from "@/lib/session";
 import { wrap } from "@/lib/api";
 import { useApiQuery, qk } from "@/lib/query";
 import { Markdown } from "@/components/overview/markdown";
+import { resolveSiblingDoc, docReaderHref } from "@/lib/doc-links";
 import { PathIcon } from "@/components/catalog/portal/icon";
 import { DOC_ICON } from "@/lib/catalog-portal/icons";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -74,14 +75,36 @@ export function DocProvenance({ doc }: { doc: CatalogDoc }) {
   );
 }
 
+export { resolveSiblingDoc, docReaderHref };
+
 /** One doc's body: fetched by content digest (immutable → cached indefinitely)
- *  and rendered through the sanitizing markdown pipeline. */
-export function DocBody({ orgId, doc }: { orgId: string; doc: CatalogDoc }) {
+ *  and rendered through the sanitizing markdown pipeline. With `orgSlug` +
+ *  `siblings`, relative links between the entity's attached docs navigate
+ *  in-app (CD6). */
+export function DocBody({
+  orgId,
+  doc,
+  orgSlug,
+  siblings,
+}: {
+  orgId: string;
+  doc: CatalogDoc;
+  orgSlug?: string;
+  siblings?: CatalogDoc[];
+}) {
   const { client } = useSession();
   const body = useApiQuery(
     qk.docBody(orgId, doc.digest),
     () => wrap(() => client.state.readCatalogDoc(orgId, doc.digest)),
     { staleTime: Infinity },
+  );
+  const resolveLink = React.useCallback(
+    (href: string): string | null => {
+      if (!orgSlug || !siblings || siblings.length === 0) return null;
+      const hit = resolveSiblingDoc(href, doc.path, siblings);
+      return hit ? docReaderHref(orgSlug, hit) : null;
+    },
+    [orgSlug, siblings, doc.path],
   );
   if (body.loading && body.data == null) {
     return (
@@ -101,7 +124,7 @@ export function DocBody({ orgId, doc }: { orgId: string; doc: CatalogDoc }) {
       </p>
     );
   }
-  return <Markdown>{body.data}</Markdown>;
+  return <Markdown resolveLink={resolveLink}>{body.data}</Markdown>;
 }
 
 /** The shelf: an entity's ordered doc list. Pure presentation — selection state
