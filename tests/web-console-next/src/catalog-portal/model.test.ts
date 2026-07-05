@@ -11,6 +11,7 @@ import {
   ownerLabel,
   rollup,
   scoreOf,
+  scorecardOf,
   tierOf,
   toService,
 } from "@web-console-next/lib/catalog-portal/model";
@@ -54,16 +55,29 @@ describe("toService", () => {
   });
 });
 
-describe("scorecard engine", () => {
-  it("passes owner+docs when present and warns unknown checks (never false pass)", () => {
+describe("scorecard engine (v2 — unknown-aware)", () => {
+  it("passes owner+docs when present; unwired signals are unknown, not a penalty", () => {
     const s = service({ entityRef: "component:default/api", owner: "payments", description: "x" });
     const checks = computeChecks(s);
     expect(checks.find((c) => c.id === "owner")!.status).toBe("pass");
     expect(checks.find((c) => c.id === "docs")!.status).toBe("pass");
-    expect(checks.find((c) => c.id === "slo")!.status).toBe("warn");
-    // owner(1) + docs(1) + 6 warns(0.5) = 5 / 8 = 62.5 → 63
-    expect(scoreOf(s)).toBe(63);
-    expect(tierOf(scoreOf(s))).toBe("Bronze");
+    expect(checks.find((c) => c.id === "slo")!.status).toBe("unknown");
+    // v2: unknown checks are excluded from the denominator — 2/2 pass = 100 —
+    // but only 2 known checks, so the coverage floor caps the tier at Silver.
+    expect(scorecardOf(s)).toEqual({ score: 100, known: 2 });
+    expect(tierOf(100, 2)).toBe("Silver");
+  });
+
+  it("reaches Gold only with the coverage floor (≥5 known checks)", () => {
+    const base = service({ entityRef: "component:default/api", owner: "payments", description: "x" });
+    // Doc-index + runs-feed signals wired (annotators set these): runbook,
+    // tests, pipeline join owner + docs → 5 known, all pass → Gold.
+    const wired = { ...base, hasDocs: true, hasRunbook: true, testsPassing: true, deploysPerWeek: 3 };
+    expect(scorecardOf(wired)).toEqual({ score: 100, known: 5 });
+    expect(tierOf(100, 5)).toBe("Gold");
+    // A missing runbook is a REAL fail once docs are indexed: 4/5 = 80 → Silver.
+    const noRunbook = { ...base, hasDocs: true, hasRunbook: false, testsPassing: true, deploysPerWeek: 3 };
+    expect(scorecardOf(noRunbook)).toEqual({ score: 80, known: 5 });
   });
 
   it("fails owner when unowned and docs when undescribed", () => {
@@ -209,7 +223,7 @@ describe("buildSelected", () => {
     const sel = buildSelected(services[0]!, ctx);
     expect(sel.hasOps).toBe(true);
     expect(sel.deploysWeek).toBe("9/wk");
-    expect(sel.passCount + sel.warnCount + sel.failCount).toBe(8);
+    expect(sel.passCount + sel.warnCount + sel.failCount + sel.unknownCount).toBe(8);
     expect(sel.hasUsedBy).toBe(true);
     expect(sel.usedByList[0]!.name).toBe("web");
     expect(sel.hasDeps).toBe(false);

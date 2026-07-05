@@ -19,7 +19,8 @@ import { useSession } from "@/lib/session";
 import { wrap } from "@/lib/api";
 import { useApiQuery, qk } from "@/lib/query";
 import { collectOrgCatalog } from "@/lib/catalog-portal/fetch";
-import { buildContext, toServices } from "@/lib/catalog-portal/model";
+import { buildContext, toServices, annotateDocSignals, annotateRunSignals } from "@/lib/catalog-portal/model";
+import { useOrgDocs } from "@/components/catalog/docs/entity-docs";
 import { buildPage } from "@/lib/catalog-portal/page";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -49,7 +50,18 @@ export function ServicePageLoader({
     ),
   );
 
-  const services = React.useMemo(() => toServices(entities ?? []), [entities]);
+  // Scorecard v2 signals (same sources + caches as the index) so the deep
+  // page's ring/tier agree with the portal row that drilled in.
+  const { data: orgDocs } = useOrgDocs(orgId);
+  const { data: orgRuns } = useApiQuery(qk.orgRuns(orgId), () =>
+    wrap(async () => (await client.state.listOrgRuns(orgId, { limit: 24 })).runs),
+  );
+  const services = React.useMemo(() => {
+    let out = toServices(entities ?? []);
+    if (orgDocs) out = annotateDocSignals(out, orgDocs);
+    if (orgRuns) out = annotateRunSignals(out, orgRuns, Date.now());
+    return out;
+  }, [entities, orgDocs, orgRuns]);
   const ctx = React.useMemo(() => buildContext(services), [services]);
   const selected = React.useMemo(() => services.find((s) => s.key === entityKey) ?? null, [services, entityKey]);
   const page = React.useMemo(() => (selected ? buildPage(selected, ctx) : null), [selected, ctx]);

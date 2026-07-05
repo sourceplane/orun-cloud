@@ -41,6 +41,32 @@ export function docRoleIcon(role: string): string {
   }
 }
 
+const ORG_DOCS_PAGE_LIMIT = 100;
+const ORG_DOCS_MAX_PAGES = 20;
+
+/** Fetch the WHOLE org doc index (bounded, keyset-paged into one cache entry).
+ *  Shared by the Docs hub (the library) and the catalog portal (the scorecard's
+ *  doc signals) so they read one cache. */
+export function useOrgDocs(orgId: string) {
+  const { client } = useSession();
+  return useApiQuery(qk.orgDocs(orgId), () =>
+    wrap(async () => {
+      const all: CatalogDoc[] = [];
+      let cursor: string | null = null;
+      for (let i = 0; i < ORG_DOCS_MAX_PAGES; i++) {
+        const page = await client.state.listCatalogDocs(orgId, {
+          limit: ORG_DOCS_PAGE_LIMIT,
+          ...(cursor ? { cursor } : {}),
+        });
+        all.push(...page.docs);
+        if (!page.nextCursor) break;
+        cursor = `${page.nextCursor.createdAt}|${page.nextCursor.id}`;
+      }
+      return all;
+    }),
+  );
+}
+
 /** Fetch one entity's doc set from the org doc index, in shelf order
  *  (overview first, then declared position). */
 export function useEntityDocs(orgId: string, entityRef: string | null) {
