@@ -46,6 +46,16 @@ const ORG_WORK_RE = /^\/v1\/organizations\/[^/]+\/work(\/.*)?$/;
 const COORDINATION_ROUTE_RE =
   /^\/v1\/organizations\/[^/]+\/projects\/[^/]+\/state\/runs\/[^/]+(?::cancel|\/jobs\/[^/]+:(?:claim|heartbeat|complete)|\/log|\/frontier)$/;
 
+// CAS object plane + catalog head advance: digest-negotiated blob PUTs
+// (`/state/objects/{digest}`, multipart parts), the `objects/missing`
+// negotiation, and the head CAS (`/state/catalog/head`). A catalog sync bursts
+// hundreds of idempotent puts under one token — the tight `state` family
+// 429'd the best-effort catalog autopush into a silent skip (stale org
+// catalog), so this plane rides its own coordination-class family
+// (see rate-limit.ts). Run create and the rest of /state stay on `state`.
+const OBJECTS_ROUTE_RE =
+  /^\/v1\/organizations\/[^/]+\/projects\/[^/]+\/state\/(?:objects(?:\/|$)|catalog\/head$)/;
+
 // `orun-contract-version` is forwarded so state-worker enforces the major and
 // rejects unsupported skew with 409 contract_version_unsupported. `orun-object-
 // kind` + `content-length` are forwarded for the OP3 object plane's digest-
@@ -89,7 +99,11 @@ export async function handleStateRoute(
     return errorResponse("unsupported", "Method not allowed", 405, requestId);
   }
 
-  const routeFamily = COORDINATION_ROUTE_RE.test(pathname) ? "coordination" : "state";
+  const routeFamily = COORDINATION_ROUTE_RE.test(pathname)
+    ? "coordination"
+    : OBJECTS_ROUTE_RE.test(pathname)
+      ? "objects"
+      : "state";
 
   return replayOrExecute(request, requestId, env, routeFamily, async () => {
     if (!env.IDENTITY_WORKER) {

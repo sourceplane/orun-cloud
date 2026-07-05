@@ -59,6 +59,7 @@ export type RouteFamily =
   | "notifications"
   | "integrations"
   | "state"
+  | "objects"
   | "coordination";
 
 interface BucketLimits {
@@ -90,6 +91,15 @@ interface FamilyConfig {
  *     additionally scoped per-run (see `enforceRateLimit`) so one run can't
  *     starve another under the same token. Sized to comfortably clear a
  *     `MAX_JOBS_PER_RUN`-scale fan-out (1000 jobs) at steady state.
+ *   - `objects`: the CAS object plane (digest-negotiated PUTs + `objects/
+ *     missing` + the catalog head advance). A catalog sync for a mature repo
+ *     legitimately bursts hundreds of small uploads in seconds — a 46-component
+ *     repo's first doc-set push is ~150 puts — and the CLI's catalog autopush
+ *     is best-effort (skip + warn on 429, no retry), so the 60/min `state` cap
+ *     silently left the org catalog stale (ogpic run 28734466789: "catalog
+ *     auto-sync skipped … rate_limited"). Puts are idempotent, digest-verified,
+ *     and size-capped server-side; the request count is not the abuse surface
+ *     bytes are, so they ride a coordination-class ceiling.
  */
 const LIMITS: Record<RouteFamily, FamilyConfig> = {
   auth: {
@@ -135,6 +145,10 @@ const LIMITS: Record<RouteFamily, FamilyConfig> = {
   state: {
     identity: { limit: 60, windowSec: 60 },
     org: { limit: 300, windowSec: 60 },
+  },
+  objects: {
+    identity: { limit: 1200, windowSec: 60 },
+    org: { limit: 6000, windowSec: 60 },
   },
   coordination: {
     identity: { limit: 1200, windowSec: 60 },
