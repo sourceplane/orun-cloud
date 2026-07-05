@@ -579,5 +579,14 @@ export const manifest: MigrationManifest = {
       description:
         "Event grouping activation + group-aware notification ledger (saas-event-streaming ES4) — seeds the 'grouping' subscriber lane (active; the events-worker grouping handler renders catalog dedup keys and maintains events.event_groups as an open-story-per-key read-model) and creates events.rule_group_notifications, the notifications lane's own (rule_id, group_key) high-water-severity ledger that fires a rule on a group's first matching event and on severity escalation but not on every member (one story, not five pings). The ledger is owned solely by the notifications lane, so group-aware firing is race-free regardless of lane dispatch order. Additive + idempotent (ON CONFLICT DO NOTHING seed, CREATE TABLE IF NOT EXISTS); same-context FK only.",
     },
+    {
+      id: "640_notifications_team_subject_kind",
+      context: "notifications",
+      path: "640_notifications_team_subject_kind/up.sql",
+      checksum:
+        "49aad8d10b140026492f858c7408e3ed71182cdabed4220e0dd34c539c0a9382",
+      description:
+        "Team notification subject-kind lift (teams-collaboration TC1) — widens both subject-kind CHECKs from ('user','organization') to admit 'team': notification_preferences.subject_kind (so a team-default preference row is storable for the TC2 member-override → team-default → org-default cascade) and notifications.recipient_subject_kind (so a delivery row can record team provenance directly). The enqueue fan-out records per-member 'user' rows; this keeps a direct team row representable without a further migration. Additive + idempotent (DROP CONSTRAINT IF EXISTS before re-add, mirroring the 610 channel lift); no cross-context FKs; every existing row continues to validate.",
+    },
   ],
 };

@@ -4,6 +4,7 @@ import { handleLoginStart } from "./handlers/login-start.js";
 import { handleLoginComplete } from "./handlers/login-complete.js";
 import { handleSession } from "./handlers/session.js";
 import { handleResolveBearer } from "./handlers/resolve-bearer.js";
+import { handleResolveEmails } from "./handlers/resolve-emails.js";
 import { handleOidcExchange } from "./handlers/oidc-exchange.js";
 import { handleLogout } from "./handlers/logout.js";
 import { handleSecurityEvents } from "./handlers/security-events.js";
@@ -71,6 +72,14 @@ export async function route(request: Request, env: Env): Promise<Response> {
     if (url.pathname === "/v1/auth/resolve") {
       if (request.method !== "GET") return methodNotAllowed(requestId);
       return handleResolveBearer(request, env, requestId);
+    }
+
+    // Internal batch email resolution (teams-collaboration TC1): the
+    // notifications worker maps team-member subject ids → delivery emails when
+    // it expands a team target. Service-binding only — not routed by api-edge.
+    if (url.pathname === "/v1/internal/identity/resolve-emails") {
+      if (request.method !== "POST") return methodNotAllowed(requestId);
+      return handleResolveEmails(request, env, requestId);
     }
 
     // GitHub Actions OIDC exchange (OV3): no bearer; the OIDC token is the body.

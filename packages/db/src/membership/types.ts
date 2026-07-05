@@ -356,6 +356,12 @@ export interface MembershipRepository {
   getTeamById(id: string): Promise<MembershipResult<Team>>;
   /** Look up a team by its slug within an account (case-insensitive). */
   getTeamBySlug(accountOrgId: Uuid, slugLower: string): Promise<MembershipResult<Team>>;
+  /**
+   * Look up a team by its account-unique mentionable handle (teams-foundation
+   * TF1), case-insensitive. Backs `@handle` → team resolution for notification
+   * routing (teams-collaboration TC2).
+   */
+  getTeamByHandle(accountOrgId: Uuid, handleLower: string): Promise<MembershipResult<Team>>;
   /** All active teams owned by an account, oldest first. */
   listTeams(accountOrgId: Uuid): Promise<MembershipResult<Team[]>>;
   updateTeam(id: string, input: UpdateTeamInput): Promise<MembershipResult<Team>>;

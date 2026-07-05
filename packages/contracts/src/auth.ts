@@ -77,6 +77,28 @@ export interface BearerResolutionResponse {
   user?: AuthUser;
 }
 
+// ── Internal: batch email resolution (teams-collaboration TC1) ──────
+/**
+ * Internal (service-binding only) request to resolve opaque user subject ids
+ * (`usr_…`) to their delivery email addresses. Called by the notifications
+ * worker when it expands a team target to its members — the roster returns
+ * subject ids and this resolves each to an address. Subjects that do not map
+ * to an active user are simply omitted from the response.
+ */
+export interface ResolveEmailsRequest {
+  subjectIds: string[];
+}
+
+/** One resolved subject → email pair (TC1). */
+export interface ResolvedEmail {
+  subjectId: string;
+  email: string;
+}
+
+export interface ResolveEmailsResponse {
+  users: ResolvedEmail[];
+}
+
 // OAuth sign-in contracts.
 //
 // The `start` and `callback` routes are browser-redirect flows (not JSON

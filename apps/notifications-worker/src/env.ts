@@ -4,8 +4,16 @@ export interface Env {
   PLATFORM_DB?: Hyperdrive;
   /** Cloudflare Email Service send_email binding (cloudflare-email provider). */
   EMAIL?: CloudflareEmailSender;
-  /** Authorization context for channel CRUD (ES3). */
+  /**
+   * Authorization context for channel CRUD (ES3) and the active team roster
+   * for team-target fan-out (teams-collaboration TC1).
+   */
   MEMBERSHIP_WORKER?: Fetcher;
+  /**
+   * Batch subject-id → email resolution for team-target fan-out
+   * (teams-collaboration TC1). Absent ⇒ team targets can't be expanded.
+   */
+  IDENTITY_WORKER?: Fetcher;
   /** Policy decisions for channel CRUD (ES3). */
   POLICY_WORKER?: Fetcher;
   /** Entitlement checks for Slack channels (ES3). */

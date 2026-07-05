@@ -246,6 +246,24 @@ export function createIdentityRepository(executor: SqlExecutor): IdentityReposit
       }
     },
 
+    async listUsersByIds(ids: string[]): Promise<IdentityResult<User[]>> {
+      // Batch resolver for notification fan-out (teams-collaboration TC1).
+      // Active users only — a suspended/deleted account must not be emailed.
+      // Missing ids are simply absent from the result (no 1:1 guarantee).
+      if (ids.length === 0) {
+        return { ok: true, value: [] };
+      }
+      try {
+        const result = await executor.execute<Record<string, unknown>>(
+          `SELECT * FROM identity.users WHERE id = ANY($1) AND status = 'active'`,
+          [ids],
+        );
+        return { ok: true, value: result.rows.map(mapUser) };
+      } catch {
+        return safeError("Failed to list users by ids");
+      }
+    },
+
     async updateUserProfile(userId: string, input: UpdateUserProfileInput): Promise<IdentityResult<User>> {
       try {
         // Partial update: only set the columns the caller provided. `updated_at`

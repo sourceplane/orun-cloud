@@ -13,10 +13,12 @@ import type {
   StoredNotification,
   StoredNotificationAttempt,
 } from "@saas/db/notifications";
+import type { Uuid } from "@saas/db/ids";
 import type { Env } from "../env.js";
 import { notificationPublicId, parseNotificationPublicId, parseOrgIdInput } from "../ids.js";
 import { emitEvent } from "../events-client.js";
 import { deliverAttempt } from "./dispatch.js";
+import { expandTeamRecipients, resolveTeamHandle } from "../team-expansion.js";
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const ALLOWED_CATEGORIES = new Set(["invitation", "billing", "security", "support", "product"]);
@@ -52,9 +54,20 @@ export function validateEnqueueRequest(body: unknown): ValidatedEnqueue {
   if (!recipient || typeof recipient !== "object") {
     errors.recipient = ["Required"];
   } else {
+    const isTeam = recipient.subjectKind === "team";
     // ES3: email (address = email) or slack (address = chan_<hex> channel id).
     if (recipient.channel !== "email" && recipient.channel !== "slack") {
       errors["recipient.channel"] = ['Must be "email" or "slack"'];
+    } else if (isTeam) {
+      // teams-collaboration TC1: a team target is expanded to its members at
+      // send time, so `address` is a free-form team label (not email-validated)
+      // and only the email channel is supported.
+      if (recipient.channel !== "email") {
+        errors["recipient.channel"] = ['Team targets support only the "email" channel'];
+      }
+      if (typeof recipient.address !== "string" || recipient.address.length === 0) {
+        errors["recipient.address"] = ["Required"];
+      }
     } else if (recipient.channel === "email") {
       if (typeof recipient.address !== "string" || !EMAIL_RE.test(recipient.address)) {
         errors["recipient.address"] = ["Must be a valid email address"];
@@ -65,10 +78,17 @@ export function validateEnqueueRequest(body: unknown): ValidatedEnqueue {
         errors["recipient.address"] = ["Must be a notification channel id (chan_...)"];
       }
     }
-    if (recipient.subjectKind !== undefined && recipient.subjectKind !== "user" && recipient.subjectKind !== "organization") {
-      errors["recipient.subjectKind"] = ['Must be "user" or "organization"'];
+    if (
+      recipient.subjectKind !== undefined &&
+      recipient.subjectKind !== "user" &&
+      recipient.subjectKind !== "organization" &&
+      recipient.subjectKind !== "team"
+    ) {
+      errors["recipient.subjectKind"] = ['Must be "user", "organization", or "team"'];
     }
-    if (recipient.subjectId !== undefined && typeof recipient.subjectId !== "string") {
+    if (isTeam && (typeof recipient.subjectId !== "string" || recipient.subjectId.length === 0)) {
+      errors["recipient.subjectId"] = ["Required for a team target"];
+    } else if (recipient.subjectId !== undefined && typeof recipient.subjectId !== "string") {
       errors["recipient.subjectId"] = ["Must be a string"];
     }
   }
@@ -167,7 +187,6 @@ export async function enqueueNotification(
   deps: NotificationsServiceDeps,
   request: EnqueueNotificationRequest,
 ): Promise<{ outcome: EnqueueOutcome } | { error: { code: string; status: number; message: string } }> {
-  const { repo, provider } = deps;
   const now = deps.now ? deps.now() : new Date();
   const genUuid = deps.generateUuid ?? (() => crypto.randomUUID());
   const emit = deps.emit ?? emitEvent;
@@ -179,9 +198,60 @@ export async function enqueueNotification(
     return { error: { code: "validation_error", status: 422, message: "Invalid org id" } };
   }
 
+  // teams-collaboration TC1: a team target is not a delivery identity. Expand
+  // it to its active members' emails (live, no backfill) and fan out — one
+  // delivery per member, each subject to org suppression independently.
+  if (request.recipient.subjectKind === "team") {
+    return enqueueTeamFanOut(deps, request, orgUuid, now, genUuid, emit);
+  }
+
+  return deliverToRecipient(
+    deps,
+    request,
+    orgUuid,
+    {
+      channel: request.recipient.channel,
+      address: request.recipient.address,
+      subjectKind: request.recipient.subjectKind ?? null,
+      subjectId: request.recipient.subjectId ?? null,
+    },
+    request.idempotencyKey,
+    now,
+    genUuid,
+    emit,
+  );
+}
+
+/** Resolved delivery identity for a single send (single recipient or one team member). */
+interface ResolvedRecipient {
+  channel: EnqueueNotificationRequest["recipient"]["channel"];
+  address: string;
+  subjectKind: string | null;
+  subjectId: string | null;
+}
+
+/**
+ * Enqueue + synchronously send to exactly one address. Runs the idempotency
+ * short-circuit, the suppression short-circuit, the row write, delivery attempt
+ * 1, and the queued/sent/failed events. Shared by the single-recipient path and
+ * each team-member fan-out leg (TC1).
+ */
+async function deliverToRecipient(
+  deps: NotificationsServiceDeps,
+  request: EnqueueNotificationRequest,
+  orgUuid: Uuid,
+  recipient: ResolvedRecipient,
+  idempotencyKey: string | undefined,
+  now: Date,
+  genUuid: () => string,
+  emit: NonNullable<NotificationsServiceDeps["emit"]>,
+  opts?: { preferenceSkip?: boolean },
+): Promise<{ outcome: EnqueueOutcome } | { error: { code: string; status: number; message: string } }> {
+  const { repo, provider } = deps;
+
   // Idempotency check.
-  if (request.idempotencyKey) {
-    const existing = await repo.findNotificationByIdempotencyKey(orgUuid, request.idempotencyKey);
+  if (idempotencyKey) {
+    const existing = await repo.findNotificationByIdempotencyKey(orgUuid, idempotencyKey);
     if (existing.ok) {
       const attempts = await repo.listAttempts(existing.value.id);
       return {
@@ -195,9 +265,14 @@ export async function enqueueNotification(
     }
   }
 
-  // Suppression short-circuit.
-  const suppressed = await repo.isSuppressed(orgUuid, request.recipient.channel, request.recipient.address);
-  if (suppressed.ok && suppressed.value) {
+  // Suppression short-circuit. Two paths land here: an address-level org
+  // suppression (bounce/complaint — the absolute ceiling) or a TC2 preference
+  // opt-out (`preferenceSkip`). Either records a `suppressed` row (auditable,
+  // never sent) rather than a live delivery.
+  const addressSuppressed = await repo.isSuppressed(orgUuid, recipient.channel, recipient.address);
+  const suppress = opts?.preferenceSkip === true || (addressSuppressed.ok && addressSuppressed.value);
+  if (suppress) {
+    const reason = opts?.preferenceSkip ? "preference opt-out" : "suppression";
     const id = genUuid();
     const create = await repo.createNotification({
       id,
@@ -205,12 +280,12 @@ export async function enqueueNotification(
       category: request.category,
       templateKey: request.templateKey,
       templateData: request.templateData ?? {},
-      channel: request.recipient.channel,
-      recipientAddress: request.recipient.address,
-      recipientSubjectKind: request.recipient.subjectKind ?? null,
-      recipientSubjectId: request.recipient.subjectId ?? null,
+      channel: recipient.channel,
+      recipientAddress: recipient.address,
+      recipientSubjectKind: recipient.subjectKind,
+      recipientSubjectId: recipient.subjectId,
       status: "suppressed",
-      idempotencyKey: request.idempotencyKey ?? null,
+      idempotencyKey: idempotencyKey ?? null,
       correlationId: request.correlationId ?? null,
       queuedAt: now,
     });
@@ -228,12 +303,12 @@ export async function enqueueNotification(
       requestId: deps.requestId,
       correlationId: request.correlationId ?? null,
       category: "notifications",
-      description: `Notification ${notificationPublicId(create.value.id)} short-circuited by suppression`,
+      description: `Notification ${notificationPublicId(create.value.id)} short-circuited by ${reason}`,
       payload: {
         orgId: request.orgId,
         category: request.category,
         templateKey: request.templateKey,
-        recipient: { channel: request.recipient.channel, address: request.recipient.address },
+        recipient: { channel: recipient.channel, address: recipient.address },
       },
       occurredAt: now,
     });
@@ -253,20 +328,20 @@ export async function enqueueNotification(
     category: request.category,
     templateKey: request.templateKey,
     templateData: request.templateData ?? {},
-    channel: request.recipient.channel,
-    recipientAddress: request.recipient.address,
-    recipientSubjectKind: request.recipient.subjectKind ?? null,
-    recipientSubjectId: request.recipient.subjectId ?? null,
+    channel: recipient.channel,
+    recipientAddress: recipient.address,
+    recipientSubjectKind: recipient.subjectKind,
+    recipientSubjectId: recipient.subjectId,
     status: "queued",
-    idempotencyKey: request.idempotencyKey ?? null,
+    idempotencyKey: idempotencyKey ?? null,
     correlationId: request.correlationId ?? null,
     queuedAt: now,
   });
   if (!created.ok) {
     if (created.error.kind === "conflict") {
       // Idempotency race: re-fetch.
-      if (request.idempotencyKey) {
-        const re = await repo.findNotificationByIdempotencyKey(orgUuid, request.idempotencyKey);
+      if (idempotencyKey) {
+        const re = await repo.findNotificationByIdempotencyKey(orgUuid, idempotencyKey);
         if (re.ok) {
           const attempts = await repo.listAttempts(re.value.id);
           return {
@@ -355,6 +430,142 @@ export async function enqueueNotification(
     outcome: {
       status: "created",
       response: { notification: toDeliveryStatus(finalRow, attempts.ok ? attempts.value : []) },
+    },
+  };
+}
+
+/**
+ * Read one preference row's toggle for a category. Returns `null` when the row
+ * (or the category key) is not configured — the cascade treats that as "defer
+ * to the next level", not as an opt-out.
+ */
+async function categoryToggle(
+  repo: NotificationsRepository,
+  orgUuid: Uuid,
+  subjectKind: "user" | "team" | "organization",
+  subjectId: string,
+  category: string,
+  channel: string,
+): Promise<boolean | null> {
+  const list = await repo.listPreferences(orgUuid, subjectKind, subjectId, channel);
+  if (!list.ok || list.value.length === 0) return null;
+  // The (org, subjectKind, subjectId, channel) index is unique — at most one row.
+  const categories = list.value[0]!.categories as Record<string, boolean | null | undefined>;
+  const v = categories[category];
+  return v === true || v === false ? v : null;
+}
+
+/**
+ * teams-collaboration TC2: resolve whether a team member wants a category on a
+ * channel, by the preference cascade — member-override → team-default →
+ * org-default → opt-in default. The first level that has an explicit toggle
+ * wins; an unset level defers downward. Org suppression is enforced separately
+ * (in deliverToRecipient) as the absolute ceiling, so it is not part of this
+ * opt-in/opt-out resolution.
+ */
+async function memberWantsCategory(
+  repo: NotificationsRepository,
+  orgUuid: Uuid,
+  orgPublicId: string,
+  teamId: string,
+  memberSubjectId: string,
+  category: string,
+  channel: string,
+): Promise<boolean> {
+  const member = await categoryToggle(repo, orgUuid, "user", memberSubjectId, category, channel);
+  if (member !== null) return member;
+  const team = await categoryToggle(repo, orgUuid, "team", teamId, category, channel);
+  if (team !== null) return team;
+  const org = await categoryToggle(repo, orgUuid, "organization", orgPublicId, category, channel);
+  if (org !== null) return org;
+  return true; // no level configured ⇒ transactional opt-in default.
+}
+
+/**
+ * Expand a team target to its active members and send one notification per
+ * member (teams-collaboration TC1). Each leg records a per-member `user`
+ * delivery row and is gated by org suppression independently, so org
+ * suppression still wins per address. A per-member idempotency key
+ * (`<base>:<subjectId>`) keeps re-sends idempotent while letting a roster grow
+ * between sends. The aggregate response carries the first delivery as
+ * `notification` and the full set as `deliveries`.
+ *
+ * teams-collaboration TC2: before each leg, the preference cascade
+ * (member-override → team-default → org-default) decides whether the member
+ * wants this category. An opted-out member is skipped — they leave no delivery
+ * row and stay on the team. Org suppression remains the absolute ceiling
+ * (checked in deliverToRecipient), independent of any team default.
+ */
+async function enqueueTeamFanOut(
+  deps: NotificationsServiceDeps,
+  request: EnqueueNotificationRequest,
+  orgUuid: Uuid,
+  now: Date,
+  genUuid: () => string,
+  emit: NonNullable<NotificationsServiceDeps["emit"]>,
+): Promise<{ outcome: EnqueueOutcome } | { error: { code: string; status: number; message: string } }> {
+  // TC2: the target may be a `team_<hex>` id or an `@handle` mention. Resolve a
+  // handle to its team id first (unknown handle ⇒ 422, transport failure ⇒ 503).
+  let teamId = request.recipient.subjectId!;
+  if (!teamId.startsWith("team_")) {
+    const resolved = await resolveTeamHandle(deps.env.MEMBERSHIP_WORKER, request.orgId, teamId, deps.requestId);
+    if (!resolved.ok) {
+      return resolved.reason === "not_found"
+        ? { error: { code: "not_found", status: 422, message: "No team owns that handle" } }
+        : { error: { code: "service_unavailable", status: 503, message: "Team handle resolution unavailable" } };
+    }
+    teamId = resolved.teamId;
+  }
+  const expansion = await expandTeamRecipients(deps.env.MEMBERSHIP_WORKER, deps.env.IDENTITY_WORKER, teamId, deps.requestId);
+  if (!expansion.ok) {
+    return { error: { code: "service_unavailable", status: 503, message: "Team roster resolution unavailable" } };
+  }
+  if (expansion.recipients.length === 0) {
+    return { error: { code: "no_recipients", status: 422, message: "Team has no active members with a deliverable address" } };
+  }
+
+  const deliveries: NotificationDeliveryStatus[] = [];
+  let lastError: { code: string; status: number; message: string } | undefined;
+  for (const member of expansion.recipients) {
+    // TC2 preference cascade: an opted-out member gets a `suppressed` row
+    // (auditable, never sent) while remaining on the team. Org suppression is
+    // enforced below in deliverToRecipient regardless of this decision.
+    const wants = await memberWantsCategory(
+      deps.repo,
+      orgUuid,
+      request.orgId,
+      teamId,
+      member.subjectId,
+      request.category,
+      "email",
+    );
+    const perMemberKey = request.idempotencyKey ? `${request.idempotencyKey}:${member.subjectId}` : undefined;
+    const res = await deliverToRecipient(
+      deps,
+      request,
+      orgUuid,
+      { channel: "email", address: member.address, subjectKind: "user", subjectId: member.subjectId },
+      perMemberKey,
+      now,
+      genUuid,
+      emit,
+      wants ? undefined : { preferenceSkip: true },
+    );
+    if ("error" in res) {
+      lastError = res.error;
+      continue;
+    }
+    deliveries.push(res.outcome.response.notification);
+  }
+
+  if (deliveries.length === 0) {
+    return { error: lastError ?? { code: "internal_error", status: 500, message: "Failed to deliver to team" } };
+  }
+
+  return {
+    outcome: {
+      status: "created",
+      response: { notification: deliveries[0]!, deliveries },
     },
   };
 }

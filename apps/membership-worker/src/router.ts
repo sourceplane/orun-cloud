@@ -24,6 +24,8 @@ import { handleAuthorizationContext } from "./handlers/authorization-context.js"
 import { handleEffectiveAccess, handleOrgEffectiveAccess } from "./handlers/effective-access.js";
 import { handleListOwnerHandles, handleSetOwnerHandle, handleDeleteOwnerHandle, handleResolveOwners } from "./handlers/owner-handles.js";
 import { handleSubjectOrgs } from "./handlers/subject-orgs.js";
+import { handleInternalTeamMembers } from "./handlers/internal-team-members.js";
+import { handleResolveTeamHandle } from "./handlers/resolve-team-handle.js";
 import { handleSyncAccountChildren } from "./handlers/sync-account-children.js";
 import { handleResolveBillingParent } from "./handlers/resolve-billing-parent.js";
 import { handleResolveIntegrationParent } from "./handlers/resolve-integration-parent.js";
@@ -89,6 +91,21 @@ export async function route(request: Request, env: Env): Promise<Response> {
     if (url.pathname === "/v1/internal/membership/subject-orgs") {
       if (request.method !== "POST") return methodNotAllowed(requestId);
       return handleSubjectOrgs(request, env, requestId);
+    }
+
+    // Active team roster for notification fan-out (teams-collaboration TC1):
+    // the notifications worker expands a team target to its current members.
+    // Service-binding only.
+    if (url.pathname === "/v1/internal/membership/team-members") {
+      if (request.method !== "POST") return methodNotAllowed(requestId);
+      return handleInternalTeamMembers(request, env, requestId);
+    }
+
+    // Resolve a team @handle mention → team_ id for notification routing
+    // (teams-collaboration TC2). Service-binding only.
+    if (url.pathname === "/v1/internal/membership/resolve-team-handle") {
+      if (request.method !== "POST") return methodNotAllowed(requestId);
+      return handleResolveTeamHandle(request, env, requestId);
     }
 
     if (url.pathname === "/v1/internal/membership/authorization-context") {

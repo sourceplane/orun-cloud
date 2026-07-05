@@ -1047,6 +1047,20 @@ export function createMembershipRepository(executor: SqlExecutor): MembershipRep
       }
     },
 
+    async getTeamByHandle(accountOrgId: string, handleLower: string): Promise<MembershipResult<Team>> {
+      try {
+        const result = await executor.execute<Record<string, unknown>>(
+          `SELECT * FROM membership.teams
+           WHERE account_org_id = $1 AND lower(handle) = $2 AND status <> 'deleted'`,
+          [accountOrgId, handleLower],
+        );
+        if (result.rowCount === 0) return { ok: false, error: { kind: "not_found" } };
+        return { ok: true, value: mapTeam(result.rows[0]!) };
+      } catch (err) {
+        return safeError("Failed to get team by handle", err);
+      }
+    },
+
     async listTeams(accountOrgId: string): Promise<MembershipResult<Team[]>> {
       try {
         // teams-platform — carry the active-member count so the Teams directory

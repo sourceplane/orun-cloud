@@ -12,6 +12,7 @@ export function teamRepoStubs(): Pick<
   | "createTeam"
   | "getTeamById"
   | "getTeamBySlug"
+  | "getTeamByHandle"
   | "listTeams"
   | "updateTeam"
   | "deleteTeam"
@@ -36,6 +37,7 @@ export function teamRepoStubs(): Pick<
     async createTeam() { return notFound; },
     async getTeamById() { return notFound; },
     async getTeamBySlug() { return notFound; },
+    async getTeamByHandle() { return notFound; },
     async listTeams() { return { ok: true as const, value: [] }; },
     async updateTeam() { return notFound; },
     async deleteTeam() { return notFound; },

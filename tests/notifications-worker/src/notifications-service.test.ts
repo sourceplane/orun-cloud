@@ -490,3 +490,341 @@ describe("toDeliveryStatus", () => {
     expect(status.failedAt).toBeNull();
   });
 });
+
+// ── teams-collaboration TC1: team as notification target ──────────────
+function jsonEnvelope(data: unknown, status = 200): Response {
+  return new Response(JSON.stringify({ data }), {
+    status,
+    headers: { "content-type": "application/json" },
+  });
+}
+
+/**
+ * Fake membership-worker. Routes by path: `team-members` returns the roster;
+ * `resolve-team-handle` maps a handle → team id from `handleMap` (TC2).
+ */
+function fakeMembershipWorker(
+  members: Array<{ subjectId: string; subjectType?: string; teamRole?: string }>,
+  handleMap: Record<string, string> = {},
+) {
+  return {
+    fetch: async (url: string, init?: { body?: string }) => {
+      if (url.includes("resolve-team-handle")) {
+        const body = JSON.parse(init?.body ?? "{}") as { handle: string };
+        const key = body.handle.replace(/^@/, "").toLowerCase();
+        const teamId = handleMap[key] ?? null;
+        return jsonEnvelope({ teamId, handle: teamId ? key : null, name: teamId ? key : null });
+      }
+      return jsonEnvelope({
+        members: members.map((m) => ({
+          subjectId: m.subjectId,
+          subjectType: m.subjectType ?? "user",
+          teamRole: m.teamRole ?? "team_member",
+        })),
+      });
+    },
+  };
+}
+
+/** Fake identity-worker resolving subject ids → emails (missing ⇒ omitted). */
+function fakeIdentityWorker(emails: Record<string, string>) {
+  return {
+    fetch: async (_url: string, init?: { body?: string }) => {
+      const body = JSON.parse(init?.body ?? "{}") as { subjectIds: string[] };
+      const users = body.subjectIds
+        .filter((id) => emails[id])
+        .map((id) => ({ subjectId: id, email: emails[id]! }));
+      return jsonEnvelope({ users });
+    },
+  };
+}
+
+const teamRequest = {
+  orgId: ORG_UUID,
+  category: "product" as const,
+  templateKey: "event.notification",
+  recipient: {
+    channel: "email" as const,
+    address: "@payments",
+    subjectKind: "team" as const,
+    subjectId: "team_00000000000000000000000000000abc",
+  },
+};
+
+function teamEnv(membership: unknown, identity: unknown): Env {
+  return { ...fakeEnv, MEMBERSHIP_WORKER: membership, IDENTITY_WORKER: identity } as unknown as Env;
+}
+
+describe("validateEnqueueRequest — team target (TC1)", () => {
+  it("accepts a team recipient with a non-email address label", () => {
+    const r = validateEnqueueRequest(teamRequest);
+    expect(r.ok).toBe(true);
+  });
+
+  it("requires a subjectId for a team target", () => {
+    const r = validateEnqueueRequest({
+      ...teamRequest,
+      recipient: { channel: "email", address: "@payments", subjectKind: "team" },
+    });
+    expect(r.ok).toBe(false);
+    expect(r.errors["recipient.subjectId"]).toBeDefined();
+  });
+
+  it("rejects a team target on a non-email channel", () => {
+    const r = validateEnqueueRequest({
+      ...teamRequest,
+      recipient: { channel: "slack", address: "@payments", subjectKind: "team", subjectId: "team_x" },
+    });
+    expect(r.ok).toBe(false);
+    expect(r.errors["recipient.channel"]).toBeDefined();
+  });
+});
+
+describe("enqueueNotification — team fan-out (TC1)", () => {
+  it("expands a team to its members and delivers one notification per member", async () => {
+    const repo = createFakeRepo();
+    const provider = createLocalDebugProvider();
+    const cap = createCapturingEmitter();
+    const env = teamEnv(
+      fakeMembershipWorker([{ subjectId: "usr_a" }, { subjectId: "usr_b" }, { subjectId: "usr_c" }]),
+      fakeIdentityWorker({ usr_a: "a@x.com", usr_b: "b@x.com", usr_c: "c@x.com" }),
+    );
+
+    const result = await enqueueNotification(
+      { repo, provider, env, actorType: "service", actorId: "events-worker", requestId: "req_team_1", now: () => fixedNow, generateUuid: () => crypto.randomUUID(), emit: cap.emit },
+      teamRequest,
+    );
+
+    expect("outcome" in result).toBe(true);
+    if (!("outcome" in result)) return;
+    expect(result.outcome.response.deliveries).toHaveLength(3);
+    expect(result.outcome.response.deliveries!.every((d) => d.status === "sent")).toBe(true);
+    // notification is the first delivery.
+    expect(result.outcome.response.notification.id).toBe(result.outcome.response.deliveries![0]!.id);
+
+    const stored = [...repo._store.notifications.values()];
+    expect(stored).toHaveLength(3);
+    expect(stored.map((n) => n.recipientAddress).sort()).toEqual(["a@x.com", "b@x.com", "c@x.com"]);
+    // each fanned row records the member as a `user` delivery.
+    expect(stored.every((n) => n.recipientSubjectKind === "user")).toBe(true);
+    expect(stored.map((n) => n.recipientSubjectId).sort()).toEqual(["usr_a", "usr_b", "usr_c"]);
+    // queued+sent per member.
+    expect(cap.events.filter((e) => e.type === "notification.sent")).toHaveLength(3);
+  });
+
+  it("drops service-principal members and members with no resolvable email", async () => {
+    const repo = createFakeRepo();
+    const env = teamEnv(
+      fakeMembershipWorker([
+        { subjectId: "usr_a" },
+        { subjectId: "sp_bot", subjectType: "service_principal" },
+        { subjectId: "usr_gone" }, // no email in identity
+      ]),
+      fakeIdentityWorker({ usr_a: "a@x.com" }),
+    );
+
+    const result = await enqueueNotification(
+      { repo, provider: createLocalDebugProvider(), env, actorType: "service", actorId: "events-worker", requestId: "req_team_2", now: () => fixedNow, generateUuid: () => crypto.randomUUID(), emit: createCapturingEmitter().emit },
+      teamRequest,
+    );
+
+    if (!("outcome" in result)) throw new Error("expected outcome");
+    expect(result.outcome.response.deliveries).toHaveLength(1);
+    expect(result.outcome.response.deliveries![0]!.recipient.address).toBe("a@x.com");
+  });
+
+  it("lets org suppression win per member — a suppressed member is not sent", async () => {
+    const repo = createFakeRepo();
+    const provider = createLocalDebugProvider();
+    let sendCalls = 0;
+    const realSend = provider.send.bind(provider);
+    provider.send = async (ctx) => {
+      sendCalls++;
+      return realSend(ctx);
+    };
+    await repo.createSuppression({
+      id: "66666666-6666-4666-8666-666666666666",
+      orgId: ORG_UUID,
+      channel: "email",
+      address: "b@x.com",
+      reason: "bounce",
+      createdAt: fixedNow,
+    });
+    const env = teamEnv(
+      fakeMembershipWorker([{ subjectId: "usr_a" }, { subjectId: "usr_b" }]),
+      fakeIdentityWorker({ usr_a: "a@x.com", usr_b: "b@x.com" }),
+    );
+
+    const result = await enqueueNotification(
+      { repo, provider, env, actorType: "service", actorId: "events-worker", requestId: "req_team_3", now: () => fixedNow, generateUuid: () => crypto.randomUUID(), emit: createCapturingEmitter().emit },
+      teamRequest,
+    );
+
+    if (!("outcome" in result)) throw new Error("expected outcome");
+    expect(sendCalls).toBe(1); // only usr_a actually sent
+    const byAddr = new Map(result.outcome.response.deliveries!.map((d) => [d.recipient.address, d.status]));
+    expect(byAddr.get("a@x.com")).toBe("sent");
+    expect(byAddr.get("b@x.com")).toBe("suppressed");
+  });
+
+  it("reflects a roster change on the next send with no backfill", async () => {
+    const repo = createFakeRepo();
+    const identity = fakeIdentityWorker({ usr_a: "a@x.com", usr_b: "b@x.com" });
+    const base = { repo, provider: createLocalDebugProvider(), actorType: "service", actorId: "events-worker", now: () => fixedNow, generateUuid: () => crypto.randomUUID(), emit: createCapturingEmitter().emit };
+
+    const first = await enqueueNotification(
+      { ...base, env: teamEnv(fakeMembershipWorker([{ subjectId: "usr_a" }]), identity), requestId: "req_r1" },
+      teamRequest,
+    );
+    const second = await enqueueNotification(
+      { ...base, env: teamEnv(fakeMembershipWorker([{ subjectId: "usr_a" }, { subjectId: "usr_b" }]), identity), requestId: "req_r2" },
+      teamRequest,
+    );
+
+    if (!("outcome" in first) || !("outcome" in second)) throw new Error("expected outcomes");
+    expect(first.outcome.response.deliveries).toHaveLength(1);
+    expect(second.outcome.response.deliveries).toHaveLength(2); // usr_b picked up live
+  });
+
+  it("returns 422 when the team has no deliverable members", async () => {
+    const repo = createFakeRepo();
+    const env = teamEnv(fakeMembershipWorker([]), fakeIdentityWorker({}));
+    const result = await enqueueNotification(
+      { repo, provider: createLocalDebugProvider(), env, actorType: "service", actorId: "events-worker", requestId: "req_team_empty", now: () => fixedNow, generateUuid: () => crypto.randomUUID(), emit: createCapturingEmitter().emit },
+      teamRequest,
+    );
+    if (!("error" in result)) throw new Error("expected error");
+    expect(result.error.status).toBe(422);
+    expect(result.error.code).toBe("no_recipients");
+  });
+
+  it("returns 503 when team roster resolution is unavailable", async () => {
+    const repo = createFakeRepo();
+    const env = teamEnv(fakeMembershipWorker([{ subjectId: "usr_a" }]), undefined); // no identity binding
+    const result = await enqueueNotification(
+      { repo, provider: createLocalDebugProvider(), env, actorType: "service", actorId: "events-worker", requestId: "req_team_unavail", now: () => fixedNow, generateUuid: () => crypto.randomUUID(), emit: createCapturingEmitter().emit },
+      teamRequest,
+    );
+    if (!("error" in result)) throw new Error("expected error");
+    expect(result.error.status).toBe(503);
+  });
+
+  it("keeps a per-member idempotency key so re-sends dedupe", async () => {
+    const repo = createFakeRepo();
+    const env = teamEnv(
+      fakeMembershipWorker([{ subjectId: "usr_a" }, { subjectId: "usr_b" }]),
+      fakeIdentityWorker({ usr_a: "a@x.com", usr_b: "b@x.com" }),
+    );
+    const deps = { repo, provider: createLocalDebugProvider(), env, actorType: "service", actorId: "events-worker", now: () => fixedNow, generateUuid: () => crypto.randomUUID(), emit: createCapturingEmitter().emit };
+    const req = { ...teamRequest, idempotencyKey: "evt_42" };
+
+    await enqueueNotification({ ...deps, requestId: "req_idem_1" }, req);
+    await enqueueNotification({ ...deps, requestId: "req_idem_2" }, req);
+
+    // Re-send is idempotent per member: still exactly 2 rows, not 4.
+    expect([...repo._store.notifications.values()]).toHaveLength(2);
+  });
+});
+
+// ── teams-collaboration TC2: preference cascade + @handle resolution ──
+const TEAM_ID = "team_00000000000000000000000000000abc";
+
+async function seedPref(
+  repo: ReturnType<typeof createFakeRepo>,
+  subjectKind: "user" | "team" | "organization",
+  subjectId: string,
+  categories: Record<string, boolean | null>,
+) {
+  await repo.upsertPreference({
+    id: `pref-${subjectKind}-${subjectId}`,
+    orgId: ORG_UUID,
+    subjectKind,
+    subjectId,
+    channel: "email",
+    categories,
+    updatedAt: fixedNow,
+  });
+}
+
+function runTeamSend(repo: ReturnType<typeof createFakeRepo>, membership: unknown, identity: unknown, req = teamRequest) {
+  return enqueueNotification(
+    { repo, provider: createLocalDebugProvider(), env: teamEnv(membership, identity), actorType: "service", actorId: "events-worker", requestId: "req_tc2", now: () => fixedNow, generateUuid: () => crypto.randomUUID(), emit: createCapturingEmitter().emit },
+    req,
+  );
+}
+
+describe("enqueueNotification — TC2 preference cascade", () => {
+  const roster = fakeMembershipWorker([{ subjectId: "usr_a" }, { subjectId: "usr_b" }]);
+  const identity = fakeIdentityWorker({ usr_a: "a@x.com", usr_b: "b@x.com" });
+
+  it("lets a member opt out of a category without leaving the team", async () => {
+    const repo = createFakeRepo();
+    await seedPref(repo, "user", "usr_b", { product: false });
+    const result = await runTeamSend(repo, roster, identity);
+    if (!("outcome" in result)) throw new Error("expected outcome");
+    const byAddr = new Map(result.outcome.response.deliveries!.map((d) => [d.recipient.address, d.status]));
+    expect(byAddr.get("a@x.com")).toBe("sent");
+    expect(byAddr.get("b@x.com")).toBe("suppressed"); // opted out, still on roster
+  });
+
+  it("applies a team default when a member has no override", async () => {
+    const repo = createFakeRepo();
+    await seedPref(repo, "team", TEAM_ID, { product: false });
+    const result = await runTeamSend(repo, roster, identity);
+    if (!("outcome" in result)) throw new Error("expected outcome");
+    expect(result.outcome.response.deliveries!.every((d) => d.status === "suppressed")).toBe(true);
+  });
+
+  it("a member override beats a team default (opt back in)", async () => {
+    const repo = createFakeRepo();
+    await seedPref(repo, "team", TEAM_ID, { product: false });
+    await seedPref(repo, "user", "usr_a", { product: true });
+    const result = await runTeamSend(repo, roster, identity);
+    if (!("outcome" in result)) throw new Error("expected outcome");
+    const byAddr = new Map(result.outcome.response.deliveries!.map((d) => [d.recipient.address, d.status]));
+    expect(byAddr.get("a@x.com")).toBe("sent"); // override wins
+    expect(byAddr.get("b@x.com")).toBe("suppressed"); // inherits team default
+  });
+
+  it("falls back to the org default when neither member nor team is set", async () => {
+    const repo = createFakeRepo();
+    await seedPref(repo, "organization", ORG_UUID, { product: false });
+    const result = await runTeamSend(repo, roster, identity);
+    if (!("outcome" in result)) throw new Error("expected outcome");
+    expect(result.outcome.response.deliveries!.every((d) => d.status === "suppressed")).toBe(true);
+  });
+
+  it("org suppression is the absolute ceiling — a team default of true cannot override it", async () => {
+    const repo = createFakeRepo();
+    await seedPref(repo, "team", TEAM_ID, { product: true }); // team says send
+    await repo.createSuppression({ id: "77777777-7777-4777-8777-777777777777", orgId: ORG_UUID, channel: "email", address: "b@x.com", reason: "bounce", createdAt: fixedNow });
+    const result = await runTeamSend(repo, roster, identity);
+    if (!("outcome" in result)) throw new Error("expected outcome");
+    const byAddr = new Map(result.outcome.response.deliveries!.map((d) => [d.recipient.address, d.status]));
+    expect(byAddr.get("a@x.com")).toBe("sent");
+    expect(byAddr.get("b@x.com")).toBe("suppressed"); // suppression wins over team default
+  });
+});
+
+describe("enqueueNotification — TC2 @handle target resolution", () => {
+  it("resolves an @handle target to a team and fans out to its members", async () => {
+    const repo = createFakeRepo();
+    const membership = fakeMembershipWorker([{ subjectId: "usr_a" }, { subjectId: "usr_b" }], { payments: TEAM_ID });
+    const identity = fakeIdentityWorker({ usr_a: "a@x.com", usr_b: "b@x.com" });
+    const req = { ...teamRequest, recipient: { ...teamRequest.recipient, subjectId: "@payments" } };
+    const result = await runTeamSend(repo, membership, identity, req);
+    if (!("outcome" in result)) throw new Error("expected outcome");
+    expect(result.outcome.response.deliveries).toHaveLength(2);
+    expect(result.outcome.response.deliveries!.every((d) => d.status === "sent")).toBe(true);
+  });
+
+  it("returns 422 when the @handle resolves to no team", async () => {
+    const repo = createFakeRepo();
+    const membership = fakeMembershipWorker([{ subjectId: "usr_a" }], {}); // no handle mapping
+    const identity = fakeIdentityWorker({ usr_a: "a@x.com" });
+    const req = { ...teamRequest, recipient: { ...teamRequest.recipient, subjectId: "@ghost" } };
+    const result = await runTeamSend(repo, membership, identity, req);
+    if (!("error" in result)) throw new Error("expected error");
+    expect(result.error.status).toBe(422);
+  });
+});

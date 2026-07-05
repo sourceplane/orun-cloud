@@ -322,6 +322,12 @@ export interface IdentityRepository {
   createUser(input: CreateUserInput): Promise<IdentityResult<User>>;
   getUserById(id: string): Promise<IdentityResult<User>>;
   getUserByEmail(emailLower: string): Promise<IdentityResult<User>>;
+  /**
+   * Batch resolve active users by id (teams-collaboration TC1). Returns only the
+   * users that exist and are active — missing / removed ids are silently omitted,
+   * so the caller must not assume a 1:1 mapping. Order is unspecified.
+   */
+  listUsersByIds(ids: string[]): Promise<IdentityResult<User[]>>;
   updateUserProfile(userId: string, input: UpdateUserProfileInput): Promise<IdentityResult<User>>;
 
   createAuthIdentity(input: CreateAuthIdentityInput): Promise<IdentityResult<AuthIdentity>>;

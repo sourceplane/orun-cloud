@@ -27,7 +27,7 @@ export interface GetPreferencesDeps {
   repo?: NotificationsRepository;
 }
 
-const ALLOWED_KIND = new Set(["user", "organization"]);
+const ALLOWED_KIND = new Set(["user", "organization", "team"]);
 
 export async function handleGetPreferences(
   env: Env,
@@ -42,7 +42,7 @@ export async function handleGetPreferences(
 
   const errors: Record<string, string[]> = {};
   if (!orgId) errors.orgId = ["Required"];
-  if (!subjectKind || !ALLOWED_KIND.has(subjectKind)) errors.subjectKind = ['Must be "user" or "organization"'];
+  if (!subjectKind || !ALLOWED_KIND.has(subjectKind)) errors.subjectKind = ['Must be "user", "organization", or "team"'];
   if (!subjectId) errors.subjectId = ["Required"];
   if (channel && channel !== "email") errors.channel = ['Only "email" is supported in V1'];
   if (Object.keys(errors).length > 0) return validationError(requestId, errors);

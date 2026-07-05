@@ -16,7 +16,7 @@ import { successResponse, errorResponse, validationError } from "../http.js";
 import { parseOrgIdInput } from "../ids.js";
 import { emitEvent } from "../events-client.js";
 
-const ALLOWED_KIND = new Set(["user", "organization"]);
+const ALLOWED_KIND = new Set(["user", "organization", "team"]);
 const ALLOWED_CATEGORIES = new Set(["invitation", "billing", "security", "support", "product"]);
 
 function toPreference(p: StoredNotificationPreference): NotificationPreference {
@@ -42,7 +42,7 @@ function validate(body: unknown): { ok: true; value: UpdateNotificationPreferenc
   if (!body || typeof body !== "object") return { ok: false, errors: { _root: ["Body must be a JSON object"] } };
   const b = body as Record<string, unknown>;
   if (typeof b.orgId !== "string" || !b.orgId) errors.orgId = ["Required"];
-  if (typeof b.subjectKind !== "string" || !ALLOWED_KIND.has(b.subjectKind)) errors.subjectKind = ['Must be "user" or "organization"'];
+  if (typeof b.subjectKind !== "string" || !ALLOWED_KIND.has(b.subjectKind)) errors.subjectKind = ['Must be "user", "organization", or "team"'];
   if (typeof b.subjectId !== "string" || !b.subjectId) errors.subjectId = ["Required"];
   if (b.channel !== "email") errors.channel = ['Only "email" is supported in V1'];
   if (!b.categories || typeof b.categories !== "object" || Array.isArray(b.categories)) {
