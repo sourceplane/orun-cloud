@@ -38,6 +38,7 @@ render time.
 | Field | Value |
 |-------|-------|
 | Status | **✅ Shipped (WO1–WO5)** — the Workspace Overview is live: design (#245, #256), the landing (#272), the CLI half in `orun` (WO3a/b/c #434/#435/#436), projection → `state.repo_facet` + `doc_ref` (#276), console repo-facet reads + doc-by-digest (#277), narrative render + facet surfaces (#278), and Overview as the default landing + mobile tabs (#312). **WO6** (`Product` + explicit primary) remains **deferred** by design. |
+| Successor | [`saas-catalog-docs`](../saas-catalog-docs/) (**CD**) — chartered by the post-ship review ([`review-2026-07-05.md`](./review-2026-07-05.md)): generalizes the doc-blob spine to a **doc set on every kind** (multi-doc `docs.pages`, enrichment for derived kinds, the org doc index, and the browsable Docs surfaces), closing review findings F1–F6. |
 | Cluster | **WO** (workspace overview — presentation + catalog-model layer over **WS** `saas-workspaces`, **CP** `saas-catalog-portal`, **OP** state/`18-state.md`, and the runs feed) |
 | Repos | `sourceplane/orun-cloud` (platform, TS) · `sourceplane/orun` (CLI/engine, Go) |
 | Owner(s) | `apps/state-worker` + `apps/web-console-next` + `packages/{contracts,db}` (platform) · `internal/catalogmodel` + `internal/model` + `cmd/orun` (CLI) |
@@ -94,6 +95,9 @@ no drift, and no live provider call.
    it before WO2 code lands.
 7. `design/overview-mockup.html` — a token-faithful static mockup (mirrors the
    `saas-catalog-portal/design/*.html` convention).
+8. `review-2026-07-05.md` — the **post-ship review** (as-built vs. the ratified
+   model): what held, findings F1–F8 with code grounding, and the handoff map
+   into the successor epic [`saas-catalog-docs`](../saas-catalog-docs/).
 
 ## Milestones at a glance
 
