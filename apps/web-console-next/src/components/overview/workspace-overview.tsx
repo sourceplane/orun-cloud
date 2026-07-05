@@ -15,6 +15,7 @@
 import * as React from "react";
 import Link from "next/link";
 import {
+  BookOpen,
   Activity,
   ArrowRight,
   Boxes,
@@ -56,6 +57,10 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { RunCards } from "@/components/activity/run-rows";
 import { StatusMark } from "@/components/activity/run-status-icon";
 import { Markdown } from "@/components/overview/markdown";
+import { useEntityDocs, docRoleIcon } from "@/components/catalog/docs/entity-docs";
+import { encodeEntityKey } from "@/lib/catalog-entity-key";
+import { PathIcon } from "@/components/catalog/portal/icon";
+import { DOC_ICON } from "@/lib/catalog-portal/icons";
 
 const TILE = "rounded-xl border border-border bg-card px-4 py-3";
 const LABEL = "font-mono text-[10.5px] uppercase tracking-[0.1em] text-muted-foreground/80";
@@ -169,6 +174,9 @@ export function WorkspaceOverview({ orgId, orgSlug }: { orgId: string; orgSlug: 
             </div>
             <div className="space-y-4">
               <RepositoriesCard orgSlug={orgSlug} projects={projectList} links={linkList} />
+              {state === "ready" && primary?.entityRef && (
+                <PrimaryDocsCard orgId={orgId} orgSlug={orgSlug} facet={primary} />
+              )}
             </div>
           </div>
         </>
@@ -553,6 +561,53 @@ function Stat({ label, value }: { label: string; value: string }) {
       <div className={LABEL}>{label}</div>
       <div className="mt-1 text-lg font-semibold leading-none text-foreground">{value}</div>
     </div>
+  );
+}
+
+/** The primary repo's doc set (saas-catalog-docs CD5) — the "Pinned docs" card
+ *  WO design §3 promised, now against real data. Hidden when only the overview
+ *  exists (the hero already renders it) — the card earns its place with
+ *  content. Each row deep-links into the doc reader. */
+function PrimaryDocsCard({
+  orgId,
+  orgSlug,
+  facet,
+}: {
+  orgId: string;
+  orgSlug: string;
+  facet: RepoFacet;
+}) {
+  const { docs } = useEntityDocs(orgId, facet.entityRef);
+  if (docs.length <= 1) return null;
+  const entityKey = encodeEntityKey({
+    sourceProjectId: facet.projectId,
+    sourceEnvironment: null,
+    entityRef: facet.entityRef!,
+  });
+  const shown = docs.slice(0, 5);
+  return (
+    <CardShell title="Docs" icon={BookOpen} href={`/orgs/${orgSlug}/docs`} hrefLabel="All docs">
+      <div className="flex flex-col">
+        {shown.map((d) => (
+          <Link
+            key={d.docKey}
+            href={`/orgs/${orgSlug}/docs/${entityKey}/${encodeURIComponent(d.docKey)}`}
+            className="flex items-center gap-2.5 rounded-lg px-2 py-2 transition-colors hover:bg-foreground/[0.03]"
+          >
+            <PathIcon
+              d={d.docKey === "overview" ? DOC_ICON.file : docRoleIcon(d.role)}
+              size={14}
+              strokeWidth={1.7}
+              className="shrink-0 text-muted-foreground/80"
+            />
+            <span className="min-w-0 flex-1 truncate text-[13px] text-foreground/90">{d.title}</span>
+            <span className="shrink-0 text-[10.5px] text-muted-foreground/60">
+              {d.docKey === "overview" ? "front page" : d.role}
+            </span>
+          </Link>
+        ))}
+      </div>
+    </CardShell>
   );
 }
 

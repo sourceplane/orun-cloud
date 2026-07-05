@@ -48,6 +48,8 @@ export const qk = {
   repoFacets: (orgId: string) => ["repoFacets", orgId] as const,
   docObject: (orgId: string, projectId: string, digest: string) =>
     ["docObject", orgId, projectId, digest] as const,
+  /** The whole org doc index (the Docs hub library, saas-catalog-docs CD5). */
+  orgDocs: (orgId: string) => ["orgDocs", orgId] as const,
   /** One entity's doc set from the org doc index (saas-catalog-docs CD4). */
   entityDocs: (orgId: string, entityRef: string) => ["entityDocs", orgId, entityRef] as const,
   /** A doc body by content digest (immutable — cached indefinitely). */

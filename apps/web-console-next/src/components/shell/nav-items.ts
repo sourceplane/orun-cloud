@@ -64,6 +64,9 @@ export function buildNavSections(scope: NavScope): NavSection[] {
         // rail's home row — first, above Catalog.
         { href: orgBase, label: "Overview", icon: "LayoutDashboard" },
         { href: `${orgBase}/catalog`, label: "Catalog", icon: "Boxes" },
+        // Docs — the org-wide catalog doc library (saas-catalog-docs CD5):
+        // git-authored entity docs, browsed by kind/role, rendered by digest.
+        { href: `${orgBase}/docs`, label: "Docs", icon: "BookOpen" },
         { href: `${orgBase}/activities`, label: "Activities", icon: "Activity" },
         { href: `${orgBase}/work`, label: "Work", icon: "ListChecks" },
         // Teams — the human-scale organizing primitive, promoted out of Settings

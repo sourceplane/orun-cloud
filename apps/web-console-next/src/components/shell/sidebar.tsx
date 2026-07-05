@@ -4,6 +4,7 @@ import * as React from "react";
 import Link from "next/link";
 import { useParams, usePathname } from "next/navigation";
 import {
+  BookOpen,
   Building2,
   ChevronDown,
   ChevronLeft,
@@ -43,6 +44,7 @@ const ICONS: Record<string, LucideIcon> = {
   Building2,
   FolderKanban,
   Boxes,
+  BookOpen,
   KeyRound,
   Settings,
   SlidersHorizontal,
