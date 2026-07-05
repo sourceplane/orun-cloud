@@ -1,5 +1,5 @@
 import type { NotificationRulesRepository, StoredEvent, StoredNotificationRule, StoredRuleTarget } from "@saas/db/events";
-import { catalogEntryFor, effectiveEventSeverity, renderEventTitle } from "@saas/contracts/event-catalog";
+import { catalogEntryFor, effectiveEventSeverity, eventDedupKey, renderEventTitle } from "@saas/contracts/event-catalog";
 import { enqueueNotification } from "@saas/notifications-client";
 import type { NotificationsEnvBinding } from "@saas/notifications-client";
 import { toPublicScopeId } from "../ids.js";
@@ -104,18 +104,32 @@ export function createNotificationsLaneHandler(deps: NotificationsLaneDeps): Lan
         );
         if (targets.length === 0) continue;
 
-        // One throttle consumption per (rule, event) — a rule firing is one
-        // admission regardless of its target count. Saturated window = the
-        // event is silently absorbed by design (storm control), not retried.
-        const admitted = await deps.rulesRepo.tryConsumeThrottle(
-          rule.id,
-          rule.throttleWindowSeconds,
-          rule.throttleMax,
-        );
-        if (!admitted.ok) throw new Error("throttle_state_failed");
-        if (!admitted.value) continue;
-
         const severity = effectiveEventSeverity(event.type, event.payload);
+
+        // Admission (ES4 group-aware): if the event belongs to a dedup story,
+        // fire once per (rule, story) plus on severity escalation — collapsing
+        // a burst of correlated events (push × checks × run) into one
+        // notification. Otherwise fall back to the per-rule throttle window
+        // (ES2 storm control). Both paths are single-statement + race-free.
+        const groupKey = eventDedupKey(event.type, {
+          subject: { kind: event.subjectKind, id: event.subjectId, name: event.subjectName },
+          tenant: { orgId: event.orgId },
+          payload: event.payload,
+        });
+        if (groupKey) {
+          const decision = await deps.rulesRepo.tryNotifyGroup(rule.id, groupKey, severity);
+          if (!decision.ok) throw new Error("group_notify_state_failed");
+          if (!decision.value) continue;
+        } else {
+          const admitted = await deps.rulesRepo.tryConsumeThrottle(
+            rule.id,
+            rule.throttleWindowSeconds,
+            rule.throttleMax,
+          );
+          if (!admitted.ok) throw new Error("throttle_state_failed");
+          if (!admitted.value) continue;
+        }
+
         const title = eventTitle(event);
 
         for (const target of targets) {

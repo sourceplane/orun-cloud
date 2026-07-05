@@ -10,6 +10,7 @@ import {
   createEventsRepository,
   createEventStreamsRepository,
   createNotificationRulesRepository,
+  createEventGroupsRepository,
 } from "@saas/db/events";
 import { createSqlExecutor } from "@saas/db/hyperdrive";
 import { createTimings } from "@saas/contracts/timing";
@@ -179,6 +180,8 @@ export async function handleReplayDeadLetter(
       deps?.handlers ??
       buildLaneHandlers(env, {
         rulesRepo: createNotificationRulesRepository(executor),
+        groupsRepo: createEventGroupsRepository(executor),
+        eventsRepo,
         requestId,
       });
 

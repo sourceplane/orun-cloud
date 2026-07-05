@@ -88,6 +88,7 @@ interface RepoCalls {
   created: unknown[];
   targets: unknown[];
   throttleCalls: Array<{ ruleId: string; windowSeconds: number; max: number }>;
+  groupNotifyCalls: Array<{ ruleId: string; groupKey: string; severity: string }>;
   deleted: string[];
 }
 
@@ -96,10 +97,12 @@ function fakeRulesRepo(options?: {
   targetsList?: StoredRuleTarget[];
   count?: number;
   throttleAdmit?: boolean[];
+  groupNotify?: boolean[];
   getRule?: StoredNotificationRule | null;
 }): { repo: NotificationRulesRepository; calls: RepoCalls } {
-  const calls: RepoCalls = { created: [], targets: [], throttleCalls: [], deleted: [] };
+  const calls: RepoCalls = { created: [], targets: [], throttleCalls: [], groupNotifyCalls: [], deleted: [] };
   let throttleIdx = 0;
+  let groupIdx = 0;
   const repo: NotificationRulesRepository = {
     async createRule(input) {
       calls.created.push(input);
@@ -132,6 +135,12 @@ function fakeRulesRepo(options?: {
       const admit = options?.throttleAdmit?.[throttleIdx] ?? true;
       throttleIdx++;
       return { ok: true, value: admit };
+    },
+    async tryNotifyGroup(ruleId, groupKey, severity) {
+      calls.groupNotifyCalls.push({ ruleId, groupKey, severity });
+      const fire = options?.groupNotify?.[groupIdx] ?? true;
+      groupIdx++;
+      return { ok: true, value: fire };
     },
     async addTarget(input) {
       calls.targets.push(input);
@@ -511,6 +520,44 @@ describe("notifications lane handler", () => {
     await handler.handleEvent(storedEvent());
 
     expect(calls.throttleCalls).toEqual([{ ruleId: RULE_ID, windowSeconds: 300, max: 10 }]);
+    expect(notificationCalls).toHaveLength(0);
+  });
+
+  it("uses group-aware admission (not the window throttle) for a dedup-keyed event", async () => {
+    // scm.push carries a catalog dedupKey; the rule matches scm.*.
+    const rule = storedRule({ eventTypes: ["scm.*"] });
+    const { repo, calls } = fakeRulesRepo({ rules: [rule], groupNotify: [true] });
+    const notificationCalls: Array<{ url: string; body: Record<string, unknown> }> = [];
+    const handler = createNotificationsLaneHandler({
+      rulesRepo: repo,
+      notificationsEnv: laneEnv(notificationCalls),
+      requestId: REQUEST_ID,
+    });
+
+    await handler.handleEvent(
+      storedEvent({ type: "scm.push", payload: { repoFullName: "acme/api", headSha: "abc123" } }),
+    );
+
+    // The group ledger decided; the window throttle was NOT consulted.
+    expect(calls.groupNotifyCalls).toHaveLength(1);
+    expect(calls.groupNotifyCalls[0]!.groupKey).toBe("run:" + TEST_ORG_UUID + ":acme/api:abc123");
+    expect(calls.throttleCalls).toHaveLength(0);
+    expect(notificationCalls).toHaveLength(1);
+  });
+
+  it("suppresses a non-first, non-escalating member of a story", async () => {
+    const rule = storedRule({ eventTypes: ["scm.*"] });
+    const { repo, calls } = fakeRulesRepo({ rules: [rule], groupNotify: [false] });
+    const notificationCalls: Array<{ url: string; body: Record<string, unknown> }> = [];
+    const handler = createNotificationsLaneHandler({
+      rulesRepo: repo,
+      notificationsEnv: laneEnv(notificationCalls),
+      requestId: REQUEST_ID,
+    });
+    await handler.handleEvent(
+      storedEvent({ type: "scm.check.completed", payload: { repoFullName: "acme/api", headSha: "abc123" } }),
+    );
+    expect(calls.groupNotifyCalls).toHaveLength(1);
     expect(notificationCalls).toHaveLength(0);
   });
 

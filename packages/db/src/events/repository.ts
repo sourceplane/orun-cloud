@@ -405,6 +405,20 @@ export function createEventsRepository(executor: SqlExecutor): EventsRepository 
       }
     },
 
+    async listRecentlyActiveOrgIds(sinceIso: string, limit: number): Promise<EventsResult<string[]>> {
+      try {
+        const result = await executor.execute<Record<string, unknown>>(
+          `SELECT DISTINCT org_id FROM events.event_log
+           WHERE occurred_at >= $1
+           LIMIT $2`,
+          [sinceIso, limit],
+        );
+        return { ok: true, value: result.rows.map((row) => row.org_id as string) };
+      } catch {
+        return safeError("Failed to list recently active orgs");
+      }
+    },
+
     async getEventById(orgId: string, eventId: string): Promise<EventsResult<StoredEvent | null>> {
       try {
         const result = await executor.execute<Record<string, unknown>>(

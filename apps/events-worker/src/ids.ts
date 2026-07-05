@@ -41,6 +41,11 @@ export function generateRuleTargetId(): string {
   return `rtgt_${randomHex(16)}`;
 }
 
+/** Event-group public id (grp_<32hex>) — the TEXT PK. */
+export function generateGroupId(): string {
+  return `grp_${randomHex(16)}`;
+}
+
 export function parseOrgPublicId(publicId: string): string | null {
   if (!publicId.startsWith("org_")) return null;
   return hexToUuid(publicId.slice(4));

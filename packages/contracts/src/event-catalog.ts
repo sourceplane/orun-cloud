@@ -354,3 +354,62 @@ export function renderEventTitle(
     return String(target);
   });
 }
+
+/**
+ * Render a catalog `dedupKey` template into a concrete aggregation key
+ * (saas-event-streaming ES4). Unlike title rendering this is STRICT: if any
+ * referenced field is missing/empty/non-scalar the key is `null` and the
+ * event does not group (R2 — a partial key would fuse unrelated events). The
+ * org scope is always part of an authored key, so cross-tenant grouping is
+ * structurally impossible.
+ */
+export function renderDedupKey(
+  template: string,
+  view: {
+    subject?: { kind?: string; id?: string; name?: string | null };
+    tenant?: { orgId?: string };
+    payload?: Record<string, unknown>;
+  },
+): string | null {
+  let missing = false;
+  const rendered = template.replace(/\{([a-zA-Z0-9_.]+)\}/g, (_match, rawPath: string) => {
+    const parts = rawPath.split(".");
+    let target: unknown = view;
+    for (const part of parts) {
+      if (target && typeof target === "object" && part in (target as Record<string, unknown>)) {
+        target = (target as Record<string, unknown>)[part];
+      } else {
+        target = undefined;
+        break;
+      }
+    }
+    if (target === undefined || target === null || typeof target === "object") {
+      missing = true;
+      return "";
+    }
+    const str = String(target);
+    if (str.length === 0) {
+      missing = true;
+      return "";
+    }
+    return str;
+  });
+  return missing ? null : rendered;
+}
+
+/**
+ * The dedup group key for a concrete event, or `null` when the event's type
+ * has no authored `dedupKey` (never groups) or a referenced field is absent.
+ */
+export function eventDedupKey(
+  type: string,
+  view: {
+    subject?: { kind?: string; id?: string; name?: string | null };
+    tenant?: { orgId?: string };
+    payload?: Record<string, unknown>;
+  },
+): string | null {
+  const template = catalogEntryFor(type)?.dedupKey;
+  if (!template) return null;
+  return renderDedupKey(template, view);
+}

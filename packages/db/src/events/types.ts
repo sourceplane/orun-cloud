@@ -177,6 +177,12 @@ export interface EventsRepository {
   /** Query events for an org after a cursor position (for webhook dispatch fanout). */
   queryEventsByOrg(orgId: string, afterOccurredAt: string | null, afterEventId: string | null, limit: number): Promise<EventsResult<StoredEvent[]>>;
   /**
+   * Distinct org ids with at least one event on/after `sinceIso` — the
+   * grouping lane's org discovery (ES4). Recency-bounded so it does not scan
+   * the whole log; backed by the `(org_id, occurred_at DESC, id DESC)` index.
+   */
+  listRecentlyActiveOrgIds(sinceIso: string, limit: number): Promise<EventsResult<string[]>>;
+  /**
    * Read a single org-scoped event by id. Returns `null` (not an error) when no
    * row matches — callers distinguish "absent" from "infra failure" without a
    * dedicated `not_found` error kind. Used by the webhooks manual-replay path to

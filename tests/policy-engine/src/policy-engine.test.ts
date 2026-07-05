@@ -729,8 +729,9 @@ describe("listEffectivePermissions", () => {
     // + 2 teams-ownership TO1 team.owner_handle.* actions
     // + 2 ES1 dead_letter.* actions + 2 orun-work WP1 work.* actions
     // + 2 ES2 organization.notification_rule.* actions
-    // + 2 ES3 organization.notification_channel.* actions.
-    expect(allowed.length).toBe(60);
+    // + 2 ES3 organization.notification_channel.* actions
+    // + 2 ES4 organization.event.{read,ingest} actions.
+    expect(allowed.length).toBe(62);
   });
 
   it("returns limited permissions for viewer", () => {
@@ -744,6 +745,7 @@ describe("listEffectivePermissions", () => {
     expect(allowed.map((p) => p.action).sort()).toEqual([
       "catalog.read",
       "organization.config.read",
+      "organization.event.read",
       "organization.integration.read",
       "organization.metering.read",
       "organization.notification_channel.read",

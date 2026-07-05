@@ -12,6 +12,9 @@ import type {
 // matching engine that evaluates them lands in ES2.
 // ---------------------------------------------------------------------------
 
+/** Severity ladder for in-SQL and in-JS rank comparisons (ES4). */
+const SEVERITY_LADDER = ["info", "notice", "warning", "error", "critical"];
+
 export type NotificationRuleStatus = "enabled" | "disabled" | "suppressed";
 export type RuleTargetKind = "email" | "slack_channel" | "webhook_endpoint";
 export type RuleFilterOp = "eq" | "neq" | "in";
@@ -120,6 +123,19 @@ export interface NotificationRulesRepository {
     ruleId: string,
     windowSeconds: number,
     throttleMax: number,
+  ): Promise<EventsResult<boolean>>;
+
+  /**
+   * Group-aware notification admission (ES4). For a (rule, dedup group key),
+   * record the high-water severity notified and return true when this event
+   * should fire — i.e. it opened the story (first) or escalated its severity
+   * above what was already notified. Single-statement upsert: race-free per
+   * (rule, group). Returns false for a non-first, non-escalating member.
+   */
+  tryNotifyGroup(
+    ruleId: string,
+    groupKey: string,
+    severity: string,
   ): Promise<EventsResult<boolean>>;
 
   addTarget(input: AddRuleTargetInput): Promise<EventsResult<StoredRuleTarget>>;
@@ -366,6 +382,40 @@ export function createNotificationRulesRepository(executor: SqlExecutor): Notifi
         return { ok: true, value: result.rows.length > 0 };
       } catch {
         return safeError("Failed to delete notification rule");
+      }
+    },
+
+    async tryNotifyGroup(ruleId, groupKey, severity) {
+      try {
+        const result = await executor.execute<Record<string, unknown>>(
+          `WITH prior AS (
+             SELECT max_notified_severity AS prev
+             FROM events.rule_group_notifications
+             WHERE rule_id = $1 AND group_key = $2
+           ),
+           up AS (
+             INSERT INTO events.rule_group_notifications (rule_id, group_key, max_notified_severity)
+             VALUES ($1, $2, $3)
+             ON CONFLICT (rule_id, group_key) DO UPDATE SET
+               max_notified_severity = CASE
+                 WHEN array_position($4::text[], $3)
+                    > array_position($4::text[], events.rule_group_notifications.max_notified_severity)
+                 THEN $3 ELSE events.rule_group_notifications.max_notified_severity END,
+               updated_at = now()
+             RETURNING 1
+           )
+           SELECT (SELECT prev FROM prior) AS prev`,
+          [ruleId, groupKey, severity, SEVERITY_LADDER],
+        );
+        const prev = (result.rows[0]?.prev as string | null) ?? null;
+        // Fire when the story is new (no prior) or this event escalates it.
+        const fire =
+          prev === null ||
+          SEVERITY_LADDER.indexOf(severity) > SEVERITY_LADDER.indexOf(prev);
+        return { ok: true, value: fire };
+      } catch {
+        // Fail-closed: an unknown ledger state must not fan out a storm.
+        return safeError("Failed to evaluate group notification");
       }
     },
 

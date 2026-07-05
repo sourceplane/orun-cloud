@@ -10,8 +10,8 @@ eventing stack (events/notifications/webhooks/integrations workers).
 | ES0 — Foundation (catalog, `580_event_streams_foundation`, repo layer, notifications emit fix, spec 09/14 amendments) | ✅ Shipped (#325) |
 | ES1 — Router: shared lanes + dead letters + webhooks cutover | ✅ Shipped (#331) |
 | ES2 — Notification rules | ✅ Shipped (#334) |
-| ES3 — Channels: provider seam + Slack incoming webhook + async retry | In review |
-| ES4 — Correlation & dedup (event groups) | 🗓️ Planned |
+| ES3 — Channels: provider seam + Slack incoming webhook + async retry | ✅ Shipped (#338) |
+| ES4 — Correlation & dedup (event groups) | In review |
 | ES5 — Custom event ingest + SDK/CLI | 🗓️ Planned |
 | ES6 — Console: Events explorer + rules/channels UX | 🗓️ Planned |
 | ES7 — Scale & lifecycle (retention, fairness, storm breaker) | 🗓️ Planned |
@@ -70,5 +70,28 @@ eventing stack (events/notifications/webhooks/integrations workers).
   slack_channel rule targets unblocked end-to-end; webhook_endpoint still
   deferred. Slack URLs are irrecoverable: write-only ciphertext, network
   errors reduced to a fixed non-secret reason.
+- 2026-07-05: ES3 shipped (#338) — channel-provider seam live in
+  notifications-worker with the Slack incoming-webhook provider; migration
+  `610_notification_channels` applied. slack_channel rule targets deliver
+  end-to-end; webhook_endpoint still deferred.
+- 2026-07-05: ES4 in review — correlation & dedup. The event catalog gains
+  strict `dedupKey` templates for the scm/state.run families
+  (`run:{orgId}:{repoFullName}:{headSha}`) with `renderDedupKey`/`eventDedupKey`
+  helpers that return null when any referenced field is absent (no partial
+  grouping). A new events-owned **grouping lane** (seeded active by migration
+  `630_event_grouping`) sweeps inactive groups once per tick (30-min inactivity
+  window), then upserts `event_groups` + members keyed by the rendered dedup
+  key, recovering from create races by appending to the winner. Org discovery
+  uses `listRecentlyActiveOrgIds` (2-day lookback). Notification admission is
+  now group-aware: dedup-keyed events fire once per group and re-fire only on
+  severity **escalation** via the `rule_group_notifications` ledger
+  (`tryNotifyGroup`, severity ladder info→critical), decoupled from the grouping
+  lane's own state so there is no cross-lane timing dependency; unkeyed events
+  keep the existing throttle window. Read-only groups API
+  (`GET …/event-groups`, `…/event-groups/{grp_…}` with member timeline) behind
+  a new api-edge facade; new policy actions `organization.event.read`
+  (owner/admin/builder/viewer) and `organization.event.ingest` (owner/admin,
+  reserved for ES5 custom ingest). No new worker dependency edges — verified
+  via `orun plan` (no cycle).
 - Decision gates D1–D4 are open with defaults recommended; none block the
   spine (see `risks-and-open-questions.md`).
