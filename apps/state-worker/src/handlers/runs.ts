@@ -284,37 +284,26 @@ export async function handleCreateRun(
     //    claim at minimum) stamps real status/lease before any log append.
     //    Applies on BOTH backends — OP2 claims also read these rows. The counts
     //    sum is only a cheap gate ('canceled' falls outside its buckets, so a
-    //    rare false positive just re-runs idempotent conflict-ignored inserts).
+    //    rare false positive just re-runs an idempotent no-op insert). ONE
+    //    statement, not per-row inserts: every matrix job of a rerun replays
+    //    createRun at once, and a per-row sweep under that thundering herd
+    //    saturates the pool and times the CLI out before headers.
     const healMissingJobRows = async (runRowId: Uuid, counts: RunJobCounts | null): Promise<boolean> => {
       if (!planJobs || planJobs.length === 0) return false;
       const seen = counts ? counts.queued + counts.running + counts.succeeded + counts.failed : -1;
       if (seen >= planJobs.length) return false;
-      let inserted = 0;
-      for (const j of planJobs) {
-        const jobResult = await repo.createRunJob({
-          id: generateUuid(),
-          orgId,
-          projectId,
-          runId: runRowId,
-          jobId: j.jobId,
-          component: j.component,
-          deps: j.deps,
-        });
-        if (jobResult.ok) inserted += 1;
-        else if (jobResult.error.kind !== "conflict") {
-          // Partial heal — keep what landed; the next replay finishes the job.
-          console.error(
-            `[coordination] createRun ${runId}: run_jobs row heal failed at job ${j.jobId} (${jobResult.error.kind})`,
-          );
-          break;
-        }
+      const healed = await repo.createRunJobsBulk(orgId, projectId, runRowId, planJobs);
+      if (!healed.ok) {
+        // Best-effort — the next replay retries; the replay itself still 200s.
+        console.error(`[coordination] createRun ${runId}: run_jobs row heal failed (${healed.error.kind})`);
+        return false;
       }
-      if (inserted > 0) {
+      if (healed.value > 0) {
         console.warn(
-          `[coordination] createRun ${runId}: healed ${inserted} missing run_jobs row(s) on replay (original create died mid-way)`,
+          `[coordination] createRun ${runId}: healed ${healed.value} missing run_jobs row(s) on replay (original create died mid-way)`,
         );
       }
-      return inserted > 0;
+      return healed.value > 0;
     };
 
     // ── Replay short-circuit: a known ULID returns the existing run (200). ──
@@ -450,22 +439,15 @@ export async function handleCreateRun(
       idempotencySeed: run.runUlid,
     });
 
-    // ── Persist the plan DAG as run_jobs. ──
+    // ── Persist the plan DAG as run_jobs — ONE statement for the whole DAG
+    //    (conflict-ignored, so a concurrent replay's heal converges). The old
+    //    per-row loop is what made wide-DAG creates slow enough for the creator
+    //    to die mid-insert (the poisoned-run gap the replay heals fix) and for
+    //    the CLI to time out awaiting headers. ──
     if (planJobs && planJobs.length > 0) {
-      for (const j of planJobs) {
-        const jobResult = await repo.createRunJob({
-          id: generateUuid(),
-          orgId,
-          projectId,
-          runId: asUuid(run.id),
-          jobId: j.jobId,
-          component: j.component,
-          deps: j.deps,
-        });
-        // A duplicate (run, jobId) is the only conflict; ignore (idempotent).
-        if (!jobResult.ok && jobResult.error.kind !== "conflict") {
-          return errorResponse("internal_error", "Service unavailable", 503, requestId);
-        }
+      const seeded = await repo.createRunJobsBulk(orgId, projectId, asUuid(run.id), planJobs);
+      if (!seeded.ok) {
+        return errorResponse("internal_error", "Service unavailable", 503, requestId);
       }
     }
 
