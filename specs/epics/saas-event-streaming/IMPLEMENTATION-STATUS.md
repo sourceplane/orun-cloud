@@ -12,8 +12,8 @@ eventing stack (events/notifications/webhooks/integrations workers).
 | ES2 — Notification rules | ✅ Shipped (#334) |
 | ES3 — Channels: provider seam + Slack incoming webhook + async retry | ✅ Shipped (#338) |
 | ES4 — Correlation & dedup (event groups) | ✅ Shipped (#339) |
-| ES5a — Custom event ingest + explorer read API | In review |
-| ES5b — SDK + CLI + custom-event grouping + metering | 🗓️ Planned |
+| ES5a — Custom event ingest + explorer read API | ✅ Shipped (#345) |
+| ES5b — SDK + CLI + custom-event grouping + metering | In review |
 | ES6 — Console: Events explorer + rules/channels UX | 🗓️ Planned |
 | ES7 — Scale & lifecycle (retention, fairness, storm breaker) | 🗓️ Planned |
 
@@ -119,5 +119,29 @@ eventing stack (events/notifications/webhooks/integrations workers).
   the CLI (`events emit|list|tail`), custom-event grouping via a caller-supplied
   `dedupKey` (persisted on the event now, honored by the grouping lane in ES5b),
   and metering rollups.
+- 2026-07-05: ES5a shipped (#345) — custom ingest + explorer read API live.
+- 2026-07-05: ES5b in review — SDK + CLI + custom-event grouping + metering,
+  completing ES5's "custom events are full citizens" promise. **SDK**
+  (`@saas/sdk`): `EventsClient` gains the event-stream surface
+  (`emitEvent`/`listEvents`/`listEventsPage`/`iterEvents`/`exportEventsNdjson`/
+  `getEvent`, mirroring the audit iterator's `seenCursors`+max-pages guards);
+  new `EventGroupsClient` (`list`/`get`), `NotificationRulesClient`
+  (list/create/get/update/delete/test) and `NotificationChannelsClient`
+  (list/create/update/delete/testSend — no `get`, the facade exposes no
+  single-channel GET; channel config stays write-only, never in a response
+  type), all wired into `OrunCloud`. **CLI** (`@saas/cli`): `events
+  emit|list|tail` (tail is a bounded poll over a unit-tested `tailOnce` seam,
+  `--max-polls`) and `notification-rules list|create|test`. **Grouping**: the
+  ES4 lane now falls back to a caller-authored key — a `custom.*` event whose
+  payload carries a non-empty `dedupKey` groups on `custom:{orgId}:{dedupKey}`
+  (org-scoped, so no cross-tenant fusion); catalog grouping unchanged.
+  **Metering**: each accepted custom ingest records one `custom_events_ingested`
+  usage unit via the db-package metering repo over events-worker's own
+  PLATFORM_DB executor — the same direct-write pattern state-worker already
+  uses for run metering, so NO new worker dependency edge (verified via `orun
+  plan`, no cycle); the event id is the usage idempotency key and the
+  idempotent-replay path returns before recording, so replays never
+  double-count. New contract types: event-group + notification-rule/channel
+  request/response shapes. No migrations.
 - Decision gates D1–D4 are open with defaults recommended; none block the
   spine (see `risks-and-open-questions.md`).

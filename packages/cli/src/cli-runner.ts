@@ -66,6 +66,16 @@ import {
   billingSummaryCommand,
   auditListCommand,
 } from "./commands/cross-reads.js";
+import {
+  eventsEmitCommand,
+  eventsListCommand,
+  eventsTailCommand,
+} from "./commands/events.js";
+import {
+  notificationRulesListCommand,
+  notificationRulesCreateCommand,
+  notificationRulesTestCommand,
+} from "./commands/notification-rules.js";
 import { parseOutputMode, type OutputMode } from "./output/index.js";
 import { ContextStore } from "./context/store.js";
 import { selectTokenStore } from "./token-store/index.js";
@@ -218,6 +228,14 @@ function buildRouter(opts: RunOptions): Router {
   r.register(["usage", "summary"], "Summarize usage rollups for the active organization", usageSummaryCommand);
   r.register(["billing", "summary"], "Show billing customer/plan/entitlements summary", billingSummaryCommand);
   r.register(["audit", "list"], "List audit log entries for the active organization", auditListCommand);
+  // Event stream (saas-event-streaming ES5) — custom ingest + explorer.
+  r.register(["events", "emit"], "Emit a custom.* event to the event stream", eventsEmitCommand);
+  r.register(["events", "list"], "List events from the explorer (single page; --all streams every page)", eventsListCommand);
+  r.register(["events", "tail"], "Poll the event stream and print new events as they arrive", eventsTailCommand);
+  // Notification rules (saas-event-streaming ES2) — routing-rule CRUD + test.
+  r.register(["notification-rules", "list"], "List notification rules for the active organization", notificationRulesListCommand);
+  r.register(["notification-rules", "create"], "Create a notification rule", notificationRulesCreateCommand);
+  r.register(["notification-rules", "test"], "Dry-run a synthetic event against a notification rule", notificationRulesTestCommand);
   // Account security events (actor-scoped — no --org)
   r.register(["security", "events"], "List account security events (actor-scoped)", securityEventsCommand);
   // Notification preferences (actor-scoped per org)
@@ -295,6 +313,20 @@ function printHelp(stdout: (line: string) => void): void {
       "                         [--actor=ID] [--actor-type=TYPE] [--subject-kind=KIND]",
       "                         [--subject-id=ID] [--event-type=TYPE] [--from=ISO] [--to=ISO]",
       "                         [--format=ndjson]",
+      "",
+      "EVENTS:",
+      `  ${CLI_BIN} events emit --type=TYPE [--title=T] [--severity=S] [--payload=JSON]`,
+      "                      [--dedup-key=K] [--project=ID] [--environment=ID] [--idempotency-key=K]",
+      `  ${CLI_BIN} events list [--type=GLOB] [--source=S] [--project=ID] [--environment=ID]`,
+      "                       [--from=ISO] [--to=ISO] [--limit=N] [--cursor=CURSOR] [--all]",
+      `  ${CLI_BIN} events tail [--type=GLOB] [--source=S] [--interval=SECONDS] [--limit=N]`,
+      "",
+      "NOTIFICATION RULES:",
+      `  ${CLI_BIN} notification-rules list`,
+      `  ${CLI_BIN} notification-rules create --name=NAME --event-type=GLOB[,GLOB2] [--min-severity=S]`,
+      "                                    [--source=S] [--target=JSON] [--attribute-filters=JSON]",
+      "                                    [--throttle-window=N] [--throttle-max=N] [--project=ID]",
+      `  ${CLI_BIN} notification-rules test <ruleId> --type=TYPE [--severity=S] [--source=S] [--payload=JSON]`,
       "",
       "SECURITY:",
       `  ${CLI_BIN} security events [--limit=N] [--cursor=CURSOR] [--all] [--output=human|json]`,

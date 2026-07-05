@@ -2,6 +2,8 @@ import type { Env } from "../env.js";
 import type { ActorContext } from "../router.js";
 import type { EventsRepository, StoredEvent } from "@saas/db/events";
 import { createEventsRepository } from "@saas/db/events";
+import type { MeteringRepository } from "@saas/db/metering";
+import { createMeteringRepository } from "@saas/db/metering";
 import { createSqlExecutor } from "@saas/db/hyperdrive";
 import { createTimings } from "@saas/contracts/timing";
 import { validateCustomEvent } from "@saas/contracts/events";
@@ -16,6 +18,9 @@ import { toPublicEvent } from "./to-public-event.js";
 export const FEATURE_CUSTOM_INGEST = "feature.events.custom_ingest";
 export const LIMIT_CUSTOM_EVENTS_PER_DAY = "limit.custom_events_per_day";
 
+/** Usage metric key recorded once per successfully-ingested custom event. */
+export const METRIC_CUSTOM_EVENTS_INGESTED = "custom_events_ingested";
+
 // Reject an obviously oversized raw body before buffering/parsing. The precise
 // 32KiB payload cap is enforced post-parse by validateCustomEvent; this coarse
 // 64KiB guard bounds envelope + payload so a hostile body cannot force a large
@@ -26,6 +31,7 @@ const ROUTE = "event.ingest";
 
 export interface IngestEventDeps {
   eventsRepo?: EventsRepository;
+  meteringRepo?: MeteringRepository;
 }
 
 function bindingsMissing(env: Env): boolean {
@@ -238,6 +244,31 @@ export async function handleIngestEvent(
     }
 
     const stored: StoredEvent = appended.value;
+
+    // Metering (ES5b): record one `custom_events_ingested` usage unit for the
+    // event we just committed. This reuses events-worker's own PLATFORM_DB
+    // executor and the db-package metering repo — NO new worker service
+    // binding / dependency edge. The event id is the usage idempotency key
+    // (unique, and the idempotent-replay path returns before we reach here),
+    // so re-runs never double-count. Best-effort: a metering failure must not
+    // fail an ingest the caller already committed.
+    try {
+      const meteringRepo = deps?.meteringRepo ?? createMeteringRepository(executor);
+      await meteringRepo.recordUsage({
+        id: crypto.randomUUID(),
+        orgId,
+        projectId: projectUuid,
+        environmentId: environmentUuid,
+        metric: METRIC_CUSTOM_EVENTS_INGESTED,
+        quantity: 1,
+        idempotencyKey: `custom_event:${stored.id}`,
+        recordedAt: occurredAt,
+        metadata: { eventType: normalized.type, source: "custom-ingest" },
+      });
+    } catch {
+      // Best-effort — usage metering never breaks an accepted ingest.
+    }
+
     endTotal();
     return withTimings(
       Response.json({ data: { event: toPublicEvent(stored) }, meta: { requestId } }, { status: 201 }),

@@ -1,6 +1,10 @@
 import type {
   ListAuditEntriesResponse,
   PublicAuditEntry,
+  CustomEventInput,
+  GetEventResponse,
+  ListEventsResponse,
+  PublicEvent,
 } from "@saas/contracts/events";
 
 import type { RequestOptions, Transport } from "./transport.js";
@@ -66,6 +70,33 @@ export type ListAuditEntriesResult = ListAuditEntriesResponse["data"];
  * Exported for tests; consumers should not rely on the exact number.
  */
 export const AUDIT_ITERATOR_MAX_PAGES = 1000;
+
+/**
+ * Independently-combinable filters for the org-scoped event STREAM list
+ * (`GET …/events`) — the raw event_log explorer, distinct from the audit
+ * projection above. Every field is optional; supplying several narrows the
+ * result set with AND semantics. `project`/`environment` accept public scope
+ * ids (`prj_…` / `env_…`); `from`/`to` bound `occurredAt`. `limit`/`cursor`
+ * drive keyset pagination (the cursor is opaque — pass it back verbatim).
+ */
+export interface EventStreamFilters {
+  type?: string;
+  source?: string;
+  project?: string;
+  environment?: string;
+  from?: string;
+  to?: string;
+  limit?: number;
+  cursor?: string;
+}
+
+/**
+ * Hard upper bound on pages walked by `iterEvents`. Mirrors
+ * {@link AUDIT_ITERATOR_MAX_PAGES}: a `seenCursors` guard aborts a cycling
+ * server first, and this cap is defence-in-depth against a server that mints a
+ * fresh cursor on every call. Exported for tests.
+ */
+export const EVENT_ITERATOR_MAX_PAGES = 1000;
 
 export class EventsClient {
   constructor(private readonly transport: Transport) {}
@@ -154,6 +185,113 @@ export class EventsClient {
     for await (const entry of this.iterAuditEntries(orgId, query, opts)) {
       yield `${JSON.stringify(entry)}\n`;
     }
+  }
+
+  // -------------------------------------------------------------------------
+  // Event STREAM surface (saas-event-streaming ES5) — custom ingest + the raw
+  // event_log explorer. Distinct from the audit projection above: these hit
+  // `POST/GET …/events` behind the api-edge events facade.
+  // -------------------------------------------------------------------------
+
+  /**
+   * POST /v1/organizations/:orgId/events
+   *
+   * Emit a tenant-authored custom event (the `custom.*` namespace). Pass
+   * `idempotencyKey` in `opts` for safe-retry semantics (mirrors
+   * `NotificationsClient.enqueue`); the body may also carry an
+   * `idempotencyKey` the worker uses for content-level dedupe. Returns the
+   * created (or, on idempotent replay, the original) event.
+   */
+  emitEvent(
+    orgId: string,
+    body: CustomEventInput,
+    opts: RequestOptions = {},
+  ): Promise<GetEventResponse["data"]> {
+    return this.transport.request<GetEventResponse["data"]>(
+      { method: "POST", path: eventsPath(orgId), body },
+      opts,
+    );
+  }
+
+  /** GET /v1/organizations/:orgId/events */
+  listEvents(
+    orgId: string,
+    query: EventStreamFilters = {},
+    opts: RequestOptions = {},
+  ): Promise<ListEventsResponse["data"]> {
+    return this.transport.request<ListEventsResponse["data"]>(
+      buildEventsRequest(orgId, query),
+      opts,
+    );
+  }
+
+  /**
+   * Single-page event fetch that also exposes the server-issued continuation
+   * cursor (`meta.cursor`, `null` when exhausted). Mirrors
+   * {@link listAuditEntriesPage}; use it to drive a paginated UI, and
+   * {@link iterEvents} when the caller wants every event across every page.
+   */
+  async listEventsPage(
+    orgId: string,
+    query: EventStreamFilters = {},
+    opts: RequestOptions = {},
+  ): Promise<{ events: ReadonlyArray<PublicEvent>; cursor: string | null }> {
+    const { data, meta } = await this.transport.requestWithEnvelope<
+      ListEventsResponse["data"]
+    >(buildEventsRequest(orgId, query), opts);
+    return {
+      events: data.events,
+      cursor: meta.cursor ?? null,
+    };
+  }
+
+  /**
+   * Async iterator over every page of the event stream until the server
+   * returns `meta.cursor === null`. Mirrors {@link iterAuditEntries} exactly:
+   * hard cap of {@link EVENT_ITERATOR_MAX_PAGES} page reads plus a
+   * `seenCursors` guard that throws rather than looping on a repeated cursor.
+   */
+  iterEvents(
+    orgId: string,
+    query: EventStreamFilters = {},
+    opts: RequestOptions = {},
+  ): AsyncIterable<PublicEvent> {
+    const transport = this.transport;
+    return {
+      [Symbol.asyncIterator](): AsyncIterator<PublicEvent> {
+        return createEventIterator(transport, orgId, query, opts);
+      },
+    };
+  }
+
+  /**
+   * Stream the (optionally filtered) event log as NDJSON — one JSON-encoded
+   * `PublicEvent` per line, terminated by `\n`. Layered over
+   * {@link iterEvents}, so all filters and loop guards apply unchanged.
+   */
+  async *exportEventsNdjson(
+    orgId: string,
+    query: EventStreamFilters = {},
+    opts: RequestOptions = {},
+  ): AsyncGenerator<string, void, unknown> {
+    for await (const event of this.iterEvents(orgId, query, opts)) {
+      yield `${JSON.stringify(event)}\n`;
+    }
+  }
+
+  /** GET /v1/organizations/:orgId/events/:eventId */
+  getEvent(
+    orgId: string,
+    eventId: string,
+    opts: RequestOptions = {},
+  ): Promise<GetEventResponse["data"]> {
+    return this.transport.request<GetEventResponse["data"]>(
+      {
+        method: "GET",
+        path: `${eventsPath(orgId)}/${encodeURIComponent(eventId)}`,
+      },
+      opts,
+    );
   }
 }
 
@@ -279,6 +417,104 @@ function createAuditIterator(
           if (seenCursors.has(cursor)) {
             throw new Error(
               `audit iterator detected a repeated cursor (${cursor}); aborting to avoid an infinite loop`,
+            );
+          }
+          seenCursors.add(cursor);
+          nextCursor = cursor;
+        }
+      }
+    },
+  };
+}
+
+/** Org-scoped events collection path (`…/events`), org id URL-encoded. */
+function eventsPath(orgId: string): string {
+  return `/v1/organizations/${encodeURIComponent(orgId)}/events`;
+}
+
+interface EventsRequestInput {
+  method: "GET";
+  path: string;
+  query: Record<string, string | number | undefined>;
+}
+
+/**
+ * Build the GET request for the event-stream list, threading the optional
+ * filter/pagination params (omitting `undefined` so the URL builder never
+ * emits an empty `key=`). Shared by `listEvents`, `listEventsPage`, and the
+ * iterator so the wire shape stays in lock-step.
+ */
+function buildEventsRequest(
+  orgId: string,
+  query: EventStreamFilters,
+): EventsRequestInput {
+  const params: Record<string, string | number | undefined> = {};
+  if (query.type !== undefined) params.type = query.type;
+  if (query.source !== undefined) params.source = query.source;
+  if (query.project !== undefined) params.project = query.project;
+  if (query.environment !== undefined) params.environment = query.environment;
+  if (query.from !== undefined) params.from = query.from;
+  if (query.to !== undefined) params.to = query.to;
+  if (query.limit !== undefined) params.limit = query.limit;
+  if (query.cursor !== undefined) params.cursor = query.cursor;
+  return {
+    method: "GET",
+    path: eventsPath(orgId),
+    query: params,
+  };
+}
+
+function createEventIterator(
+  transport: Transport,
+  orgId: string,
+  initialQuery: EventStreamFilters,
+  opts: RequestOptions,
+): AsyncIterator<PublicEvent> {
+  let bufferedEvents: PublicEvent[] = [];
+  let bufferIndex = 0;
+  let nextCursor: string | undefined = initialQuery.cursor;
+  let pagesRead = 0;
+  let exhausted = false;
+  const seenCursors = new Set<string>();
+
+  return {
+    async next(): Promise<IteratorResult<PublicEvent>> {
+      while (true) {
+        if (bufferIndex < bufferedEvents.length) {
+          const value = bufferedEvents[bufferIndex] as PublicEvent;
+          bufferIndex += 1;
+          return { value, done: false };
+        }
+        if (exhausted) {
+          return { value: undefined, done: true };
+        }
+        if (pagesRead >= EVENT_ITERATOR_MAX_PAGES) {
+          throw new Error(
+            `event iterator exceeded ${EVENT_ITERATOR_MAX_PAGES} page reads — refusing to continue`,
+          );
+        }
+
+        const queryForPage: EventStreamFilters = {
+          ...initialQuery,
+          ...(nextCursor !== undefined ? { cursor: nextCursor } : {}),
+        };
+
+        const { data, meta } = await transport.requestWithEnvelope<
+          ListEventsResponse["data"]
+        >(buildEventsRequest(orgId, queryForPage), opts);
+        pagesRead += 1;
+
+        bufferedEvents = data.events.slice();
+        bufferIndex = 0;
+
+        const cursor = meta.cursor;
+        if (cursor === null || cursor === undefined) {
+          exhausted = true;
+          nextCursor = undefined;
+        } else {
+          if (seenCursors.has(cursor)) {
+            throw new Error(
+              `event iterator detected a repeated cursor (${cursor}); aborting to avoid an infinite loop`,
             );
           }
           seenCursors.add(cursor);
