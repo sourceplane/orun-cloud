@@ -21,6 +21,7 @@ import { ConfigClient } from "./config.js";
 import { EnvironmentsClient } from "./environments.js";
 import { EventsClient } from "./events.js";
 import { EventGroupsClient } from "./eventGroups.js";
+import { DeadLettersClient } from "./deadLetters.js";
 import { NotificationRulesClient } from "./notificationRules.js";
 import { NotificationChannelsClient } from "./notificationChannels.js";
 import { MembershipsClient } from "./memberships.js";
@@ -70,6 +71,8 @@ export class OrunCloud {
   readonly events: EventsClient;
   /** Event Groups resource — read-only dedup/correlation stories (ES4). */
   readonly eventGroups: EventGroupsClient;
+  /** Dead Letters resource — undeliverable-event ops: list + replay (ES1). */
+  readonly deadLetters: DeadLettersClient;
   /** Notification Rules resource — routing-rule CRUD + test-fire (ES2). */
   readonly notificationRules: NotificationRulesClient;
   /** Notification Channels resource — delivery-channel CRUD + test-send (ES3). */
@@ -102,6 +105,7 @@ export class OrunCloud {
     this.billing = new BillingClient(this.transport);
     this.events = new EventsClient(this.transport);
     this.eventGroups = new EventGroupsClient(this.transport);
+    this.deadLetters = new DeadLettersClient(this.transport);
     this.notificationRules = new NotificationRulesClient(this.transport);
     this.notificationChannels = new NotificationChannelsClient(this.transport);
     this.securityEvents = new SecurityEventsClient(this.transport);
@@ -151,6 +155,7 @@ export {
   EVENT_GROUP_ITERATOR_MAX_PAGES,
   type ListEventGroupsQuery,
 } from "./eventGroups.js";
+export { DeadLettersClient, type ListDeadLettersQuery } from "./deadLetters.js";
 export { NotificationRulesClient } from "./notificationRules.js";
 export { NotificationChannelsClient } from "./notificationChannels.js";
 export {
@@ -361,6 +366,11 @@ export type {
   EventGroupStatus,
   ListEventGroupsResponse,
   GetEventGroupResponse,
+  // Dead letters (undeliverable-event ops, ES1).
+  DeadLetterStatus,
+  PublicDeadLetter,
+  ListDeadLettersResponse,
+  ReplayDeadLetterResponse,
 } from "@saas/contracts/events";
 
 export type {

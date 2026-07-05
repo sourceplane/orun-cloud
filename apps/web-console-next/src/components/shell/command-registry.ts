@@ -192,6 +192,42 @@ export function buildBaseCommands(ctx: CommandContext): CommandDescriptor[] {
         "events",
         "settings",
       ]),
+      // Event-bus surfaces (saas-event-streaming ES6).
+      navItem("nav.events", "Events", `${orgBase}/events`, "Activity", [
+        "events",
+        "event",
+        "stream",
+        "bus",
+        "explorer",
+        "correlation",
+        "groups",
+      ]),
+      navItem("nav.notification-rules", "Notification rules", `${settingsBase}/notifications/rules`, "Bell", [
+        "notification",
+        "rule",
+        "route",
+        "alert",
+        "slack",
+        "email",
+        "settings",
+      ]),
+      navItem("nav.notification-channels", "Delivery channels", `${settingsBase}/notifications/channels`, "Bell", [
+        "channel",
+        "slack",
+        "webhook",
+        "delivery",
+        "notification",
+        "settings",
+      ]),
+      navItem("nav.dead-letters", "Dead letters", `${settingsBase}/notifications/dead-letters`, "ScrollText", [
+        "dead letter",
+        "dlq",
+        "replay",
+        "failed",
+        "delivery",
+        "ops",
+        "settings",
+      ]),
     );
   }
   if (projectBase) {
