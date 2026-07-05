@@ -12,8 +12,10 @@ import {
   RULE_ID_RE,
 } from "./handlers/notification-rules.js";
 import { handleListEventGroups, handleGetEventGroup } from "./handlers/event-groups.js";
+import { handleIngestEvent } from "./handlers/ingest-event.js";
+import { handleListEvents, handleGetEvent } from "./handlers/list-events.js";
 import { errorResponse, notFound, methodNotAllowed } from "./http.js";
-import { generateRequestId, isDeadLetterId, parseOrgPublicId } from "./ids.js";
+import { generateRequestId, isDeadLetterId, parseOrgPublicId, EVENT_ID_RE } from "./ids.js";
 
 const REQUEST_ID_RE = /^[\w-]{1,128}$/;
 
@@ -36,6 +38,8 @@ function resolveActor(request: Request): ActorContext | null {
 }
 
 const ORG_AUDIT_RE = /^\/v1\/organizations\/([^/]+)\/audit$/;
+const ORG_EVENTS_RE = /^\/v1\/organizations\/([^/]+)\/events$/;
+const ORG_EVENT_RE = /^\/v1\/organizations\/([^/]+)\/events\/([^/]+)$/;
 const ORG_EVENT_GROUPS_RE = /^\/v1\/organizations\/([^/]+)\/event-groups$/;
 const ORG_EVENT_GROUP_RE = /^\/v1\/organizations\/([^/]+)\/event-groups\/([^/]+)$/;
 const ORG_DEAD_LETTERS_RE = /^\/v1\/organizations\/([^/]+)\/dead-letters$/;
@@ -110,6 +114,30 @@ export async function route(request: Request, env: Env): Promise<Response> {
       if (request.method === "PATCH") return handleUpdateRule(request, env, requestId, actor, orgUuid, ruleId);
       if (request.method === "DELETE") return handleDeleteRule(request, env, requestId, actor, orgUuid, ruleId);
       return methodNotAllowed(requestId);
+    }
+
+    const eventsMatch = url.pathname.match(ORG_EVENTS_RE);
+    if (eventsMatch) {
+      const orgUuid = parseOrgPublicId(eventsMatch[1]!);
+      if (!orgUuid) return errorResponse("not_found", "Not found", 404, requestId);
+      const actor = resolveActor(request);
+      if (!actor) return errorResponse("unauthenticated", "Authentication required", 401, requestId);
+      if (request.method === "GET") return handleListEvents(request, env, requestId, actor, orgUuid);
+      if (request.method === "POST") return handleIngestEvent(request, env, requestId, actor, orgUuid);
+      return methodNotAllowed(requestId);
+    }
+
+    const eventMatch = url.pathname.match(ORG_EVENT_RE);
+    if (eventMatch) {
+      if (request.method !== "GET") return methodNotAllowed(requestId);
+      const orgUuid = parseOrgPublicId(eventMatch[1]!);
+      const eventId = eventMatch[2]!;
+      if (!orgUuid || !EVENT_ID_RE.test(eventId)) {
+        return errorResponse("not_found", "Not found", 404, requestId);
+      }
+      const actor = resolveActor(request);
+      if (!actor) return errorResponse("unauthenticated", "Authentication required", 401, requestId);
+      return handleGetEvent(request, env, requestId, actor, orgUuid, eventId);
     }
 
     const groupsMatch = url.pathname.match(ORG_EVENT_GROUPS_RE);

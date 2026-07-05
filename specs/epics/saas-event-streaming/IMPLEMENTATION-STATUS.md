@@ -11,8 +11,9 @@ eventing stack (events/notifications/webhooks/integrations workers).
 | ES1 — Router: shared lanes + dead letters + webhooks cutover | ✅ Shipped (#331) |
 | ES2 — Notification rules | ✅ Shipped (#334) |
 | ES3 — Channels: provider seam + Slack incoming webhook + async retry | ✅ Shipped (#338) |
-| ES4 — Correlation & dedup (event groups) | In review |
-| ES5 — Custom event ingest + SDK/CLI | 🗓️ Planned |
+| ES4 — Correlation & dedup (event groups) | ✅ Shipped (#339) |
+| ES5a — Custom event ingest + explorer read API | In review |
+| ES5b — SDK + CLI + custom-event grouping + metering | 🗓️ Planned |
 | ES6 — Console: Events explorer + rules/channels UX | 🗓️ Planned |
 | ES7 — Scale & lifecycle (retention, fairness, storm breaker) | 🗓️ Planned |
 
@@ -93,5 +94,30 @@ eventing stack (events/notifications/webhooks/integrations workers).
   (owner/admin/builder/viewer) and `organization.event.ingest` (owner/admin,
   reserved for ES5 custom ingest). No new worker dependency edges — verified
   via `orun plan` (no cycle).
+- 2026-07-05: ES4 shipped (#339) — grouping lane + group-aware notifications
+  live; migration `630_event_grouping` applied (renumbered from 620 after a
+  parallel `620_state_catalog_docs` landed first).
+- 2026-07-05: ES5 split into ES5a (this PR) and ES5b (next) to keep each PR
+  reviewable — the plan itself lands the ingest/SDK/CLI surfaces
+  incrementally. **ES5a in review — custom event ingest + explorer read API.**
+  `POST /v1/organizations/{orgId}/events` is events-worker's first write route:
+  the `custom.*` namespace is enforced server-side (a `billing.invoice_paid`
+  escape is rejected), payload capped at 32KiB, body pre-check at 64KiB, policy
+  `organization.event.ingest`, entitlement `feature.events.custom_ingest` (402
+  when off-plan), and a per-day quota `limit.custom_events_per_day` enforced by
+  a same-context `count(*) WHERE type LIKE 'custom.%'` over the UTC day (412
+  with the limit + upgrade hint) — no metering-worker edge. Idempotency-key
+  replay returns the original event, never a duplicate insert. The explorer read
+  API (`GET …/events` + `…/events/{evt_…}`) is the operational twin of the audit
+  query: type-glob/source/project/environment/time filters, keyset pagination,
+  redaction-respecting, enriched with catalog-derived severity/category/title.
+  Both behind a new api-edge events facade (GET+POST; bearer never forwarded).
+  Entitlement defaults seeded in `plan-catalog.ts` (feature on all tiers; quota
+  1k/10k/100k/unlimited). No migrations, no new worker dependency edges —
+  verified via `orun plan` (no cycle). Deferred to **ES5b**: the SDK
+  (`events.emit/list/get`, `eventGroups.list`, `notificationRules/Channels.*`),
+  the CLI (`events emit|list|tail`), custom-event grouping via a caller-supplied
+  `dedupKey` (persisted on the event now, honored by the grouping lane in ES5b),
+  and metering rollups.
 - Decision gates D1–D4 are open with defaults recommended; none block the
   spine (see `risks-and-open-questions.md`).

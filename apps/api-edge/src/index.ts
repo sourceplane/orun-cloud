@@ -9,6 +9,7 @@ import { isProjectRoute, handleProjectRoute } from "./project-facade";
 import { isAuditRoute, handleAuditRoute } from "./audit-facade";
 import { isDeadLettersRoute, handleDeadLettersRoute } from "./dead-letters-facade";
 import { isEventGroupsRoute, handleEventGroupsRoute } from "./event-groups-facade";
+import { isEventsRoute, handleEventsRoute } from "./events-facade";
 import { isNotificationRulesRoute, handleNotificationRulesRoute } from "./notification-rules-facade";
 import { isNotificationChannelsRoute, handleNotificationChannelsRoute } from "./notification-channels-facade";
 import { isConfigRoute, handleConfigRoute } from "./config-facade";
@@ -82,6 +83,8 @@ export default {
       response = await handleDeadLettersRoute(routedRequest, env, requestId, pathname);
     } else if (isEventGroupsRoute(pathname)) {
       response = await handleEventGroupsRoute(routedRequest, env, requestId, pathname);
+    } else if (isEventsRoute(pathname)) {
+      response = await handleEventsRoute(routedRequest, env, requestId, pathname);
     } else if (isNotificationRulesRoute(pathname)) {
       response = await handleNotificationRulesRoute(routedRequest, env, requestId, pathname);
     } else if (isNotificationChannelsRoute(pathname)) {

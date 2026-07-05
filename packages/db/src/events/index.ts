@@ -11,6 +11,7 @@ export type {
   EventsPageQueryParams,
   EventsPagedResult,
   AuditOrgFilters,
+  EventLogFilters,
 } from "./types.js";
 
 export { createEventsRepository } from "./repository.js";

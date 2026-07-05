@@ -324,6 +324,16 @@ export function effectiveEventSeverity(type: string, payload: Record<string, unk
 }
 
 /**
+ * The category of a concrete event: the catalog entry's category when the type
+ * is registered (or a tenant `custom.*` type, which resolves to "custom"), else
+ * "system" for anything unrecognized. Never throws — used by the explorer read
+ * projection where an unknown type must still render a category.
+ */
+export function eventCategory(type: string): string {
+  return catalogEntryFor(type)?.category ?? (type.startsWith(CUSTOM_EVENT_NAMESPACE) ? "custom" : "system");
+}
+
+/**
  * Render a catalog title template against an envelope-shaped view. Supported
  * placeholders: `{subject.name}`, `{subject.id}`, `{subject.kind}`,
  * `{tenant.orgId}`, `{payload.<dotted.path>}`. Unresolvable placeholders

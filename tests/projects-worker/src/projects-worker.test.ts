@@ -216,6 +216,10 @@ function createFakeEventsRepo(overrides?: Partial<Record<keyof EventsRepository,
     async queryAuditByTarget() { return { ok: true, value: { items: [], nextCursor: null } }; },
     async listScmEventsSince() { return { ok: true, value: [] }; },
     async listRunResultEventsSince() { return { ok: true, value: [] }; },
+    async listRecentlyActiveOrgIds() { return { ok: true, value: [] }; },
+    async queryEventLogByOrg() { return { ok: true, value: { items: [], nextCursor: null } }; },
+    async findEventByIdempotencyKey() { return { ok: true, value: null }; },
+    async countCustomEventsSince() { return { ok: true, value: 0 }; },
   };
 
   if (overrides) {

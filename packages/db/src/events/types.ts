@@ -165,6 +165,23 @@ export interface AuditOrgFilters {
   to?: string;
 }
 
+/**
+ * Optional, independently-combinable filters for the org-scoped event-log read
+ * (the ES5 explorer). Same `AND`-composition and inclusive `from`/`to` bounds
+ * as {@link AuditOrgFilters}. `type` is exact-match OR a trailing-`*` prefix glob
+ * (`custom.*` -> SQL `type LIKE 'custom.%'`); every other field is exact match.
+ * `projectId`/`environmentId` are the internal UUIDs (the handler converts the
+ * caller's public ids before calling).
+ */
+export interface EventLogFilters {
+  type?: string;
+  source?: string;
+  projectId?: string;
+  environmentId?: string;
+  from?: string;
+  to?: string;
+}
+
 // ---------------------------------------------------------------------------
 // Repository interface
 // ---------------------------------------------------------------------------
@@ -189,6 +206,26 @@ export interface EventsRepository {
    * rehydrate the full original event payload by id.
    */
   getEventById(orgId: string, eventId: string): Promise<EventsResult<StoredEvent | null>>;
+  /**
+   * Org-scoped, time-ordered keyset scan of the raw event_log (the ES5 explorer
+   * read). Same `ORDER BY occurred_at DESC, id DESC` keyset and `limit+1`
+   * next-cursor computation as {@link queryAuditByOrg}, but reads `events.event_log`
+   * and maps to {@link StoredEvent}. `filters` compose as parameterized `AND`
+   * clauses; `type` supports a trailing-`*` prefix glob.
+   */
+  queryEventLogByOrg(orgId: string, params: EventsPageQueryParams, filters?: EventLogFilters): Promise<EventsResult<EventsPagedResult<StoredEvent>>>;
+  /**
+   * The most recent org-scoped event carrying `idempotencyKey`, or `null` when
+   * none exists — the ES5 ingest idempotent-replay lookup. Returns `null` (not an
+   * error) on no match, mirroring {@link getEventById}.
+   */
+  findEventByIdempotencyKey(orgId: string, idempotencyKey: string): Promise<EventsResult<StoredEvent | null>>;
+  /**
+   * Count of tenant-authored custom events (`type LIKE 'custom.%'`) for an org
+   * on/after `sinceIso` — the ES5 per-day quota check. Bounded by the
+   * `(org_id, occurred_at DESC, id DESC)` index for a recency window.
+   */
+  countCustomEventsSince(orgId: string, sinceIso: string): Promise<EventsResult<number>>;
   /**
    * Global, time-ordered keyset scan of source-control events (`type LIKE
    * 'scm.%'`) strictly after the cursor — the OV4 state-worker bridge consumer's

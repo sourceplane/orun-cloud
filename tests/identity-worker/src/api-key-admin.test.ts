@@ -217,6 +217,18 @@ function createFakeEventsRepo(): FakeEventsRepo {
     async listRunResultEventsSince(): Promise<EventsResult<StoredEvent[]>> {
       return { ok: true as const, value: [] };
     },
+    async listRecentlyActiveOrgIds(): Promise<EventsResult<string[]>> {
+      return { ok: true as const, value: [] };
+    },
+    async queryEventLogByOrg(): Promise<EventsResult<EventsPagedResult<StoredEvent>>> {
+      return { ok: true as const, value: { items: [], nextCursor: null } };
+    },
+    async findEventByIdempotencyKey(): Promise<EventsResult<StoredEvent | null>> {
+      return { ok: true as const, value: null };
+    },
+    async countCustomEventsSince(): Promise<EventsResult<number>> {
+      return { ok: true as const, value: 0 };
+    },
   };
 }
 

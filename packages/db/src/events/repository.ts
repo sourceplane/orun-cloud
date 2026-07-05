@@ -3,6 +3,7 @@ import type {
   AppendEventInput,
   AppendEventWithAuditInput,
   AuditOrgFilters,
+  EventLogFilters,
   EventsCursorPosition,
   EventsPagedResult,
   EventsPageQueryParams,
@@ -431,6 +432,110 @@ export function createEventsRepository(executor: SqlExecutor): EventsRepository 
         return { ok: true, value: mapEvent(result.rows[0]!) };
       } catch {
         return safeError("Failed to get event by id");
+      }
+    },
+
+    async queryEventLogByOrg(orgId: string, params: EventsPageQueryParams, filters?: EventLogFilters): Promise<EventsResult<EventsPagedResult<StoredEvent>>> {
+      try {
+        const baseParams: unknown[] = [orgId];
+        let paramIndex = 2;
+
+        // Optional, independently-combinable filter clauses. Each appends a
+        // parameterized `AND` predicate and advances the placeholder index; none
+        // alter the ORDER BY / cursor keyset. `from`/`to` are inclusive.
+        let filterClause = "";
+        if (filters) {
+          if (filters.type !== undefined) {
+            if (filters.type.endsWith("*")) {
+              // Trailing-`*` prefix glob -> LIKE 'prefix%', escaping LIKE
+              // metacharacters (`%`, `_`, `\`) in the prefix so they match
+              // literally.
+              const prefix = filters.type.slice(0, -1).replace(/([%_\\])/g, "\\$1");
+              filterClause += ` AND type LIKE $${paramIndex}`;
+              baseParams.push(`${prefix}%`);
+            } else {
+              filterClause += ` AND type = $${paramIndex}`;
+              baseParams.push(filters.type);
+            }
+            paramIndex++;
+          }
+          const eq: Array<[string, string | undefined]> = [
+            ["source", filters.source],
+            ["project_id", filters.projectId],
+            ["environment_id", filters.environmentId],
+          ];
+          for (const [column, value] of eq) {
+            if (value !== undefined) {
+              filterClause += ` AND ${column} = $${paramIndex}`;
+              baseParams.push(value);
+              paramIndex++;
+            }
+          }
+          if (filters.from !== undefined) {
+            filterClause += ` AND occurred_at >= $${paramIndex}`;
+            baseParams.push(filters.from);
+            paramIndex++;
+          }
+          if (filters.to !== undefined) {
+            filterClause += ` AND occurred_at <= $${paramIndex}`;
+            baseParams.push(filters.to);
+            paramIndex++;
+          }
+        }
+
+        baseParams.push(params.limit + 1);
+        const limitParam = paramIndex;
+        paramIndex++;
+
+        const { clause, params: cursorParams } = buildCursorCondition(params.cursor, paramIndex);
+        const allParams = [...baseParams, ...cursorParams];
+
+        const result = await executor.execute<Record<string, unknown>>(
+          `SELECT * FROM events.event_log
+           WHERE org_id = $1${filterClause}${clause}
+           ORDER BY occurred_at DESC, id DESC
+           LIMIT $${limitParam}`,
+          allParams,
+        );
+
+        const mapped = result.rows.map(mapEvent);
+        const { trimmed, nextCursor } = extractNextCursor(mapped, params.limit);
+        return { ok: true, value: { items: trimmed, nextCursor } };
+      } catch {
+        return safeError("Failed to query event log by org");
+      }
+    },
+
+    async findEventByIdempotencyKey(orgId: string, idempotencyKey: string): Promise<EventsResult<StoredEvent | null>> {
+      try {
+        const result = await executor.execute<Record<string, unknown>>(
+          `SELECT * FROM events.event_log
+           WHERE org_id = $1 AND idempotency_key = $2
+           ORDER BY occurred_at DESC
+           LIMIT 1`,
+          [orgId, idempotencyKey],
+        );
+        if (result.rows.length === 0) {
+          return { ok: true, value: null };
+        }
+        return { ok: true, value: mapEvent(result.rows[0]!) };
+      } catch {
+        return safeError("Failed to find event by idempotency key");
+      }
+    },
+
+    async countCustomEventsSince(orgId: string, sinceIso: string): Promise<EventsResult<number>> {
+      try {
+        const result = await executor.execute<Record<string, unknown>>(
+          `SELECT count(*)::bigint AS count FROM events.event_log
+           WHERE org_id = $1 AND type LIKE 'custom.%' AND occurred_at >= $2`,
+          [orgId, sinceIso],
+        );
+        const raw = result.rows[0]?.count;
+        const count = typeof raw === "number" ? raw : Number(raw ?? 0);
+        return { ok: true, value: Number.isFinite(count) ? count : 0 };
+      } catch {
+        return safeError("Failed to count custom events");
       }
     },
 
