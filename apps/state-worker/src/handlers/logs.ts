@@ -93,22 +93,28 @@ export async function handleAppendLog(
     if (!run.ok) return errorResponse("not_found", "Not found", 404, requestId);
     const runRowId = asUuid(run.value.id);
 
-    // ── Live-lease check: the runner must currently own the job's lease. ──
-    // A chunk from a runner whose lease lapsed or was reassigned is rejected
-    // 409 lease_lost — the job already re-queued, the runner must stop. We read
-    // the job row and assert runner ownership + an unexpired, non-terminal lease.
+    // ── Holder fence: reject only on POSITIVE evidence the job belongs to a
+    // different runner (a takeover/requeue always stamps a new holder on the
+    // row). The row is an eventually-consistent projection of the DO log:
+    // right after a claim it can still read queued/unheld (the per-verb
+    // projection is deferred and queues behind the single-threaded run-shard
+    // fold under a wide-DAG claim storm), and after completion the fold CLEARS
+    // the holder — so the previous live-lease assertion rejected real output
+    // from the only runner that ever held the job: a fast job's first chunks
+    // arrived before its claim was projected, buffered client-side, and were
+    // then sealed out forever at the CLI's documented post-run drain because
+    // the row had gone terminal. That failed green runs with "state may be
+    // stale on the server" (ogpic 28734466789, attempts 2–5). Logs are an
+    // advisory plane: losing true output to fence hypothetical zombies is the
+    // wrong trade. A genuinely superseded runner still gets its 409 stop
+    // signal the moment the new holder is projected.
     const job = await repo.getRunJob(orgId, projectId, runRowId, jobId);
     if (!job.ok) return errorResponse("not_found", "Not found", 404, requestId);
     const j = job.value;
-    const leaseLive =
-      j.runnerId === runnerId &&
-      !TERMINAL_JOB_STATUSES.has(j.status) &&
-      j.leaseExpiresAt !== null &&
-      j.leaseExpiresAt.getTime() > Date.now();
-    if (!leaseLive) {
+    if (j.runnerId !== null && j.runnerId !== runnerId) {
       return errorResponse(
         "lease_lost",
-        "No live lease for this runner on this job; stop appending logs",
+        "Another runner holds this job; stop appending logs",
         409,
         requestId,
       );
