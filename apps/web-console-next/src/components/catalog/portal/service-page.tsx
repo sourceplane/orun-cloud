@@ -16,11 +16,13 @@
 
 import * as React from "react";
 import { ArrowLeft, ArrowUpRight, AreaChart, BookText, ChevronRight, Github } from "lucide-react";
+import type { CatalogDoc } from "@saas/contracts/state";
 import type { PageRef, ServicePage } from "@/lib/catalog-portal/page";
 import { CHECK_COLOR } from "@/lib/catalog-portal/palette";
 import { CHECK_MARK, DOC_ICON } from "@/lib/catalog-portal/icons";
 import { PathIcon } from "./icon";
 import { MarkdownView } from "./markdown-view";
+import { DocBody, DocProvenance, DocShelf, useEntityDocs } from "@/components/catalog/docs/entity-docs";
 
 const MONO_LABEL = "font-mono text-[10px] uppercase tracking-[0.1em] text-muted-foreground/80";
 const CARD = "rounded-[13px] border border-border bg-card overflow-hidden";
@@ -39,20 +41,24 @@ type TabKey = (typeof TABS)[number]["key"];
 
 export function ServicePage({
   page,
+  orgId,
   orgLabel,
   onBack,
   onViewMap,
   onSelectRef,
 }: {
   page: ServicePage;
+  orgId: string;
   orgLabel: string;
   onBack: () => void;
   onViewMap: () => void;
   onSelectRef: (key: string) => void;
 }) {
   const [tab, setTab] = React.useState<TabKey>("overview");
-  const [docId, setDocId] = React.useState<string | null>(null);
-  const activeDoc = page.docs.find((d) => d.id === docId) ?? page.docs[0]!;
+  const [docKey, setDocKey] = React.useState<string | null>(null);
+  // The entity's real doc set (saas-catalog-docs CD4) — git-authored, indexed
+  // at projection, rendered by digest. Empty ⇒ the badged derived card.
+  const { docs, loading: docsLoading } = useEntityDocs(orgId, page.ref);
 
   return (
     <div className="flex flex-col md:h-full md:min-h-0">
@@ -118,9 +124,16 @@ export function ServicePage({
           {/* two column */}
           <div className="grid grid-cols-1 items-start gap-[26px] xl:grid-cols-[minmax(0,1fr)_290px]">
             <div className="flex min-w-0 flex-col gap-4">
-              {tab === "overview" ? <OverviewTab page={page} /> : null}
+              {tab === "overview" ? <OverviewTab page={page} orgId={orgId} docs={docs} /> : null}
               {tab === "docs" ? (
-                <DocsTab page={page} activeDocId={activeDoc.id} onSelectDoc={setDocId} />
+                <DocsTab
+                  page={page}
+                  orgId={orgId}
+                  docs={docs}
+                  docsLoading={docsLoading}
+                  activeDocKey={docKey}
+                  onSelectDoc={setDocKey}
+                />
               ) : null}
               {tab === "dependencies" ? <DepsTab page={page} onViewMap={onViewMap} onSelectRef={onSelectRef} /> : null}
               {tab === "activity" ? <ActivityTab page={page} /> : null}
@@ -245,17 +258,71 @@ function OpsTile({ label, value, valueColor, sub }: { label: string; value: stri
 
 // ── Overview tab ─────────────────────────────────────────────────
 
-function OverviewTab({ page }: { page: ServicePage }) {
+function OverviewTab({ page, orgId, docs }: { page: ServicePage; orgId: string; docs: CatalogDoc[] }) {
+  // The real git-authored overview leads when the entity attached one; the
+  // badged derived card is the fallback — never presented as a file (the
+  // honesty rule, saas-catalog-docs design.md §4).
+  const overview = docs.find((d) => d.docKey === "overview") ?? null;
+  if (overview) {
+    return (
+      <div className={CARD}>
+        <div className={CARD_HEAD}>
+          <PathIcon d={DOC_ICON.file} size={14} strokeWidth={1.8} className="text-muted-foreground/80" />
+          <span className="text-[12.5px] font-medium text-foreground/90">{overview.title}</span>
+          <span className="ml-auto">
+            <DocProvenance doc={overview} />
+          </span>
+        </div>
+        <div className="px-[26px] py-[22px]">
+          <DocBody orgId={orgId} doc={overview} />
+        </div>
+      </div>
+    );
+  }
+  return <DerivedCard page={page} />;
+}
+
+/** The one computed surface: catalog facts, visibly badged, never a "file". */
+function DerivedCard({ page }: { page: ServicePage }) {
   return (
     <div className={CARD}>
       <div className={CARD_HEAD}>
-        <PathIcon d={DOC_ICON.file} size={14} strokeWidth={1.8} className="text-muted-foreground/80" />
-        <span className="font-mono text-[12.5px] font-medium text-foreground/90">README.md</span>
-        <span className="ml-auto text-[11px] text-muted-foreground/60">rendered from service definition</span>
+        <span className="text-[12.5px] font-medium text-foreground/90">About this {page.kindLabel.toLowerCase()}</span>
+        <span className="ml-auto rounded-[5px] border border-input px-[7px] py-px text-[10.5px] text-muted-foreground/70">
+          derived — not a repo file
+        </span>
       </div>
       <div className="px-[26px] py-[22px]">
-        <MarkdownView blocks={page.overviewBlocks} />
+        <MarkdownView blocks={page.derivedBlocks} />
       </div>
+    </div>
+  );
+}
+
+/** The no-docs nudge: teach the manifest, never offer a textbox. */
+function DocsNudge({ page }: { page: ServicePage }) {
+  const snippet = [
+    "spec:",
+    "  docs:",
+    "    overview: docs/overview.md",
+    "    pages:",
+    "      - { path: docs/architecture.md, role: architecture }",
+    "      - { path: docs/runbook.md, role: runbook }",
+  ].join("\n");
+  return (
+    <div className="rounded-[13px] border border-dashed border-border bg-card/50 px-5 py-4">
+      <div className="text-[13px] font-medium text-foreground/90">
+        Document this {page.kindLabel.toLowerCase()} from its repo
+      </div>
+      <p className="mt-1 text-[12.5px] leading-[1.55] text-muted-foreground">
+        Point <code className="rounded bg-muted px-1 py-0.5 font-mono text-[11.5px]">docs.overview</code> and{" "}
+        <code className="rounded bg-muted px-1 py-0.5 font-mono text-[11.5px]">docs.pages</code> at markdown files in
+        the repo — the next <code className="rounded bg-muted px-1 py-0.5 font-mono text-[11.5px]">orun plan</code>{" "}
+        carries them here, pinned to the commit, with no CMS and no drift.
+      </p>
+      <pre className="mt-3 overflow-x-auto rounded-lg border border-border bg-muted p-3 font-mono text-[11.5px] leading-[1.5] text-foreground/85">
+        {snippet}
+      </pre>
     </div>
   );
 }
@@ -264,54 +331,49 @@ function OverviewTab({ page }: { page: ServicePage }) {
 
 function DocsTab({
   page,
-  activeDocId,
+  orgId,
+  docs,
+  docsLoading,
+  activeDocKey,
   onSelectDoc,
 }: {
   page: ServicePage;
-  activeDocId: string;
-  onSelectDoc: (id: string) => void;
+  orgId: string;
+  docs: CatalogDoc[];
+  docsLoading: boolean;
+  activeDocKey: string | null;
+  onSelectDoc: (docKey: string) => void;
 }) {
-  const active = page.docs.find((d) => d.id === activeDocId) ?? page.docs[0]!;
+  if (docsLoading && docs.length === 0) {
+    return (
+      <div className="rounded-[13px] border border-border bg-card px-5 py-10 text-center text-[13px] text-muted-foreground/60">
+        Loading documents…
+      </div>
+    );
+  }
+  // No git-authored docs: the badged derived card + the manifest nudge — never
+  // a fabricated file (saas-catalog-docs CD4, closing WO review F2).
+  if (docs.length === 0) {
+    return (
+      <div className="flex flex-col gap-4">
+        <DerivedCard page={page} />
+        <DocsNudge page={page} />
+      </div>
+    );
+  }
+  const active = docs.find((d) => d.docKey === activeDocKey) ?? docs[0]!;
   return (
     <div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-[210px_minmax(0,1fr)]">
-      <div className="flex flex-col gap-0.5 rounded-[12px] border border-border bg-card p-2">
-        <div className="px-2 pb-2 pt-1.5 text-[10px] font-semibold uppercase tracking-[0.08em] text-muted-foreground/60">
-          Documents
-        </div>
-        {page.docs.map((d) => {
-          const on = d.id === active.id;
-          return (
-            <button
-              key={d.id}
-              type="button"
-              onClick={() => onSelectDoc(d.id)}
-              className="flex w-full items-center gap-[9px] rounded-[8px] px-[9px] py-2 text-left"
-              style={{
-                background: on ? "hsl(var(--primary) / 0.07)" : "transparent",
-                border: `1px solid ${on ? "hsl(var(--input))" : "transparent"}`,
-              }}
-            >
-              <PathIcon d={d.iconD} size={14} strokeWidth={1.7} className="shrink-0 text-muted-foreground/80" />
-              <span className="flex min-w-0 flex-col gap-px">
-                <span
-                  className="truncate font-mono text-[12.5px]"
-                  style={{ color: on ? "hsl(var(--foreground))" : "hsl(var(--muted-foreground))" }}
-                >
-                  {d.name}
-                </span>
-                <span className="text-[10.5px] text-muted-foreground/60">{d.sub}</span>
-              </span>
-            </button>
-          );
-        })}
-      </div>
+      <DocShelf docs={docs} activeKey={active.docKey} onSelect={onSelectDoc} />
       <div className={CARD}>
         <div className={CARD_HEAD}>
-          <span className="font-mono text-[12.5px] font-medium text-foreground/90">{active.name}</span>
-          <span className="ml-auto text-[11px] text-muted-foreground/60">{active.sub}</span>
+          <span className="text-[12.5px] font-medium text-foreground/90">{active.title}</span>
+          <span className="ml-auto">
+            <DocProvenance doc={active} />
+          </span>
         </div>
         <div className="px-[26px] py-[22px]">
-          <MarkdownView blocks={active.blocks} />
+          <DocBody orgId={orgId} doc={active} />
         </div>
       </div>
     </div>

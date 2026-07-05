@@ -1,14 +1,17 @@
 /**
- * Unit tests for the catalog-portal dedicated-page view-model (CP5).
+ * Unit tests for the catalog-portal dedicated-page view-model (CP5, revised by
+ * saas-catalog-docs CD4).
  *
- * Asserts the page is composed honestly from real catalog facts: documents are
- * built from the entity's own fields, the activity feed is provenance-only (no
- * fabricated deploy/incident metrics), and the dependency neighborhood resolves
- * through the shared graph context.
+ * Asserts the page is composed honestly: the ONE derived surface (the badged
+ * derived card) is built strictly from real catalog facts and never presented
+ * as a file — the CP5 synthesized README/ARCHITECTURE/RUNBOOK/API documents
+ * are gone (real docs are git-authored and fetched from the org doc index at
+ * render). The activity feed stays provenance-only, and the dependency
+ * neighborhood resolves through the shared graph context.
  */
 
 import { buildContext } from "@web-console-next/lib/catalog-portal/model";
-import { activityFor, buildPage, docsFor } from "@web-console-next/lib/catalog-portal/page";
+import { activityFor, buildPage, derivedBlocksFor } from "@web-console-next/lib/catalog-portal/page";
 import { service } from "./fixture";
 
 /** A small graph: web depends on api; api is a resource-free component. */
@@ -33,34 +36,32 @@ function graph() {
   return { web, api, ctx };
 }
 
-describe("docsFor", () => {
-  it("always includes a README plus ARCHITECTURE and RUNBOOK for components", () => {
+describe("derivedBlocksFor (the badged derived card — CD4 honesty rule)", () => {
+  it("composes only real facts: description, deps, language, system, owner", () => {
     const { web, ctx } = graph();
-    const ids = docsFor(web, ctx).map((d) => d.id);
-    expect(ids).toEqual(["readme", "arch", "runbook"]);
-  });
-
-  it("adds an API document for API-kind entities", () => {
-    const api = service({ entityRef: "api:default/payments", system: "Checkout" });
-    const ids = docsFor(api, buildContext([api])).map((d) => d.id);
-    expect(ids).toContain("api");
-  });
-
-  it("uses PROVISIONING instead of arch/runbook for managed resources", () => {
-    const res = service({ entityRef: "resource:default/db", system: "Checkout" });
-    const ids = docsFor(res, buildContext([res])).map((d) => d.id);
-    expect(ids).toEqual(["readme", "provision"]);
-  });
-
-  it("composes the README from real facts (description, deps, owner, language)", () => {
-    const { web, ctx } = graph();
-    const readme = docsFor(web, ctx)[0]!;
-    const text = JSON.stringify(readme.blocks);
+    const text = JSON.stringify(derivedBlocksFor(web, ctx));
     expect(text).toContain("The storefront.");
-    expect(text).toContain("api"); // resolved dependency name on the request path
+    expect(text).toContain("api"); // resolved dependency name
     expect(text).toContain("TypeScript");
     expect(text).toContain("Growth");
-    expect(readme.blocks[0]).toEqual({ type: "heading", level: 1, text: "web" });
+    // Real CLI commands only — never invented endpoints/alerts/architecture.
+    expect(text).toContain("orun catalog docs web --list");
+  });
+
+  it("never fabricates file framing or invented operational prose", () => {
+    const { web, ctx } = graph();
+    const text = JSON.stringify(derivedBlocksFor(web, ctx));
+    expect(text).not.toContain("README");
+    expect(text).not.toContain(".md");
+    expect(text).not.toContain("Stateless replicas"); // genArch's invention
+    expect(text).not.toContain("war room"); // genRunbook's invention
+    expect(text).not.toContain("bearer token"); // genApi's invention
+  });
+
+  it("declares self-contained entities honestly", () => {
+    const api = service({ entityRef: "component:default/api", system: "Checkout" });
+    const text = JSON.stringify(derivedBlocksFor(api, buildContext([api])));
+    expect(text).toContain("None declared");
   });
 });
 
@@ -95,10 +96,10 @@ describe("buildPage", () => {
     expect(offset).toBeLessThanOrEqual(Number(page.ringCircLg));
   });
 
-  it("exposes the README as the overview blocks", () => {
+  it("exposes the derived card blocks (the no-docs fallback body)", () => {
     const { web, ctx } = graph();
     const page = buildPage(web, ctx);
-    expect(page.overviewBlocks).toBe(page.docs[0]!.blocks);
+    expect(JSON.stringify(page.derivedBlocks)).toContain("The storefront.");
   });
 
   it("resolves the dependency neighborhood through the context", () => {
