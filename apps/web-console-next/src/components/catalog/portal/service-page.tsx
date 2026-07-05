@@ -543,7 +543,7 @@ function ScorecardTab({ page }: { page: ServicePage }) {
           >
             {page.tierLabel} tier
           </div>
-          <div className="mt-2.5 flex gap-4 text-[12.5px] text-muted-foreground/80">
+          <div className="mt-2.5 flex flex-wrap gap-4 text-[12.5px] text-muted-foreground/80">
             <span>
               <span className="font-semibold text-success">{page.passCount}</span> pass
             </span>
@@ -553,6 +553,11 @@ function ScorecardTab({ page }: { page: ServicePage }) {
             <span>
               <span className="font-semibold text-destructive">{page.failCount}</span> fail
             </span>
+            {page.unknownCount > 0 ? (
+              <span>
+                <span className="font-semibold text-muted-foreground/70">{page.unknownCount}</span> no signal
+              </span>
+            ) : null}
           </div>
         </div>
       </div>

@@ -53,6 +53,8 @@ export const CHECK_COLOR = {
   pass: { c: "hsl(var(--success))", bg: "hsl(var(--success) / 0.14)" },
   warn: { c: "hsl(var(--warning))", bg: "hsl(var(--warning) / 0.14)" },
   fail: { c: "hsl(var(--destructive))", bg: "hsl(var(--destructive) / 0.14)" },
+  // Scorecard v2: a signal with no source — muted, excluded from the score.
+  unknown: { c: "hsl(var(--muted-foreground) / 0.6)", bg: "hsl(var(--muted-foreground) / 0.08)" },
 } as const;
 
 /** Surface greys, borders and text ramps mapped onto the theme tokens. */

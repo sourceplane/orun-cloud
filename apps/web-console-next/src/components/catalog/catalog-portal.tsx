@@ -13,6 +13,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useSession } from "@/lib/session";
 import { wrap } from "@/lib/api";
 import { useApiQuery, usePrefetch, qk } from "@/lib/query";
+import { useOrgDocs } from "@/components/catalog/docs/entity-docs";
 import { useDebounced } from "@/lib/use-debounced";
 import { useMediaQuery } from "@/lib/use-media-query";
 import { collectOrgCatalog } from "@/lib/catalog-portal/fetch";
@@ -22,6 +23,8 @@ import { Skeleton } from "@/components/ui/skeleton";
 import {
   buildContext,
   annotateOwnership,
+  annotateDocSignals,
+  annotateRunSignals,
   ownershipCoverage,
   buildSelected,
   decorateService,
@@ -151,11 +154,23 @@ export function CatalogPortal({ orgId, orgSlug }: { orgId: string; orgSlug: stri
     ["ownerResolutions", orgId, ownersKey] as const,
     () => wrap(async () => (await client.teams.resolveOwners(orgId, { owners: distinctOwners })).resolutions),
   );
+  // Scorecard v2 signal sources: the org doc index (runbook/docs checks) and
+  // the runs feed (tests/pipeline checks). Both share their cache with the
+  // Docs hub and the Overview respectively.
+  const { data: orgDocs } = useOrgDocs(orgId);
+  const { data: orgRuns } = useApiQuery(qk.orgRuns(orgId), () =>
+    wrap(async () => (await client.state.listOrgRuns(orgId, { limit: 24 })).runs),
+  );
   const services = React.useMemo(() => {
-    if (!resolutions) return rawServices;
-    const byOwner = new Map(resolutions.map((r) => [r.owner, r]));
-    return annotateOwnership(rawServices, byOwner);
-  }, [rawServices, resolutions]);
+    let out = rawServices;
+    if (resolutions) {
+      const byOwner = new Map(resolutions.map((r) => [r.owner, r]));
+      out = annotateOwnership(out, byOwner);
+    }
+    if (orgDocs) out = annotateDocSignals(out, orgDocs);
+    if (orgRuns) out = annotateRunSignals(out, orgRuns, Date.now());
+    return out;
+  }, [rawServices, resolutions, orgDocs, orgRuns]);
 
   // teams-ownership TO3 — the viewer's own teams, for the "My services" lens.
   const { data: myTeams } = useApiQuery(["myTeams", orgId] as const, () =>

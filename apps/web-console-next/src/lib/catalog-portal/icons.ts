@@ -26,10 +26,11 @@ export function iconForKind(kind: string): string {
 }
 
 /** Check-status → tick/warn/cross mark path (drawer scorecard rows). */
-export const CHECK_MARK: Record<"pass" | "warn" | "fail", string> = {
+export const CHECK_MARK: Record<"pass" | "warn" | "fail" | "unknown", string> = {
   pass: "M20 6 9 17l-5-5",
   warn: "M12 8v5 M12 17h.01",
   fail: "M18 6 6 18 M6 6l12 12",
+  unknown: "M5 12h14", // an em-dash: no signal, no verdict
 };
 
 /**

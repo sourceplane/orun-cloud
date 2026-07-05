@@ -12,7 +12,7 @@
  */
 
 import type { CatalogService } from "../catalog-portal/model";
-import { needsAttention, scoreOf, tierOf } from "../catalog-portal/model";
+import { needsAttention, scorecardOf, tierOf } from "../catalog-portal/model";
 import type { RunRow } from "../runs-portal/model";
 import type { RunStatus, RepoFacet } from "@saas/contracts/state";
 
@@ -84,7 +84,8 @@ export function tierCounts(services: readonly CatalogService[]): TierCounts {
   let silver = 0;
   let bronze = 0;
   for (const s of services) {
-    const tier = tierOf(scoreOf(s));
+    const { score, known } = scorecardOf(s);
+    const tier = tierOf(score, known);
     if (tier === "Gold") gold += 1;
     else if (tier === "Silver") silver += 1;
     else if (tier === "Bronze") bronze += 1;

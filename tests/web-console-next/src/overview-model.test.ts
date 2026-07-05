@@ -113,10 +113,12 @@ describe("overviewActivity", () => {
 
 describe("tierCounts", () => {
   it("partitions scored services by tier and excludes resources", () => {
+    // v2: bronze()'s two passing known checks score 100 but the Gold coverage
+    // floor (≥5 known) caps it at Silver — low coverage is capped, not punished.
     const services = [gold(), bronze(), svc({ kind: "Resource", owner: null })];
     const t = tierCounts(services);
     expect(t.gold).toBe(1);
-    expect(t.bronze).toBe(1);
+    expect(t.silver).toBe(1);
     expect(t.scored).toBe(2); // the resource is not scored
     expect(t.gold + t.silver + t.bronze).toBe(t.scored);
   });

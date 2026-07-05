@@ -18,40 +18,13 @@ import * as React from "react";
 import Link from "next/link";
 import { BookOpen, Search } from "lucide-react";
 import type { CatalogDoc } from "@saas/contracts/state";
-import { useSession } from "@/lib/session";
-import { wrap } from "@/lib/api";
-import { useApiQuery, qk } from "@/lib/query";
 import { encodeEntityKey } from "@/lib/catalog-entity-key";
 import { KINDS } from "@/lib/catalog-kind";
-import { docRoleIcon, shortCommit } from "@/components/catalog/docs/entity-docs";
+import { docRoleIcon, shortCommit, useOrgDocs } from "@/components/catalog/docs/entity-docs";
 import { PathIcon } from "@/components/catalog/portal/icon";
 import { DOC_ICON, iconForKind } from "@/lib/catalog-portal/icons";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Skeleton } from "@/components/ui/skeleton";
-
-const PAGE_LIMIT = 100;
-const MAX_PAGES = 20;
-
-/** Fetch the whole org doc index (bounded), one cache entry per org. */
-function useOrgDocs(orgId: string) {
-  const { client } = useSession();
-  return useApiQuery(qk.orgDocs(orgId), () =>
-    wrap(async () => {
-      const all: CatalogDoc[] = [];
-      let cursor: string | null = null;
-      for (let i = 0; i < MAX_PAGES; i++) {
-        const page = await client.state.listCatalogDocs(orgId, {
-          limit: PAGE_LIMIT,
-          ...(cursor ? { cursor } : {}),
-        });
-        all.push(...page.docs);
-        if (!page.nextCursor) break;
-        cursor = `${page.nextCursor.createdAt}|${page.nextCursor.id}`;
-      }
-      return all;
-    }),
-  );
-}
 
 /** The well-known role chips, in shelf order. Unknown roles fold into the
  *  trailing "other" bucket rather than exploding the chip row. */
