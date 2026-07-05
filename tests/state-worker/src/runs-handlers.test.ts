@@ -297,10 +297,11 @@ describe("POST …/state/runs — create", () => {
       return { ns, calls };
     }
 
-    function replayExecutor() {
+    function replayExecutor(counts: typeof COUNTS = COUNTS) {
       return fakeExecutor((text) => {
         if (text.startsWith("SELECT * FROM state.runs WHERE org_id = $1 AND project_id = $2 AND run_ulid")) return [runRow({ status: "running" })];
-        if (text.includes("COUNT(*) FILTER")) return [COUNTS];
+        if (text.includes("COUNT(*) FILTER")) return [counts];
+        if (text.includes("INSERT INTO state.run_jobs")) return [jobRow()];
         return [];
       });
     }
@@ -362,6 +363,41 @@ describe("POST …/state/runs — create", () => {
       const res = await handleCreateRun(replayRequest(JOBS), env, "req_1", ACTOR, asUuid(ORG), asUuid(PROJECT), { executor });
       expect(res.status).toBe(200);
       expect(calls.some((c) => c.path === "/init")).toBe(false);
+    });
+
+    it("re-inserts missing run_jobs rows on replay (partial rows from a dead creator)", async () => {
+      // COUNTS reports 1 of the 2 planned jobs — the original creator died after
+      // the first insert. The replay must reconcile the read model so log
+      // appends and lease checks stop 404ing on the missing rows.
+      const { ns } = fakeCoordinatorNs({ state: () => Response.json({ runId: ULID, frontier: [] }) });
+      const env = { ...createEnv(), COORDINATION_BACKEND: "do", COORDINATOR: ns } as unknown as Env;
+      const { executor, queries } = replayExecutor(); // COUNTS: 1 seen < 2 planned
+      const res = await handleCreateRun(replayRequest(JOBS), env, "req_1", ACTOR, asUuid(ORG), asUuid(PROJECT), { executor });
+      expect(res.status).toBe(200);
+      const inserts = queries.filter((q) => q.text.includes("INSERT INTO state.run_jobs"));
+      expect(inserts.map((q) => q.params[4])).toEqual(["build", "deploy"]); // conflict-ignored, full plan
+      // Counts are re-read after the heal so the replay response reflects the healed rows.
+      expect(queries.filter((q) => q.text.includes("COUNT(*) FILTER"))).toHaveLength(2);
+    });
+
+    it("does not touch run_jobs when the read model already has every planned row", async () => {
+      const full = { queued: 2, running: 0, succeeded: 0, failed: 0 };
+      const { ns } = fakeCoordinatorNs({ state: () => Response.json({ runId: ULID, frontier: [] }) });
+      const env = { ...createEnv(), COORDINATION_BACKEND: "do", COORDINATOR: ns } as unknown as Env;
+      const { executor, queries } = replayExecutor(full);
+      const res = await handleCreateRun(replayRequest(JOBS), env, "req_1", ACTOR, asUuid(ORG), asUuid(PROJECT), { executor });
+      expect(res.status).toBe(200);
+      expect(queries.some((q) => q.text.includes("INSERT INTO state.run_jobs"))).toBe(false);
+    });
+
+    it("heals rows on the plain relational path too (no DO backend configured)", async () => {
+      // OP2 claims read run_jobs directly, so a partial read model poisons that
+      // backend the same way — the row heal must not be gated on the DO flag.
+      const { executor, queries } = replayExecutor();
+      const res = await handleCreateRun(replayRequest(JOBS), createEnv(), "req_1", ACTOR, asUuid(ORG), asUuid(PROJECT), { executor });
+      expect(res.status).toBe(200);
+      const inserts = queries.filter((q) => q.text.includes("INSERT INTO state.run_jobs"));
+      expect(inserts.map((q) => q.params[4])).toEqual(["build", "deploy"]);
     });
 
     it("skips the heal when the replay body carries no jobs (nothing safe to seed from)", async () => {

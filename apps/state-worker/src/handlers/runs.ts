@@ -271,12 +271,62 @@ export async function handleCreateRun(
       return null;
     };
 
+    // ── Read-model row heal, the shard heal's sibling. The same mid-create
+    //    death also leaves state.run_jobs PARTIAL (rows insert one-by-one,
+    //    before the shard seed). The projector only UPDATEs job rows it finds,
+    //    and the log-append lease check 404s on a missing row — so jobs beyond
+    //    the dead creator's last insert execute fine (the DO has the full plan)
+    //    but can never deliver logs ("state may be stale on the server") and
+    //    are invisible to job counts. Reconcile from THIS request's complete
+    //    plan: inserts are conflict-ignored on the unique (run_id, job_id), so
+    //    concurrent replays and the original creator's late inserts converge.
+    //    Healed rows land 'queued'; the next projected verb (the job's own
+    //    claim at minimum) stamps real status/lease before any log append.
+    //    Applies on BOTH backends — OP2 claims also read these rows. The counts
+    //    sum is only a cheap gate ('canceled' falls outside its buckets, so a
+    //    rare false positive just re-runs idempotent conflict-ignored inserts).
+    const healMissingJobRows = async (runRowId: Uuid, counts: RunJobCounts | null): Promise<boolean> => {
+      if (!planJobs || planJobs.length === 0) return false;
+      const seen = counts ? counts.queued + counts.running + counts.succeeded + counts.failed : -1;
+      if (seen >= planJobs.length) return false;
+      let inserted = 0;
+      for (const j of planJobs) {
+        const jobResult = await repo.createRunJob({
+          id: generateUuid(),
+          orgId,
+          projectId,
+          runId: runRowId,
+          jobId: j.jobId,
+          component: j.component,
+          deps: j.deps,
+        });
+        if (jobResult.ok) inserted += 1;
+        else if (jobResult.error.kind !== "conflict") {
+          // Partial heal — keep what landed; the next replay finishes the job.
+          console.error(
+            `[coordination] createRun ${runId}: run_jobs row heal failed at job ${j.jobId} (${jobResult.error.kind})`,
+          );
+          break;
+        }
+      }
+      if (inserted > 0) {
+        console.warn(
+          `[coordination] createRun ${runId}: healed ${inserted} missing run_jobs row(s) on replay (original create died mid-way)`,
+        );
+      }
+      return inserted > 0;
+    };
+
     // ── Replay short-circuit: a known ULID returns the existing run (200). ──
     const existing = await repo.getRunByUlid(orgId, projectId, runId as string);
     if (existing.ok) {
       const healFail = await healShardIfUnseeded();
       if (healFail) return healFail;
-      const counts = await repo.getRunJobCounts(orgId, projectId, asUuid(existing.value.id));
+      const runRowId = asUuid(existing.value.id);
+      let counts = await repo.getRunJobCounts(orgId, projectId, runRowId);
+      if (await healMissingJobRows(runRowId, counts.ok ? counts.value : null)) {
+        counts = await repo.getRunJobCounts(orgId, projectId, runRowId);
+      }
       const payload: CreateRunResponse = {
         run: toPublicRun(existing.value, counts.ok ? counts.value : zeroCounts()),
       };
@@ -371,10 +421,16 @@ export async function handleCreateRun(
 
     if (!created.value.created) {
       // Lost the create race to a concurrent replay — return the existing run
-      // (healing the shard first if the winner hasn't seeded it yet).
+      // (healing the shard and any missing job rows first if the winner hasn't
+      // finished seeding them yet; both heals are idempotent, so racing the
+      // winner's own inserts just converges faster).
       const healFail = await healShardIfUnseeded();
       if (healFail) return healFail;
-      const counts = await repo.getRunJobCounts(orgId, projectId, asUuid(created.value.run.id));
+      const runRowId = asUuid(created.value.run.id);
+      let counts = await repo.getRunJobCounts(orgId, projectId, runRowId);
+      if (await healMissingJobRows(runRowId, counts.ok ? counts.value : null)) {
+        counts = await repo.getRunJobCounts(orgId, projectId, runRowId);
+      }
       const payload: CreateRunResponse = {
         run: toPublicRun(created.value.run, counts.ok ? counts.value : zeroCounts()),
       };
