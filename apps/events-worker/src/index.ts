@@ -5,6 +5,7 @@ import {
   createEventsRepository,
   createEventStreamsRepository,
   createNotificationRulesRepository,
+  createEventGroupsRepository,
 } from "@saas/db/events";
 import { runLaneDispatch } from "./lanes/dispatcher.js";
 import { buildLaneHandlers } from "./lanes/registry.js";
@@ -27,11 +28,14 @@ export default {
     const executor = createSqlExecutor(env.PLATFORM_DB);
     try {
       const requestId = generateRequestId();
+      const eventsRepo = createEventsRepository(executor);
       const summary = await runLaneDispatch({
         streamsRepo: createEventStreamsRepository(executor),
-        eventsRepo: createEventsRepository(executor),
+        eventsRepo,
         handlers: buildLaneHandlers(env, {
           rulesRepo: createNotificationRulesRepository(executor),
+          groupsRepo: createEventGroupsRepository(executor),
+          eventsRepo,
           requestId,
         }),
         requestId,

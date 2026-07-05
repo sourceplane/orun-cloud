@@ -570,5 +570,14 @@ export const manifest: MigrationManifest = {
       description:
         "Org-wide catalog doc index (saas-catalog-docs CD3) — creates state.catalog_docs: one row per attached (digest-bearing) doc of every catalog entity (the reserved overview + the ordered docs.pages set from CLI CD1/CD2), keyed (org, project, env, entity_ref, doc_key) with denormalized entity kind/name for the Docs-hub browse, role/title/path/commit provenance, the CAS digest the console renders the body by, and (org, digest) + (org, kind, role) + keyset indexes. Projected in the same delete-then-upsert pass as org_catalog_entities and swept by the migration-570 outbox. Derived, never authored; additive + idempotent.",
     },
+    {
+      id: "630_event_grouping",
+      context: "events",
+      path: "630_event_grouping/up.sql",
+      checksum:
+        "56bed9b11b6f860bc296358c3a6626a6df0f9424359be6e64a7e187e7c6b4018",
+      description:
+        "Event grouping activation + group-aware notification ledger (saas-event-streaming ES4) — seeds the 'grouping' subscriber lane (active; the events-worker grouping handler renders catalog dedup keys and maintains events.event_groups as an open-story-per-key read-model) and creates events.rule_group_notifications, the notifications lane's own (rule_id, group_key) high-water-severity ledger that fires a rule on a group's first matching event and on severity escalation but not on every member (one story, not five pings). The ledger is owned solely by the notifications lane, so group-aware firing is race-free regardless of lane dispatch order. Additive + idempotent (ON CONFLICT DO NOTHING seed, CREATE TABLE IF NOT EXISTS); same-context FK only.",
+    },
   ],
 };

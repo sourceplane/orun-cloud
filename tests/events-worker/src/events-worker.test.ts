@@ -198,6 +198,7 @@ describe("events-worker list-audit handler", () => {
       getEventById: async () => ({ ok: true as const, value: null }),
       listScmEventsSince: async () => ({ ok: true as const, value: [] }),
       listRunResultEventsSince: async () => ({ ok: true as const, value: [] }),
+      listRecentlyActiveOrgIds: async () => ({ ok: true as const, value: [] }),
     };
 
     const env = createEnv();
@@ -235,6 +236,7 @@ describe("events-worker list-audit handler", () => {
       getEventById: async () => ({ ok: true as const, value: null }),
       listScmEventsSince: async () => ({ ok: true as const, value: [] }),
       listRunResultEventsSince: async () => ({ ok: true as const, value: [] }),
+      listRecentlyActiveOrgIds: async () => ({ ok: true as const, value: [] }),
     };
 
     const env = createEnv();
@@ -260,6 +262,7 @@ describe("events-worker list-audit handler", () => {
       getEventById: async () => ({ ok: true as const, value: null }),
       listScmEventsSince: async () => ({ ok: true as const, value: [] }),
       listRunResultEventsSince: async () => ({ ok: true as const, value: [] }),
+      listRecentlyActiveOrgIds: async () => ({ ok: true as const, value: [] }),
     };
 
     const env = createEnv();
@@ -287,6 +290,7 @@ describe("events-worker list-audit handler", () => {
       getEventById: async () => ({ ok: true as const, value: null }),
       listScmEventsSince: async () => ({ ok: true as const, value: [] }),
       listRunResultEventsSince: async () => ({ ok: true as const, value: [] }),
+      listRecentlyActiveOrgIds: async () => ({ ok: true as const, value: [] }),
     };
 
     const env = createEnv();
@@ -340,6 +344,7 @@ describe("events-worker list-audit handler", () => {
       getEventById: async () => ({ ok: true as const, value: null }),
       listScmEventsSince: async () => ({ ok: true as const, value: [] }),
       listRunResultEventsSince: async () => ({ ok: true as const, value: [] }),
+      listRecentlyActiveOrgIds: async () => ({ ok: true as const, value: [] }),
     };
 
     const env = createEnv();
@@ -403,6 +408,7 @@ describe("events-worker list-audit handler", () => {
       getEventById: async () => ({ ok: true as const, value: null }),
       listScmEventsSince: async () => ({ ok: true as const, value: [] }),
       listRunResultEventsSince: async () => ({ ok: true as const, value: [] }),
+      listRecentlyActiveOrgIds: async () => ({ ok: true as const, value: [] }),
     };
 
     const env = createEnv();
@@ -465,6 +471,7 @@ describe("events-worker list-audit handler", () => {
       getEventById: async () => ({ ok: true as const, value: null }),
       listScmEventsSince: async () => ({ ok: true as const, value: [] }),
       listRunResultEventsSince: async () => ({ ok: true as const, value: [] }),
+      listRecentlyActiveOrgIds: async () => ({ ok: true as const, value: [] }),
     };
 
     const env = createEnv();
@@ -498,6 +505,7 @@ describe("events-worker list-audit handler", () => {
       getEventById: async () => ({ ok: true as const, value: null }),
       listScmEventsSince: async () => ({ ok: true as const, value: [] }),
       listRunResultEventsSince: async () => ({ ok: true as const, value: [] }),
+      listRecentlyActiveOrgIds: async () => ({ ok: true as const, value: [] }),
     };
 
     const env = createEnv();
@@ -531,6 +539,7 @@ describe("events-worker list-audit handler", () => {
       getEventById: async () => ({ ok: true as const, value: null }),
       listScmEventsSince: async () => ({ ok: true as const, value: [] }),
       listRunResultEventsSince: async () => ({ ok: true as const, value: [] }),
+      listRecentlyActiveOrgIds: async () => ({ ok: true as const, value: [] }),
     };
 
     const env = createEnv();
@@ -552,6 +561,7 @@ describe("events-worker list-audit handler", () => {
       getEventById: async () => ({ ok: true as const, value: null }),
       listScmEventsSince: async () => ({ ok: true as const, value: [] }),
       listRunResultEventsSince: async () => ({ ok: true as const, value: [] }),
+      listRecentlyActiveOrgIds: async () => ({ ok: true as const, value: [] }),
     };
 
     const env = createEnv();
@@ -577,6 +587,7 @@ describe("events-worker list-audit handler", () => {
       getEventById: async () => ({ ok: true as const, value: null }),
       listScmEventsSince: async () => ({ ok: true as const, value: [] }),
       listRunResultEventsSince: async () => ({ ok: true as const, value: [] }),
+      listRecentlyActiveOrgIds: async () => ({ ok: true as const, value: [] }),
     };
 
     const env = createEnv();
@@ -629,6 +640,7 @@ describe("events-worker list-audit handler", () => {
       getEventById: async () => ({ ok: true as const, value: null }),
       listScmEventsSince: async () => ({ ok: true as const, value: [] }),
       listRunResultEventsSince: async () => ({ ok: true as const, value: [] }),
+      listRecentlyActiveOrgIds: async () => ({ ok: true as const, value: [] }),
     };
 
     const env = createEnv({
@@ -660,6 +672,7 @@ describe("events-worker list-audit handler", () => {
       getEventById: async () => ({ ok: true as const, value: null }),
       listScmEventsSince: async () => ({ ok: true as const, value: [] }),
       listRunResultEventsSince: async () => ({ ok: true as const, value: [] }),
+      listRecentlyActiveOrgIds: async () => ({ ok: true as const, value: [] }),
     };
 
     const env = createEnv();
