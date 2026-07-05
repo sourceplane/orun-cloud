@@ -119,6 +119,12 @@ export function createFakeRepository(): IdentityRepository & {
       return { ok: false, error: { kind: "not_found" } };
     },
 
+    async listUsersByIds(ids: string[]): Promise<IdentityResult<User[]>> {
+      const wanted = new Set(ids);
+      const found = [...users.values()].filter((u) => wanted.has(u.id) && u.status === "active");
+      return { ok: true, value: found };
+    },
+
     async updateUserProfile(userId: string, input: UpdateUserProfileInput): Promise<IdentityResult<User>> {
       const user = users.get(userId);
       if (!user) return { ok: false, error: { kind: "not_found" } };

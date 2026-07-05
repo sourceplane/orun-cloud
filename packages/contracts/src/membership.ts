@@ -236,6 +236,29 @@ export interface ResolveOwnersResponse {
   resolutions: OwnerResolution[];
 }
 
+// ── Internal: team notification expansion (teams-collaboration TC1) ──
+/**
+ * Internal (service-binding only) request to expand a team into its active
+ * roster so a notification target can fan out to its current members. `teamId`
+ * is the `team_<hex>` public id. Called by the notifications worker at enqueue
+ * time — the roster is read live, so a membership change is reflected on the
+ * next send with no backfill.
+ */
+export interface InternalTeamMembersRequest {
+  teamId: string;
+}
+
+/** One active team member, as returned to the notification spine (TC1). */
+export interface InternalTeamMember {
+  subjectId: string;
+  subjectType: string;
+  teamRole: string;
+}
+
+export interface InternalTeamMembersResponse {
+  members: InternalTeamMember[];
+}
+
 /** Grant a team a role at account | organization (workspace) | project scope. */
 export interface GrantTeamRoleRequest {
   teamId: string;

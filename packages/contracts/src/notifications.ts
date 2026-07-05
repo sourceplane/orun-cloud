@@ -57,11 +57,12 @@ export type NotificationStatus =
   | "suppressed";
 
 /**
- * Preference subject kind. A preference row is keyed either to a user
- * (e.g. user-level opt-out of product email) or an organization
- * (org-wide billing recipient overrides).
+ * Preference subject kind. A preference row is keyed to a user
+ * (e.g. user-level opt-out of product email), an organization
+ * (org-wide billing recipient overrides), or a team (teams-collaboration TC:
+ * a team as a notification target / team-default preference level).
  */
-export type NotificationSubjectKind = "user" | "organization";
+export type NotificationSubjectKind = "user" | "organization" | "team";
 
 // ---------------------------------------------------------------------------
 // Recipient
@@ -74,6 +75,13 @@ export type NotificationSubjectKind = "user" | "organization";
  * lower-cased email address. `subjectKind` + `subjectId` are optional and
  * let the worker join back to the preference / suppression rows; when
  * omitted, preferences are not consulted (system-level notifications).
+ *
+ * teams-collaboration TC1: a `subjectKind: "team"` recipient is a *target*,
+ * not a delivery identity. `subjectId` is the team public id (`team_…`) and
+ * `address` carries a free-form team label (handle or name) for audit only —
+ * the notifications worker expands the team to its active members at send
+ * time and produces one delivery per member's resolved email. Team targeting
+ * supports the `email` channel only.
  */
 export interface NotificationRecipient {
   channel: NotificationChannel;
@@ -147,6 +155,13 @@ export interface NotificationDeliveryStatus {
 /** Response shape for POST /v1/notifications. */
 export interface EnqueueNotificationResponse {
   notification: NotificationDeliveryStatus;
+  /**
+   * teams-collaboration TC1: present only when the recipient was a team
+   * (`subjectKind: "team"`). One delivery record per active member the team
+   * fanned out to; `notification` is the first of these. Absent for
+   * single-recipient (user / organization / system) sends.
+   */
+  deliveries?: NotificationDeliveryStatus[];
 }
 
 /** Response shape for GET /v1/notifications/:notificationId. */
