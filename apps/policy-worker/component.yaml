@@ -67,3 +67,12 @@ spec:
 # policy-worker returns allow=false because the action isn't in its stale
 # ALL_KNOWN_ACTIONS). Touching this file forces the next push-to-main to
 # include policy-worker in the deploy set.
+# ci: redeploy with the orun-work bundle. Same failure mode as above, third
+# occurrence: PR #333 added `work.read`/`work.write` to the role maps and to
+# ALL_KNOWN_ACTIONS in `packages/policy-engine`, but touched nothing under
+# this component's path — so `orun plan --changed` never scheduled the deploy
+# profile and prod kept serving the pre-work bundle. Every actor's `work.read`
+# check denied as `unknown_action`, state-worker resource-hid the deny, and
+# the console Work page rendered `not_found`. (web-console-next DID redeploy
+# from the same PR — its files live under its own path — which is why the
+# Work nav item shows while the API 404s.)
