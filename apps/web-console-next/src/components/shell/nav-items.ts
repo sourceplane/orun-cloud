@@ -68,6 +68,9 @@ export function buildNavSections(scope: NavScope): NavSection[] {
         // git-authored entity docs, browsed by kind/role, rendered by digest.
         { href: `${orgBase}/docs`, label: "Docs", icon: "BookOpen" },
         { href: `${orgBase}/activities`, label: "Activities", icon: "Activity" },
+        // Events — the raw event-bus explorer (saas-event-streaming ES6):
+        // faceted stream + correlation stories, a Datadog-style events surface.
+        { href: `${orgBase}/events`, label: "Events", icon: "Radio" },
         { href: `${orgBase}/work`, label: "Work", icon: "ListChecks" },
         // Teams — the human-scale organizing primitive, promoted out of Settings
         // to a first-class product surface (à la Datadog Teams).

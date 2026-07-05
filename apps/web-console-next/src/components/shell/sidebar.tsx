@@ -30,6 +30,10 @@ import {
   HardDrive,
   Activity,
   UsersRound,
+  Radio,
+  BellRing,
+  Slack,
+  Inbox,
   type LucideIcon,
 } from "lucide-react";
 import { cn } from "@/lib/cn";
@@ -64,6 +68,10 @@ const ICONS: Record<string, LucideIcon> = {
   HardDrive,
   Activity,
   UsersRound,
+  Radio,
+  BellRing,
+  Slack,
+  Inbox,
 };
 
 /**

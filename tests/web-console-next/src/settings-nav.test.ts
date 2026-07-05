@@ -5,9 +5,20 @@ import {
 } from "@web-console-next/components/shell/settings-nav";
 
 describe("buildSettingsNav", () => {
-  it("groups settings into Organization, Account, Billing, and Developer", () => {
+  it("groups settings into Organization, Account, Billing, Notifications, and Developer", () => {
     const ids = buildSettingsNav("acme").map((g) => g.id);
-    expect(ids).toEqual(["organization", "account", "billing", "developer"]);
+    expect(ids).toEqual(["organization", "account", "billing", "notifications", "developer"]);
+  });
+
+  it("exposes the event-routing surfaces under the Notifications group", () => {
+    const hrefs = flattenSettingsNav(buildSettingsNav("acme")).map((l) => l.href);
+    expect(hrefs).toEqual(
+      expect.arrayContaining([
+        "/orgs/acme/settings/notifications/rules",
+        "/orgs/acme/settings/notifications/channels",
+        "/orgs/acme/settings/notifications/dead-letters",
+      ]),
+    );
   });
 
   it("roots every link under the org settings base", () => {

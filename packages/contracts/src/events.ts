@@ -461,3 +461,39 @@ export interface GetEventGroupResponse {
   data: { eventGroup: PublicEventGroup; members: PublicEventGroupMember[] };
   meta: { requestId: string };
 }
+
+// ---------------------------------------------------------------------------
+// Dead letters (saas-event-streaming ES1 ops surface)
+// ---------------------------------------------------------------------------
+
+/** Lifecycle of a dead-lettered event. A `discarded`/`replayed` letter is terminal. */
+export type DeadLetterStatus = "open" | "replayed" | "discarded";
+
+/**
+ * A dead-lettered event as seen at the API boundary (events-worker
+ * `toPublicDeadLetter`): the internal org UUID is projected to its public
+ * `org_<hex>` form and every timestamp is an ISO-8601 string. Carries the lane
+ * that failed, the source event id, the failure reason, and the attempt count.
+ */
+export interface PublicDeadLetter {
+  id: string;
+  orgId: string;
+  laneKey: string;
+  eventId: string;
+  reason: string;
+  attempts: number;
+  status: DeadLetterStatus;
+  firstFailedAt: string;
+  lastFailedAt: string;
+  createdAt: string;
+}
+
+export interface ListDeadLettersResponse {
+  data: { deadLetters: PublicDeadLetter[] };
+  meta: { requestId: string; cursor: string | null };
+}
+
+export interface ReplayDeadLetterResponse {
+  data: { deadLetter: PublicDeadLetter };
+  meta: { requestId: string };
+}

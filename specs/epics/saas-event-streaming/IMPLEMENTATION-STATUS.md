@@ -13,8 +13,8 @@ eventing stack (events/notifications/webhooks/integrations workers).
 | ES3 — Channels: provider seam + Slack incoming webhook + async retry | ✅ Shipped (#338) |
 | ES4 — Correlation & dedup (event groups) | ✅ Shipped (#339) |
 | ES5a — Custom event ingest + explorer read API | ✅ Shipped (#345) |
-| ES5b — SDK + CLI + custom-event grouping + metering | In review |
-| ES6 — Console: Events explorer + rules/channels UX | 🗓️ Planned |
+| ES5b — SDK + CLI + custom-event grouping + metering | ✅ Shipped (#349) |
+| ES6 — Console: Events explorer + rules/channels UX | In review |
 | ES7 — Scale & lifecycle (retention, fairness, storm breaker) | 🗓️ Planned |
 
 ## Notes
@@ -143,5 +143,26 @@ eventing stack (events/notifications/webhooks/integrations workers).
   idempotent-replay path returns before recording, so replays never
   double-count. New contract types: event-group + notification-rule/channel
   request/response shapes. No migrations.
+- 2026-07-05: ES5b shipped (#349) — SDK + CLI + custom-event grouping + metering.
+- 2026-07-05: ES6 in review — console to Datadog standard, in
+  `apps/web-console-next` on top of the ES5b SDK clients (no backend changes
+  beyond an additive `DeadLettersClient` the SDK was missing). Four surfaces:
+  (1) an **Events explorer** (`/orgs/{slug}/events`) — URL-driven faceted
+  filters, keyset pagination, a 5s live-poll toggle that prepends new rows, a
+  per-row detail sheet (envelope + pretty payload), a Correlation Stories tab
+  over `eventGroups` with lazy member timelines, and a "create rule from this
+  event" deep-link; (2) a **rules** surface (`settings/notifications/rules`) —
+  list + catalog-fed builder (type glob, severity floor, attribute-filter rows,
+  email/slack target picker, throttle) + test-fire preview; (3) a **channels**
+  surface — Slack paste → test-send → verified badge, the webhook URL never
+  rendered; (4) an admin-gated **dead-letter** ops view — list + replay. Plus
+  nav/settings-nav/Cmd-K entries and `qk` query keys. Documented product
+  limits from the current read APIs: severity/category are client-side filters
+  (the explorer query API takes only type/source/project/environment/time),
+  rule targets are set at create time (`UpdateNotificationRuleRequest` has no
+  targets field), and there is no recent-firings panel, DL discard, or channel
+  last-delivery health column (no read API yet — candidates for a later pass).
+  Console typecheck/lint clean, console tests 479, sdk 198, `orun plan` no
+  cycle. No migrations.
 - Decision gates D1–D4 are open with defaults recommended; none block the
   spine (see `risks-and-open-questions.md`).

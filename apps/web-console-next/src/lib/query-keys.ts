@@ -29,6 +29,14 @@ export const qk = {
   webhookEndpoint: (orgId: string, endpointId: string) =>
     ["webhookEndpoint", orgId, endpointId] as const,
   notificationPrefs: (orgId: string) => ["notificationPrefs", orgId] as const,
+  // saas-event-streaming ES6 — console surfaces for the event bus.
+  events: (orgId: string, filterKey: string) => ["events", orgId, filterKey] as const,
+  event: (orgId: string, eventId: string) => ["event", orgId, eventId] as const,
+  eventGroups: (orgId: string, status: string) => ["eventGroups", orgId, status] as const,
+  eventGroup: (orgId: string, groupId: string) => ["eventGroup", orgId, groupId] as const,
+  notificationRules: (orgId: string) => ["notificationRules", orgId] as const,
+  notificationChannels: (orgId: string) => ["notificationChannels", orgId] as const,
+  deadLetters: (orgId: string, status: string) => ["deadLetters", orgId, status] as const,
   integrations: (orgId: string) => ["integrations", orgId] as const,
   connectionGrants: (orgId: string, connectionId: string) =>
     ["connectionGrants", orgId, connectionId] as const,
