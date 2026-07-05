@@ -161,6 +161,13 @@ export interface CreateRunJobInput {
   deps?: string[];
 }
 
+/** One plan-DAG job for the bulk (single-statement) run_jobs insert. */
+export interface RunJobSeed {
+  jobId: string;
+  component?: string | null;
+  deps?: string[];
+}
+
 // ── Objects (CAS index) ─────────────────────────────────────
 
 export type StateObjectKind =
@@ -633,6 +640,19 @@ export interface StateRepository {
 
   // Run jobs
   createRunJob(input: CreateRunJobInput): Promise<StateResult<RunJob>>;
+  /**
+   * Seed the plan DAG in ONE statement (conflict-ignored on (run_id, job_id)).
+   * Returns the number of rows actually inserted. One round-trip regardless of
+   * plan width — a 98-job DAG must not be 98 sequential inserts: that window is
+   * what let a dying createRun leave a partial read model, and per-row healing
+   * under a replay thundering-herd saturates the pool and times clients out.
+   */
+  createRunJobsBulk(
+    orgId: Uuid,
+    projectId: Uuid,
+    runId: Uuid,
+    jobs: RunJobSeed[],
+  ): Promise<StateResult<number>>;
   getRunJob(orgId: Uuid, projectId: Uuid, runId: Uuid, jobId: string): Promise<StateResult<RunJob>>;
   listRunJobs(orgId: Uuid, projectId: Uuid, runId: Uuid): Promise<StateResult<RunJob[]>>;
   /** Frontier: queued jobs whose deps are all terminal-success. */

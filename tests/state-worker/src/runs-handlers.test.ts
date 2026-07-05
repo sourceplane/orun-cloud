@@ -374,8 +374,11 @@ describe("POST …/state/runs — create", () => {
       const { executor, queries } = replayExecutor(); // COUNTS: 1 seen < 2 planned
       const res = await handleCreateRun(replayRequest(JOBS), env, "req_1", ACTOR, asUuid(ORG), asUuid(PROJECT), { executor });
       expect(res.status).toBe(200);
+      // ONE conflict-ignored statement carrying the full plan — never per-row inserts.
       const inserts = queries.filter((q) => q.text.includes("INSERT INTO state.run_jobs"));
-      expect(inserts.map((q) => q.params[4])).toEqual(["build", "deploy"]); // conflict-ignored, full plan
+      expect(inserts).toHaveLength(1);
+      const seeded = JSON.parse(inserts[0]!.params[3] as string) as { job_id: string }[];
+      expect(seeded.map((j) => j.job_id)).toEqual(["build", "deploy"]);
       // Counts are re-read after the heal so the replay response reflects the healed rows.
       expect(queries.filter((q) => q.text.includes("COUNT(*) FILTER"))).toHaveLength(2);
     });
@@ -397,7 +400,9 @@ describe("POST …/state/runs — create", () => {
       const res = await handleCreateRun(replayRequest(JOBS), createEnv(), "req_1", ACTOR, asUuid(ORG), asUuid(PROJECT), { executor });
       expect(res.status).toBe(200);
       const inserts = queries.filter((q) => q.text.includes("INSERT INTO state.run_jobs"));
-      expect(inserts.map((q) => q.params[4])).toEqual(["build", "deploy"]);
+      expect(inserts).toHaveLength(1);
+      const seeded = JSON.parse(inserts[0]!.params[3] as string) as { job_id: string }[];
+      expect(seeded.map((j) => j.job_id)).toEqual(["build", "deploy"]);
     });
 
     it("skips the heal when the replay body carries no jobs (nothing safe to seed from)", async () => {

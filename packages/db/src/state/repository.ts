@@ -9,6 +9,7 @@ import type {
   CatalogHead,
   CreateRunInput,
   CreateRunJobInput,
+  RunJobSeed,
   CreateRunOutcome,
   CreateWorkspaceLinkInput,
   CursorPosition,
@@ -530,6 +531,48 @@ export function createStateRepository(executor: SqlExecutor): StateRepository {
           return { ok: false, error: { kind: "conflict", entity: "run_job" } };
         }
         return safeError("Failed to create run job");
+      }
+    },
+
+    async createRunJobsBulk(
+      orgId: Uuid,
+      projectId: Uuid,
+      runId: Uuid,
+      jobs: RunJobSeed[],
+    ): Promise<StateResult<number>> {
+      if (jobs.length === 0) return { ok: true, value: 0 };
+      try {
+        // One statement for the whole DAG. The jobs travel as ONE jsonb param
+        // (::text::jsonb for the same driver reason as createRunJob) and unpack
+        // via jsonb_to_recordset; ON CONFLICT DO NOTHING makes it idempotent
+        // under replays and the create/heal race — re-inserting an existing
+        // (run_id, job_id) is a no-op, never an error.
+        const result = await executor.execute(
+          `INSERT INTO state.run_jobs
+             (id, org_id, project_id, run_id, job_id, component, deps, status,
+              attempt, created_at, updated_at)
+           SELECT gen_random_uuid(), $1, $2, $3, j.job_id, j.component,
+                  COALESCE(j.deps, '[]'::jsonb), 'queued', 1, now(), now()
+             FROM jsonb_to_recordset($4::text::jsonb)
+                    AS j(job_id TEXT, component TEXT, deps JSONB)
+           ON CONFLICT (run_id, job_id) DO NOTHING
+           RETURNING job_id`,
+          [
+            orgId,
+            projectId,
+            runId,
+            JSON.stringify(
+              jobs.map((j) => ({
+                job_id: j.jobId,
+                component: j.component ?? null,
+                deps: j.deps ?? [],
+              })),
+            ),
+          ],
+        );
+        return { ok: true, value: result.rows.length };
+      } catch {
+        return safeError("Failed to seed run jobs");
       }
     },
 
