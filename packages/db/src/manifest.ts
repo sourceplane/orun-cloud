@@ -579,5 +579,14 @@ export const manifest: MigrationManifest = {
       description:
         "Event grouping activation + group-aware notification ledger (saas-event-streaming ES4) — seeds the 'grouping' subscriber lane (active; the events-worker grouping handler renders catalog dedup keys and maintains events.event_groups as an open-story-per-key read-model) and creates events.rule_group_notifications, the notifications lane's own (rule_id, group_key) high-water-severity ledger that fires a rule on a group's first matching event and on severity escalation but not on every member (one story, not five pings). The ledger is owned solely by the notifications lane, so group-aware firing is race-free regardless of lane dispatch order. Additive + idempotent (ON CONFLICT DO NOTHING seed, CREATE TABLE IF NOT EXISTS); same-context FK only.",
     },
+    {
+      id: "640_event_lifecycle",
+      context: "events",
+      path: "640_event_lifecycle/up.sql",
+      checksum:
+        "1e5ad371b35b2b8b1d38ad7ccc92ed97ad798b801b91197c27ae8cef75e9b5a3",
+      description:
+        "Event lifecycle — retention-sweep support + per-rule storm breaker (saas-event-streaming ES7). Adds storm-breaker state to events.notification_rules (suppressed_at/suppressed_reason — the auto-suppression overlay on top of the operator status column, a rule fires only when status='enabled' AND suppressed_at IS NULL, the read maps suppressed_at back onto the 'suppressed' status; saturated_window_count/last_saturated_at — the consecutive-saturation bookkeeping the throttle admission path maintains, reset on admit, incremented on deny, tripping auto-suppression past a threshold, cleared after a cooldown). Adds a partial notification_rules_suppressed_idx for the cooldown re-enable scan + admin storm audit, and two retention cutoff-scan partial indexes not already covered by the ES0/ES4 indexes: dead_letters_terminal_updated_idx (terminal-status age scan for the fixed-window dead-letter sweep) and event_groups_closed_at_idx (closed_at age scan for the closed-group sweep). event_log / audit_entries cutoff deletes reuse the existing (org_id, occurred_at) indexes; the design §10 security-category floor is enforced in the delete predicate, not the schema. Additive + idempotent (ADD COLUMN IF NOT EXISTS / CREATE INDEX IF NOT EXISTS, no DROP); same-context references only.",
+    },
   ],
 };

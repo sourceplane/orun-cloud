@@ -35,6 +35,7 @@ export function buildLaneHandlers(
       rulesRepo: deps.rulesRepo,
       notificationsEnv: env.NOTIFICATIONS_WORKER ? { NOTIFICATIONS_WORKER: env.NOTIFICATIONS_WORKER } : {},
       requestId: deps.requestId,
+      eventsRepo: deps.eventsRepo,
     }),
   ];
 }

@@ -249,4 +249,38 @@ export interface EventsRepository {
     afterEventId: string | null,
     limit: number,
   ): Promise<EventsResult<StoredEvent[]>>;
+
+  // -------------------------------------------------------------------------
+  // Retention sweep (saas-event-streaming ES7). Each delete is a single
+  // batched keyset scan (ctid-in-subquery with a LIMIT) returning the number
+  // of rows removed, so the caller loops until a batch drains or a per-tick cap
+  // is hit. Bounded work per call regardless of backlog.
+  // -------------------------------------------------------------------------
+  /**
+   * Delete up to `limit` `events.event_log` rows for the org with
+   * `occurred_at < cutoffIso`, EXCEPT rows whose audit projection is
+   * `category = 'security'` — the design §10 security floor keeps the raw log
+   * behind a retained security audit (and keeps the audit_entries FK valid).
+   * Returns the number of rows deleted.
+   */
+  deleteExpiredEvents(orgId: string, cutoffIso: string, limit: number): Promise<EventsResult<number>>;
+  /**
+   * Delete up to `limit` `events.audit_entries` rows for the org with
+   * `occurred_at < cutoffIso` EXCEPT `category = 'security'` rows — the design
+   * §10 compliance floor: security audit records are retained regardless of
+   * plan age. Returns the number of rows deleted.
+   */
+  deleteExpiredAuditEntries(orgId: string, cutoffIso: string, limit: number): Promise<EventsResult<number>>;
+  /**
+   * Delete up to `limit` terminal-status (`replayed`/`discarded`) dead letters
+   * across ALL orgs whose `updated_at < cutoffIso` — the fixed platform-window
+   * dead-letter sweep. Open dead letters are never aged out. Returns the count.
+   */
+  deleteExpiredDeadLetters(cutoffIso: string, limit: number): Promise<EventsResult<number>>;
+  /**
+   * Delete up to `limit` closed `events.event_groups` across ALL orgs whose
+   * `closed_at < cutoffIso` — the fixed platform-window closed-group sweep.
+   * Members cascade via the `event_group_members` FK. Returns the count.
+   */
+  deleteClosedGroupsBefore(cutoffIso: string, limit: number): Promise<EventsResult<number>>;
 }

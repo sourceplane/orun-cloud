@@ -35,6 +35,7 @@ export type {
   RuleFilterOp,
   RuleAttributeFilter,
   StoredNotificationRule,
+  ThrottleAdmission,
   CreateNotificationRuleInput,
   UpdateNotificationRulePatch,
   StoredRuleTarget,
@@ -54,3 +55,12 @@ export type {
 } from "./groups.js";
 
 export { createEventGroupsRepository } from "./groups.js";
+
+export type {
+  LaneHealthRow,
+  DeadLetterCountRow,
+  SuppressedRuleRow,
+  EventsAdminRepository,
+} from "./admin.js";
+
+export { createEventsAdminRepository } from "./admin.js";

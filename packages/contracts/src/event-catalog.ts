@@ -241,6 +241,17 @@ export const EVENT_CATALOG: Readonly<Record<string, CatalogEntry>> = Object.from
   entry({ type: "notification_rule.created", version: 1, category: "activity", severity: "info", title: "Notification rule {subject.name} created", audit: true }),
   entry({ type: "notification_rule.updated", version: 1, category: "activity", severity: "info", title: "Notification rule {subject.name} updated", audit: true }),
   entry({ type: "notification_rule.deleted", version: 1, category: "activity", severity: "notice", title: "Notification rule {subject.name} deleted", audit: true }),
+  // The storm-breaker suppression event (ES7). Category `system`: it is the
+  // pipeline monitoring itself (like the event.* / dead_letter.* lifecycle
+  // events), not a tenant activity record. Lane-suppressed by the
+  // `notification_rule.` guard so a suppression cannot itself trigger rule
+  // matching / more suppression.
+  entry({ type: "notification_rule.suppressed", version: 1, category: "system", severity: "warning", title: "Notification rule {payload.ruleId} auto-suppressed after storm", audit: true }),
+
+  // --- scale & lifecycle (events-worker; emitted from ES7) ------------------
+  // The lane-lag alert: the pipeline routes its own health onto the log. Uses
+  // the `event.` namespace so it is lane-suppressed and never recurses.
+  entry({ type: "event.lane_lagging", version: 1, category: "system", severity: "warning", title: "Lane {payload.laneKey} lagging {payload.lagSeconds}s behind budget", audit: true }),
 
   // --- notification channels (notifications-worker; emitted from ES3) -------
   entry({ type: "notification_channel.created", version: 1, category: "activity", severity: "notice", title: "Notification channel {subject.name} created", audit: true }),

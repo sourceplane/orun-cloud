@@ -631,3 +631,72 @@ describe("events repository: getEventById", () => {
     }
   });
 });
+
+describe("retention sweep deletes (ES7)", () => {
+  const CUTOFF = "2026-01-01T00:00:00.000Z";
+
+  it("deleteExpiredEvents batches by ctid and enforces the §10 security floor", async () => {
+    const { executor, queries } = createFakeExecutor({ rowCount: 3 });
+    const repo = createEventsRepository(executor);
+    const result = await repo.deleteExpiredEvents("org-001", CUTOFF, 1000);
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.value).toBe(3);
+    const text = queries[0]!.text;
+    expect(text).toContain("DELETE FROM events.event_log");
+    expect(text).toContain("el.occurred_at < $2");
+    expect(text).toContain("NOT EXISTS");
+    expect(text).toContain("a.category = 'security'");
+    // Group-membership guard: never delete an event still referenced by a
+    // group member (the FK has no ON DELETE CASCADE).
+    expect(text).toContain("events.event_group_members m");
+    expect(text).toContain("LIMIT $3");
+    expect(queries[0]!.params).toEqual(["org-001", CUTOFF, 1000]);
+  });
+
+  it("deleteExpiredAuditEntries keeps security rows and deletes the rest past the window", async () => {
+    const { executor, queries } = createFakeExecutor({ rowCount: 5 });
+    const repo = createEventsRepository(executor);
+    const result = await repo.deleteExpiredAuditEntries("org-001", CUTOFF, 1000);
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.value).toBe(5);
+    const text = queries[0]!.text;
+    expect(text).toContain("DELETE FROM events.audit_entries");
+    // The critical correctness property: security-category rows are the floor.
+    expect(text).toContain("ae.category <> 'security'");
+    expect(text).toContain("ae.occurred_at < $2");
+    expect(queries[0]!.params).toEqual(["org-001", CUTOFF, 1000]);
+  });
+
+  it("deleteExpiredDeadLetters purges terminal rows past the fixed window (all orgs)", async () => {
+    const { executor, queries } = createFakeExecutor({ rowCount: 2 });
+    const repo = createEventsRepository(executor);
+    const result = await repo.deleteExpiredDeadLetters(CUTOFF, 500);
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.value).toBe(2);
+    const text = queries[0]!.text;
+    expect(text).toContain("DELETE FROM events.dead_letters");
+    expect(text).toContain("dl.status IN ('replayed', 'discarded')");
+    expect(text).toContain("dl.updated_at < $1");
+    expect(queries[0]!.params).toEqual([CUTOFF, 500]);
+  });
+
+  it("deleteClosedGroupsBefore purges closed groups past the fixed window", async () => {
+    const { executor, queries } = createFakeExecutor({ rowCount: 1 });
+    const repo = createEventsRepository(executor);
+    const result = await repo.deleteClosedGroupsBefore(CUTOFF, 500);
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.value).toBe(1);
+    const text = queries[0]!.text;
+    expect(text).toContain("DELETE FROM events.event_groups");
+    expect(text).toContain("g.status = 'closed'");
+    expect(text).toContain("g.closed_at < $1");
+    expect(queries[0]!.params).toEqual([CUTOFF, 500]);
+  });
+
+  it("surfaces a safe error when a delete throws", async () => {
+    const { executor } = createFakeExecutor({ error: new Error("connection lost") });
+    const repo = createEventsRepository(executor);
+    const result = await repo.deleteExpiredAuditEntries("org-001", CUTOFF, 1000);
+    expect(result.ok).toBe(false);
+  });
+});

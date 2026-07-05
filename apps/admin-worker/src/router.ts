@@ -6,6 +6,11 @@ import { handleRecordSupportAction } from "./handlers/record-support-action.js";
 import { handleListSupportActions } from "./handlers/list-support-actions.js";
 import { handleListEntitlementDecisions } from "./handlers/list-entitlement-decisions.js";
 import {
+  handleLaneHealth,
+  handleDeadLetterCounts,
+  handleRuleStorms,
+} from "./handlers/events-ops.js";
+import {
   handleLookupOrganizationForSupport,
   handleLookupUserForSupport,
 } from "./handlers/lookup-support.js";
@@ -89,6 +94,17 @@ export async function route(request: Request, env: Env): Promise<Response> {
     if (method === "GET" && decisionsMatch) {
       const ctx = resolveSupportContext(request);
       return await handleListEntitlementDecisions(env, requestId, ctx, decisionsMatch[1]!, url);
+    }
+
+    // Cross-org events scale/lifecycle diagnostics (saas-event-streaming ES7).
+    if (method === "GET" && path === "/v1/internal/support/events/lane-health") {
+      return await handleLaneHealth(env, requestId, resolveSupportContext(request), url);
+    }
+    if (method === "GET" && path === "/v1/internal/support/events/dead-letter-counts") {
+      return await handleDeadLetterCounts(env, requestId, resolveSupportContext(request), url);
+    }
+    if (method === "GET" && path === "/v1/internal/support/events/rule-storms") {
+      return await handleRuleStorms(env, requestId, resolveSupportContext(request), url);
     }
 
     // Read-only diagnostic lookup: organization.

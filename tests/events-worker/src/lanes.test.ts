@@ -193,8 +193,71 @@ function handler(laneKey: string, impl?: (event: StoredEvent) => Promise<void>):
 describe("lane dispatcher", () => {
   it("suppresses meta namespaces", () => {
     expect(isLaneSuppressedEvent("event.delivery_failed")).toBe(true);
+    expect(isLaneSuppressedEvent("event.lane_lagging")).toBe(true);
     expect(isLaneSuppressedEvent("dead_letter.created")).toBe(true);
+    // ES7: notification_rule.* (incl. the storm-breaker suppression event) must
+    // not re-enter a lane and trigger more matching / more suppression.
+    expect(isLaneSuppressedEvent("notification_rule.suppressed")).toBe(true);
+    expect(isLaneSuppressedEvent("notification_rule.created")).toBe(true);
     expect(isLaneSuppressedEvent("scm.push")).toBe(false);
+  });
+
+  it("emits one event.lane_lagging when an org's lag exceeds the budget", async () => {
+    const { repo: streamsRepo } = fakeStreamsRepo({ lanes: [lane()] });
+    const { repo: eventsRepo, emitted } = fakeEventsRepo({ events: [storedEvent()] });
+    const h = handler("notifications");
+    const summary = await runLaneDispatch({
+      streamsRepo,
+      eventsRepo,
+      handlers: [h],
+      requestId: REQUEST_ID,
+      scheduledTimeMs: NOW.getTime() + 1_000_000, // ~1000s after the head event
+    });
+    expect(emitted).toEqual(["event.lane_lagging"]);
+    expect(summary.laggingOrgs).toBe(1);
+    expect(summary.maxLagSeconds).toBeGreaterThan(900);
+    // The event still got processed — lag alerting is a side channel.
+    expect(h.handled).toEqual(["evt-1"]);
+  });
+
+  it("emits no lag alert when lag is within budget", async () => {
+    const { repo: streamsRepo } = fakeStreamsRepo({ lanes: [lane()] });
+    const { repo: eventsRepo, emitted } = fakeEventsRepo({ events: [storedEvent()] });
+    const h = handler("notifications");
+    const summary = await runLaneDispatch({
+      streamsRepo,
+      eventsRepo,
+      handlers: [h],
+      requestId: REQUEST_ID,
+      scheduledTimeMs: NOW.getTime() + 100_000, // 100s < 900s budget
+    });
+    expect(emitted).toEqual([]);
+    expect(summary.laggingOrgs).toBe(0);
+  });
+
+  it("caps orgs per lane per tick and reports the deferred remainder (no silent truncation)", async () => {
+    const many = Array.from({ length: 250 }, (_, i) => `org-${i.toString().padStart(3, "0")}`);
+    const { repo: streamsRepo } = fakeStreamsRepo({ lanes: [lane()] });
+    const { repo: eventsRepo } = fakeEventsRepo({ events: [] });
+    const h: LaneHandler & { handled: string[] } = {
+      laneKey: "notifications",
+      handled: [],
+      async discoverOrgIds() {
+        return many;
+      },
+      async handleEvent() {
+        /* no events → never called */
+      },
+    };
+    const summary = await runLaneDispatch({
+      streamsRepo,
+      eventsRepo,
+      handlers: [h],
+      requestId: REQUEST_ID,
+      scheduledTimeMs: 60_000,
+    });
+    expect(summary.orgsScanned).toBe(200);
+    expect(summary.orgsDeferred).toBe(50);
   });
 
   it("runs only active lanes that have a registered handler", async () => {
