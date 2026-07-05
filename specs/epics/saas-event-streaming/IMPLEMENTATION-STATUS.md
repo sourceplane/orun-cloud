@@ -9,8 +9,8 @@ eventing stack (events/notifications/webhooks/integrations workers).
 |----|--------|
 | ES0 — Foundation (catalog, `580_event_streams_foundation`, repo layer, notifications emit fix, spec 09/14 amendments) | ✅ Shipped (#325) |
 | ES1 — Router: shared lanes + dead letters + webhooks cutover | ✅ Shipped (#331) |
-| ES2 — Notification rules | In review |
-| ES3 — Channels: provider seam + Slack incoming webhook + async retry | 🗓️ Planned |
+| ES2 — Notification rules | ✅ Shipped (#334) |
+| ES3 — Channels: provider seam + Slack incoming webhook + async retry | In review |
 | ES4 — Correlation & dedup (event groups) | 🗓️ Planned |
 | ES5 — Custom event ingest + SDK/CLI | 🗓️ Planned |
 | ES6 — Console: Events explorer + rules/channels UX | 🗓️ Planned |
@@ -53,5 +53,22 @@ eventing stack (events/notifications/webhooks/integrations workers).
   all tiers, limit.notification_rules 10/50/200/unlimited (D3 defaults);
   events-worker added to billing's internal-caller allow-list; notifications
   lane flipped active by 600_notification_rule_throttle.
+- 2026-07-05: ES2 shipped (#334) — rules engine live on the router; email
+  targets deliver; slack_channel/webhook_endpoint schema-live but CRUD-rejected.
+  Rebased through a parallel policy-engine change (owner action count).
+- 2026-07-05: ES3 in review — channel-provider seam in notifications-worker
+  with the Slack incoming-webhook provider (Block Kit, D1 default: no OAuth
+  app, credential-free). Migration `610_notification_channels` creates the
+  encrypted-config channel table (config_ciphertext = AES-GCM envelope, never
+  returned on CRUD reads — R4), lifts the channel CHECK to ('email','slack')
+  on the three channel-bearing tables, and adds next_retry_at + attempt_count
+  for the async retry cron (30s·4^(n-1), 5 attempts). Channels CRUD + test-send
+  on notifications-worker (org-scoped, policy organization.notification_channel
+  .read/write, feature.notifications.slack + limit.notification_channels
+  entitlements) behind a new api-edge facade; notifications-worker gained
+  membership/policy/billing bindings (no dep cycle — verified via orun plan).
+  slack_channel rule targets unblocked end-to-end; webhook_endpoint still
+  deferred. Slack URLs are irrecoverable: write-only ciphertext, network
+  errors reduced to a fixed non-secret reason.
 - Decision gates D1–D4 are open with defaults recommended; none block the
   spine (see `risks-and-open-questions.md`).

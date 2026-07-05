@@ -97,7 +97,7 @@ interface ValidatedRuleBody {
   attributeFilters: RuleAttributeFilter[] | null;
   throttleWindowSeconds: number;
   throttleMax: number;
-  targets: Array<{ kind: "email"; ref: string }>;
+  targets: Array<{ kind: "email" | "slack_channel"; ref: string }>;
 }
 
 type RuleBodyResult =
@@ -249,15 +249,25 @@ function validateRuleBody(body: unknown, partial: boolean): RuleBodyResult {
           continue;
         }
         const t = raw as Record<string, unknown>;
-        if (t.kind === "slack_channel" || t.kind === "webhook_endpoint") {
-          // Schema-live, delivery-deferred: slack_channel unlocks with the
-          // ES3 channel seam; webhook_endpoint moved to ES3 with it (reusing
-          // B5's attempts table would break its subscription invariants).
-          errors[`targets.${i}.kind`] = [`Target kind "${String(t.kind)}" is not available yet`];
+        if (t.kind === "webhook_endpoint") {
+          // Deferred: reusing B5's webhook_delivery_attempts (NOT NULL
+          // subscription_id + subscription-keyed replay) for subscription-less
+          // rule deliveries would invade the shipped delivery plane. It becomes
+          // a channel-kind delivery in a later milestone.
+          errors[`targets.${i}.kind`] = ['Target kind "webhook_endpoint" is not available yet'];
+          continue;
+        }
+        if (t.kind === "slack_channel") {
+          // ES3: ref is a notifications-worker channel public id (chan_<hex>).
+          if (typeof t.ref !== "string" || !/^chan_[0-9a-f]{32}$/.test(t.ref)) {
+            errors[`targets.${i}.ref`] = ["Must be a notification channel id (chan_...)"];
+            continue;
+          }
+          value.targets.push({ kind: "slack_channel", ref: t.ref });
           continue;
         }
         if (t.kind !== "email") {
-          errors[`targets.${i}.kind`] = ["Must be email"];
+          errors[`targets.${i}.kind`] = ["Must be email or slack_channel"];
           continue;
         }
         if (typeof t.ref !== "string" || !EMAIL_RE.test(t.ref) || t.ref.length > 320) {

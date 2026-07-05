@@ -76,6 +76,8 @@ function createFakeRepo(): NotificationsRepository & { _store: FakeStore } {
         sentAt: null,
         failedAt: null,
         updatedAt: input.queuedAt,
+        nextRetryAt: null,
+        attemptCount: 0,
       };
       store.notifications.set(row.id, row);
       return { ok: true, value: row };
@@ -103,6 +105,8 @@ function createFakeRepo(): NotificationsRepository & { _store: FakeStore } {
         sentAt: input.sentAt ?? row.sentAt,
         failedAt: input.failedAt ?? row.failedAt,
         updatedAt: input.updatedAt,
+        nextRetryAt: input.nextRetryAt !== undefined ? input.nextRetryAt : row.nextRetryAt,
+        attemptCount: input.attemptCount !== undefined ? input.attemptCount : row.attemptCount,
       };
       store.notifications.set(row.id, updated);
       return { ok: true, value: updated };
@@ -164,6 +168,12 @@ function createFakeRepo(): NotificationsRepository & { _store: FakeStore } {
       };
       store.suppressions.set(`${row.orgId}|${row.channel}|${row.address}`, row);
       return { ok: true, value: row };
+    },
+    async listRetryableNotifications(limit: number) {
+      const due = [...store.notifications.values()].filter(
+        (n) => n.status === "failed" && n.nextRetryAt !== null && n.nextRetryAt.getTime() <= Date.now(),
+      );
+      return { ok: true, value: due.slice(0, limit) };
     },
   };
   return repo;
@@ -470,6 +480,8 @@ describe("toDeliveryStatus", () => {
       sentAt: fixedNow,
       failedAt: null,
       updatedAt: fixedNow,
+      nextRetryAt: null,
+      attemptCount: 1,
     };
     const status = toDeliveryStatus(row, []);
     expect(status.id.startsWith("ntf_")).toBe(true);

@@ -8,6 +8,13 @@
   "compatibility_flags": ["nodejs_compat"],
   "main": "src/index.ts",
   "minify": false,
+  // Async retry drain (saas-event-streaming ES3): minutely, matching the
+  // webhooks/events drains. Also: SECRET_ENCRYPTION_KEY (channel credential
+  // encryption) is set out-of-band via `wrangler secret put
+  // SECRET_ENCRYPTION_KEY --env <env>` on stage/prod.
+  "triggers": {
+    "crons": ["* * * * *"]
+  },
   "vars": {
     "ENVIRONMENT": "local",
     "NOTIFICATIONS_PROVIDER": "local-debug",
@@ -48,6 +55,20 @@
           "binding": "PLATFORM_DB",
           "id": "@@wiring(cloudflare-hyperdrive/stage:hyperdrive_id)@@"
         }
+      ],
+      "services": [
+        {
+          "binding": "MEMBERSHIP_WORKER",
+          "service": "membership-worker-stage"
+        },
+        {
+          "binding": "POLICY_WORKER",
+          "service": "policy-worker-stage"
+        },
+        {
+          "binding": "BILLING_WORKER",
+          "service": "billing-worker-stage"
+        }
       ]
     },
     "prod": {
@@ -69,6 +90,20 @@
         {
           "binding": "PLATFORM_DB",
           "id": "@@wiring(cloudflare-hyperdrive/prod:hyperdrive_id)@@"
+        }
+      ],
+      "services": [
+        {
+          "binding": "MEMBERSHIP_WORKER",
+          "service": "membership-worker-prod"
+        },
+        {
+          "binding": "POLICY_WORKER",
+          "service": "policy-worker-prod"
+        },
+        {
+          "binding": "BILLING_WORKER",
+          "service": "billing-worker-prod"
         }
       ]
     }
