@@ -616,7 +616,7 @@ describe("POST …/runs/{runId}/logs/{jobId} — append with lease check", () =>
     expect(usage.map((p) => p[5])).toContain("state.log_bytes");
   });
 
-  it("409 lease_lost when the runner does not hold a live lease", async () => {
+  it("409 lease_lost when the row names a DIFFERENT runner (takeover fence)", async () => {
     const { executor } = fakeExecutor((text) => {
       if (text.includes("FROM state.runs")) return [runRow()];
       if (text.includes("FROM state.run_jobs")) return [jobRow({ runner_id: "other-runner" })];
@@ -633,20 +633,58 @@ describe("POST …/runs/{runId}/logs/{jobId} — append with lease check", () =>
     expect(body.error.code).toBe("lease_lost");
   });
 
-  it("409 lease_lost when the lease has expired", async () => {
-    const { executor } = fakeExecutor((text) => {
+  function acceptingExecutor(jobOver: Record<string, unknown>) {
+    return fakeExecutor((text) => {
       if (text.includes("FROM state.runs")) return [runRow()];
-      if (text.includes("FROM state.run_jobs")) return [jobRow({ lease_expires_at: new Date(Date.now() - 1000).toISOString() })];
+      if (text.includes("FROM state.run_jobs")) return [jobRow(jobOver)];
+      if (text.includes("SELECT * FROM state.log_chunks")) return [];
+      if (text.includes("INSERT INTO state.log_chunks")) return [logChunkRow(0)];
       return [];
     });
+  }
+
+  it("accepts a chunk while the claim is not yet projected (row still queued/unheld)", async () => {
+    // The row is an eventually-consistent projection: under a wide-DAG claim
+    // storm the per-verb projection lags, so a fast job's first chunk arrives
+    // while the row still reads queued with no holder. No foreign holder → no
+    // fence — rejecting here buffered real output that was later sealed out.
+    const { executor } = acceptingExecutor({ status: "queued", runner_id: null, lease_expires_at: null });
     const req = new Request("https://s/logs", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ runnerId: "runner-1", content: HELLO }),
     });
     const res = await handleAppendLog(req, createEnv(new FakeBucket()), "req_1", ACTOR, asUuid(ORG), asUuid(PROJECT), ULID, "build", { executor });
-    expect(res.status).toBe(409);
-    expect(((await res.json()) as { error: { code: string } }).error.code).toBe("lease_lost");
+    expect(res.status).toBe(200);
+  });
+
+  it("accepts the post-run drain after the job went terminal (fold clears the holder)", async () => {
+    // The CLI's logpipe drains buffered chunks at Close — after :complete. The
+    // projected terminal row has runner_id NULL (the fold clears holders on
+    // success), so a live-lease assertion would reject the drain forever and
+    // fail a green run with "state may be stale on the server".
+    const { executor } = acceptingExecutor({ status: "succeeded", runner_id: null, lease_expires_at: null });
+    const req = new Request("https://s/logs", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ runnerId: "runner-1", content: HELLO }),
+    });
+    const res = await handleAppendLog(req, createEnv(new FakeBucket()), "req_1", ACTOR, asUuid(ORG), asUuid(PROJECT), ULID, "build", { executor });
+    expect(res.status).toBe(200);
+  });
+
+  it("accepts a same-holder chunk after lease expiry (no takeover happened)", async () => {
+    // An expired lease with the SAME holder means nobody took the job over —
+    // the chunk is still the only real output stream. A takeover would stamp a
+    // new holder and trip the fence above.
+    const { executor } = acceptingExecutor({ lease_expires_at: new Date(Date.now() - 1000).toISOString() });
+    const req = new Request("https://s/logs", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ runnerId: "runner-1", content: HELLO }),
+    });
+    const res = await handleAppendLog(req, createEnv(new FakeBucket()), "req_1", ACTOR, asUuid(ORG), asUuid(PROJECT), ULID, "build", { executor });
+    expect(res.status).toBe(200);
   });
 });
 
