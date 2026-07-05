@@ -35,7 +35,7 @@ export interface AsyncState<T> {
 export function useApiQuery<T>(
   key: QueryKey,
   fn: () => Promise<ApiResult<T>>,
-  opts?: { enabled?: boolean },
+  opts?: { enabled?: boolean; staleTime?: number },
 ): AsyncState<T> {
   const qc = useQueryClient();
   const enabled = opts?.enabled ?? true;
@@ -47,6 +47,9 @@ export function useApiQuery<T>(
       return r.data;
     },
     enabled,
+    // Content-addressed reads (doc bodies by digest) are immutable — callers
+    // pass Infinity so a rendered doc never refetches (CD4).
+    ...(opts?.staleTime !== undefined ? { staleTime: opts.staleTime } : {}),
   });
 
   return {
