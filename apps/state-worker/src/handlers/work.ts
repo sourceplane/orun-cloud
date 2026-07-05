@@ -186,15 +186,7 @@ export async function handleListWorkEvents(
   const { repo, owned } = repoOf(env, deps);
   try {
     const events = await repo.listEvents({ orgId }, Number.isFinite(from) && from > 0 ? from : 0);
-    const views: WorkEventView[] = events.map((e: CoordinationEvent) => ({
-      eventId: e.eventId ?? "",
-      subject: e.subject,
-      kind: e.kind,
-      actor: e.actor,
-      at: e.at,
-      payload: e.payload,
-      seq: e.seq,
-    }));
+    const views: WorkEventView[] = events.map((e: CoordinationEvent) => eventView(e));
     const payload: ListWorkEventsResponse = {
       events: views,
       seq: views.length ? views[views.length - 1]!.seq : from > 0 ? from : 0,
@@ -205,6 +197,112 @@ export async function handleListWorkEvents(
   } finally {
     await dispose(owned);
   }
+}
+
+// ── SSE (WP1b follow-up): push the coordination log over the same cursor ────
+//
+// The seam the console poll established is transport-agnostic: this endpoint
+// serves the SAME events, from the SAME `from` cursor, as `GET …/work/events`
+// — just framed as text/event-stream so a new event reaches open tabs in
+// ~pollMs instead of the client's poll interval. The stream is deliberately
+// BOUNDED (maxMs) — Workers-friendly — and every frame carries `id: <seq>`,
+// so a reconnecting client resumes exactly where it left off (Last-Event-ID
+// or ?from=). Mutations and verdicts are untouched: this is read-only fan-out
+// of the log, never a second write path.
+
+export interface WorkStreamConfig {
+  /** DB re-check interval while the stream is open. */
+  pollMs?: number;
+  /** Wall-clock bound; the client reconnects with its cursor after close. */
+  maxMs?: number;
+}
+
+const STREAM_DEFAULTS: Required<WorkStreamConfig> = { pollMs: 2_500, maxMs: 55_000 };
+
+function sseFrame(view: WorkEventView): string {
+  return `id: ${view.seq}\nevent: work\ndata: ${JSON.stringify(view)}\n\n`;
+}
+
+function eventView(e: CoordinationEvent): WorkEventView {
+  return {
+    eventId: e.eventId ?? "",
+    subject: e.subject,
+    kind: e.kind,
+    actor: e.actor,
+    at: e.at,
+    payload: e.payload,
+    seq: e.seq,
+  };
+}
+
+export async function handleStreamWorkEvents(
+  request: Request,
+  env: Env,
+  requestId: string,
+  actor: ActorContext,
+  orgId: Uuid,
+  deps?: WorkHandlerDeps & { stream?: WorkStreamConfig },
+): Promise<Response> {
+  const authz = await authorizeOrg(env, requestId, actor, orgId, WORK_POLICY_ACTIONS.WORK_READ);
+  if (!authz.ok) return authz.response;
+
+  const fromParam = Number(new URL(request.url).searchParams.get("from") ?? "0");
+  const lastEventId = Number(request.headers.get("last-event-id") ?? "0");
+  let cursor = Math.max(
+    Number.isFinite(fromParam) && fromParam > 0 ? fromParam : 0,
+    Number.isFinite(lastEventId) && lastEventId > 0 ? lastEventId : 0,
+  );
+
+  const cfg = { ...STREAM_DEFAULTS, ...(deps?.stream ?? {}) };
+  const { repo, owned } = repoOf(env, deps);
+  const encoder = new TextEncoder();
+  let cancelled = false;
+
+  const stream = new ReadableStream<Uint8Array>({
+    start(controller) {
+      const write = (s: string) => controller.enqueue(encoder.encode(s));
+      const run = async () => {
+        const startedAt = Date.now();
+        try {
+          write("retry: 3000\n\n");
+          for (;;) {
+            const events = await repo.listEvents({ orgId }, cursor);
+            for (const e of events) {
+              write(sseFrame(eventView(e)));
+              cursor = Math.max(cursor, e.seq);
+            }
+            if (events.length === 0) write(": ka\n\n"); // keep intermediaries from idling us out
+            if (cancelled || Date.now() - startedAt + cfg.pollMs > cfg.maxMs) break;
+            await new Promise((r) => setTimeout(r, cfg.pollMs));
+            if (cancelled) break;
+          }
+        } catch {
+          // Transient failure mid-stream: close; the client reconnects from
+          // its cursor and misses nothing (the log is the source of truth).
+        } finally {
+          await dispose(owned);
+          try {
+            controller.close();
+          } catch {
+            // already closed/cancelled
+          }
+        }
+      };
+      void run();
+    },
+    cancel() {
+      cancelled = true;
+    },
+  });
+
+  return new Response(stream, {
+    status: 200,
+    headers: {
+      "content-type": "text/event-stream",
+      "cache-control": "no-cache, no-transform",
+      "x-request-id": requestId,
+    },
+  });
 }
 
 // ── Mutations (verdicts ride the error envelope) ────────────────────────────

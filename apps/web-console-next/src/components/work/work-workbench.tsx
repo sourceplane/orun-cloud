@@ -31,31 +31,64 @@ export function WorkWorkbench({ orgId }: { orgId: string }) {
     wrap(async () => client.work.summary(orgId)),
   );
 
-  // WP1b live-ness: the coordination log IS the sync signal. Poll the
-  // events endpoint from the last seen cursor; any new event (another tab,
-  // a teammate, an agent via the MCP) triggers one summary refetch. The
-  // mutation/verdict seam stays transport-agnostic — SSE can replace this
-  // poll without touching anything else.
+  // WP1b live-ness: the coordination log IS the sync signal. Prefer the SSE
+  // tail (a new event reaches open tabs in ~seconds); each server leg is
+  // deliberately bounded, so the loop reconnects from its cursor when a leg
+  // ends, and when a leg FAILS it falls back to one 12s poll round before
+  // trying the stream again — liveness degrades, never disappears. Any new
+  // event (another tab, a teammate, an agent via the MCP) triggers one
+  // summary refetch. The mutation/verdict seam is untouched either way.
   const cursor = React.useRef(0);
   React.useEffect(() => {
     if (summary.data) cursor.current = Math.max(cursor.current, summary.data.coordSeq);
   }, [summary.data]);
   const reload = summary.reload;
   React.useEffect(() => {
-    const t = setInterval(() => {
-      void (async () => {
+    const aborter = new AbortController();
+    const sleep = (ms: number) =>
+      new Promise<void>((resolve) => {
+        const t = setTimeout(resolve, ms);
+        aborter.signal.addEventListener("abort", () => {
+          clearTimeout(t);
+          resolve();
+        });
+      });
+    // Trailing debounce: an import burst (dozens of events in one leg) folds
+    // into one summary refetch instead of one per event.
+    let reloadTimer: ReturnType<typeof setTimeout> | undefined;
+    const scheduleReload = () => {
+      if (reloadTimer !== undefined) clearTimeout(reloadTimer);
+      reloadTimer = setTimeout(() => {
+        if (!aborter.signal.aborted) reload();
+      }, 300);
+    };
+    void (async () => {
+      while (!aborter.signal.aborted) {
         try {
-          const page = await client.work.listEvents(orgId, cursor.current);
-          if (page.events.length > 0) {
-            cursor.current = page.seq;
-            reload();
+          for await (const e of client.work.streamEvents(orgId, cursor.current, { signal: aborter.signal })) {
+            cursor.current = Math.max(cursor.current, e.seq);
+            scheduleReload();
           }
+          await sleep(1_000); // bounded leg ended — reconnect from the cursor
         } catch {
-          // transient — the next tick retries
+          if (aborter.signal.aborted) return;
+          try {
+            const page = await client.work.listEvents(orgId, cursor.current);
+            if (page.events.length > 0) {
+              cursor.current = page.seq;
+              reload();
+            }
+          } catch {
+            // transient — the next round retries
+          }
+          await sleep(12_000);
         }
-      })();
-    }, 12_000);
-    return () => clearInterval(t);
+      }
+    })();
+    return () => {
+      if (reloadTimer !== undefined) clearTimeout(reloadTimer);
+      aborter.abort();
+    };
   }, [client, orgId, reload]);
 
   if (summary.loading) {

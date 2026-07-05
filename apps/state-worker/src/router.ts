@@ -51,6 +51,7 @@ import {
   handleCreateWorkSpec,
   handleCreateWorkTask,
   handleListWorkEvents,
+  handleStreamWorkEvents,
   handleIngestWorkObservation,
   handleWorkImport,
   handleWorkSummary,
@@ -182,6 +183,7 @@ const ORG_RUNS_RE = /^\/v1\/organizations\/([^/]+)\/state\/runs$/;
 // Workspace-scoped (no project segment); lifecycle is derived on every read.
 const ORG_WORK_RE = /^\/v1\/organizations\/([^/]+)\/work$/;
 const ORG_WORK_EVENTS_RE = /^\/v1\/organizations\/([^/]+)\/work\/events$/;
+const ORG_WORK_EVENTS_STREAM_RE = /^\/v1\/organizations\/([^/]+)\/work\/events\/stream$/;
 const ORG_WORK_SPECS_RE = /^\/v1\/organizations\/([^/]+)\/work\/specs$/;
 const ORG_WORK_TASKS_RE = /^\/v1\/organizations\/([^/]+)\/work\/tasks$/;
 const ORG_WORK_TASK_ACTION_RE = /^\/v1\/organizations\/([^/]+)\/work\/tasks\/([^/]+)\/(comment|assign|pin|cancel|contract)$/;
@@ -336,6 +338,15 @@ export async function route(request: Request, env: Env, ctx?: ExecutionContext):
     if (!orgId) return notFound(requestId, pathname);
     if (request.method !== "GET") return methodNotAllowed(requestId);
     return handleWorkSummary(request, env, requestId, actor, orgId);
+  }
+
+  // Match the stream route before the plain events route (same prefix).
+  m = pathname.match(ORG_WORK_EVENTS_STREAM_RE);
+  if (m) {
+    const orgId = parseOrgPublicId(m[1]!);
+    if (!orgId) return notFound(requestId, pathname);
+    if (request.method !== "GET") return methodNotAllowed(requestId);
+    return handleStreamWorkEvents(request, env, requestId, actor, orgId);
   }
 
   m = pathname.match(ORG_WORK_EVENTS_RE);

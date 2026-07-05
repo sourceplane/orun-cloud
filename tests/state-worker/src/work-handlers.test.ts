@@ -13,6 +13,7 @@ import {
   handleIngestWorkObservation,
   handleCreateWorkTask,
   handleListWorkEvents,
+  handleStreamWorkEvents,
   handleWorkImport,
   handleWorkSummary,
   handleWorkTaskAction,
@@ -97,6 +98,63 @@ async function seedTask(repo: MemoryWorkRepository) {
   const body = (await res.json()) as { data: { key: string } };
   return body.data.key;
 }
+
+describe("work events stream (SSE — the same cursor, pushed)", () => {
+  const streamCfg = { pollMs: 1, maxMs: 10 };
+
+  it("frames existing events as id/event/data SSE records", async () => {
+    const repo = new MemoryWorkRepository(fixedClock);
+    const key = await seedTask(repo);
+    const env = createEnv();
+    await handleWorkTaskAction(post("/x", { body: "hello" }), env, "r", USER, asUuid(ORG), key, "comment", { repo });
+
+    const res = await handleStreamWorkEvents(get("/x/events/stream"), env, "req", USER, asUuid(ORG), {
+      repo,
+      stream: streamCfg,
+    });
+    expect(res.status).toBe(200);
+    expect(res.headers.get("content-type")).toBe("text/event-stream");
+    const text = await res.text();
+    // A retry hint, then one frame per coordination event, ids = seqs.
+    expect(text.startsWith("retry: 3000\n\n")).toBe(true);
+    const ids = [...text.matchAll(/^id: (\d+)$/gm)].map((m) => Number(m[1]));
+    expect(ids).toEqual([1, 2, 3]); // spec created, task created, comment
+    const frames = [...text.matchAll(/^data: (.+)$/gm)].map((m) => JSON.parse(m[1]!) as { kind: string; seq: number });
+    expect(frames.map((f) => f.kind)).toEqual(["item_created", "item_created", "comment_added"]);
+    expect(text).toContain("event: work\n");
+  });
+
+  it("resumes from the ?from= cursor (and Last-Event-ID wins when larger)", async () => {
+    const repo = new MemoryWorkRepository(fixedClock);
+    const key = await seedTask(repo);
+    const env = createEnv();
+    await handleWorkTaskAction(post("/x", { body: "hello" }), env, "r", USER, asUuid(ORG), key, "comment", { repo });
+
+    const fromRes = await handleStreamWorkEvents(get("/x/events/stream?from=2"), env, "req", USER, asUuid(ORG), {
+      repo,
+      stream: streamCfg,
+    });
+    const fromIds = [...(await fromRes.text()).matchAll(/^id: (\d+)$/gm)].map((m) => Number(m[1]));
+    expect(fromIds).toEqual([3]);
+
+    const req = new Request("https://state.internal/x/events/stream?from=1", {
+      headers: { "last-event-id": "3" },
+    });
+    const lastRes = await handleStreamWorkEvents(req, env, "req", USER, asUuid(ORG), { repo, stream: streamCfg });
+    const lastText = await lastRes.text();
+    expect([...lastText.matchAll(/^id: (\d+)$/gm)]).toHaveLength(0);
+    expect(lastText).toContain(": ka\n"); // an idle leg still heartbeats
+  });
+
+  it("hides the workspace on policy deny (resource-hiding 404) before any stream opens", async () => {
+    const repo = new MemoryWorkRepository(fixedClock);
+    const res = await handleStreamWorkEvents(get("/x/events/stream"), createEnv(false), "req", USER, asUuid(ORG), {
+      repo,
+      stream: streamCfg,
+    });
+    expect(res.status).toBe(404);
+  });
+});
 
 describe("work summary (the fold with evidence)", () => {
   it("returns tasks with derived lifecycle — a complete contract reads Ready", async () => {
