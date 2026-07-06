@@ -76,3 +76,18 @@ spec:
 # the console Work page rendered `not_found`. (web-console-next DID redeploy
 # from the same PR — its files live under its own path — which is why the
 # Work nav item shows while the API 404s.)
+# ci: redeploy with the saas-event-streaming bundle. Fourth occurrence of the
+# same failure mode: the epic (PRs #325/#331/#334/#338/#339/#345) added the
+# whole event-streaming action set to the role maps and ALL_KNOWN_ACTIONS in
+# `packages/policy-engine` — `dead_letter.read`/`dead_letter.replay` (ES1),
+# `organization.notification_rule.read`/`.write` (ES2),
+# `organization.notification_channel.read`/`.write` (ES3), and
+# `organization.event.read`/`.ingest` (ES4/ES5) — but touched nothing under
+# this component's `path`, so `orun plan --changed` never scheduled the deploy
+# profile and prod kept serving the pre-event-streaming bundle. Every
+# `organization.event.read` check denied as `unknown_action`, events-worker
+# resource-hid the deny (leak-free 404), and the console Events explorer
+# rendered `not_found` (web-console-next redeployed from its own path, so the
+# Events nav shows while the API 404s — same signature as the Work page). This
+# marker republishes the current bundle, unblocking Events + dead-letters +
+# notification rules/channels in one deploy.
