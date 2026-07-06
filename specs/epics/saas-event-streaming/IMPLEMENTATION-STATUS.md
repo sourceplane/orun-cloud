@@ -15,7 +15,7 @@ eventing stack (events/notifications/webhooks/integrations workers).
 | ES5a — Custom event ingest + explorer read API | ✅ Shipped (#345) |
 | ES5b — SDK + CLI + custom-event grouping + metering | ✅ Shipped (#349) |
 | ES6 — Console: Events explorer + rules/channels UX | ✅ Shipped (#353) |
-| ES7 — Scale & lifecycle (retention, fairness, storm breaker) | In review |
+| ES7 — Scale & lifecycle (retention, fairness, storm breaker) | ✅ Shipped (#354) |
 
 ## Notes
 
@@ -196,8 +196,10 @@ eventing stack (events/notifications/webhooks/integrations workers).
   and `notification_rule.` added to the dispatcher's lane-suppression guard so
   they can't recurse). typecheck/lint clean; db 847, events-worker 94,
   contracts 147, admin-worker 33, billing 159 tests pass; `orun plan` no cycle.
-- **Epic complete when ES7 merges** — the full spine (catalog → router → rules →
-  channels → correlation → ingest/SDK/CLI → console → scale/lifecycle) is then
-  shipped end to end.
+- 2026-07-05: ES7 shipped (#354) — migration `640_event_lifecycle` applied on
+  stage and prod via db-migrate (CI lanes green). **THE EPIC IS COMPLETE**: the
+  full spine (catalog → router → rules → channels → correlation →
+  ingest/SDK/CLI → console → scale/lifecycle) is shipped end to end across
+  PRs #325, #331, #334, #338, #339, #345, #349, #353, #354.
 - Decision gates D1–D4 are open with defaults recommended; none block the
   spine (see `risks-and-open-questions.md`).
