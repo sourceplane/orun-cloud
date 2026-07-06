@@ -601,5 +601,98 @@ export function createEventsRepository(executor: SqlExecutor): EventsRepository 
         return safeError("Failed to list run-result events");
       }
     },
+
+    async deleteExpiredEvents(orgId: string, cutoffIso: string, limit: number): Promise<EventsResult<number>> {
+      try {
+        // Batched keyset delete backed by event_log_org_occurred_idx. Two
+        // NOT EXISTS guards keep the delete FK-safe and compliant:
+        //   1. design §10 security floor — an event_log row whose audit
+        //      projection is category 'security' is retained regardless of age
+        //      (and its audit_entries FK stays valid). Non-security audits are
+        //      removed by the audit sweep first, so their log rows FK-delete
+        //      cleanly here.
+        //   2. group-membership guard — event_group_members.event_id references
+        //      event_log(id) with NO ON DELETE CASCADE, so deleting an event
+        //      still referenced by a (possibly still-open) group would raise a
+        //      FK violation and abort the whole batch. Retain such rows; they
+        //      age out once the closed-group sweep cascades their memberships.
+        const result = await executor.execute<Record<string, unknown>>(
+          `DELETE FROM events.event_log
+           WHERE ctid IN (
+             SELECT el.ctid FROM events.event_log el
+             WHERE el.org_id = $1 AND el.occurred_at < $2
+               AND NOT EXISTS (
+                 SELECT 1 FROM events.audit_entries a
+                 WHERE a.event_id = el.id AND a.category = 'security'
+               )
+               AND NOT EXISTS (
+                 SELECT 1 FROM events.event_group_members m
+                 WHERE m.event_id = el.id
+               )
+             LIMIT $3
+           )`,
+          [orgId, cutoffIso, limit],
+        );
+        return { ok: true, value: result.rowCount ?? 0 };
+      } catch {
+        return safeError("Failed to delete expired events");
+      }
+    },
+
+    async deleteExpiredAuditEntries(orgId: string, cutoffIso: string, limit: number): Promise<EventsResult<number>> {
+      try {
+        // The critical correctness property (ES7): security-category audit rows
+        // are the compliance floor and survive regardless of age; every other
+        // past-window row is deleted. category is NOT NULL so `<> 'security'`
+        // never drops a NULL.
+        const result = await executor.execute<Record<string, unknown>>(
+          `DELETE FROM events.audit_entries
+           WHERE ctid IN (
+             SELECT ae.ctid FROM events.audit_entries ae
+             WHERE ae.org_id = $1 AND ae.occurred_at < $2 AND ae.category <> 'security'
+             LIMIT $3
+           )`,
+          [orgId, cutoffIso, limit],
+        );
+        return { ok: true, value: result.rowCount ?? 0 };
+      } catch {
+        return safeError("Failed to delete expired audit entries");
+      }
+    },
+
+    async deleteExpiredDeadLetters(cutoffIso: string, limit: number): Promise<EventsResult<number>> {
+      try {
+        const result = await executor.execute<Record<string, unknown>>(
+          `DELETE FROM events.dead_letters
+           WHERE ctid IN (
+             SELECT dl.ctid FROM events.dead_letters dl
+             WHERE dl.status IN ('replayed', 'discarded') AND dl.updated_at < $1
+             LIMIT $2
+           )`,
+          [cutoffIso, limit],
+        );
+        return { ok: true, value: result.rowCount ?? 0 };
+      } catch {
+        return safeError("Failed to delete expired dead letters");
+      }
+    },
+
+    async deleteClosedGroupsBefore(cutoffIso: string, limit: number): Promise<EventsResult<number>> {
+      try {
+        // event_group_members cascade via their FK to event_groups(id).
+        const result = await executor.execute<Record<string, unknown>>(
+          `DELETE FROM events.event_groups
+           WHERE ctid IN (
+             SELECT g.ctid FROM events.event_groups g
+             WHERE g.status = 'closed' AND g.closed_at < $1
+             LIMIT $2
+           )`,
+          [cutoffIso, limit],
+        );
+        return { ok: true, value: result.rowCount ?? 0 };
+      } catch {
+        return safeError("Failed to delete closed groups");
+      }
+    },
   };
 }

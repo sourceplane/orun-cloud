@@ -313,30 +313,76 @@ describe("notification rules repository", () => {
     expect(queries[0]!.text).toContain("count(*)::int");
   });
 
-  it("tryConsumeThrottle is a single atomic upsert with window rollover", async () => {
-    const { executor, queries } = createFakeExecutor({ rows: [{ fired_count: 3 }] });
+  it("tryConsumeThrottle is a single atomic statement with window rollover + breaker bookkeeping", async () => {
+    const { executor, queries } = createFakeExecutor({ rows: [{ admitted: true, saturated_windows: 0 }] });
     const repo = createNotificationRulesRepository(executor);
     const result = await repo.tryConsumeThrottle(SAMPLE_RULE_ROW.id, 300, 10);
     expect(result.ok).toBe(true);
-    if (result.ok) expect(result.value).toBe(true);
+    if (result.ok) {
+      expect(result.value.admitted).toBe(true);
+      expect(result.value.saturatedWindows).toBe(0);
+    }
     expect(queries).toHaveLength(1);
     expect(queries[0]!.text).toContain("INSERT INTO events.rule_throttle_state");
     expect(queries[0]!.text).toContain("ON CONFLICT (rule_id) DO UPDATE");
     expect(queries[0]!.text).toContain("make_interval(secs => $2)");
-    expect(queries[0]!.params).toEqual([SAMPLE_RULE_ROW.id, 300]);
+    // Breaker bookkeeping lives in the same statement.
+    expect(queries[0]!.text).toContain("saturated_window_count");
+    expect(queries[0]!.params).toEqual([SAMPLE_RULE_ROW.id, 300, 10]);
   });
 
-  it("tryConsumeThrottle denies past the window max and skips DB when disabled", async () => {
-    const { executor, queries } = createFakeExecutor({ rows: [{ fired_count: 11 }] });
+  it("tryConsumeThrottle denies past the window max (surfacing saturation) and skips DB when disabled", async () => {
+    const { executor, queries } = createFakeExecutor({ rows: [{ admitted: false, saturated_windows: 5 }] });
     const repo = createNotificationRulesRepository(executor);
     const denied = await repo.tryConsumeThrottle(SAMPLE_RULE_ROW.id, 300, 10);
     expect(denied.ok).toBe(true);
-    if (denied.ok) expect(denied.value).toBe(false);
+    if (denied.ok) {
+      expect(denied.value.admitted).toBe(false);
+      expect(denied.value.saturatedWindows).toBe(5);
+    }
 
     const disabled = await repo.tryConsumeThrottle(SAMPLE_RULE_ROW.id, 0, 10);
     expect(disabled.ok).toBe(true);
-    if (disabled.ok) expect(disabled.value).toBe(true);
+    if (disabled.ok) expect(disabled.value.admitted).toBe(true);
     expect(queries).toHaveLength(1); // windowSeconds=0 issues no query
+  });
+
+  it("suppressRuleForStorm only transitions a not-yet-suppressed rule", async () => {
+    const hit = createFakeExecutor({ rows: [{ id: SAMPLE_RULE_ROW.id }] });
+    const repo1 = createNotificationRulesRepository(hit.executor);
+    const r1 = await repo1.suppressRuleForStorm(SAMPLE_RULE_ROW.id, "storm_breaker:5");
+    expect(r1.ok).toBe(true);
+    if (r1.ok) expect(r1.value).toBe(true);
+    expect(hit.queries[0]!.text).toContain("WHERE id = $1 AND suppressed_at IS NULL");
+
+    // Already suppressed → the guarded UPDATE matches no row.
+    const miss = createFakeExecutor({ rows: [] });
+    const repo2 = createNotificationRulesRepository(miss.executor);
+    const r2 = await repo2.suppressRuleForStorm(SAMPLE_RULE_ROW.id, "storm_breaker:6");
+    if (r2.ok) expect(r2.value).toBe(false);
+  });
+
+  it("clearExpiredSuppressions re-enables rules past the cooldown cutoff", async () => {
+    const { executor, queries } = createFakeExecutor({ rowCount: 2, rows: [] });
+    const repo = createNotificationRulesRepository(executor);
+    const result = await repo.clearExpiredSuppressions("2026-07-05T00:00:00.000Z");
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.value).toBe(2);
+    expect(queries[0]!.text).toContain("suppressed_at IS NOT NULL AND suppressed_at < $1");
+    expect(queries[0]!.text).toContain("saturated_window_count = 0");
+  });
+
+  it("mapRule surfaces suppressed_at as the 'suppressed' status (console banner)", async () => {
+    const { executor } = createFakeExecutor({
+      rows: [{ ...SAMPLE_RULE_ROW, suppressed_at: NOW.toISOString(), suppressed_reason: "storm_breaker:5" }],
+    });
+    const repo = createNotificationRulesRepository(executor);
+    const result = await repo.getRule("org-001", SAMPLE_RULE_ROW.id);
+    expect(result.ok).toBe(true);
+    if (result.ok && result.value) {
+      expect(result.value.status).toBe("suppressed");
+      expect(result.value.suppressedReason).toBe("storm_breaker:5");
+    }
   });
 
   it("targets: add, list-for-rules, remove", async () => {

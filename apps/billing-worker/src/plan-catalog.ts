@@ -111,6 +111,11 @@ export const PLAN_CATALOG: PlanDefinition[] = [
       // enabled on every tier with a per-day quota that scales with the plan.
       { entitlementKey: "feature.events.custom_ingest", valueType: "boolean", enabled: true, limitValue: null },
       { entitlementKey: "limit.custom_events_per_day", valueType: "quantity", enabled: true, limitValue: 1000 },
+      // Event/audit retention window (saas-event-streaming ES7, D3 placeholder
+      // tiers). The retention sweep deletes past-window rows; the security
+      // category floor is kept regardless of plan (compliance is not a plan
+      // feature). null = unlimited (Enterprise). Config edit, not a migration.
+      { entitlementKey: "limit.event_retention_days", valueType: "quantity", enabled: true, limitValue: 30 },
     ],
   },
   {
@@ -136,6 +141,7 @@ export const PLAN_CATALOG: PlanDefinition[] = [
       { entitlementKey: "limit.notification_channels", valueType: "quantity", enabled: true, limitValue: 10 },
       { entitlementKey: "feature.events.custom_ingest", valueType: "boolean", enabled: true, limitValue: null },
       { entitlementKey: "limit.custom_events_per_day", valueType: "quantity", enabled: true, limitValue: 10000 },
+      { entitlementKey: "limit.event_retention_days", valueType: "quantity", enabled: true, limitValue: 90 },
     ],
   },
   {
@@ -161,6 +167,7 @@ export const PLAN_CATALOG: PlanDefinition[] = [
       { entitlementKey: "limit.notification_channels", valueType: "quantity", enabled: true, limitValue: 25 },
       { entitlementKey: "feature.events.custom_ingest", valueType: "boolean", enabled: true, limitValue: null },
       { entitlementKey: "limit.custom_events_per_day", valueType: "quantity", enabled: true, limitValue: 100000 },
+      { entitlementKey: "limit.event_retention_days", valueType: "quantity", enabled: true, limitValue: 365 },
     ],
   },
   {
@@ -186,6 +193,7 @@ export const PLAN_CATALOG: PlanDefinition[] = [
       { entitlementKey: "limit.notification_channels", valueType: "quantity", enabled: true, limitValue: null },
       { entitlementKey: "feature.events.custom_ingest", valueType: "boolean", enabled: true, limitValue: null },
       { entitlementKey: "limit.custom_events_per_day", valueType: "quantity", enabled: true, limitValue: null },
+      { entitlementKey: "limit.event_retention_days", valueType: "quantity", enabled: true, limitValue: null },
     ],
   },
 ];

@@ -41,6 +41,25 @@ export interface StoredNotificationRule {
   createdBy: string;
   createdAt: Date;
   updatedAt: Date;
+  // Storm-breaker state (ES7). suppressedAt is the auto-suppression overlay:
+  // when set, `status` reads back as "suppressed" and the rule stops firing
+  // until the cooldown clears it. saturatedWindowCount is the consecutive
+  // throttle-saturation counter (reset on admit, incremented on deny).
+  suppressedAt: Date | null;
+  suppressedReason: string | null;
+  saturatedWindowCount: number;
+  lastSaturatedAt: Date | null;
+}
+
+/**
+ * The outcome of a throttle admission attempt (ES7). `admitted` is the ES2
+ * admit/deny decision; `saturatedWindows` is the rule's consecutive-saturation
+ * count AFTER this attempt (0 on an admit) — the notifications lane trips the
+ * circuit breaker once it crosses the storm threshold.
+ */
+export interface ThrottleAdmission {
+  admitted: boolean;
+  saturatedWindows: number;
 }
 
 export interface CreateNotificationRuleInput {
@@ -113,17 +132,41 @@ export interface NotificationRulesRepository {
   deleteRule(orgId: string, id: string): Promise<EventsResult<boolean>>;
 
   /**
-   * Atomically consume one firing from the rule's fixed throttle window.
-   * Returns true when the firing is admitted (fired_count within
-   * throttleMax), false when the window is saturated. A window opens at the
-   * first fire and rolls when windowSeconds have elapsed. Single-statement
-   * upsert — overlapping cron ticks cannot double-admit.
+   * Atomically consume one firing from the rule's fixed throttle window AND
+   * maintain the storm-breaker bookkeeping in one statement. Returns
+   * `admitted` (fired_count within throttleMax) plus `saturatedWindows` — the
+   * rule's consecutive-saturation count after this attempt, reset to 0 on an
+   * admit and incremented (with last_saturated_at) on a deny. A window opens at
+   * the first fire and rolls when windowSeconds have elapsed. Single multi-CTE
+   * statement — overlapping cron ticks cannot double-admit or double-count.
    */
   tryConsumeThrottle(
     ruleId: string,
     windowSeconds: number,
     throttleMax: number,
-  ): Promise<EventsResult<boolean>>;
+  ): Promise<EventsResult<ThrottleAdmission>>;
+
+  /**
+   * Auto-suppress a rule after sustained throttle saturation (ES7 circuit
+   * breaker). Sets suppressed_at/suppressed_reason only when not already
+   * suppressed; returns true when THIS call transitioned the rule (so the
+   * caller emits the `notification_rule.suppressed` event + admin notice
+   * exactly once). Idempotent: a second call on an already-suppressed rule
+   * returns false.
+   */
+  suppressRuleForStorm(ruleId: string, reason: string): Promise<EventsResult<boolean>>;
+  /**
+   * Clear a single rule's suppression (cooldown re-enable): zeroes
+   * suppressed_at/reason and the saturation counter so the rule resumes with a
+   * fresh breaker. Returns true when a suppressed rule was cleared.
+   */
+  clearRuleSuppression(ruleId: string): Promise<EventsResult<boolean>>;
+  /**
+   * The once-per-tick cooldown pass: clear suppression on every rule whose
+   * suppressed_at is older than `cutoffIso`. Returns the number of rules
+   * re-enabled. Backed by notification_rules_suppressed_idx.
+   */
+  clearExpiredSuppressions(cutoffIso: string): Promise<EventsResult<number>>;
 
   /**
    * Group-aware notification admission (ES4). For a (rule, dedup group key),
@@ -159,12 +202,16 @@ function parseJsonArrayColumn(value: unknown): unknown[] | null {
 }
 
 function mapRule(row: Record<string, unknown>): StoredNotificationRule {
+  const suppressedAt = row.suppressed_at ? new Date(row.suppressed_at as string) : null;
   return {
     id: row.id as string,
     orgId: row.org_id as string,
     projectId: (row.project_id as string) ?? null,
     name: row.name as string,
-    status: row.status as NotificationRuleStatus,
+    // The storm-breaker overlay wins the status read: a rule with
+    // suppressed_at set surfaces as "suppressed" (the ES6 rules page banner)
+    // regardless of the operator-set status column underneath.
+    status: suppressedAt ? "suppressed" : (row.status as NotificationRuleStatus),
     eventTypes: (parseJsonArrayColumn(row.event_types) as string[]) ?? [],
     minSeverity: row.min_severity as string,
     sources: (parseJsonArrayColumn(row.sources) as string[] | null) ?? null,
@@ -175,6 +222,10 @@ function mapRule(row: Record<string, unknown>): StoredNotificationRule {
     createdBy: row.created_by as string,
     createdAt: new Date(row.created_at as string),
     updatedAt: new Date(row.updated_at as string),
+    suppressedAt,
+    suppressedReason: (row.suppressed_reason as string) ?? null,
+    saturatedWindowCount: (row.saturated_window_count as number) ?? 0,
+    lastSaturatedAt: row.last_saturated_at ? new Date(row.last_saturated_at as string) : null,
   };
 }
 
@@ -303,7 +354,7 @@ export function createNotificationRulesRepository(executor: SqlExecutor): Notifi
       try {
         const result = await executor.execute<Record<string, unknown>>(
           `SELECT * FROM events.notification_rules
-           WHERE org_id = $1 AND status = 'enabled'
+           WHERE org_id = $1 AND status = 'enabled' AND suppressed_at IS NULL
            ORDER BY created_at ASC, id ASC`,
           [orgId],
         );
@@ -316,7 +367,7 @@ export function createNotificationRulesRepository(executor: SqlExecutor): Notifi
     async listOrgIdsWithEnabledRules() {
       try {
         const result = await executor.execute<Record<string, unknown>>(
-          `SELECT DISTINCT org_id FROM events.notification_rules WHERE status = 'enabled'`,
+          `SELECT DISTINCT org_id FROM events.notification_rules WHERE status = 'enabled' AND suppressed_at IS NULL`,
         );
         return { ok: true, value: result.rows.map((row) => row.org_id as string) };
       } catch {
@@ -432,32 +483,105 @@ export function createNotificationRulesRepository(executor: SqlExecutor): Notifi
     },
 
     async tryConsumeThrottle(ruleId, windowSeconds, throttleMax) {
-      // windowSeconds 0 disables throttling entirely.
-      if (windowSeconds <= 0) return { ok: true, value: true };
+      // windowSeconds 0 disables throttling entirely — no window, no breaker.
+      if (windowSeconds <= 0) return { ok: true, value: { admitted: true, saturatedWindows: 0 } };
       try {
+        // One multi-CTE statement: consume the throttle window (t), decide
+        // admit/deny (adm), then maintain the storm-breaker counter on the rule
+        // row (upd) — reset to 0 on an admit, +1 with last_saturated_at on a
+        // deny. Atomic, so overlapping ticks cannot double-admit or skew the
+        // consecutive-saturation count.
         const result = await executor.execute<Record<string, unknown>>(
-          `INSERT INTO events.rule_throttle_state (rule_id, window_started_at, fired_count, updated_at)
-           VALUES ($1, now(), 1, now())
-           ON CONFLICT (rule_id) DO UPDATE SET
-             fired_count = CASE
-               WHEN events.rule_throttle_state.window_started_at < now() - make_interval(secs => $2)
-               THEN 1
-               ELSE events.rule_throttle_state.fired_count + 1
-             END,
-             window_started_at = CASE
-               WHEN events.rule_throttle_state.window_started_at < now() - make_interval(secs => $2)
-               THEN now()
-               ELSE events.rule_throttle_state.window_started_at
-             END,
-             updated_at = now()
-           RETURNING fired_count`,
-          [ruleId, windowSeconds],
+          `WITH t AS (
+             INSERT INTO events.rule_throttle_state (rule_id, window_started_at, fired_count, updated_at)
+             VALUES ($1, now(), 1, now())
+             ON CONFLICT (rule_id) DO UPDATE SET
+               fired_count = CASE
+                 WHEN events.rule_throttle_state.window_started_at < now() - make_interval(secs => $2)
+                 THEN 1
+                 ELSE events.rule_throttle_state.fired_count + 1
+               END,
+               window_started_at = CASE
+                 WHEN events.rule_throttle_state.window_started_at < now() - make_interval(secs => $2)
+                 THEN now()
+                 ELSE events.rule_throttle_state.window_started_at
+               END,
+               updated_at = now()
+             RETURNING fired_count
+           ),
+           adm AS (
+             SELECT (SELECT fired_count FROM t) <= $3 AS admitted
+           ),
+           upd AS (
+             UPDATE events.notification_rules nr
+             SET saturated_window_count = CASE WHEN (SELECT admitted FROM adm)
+                                               THEN 0 ELSE nr.saturated_window_count + 1 END,
+                 last_saturated_at = CASE WHEN (SELECT admitted FROM adm)
+                                         THEN nr.last_saturated_at ELSE now() END
+             WHERE nr.id = $1
+             RETURNING saturated_window_count
+           )
+           SELECT (SELECT admitted FROM adm) AS admitted,
+                  (SELECT saturated_window_count FROM upd) AS saturated_windows`,
+          [ruleId, windowSeconds, throttleMax],
         );
-        const firedCount = result.rows[0]!.fired_count as number;
-        return { ok: true, value: firedCount <= throttleMax };
+        const row = result.rows[0]!;
+        return {
+          ok: true,
+          value: {
+            admitted: row.admitted === true,
+            saturatedWindows: (row.saturated_windows as number) ?? 0,
+          },
+        };
       } catch {
         // Fail-closed: an unknown throttle state must not admit a storm.
         return safeError("Failed to consume rule throttle");
+      }
+    },
+
+    async suppressRuleForStorm(ruleId, reason) {
+      try {
+        const result = await executor.execute<Record<string, unknown>>(
+          `UPDATE events.notification_rules
+           SET suppressed_at = now(), suppressed_reason = $2, updated_at = now()
+           WHERE id = $1 AND suppressed_at IS NULL
+           RETURNING id`,
+          [ruleId, reason],
+        );
+        return { ok: true, value: result.rows.length > 0 };
+      } catch {
+        return safeError("Failed to suppress notification rule");
+      }
+    },
+
+    async clearRuleSuppression(ruleId) {
+      try {
+        const result = await executor.execute<Record<string, unknown>>(
+          `UPDATE events.notification_rules
+           SET suppressed_at = NULL, suppressed_reason = NULL,
+               saturated_window_count = 0, last_saturated_at = NULL, updated_at = now()
+           WHERE id = $1 AND suppressed_at IS NOT NULL
+           RETURNING id`,
+          [ruleId],
+        );
+        return { ok: true, value: result.rows.length > 0 };
+      } catch {
+        return safeError("Failed to clear rule suppression");
+      }
+    },
+
+    async clearExpiredSuppressions(cutoffIso) {
+      try {
+        const result = await executor.execute<Record<string, unknown>>(
+          `UPDATE events.notification_rules
+           SET suppressed_at = NULL, suppressed_reason = NULL,
+               saturated_window_count = 0, last_saturated_at = NULL, updated_at = now()
+           WHERE suppressed_at IS NOT NULL AND suppressed_at < $1`,
+          [cutoffIso],
+        );
+        return { ok: true, value: result.rowCount ?? 0 };
+      } catch {
+        return safeError("Failed to clear expired suppressions");
       }
     },
 

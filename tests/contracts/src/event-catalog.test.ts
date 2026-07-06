@@ -240,6 +240,20 @@ describe("event catalog totality (CI guard)", () => {
     }
   });
 
+  it("registers the ES7 scale/lifecycle events (lane lag + rule suppression)", () => {
+    const lag = EVENT_CATALOG["event.lane_lagging"];
+    expect(lag).toBeDefined();
+    expect(lag!.category).toBe("system");
+    expect(lag!.severity).toBe("warning");
+    expect(lag!.audit).toBe(true);
+
+    const suppressed = EVENT_CATALOG["notification_rule.suppressed"];
+    expect(suppressed).toBeDefined();
+    expect(suppressed!.category).toBe("system");
+    expect(suppressed!.severity).toBe("warning");
+    expect(suppressed!.audit).toBe(true);
+  });
+
   it("registers the config-worker secret event vocabulary", () => {
     const missing = SECRET_EVENT_TYPES_SNAPSHOT.filter((t) => !EVENT_CATALOG[t]);
     expect(missing).toEqual([]);

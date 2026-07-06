@@ -14,8 +14,8 @@ eventing stack (events/notifications/webhooks/integrations workers).
 | ES4 — Correlation & dedup (event groups) | ✅ Shipped (#339) |
 | ES5a — Custom event ingest + explorer read API | ✅ Shipped (#345) |
 | ES5b — SDK + CLI + custom-event grouping + metering | ✅ Shipped (#349) |
-| ES6 — Console: Events explorer + rules/channels UX | In review |
-| ES7 — Scale & lifecycle (retention, fairness, storm breaker) | 🗓️ Planned |
+| ES6 — Console: Events explorer + rules/channels UX | ✅ Shipped (#353) |
+| ES7 — Scale & lifecycle (retention, fairness, storm breaker) | In review |
 
 ## Notes
 
@@ -164,5 +164,40 @@ eventing stack (events/notifications/webhooks/integrations workers).
   last-delivery health column (no read API yet — candidates for a later pass).
   Console typecheck/lint clean, console tests 479, sdk 198, `orun plan` no
   cycle. No migrations.
+- 2026-07-05: ES6 shipped (#353) — console surfaces live.
+- 2026-07-05: ES7 in review — scale & lifecycle, the epic's capstone. Migration
+  `640_event_lifecycle` adds storm-breaker state to `events.notification_rules`
+  (`suppressed_at`/`suppressed_reason`/`saturated_window_count`/
+  `last_saturated_at`) + partial indexes for the cooldown/audit and the
+  fixed-window sweeps. **(a) Retention sweep** — an events-worker `scheduled`
+  pass gated to UTC hour 4 (derived from `controller.scheduledTime`, never
+  `Date.now()`), enforcing the new `limit.event_retention_days` entitlement
+  (30/90/365/unlimited) per org: batched `ctid` deletes of past-window
+  `event_log` + `audit_entries` honoring the design §10 **security-category
+  floor** (security audit rows survive forever; the raw log rows behind them are
+  retained via a `NOT EXISTS` guard, which ALSO excludes events still referenced
+  by an `event_group_members` row — the FK has no cascade), plus fixed 30-day
+  platform windows for terminal dead letters and closed groups. Fail-safe:
+  unlimited/denied/service-error → skip (never deletes when retention can't be
+  confirmed). **(b) Hot-org fairness** — `MAX_ORGS_PER_LANE_PER_TICK` with a
+  `scheduledTime`-derived rotating offset (round-robin; deferred count reported,
+  never silently truncated) and a per-(lane,org) **lane-lag** metric emitting one
+  `event.lane_lagging` per tick past a 900s budget (the pipeline monitors
+  itself). **(c) Storm breaker** — `tryConsumeThrottle` tracks consecutive
+  throttle saturation; after 5 saturated windows a rule auto-suppresses, emits
+  `notification_rule.suppressed` exactly once (idempotent transition), drops out
+  of the working set, and re-enables after a 3600s cooldown; the ES6 rules page
+  renders the derived `suppressed` status. Admin signal is the routed
+  `notification_rule.suppressed` event + console banner (a dedicated admin email
+  would need membership resolution — deferred, no new dependency edge).
+  **(d) admin-worker** read surfaces (support-gated, direct-DB): cross-org lane
+  health, dead-letter counts, rule-storm audit. New catalog types
+  `event.lane_lagging` + `notification_rule.suppressed` (both `system`/`warning`,
+  and `notification_rule.` added to the dispatcher's lane-suppression guard so
+  they can't recurse). typecheck/lint clean; db 847, events-worker 94,
+  contracts 147, admin-worker 33, billing 159 tests pass; `orun plan` no cycle.
+- **Epic complete when ES7 merges** — the full spine (catalog → router → rules →
+  channels → correlation → ingest/SDK/CLI → console → scale/lifecycle) is then
+  shipped end to end.
 - Decision gates D1–D4 are open with defaults recommended; none block the
   spine (see `risks-and-open-questions.md`).

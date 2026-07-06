@@ -39,6 +39,10 @@ function storedRule(overrides?: Partial<StoredNotificationRule>): StoredNotifica
     createdBy: "usr_abc123",
     createdAt: NOW,
     updatedAt: NOW,
+    suppressedAt: null,
+    suppressedReason: null,
+    saturatedWindowCount: 0,
+    lastSaturatedAt: null,
     ...overrides,
   };
 }
@@ -90,6 +94,8 @@ interface RepoCalls {
   throttleCalls: Array<{ ruleId: string; windowSeconds: number; max: number }>;
   groupNotifyCalls: Array<{ ruleId: string; groupKey: string; severity: string }>;
   deleted: string[];
+  suppressCalls: Array<{ ruleId: string; reason: string }>;
+  clearExpiredCalls: string[];
 }
 
 function fakeRulesRepo(options?: {
@@ -97,12 +103,17 @@ function fakeRulesRepo(options?: {
   targetsList?: StoredRuleTarget[];
   count?: number;
   throttleAdmit?: boolean[];
+  /** Consecutive-saturation count returned per throttle call (aligned to throttleAdmit). */
+  saturatedWindows?: number[];
   groupNotify?: boolean[];
   getRule?: StoredNotificationRule | null;
+  /** Whether suppressRuleForStorm transitions the rule (per call). */
+  suppressTransitions?: boolean[];
 }): { repo: NotificationRulesRepository; calls: RepoCalls } {
-  const calls: RepoCalls = { created: [], targets: [], throttleCalls: [], groupNotifyCalls: [], deleted: [] };
+  const calls: RepoCalls = { created: [], targets: [], throttleCalls: [], groupNotifyCalls: [], deleted: [], suppressCalls: [], clearExpiredCalls: [] };
   let throttleIdx = 0;
   let groupIdx = 0;
+  let suppressIdx = 0;
   const repo: NotificationRulesRepository = {
     async createRule(input) {
       calls.created.push(input);
@@ -133,8 +144,22 @@ function fakeRulesRepo(options?: {
     async tryConsumeThrottle(ruleId, windowSeconds, max) {
       calls.throttleCalls.push({ ruleId, windowSeconds, max });
       const admit = options?.throttleAdmit?.[throttleIdx] ?? true;
+      const saturatedWindows = options?.saturatedWindows?.[throttleIdx] ?? 0;
       throttleIdx++;
-      return { ok: true, value: admit };
+      return { ok: true, value: { admitted: admit, saturatedWindows } };
+    },
+    async suppressRuleForStorm(ruleId, reason) {
+      calls.suppressCalls.push({ ruleId, reason });
+      const transitioned = options?.suppressTransitions?.[suppressIdx] ?? true;
+      suppressIdx++;
+      return { ok: true, value: transitioned };
+    },
+    async clearRuleSuppression() {
+      return { ok: true, value: true };
+    },
+    async clearExpiredSuppressions(cutoffIso) {
+      calls.clearExpiredCalls.push(cutoffIso);
+      return { ok: true, value: 0 };
     },
     async tryNotifyGroup(ruleId, groupKey, severity) {
       calls.groupNotifyCalls.push({ ruleId, groupKey, severity });
@@ -521,6 +546,57 @@ describe("notifications lane handler", () => {
 
     expect(calls.throttleCalls).toEqual([{ ruleId: RULE_ID, windowSeconds: 300, max: 10 }]);
     expect(notificationCalls).toHaveLength(0);
+  });
+
+  it("trips the circuit breaker after sustained saturation: suppresses + emits exactly once", async () => {
+    const { repo, calls } = fakeRulesRepo({
+      throttleAdmit: [false, false],
+      saturatedWindows: [5, 6],
+      suppressTransitions: [true, false], // only the first call transitions
+    });
+    const { repo: eventsRepo, emitted } = fakeEventsRepo();
+    const handler = createNotificationsLaneHandler({
+      rulesRepo: repo,
+      notificationsEnv: {},
+      requestId: REQUEST_ID,
+      eventsRepo,
+    });
+
+    await handler.handleEvent(storedEvent());
+    await handler.handleEvent(storedEvent({ id: "evt_0123456789abcdef0123456789abcde2" }));
+
+    // Every denied firing past the threshold attempts suppression, but only the
+    // transition emits — so the admin-facing event fires exactly once.
+    expect(calls.suppressCalls).toHaveLength(2);
+    expect(emitted).toEqual(["notification_rule.suppressed"]);
+  });
+
+  it("does not trip the breaker below the saturation threshold", async () => {
+    const { repo, calls } = fakeRulesRepo({ throttleAdmit: [false], saturatedWindows: [2] });
+    const { repo: eventsRepo, emitted } = fakeEventsRepo();
+    const handler = createNotificationsLaneHandler({
+      rulesRepo: repo,
+      notificationsEnv: {},
+      requestId: REQUEST_ID,
+      eventsRepo,
+    });
+    await handler.handleEvent(storedEvent());
+    expect(calls.suppressCalls).toHaveLength(0);
+    expect(emitted).toEqual([]);
+  });
+
+  it("runs the cooldown re-enable pass on org discovery", async () => {
+    const { repo, calls } = fakeRulesRepo();
+    const handler = createNotificationsLaneHandler({
+      rulesRepo: repo,
+      notificationsEnv: {},
+      requestId: REQUEST_ID,
+      now: () => new Date("2026-07-05T00:00:00.000Z"),
+    });
+    const orgs = await handler.discoverOrgIds();
+    expect(orgs).toEqual([TEST_ORG_UUID]);
+    // Cooldown cutoff = now - 1h.
+    expect(calls.clearExpiredCalls).toEqual(["2026-07-04T23:00:00.000Z"]);
   });
 
   it("uses group-aware admission (not the window throttle) for a dedup-keyed event", async () => {
