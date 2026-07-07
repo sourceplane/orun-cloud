@@ -5,13 +5,35 @@
 // writes a rung: a comment is coordination, and a pin is a public,
 // attributed override rendered beside observed truth until truth catches
 // up. A rejected mutation surfaces the mutator's verdict inline.
+//
+// Rendering: the root is `display: contents`, so the quiet trigger buttons
+// participate directly in the task row's flex line (revealed on row hover on
+// desktop — the parent row provides the `group` class) while the comment/pin
+// forms wrap to a full-width line below via `order-last basis-full`.
 
 import * as React from "react";
 import type { WorkRung, WorkTaskView } from "@saas/contracts/work";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { cn } from "@/lib/cn";
 import { useSession } from "@/lib/session";
 import { RUNGS_PINNABLE, rungLabel } from "@/lib/work/model";
+
+function QuietAction({
+  className,
+  ...props
+}: React.ButtonHTMLAttributes<HTMLButtonElement>) {
+  return (
+    <button
+      type="button"
+      className={cn(
+        "-my-1 cursor-pointer py-1 text-[11.5px] text-muted-foreground transition-colors hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50",
+        className,
+      )}
+      {...props}
+    />
+  );
+}
 
 export function TaskActions({
   orgId,
@@ -47,30 +69,36 @@ export function TaskActions({
     }
   };
 
+  // Quiet by default on desktop: fade the triggers in on row hover / focus,
+  // but keep them pinned visible while a form is open, a mutation is in
+  // flight, or a verdict is showing (and always on touch layouts).
+  const quiet = mode === "idle" && !busy && !verdict;
+
   return (
-    <div className="w-full">
-      <div className="flex gap-1">
-        <Button size="sm" variant="ghost" onClick={() => setMode(mode === "comment" ? "idle" : "comment")}>
+    <div className="contents">
+      <span
+        className={cn(
+          "flex shrink-0 items-center gap-3.5 transition-opacity",
+          quiet && "sm:opacity-0 sm:focus-within:opacity-100 sm:group-hover:opacity-100",
+        )}
+      >
+        <QuietAction onClick={() => setMode(mode === "comment" ? "idle" : "comment")}>
           Comment
-        </Button>
+        </QuietAction>
         {task.lifecycle.pinned ? (
-          <Button
-            size="sm"
-            variant="ghost"
+          <QuietAction
             disabled={busy}
-            onClick={() => run(() => client.work.pin(orgId, task.key, { rung: null }))}
+            onClick={() => void run(() => client.work.pin(orgId, task.key, { rung: null }))}
           >
             Unpin
-          </Button>
+          </QuietAction>
         ) : (
-          <Button size="sm" variant="ghost" onClick={() => setMode(mode === "pin" ? "idle" : "pin")}>
-            Pin
-          </Button>
+          <QuietAction onClick={() => setMode(mode === "pin" ? "idle" : "pin")}>Pin</QuietAction>
         )}
-      </div>
+      </span>
       {mode === "comment" ? (
         <form
-          className="mt-1 flex gap-2"
+          className="order-last flex basis-full items-center gap-2 sm:pl-[68px]"
           onSubmit={(e) => {
             e.preventDefault();
             if (comment.trim()) void run(() => client.work.comment(orgId, task.key, { body: comment.trim() }));
@@ -90,14 +118,14 @@ export function TaskActions({
       ) : null}
       {mode === "pin" ? (
         <form
-          className="mt-1 flex flex-wrap items-center gap-2"
+          className="order-last flex basis-full flex-wrap items-center gap-2 sm:pl-[68px]"
           onSubmit={(e) => {
             e.preventDefault();
             void run(() => client.work.pin(orgId, task.key, { rung: pinRung, note: pinNote.trim() || undefined }));
           }}
         >
           <select
-            className="h-8 rounded-md border border-input bg-background px-2 text-sm"
+            className="h-8 cursor-pointer rounded-[8px] border border-border bg-[#FCFCFC] px-2 text-[13px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring dark:bg-card"
             value={pinRung}
             onChange={(e) => setPinRung(e.target.value as WorkRung)}
           >
@@ -118,7 +146,11 @@ export function TaskActions({
           </Button>
         </form>
       ) : null}
-      {verdict ? <p className="mt-1 text-xs text-destructive">verdict: {verdict}</p> : null}
+      {verdict ? (
+        <p className="order-last basis-full text-xs text-destructive sm:pl-[68px]">
+          verdict: {verdict}
+        </p>
+      ) : null}
     </div>
   );
 }

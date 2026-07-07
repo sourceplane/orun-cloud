@@ -4,70 +4,98 @@
 
 @layer base {
   :root {
-    /* Match the orun.dev landing system stack so the console and the marketing
-       site render identical type without shipping a web font. */
-    --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
+    /* Northwind type system: quiet system sans for UI, Newsreader serif for
+       display headings and stat numerals, system mono for refs and shas. The
+       serif is loaded via next/font and exposed as --font-newsreader. */
+    --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI",
       "Helvetica Neue", Arial, sans-serif;
+    --font-serif: var(--font-newsreader, "Newsreader"), Georgia, serif;
     --font-mono: ui-monospace, "SF Mono", "Cascadia Code", "JetBrains Mono",
       Menlo, Consolas, monospace;
 
-    /* Light theme — warm "paper" surface with the orun amber accent. The
-       console defaults to dark (which mirrors orun.dev one-to-one); light is the
-       opt-in counterpart, kept warm so the brand reads the same in both. */
-    --background: 40 33% 99%;
-    --foreground: 240 10% 8%;
-    --card: 0 0% 100%;
-    --card-foreground: 240 10% 8%;
+    /* Northwind light — the canonical console surface. Neutral gray paper
+       (#FAFAFA canvas, #FFFFFF cards, #F5F5F5 rail), near-black ink (#171717),
+       and reserved accent colors: green #3A8159, amber #C39B45/#9A7B2D,
+       red #C94A44, run-blue #3B76C9, link-blue #2563C9. */
+    --background: 0 0% 98%; /* #FAFAFA */
+    --foreground: 0 0% 9%; /* #171717 */
+    --card: 0 0% 100%; /* #FFFFFF */
+    --card-foreground: 0 0% 9%;
     --popover: 0 0% 100%;
-    --popover-foreground: 240 10% 8%;
-    --primary: 30 94% 43%;
-    --primary-foreground: 40 60% 98%;
-    --secondary: 40 16% 95%;
-    --secondary-foreground: 240 6% 12%;
-    --muted: 40 16% 95%;
-    --muted-foreground: 240 4% 42%;
-    --accent: 40 38% 93%;
-    --accent-foreground: 240 6% 12%;
-    --destructive: 0 72% 51%;
+    --popover-foreground: 0 0% 9%;
+    /* Primary is Northwind ink: black buttons, black active states.
+       `bg-primary/10` ≈ the #E4E4E4 active-nav tint. */
+    --primary: 0 0% 9%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 0 0% 96%; /* #F5F5F5 — sidebar, neutral pills */
+    --secondary-foreground: 0 0% 27%; /* #444444 */
+    --muted: 0 0% 97%; /* #F7F7F7 — row hover, quiet fills */
+    --muted-foreground: 0 0% 45%; /* #737373 */
+    --accent: 0 0% 92%; /* #EBEBEB — nav hover */
+    --accent-foreground: 0 0% 9%;
+    --destructive: 3 55% 53%; /* #C94A44 */
     --destructive-foreground: 0 0% 100%;
-    --warning: 28 90% 48%;
-    --warning-foreground: 30 60% 10%;
-    --success: 142 64% 36%;
+    --warning: 43 55% 39%; /* #9A7B2D (text); dot uses --warning-accent */
+    --warning-foreground: 0 0% 100%;
+    --success: 146 38% 37%; /* #3A8159 */
     --success-foreground: 0 0% 100%;
-    --border: 40 14% 90%;
-    --input: 40 14% 87%;
-    --ring: 30 94% 43%;
-    --radius: 0.625rem;
+    /* Informational / running blue (#3B76C9) and prose-link blue (#2563C9). */
+    --info: 215 55% 51%;
+    --info-foreground: 0 0% 100%;
+    --link: 217 69% 47%;
+    --border: 0 0% 90%; /* #E5E5E5–#E6E6E6 */
+    --input: 0 0% 90%;
+    --ring: 0 0% 9%;
+    --radius: 0.75rem; /* cards 12px; md 10px; sm 8px */
+
+    /* Soft tint fills for status pills and row washes. */
+    --success-soft: 140 31% 93%; /* #E7F3EC */
+    --warning-soft: 44 59% 90%; /* #F5EDD8 */
+    --warning-accent: 43 51% 52%; /* #C39B45 dot */
+    --warning-wash: 48 70% 95%; /* #FBF7E8 row tint */
+    --destructive-soft: 4 74% 95%; /* #FBEBEA */
+    --destructive-wash: 7 67% 96%; /* #FCF0EF row tint */
+    --info-soft: 216 69% 95%; /* #E9F0FB */
   }
 
   .dark {
-    /* Dark theme — the orun.dev canvas: near-black zinc surfaces, amber accent.
-       Values are lifted directly from the landing page tokens (bg #050505,
-       surface #0a0a0a, border #1f1f23, text #fafafa/#a1a1aa, amber #f59e0b) so
-       "Open Console" feels like the same product, not a different app. */
-    --background: 240 8% 3.5%;
-    --foreground: 0 0% 98%;
-    --card: 240 7% 5%;
-    --card-foreground: 0 0% 98%;
-    --popover: 240 7% 6.5%;
-    --popover-foreground: 0 0% 98%;
-    --primary: 38 92% 50%;
-    --primary-foreground: 30 45% 7%;
-    --secondary: 240 6% 11%;
-    --secondary-foreground: 0 0% 98%;
-    --muted: 240 6% 11%;
-    --muted-foreground: 240 5% 65%;
-    --accent: 240 6% 13%;
-    --accent-foreground: 0 0% 98%;
-    --destructive: 0 72% 55%;
-    --destructive-foreground: 0 0% 98%;
-    --warning: 30 95% 56%;
-    --warning-foreground: 30 60% 8%;
-    --success: 142 69% 58%;
-    --success-foreground: 140 65% 8%;
-    --border: 240 8% 13%;
-    --input: 240 8% 16%;
-    --ring: 38 92% 50%;
+    /* Northwind dark — derived from the design's terminal/log surfaces
+       (#171717 pane, #333 border, #C9C9C9 text). Same reserved accents,
+       lifted for contrast. Primary inverts to paper-on-ink. */
+    --background: 0 0% 7%;
+    --foreground: 0 0% 94%;
+    --card: 0 0% 9%;
+    --card-foreground: 0 0% 94%;
+    --popover: 0 0% 10%;
+    --popover-foreground: 0 0% 94%;
+    --primary: 0 0% 96%;
+    --primary-foreground: 0 0% 9%;
+    --secondary: 0 0% 12%;
+    --secondary-foreground: 0 0% 79%;
+    --muted: 0 0% 12%;
+    --muted-foreground: 0 0% 60%;
+    --accent: 0 0% 16%;
+    --accent-foreground: 0 0% 94%;
+    --destructive: 3 60% 58%;
+    --destructive-foreground: 0 0% 100%;
+    --warning: 43 55% 55%;
+    --warning-foreground: 0 0% 9%;
+    --success: 146 35% 52%;
+    --success-foreground: 0 0% 9%;
+    --info: 215 60% 62%;
+    --info-foreground: 0 0% 9%;
+    --link: 217 75% 66%;
+    --border: 0 0% 17%;
+    --input: 0 0% 19%;
+    --ring: 0 0% 80%;
+
+    --success-soft: 146 25% 15%;
+    --warning-soft: 43 35% 15%;
+    --warning-accent: 43 51% 52%;
+    --warning-wash: 43 30% 11%;
+    --destructive-soft: 3 35% 15%;
+    --destructive-wash: 3 30% 11%;
+    --info-soft: 215 40% 15%;
   }
 
   * {
@@ -77,10 +105,37 @@
   body {
     @apply bg-background text-foreground antialiased;
     font-family: var(--font-sans);
+    font-size: 14px;
     -webkit-font-smoothing: antialiased;
   }
+  a {
+    color: inherit;
+  }
   ::selection {
-    background: hsl(var(--primary) / 0.35);
+    background: hsl(var(--link) / 0.14);
+  }
+
+  /* Northwind scrollbars: light thumb inset from a transparent track. */
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: hsl(0 0% 86%);
+    border-radius: 6px;
+    border: 2px solid hsl(var(--background));
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: hsl(0 0% 78%);
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  .dark ::-webkit-scrollbar-thumb {
+    background: hsl(0 0% 24%);
+  }
+  .dark ::-webkit-scrollbar-thumb:hover {
+    background: hsl(0 0% 32%);
   }
 
   /* Respect the OS "reduce motion" setting: collapse animations/transitions to
@@ -98,11 +153,30 @@
 }
 
 @layer utilities {
-  /* The orun.dev hero backdrop: an amber radial glow over a faint engineering
-     grid, faded out toward the bottom. Used on the full-screen entry surfaces
-     (login, onboarding) so they read as a continuation of the landing hero.
-     The pseudo-element sits behind content (pointer-events:none); host elements
-     just need `position: relative`. */
+  /* Display serif for page titles, greetings, and stat numerals. */
+  .font-serif-display {
+    font-family: var(--font-serif);
+    font-weight: 500;
+  }
+
+  /* 11px/600 uppercase section label — the Northwind kicker motif. */
+  .kicker {
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: hsl(var(--muted-foreground) / 0.85);
+  }
+
+  /* Prose link: no underline, a quiet blue baseline border. */
+  .link-prose {
+    cursor: pointer;
+    border-bottom: 1px solid hsl(var(--link) / 0.35);
+    text-decoration: none;
+  }
+
+  /* Quiet full-bleed entry surfaces (login, onboarding): plain paper with a
+     faint grid, no glow — Northwind keeps entry pages quiet too. */
   .bg-grid-glow {
     position: relative;
     isolation: isolate;
@@ -114,28 +188,26 @@
     z-index: -1;
     pointer-events: none;
     background:
-      radial-gradient(
-        620px 320px at 50% -80px,
-        hsl(var(--primary) / 0.12),
-        transparent 70%
-      ),
-      linear-gradient(hsl(var(--foreground) / 0.025) 1px, transparent 1px),
-      linear-gradient(90deg, hsl(var(--foreground) / 0.025) 1px, transparent 1px);
+      linear-gradient(hsl(var(--foreground) / 0.02) 1px, transparent 1px),
+      linear-gradient(
+        90deg,
+        hsl(var(--foreground) / 0.02) 1px,
+        transparent 1px
+      );
     background-size:
-      auto,
       56px 56px,
       56px 56px;
     -webkit-mask-image: linear-gradient(#000 0%, #000 52%, transparent 100%);
     mask-image: linear-gradient(#000 0%, #000 52%, transparent 100%);
   }
 
-  /* Mono, amber, uppercase section label — the landing "eyebrow" motif. */
+  /* Uppercase mono section label, retained for legacy call sites. */
   .eyebrow {
     font-family: var(--font-mono);
     font-size: 0.6875rem;
     letter-spacing: 0.14em;
     text-transform: uppercase;
-    color: hsl(var(--primary));
+    color: hsl(var(--muted-foreground));
   }
 
   .scrollbar-thin::-webkit-scrollbar {
@@ -145,6 +217,27 @@
   .scrollbar-thin::-webkit-scrollbar-thumb {
     background: hsl(var(--border));
     border-radius: 4px;
+  }
+  .scrollbar-none::-webkit-scrollbar {
+    display: none;
+  }
+  .scrollbar-none {
+    scrollbar-width: none;
+  }
+
+  /* Animated striped fill for a running job's progress segment. */
+  .runbar {
+    background-image: linear-gradient(
+      115deg,
+      hsl(var(--info) / 0.45) 25%,
+      transparent 25%,
+      transparent 50%,
+      hsl(var(--info) / 0.45) 50%,
+      hsl(var(--info) / 0.45) 75%,
+      transparent 75%
+    );
+    background-size: 20px 20px;
+    animation: runflow 1s linear infinite;
   }
 
   /* iOS safe-area helpers (notch / home indicator). Used by the sticky topbar,

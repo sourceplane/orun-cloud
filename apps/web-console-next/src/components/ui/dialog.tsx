@@ -17,7 +17,8 @@ export const DialogOverlay = React.forwardRef<
   <DialogPrimitive.Overlay
     ref={ref}
     className={cn(
-      "fixed inset-0 z-50 bg-black/50 data-[state=open]:animate-fade-in data-[state=closed]:animate-fade-out",
+      // Northwind scrim: quiet rgba(0,0,0,.22) wash.
+      "fixed inset-0 z-50 bg-black/[0.22] data-[state=open]:animate-scrim-in data-[state=closed]:animate-fade-out",
       className,
     )}
     {...props}
@@ -35,7 +36,8 @@ export const DialogContent = React.forwardRef<
       ref={ref}
       className={cn(
         "fixed left-[50%] top-[50%] z-50 grid w-[calc(100%-2rem)] max-w-lg translate-x-[-50%] translate-y-[-50%] gap-4",
-        "border bg-card text-card-foreground p-6 shadow-xl rounded-xl",
+        // Northwind panel: white, hairline border, 14px radius, drawer shadow.
+        "rounded-[14px] border bg-card p-6 text-card-foreground shadow-[0_18px_50px_rgba(0,0,0,0.16)]",
         "will-change-transform data-[state=open]:animate-dialog-in data-[state=closed]:animate-dialog-out",
         className,
       )}
@@ -61,7 +63,7 @@ export const DialogTitle = React.forwardRef<
   React.ElementRef<typeof DialogPrimitive.Title>,
   React.ComponentPropsWithoutRef<typeof DialogPrimitive.Title>
 >(({ className, ...props }, ref) => (
-  <DialogPrimitive.Title ref={ref} className={cn("text-lg font-semibold leading-none tracking-tight", className)} {...props} />
+  <DialogPrimitive.Title ref={ref} className={cn("text-[15px] font-semibold leading-none tracking-tight", className)} {...props} />
 ));
 DialogTitle.displayName = "DialogTitle";
 
@@ -69,6 +71,6 @@ export const DialogDescription = React.forwardRef<
   React.ElementRef<typeof DialogPrimitive.Description>,
   React.ComponentPropsWithoutRef<typeof DialogPrimitive.Description>
 >(({ className, ...props }, ref) => (
-  <DialogPrimitive.Description ref={ref} className={cn("text-sm text-muted-foreground", className)} {...props} />
+  <DialogPrimitive.Description ref={ref} className={cn("text-[12.5px] leading-normal text-muted-foreground", className)} {...props} />
 ));
 DialogDescription.displayName = "DialogDescription";

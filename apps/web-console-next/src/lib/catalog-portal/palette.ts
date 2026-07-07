@@ -22,10 +22,11 @@
 /** Health states → dot colour `c`, label `t`, and text colour `l`. */
 export const HEALTH = {
   healthy: { c: "hsl(var(--success))", t: "Healthy", l: "hsl(var(--success))" },
-  degraded: { c: "hsl(var(--warning))", t: "Degraded", l: "hsl(var(--warning))" },
+  // Northwind warn pair: amber #C39B45 dot, #9A7B2D text (catalog.html).
+  degraded: { c: "hsl(var(--warning-accent))", t: "Degraded", l: "hsl(var(--warning))" },
   down: { c: "hsl(var(--destructive))", t: "Down", l: "hsl(var(--destructive))" },
   /** Resources (and entities with no runtime signal) are "Managed". */
-  managed: { c: "hsl(var(--muted-foreground))", t: "Managed", l: "hsl(var(--muted-foreground))" },
+  managed: { c: "hsl(var(--muted-foreground) / 0.55)", t: "Managed", l: "hsl(var(--muted-foreground))" },
 } as const;
 
 export type HealthKey = keyof typeof HEALTH;

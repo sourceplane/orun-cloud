@@ -17,7 +17,8 @@ export const TooltipContent = React.forwardRef<
       ref={ref}
       sideOffset={sideOffset}
       className={cn(
-        "z-50 overflow-hidden rounded-md border bg-popover px-2.5 py-1.5 text-xs text-popover-foreground shadow-md",
+        // Northwind popover language: white card, hairline border, soft shadow.
+        "z-50 overflow-hidden rounded-[8px] border bg-popover px-2.5 py-1.5 text-xs text-popover-foreground shadow-[0_8px_30px_rgba(0,0,0,0.10)]",
         "data-[state=delayed-open]:animate-fade-in",
         className,
       )}

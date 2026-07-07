@@ -10,19 +10,20 @@ import type {
   WorkSummaryResponse,
   WorkTaskView,
 } from "@saas/contracts/work";
-import { Badge } from "@/components/ui/badge";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
+import {
+  HeaderStat,
+  ListCard,
+  PageHeader,
+  Pill,
+  Screen,
+  StatusText,
+  type Tone,
+} from "@/components/ui/northwind";
 import { wrap } from "@/lib/api";
 import { qk, useApiQuery } from "@/lib/query";
 import { useSession } from "@/lib/session";
-import { rungBadgeVariant, rungLabel, groupTasksBySpec } from "@/lib/work/model";
+import { rungLabel, groupTasksBySpec, type SpecGroup } from "@/lib/work/model";
 import { TaskActions } from "@/components/work/task-actions";
 
 export function WorkWorkbench({ orgId }: { orgId: string }) {
@@ -58,140 +59,303 @@ export function WorkWorkbench({ orgId }: { orgId: string }) {
     return () => clearInterval(t);
   }, [client, orgId, reload]);
 
-  if (summary.loading) {
-    return (
-      <div className="space-y-3">
-        <Skeleton className="h-8 w-64" />
-        <Skeleton className="h-32 w-full" />
-        <Skeleton className="h-32 w-full" />
-      </div>
-    );
-  }
-  if (summary.error) {
-    return <ErrorCard code={summary.error.code} message={summary.error.message} />;
-  }
   const data = summary.data;
-  if (!data || (data.tasks.length === 0 && data.specs.length === 0)) {
-    return (
-      <Card>
-        <CardHeader>
-          <CardTitle>Work</CardTitle>
-          <CardDescription>
-            Nothing here yet. Import a specs tree with{" "}
-            <code className="font-mono text-xs">orun work import specs/ --workspace …</code> — lifecycle
-            derives from delivery history, not from anything you type.
-          </CardDescription>
-        </CardHeader>
-      </Card>
-    );
+  const empty = !data || (data.tasks.length === 0 && data.specs.length === 0);
+
+  let body: React.ReactNode;
+  if (summary.loading) {
+    body = <WorkSkeleton />;
+  } else if (summary.error) {
+    body = <ErrorCard code={summary.error.code} message={summary.error.message} />;
+  } else if (empty) {
+    body = <EmptyWork />;
+  } else {
+    body = <WorkSummary data={data} orgId={orgId} onMutated={summary.reload} />;
   }
-  return <WorkSummary data={data} orgId={orgId} onMutated={summary.reload} />;
+
+  return (
+    <Screen>
+      <PageHeader
+        title="Work"
+        description="Tasks grouped by spec, ordered by how close they are to shipped. Authored in git — the console reflects, and lets you pin a rung."
+        {...(data && !empty ? { actions: <HeaderStats tasks={data.tasks} /> } : {})}
+      />
+      {body}
+    </Screen>
+  );
 }
 
-function WorkSummary({ data, orgId, onMutated }: { data: WorkSummaryResponse; orgId: string; onMutated: () => void }) {
+/* ── Header stats ─────────────────────────────────────────────── */
+
+function HeaderStats({ tasks }: { tasks: WorkTaskView[] }) {
+  const open = tasks.filter(
+    (t) => t.lifecycle.rung !== "released" && t.lifecycle.rung !== "canceled",
+  ).length;
+  const released = tasks.filter((t) => t.lifecycle.rung === "released").length;
+  return (
+    <div className="flex gap-6">
+      <HeaderStat
+        value={open}
+        caption={open === 1 ? "open task" : "open tasks"}
+        className="text-left sm:text-right"
+      />
+      <HeaderStat
+        value={released}
+        caption="released"
+        tone="success"
+        className="text-left sm:text-right"
+      />
+    </div>
+  );
+}
+
+/* ── Summary (spec groups) ────────────────────────────────────── */
+
+function WorkSummary({
+  data,
+  orgId,
+  onMutated,
+}: {
+  data: WorkSummaryResponse;
+  orgId: string;
+  onMutated: () => void;
+}) {
   const groups = groupTasksBySpec(data.tasks);
   const specTitles = new Map(data.specs.map((s) => [s.key, s.title]));
 
   return (
-    <div className="space-y-4">
+    <div className="mt-[30px] flex flex-col gap-[26px]">
       {data.drift.length > 0 ? <DriftInbox drift={data.drift} /> : null}
       {data.suggestions.length > 0 ? <Suggestions suggestions={data.suggestions} /> : null}
       {groups.map((group) => (
-        <Card key={group.spec ?? "__inbox__"}>
-          <CardHeader>
-            <CardTitle className="text-base">
-              {group.spec ? (specTitles.get(group.spec) ?? group.spec) : "Inbox"}
-            </CardTitle>
-            {group.spec ? (
-              <CardDescription className="font-mono text-xs">{group.spec}</CardDescription>
-            ) : null}
-          </CardHeader>
-          <CardContent>
-            <ul className="divide-y divide-border">
-              {group.tasks.map((task) => (
-                <TaskRow key={task.key} task={task} orgId={orgId} onMutated={onMutated} />
-              ))}
-            </ul>
-          </CardContent>
-        </Card>
+        <SpecGroupSection
+          key={group.spec ?? "__inbox__"}
+          group={group}
+          {...(group.spec ? { title: specTitles.get(group.spec) } : {})}
+          orgId={orgId}
+          onMutated={onMutated}
+        />
       ))}
     </div>
   );
 }
 
-function TaskRow({ task, orgId, onMutated }: { task: WorkTaskView; orgId: string; onMutated: () => void }) {
+function SpecGroupSection({
+  group,
+  title,
+  orgId,
+  onMutated,
+}: {
+  group: SpecGroup;
+  title?: string | undefined;
+  orgId: string;
+  onMutated: () => void;
+}) {
+  const total = group.tasks.length;
+  const done = group.tasks.filter(
+    (t) => t.lifecycle.rung === "released" || t.lifecycle.rung === "done",
+  ).length;
+  const active = group.tasks.filter(
+    (t) => t.lifecycle.rung === "in_review" || t.lifecycle.rung === "in_progress",
+  ).length;
+
+  return (
+    <section>
+      <div className="mb-2.5 flex items-center gap-2.5">
+        {group.spec ? (
+          <span
+            className="truncate font-mono text-[12.5px] font-semibold text-secondary-foreground"
+            {...(title && title !== group.spec ? { title } : {})}
+          >
+            {group.spec}
+          </span>
+        ) : (
+          <span className="text-[12.5px] font-semibold text-muted-foreground">Inbox</span>
+        )}
+        <span className="shrink-0 text-[11.5px] text-muted-foreground/85">
+          {total} {total === 1 ? "task" : "tasks"}
+          {group.spec ? "" : " · no spec yet"}
+        </span>
+        {group.spec && total > 0 ? (
+          <span
+            aria-hidden
+            className="ml-auto flex h-[5px] w-20 shrink-0 overflow-hidden rounded-[3px] bg-[#EDEDED] dark:bg-secondary sm:w-40"
+          >
+            {done > 0 ? <span className="bg-success" style={{ width: `${(done / total) * 100}%` }} /> : null}
+            {active > 0 ? (
+              <span className="bg-warning-accent" style={{ width: `${(active / total) * 100}%` }} />
+            ) : null}
+          </span>
+        ) : null}
+      </div>
+      <ListCard>
+        <ul>
+          {group.tasks.map((task) => (
+            <TaskRow key={task.key} task={task} orgId={orgId} onMutated={onMutated} />
+          ))}
+        </ul>
+      </ListCard>
+    </section>
+  );
+}
+
+/* ── Task rows ────────────────────────────────────────────────── */
+
+const RUNG_PILL_TONE: Partial<Record<WorkRung, Tone>> = {
+  released: "success",
+  in_review: "warning",
+  in_progress: "warning",
+  ready: "neutral",
+};
+
+const RUNG_PILL_CLASS: Partial<Record<WorkRung, string>> = {
+  done: "bg-[#EDEDED] text-foreground dark:bg-secondary dark:text-foreground",
+  draft: "border border-border bg-background text-muted-foreground",
+  canceled: "border border-border bg-background text-muted-foreground/70",
+};
+
+function RungPill({ rung }: { rung: WorkRung }) {
+  return (
+    <Pill tone={RUNG_PILL_TONE[rung] ?? "neutral"} className={RUNG_PILL_CLASS[rung] ?? ""}>
+      {rungLabel(rung)}
+    </Pill>
+  );
+}
+
+function TaskRow({
+  task,
+  orgId,
+  onMutated,
+}: {
+  task: WorkTaskView;
+  orgId: string;
+  onMutated: () => void;
+}) {
   const lc = task.lifecycle;
   return (
-    <li className="flex flex-wrap items-center gap-2 py-2">
-      <span className="font-mono text-xs text-muted-foreground">{task.key}</span>
-      <span className="flex-1 text-sm">{task.title}</span>
-      {lc.pinned ? (
-        <Badge variant="warning" title={`pinned by ${lc.pinned.by.id}${lc.pinned.note ? ` — ${lc.pinned.note}` : ""}`}>
-          pinned {rungLabel(lc.pinned.rung)}
-        </Badge>
-      ) : null}
-      {lc.blocked ? <Badge variant="destructive">blocked</Badge> : null}
-      <Badge variant={rungBadgeVariant(lc.rung)}>{rungLabel(lc.rung)}</Badge>
+    <li className="group border-t border-border/50 px-5 py-3 transition-colors duration-100 first:border-t-0 hover:bg-muted/60">
+      <div className="flex min-h-[20px] flex-wrap items-center gap-x-3 gap-y-1.5">
+        <span className="min-w-[56px] shrink-0 font-mono text-[11.5px] text-muted-foreground/85">
+          {task.key}
+        </span>
+        <span className="min-w-0 flex-1 truncate text-[13.5px]">{task.title}</span>
+        <TaskActions orgId={orgId} task={task} onMutated={onMutated} />
+        {lc.pinned ? (
+          <span
+            className="shrink-0"
+            title={`pinned by ${lc.pinned.by.id}${lc.pinned.note ? ` — ${lc.pinned.note}` : ""}`}
+          >
+            <Pill tone="warning">pinned {rungLabel(lc.pinned.rung)}</Pill>
+          </span>
+        ) : null}
+        {lc.blocked ? <Pill tone="error">blocked</Pill> : null}
+        <RungPill rung={lc.rung} />
+      </div>
       {lc.evidence?.length ? (
-        <span className="w-full pl-1 text-xs text-muted-foreground sm:w-auto">{lc.evidence[0]}</span>
+        <div className="mt-1 truncate text-[11.5px] text-muted-foreground/85 sm:pl-[68px]">
+          {lc.evidence[0]}
+        </div>
       ) : null}
-      <TaskActions orgId={orgId} task={task} onMutated={onMutated} />
     </li>
   );
 }
 
+/* ── Drift & suggestions ──────────────────────────────────────── */
+
 function DriftInbox({ drift }: { drift: WorkSummaryResponse["drift"] }) {
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="text-base">Drift inbox</CardTitle>
-        <CardDescription>Merged PRs no open task claims — unplanned changes.</CardDescription>
-      </CardHeader>
-      <CardContent>
-        <ul className="space-y-1">
-          {drift.map((d) => (
-            <li key={d.pr} className="text-sm">
-              <span className="font-mono text-xs">{d.pr}</span>{" "}
-              <span className="text-muted-foreground">→ {d.affected.join(", ")}</span>
-            </li>
-          ))}
-        </ul>
-      </CardContent>
-    </Card>
+    <section>
+      <div className="mb-2.5 flex flex-wrap items-baseline gap-x-2.5 gap-y-0.5">
+        <span className="text-[12.5px] font-semibold text-muted-foreground">Drift inbox</span>
+        <span className="text-[11.5px] text-muted-foreground/85">
+          merged PRs no open task claims — unplanned changes
+        </span>
+      </div>
+      <ListCard>
+        {drift.map((d) => (
+          <div
+            key={d.pr}
+            className="flex items-baseline gap-3 border-t border-border/50 bg-warning-wash px-5 py-2.5 first:border-t-0"
+          >
+            <span className="min-w-[56px] shrink-0 font-mono text-[11.5px] text-secondary-foreground">
+              {d.pr}
+            </span>
+            <span className="min-w-0 flex-1 truncate text-[12.5px] text-muted-foreground">
+              → {d.affected.join(", ")}
+            </span>
+          </div>
+        ))}
+      </ListCard>
+    </section>
   );
 }
 
 function Suggestions({ suggestions }: { suggestions: WorkSummaryResponse["suggestions"] }) {
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="text-base">Claim suggestions</CardTitle>
-        <CardDescription>
-          PRs whose components match more than one open task — ambiguity suggests, never links.
-        </CardDescription>
-      </CardHeader>
-      <CardContent>
-        <ul className="space-y-1">
-          {suggestions.map((s) => (
-            <li key={s.pr} className="text-sm">
-              <span className="font-mono text-xs">{s.pr}</span>{" "}
-              <span className="text-muted-foreground">could claim {s.taskKeys.join(" or ")}</span>
-            </li>
-          ))}
-        </ul>
-      </CardContent>
-    </Card>
+    <section>
+      <div className="mb-2.5 flex flex-wrap items-baseline gap-x-2.5 gap-y-0.5">
+        <span className="text-[12.5px] font-semibold text-muted-foreground">Claim suggestions</span>
+        <span className="text-[11.5px] text-muted-foreground/85">
+          PRs whose components match more than one open task — ambiguity suggests, never links
+        </span>
+      </div>
+      <ListCard>
+        {suggestions.map((s) => (
+          <div
+            key={s.pr}
+            className="flex items-baseline gap-3 border-t border-border/50 px-5 py-2.5 first:border-t-0"
+          >
+            <span className="min-w-[56px] shrink-0 font-mono text-[11.5px] text-secondary-foreground">
+              {s.pr}
+            </span>
+            <span className="min-w-0 flex-1 truncate text-[12.5px] text-muted-foreground">
+              could claim {s.taskKeys.join(" or ")}
+            </span>
+          </div>
+        ))}
+      </ListCard>
+    </section>
+  );
+}
+
+/* ── Empty / error / loading ──────────────────────────────────── */
+
+function EmptyWork() {
+  return (
+    <div className="mt-[30px] rounded-xl border bg-card px-6 py-14 text-center">
+      <div className="text-[13.5px] font-medium">Nothing here yet</div>
+      <p className="mx-auto mt-1.5 max-w-[460px] text-[12.5px] leading-relaxed text-muted-foreground">
+        Import a specs tree with{" "}
+        <code className="rounded bg-muted px-1 py-0.5 font-mono text-[11px] text-foreground">
+          orun work import specs/ --workspace …
+        </code>{" "}
+        — lifecycle derives from delivery history, not from anything you type.
+      </p>
+    </div>
   );
 }
 
 function ErrorCard({ code, message }: { code: string; message: string }) {
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="text-destructive">{code}</CardTitle>
-        <CardDescription>{message}</CardDescription>
-      </CardHeader>
-    </Card>
+    <div className="mt-[30px] rounded-xl border bg-card px-6 py-8">
+      <StatusText tone="error" className="font-medium">
+        {code}
+      </StatusText>
+      <p className="mt-1.5 text-[12.5px] text-muted-foreground">{message}</p>
+    </div>
+  );
+}
+
+function WorkSkeleton() {
+  return (
+    <div aria-hidden className="mt-[30px] space-y-[26px]">
+      {Array.from({ length: 2 }).map((_, i) => (
+        <div key={i}>
+          <Skeleton className="mb-2.5 h-4 w-44" />
+          <Skeleton className="h-36 w-full rounded-xl" />
+        </div>
+      ))}
+    </div>
   );
 }
 

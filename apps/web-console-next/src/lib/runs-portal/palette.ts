@@ -20,8 +20,8 @@
 
 import type { RunStatus, RunJobStatus, ActorRef, RunSource } from "@saas/contracts/state";
 
-/** The design's in-progress cobalt — used for running runs/jobs and progress bars. */
-export const RUN_BLUE = "#6f9fd8";
+/** The design's in-progress blue (Northwind info) — running runs/jobs/progress. */
+export const RUN_BLUE = "#3B76C9";
 
 /** SVG `path d` glyphs for run/job status marks (verbatim from the design). */
 export const STATUS_GLYPH = {
@@ -51,7 +51,7 @@ export interface StatusVisual {
 export const RUN_STATUS: Record<RunStatus, StatusVisual> = {
   succeeded: { color: "hsl(var(--success))", tint: "hsl(var(--success) / 0.1)", label: "Succeeded", icon: STATUS_GLYPH.check, spin: false },
   failed: { color: "hsl(var(--destructive))", tint: "hsl(var(--destructive) / 0.1)", label: "Failed", icon: STATUS_GLYPH.cross, spin: false },
-  running: { color: RUN_BLUE, tint: "rgba(111,159,216,0.1)", label: "Running", icon: STATUS_GLYPH.spinner, spin: true },
+  running: { color: RUN_BLUE, tint: "rgba(59,118,201,0.1)", label: "Running", icon: STATUS_GLYPH.spinner, spin: true },
   pending: { color: "hsl(var(--muted-foreground))", tint: "hsl(var(--muted-foreground) / 0.1)", label: "Pending", icon: STATUS_GLYPH.clock, spin: false },
   canceled: { color: "hsl(var(--muted-foreground) / 0.8)", tint: "hsl(var(--muted-foreground) / 0.08)", label: "Canceled", icon: STATUS_GLYPH.slash, spin: false },
 };
@@ -61,8 +61,8 @@ export const JOB_STATUS: Record<RunJobStatus, StatusVisual> = {
   succeeded: { color: "hsl(var(--success))", tint: "hsl(var(--success) / 0.1)", label: "Succeeded", icon: STATUS_GLYPH.check, spin: false },
   failed: { color: "hsl(var(--destructive))", tint: "hsl(var(--destructive) / 0.1)", label: "Failed", icon: STATUS_GLYPH.cross, spin: false },
   timed_out: { color: "hsl(var(--destructive))", tint: "hsl(var(--destructive) / 0.1)", label: "Timed out", icon: STATUS_GLYPH.cross, spin: false },
-  running: { color: RUN_BLUE, tint: "rgba(111,159,216,0.1)", label: "Running", icon: STATUS_GLYPH.spinner, spin: true },
-  claimed: { color: RUN_BLUE, tint: "rgba(111,159,216,0.1)", label: "Claimed", icon: STATUS_GLYPH.spinner, spin: true },
+  running: { color: RUN_BLUE, tint: "rgba(59,118,201,0.1)", label: "Running", icon: STATUS_GLYPH.spinner, spin: true },
+  claimed: { color: RUN_BLUE, tint: "rgba(59,118,201,0.1)", label: "Claimed", icon: STATUS_GLYPH.spinner, spin: true },
   queued: { color: "hsl(var(--muted-foreground))", tint: "hsl(var(--muted-foreground) / 0.1)", label: "Queued", icon: STATUS_GLYPH.clock, spin: false },
   canceled: { color: "hsl(var(--muted-foreground) / 0.8)", tint: "hsl(var(--muted-foreground) / 0.08)", label: "Canceled", icon: STATUS_GLYPH.slash, spin: false },
 };
@@ -133,7 +133,7 @@ export function actorAvatar(actor: ActorRef | null | undefined, source: RunSourc
       icon: SOURCE_GLYPH.bot,
       initials: "",
       name,
-      bg: "rgba(111,159,216,0.12)",
+      bg: "rgba(59,118,201,0.12)",
       fg: RUN_BLUE,
     };
   }

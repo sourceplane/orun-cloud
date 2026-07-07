@@ -171,7 +171,7 @@ export function CommandPaletteProvider({ children }: { children: React.ReactNode
     <PaletteCtx.Provider value={{ open: () => setOpen(true), register }}>
       {children}
       <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="p-0 overflow-hidden max-w-xl">
+        <DialogContent className="max-w-xl overflow-hidden rounded-[14px] p-0">
           <DialogTitle className="sr-only">Command palette</DialogTitle>
           <DialogDescription className="sr-only">
             Search and run actions, jump to pages, or switch scope.
@@ -193,7 +193,7 @@ export function CommandPaletteProvider({ children }: { children: React.ReactNode
                         value={`${cmd.label} ${(cmd.keywords ?? []).join(" ")}`}
                         onSelect={() => run(cmd)}
                       >
-                        {Icon ? <Icon className="h-4 w-4 opacity-70" /> : null}
+                        {Icon ? <Icon className="h-[15px] w-[15px] text-muted-foreground" strokeWidth={1.8} /> : null}
                         {cmd.label}
                         {cmd.shortcut ? <CommandShortcut>{cmd.shortcut}</CommandShortcut> : null}
                       </CommandItem>

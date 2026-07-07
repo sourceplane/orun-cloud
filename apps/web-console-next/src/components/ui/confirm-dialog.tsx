@@ -78,7 +78,7 @@ export function ConfirmDialog({
           <DialogDescription>{description}</DialogDescription>
         </DialogHeader>
         {resourceName ? (
-          <div className="rounded-md border bg-muted/50 px-3 py-2 font-mono text-xs break-all">
+          <div className="break-all rounded-[9px] border border-border bg-muted px-3.5 py-2.5 font-mono text-xs">
             {resourceName}
           </div>
         ) : null}

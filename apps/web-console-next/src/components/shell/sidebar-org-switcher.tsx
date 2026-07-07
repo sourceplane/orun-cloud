@@ -50,15 +50,20 @@ export function SidebarOrgSwitcher({ onNavigate }: { onNavigate?: () => void } =
   const current = orgs?.find((o) => o.slug === orgSlug) ?? null;
   const label = current?.name ?? orgSlug ?? "Select workspace";
   const seed = (label.trim()[0] ?? "S").toUpperCase();
+  const kind = (current && workspaceKindBadge(current)) || "workspace";
 
   return (
     <DropdownMenu>
-      <DropdownMenuTrigger className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left transition-colors hover:bg-accent focus:outline-none focus-visible:ring-2 focus-visible:ring-ring">
-        <span className="grid h-7 w-7 shrink-0 place-items-center rounded-md bg-gradient-to-br from-primary to-primary/40 text-xs font-bold text-primary-foreground">
+      {/* Northwind switcher: white card, ink logo square, name over kind. */}
+      <DropdownMenuTrigger className="flex w-full items-center gap-[9px] rounded-[9px] border border-border bg-card p-2 text-left transition-colors hover:bg-accent/40 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+        <span className="grid h-6 w-6 shrink-0 place-items-center rounded-[7px] bg-foreground text-xs font-bold text-background">
           {seed}
         </span>
-        <span className="min-w-0 flex-1 truncate text-sm font-semibold tracking-tight">{label}</span>
-        <ChevronsUpDown className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+        <span className="flex min-w-0 flex-1 flex-col leading-tight">
+          <span className="truncate text-[13px] font-semibold">{label}</span>
+          <span className="truncate text-[11px] font-normal lowercase text-muted-foreground">{kind}</span>
+        </span>
+        <ChevronsUpDown className="h-[13px] w-[13px] shrink-0 text-muted-foreground/70" />
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" className="min-w-[240px]">
         <DropdownMenuLabel>Workspaces</DropdownMenuLabel>

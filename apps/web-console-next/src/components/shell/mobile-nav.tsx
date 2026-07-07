@@ -31,7 +31,7 @@ export function MobileNav() {
       >
         <Menu className="h-5 w-5" />
       </SheetTrigger>
-      <SheetContent side="left" className="px-0">
+      <SheetContent side="left" className="bg-secondary px-0">
         <SheetTitle className="sr-only">Navigation</SheetTitle>
         {/* Mirror the desktop sidebar: org switcher + Find at the top. */}
         <div className="space-y-2 border-b px-2 pb-2 pr-12">

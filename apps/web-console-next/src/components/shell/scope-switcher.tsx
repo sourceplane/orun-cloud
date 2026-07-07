@@ -195,8 +195,8 @@ function Crumb({
     <DropdownMenu>
       <DropdownMenuTrigger
         className={cn(
-          "group inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-sm border border-transparent",
-          "hover:bg-accent hover:border-border transition-colors",
+          "group inline-flex items-center gap-1.5 rounded-[7px] border border-transparent px-2 py-1 text-[13px]",
+          "transition-colors hover:border-border hover:bg-accent",
           muted && "text-muted-foreground",
         )}
       >

@@ -189,18 +189,18 @@ export function CreateOrgFlow({
       {variant === "page" && (
         <Link
           href="/orgs"
-          className="inline-flex items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground"
+          className="inline-flex items-center gap-1.5 text-[12.5px] text-muted-foreground transition-colors hover:text-foreground"
         >
-          <ArrowLeft className="h-4 w-4" />
+          <ArrowLeft className="h-3.5 w-3.5" strokeWidth={1.8} />
           Workspaces
         </Link>
       )}
 
-      <header className="mt-3">
-        <h1 className="text-2xl font-semibold tracking-tight">
-          {mode === "parent" ? "Create your workspace" : "Add a new workspace"}
+      <header className="mt-4">
+        <h1 className="font-serif text-[26px] font-medium leading-tight tracking-[-0.01em] sm:text-[28px]">
+          {mode === "parent" ? "Name your workspace." : "Add a new workspace."}
         </h1>
-        <p className="mt-1 text-sm text-muted-foreground">
+        <p className="mt-2 max-w-[560px] text-[13.5px] leading-normal text-muted-foreground">
           {mode === "parent"
             ? "A workspace is a tenant — it owns repos, members, and billing. You need one to use the console."
             : "Another workspace under your account — its billing rolls up to your account's parent workspace."}

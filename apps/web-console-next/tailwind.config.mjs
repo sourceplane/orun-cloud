@@ -43,6 +43,19 @@ export default {
           DEFAULT: "hsl(var(--success))",
           foreground: "hsl(var(--success-foreground))",
         },
+        info: {
+          DEFAULT: "hsl(var(--info))",
+          foreground: "hsl(var(--info-foreground))",
+        },
+        link: "hsl(var(--link))",
+        // Soft tint fills for status pills and warn/error row washes.
+        "success-soft": "hsl(var(--success-soft))",
+        "warning-soft": "hsl(var(--warning-soft))",
+        "warning-accent": "hsl(var(--warning-accent))",
+        "warning-wash": "hsl(var(--warning-wash))",
+        "destructive-soft": "hsl(var(--destructive-soft))",
+        "destructive-wash": "hsl(var(--destructive-wash))",
+        "info-soft": "hsl(var(--info-soft))",
         card: {
           DEFAULT: "hsl(var(--card))",
           foreground: "hsl(var(--card-foreground))",
@@ -59,6 +72,7 @@ export default {
       },
       fontFamily: {
         sans: ["var(--font-sans)", "system-ui", "sans-serif"],
+        serif: ["var(--font-serif)", "Georgia", "serif"],
         mono: ["var(--font-mono)", "ui-monospace", "monospace"],
       },
       keyframes: {
@@ -125,6 +139,28 @@ export default {
         shimmer: {
           "100%": { transform: "translateX(100%)" },
         },
+        // Northwind motion: screens fade up on entry, live dots pulse,
+        // running bars flow, the entity drawer slides in over a scrim.
+        "fade-up": {
+          from: { opacity: "0", transform: "translateY(6px)" },
+          to: { opacity: "1", transform: "translateY(0)" },
+        },
+        livepulse: {
+          "0%, 100%": { opacity: "1" },
+          "50%": { opacity: "0.3" },
+        },
+        runflow: {
+          from: { backgroundPosition: "0 0" },
+          to: { backgroundPosition: "20px 0" },
+        },
+        "drawer-in": {
+          from: { opacity: "0.4", transform: "translateX(24px)" },
+          to: { opacity: "1", transform: "translateX(0)" },
+        },
+        "scrim-in": {
+          from: { opacity: "0" },
+          to: { opacity: "1" },
+        },
       },
       animation: {
         // iOS-style easing for sheets so the panel decelerates naturally.
@@ -143,6 +179,11 @@ export default {
         "sidebar-in-right": "sidebar-in-right 220ms cubic-bezier(0.32, 0.72, 0, 1)",
         "sidebar-in-left": "sidebar-in-left 220ms cubic-bezier(0.32, 0.72, 0, 1)",
         shimmer: "shimmer 1.6s linear infinite",
+        "fade-up": "fade-up 280ms ease both",
+        livepulse: "livepulse 1.6s ease-in-out infinite",
+        runflow: "runflow 1s linear infinite",
+        "drawer-in": "drawer-in 240ms cubic-bezier(0.2, 0.8, 0.25, 1) both",
+        "scrim-in": "scrim-in 200ms ease both",
       },
     },
   },
