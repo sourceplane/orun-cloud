@@ -5,9 +5,6 @@ import { useParams } from "next/navigation";
 import { Plus, ShieldCheck } from "lucide-react";
 import { OrgScope } from "@/components/shell/org-scope";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Table, TableHeader, TableRow, TableHead, TableBody, TableCell } from "@/components/ui/table";
-import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { EmptyState } from "@/components/ui/empty-state";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
@@ -28,6 +25,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { SettingsHeader, SettingsPanel } from "@/components/settings/settings-primitives";
+import { ListCard, ListRow, Pill } from "@/components/ui/northwind";
 import { wrap } from "@/lib/api";
 import { useSession } from "@/lib/session";
 import { useApiQuery, qk } from "@/lib/query";
@@ -82,7 +81,7 @@ function Inner({ orgId }: { orgId: string }) {
   };
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-[18px]">
       <ConfirmDialog
         open={pendingRevoke !== null}
         onOpenChange={(o) => !o && setPendingRevoke(null)}
@@ -92,74 +91,67 @@ function Inner({ orgId }: { orgId: string }) {
         confirmLabel="Revoke role"
         onConfirm={() => (pendingRevoke ? revoke(pendingRevoke) : undefined)}
       />
-      <header className="flex items-start justify-between gap-4">
-        <div>
-          <h1 className="text-xl font-semibold tracking-tight">Account roles</h1>
-          <p className="text-sm text-muted-foreground">
-            Account-wide authority. A role granted here cascades to every workspace under the account,
-            current and future. Team grants at account scope are listed too; revoke those from the team.
-          </p>
-        </div>
-        <Dialog open={open} onOpenChange={setOpen}>
-          <DialogTrigger asChild>
-            <Button>
-              <Plus className="mr-1.5 size-4" /> Grant role
-            </Button>
-          </DialogTrigger>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>Grant account role</DialogTitle>
-              <DialogDescription>
-                The subject gains this authority on every workspace under the account.
-              </DialogDescription>
-            </DialogHeader>
-            <div className="space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="account-role-subject">Subject id</Label>
-                <Input
-                  id="account-role-subject"
-                  placeholder="usr_…"
-                  value={subjectId}
-                  onChange={(e) => setSubjectId(e.target.value)}
-                />
+      <SettingsHeader
+        title="Account roles"
+        description="Account-wide authority. A role granted here cascades to every workspace under the account, current and future. Team grants at account scope are listed too; revoke those from the team."
+        actions={
+          <Dialog open={open} onOpenChange={setOpen}>
+            <DialogTrigger asChild>
+              <Button size="sm">
+                <Plus className="mr-1.5 size-4" strokeWidth={1.8} /> Grant role
+              </Button>
+            </DialogTrigger>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Grant account role</DialogTitle>
+                <DialogDescription>
+                  The subject gains this authority on every workspace under the account.
+                </DialogDescription>
+              </DialogHeader>
+              <div className="space-y-4">
+                <div className="space-y-2">
+                  <Label htmlFor="account-role-subject">Subject id</Label>
+                  <Input
+                    id="account-role-subject"
+                    placeholder="usr_…"
+                    value={subjectId}
+                    onChange={(e) => setSubjectId(e.target.value)}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Role</Label>
+                  <Select value={role} onValueChange={setRole}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {ACCOUNT_ROLES.map((r) => (
+                        <SelectItem key={r} value={r}>{r}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="flex justify-end gap-2">
+                  <Button variant="ghost" onClick={() => setOpen(false)} disabled={busy}>Cancel</Button>
+                  <Button onClick={grant} disabled={busy}>Grant role</Button>
+                </div>
               </div>
-              <div className="space-y-2">
-                <Label>Role</Label>
-                <Select value={role} onValueChange={setRole}>
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {ACCOUNT_ROLES.map((r) => (
-                      <SelectItem key={r} value={r}>{r}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="flex justify-end gap-2">
-                <Button variant="ghost" onClick={() => setOpen(false)} disabled={busy}>Cancel</Button>
-                <Button onClick={grant} disabled={busy}>Grant role</Button>
-              </div>
-            </div>
-          </DialogContent>
-        </Dialog>
-      </header>
+            </DialogContent>
+          </Dialog>
+        }
+      />
 
       {roles.loading ? (
-        <Card>
-          <CardContent className="pt-6 space-y-2">
-            {Array.from({ length: 3 }).map((_, i) => (
-              <Skeleton key={i} className="h-9 w-full" />
-            ))}
-          </CardContent>
-        </Card>
+        <SettingsPanel className="space-y-2">
+          {Array.from({ length: 3 }).map((_, i) => (
+            <Skeleton key={i} className="h-9 w-full" />
+          ))}
+        </SettingsPanel>
       ) : roles.error ? (
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-destructive">{roles.error.code}</CardTitle>
-            <CardDescription>{roles.error.message}</CardDescription>
-          </CardHeader>
-        </Card>
+        <SettingsPanel>
+          <div className="text-[13.5px] font-semibold text-destructive">{roles.error.code}</div>
+          <p className="mt-1.5 text-[12.5px] text-muted-foreground">{roles.error.message}</p>
+        </SettingsPanel>
       ) : !roles.data || roles.data.length === 0 ? (
         <EmptyState
           icon={ShieldCheck}
@@ -168,46 +160,34 @@ function Inner({ orgId }: { orgId: string }) {
           primaryAction={{ label: "Grant role", onClick: () => setOpen(true) }}
         />
       ) : (
-        <Card>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Subject</TableHead>
-                <TableHead>Type</TableHead>
-                <TableHead>Role</TableHead>
-                <TableHead>Since</TableHead>
-                <TableHead className="text-right">Actions</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {roles.data.map((a) => (
-                <TableRow key={`${a.subjectId}-${a.role}`}>
-                  <TableCell className="font-mono text-xs">{a.subjectId}</TableCell>
-                  <TableCell>
-                    <Badge variant={a.subjectType === "team" ? "secondary" : "outline"}>{a.subjectType}</Badge>
-                  </TableCell>
-                  <TableCell className="font-medium">{a.role}</TableCell>
-                  <TableCell className="text-muted-foreground">
-                    {new Date(a.createdAt).toLocaleDateString()}
-                  </TableCell>
-                  <TableCell className="text-right">
-                    {a.subjectType === "user" ? (
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => setPendingRevoke({ subjectId: a.subjectId, role: a.role })}
-                      >
-                        Revoke
-                      </Button>
-                    ) : (
-                      <span className="text-xs text-muted-foreground">via team</span>
-                    )}
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </Card>
+        <ListCard>
+          {roles.data.map((a) => (
+            <ListRow key={`${a.subjectId}-${a.role}`} className="items-start">
+              <div className="min-w-0 flex-1 space-y-1">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="truncate font-mono text-xs">{a.subjectId}</span>
+                  <Pill tone={a.subjectType === "team" ? "info" : "neutral"}>{a.subjectType}</Pill>
+                </div>
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11.5px] text-muted-foreground">
+                  <span className="text-[13px] font-medium text-foreground">{a.role}</span>
+                  <span>since {new Date(a.createdAt).toLocaleDateString()}</span>
+                </div>
+              </div>
+              {a.subjectType === "user" ? (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="shrink-0"
+                  onClick={() => setPendingRevoke({ subjectId: a.subjectId, role: a.role })}
+                >
+                  Revoke
+                </Button>
+              ) : (
+                <span className="shrink-0 text-[11.5px] text-muted-foreground">via team</span>
+              )}
+            </ListRow>
+          ))}
+        </ListCard>
       )}
     </div>
   );

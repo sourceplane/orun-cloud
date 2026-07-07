@@ -4,13 +4,15 @@ import * as React from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { z } from "zod";
-import { Plus, Boxes } from "lucide-react";
+import { Plus, Boxes, GitBranch } from "lucide-react";
+import type { PublicEnvironment } from "@saas/contracts/projects";
+import type { Run } from "@saas/contracts/state";
 import { OrgScope } from "@/components/shell/org-scope";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardDescription, CardHeader, CardTitle, InteractiveCard } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Badge } from "@/components/ui/badge";
 import { EmptyState } from "@/components/ui/empty-state";
+import { Pill, QuietLink } from "@/components/ui/northwind";
 import {
   Dialog,
   DialogContent,
@@ -28,8 +30,7 @@ import { useSession } from "@/lib/session";
 import { useApiQuery, qk } from "@/lib/query";
 import { useToast } from "@/components/ui/toast";
 import { wrap, type ApiErrorBody } from "@/lib/api";
-import { formatDate } from "@/lib/format";
-import type { PublicEnvironment } from "@saas/contracts/projects";
+import { formatRelative } from "@/lib/runs-portal/model";
 
 const schema = z.object({
   name: z.string().min(2).max(48),
@@ -51,6 +52,7 @@ function Inner({ orgId, orgSlug, projectSlug }: { orgId: string; orgSlug: string
   const { client } = useSession();
   const { toast } = useToast();
   const qc = useQueryClient();
+  const now = React.useMemo(() => Date.now(), []);
 
   // Shares the `projects` cache key with the projects list page, so navigating
   // project-list → environments resolves the project synchronously from cache.
@@ -76,11 +78,52 @@ function Inner({ orgId, orgSlug, projectSlug }: { orgId: string; orgSlug: string
     { enabled: !!project },
   );
 
+  // Repo links carry the branch → environment map (which branch deploys where).
+  const repoLinks = useApiQuery(
+    qk.repoLinks(orgId, project?.id ?? "pending"),
+    () => wrap(async () => (await client.integrations.listRepoLinks(orgId, project!.id)).repoLinks),
+    { enabled: !!project },
+  );
+  // Org runs, for each env's most-recent deploy line.
+  const runs = useApiQuery(qk.orgRuns(orgId), () =>
+    wrap(async () => (await client.state.listOrgRuns(orgId, { limit: 100 })).runs),
+  );
+
   const [open, setOpen] = React.useState(false);
   const [precondition, setPrecondition] = React.useState<ApiErrorBody | null>(null);
 
   // The query cache is the source of truth; archive mutates it optimistically.
   const items = envs.data ?? [];
+
+  // env slug → the branch that deploys to it (first match across links).
+  const branchByEnv = React.useMemo(() => {
+    const m = new Map<string, string>();
+    for (const rl of repoLinks.data ?? []) {
+      for (const [branch, envSlug] of Object.entries(rl.branchEnvMap)) {
+        if (!m.has(envSlug)) m.set(envSlug, branch);
+      }
+    }
+    return m;
+  }, [repoLinks.data]);
+
+  // env slug → its most-recent run for this project.
+  const latestRunByEnv = React.useMemo(() => {
+    const m = new Map<string, Run>();
+    if (!project) return m;
+    for (const r of runs.data ?? []) {
+      if (r.projectId !== project.id || !r.environment) continue;
+      if (!m.has(r.environment)) m.set(r.environment, r);
+    }
+    return m;
+  }, [runs.data, project]);
+
+  const branchMap = React.useMemo(() => {
+    const entries: Array<[string, string]> = [];
+    for (const rl of repoLinks.data ?? []) {
+      for (const pair of Object.entries(rl.branchEnvMap)) entries.push(pair as [string, string]);
+    }
+    return entries;
+  }, [repoLinks.data]);
 
   const archive = async (env: PublicEnvironment) => {
     if (!project) return;
@@ -103,7 +146,7 @@ function Inner({ orgId, orgSlug, projectSlug }: { orgId: string; orgSlug: string
     return (
       <EmptyState
         title="Repo not found"
-        description={`No repo matches slug “${projectSlug}”.`}
+        description={`No repo matches “${projectSlug}”.`}
         primaryAction={{ label: "Back to repos", href: `/orgs/${orgSlug}/projects` }}
       />
     );
@@ -111,15 +154,8 @@ function Inner({ orgId, orgSlug, projectSlug }: { orgId: string; orgSlug: string
 
   return (
     <div className="space-y-5">
-      <header className="flex items-end justify-between gap-4">
-        <div>
-          <h1 className="text-xl font-semibold tracking-tight">
-            Environments <span className="text-muted-foreground font-normal">· {project.name}</span>
-          </h1>
-          <p className="text-sm text-muted-foreground">
-            Deployment targets within this project. Each gets isolated config and bindings.
-          </p>
-        </div>
+      <div className="flex items-center justify-between gap-3">
+        <span className="text-[13.5px] font-semibold">Environments</span>
         <div className="flex items-center gap-2">
           <Button
             type="button"
@@ -131,47 +167,47 @@ function Inner({ orgId, orgSlug, projectSlug }: { orgId: string; orgSlug: string
           </Button>
           <Dialog open={open} onOpenChange={setOpen}>
             <DialogTrigger asChild>
-              <Button>
+              <Button size="sm">
                 <Plus className="h-4 w-4 mr-1.5" />
                 New environment
               </Button>
             </DialogTrigger>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>Create environment</DialogTitle>
-              <DialogDescription>
-                Environments are isolated deployment targets within this project.
-              </DialogDescription>
-            </DialogHeader>
-            <ZodForm
-              schema={schema}
-              defaultValues={{ name: "", slug: "" }}
-              fields={[
-                { name: "name", label: "Name", placeholder: "Production" },
-                { name: "slug", label: "Slug", placeholder: "prod", hint: "Lowercased URL identifier." },
-              ]}
-              submitLabel="Create"
-              cancel={{ label: "Cancel", onClick: () => setOpen(false) }}
-              onSubmit={async (v) => {
-                const payload: { name: string; slug?: string } = { name: v.name };
-                if (v.slug) payload.slug = v.slug;
-                const r = await wrap(async () =>
-                  (await client.environments.create(orgId, project.id, payload)).environment,
-                );
-                if (!r.ok) {
-                  if (r.error.code === "precondition_failed") setPrecondition(r.error);
-                  else toast({ kind: "error", title: "Create failed", description: r.error.message });
-                  return;
-                }
-                toast({ kind: "success", title: "Environment created" });
-                setOpen(false);
-                envs.reload();
-              }}
-            />
-          </DialogContent>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Create environment</DialogTitle>
+                <DialogDescription>
+                  Environments are isolated deployment targets within this project.
+                </DialogDescription>
+              </DialogHeader>
+              <ZodForm
+                schema={schema}
+                defaultValues={{ name: "", slug: "" }}
+                fields={[
+                  { name: "name", label: "Name", placeholder: "Production" },
+                  { name: "slug", label: "Slug", placeholder: "prod", hint: "Lowercased URL identifier." },
+                ]}
+                submitLabel="Create"
+                cancel={{ label: "Cancel", onClick: () => setOpen(false) }}
+                onSubmit={async (v) => {
+                  const payload: { name: string; slug?: string } = { name: v.name };
+                  if (v.slug) payload.slug = v.slug;
+                  const r = await wrap(async () =>
+                    (await client.environments.create(orgId, project.id, payload)).environment,
+                  );
+                  if (!r.ok) {
+                    if (r.error.code === "precondition_failed") setPrecondition(r.error);
+                    else toast({ kind: "error", title: "Create failed", description: r.error.message });
+                    return;
+                  }
+                  toast({ kind: "success", title: "Environment created" });
+                  setOpen(false);
+                  envs.reload();
+                }}
+              />
+            </DialogContent>
           </Dialog>
         </div>
-      </header>
+      </div>
 
       {precondition && (
         <PreconditionInsight
@@ -182,14 +218,9 @@ function Inner({ orgId, orgSlug, projectSlug }: { orgId: string; orgSlug: string
       )}
 
       {envs.loading ? (
-        <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
+        <div className="grid gap-3.5 sm:grid-cols-2 lg:grid-cols-3">
           {Array.from({ length: 3 }).map((_, i) => (
-            <Card key={i}>
-              <CardHeader>
-                <Skeleton className="h-4 w-32" />
-                <Skeleton className="h-3 w-24 mt-2" />
-              </CardHeader>
-            </Card>
+            <Skeleton key={i} className="h-40 w-full rounded-xl" />
           ))}
         </div>
       ) : envs.error ? (
@@ -207,43 +238,118 @@ function Inner({ orgId, orgSlug, projectSlug }: { orgId: string; orgSlug: string
           primaryAction={{ label: "New environment", onClick: () => setOpen(true) }}
         />
       ) : (
-        <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
+        <div className="grid gap-3.5 sm:grid-cols-2 lg:grid-cols-3">
           {items.map((e) => (
-            <div key={e.id} className="relative">
-              {e.status === "active" ? (
-                <div className="absolute right-3 top-3 z-10">
-                  <ArchiveMenu
-                    resourceLabel="environment"
-                    name={e.name}
-                    onConfirm={() => archive(e)}
-                  />
-                </div>
-              ) : null}
-              <Link
-                href={`/orgs/${orgSlug}/projects/${projectSlug}/environments/${e.slug}`}
-                className="group block"
-              >
-                <Card className="h-full transition-shadow group-hover:shadow-md group-hover:border-primary/40">
-                  <CardHeader>
-                    <div className="flex items-center justify-between gap-2 pr-8">
-                      <CardTitle className="text-base truncate">{e.name}</CardTitle>
-                      <Badge variant={e.status === "active" ? "success" : "secondary"}>{e.status}</Badge>
-                    </div>
-                    <CardDescription className="text-xs">{e.slug}</CardDescription>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="text-xs text-muted-foreground">
-                      {e.status === "archived" && e.archivedAt
-                        ? `Archived ${formatDate(e.archivedAt)}`
-                        : `Last active ${formatDate(e.lastActiveAt)}`}
-                    </div>
-                  </CardContent>
-                </Card>
-              </Link>
-            </div>
+            <EnvCard
+              key={e.id}
+              env={e}
+              orgSlug={orgSlug}
+              projectSlug={projectSlug}
+              deployBranch={branchByEnv.get(e.slug) ?? null}
+              latestRun={latestRunByEnv.get(e.slug) ?? null}
+              now={now}
+              onArchive={() => archive(e)}
+            />
           ))}
         </div>
       )}
+
+      {/* Branch-map footer — how branches route to environments. */}
+      {branchMap.length > 0 ? (
+        <div className="flex flex-wrap items-center gap-3.5 rounded-xl border bg-card px-6 py-[18px]">
+          <GitBranch className="h-4 w-4 shrink-0 text-muted-foreground" strokeWidth={1.8} />
+          <span className="text-[12.5px] text-secondary-foreground">
+            Branch map:{" "}
+            {branchMap.map(([branch, envSlug], i) => (
+              <React.Fragment key={`${branch}:${envSlug}`}>
+                {i > 0 ? " · " : ""}
+                <span className="font-mono text-[11.5px]">
+                  {branch} → {envSlug}
+                </span>
+              </React.Fragment>
+            ))}
+          </span>
+          <QuietLink href={`/orgs/${orgSlug}/projects/${projectSlug}/git`} className="ml-auto">
+            Managed in Git →
+          </QuietLink>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function EnvCard({
+  env,
+  orgSlug,
+  projectSlug,
+  deployBranch,
+  latestRun,
+  now,
+  onArchive,
+}: {
+  env: PublicEnvironment;
+  orgSlug: string;
+  projectSlug: string;
+  deployBranch: string | null;
+  latestRun: Run | null;
+  now: number;
+  onArchive: () => void;
+}) {
+  const live = env.status === "active";
+  const runHref = latestRun
+    ? `/orgs/${orgSlug}/projects/${projectSlug}/runs/${latestRun.runId}`
+    : null;
+  const runLive = latestRun?.status === "running" || latestRun?.status === "pending";
+
+  return (
+    <div className="relative">
+      {live ? (
+        <div className="absolute right-3 top-3 z-10">
+          <ArchiveMenu resourceLabel="environment" name={env.name} onConfirm={onArchive} />
+        </div>
+      ) : null}
+      <Link
+        href={`/orgs/${orgSlug}/projects/${projectSlug}/environments/${env.slug}`}
+        className="group block"
+      >
+        <InteractiveCard className="h-full px-[22px] py-5">
+          <div className="flex items-center gap-2.5 pr-8">
+            <span className="truncate text-[13.5px] font-semibold">{env.name}</span>
+            {live ? (
+              <Pill tone="success" dot className="ml-auto">
+                live
+              </Pill>
+            ) : (
+              <Pill tone="neutral" className="ml-auto">
+                {env.status === "archived" ? "archived" : "ephemeral"}
+              </Pill>
+            )}
+          </div>
+          <div className="mt-2 truncate font-mono text-[11.5px] text-muted-foreground/90">{env.slug}</div>
+          <div className="mt-4 flex flex-col gap-2 text-[12px] text-muted-foreground">
+            {deployBranch ? (
+              <div className="flex justify-between gap-3">
+                <span>Deploys from</span>
+                <span className="truncate font-mono text-[11.5px] text-secondary-foreground">{deployBranch}</span>
+              </div>
+            ) : null}
+            <div className="flex justify-between gap-3">
+              <span>Last deploy</span>
+              {latestRun && runHref ? (
+                <span className="truncate text-secondary-foreground">
+                  {runLive ? (
+                    <span className="text-link">running now →</span>
+                  ) : (
+                    formatRelative(latestRun.createdAt, now)
+                  )}
+                </span>
+              ) : (
+                <span className="text-muted-foreground">no runs yet</span>
+              )}
+            </div>
+          </div>
+        </InteractiveCard>
+      </Link>
     </div>
   );
 }

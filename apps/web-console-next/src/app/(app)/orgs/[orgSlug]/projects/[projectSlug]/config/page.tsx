@@ -3,7 +3,6 @@
 import * as React from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { SlidersHorizontal } from "lucide-react";
 import { OrgScope } from "@/components/shell/org-scope";
 import { Button } from "@/components/ui/button";
 import { Card, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -45,22 +44,16 @@ function Inner({ orgId, orgSlug, projectSlug }: { orgId: string; orgSlug: string
 
   return (
     <div className="space-y-5">
-      <header className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <div className="flex items-center gap-2">
-            <SlidersHorizontal className="h-5 w-5 text-muted-foreground" />
-            <h1 className="text-xl font-semibold tracking-tight">Config · {project.name}</h1>
-          </div>
-          <p className="text-sm text-muted-foreground">
-            Project-scoped secrets, feature flags, and settings for this repo.
-          </p>
-        </div>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <p className="max-w-[560px] text-[13px] leading-normal text-muted-foreground">
+          Project-scoped secrets, feature flags, and settings for this repo.
+        </p>
         <Button asChild variant="outline" size="sm">
           <Link href={`/orgs/${orgSlug}/secrets?project=${projectSlug}`}>
             Open in Secrets console
           </Link>
         </Button>
-      </header>
+      </div>
       <ConfigSurface scope={{ kind: "project", orgId, projectId: project.id }} />
     </div>
   );

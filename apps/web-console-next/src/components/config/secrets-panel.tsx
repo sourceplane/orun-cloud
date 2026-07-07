@@ -3,7 +3,6 @@
 import * as React from "react";
 import { z } from "zod";
 import {
-  Plus,
   Lock,
   History,
   Waypoints,
@@ -16,7 +15,6 @@ import { useParams } from "next/navigation";
 import type { ConfigScope } from "@saas/sdk";
 import type { PublicSecretMetadata, PublicSecretVersion, PublicSecretSync } from "@saas/contracts/config";
 import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { EmptyState } from "@/components/ui/empty-state";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
@@ -38,12 +36,15 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Table, TableHeader, TableRow, TableHead, TableBody, TableCell } from "@/components/ui/table";
 import { ZodForm } from "@/components/ui/zod-form";
+import { AttentionBanner, StatusDot } from "@/components/ui/northwind";
+import { cn } from "@/lib/cn";
 import { useSession } from "@/lib/session";
 import { useApiQuery, qk } from "@/lib/query";
 import { useToast } from "@/components/ui/toast";
 import { wrap } from "@/lib/api";
 import { ListSkeleton, LoadError } from "./config-shared";
-import { chainBadges, rotationStatus, revealGuard, syncStatusView } from "./secrets-view";
+import { NewSecretContext } from "./config-surface";
+import { rotationStatus, revealGuard, syncStatusView, scopeChainChips } from "./secrets-view";
 
 const secretSchema = z.object({
   secretKey: z.string().min(1).max(128),
@@ -51,6 +52,8 @@ const secretSchema = z.object({
   displayName: z.string().max(128).optional(),
 });
 const rotateSchema = z.object({ value: z.string().min(1) });
+
+const GRID_COLS = "minmax(220px,1.5fr) minmax(150px,1fr) 150px 130px 92px 44px";
 
 /**
  * The Secrets console surface (saas-secret-manager SM1/SM5/SEC7). Write-only on
@@ -81,6 +84,17 @@ export function SecretsPanel({ scope, scopeKey }: { scope: ConfigScope; scopeKey
   const [syncsFor, setSyncsFor] = React.useState<PublicSecretMetadata | null>(null);
   const [revealFor, setRevealFor] = React.useState<PublicSecretMetadata | null>(null);
 
+  // Let the page-level "New secret" button (in the PageHeader) drive this
+  // panel's create dialog. No-op when the panel renders outside the console.
+  const newSecretRef = React.useContext(NewSecretContext);
+  React.useEffect(() => {
+    if (!newSecretRef) return;
+    newSecretRef.current = () => setCreateOpen(true);
+    return () => {
+      newSecretRef.current = null;
+    };
+  }, [newSecretRef]);
+
   const now = React.useMemo(() => new Date(), [secrets.data]);
 
   const revoke = async (secretId: string) => {
@@ -93,59 +107,67 @@ export function SecretsPanel({ scope, scopeKey }: { scope: ConfigScope; scopeKey
     secrets.reload();
   };
 
+  // The most overdue secret drives the attention banner (Rotate now).
+  const overdue = React.useMemo(() => {
+    if (!secrets.data) return null;
+    let worst: { secret: PublicSecretMetadata; overBy: number } | null = null;
+    for (const s of secrets.data) {
+      const rot = rotationStatus(s, now);
+      if (rot.due && rot.overdueByDays !== null) {
+        if (!worst || rot.overdueByDays > worst.overBy) worst = { secret: s, overBy: rot.overdueByDays };
+      }
+    }
+    return worst;
+  }, [secrets.data, now]);
+
   return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between gap-4">
-        <p className="text-sm text-muted-foreground">
-          Values are encrypted at rest and write-only — they never appear here again except through
-          an audited break-glass reveal.
-        </p>
-        <div className="flex items-center gap-2">
-          <Button asChild variant="outline" size="sm">
-            <a href={`/orgs/${orgSlug}/settings/audit?subjectKind=secret`}>Secret activity</a>
-          </Button>
-          <Dialog open={createOpen} onOpenChange={setCreateOpen}>
-            <Button onClick={() => setCreateOpen(true)}>
-              <Plus className="mr-1.5 h-4 w-4" /> New secret
-            </Button>
-            <DialogContent>
-              <DialogHeader>
-                <DialogTitle>Create secret</DialogTitle>
-                <DialogDescription>
-                  The value is encrypted before storage and never shown again — keep your own copy.
-                </DialogDescription>
-              </DialogHeader>
-              <ZodForm
-                schema={secretSchema}
-                defaultValues={{ secretKey: "", value: "", displayName: "" }}
-                fields={[
-                  { name: "secretKey", label: "Key", placeholder: "stripe_api_key" },
-                  { name: "value", label: "Value", type: "password", autoComplete: "off" },
-                  { name: "displayName", label: "Display name", placeholder: "Optional" },
-                ]}
-                submitLabel="Create secret"
-                cancel={{ label: "Cancel", onClick: () => setCreateOpen(false) }}
-                onSubmit={async (v) => {
-                  const r = await wrap(() =>
-                    client.config.createSecretMetadata(scope, {
-                      secretKey: v.secretKey,
-                      value: v.value,
-                      displayName: v.displayName || null,
-                    }),
-                  );
-                  if (!r.ok) {
-                    toast({ kind: "error", title: "Create failed", description: r.error.message });
-                    return;
-                  }
-                  setCreateOpen(false);
-                  toast({ kind: "success", title: "Secret stored", description: "The value is encrypted and not retrievable." });
-                  secrets.reload();
-                }}
-              />
-            </DialogContent>
-          </Dialog>
-        </div>
+    <div className="space-y-3.5">
+      <div className="flex items-center justify-end gap-2">
+        <Button asChild variant="outline" size="sm">
+          <a href={`/orgs/${orgSlug}/settings/audit?subjectKind=secret`}>Secret activity</a>
+        </Button>
+        <Button size="sm" onClick={() => setCreateOpen(true)}>
+          New secret
+        </Button>
       </div>
+
+      <Dialog open={createOpen} onOpenChange={setCreateOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Create secret</DialogTitle>
+            <DialogDescription>
+              The value is encrypted before storage and never shown again — keep your own copy.
+            </DialogDescription>
+          </DialogHeader>
+          <ZodForm
+            schema={secretSchema}
+            defaultValues={{ secretKey: "", value: "", displayName: "" }}
+            fields={[
+              { name: "secretKey", label: "Key", placeholder: "stripe_api_key" },
+              { name: "value", label: "Value", type: "password", autoComplete: "off" },
+              { name: "displayName", label: "Display name", placeholder: "Optional" },
+            ]}
+            submitLabel="Create secret"
+            cancel={{ label: "Cancel", onClick: () => setCreateOpen(false) }}
+            onSubmit={async (v) => {
+              const r = await wrap(() =>
+                client.config.createSecretMetadata(scope, {
+                  secretKey: v.secretKey,
+                  value: v.value,
+                  displayName: v.displayName || null,
+                }),
+              );
+              if (!r.ok) {
+                toast({ kind: "error", title: "Create failed", description: r.error.message });
+                return;
+              }
+              setCreateOpen(false);
+              toast({ kind: "success", title: "Secret stored", description: "The value is encrypted and not retrievable." });
+              secrets.reload();
+            }}
+          />
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={rotating !== null} onOpenChange={(o) => !o && setRotating(null)}>
         <DialogContent>
@@ -201,64 +223,102 @@ export function SecretsPanel({ scope, scopeKey }: { scope: ConfigScope; scopeKey
           primaryAction={{ label: "New secret", onClick: () => setCreateOpen(true) }}
         />
       ) : (
-        <Card>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Key</TableHead>
-                {isEnv ? <TableHead className="hidden lg:table-cell">Chain</TableHead> : null}
-                <TableHead className="hidden md:table-cell">Status</TableHead>
-                <TableHead className="hidden md:table-cell">Version</TableHead>
-                <TableHead className="hidden md:table-cell">Rotation</TableHead>
-                <TableHead className="hidden lg:table-cell">Last used</TableHead>
-                <TableHead className="text-right">Actions</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
+        <>
+          <div className="overflow-hidden rounded-xl border bg-card">
+            <div className="overflow-x-auto">
+              {/* Header */}
+              <div
+                className="grid min-w-[720px] items-center gap-3 border-b border-border/70 px-[22px] py-[10px] text-[11px] font-semibold uppercase tracking-[0.07em] text-muted-foreground/80"
+                style={{ gridTemplateColumns: GRID_COLS }}
+              >
+                <span>Secret</span>
+                <span>Scope chain</span>
+                <span>Rotation</span>
+                <span>Sync</span>
+                <span>Updated</span>
+                <span className="sr-only">Actions</span>
+              </div>
               {secrets.data.map((s) => {
                 const rot = rotationStatus(s, now);
-                const badges = isEnv ? chainBadges(s) : [];
+                const chips = scopeChainChips(s);
+                const sync = syncStatusView({ status: s.status });
+                const used = s.displayName ?? (s.servesFrom ? `serves from ${s.servesFrom}` : null);
                 return (
-                  <TableRow key={s.id}>
-                    <TableCell>
-                      <div className="font-mono text-xs">{s.secretKey}</div>
-                      {s.displayName ? (
-                        <div className="text-[11px] text-muted-foreground">{s.displayName}</div>
+                  <div
+                    key={s.id}
+                    className={cn(
+                      "grid min-w-[720px] items-center gap-3 border-t border-border/50 px-[22px] py-[13px] first:border-t-0",
+                      rot.due && "bg-warning-wash",
+                    )}
+                    style={{ gridTemplateColumns: GRID_COLS }}
+                  >
+                    {/* Secret */}
+                    <span className="min-w-0">
+                      <span className="block truncate font-mono text-[12.5px] font-semibold">{s.secretKey}</span>
+                      {used ? (
+                        <span className="mt-0.5 block truncate text-[11.5px] text-muted-foreground/80">{used}</span>
                       ) : null}
-                    </TableCell>
-                    {isEnv ? (
-                      <TableCell className="hidden lg:table-cell">
-                        <div className="flex flex-wrap gap-1">
-                          {badges.length === 0 ? (
-                            <span className="text-xs text-muted-foreground">—</span>
-                          ) : (
-                            badges.map((b) => (
-                              <Badge key={b.label} variant={b.tone}>
-                                {b.label}
-                              </Badge>
-                            ))
-                          )}
-                        </div>
-                      </TableCell>
-                    ) : null}
-                    <TableCell className="hidden md:table-cell">
-                      <Badge variant={s.status === "active" ? "success" : "warning"}>{s.status}</Badge>
-                    </TableCell>
-                    <TableCell className="hidden font-mono text-xs md:table-cell">v{s.version}</TableCell>
-                    <TableCell className="hidden md:table-cell">
-                      <Badge variant={rot.tone} className="gap-1">
-                        {rot.due ? <TriangleAlert className="h-3 w-3" aria-hidden /> : null}
-                        {rot.label}
-                      </Badge>
-                    </TableCell>
-                    <TableCell className="hidden text-xs text-muted-foreground lg:table-cell">
-                      {s.lastUsedAt ? new Date(s.lastUsedAt).toLocaleDateString() : "never"}
-                    </TableCell>
-                    <TableCell className="text-right">
+                    </span>
+
+                    {/* Scope chain */}
+                    <span className="flex min-w-0 flex-wrap gap-1">
+                      {chips.length === 0 ? (
+                        <span className="text-[11px] text-muted-foreground">—</span>
+                      ) : (
+                        chips.map((c, i) => (
+                          <span
+                            key={`${c.label}-${i}`}
+                            className={cn(
+                              "rounded-[5px] px-[7px] py-[2px] text-[10.5px]",
+                              c.tone === "env"
+                                ? "bg-info-soft text-info"
+                                : "bg-secondary text-muted-foreground",
+                            )}
+                          >
+                            {c.label}
+                            {c.override ? " ⌃" : ""}
+                          </span>
+                        ))
+                      )}
+                    </span>
+
+                    {/* Rotation */}
+                    <span
+                      className={cn(
+                        "text-[12px]",
+                        rot.due
+                          ? "font-medium text-warning"
+                          : rot.hasPolicy
+                            ? "text-success"
+                            : "text-muted-foreground",
+                      )}
+                    >
+                      {rot.displayLabel}
+                    </span>
+
+                    {/* Sync */}
+                    <span className="inline-flex items-center gap-1.5 text-[12px]">
+                      <StatusDot tone={sync.tone === "success" ? "success" : sync.tone === "warning" ? "warning" : "neutral"} />
+                      <span
+                        className={cn(
+                          sync.tone === "success" && "text-success",
+                          sync.tone === "warning" && "text-warning",
+                          sync.tone !== "success" && sync.tone !== "warning" && "text-muted-foreground",
+                        )}
+                      >
+                        {sync.label}
+                      </span>
+                    </span>
+
+                    {/* Updated */}
+                    <span className="text-[12px] text-muted-foreground">{rot.ageDays}d ago</span>
+
+                    {/* Actions */}
+                    <span className="text-right">
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
-                          <Button size="sm" variant="ghost" aria-label={`Actions for ${s.secretKey}`}>
-                            <MoreHorizontal className="h-4 w-4" />
+                          <Button size="sm" variant="ghost" className="h-7 w-7 p-0" aria-label={`Actions for ${s.secretKey}`}>
+                            <MoreHorizontal className="h-4 w-4" strokeWidth={1.8} />
                           </Button>
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end">
@@ -278,13 +338,27 @@ export function SecretsPanel({ scope, scopeKey }: { scope: ConfigScope; scopeKey
                           </DropdownMenuItem>
                         </DropdownMenuContent>
                       </DropdownMenu>
-                    </TableCell>
-                  </TableRow>
+                    </span>
+                  </div>
                 );
               })}
-            </TableBody>
-          </Table>
-        </Card>
+            </div>
+          </div>
+
+          {overdue ? (
+            <AttentionBanner
+              action={
+                <Button size="sm" variant="outline" onClick={() => setRotating(overdue.secret)}>
+                  Rotate now
+                </Button>
+              }
+            >
+              <span className="font-mono text-[12px]">{overdue.secret.secretKey}</span> is {overdue.overBy}{" "}
+              {overdue.overBy === 1 ? "day" : "days"} past its rotation policy. Reveals require a reason and are
+              audit-logged.
+            </AttentionBanner>
+          ) : null}
+        </>
       )}
     </div>
   );
@@ -493,7 +567,7 @@ function RevealDialog({
 
         {revealed ? (
           <div className="space-y-3">
-            <div className="flex items-start gap-2 rounded-md border border-warning/40 bg-warning/10 p-3 text-xs text-warning">
+            <div className="flex items-start gap-2 rounded-md border border-warning-accent/40 bg-warning-wash p-3 text-xs text-warning">
               <TriangleAlert className="mt-0.5 h-4 w-4 shrink-0" />
               <span>
                 Shown once. It is not stored by this page and disappears when you close this dialog.
@@ -518,7 +592,7 @@ function RevealDialog({
           </div>
         ) : (
           <div className="space-y-3">
-            <div className="flex items-start gap-2 rounded-md border border-warning/40 bg-warning/10 p-3 text-xs text-warning">
+            <div className="flex items-start gap-2 rounded-md border border-warning-accent/40 bg-warning-wash p-3 text-xs text-warning">
               <TriangleAlert className="mt-0.5 h-4 w-4 shrink-0" />
               <span>
                 Revealing this value is an elevated action. This access is audited and alerted — your
