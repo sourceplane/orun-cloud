@@ -22,9 +22,7 @@ import {
 } from "lucide-react";
 import type { PublicAuditEntry } from "@saas/contracts/events";
 import { OrgScope } from "@/components/shell/org-scope";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Input } from "@/components/ui/input";
@@ -36,6 +34,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { SettingsHeader, SettingsPanel } from "@/components/settings/settings-primitives";
+import { ListCard, Kicker, Pill, type Tone } from "@/components/ui/northwind";
 import { cn } from "@/lib/cn";
 import { wrap } from "@/lib/api";
 import { useSession } from "@/lib/session";
@@ -80,6 +80,16 @@ const TONE_CLASSES: Record<CategoryAccent["tone"], string> = {
   amber: "bg-amber-500/10 text-amber-500",
   rose: "bg-rose-500/10 text-rose-500",
   slate: "bg-muted text-muted-foreground",
+};
+
+/** Category accent → Northwind Pill tone. */
+const PILL_TONES: Record<CategoryAccent["tone"], Tone> = {
+  violet: "info",
+  blue: "info",
+  green: "success",
+  amber: "warning",
+  rose: "error",
+  slate: "neutral",
 };
 
 /** Debounce a fast-changing text value before it drives refetches. */
@@ -269,31 +279,29 @@ function Inner({ orgId }: { orgId: string }) {
   const groups = groupAuditEntriesByDay(log.entries);
 
   return (
-    <div className="space-y-5">
-      <header className="flex items-end justify-between gap-4">
-        <div>
-          <h1 className="text-xl font-semibold tracking-tight">Audit log</h1>
-          <p className="text-sm text-muted-foreground">
-            Immutable record of everything that happened in this workspace.
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
-          <Button
-            type="button"
-            variant="outline"
-            size="icon"
-            aria-label="Refresh"
-            onClick={() => setRefreshNonce((n) => n + 1)}
-            disabled={loading}
-          >
-            <RefreshCw className={cn("h-4 w-4", loading && "animate-spin")} />
-          </Button>
-          <Button type="button" variant="outline" onClick={() => void exportNdjson()} loading={exporting} disabled={loading}>
-            <Download className="mr-2 h-4 w-4" />
-            Export NDJSON
-          </Button>
-        </div>
-      </header>
+    <div className="space-y-[18px]">
+      <SettingsHeader
+        title="Audit log"
+        description="Security and change history — who did what, when, from where."
+        actions={
+          <>
+            <Button
+              type="button"
+              variant="outline"
+              size="icon"
+              aria-label="Refresh"
+              onClick={() => setRefreshNonce((n) => n + 1)}
+              disabled={loading}
+            >
+              <RefreshCw className={cn("h-4 w-4", loading && "animate-spin")} strokeWidth={1.8} />
+            </Button>
+            <Button type="button" variant="outline" onClick={() => void exportNdjson()} loading={exporting} disabled={loading}>
+              <Download className="mr-2 h-4 w-4" strokeWidth={1.8} />
+              Export NDJSON
+            </Button>
+          </>
+        }
+      />
 
       {/* Filter toolbar — selects apply instantly, text inputs debounce. */}
       <div className="space-y-2">
@@ -354,7 +362,7 @@ function Inner({ orgId }: { orgId: string }) {
             aria-expanded={advancedOpen}
           >
             Advanced
-            <ChevronDown className={cn("h-3.5 w-3.5 transition-transform", advancedOpen && "rotate-180")} />
+            <ChevronDown className={cn("h-3.5 w-3.5 transition-transform", advancedOpen && "rotate-180")} strokeWidth={1.8} />
           </button>
         </div>
 
@@ -411,11 +419,11 @@ function Inner({ orgId }: { orgId: string }) {
                 key={chip.key}
                 type="button"
                 onClick={() => clearChip(chip.key)}
-                className="group inline-flex max-w-[280px] items-center gap-1 rounded-full border bg-muted/50 py-0.5 pl-2.5 pr-1.5 text-[11px] text-muted-foreground transition-colors hover:text-foreground"
+                className="group inline-flex max-w-[280px] items-center gap-1 rounded-full border border-border bg-card py-[3px] pl-2.5 pr-1.5 text-[11.5px] text-muted-foreground transition-colors hover:border-foreground/25 hover:text-foreground"
                 aria-label={`Remove filter ${chip.label}`}
               >
                 <span className="truncate">{chip.label}</span>
-                <X className="h-3 w-3 opacity-60 group-hover:opacity-100" />
+                <X className="h-3 w-3 opacity-60 group-hover:opacity-100" strokeWidth={1.8} />
               </button>
             ))}
             <button
@@ -430,20 +438,16 @@ function Inner({ orgId }: { orgId: string }) {
       </div>
 
       {loading ? (
-        <Card>
-          <CardContent className="space-y-2 pt-6">
-            {Array.from({ length: 6 }).map((_, i) => (
-              <Skeleton key={i} className="h-12 w-full" />
-            ))}
-          </CardContent>
-        </Card>
+        <SettingsPanel className="space-y-2">
+          {Array.from({ length: 6 }).map((_, i) => (
+            <Skeleton key={i} className="h-12 w-full" />
+          ))}
+        </SettingsPanel>
       ) : error ? (
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-destructive">{error.code}</CardTitle>
-            <CardDescription>{error.message}</CardDescription>
-          </CardHeader>
-        </Card>
+        <SettingsPanel tone="danger">
+          <div className="text-[13.5px] font-semibold text-destructive">{error.code}</div>
+          <p className="mt-1.5 text-[12.5px] leading-relaxed text-muted-foreground">{error.message}</p>
+        </SettingsPanel>
       ) : log.entries.length === 0 ? (
         <EmptyState
           icon={ScrollText}
@@ -459,10 +463,8 @@ function Inner({ orgId }: { orgId: string }) {
         <div className="space-y-5">
           {groups.map((group) => (
             <section key={group.key} aria-label={group.label}>
-              <h2 className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                {group.label}
-              </h2>
-              <Card className="divide-y divide-border p-0">
+              <Kicker className="mb-2">{group.label}</Kicker>
+              <ListCard>
                 {group.entries.map((e) => (
                   <AuditRow
                     key={e.id}
@@ -476,7 +478,7 @@ function Inner({ orgId }: { orgId: string }) {
                     }}
                   />
                 ))}
-              </Card>
+              </ListCard>
             </section>
           ))}
 
@@ -513,12 +515,12 @@ function AuditRow({
   const absolute = new Date(entry.occurredAt).toLocaleString();
 
   return (
-    <div>
+    <div className="border-t border-border/60 first:border-t-0">
       <button
         type="button"
         onClick={onToggle}
         aria-expanded={expanded}
-        className="flex w-full items-start gap-3 px-4 py-3 text-left transition-colors hover:bg-accent/50"
+        className="flex w-full items-start gap-3 px-5 py-3 text-left transition-colors duration-100 hover:bg-muted"
       >
         <span
           className={cn(
@@ -527,10 +529,10 @@ function AuditRow({
           )}
           aria-hidden
         >
-          <Icon className="h-3.5 w-3.5" />
+          <Icon className="h-3.5 w-3.5" strokeWidth={1.8} />
         </span>
         <span className="min-w-0 flex-1">
-          <span className="block truncate text-sm">{entry.description}</span>
+          <span className="block truncate text-[13px]">{entry.description}</span>
           <span className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-muted-foreground">
             <span className="font-mono">{entry.eventType}</span>
             <span aria-hidden>·</span>
@@ -545,22 +547,27 @@ function AuditRow({
             ) : null}
           </span>
         </span>
-        <span className="flex shrink-0 items-center gap-2 pt-0.5">
-          <Badge variant="secondary" className="hidden text-[10px] sm:inline-flex">
+        <span className="flex shrink-0 items-center gap-2.5 pt-0.5">
+          <Pill tone={PILL_TONES[accent.tone]} className="hidden sm:inline-flex">
             {entry.category}
-          </Badge>
-          <time className="whitespace-nowrap text-[11px] text-muted-foreground" title={absolute} dateTime={entry.occurredAt}>
+          </Pill>
+          <time
+            className="whitespace-nowrap font-mono text-[11.5px] text-muted-foreground"
+            title={absolute}
+            dateTime={entry.occurredAt}
+          >
             {formatRelativeTime(entry.occurredAt)}
           </time>
           <ChevronDown
             className={cn("h-3.5 w-3.5 text-muted-foreground/60 transition-transform", expanded && "rotate-180")}
+            strokeWidth={1.8}
             aria-hidden
           />
         </span>
       </button>
 
       {expanded ? (
-        <div className="space-y-3 border-t border-dashed bg-muted/30 px-4 py-3">
+        <div className="space-y-3 border-t border-dashed border-border bg-muted/40 px-5 py-3">
           <dl className="grid grid-cols-1 gap-x-6 gap-y-2 text-xs sm:grid-cols-2">
             <DetailPair label="Occurred" value={absolute} />
             <DetailPair label="Subject" value={`${entry.subject.kind}:${entry.subject.id}`} mono copyValue={entry.subject.id} />

@@ -2,11 +2,10 @@
 
 import * as React from "react";
 import { useParams } from "next/navigation";
-import { Boxes } from "lucide-react";
 import { OrgScope } from "@/components/shell/org-scope";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
+import { Card, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Kicker, Pill } from "@/components/ui/northwind";
 import { ConfigSurface } from "@/components/config/config-surface";
 import { wrap } from "@/lib/api";
 import { useSession } from "@/lib/session";
@@ -61,33 +60,30 @@ function Inner({
 
   return (
     <div className="space-y-5">
-      <header className="flex items-center gap-2">
-        <Boxes className="h-5 w-5 text-muted-foreground" />
-        <h1 className="text-xl font-semibold tracking-tight">{env.name}</h1>
-        <Badge variant={env.status === "active" ? "success" : "secondary"}>{env.status}</Badge>
-      </header>
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Identity</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <dl className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
+      <div className="flex items-center gap-3">
+        <h2 className="font-serif text-[20px] font-medium tracking-[-0.01em]">{env.name}</h2>
+        <Pill tone={env.status === "active" ? "success" : "neutral"} dot={env.status === "active"}>
+          {env.status}
+        </Pill>
+      </div>
+      <div className="rounded-xl border bg-card px-6 py-5">
+        <Kicker>Identity</Kicker>
+        <dl className="mt-3 grid grid-cols-1 gap-3 text-sm sm:grid-cols-2">
             <Pair k="Repo" v={project.name} />
             <Pair k="Repo slug" v={project.slug} />
             <Pair k="Environment" v={env.name} />
             <Pair k="Environment slug" v={env.slug} />
             <Pair k="Environment ID" v={env.id} mono />
             <Pair k="Repo ID" v={env.projectId} mono />
-            <Pair k="Created" v={new Date(env.createdAt).toLocaleString()} />
-            <Pair k="Updated" v={new Date(env.updatedAt).toLocaleString()} />
-          </dl>
-        </CardContent>
-      </Card>
+          <Pair k="Created" v={new Date(env.createdAt).toLocaleString()} />
+          <Pair k="Updated" v={new Date(env.updatedAt).toLocaleString()} />
+        </dl>
+      </div>
 
       <section className="space-y-3">
         <div>
-          <h2 className="text-base font-semibold tracking-tight">Configuration</h2>
-          <p className="text-sm text-muted-foreground">
+          <h2 className="text-[15px] font-semibold tracking-tight">Configuration</h2>
+          <p className="mt-0.5 text-[13px] text-muted-foreground">
             Settings, feature flags, and secrets scoped to this environment.
           </p>
         </div>

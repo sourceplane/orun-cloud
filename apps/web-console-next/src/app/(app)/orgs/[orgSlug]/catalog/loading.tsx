@@ -4,30 +4,33 @@
 // frame. The portal swaps in its own data skeletons once mounted.
 
 import { Skeleton } from "@/components/ui/skeleton";
+import { Screen } from "@/components/ui/northwind";
 
 export default function CatalogLoading() {
   return (
-    <div className="flex flex-col gap-4 md:h-[calc(100dvh-3rem)] md:gap-[18px] md:overflow-hidden" aria-hidden>
-      {/* title + metric tiles */}
-      <div className="flex shrink-0 flex-col gap-3">
-        <div className="flex items-center justify-between gap-3">
-          <Skeleton className="h-6 w-40" />
-          <Skeleton className="h-9 w-28 rounded-lg" />
+    <Screen aria-hidden>
+      {/* header */}
+      <div className="flex items-end justify-between gap-5">
+        <div className="space-y-2">
+          <Skeleton className="h-7 w-32" />
+          <Skeleton className="h-4 w-80 max-w-full" />
         </div>
-        <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-          {Array.from({ length: 4 }).map((_, i) => (
-            <Skeleton key={i} className="h-[68px] w-full rounded-xl" />
-          ))}
-        </div>
+        <Skeleton className="hidden h-[34px] w-[230px] rounded-[9px] sm:block" />
+      </div>
+      {/* chip row */}
+      <div className="mt-[26px] flex gap-2">
+        {Array.from({ length: 5 }).map((_, i) => (
+          <Skeleton key={i} className="h-7 w-24 rounded-full" />
+        ))}
       </div>
       {/* toolbar */}
-      <Skeleton className="h-11 w-full shrink-0 rounded-lg md:h-[34px] md:max-w-2xl" />
-      {/* table frame */}
-      <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-hidden rounded-[13px] border border-border bg-card p-3">
+      <Skeleton className="mt-3.5 h-[34px] w-full max-w-xl rounded-lg" />
+      {/* table card */}
+      <div className="mt-3.5 flex flex-col gap-2 overflow-hidden rounded-xl border border-border bg-card p-3">
         {Array.from({ length: 8 }).map((_, i) => (
           <Skeleton key={i} className="h-12 w-full rounded-lg bg-muted" />
         ))}
       </div>
-    </div>
+    </Screen>
   );
 }

@@ -75,15 +75,13 @@ export function ServicePageLoader({
 
   if (page) {
     return (
-      <div className="md:h-[calc(100dvh-3rem)] md:overflow-hidden">
-        <ServicePage page={page} orgId={orgId} orgSlug={orgSlug} orgLabel={orgSlug} onBack={onBack} onViewMap={onViewMap} onSelectRef={onSelectRef} />
-      </div>
+      <ServicePage page={page} orgId={orgId} orgSlug={orgSlug} orgLabel={orgSlug} onBack={onBack} onViewMap={onViewMap} onSelectRef={onSelectRef} />
     );
   }
 
   if (loading && !entities) {
     return (
-      <div className="flex flex-col gap-4 p-1 md:h-[calc(100dvh-3rem)] md:overflow-hidden">
+      <div className="mx-auto flex w-full max-w-[1060px] flex-col gap-4 px-5 pt-7 sm:px-8 sm:pt-10 lg:px-12">
         <div className="flex items-start gap-4">
           <Skeleton className="h-[54px] w-[54px] rounded-[14px] bg-muted" />
           <div className="flex-1 space-y-2">

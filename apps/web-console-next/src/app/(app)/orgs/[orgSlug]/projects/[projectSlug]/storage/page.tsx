@@ -133,12 +133,10 @@ function Inner({ orgId, projectSlug }: { orgId: string; projectSlug: string }) {
 
   return (
     <div className="space-y-5">
-      <header>
-        <h1 className="text-xl font-semibold tracking-tight">Storage</h1>
-        <p className="text-sm text-muted-foreground">
-          Object storage for this project — what’s reachable from live pointers, and what garbage collection can reclaim.
-        </p>
-      </header>
+      <p className="max-w-[560px] text-[13px] leading-normal text-muted-foreground">
+        Object storage for this project — what’s reachable from live pointers, and what garbage
+        collection can reclaim.
+      </p>
 
       <Card>
         <CardHeader>

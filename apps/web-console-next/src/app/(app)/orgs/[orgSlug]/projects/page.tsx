@@ -1,8 +1,8 @@
 "use client";
 
 // Git Repos — a two-tab surface:
-//   • Repositories — the repo list (each repo is a project). "Add repo" picks
-//     from the connected GitHub integration; onboarding a repo creates the
+//   • Repositories — the repo list (each repo is a project). "Link repository"
+//     picks from the connected GitHub integration; onboarding a repo creates the
 //     project placeholder AND its allow-list entry (a workspace link).
 //   • Settings — the git-repo allow-list: which repos may push state objects
 //     from OIDC CI. Add via the same dropdown; remove revokes CI's push access.
@@ -10,19 +10,18 @@
 import * as React from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { Plus, FolderKanban, Github, ShieldCheck, ChevronRight } from "lucide-react";
+import { Plus, Folder, Github, ShieldCheck } from "lucide-react";
 import type { PublicProject } from "@saas/contracts/projects";
 import type { PublicConnection, PublicRepository } from "@saas/contracts/integrations";
 import type { WorkspaceLink, RepoFacet } from "@saas/contracts/state";
 import { OrgScope } from "@/components/shell/org-scope";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle, InteractiveCard } from "@/components/ui/card";
 import { Table, TableHeader, TableRow, TableHead, TableBody, TableCell } from "@/components/ui/table";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Badge } from "@/components/ui/badge";
 import { EmptyState } from "@/components/ui/empty-state";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { Pill, Screen, PageHeader, StatusText, type Tone } from "@/components/ui/northwind";
 import { PreconditionInsight } from "@/components/precondition/insight";
 import { ArchiveMenu } from "@/components/settings/archive-menu";
 import { removeById } from "@/components/settings/archive";
@@ -36,8 +35,30 @@ import {
 import { useQueryClient } from "@tanstack/react-query";
 import { useSession } from "@/lib/session";
 import { useApiQuery, qk, usePrefetch } from "@/lib/query";
+import { collectOrgCatalog } from "@/lib/catalog-portal/fetch";
+import { formatRelative } from "@/lib/runs-portal/model";
+import { cn } from "@/lib/cn";
 import { useToast } from "@/components/ui/toast";
 import { wrap, type ApiErrorBody } from "@/lib/api";
+
+const ENV_TONE: Record<string, "success" | "info" | "neutral"> = {
+  production: "success",
+  prod: "success",
+  live: "success",
+  staging: "info",
+  stage: "info",
+};
+
+/** Tint an environment chip by its slug — production green, staging blue, else neutral. */
+function envChipTone(slug: string): "success" | "info" | "neutral" {
+  return ENV_TONE[slug.toLowerCase()] ?? "neutral";
+}
+
+const ENV_CHIP_CLASS: Record<"success" | "info" | "neutral", string> = {
+  success: "bg-success-soft text-success",
+  info: "bg-info-soft text-info",
+  neutral: "bg-secondary text-muted-foreground",
+};
 
 export default function ProjectsPage() {
   const params = useParams<{ orgSlug: string }>();
@@ -64,11 +85,20 @@ function Inner({ orgId, orgSlug }: { orgId: string; orgSlug: string }) {
   const repoFacets = useApiQuery(qk.repoFacets(orgId), () =>
     wrap(async () => (await client.state.listRepoFacets(orgId)).repoFacets),
   );
+  // Rollups for the repo cards: recent org runs (last-deploy + runs·7d) and the
+  // catalog (entity counts per repo). Both are cheap, cached, and shared with
+  // the Overview screen — the cards degrade gracefully while they load.
+  const runs = useApiQuery(qk.orgRuns(orgId), () =>
+    wrap(async () => (await client.state.listOrgRuns(orgId, { limit: 100 })).runs),
+  );
+  const catalog = useApiQuery(qk.orgCatalog(orgId), () =>
+    wrap(() => collectOrgCatalog((query) => client.state.listOrgCatalogEntities(orgId, query))),
+  );
 
   const activeConnection: PublicConnection | null =
     connections.data?.find((c) => c.status === "active") ?? null;
 
-  const [tab, setTab] = React.useState("repositories");
+  const [tab, setTab] = React.useState<"repositories" | "settings">("repositories");
   const [pickerOpen, setPickerOpen] = React.useState(false);
   const [gateError, setGateError] = React.useState<ApiErrorBody | null>(null);
 
@@ -80,12 +110,20 @@ function Inner({ orgId, orgSlug }: { orgId: string; orgSlug: string }) {
     for (const l of allowList) m.set(l.projectId, l);
     return m;
   }, [allowList]);
-  // projectId → its repo facet (git-authored description + overview badge, WO5).
+  // projectId → its repo facet (git-authored description + default branch, WO5).
   const facetByProject = React.useMemo(() => {
     const m = new Map<string, RepoFacet>();
     for (const f of repoFacets.data ?? []) m.set(f.projectId, f);
     return m;
   }, [repoFacets.data]);
+  // projectId → count of catalog entities projected from it.
+  const entityCountByProject = React.useMemo(() => {
+    const m = new Map<string, number>();
+    for (const e of catalog.data ?? []) {
+      m.set(e.sourceProjectId, (m.get(e.sourceProjectId) ?? 0) + 1);
+    }
+    return m;
+  }, [catalog.data]);
   // provider repo ids already onboarded — disabled in the picker.
   const onboardedRepoIds = React.useMemo(
     () => new Set(allowList.map((l) => l.providerRepoId).filter((x): x is string => !!x)),
@@ -129,17 +167,17 @@ function Inner({ orgId, orgSlug }: { orgId: string; orgSlug: string }) {
     toast({ kind: "success", title: `Archived ${project.name}` });
   };
 
-  // "Add repo": opens the integration dropdown when a connection exists; else
-  // routes to Integrations to connect one first.
-  const addRepoControl = connections.loading ? (
+  // "Link repository": opens the integration dropdown when a connection exists;
+  // else routes to Integrations to connect one first.
+  const linkRepoControl = connections.loading ? (
     <Button disabled>
       <Plus className="mr-1.5 h-4 w-4" />
-      Add repo
+      Link repository
     </Button>
   ) : activeConnection ? (
     <Button onClick={() => setPickerOpen(true)}>
       <Plus className="mr-1.5 h-4 w-4" />
-      Add repo
+      Link repository
     </Button>
   ) : (
     <Button asChild>
@@ -151,28 +189,31 @@ function Inner({ orgId, orgSlug }: { orgId: string; orgSlug: string }) {
   );
 
   return (
-    <div className="space-y-5">
-      <header className="flex items-end justify-between gap-4">
-        <div>
-          <h1 className="text-xl font-semibold tracking-tight">Git Repos</h1>
-          <p className="text-sm text-muted-foreground">
-            Each repo is a project. Add one from your GitHub integration to onboard it and allow CI to push.
-          </p>
-        </div>
-        {addRepoControl}
-      </header>
+    <Screen>
+      <PageHeader
+        title="Git Repos"
+        description="The repositories this workspace orchestrates. Everything downstream — catalog, docs, runs — derives from what these ship."
+        actions={linkRepoControl}
+      />
 
       {gateError ? (
-        <PreconditionInsight error={gateError} resource="project" onDismiss={() => setGateError(null)} />
+        <div className="mt-6">
+          <PreconditionInsight error={gateError} resource="project" onDismiss={() => setGateError(null)} />
+        </div>
       ) : null}
 
-      <Tabs value={tab} onValueChange={setTab}>
-        <TabsList>
-          <TabsTrigger value="repositories">Repositories</TabsTrigger>
-          <TabsTrigger value="settings">Settings</TabsTrigger>
-        </TabsList>
+      {/* Underline tabs (Repositories / Settings). */}
+      <div className="mt-7 flex gap-0.5 border-b border-border">
+        <TabButton active={tab === "repositories"} onClick={() => setTab("repositories")}>
+          Repositories
+        </TabButton>
+        <TabButton active={tab === "settings"} onClick={() => setTab("settings")}>
+          Settings
+        </TabButton>
+      </div>
 
-        <TabsContent value="repositories" className="mt-5">
+      {tab === "repositories" ? (
+        <div className="mt-[22px]">
           <RepositoriesTab
             loading={projects.loading}
             error={projects.error}
@@ -181,15 +222,17 @@ function Inner({ orgId, orgSlug }: { orgId: string; orgSlug: string }) {
             orgSlug={orgSlug}
             linkByProject={linkByProject}
             facetByProject={facetByProject}
+            entityCountByProject={entityCountByProject}
+            runs={runs.data ?? []}
             prefetch={prefetch}
             client={client}
             onArchive={archive}
-            addControl={addRepoControl}
+            addControl={linkRepoControl}
             hasConnection={!!activeConnection}
           />
-        </TabsContent>
-
-        <TabsContent value="settings" className="mt-5">
+        </div>
+      ) : (
+        <div className="mt-[22px]">
           <AllowListTab
             loading={links.loading}
             error={links.error}
@@ -198,10 +241,10 @@ function Inner({ orgId, orgSlug }: { orgId: string; orgSlug: string }) {
             onRemoved={reloadAll}
             client={client}
             orgId={orgId}
-            add={addRepoControl}
+            add={linkRepoControl}
           />
-        </TabsContent>
-      </Tabs>
+        </div>
+      )}
 
       {activeConnection ? (
         <RepoPickerDialog
@@ -220,11 +263,38 @@ function Inner({ orgId, orgSlug }: { orgId: string; orgSlug: string }) {
           pickedLabel="Added"
         />
       ) : null}
-    </div>
+    </Screen>
   );
 }
 
-// ── Repositories tab — the proper repo list ─────────────────
+/** Underline tab button matching the design's repo-tab bar. */
+function TabButton({
+  active,
+  onClick,
+  children,
+}: {
+  active: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-current={active ? "page" : undefined}
+      className={cn(
+        "-mb-px border-b-2 px-3.5 py-2.5 text-[13px] transition-colors",
+        active
+          ? "border-link font-semibold text-foreground"
+          : "border-transparent text-muted-foreground hover:text-foreground",
+      )}
+    >
+      {children}
+    </button>
+  );
+}
+
+// ── Repositories tab — the repo card list ───────────────────
 
 function RepositoriesTab({
   loading,
@@ -234,6 +304,8 @@ function RepositoriesTab({
   orgSlug,
   linkByProject,
   facetByProject,
+  entityCountByProject,
+  runs,
   prefetch,
   client,
   onArchive,
@@ -247,21 +319,35 @@ function RepositoriesTab({
   orgSlug: string;
   linkByProject: Map<string, WorkspaceLink>;
   facetByProject: Map<string, RepoFacet>;
+  entityCountByProject: Map<string, number>;
+  runs: import("@saas/contracts/state").Run[];
   prefetch: ReturnType<typeof usePrefetch>;
   client: ReturnType<typeof useSession>["client"];
   onArchive: (p: PublicProject) => void;
   addControl: React.ReactNode;
   hasConnection: boolean;
 }) {
+  const now = React.useMemo(() => Date.now(), []);
+  const weekAgo = now - 7 * 24 * 60 * 60 * 1000;
+
+  // projectId → its recent runs (already newest-first from the feed).
+  const runsByProject = React.useMemo(() => {
+    const m = new Map<string, import("@saas/contracts/state").Run[]>();
+    for (const r of runs) {
+      const arr = m.get(r.projectId);
+      if (arr) arr.push(r);
+      else m.set(r.projectId, [r]);
+    }
+    return m;
+  }, [runs]);
+
   if (loading) {
     return (
-      <Card>
-        <CardContent className="space-y-2 pt-6">
-          {Array.from({ length: 4 }).map((_, i) => (
-            <Skeleton key={i} className="h-12 w-full" />
-          ))}
-        </CardContent>
-      </Card>
+      <div className="flex flex-col gap-3">
+        {Array.from({ length: 4 }).map((_, i) => (
+          <Skeleton key={i} className="h-[104px] w-full rounded-xl" />
+        ))}
+      </div>
     );
   }
   if (error) {
@@ -277,11 +363,11 @@ function RepositoriesTab({
   if (items.length === 0) {
     return (
       <EmptyState
-        icon={FolderKanban}
+        icon={Folder}
         title="No repos yet"
         description={
           hasConnection
-            ? "Add a repository from your GitHub integration to onboard it."
+            ? "Link a repository from your GitHub integration to onboard it."
             : "Connect GitHub to onboard repositories, or use the CLI to link an existing checkout."
         }
         {...(hasConnection
@@ -292,57 +378,117 @@ function RepositoriesTab({
   }
 
   return (
-    <Card className="overflow-hidden">
-      <ul className="divide-y divide-border">
+    <>
+      <div className="flex flex-col gap-3">
         {items.map((p) => {
           const link = linkByProject.get(p.id);
-          const repoName = link ? repoFullNameFromRemote(link.remoteUrl) : null;
           const facet = facetByProject.get(p.id);
-          const hasOverview = !!(facet?.docRef && (facet.docRef as Record<string, unknown>)["digest"]);
+          const repoName = facet?.displayName || (link ? repoFullNameFromRemote(link.remoteUrl) : null) || p.name;
+          const branch = facet?.defaultBranch || "main";
+          const entities = entityCountByProject.get(p.id) ?? 0;
+          const projectRuns = runsByProject.get(p.id) ?? [];
+          const runs7d = projectRuns.filter((r) => (new Date(r.createdAt).getTime() || 0) >= weekAgo).length;
+          const latest = projectRuns[0] ?? null;
+          const deploy = latest ? deployStatus(latest, now) : null;
+
           return (
-            <li key={p.id} className="flex items-center gap-3 px-4 py-3 transition-colors hover:bg-accent/40">
-              <Link
-                href={`/orgs/${orgSlug}/projects/${p.slug}/environments`}
-                className="group flex min-w-0 flex-1 items-center gap-3"
-                onMouseEnter={() =>
-                  prefetch(qk.environments(orgId, p.id), () =>
-                    wrap(async () => (await client.environments.list(orgId, p.id)).environments),
-                  )
-                }
-              >
-                <FolderKanban className="h-4 w-4 shrink-0 text-muted-foreground" />
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2">
-                    <span className="truncate text-sm font-medium">{facet?.displayName || p.name}</span>
-                    <Badge variant={p.status === "active" ? "success" : "secondary"}>{p.status}</Badge>
-                    {hasOverview ? <Badge variant="outline">overview</Badge> : null}
-                  </div>
-                  {facet?.description ? (
-                    <div className="truncate text-xs text-muted-foreground">{facet.description}</div>
+            <Link
+              key={p.id}
+              href={`/orgs/${orgSlug}/projects/${p.slug}/environments`}
+              className="group block"
+              onMouseEnter={() =>
+                prefetch(qk.environments(orgId, p.id), () =>
+                  wrap(async () => (await client.environments.list(orgId, p.id)).environments),
+                )
+              }
+            >
+              <InteractiveCard className="px-6 py-5">
+                <div className="flex items-center gap-3">
+                  <Folder className="h-4 w-4 shrink-0 text-muted-foreground" strokeWidth={1.8} />
+                  <span className="truncate font-mono text-[14px] font-semibold">{repoName}</span>
+                  <Pill tone="neutral">{branch}</Pill>
+                  {deploy ? (
+                    <StatusText tone={deploy.tone} live={deploy.live} className="ml-auto shrink-0 text-[12px]">
+                      {deploy.text}
+                    </StatusText>
                   ) : null}
-                  <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                    <span className="truncate">{p.slug}</span>
-                    {repoName ? (
-                      <span className="inline-flex items-center gap-1 truncate">
-                        <Github className="h-3 w-3" />
-                        {repoName}
-                      </span>
-                    ) : null}
-                  </div>
+                  <span className={deploy ? "ml-1.5 shrink-0" : "ml-auto shrink-0"}>
+                    <ArchiveMenu resourceLabel="repo" name={p.name} onConfirm={() => onArchive(p)} />
+                  </span>
                 </div>
-              </Link>
-              <span className="hidden text-xs text-muted-foreground sm:inline">
-                {new Date(p.updatedAt).toLocaleDateString()}
-              </span>
-              <ArchiveMenu resourceLabel="repo" name={p.name} onConfirm={() => onArchive(p)} />
-              <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground/60" />
-            </li>
+                <div className="mt-3.5 flex flex-wrap items-center gap-x-[26px] gap-y-2 text-[12.5px] text-muted-foreground">
+                  {entities > 0 ? (
+                    <span>
+                      <span className="font-semibold text-foreground">{entities}</span> catalog{" "}
+                      {entities === 1 ? "entity" : "entities"}
+                    </span>
+                  ) : null}
+                  {runs7d > 0 ? (
+                    <span>
+                      <span className="font-semibold text-foreground">{runs7d}</span> runs · 7d
+                    </span>
+                  ) : null}
+                  <RepoEnvChips orgId={orgId} projectId={p.id} client={client} />
+                </div>
+              </InteractiveCard>
+            </Link>
           );
         })}
-      </ul>
-      <div className="border-t bg-muted/20 px-4 py-3">{addControl}</div>
-    </Card>
+      </div>
+      <div className="mt-4">{addControl}</div>
+    </>
   );
+}
+
+/** Env-name chips for a repo card — production/staging tinted, rest neutral. */
+function RepoEnvChips({
+  orgId,
+  projectId,
+  client,
+}: {
+  orgId: string;
+  projectId: string;
+  client: ReturnType<typeof useSession>["client"];
+}) {
+  const envs = useApiQuery(qk.environments(orgId, projectId), () =>
+    wrap(async () => (await client.environments.list(orgId, projectId)).environments),
+  );
+  const active = (envs.data ?? []).filter((e) => e.status === "active");
+  if (active.length === 0) return null;
+  return (
+    <span className="ml-auto flex flex-wrap justify-end gap-1.5">
+      {active.map((e) => {
+        const tone = envChipTone(e.slug);
+        return (
+          <span
+            key={e.id}
+            className={cn("rounded-md px-2 py-0.5 text-[11px]", ENV_CHIP_CLASS[tone])}
+          >
+            {e.slug}
+          </span>
+        );
+      })}
+    </span>
+  );
+}
+
+/** Last-deploy status line from a repo's most recent run. */
+function deployStatus(
+  run: import("@saas/contracts/state").Run,
+  now: number,
+): { tone: Tone; live: boolean; text: string } {
+  const branch = run.git.ref ? run.git.ref.replace(/^refs\/heads\//, "") : null;
+  const rel = formatRelative(run.createdAt, now);
+  if (run.status === "running" || run.status === "pending") {
+    return { tone: "info", live: true, text: branch ? `${branch} deploying · ${rel}` : `deploying · ${rel}` };
+  }
+  if (run.status === "failed") {
+    return { tone: "error", live: false, text: branch ? `${branch} red · ${rel}` : `last deploy red · ${rel}` };
+  }
+  if (run.status === "succeeded") {
+    return { tone: "success", live: false, text: `last deploy green · ${rel}` };
+  }
+  return { tone: "neutral", live: false, text: `${run.status} · ${rel}` };
 }
 
 // ── Settings tab — the git-repo allow-list ──────────────────
@@ -381,8 +527,8 @@ function AllowListTab({
 
   return (
     <div className="space-y-4">
-      <div className="flex items-start gap-2 rounded-lg border bg-muted/20 p-3 text-sm text-muted-foreground">
-        <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
+      <div className="flex items-start gap-2.5 rounded-xl border bg-muted/30 p-4 text-[13px] text-muted-foreground">
+        <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-foreground" strokeWidth={1.8} />
         <p>
           The git-repo allow-list. Only repos listed here may push state objects from OIDC CI — a
           push from a repo that isn&apos;t allow-listed is rejected. Adding a repo onboards it and
@@ -412,7 +558,7 @@ function AllowListTab({
           description="No repos are allow-listed yet. Add a repo to let its CI push state objects."
         />
       ) : (
-        <Card className="hidden md:block">
+        <Card className="hidden overflow-hidden md:block">
           <Table>
             <TableHeader>
               <TableRow>
@@ -426,13 +572,13 @@ function AllowListTab({
             <TableBody>
               {links.map((l) => (
                 <TableRow key={l.id}>
-                  <TableCell className="text-sm">
+                  <TableCell className="text-[13.5px]">
                     <span className="inline-flex items-center gap-1.5 font-medium">
-                      <Github className="h-3.5 w-3.5" />
+                      <Github className="h-3.5 w-3.5" strokeWidth={1.8} />
                       {repoFullNameFromRemote(l.remoteUrl)}
                     </span>
                   </TableCell>
-                  <TableCell className="text-sm">
+                  <TableCell className="text-[13.5px]">
                     {l.projectSlug ? (
                       <Link href={`/orgs/${orgSlug}/projects/${l.projectSlug}/git`} className="hover:underline">
                         {l.projectSlug}
@@ -442,9 +588,9 @@ function AllowListTab({
                     )}
                   </TableCell>
                   <TableCell>
-                    <Badge variant={l.ciSettings?.oidcEnabled === false ? "secondary" : "success"}>
+                    <Pill tone={l.ciSettings?.oidcEnabled === false ? "neutral" : "success"}>
                       {l.ciSettings?.oidcEnabled === false ? "disabled" : "enabled"}
-                    </Badge>
+                    </Pill>
                   </TableCell>
                   <TableCell className="text-xs text-muted-foreground">
                     {new Date(l.createdAt).toLocaleDateString()}
@@ -467,8 +613,8 @@ function AllowListTab({
           {links.map((l) => (
             <Card key={l.id} className="space-y-2 p-4">
               <div className="flex items-center justify-between gap-2">
-                <span className="inline-flex items-center gap-1.5 text-sm font-medium">
-                  <Github className="h-3.5 w-3.5" />
+                <span className="inline-flex items-center gap-1.5 text-[13.5px] font-medium">
+                  <Github className="h-3.5 w-3.5" strokeWidth={1.8} />
                   {repoFullNameFromRemote(l.remoteUrl)}
                 </span>
                 <Button variant="outline" size="sm" onClick={() => setRemoveTarget(l)}>

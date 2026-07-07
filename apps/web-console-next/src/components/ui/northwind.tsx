@@ -521,7 +521,10 @@ export function OwnerAvatar({
   className?: string;
 }) {
   const palette = ownerPalette(name);
-  const radius = shape === "circle" ? "50%" : Math.round(size * 0.28);
+  // Radius is applied inline (dynamic per size — Tailwind can't JIT a runtime
+  // arbitrary value). Factor 0.27 lands the mock's exact square radii
+  // (36→10, 52→14, 32→9); circles are fully round.
+  const radius = shape === "circle" ? "50%" : Math.round(size * 0.27);
   if (unowned) {
     return (
       <span
