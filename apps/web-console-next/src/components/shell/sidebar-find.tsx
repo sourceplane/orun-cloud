@@ -17,11 +17,13 @@ export function SidebarFind({ onOpen }: { onOpen?: () => void } = {}) {
         onOpen?.();
         palette.open();
       }}
-      className="flex w-full items-center gap-2 rounded-md border border-input bg-background px-2.5 py-2 text-sm text-muted-foreground transition-colors hover:bg-accent/50 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      className="flex w-full items-center gap-2 rounded-[9px] border border-border bg-muted px-[9px] py-1.5 text-[12.5px] text-muted-foreground transition-colors hover:bg-accent/60 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
     >
-      <Search className="h-4 w-4" />
-      <span className="flex-1 text-left">Find…</span>
-      <kbd className="rounded border bg-muted px-1.5 py-0.5 font-mono text-[10px]">⌘K</kbd>
+      <Search className="h-[13px] w-[13px]" />
+      <span className="flex-1 text-left">Find anything</span>
+      <kbd className="rounded border border-border bg-card px-[5px] py-px font-mono text-[10px] text-muted-foreground/70">
+        ⌘K
+      </kbd>
     </button>
   );
 }

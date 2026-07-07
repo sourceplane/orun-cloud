@@ -1,14 +1,28 @@
 /**
- * Status facet pills (Activities redesign).
+ * Status facet chips (Activities, Northwind design).
  *
- * The design's status chips — All · Running · Succeeded · Failed · Pending ·
- * Canceled — each with a live count over the loaded feed. The active pill takes
- * the amber primary tint; the rest are quiet outlines.
+ * The design's status chips — All · Running · Succeeded · Failed — each with a
+ * tone-coloured dot and a live count over the loaded feed. Pending / Canceled
+ * (part of the real run vocabulary) appear only while they have rows, keeping
+ * the row quiet without losing the filter. Active chip is the black Chip.
  */
 
 import * as React from "react";
 import type { RunStatus } from "@saas/contracts/state";
 import type { StatusFacet } from "@/lib/runs-portal/model";
+import { Chip, toneDot, type Tone } from "@/components/ui/northwind";
+import { cn } from "@/lib/cn";
+
+const FACET_TONE: Record<RunStatus, Tone> = {
+  running: "info",
+  succeeded: "success",
+  failed: "error",
+  pending: "neutral",
+  canceled: "neutral",
+};
+
+/** Facets always shown, even at count 0 (the design's core vocabulary). */
+const CORE = new Set<StatusFacet["key"]>(["all", "running", "succeeded", "failed"]);
 
 export function StatusFacets({
   facets,
@@ -18,30 +32,17 @@ export function StatusFacets({
   onSelect: (key: "all" | RunStatus) => void;
 }) {
   return (
-    <div className="inline-flex flex-wrap gap-[5px]" role="group" aria-label="Filter by status">
-      {facets.map((f) => (
-        <button
-          key={f.key}
-          type="button"
-          data-facet
-          aria-pressed={f.active}
-          onClick={() => onSelect(f.key)}
-          className="flex h-8 items-center gap-1.5 rounded-lg border px-3 text-[12.5px] font-medium transition-colors"
-          style={{
-            borderColor: f.active ? "hsl(var(--primary) / 0.4)" : "hsl(var(--border))",
-            background: f.active ? "hsl(var(--primary) / 0.1)" : "transparent",
-            color: f.active ? "hsl(var(--foreground))" : "hsl(var(--muted-foreground))",
-          }}
-        >
-          {f.label}
-          <span
-            className="font-mono text-[10.5px]"
-            style={{ color: f.active ? "hsl(var(--primary))" : "hsl(var(--muted-foreground) / 0.7)" }}
-          >
-            {f.count}
-          </span>
-        </button>
-      ))}
+    <div className="contents" role="group" aria-label="Filter by status">
+      {facets
+        .filter((f) => CORE.has(f.key) || f.count > 0 || f.active)
+        .map((f) => (
+          <Chip key={f.key} active={f.active} aria-pressed={f.active} onClick={() => onSelect(f.key)}>
+            {f.key !== "all" ? (
+              <span aria-hidden className={cn("h-1.5 w-1.5 rounded-full", toneDot[FACET_TONE[f.key]])} />
+            ) : null}
+            {f.key === "all" ? f.label : `${f.label} · ${f.count}`}
+          </Chip>
+        ))}
     </div>
   );
 }

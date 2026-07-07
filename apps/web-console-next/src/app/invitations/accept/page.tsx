@@ -4,10 +4,8 @@ import * as React from "react";
 import { useRouter } from "next/navigation";
 import { Loader2, CheckCircle2, XCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { useSession, readStoredToken } from "@/lib/session";
 import { wrap } from "@/lib/api";
-import { CONSOLE_TITLE } from "@/lib/app-config";
 import { OrunMark } from "@/components/brand/logo";
 
 /**
@@ -68,58 +66,54 @@ export default function AcceptInvitationPage() {
   }, [state, router]);
 
   return (
-    <div className="bg-grid-glow grid min-h-screen place-items-center bg-background px-4">
-      <div className="w-full max-w-md space-y-4">
-        <div className="flex items-center gap-3">
+    <div className="bg-grid-glow flex min-h-screen flex-col items-center bg-background px-5 pb-14 pt-[12vh]">
+      <div className="w-full max-w-[400px] animate-fade-up">
+        <div className="flex flex-col items-center gap-5 text-center">
           <OrunMark size={34} className="text-foreground" />
-          <div className="text-base font-semibold tracking-tight">{CONSOLE_TITLE}</div>
+          <h1 className="font-serif text-[30px] font-medium leading-tight tracking-[-0.01em]">
+            Workspace invitation
+          </h1>
         </div>
 
-        <Card className="animate-fade-in">
+        <div className="mt-7 rounded-xl border bg-card p-6">
           {state === "working" && (
-            <>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                  Accepting your invitation…
-                </CardTitle>
-                <CardDescription>This only takes a moment.</CardDescription>
-              </CardHeader>
-            </>
+            <div>
+              <div className="flex items-center gap-2 text-[15px] font-semibold">
+                <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+                Accepting your invitation…
+              </div>
+              <p className="mt-1.5 text-[12.5px] text-muted-foreground">This only takes a moment.</p>
+            </div>
           )}
 
           {state === "success" && (
-            <>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2 text-success">
-                  <CheckCircle2 className="h-5 w-5" />
-                  Invitation accepted
-                </CardTitle>
-                <CardDescription>
-                  You now have access. Taking you to your workspaces…
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
+            <div>
+              <div className="flex items-center gap-2 text-[15px] font-semibold text-success">
+                <CheckCircle2 className="h-[18px] w-[18px]" strokeWidth={1.8} />
+                Invitation accepted
+              </div>
+              <p className="mt-1.5 text-[12.5px] text-muted-foreground">
+                You now have access. Taking you to your workspaces…
+              </p>
+              <div className="mt-5">
                 <Button onClick={() => router.replace("/orgs")}>Go to your workspaces</Button>
-              </CardContent>
-            </>
+              </div>
+            </div>
           )}
 
           {state === "error" && (
-            <>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2 text-destructive">
-                  <XCircle className="h-5 w-5" />
-                  Couldn&apos;t accept the invitation
-                </CardTitle>
-                <CardDescription>{message}</CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-2">
+            <div>
+              <div className="flex items-center gap-2 text-[15px] font-semibold text-destructive">
+                <XCircle className="h-[18px] w-[18px]" strokeWidth={1.8} />
+                Couldn&apos;t accept the invitation
+              </div>
+              <p className="mt-1.5 text-[12.5px] leading-normal text-muted-foreground">{message}</p>
+              <div className="mt-5 space-y-3">
                 <Button onClick={() => router.replace("/orgs")}>View your workspaces</Button>
                 <div>
                   <button
                     type="button"
-                    className="text-xs text-muted-foreground underline underline-offset-2"
+                    className="text-[12px] text-muted-foreground underline underline-offset-2 transition-colors hover:text-foreground"
                     onClick={() => {
                       setToken(null);
                       router.replace("/login");
@@ -128,10 +122,10 @@ export default function AcceptInvitationPage() {
                     Signed in with the wrong account? Sign out
                   </button>
                 </div>
-              </CardContent>
-            </>
+              </div>
+            </div>
           )}
-        </Card>
+        </div>
       </div>
     </div>
   );

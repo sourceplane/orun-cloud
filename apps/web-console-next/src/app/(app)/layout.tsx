@@ -31,7 +31,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         <Sidebar />
       ) : (
         <aside
-          className="sticky top-0 hidden h-dvh w-60 shrink-0 self-start border-r bg-card/40 md:flex"
+          className="sticky top-0 hidden h-dvh w-[230px] shrink-0 self-start border-r bg-secondary md:flex"
           aria-hidden
         />
       )}
@@ -44,7 +44,10 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             aria-hidden
           />
         )}
-        <main className="mx-auto w-full max-w-7xl flex-1 px-4 pb-[calc(env(safe-area-inset-bottom)+4.5rem)] pt-6 md:px-8 md:pb-6">
+        {/* Screens own their container (see ui/northwind.tsx `Screen`): a
+            1060px centered column with Northwind rhythm. The shell only
+            reserves space for the mobile tab bar + home indicator. */}
+        <main className="w-full flex-1 pb-[calc(env(safe-area-inset-bottom)+4.5rem)] md:pb-0">
           {ready ? children : <ShellSkeleton />}
         </main>
         {ready && <BottomTabs />}
@@ -92,7 +95,7 @@ function OnboardingGate() {
 
 function ShellSkeleton() {
   return (
-    <div className="space-y-6" aria-hidden>
+    <div className="mx-auto w-full max-w-[1060px] space-y-6 px-5 pt-8 sm:px-8 lg:px-12 lg:pt-[52px]" aria-hidden>
       <div className="space-y-2">
         <Skeleton className="h-7 w-48" />
         <Skeleton className="h-4 w-72 max-w-full" />

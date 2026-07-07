@@ -4,14 +4,18 @@
  * The Docs hub (saas-catalog-docs CD5) — the org-wide library of every
  * git-authored catalog doc: the doc sets entities attach via `docs.overview` +
  * `docs.pages`, indexed at projection (state.catalog_docs) and rendered by
- * digest. A library, not a wiki: browse by entity kind and role, search by
- * title/path/entity, open in the reader. The console never authors any of it —
- * the empty state teaches the manifest, never offers a textbox
- * (design.md §2/§6).
+ * digest. A library, not a wiki: browse by role, search by title/path/entity,
+ * open in the reader. The console never authors any of it — the empty state
+ * teaches the manifest, never offers a textbox (design.md §2/§6).
+ *
+ * Northwind layout (docs.html): serif page header with a 230px search on the
+ * right, role filter chips with a trailing "N docs · M entities" count, then
+ * one shelf per entity — shelf header (name + mono ref + doc count) over a
+ * 3-column grid of doc cards — closed by the dashed authoring footnote.
  *
  * Data: the full org doc index, keyset-paged into one client cache (the same
- * fetch-all + client-filter idiom the catalog portal uses), grouped kind →
- * entity so an entity's set reads as one shelf.
+ * fetch-all + client-filter idiom the catalog portal uses), grouped into
+ * per-entity shelves ordered kind → entity name.
  */
 
 import * as React from "react";
@@ -20,30 +24,25 @@ import { BookOpen, Search } from "lucide-react";
 import type { CatalogDoc } from "@saas/contracts/state";
 import { encodeEntityKey } from "@/lib/catalog-entity-key";
 import { KINDS } from "@/lib/catalog-kind";
-import { docRoleIcon, shortCommit, useOrgDocs } from "@/components/catalog/docs/entity-docs";
-import { PathIcon } from "@/components/catalog/portal/icon";
-import { DOC_ICON, iconForKind } from "@/lib/catalog-portal/icons";
-import { EmptyState } from "@/components/ui/empty-state";
+import {
+  docRoleColor,
+  docRoleLabel,
+  shortCommit,
+  useOrgDocs,
+} from "@/components/catalog/docs/entity-docs";
+import { Chip, ChipRow, DashedNote, MonoRef, PageHeader, Screen } from "@/components/ui/northwind";
 import { Skeleton } from "@/components/ui/skeleton";
 
-/** The well-known role chips, in shelf order. Unknown roles fold into the
- *  trailing "other" bucket rather than exploding the chip row. */
-const ROLE_CHIPS = ["overview", "guide", "architecture", "runbook", "adr", "reference", "changelog", "faq", "onboarding"];
+/** The well-known role chips, in shelf order. Unknown roles still render on
+ *  cards (neutrally) — they just don't get a dedicated chip. */
+const ROLE_CHIPS = ["overview", "guide", "runbook", "adr", "architecture", "reference", "changelog", "faq", "onboarding"];
 
 export function DocsHub({ orgId, orgSlug }: { orgId: string; orgSlug: string }) {
   const docsQuery = useOrgDocs(orgId);
-  const [kind, setKind] = React.useState<string | null>(null);
   const [role, setRole] = React.useState<string | null>(null);
   const [q, setQ] = React.useState("");
 
   const docs = docsQuery.data ?? [];
-  const kinds = React.useMemo(() => {
-    const present = new Set(docs.map((d) => d.entityKind));
-    // Known kinds first in canonical order, then anything novel.
-    const ordered = KINDS.filter((k) => present.has(k));
-    for (const k of present) if (!ordered.includes(k)) ordered.push(k);
-    return ordered;
-  }, [docs]);
   const roles = React.useMemo(() => {
     const present = new Set(docs.map((d) => d.role));
     return ROLE_CHIPS.filter((r) => present.has(r));
@@ -52,7 +51,6 @@ export function DocsHub({ orgId, orgSlug }: { orgId: string; orgSlug: string }) 
   const filtered = React.useMemo(() => {
     const needle = q.trim().toLowerCase();
     return docs.filter((d) => {
-      if (kind && d.entityKind !== kind) return false;
       if (role && d.role !== role) return false;
       if (!needle) return true;
       return (
@@ -61,128 +59,103 @@ export function DocsHub({ orgId, orgSlug }: { orgId: string; orgSlug: string }) 
         d.entityName.toLowerCase().includes(needle)
       );
     });
-  }, [docs, kind, role, q]);
+  }, [docs, role, q]);
 
-  // kind → entityRef → shelf (sorted by position; entities by name).
-  const grouped = React.useMemo(() => {
-    const byKind = new Map<string, Map<string, CatalogDoc[]>>();
+  // Per-entity shelves (docs in declared position), ordered kind → entity name
+  // so the library keeps the catalog's canonical kind grouping.
+  const shelves = React.useMemo(() => {
+    const byRef = new Map<string, CatalogDoc[]>();
     for (const d of filtered) {
-      const entities = byKind.get(d.entityKind) ?? new Map<string, CatalogDoc[]>();
-      const shelf = entities.get(d.entityRef) ?? [];
+      const shelf = byRef.get(d.entityRef) ?? [];
       shelf.push(d);
-      entities.set(d.entityRef, shelf);
-      byKind.set(d.entityKind, entities);
+      byRef.set(d.entityRef, shelf);
     }
-    for (const entities of byKind.values()) {
-      for (const shelf of entities.values()) {
-        shelf.sort((a, b) => a.position - b.position || a.docKey.localeCompare(b.docKey));
-      }
+    for (const shelf of byRef.values()) {
+      shelf.sort((a, b) => a.position - b.position || a.docKey.localeCompare(b.docKey));
     }
-    return byKind;
+    const kindOrder = new Map(KINDS.map((k, i) => [k, i] as const));
+    return [...byRef.values()].sort((a, b) => {
+      const ka = kindOrder.get(a[0]!.entityKind) ?? KINDS.length;
+      const kb = kindOrder.get(b[0]!.entityKind) ?? KINDS.length;
+      return ka - kb || a[0]!.entityName.localeCompare(b[0]!.entityName);
+    });
   }, [filtered]);
 
-  if (docsQuery.loading && !docsQuery.data) {
-    return (
-      <div className="space-y-4 p-1">
-        <Skeleton className="h-8 w-56 bg-muted" />
-        <Skeleton className="h-24 w-full bg-muted" />
-        <Skeleton className="h-24 w-full bg-muted" />
-      </div>
-    );
-  }
-
-  if (docs.length === 0) {
-    return <HubEmptyState />;
-  }
+  const loading = docsQuery.loading && !docsQuery.data;
+  const empty = !loading && docs.length === 0;
 
   return (
-    <div className="flex flex-col gap-4">
-      {/* header + search */}
-      <div className="flex flex-wrap items-center gap-3">
-        <h1 className="m-0 text-lg font-semibold tracking-tight">Docs</h1>
-        <span className="rounded-md border border-input px-2 py-0.5 font-mono text-[11px] text-muted-foreground">
-          {docs.length}
-        </span>
-        <div className="relative ml-auto w-full sm:w-72">
-          <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground/60" />
-          <input
-            value={q}
-            onChange={(e) => setQ(e.target.value)}
-            placeholder="Search title, path, or entity…"
-            className="h-9 w-full rounded-lg border border-border bg-card pl-8 pr-3 text-[13px] outline-none placeholder:text-muted-foreground/50 focus:border-input"
-          />
-        </div>
-      </div>
+    <Screen>
+      <PageHeader
+        title="Docs"
+        description="The library of every git-authored catalog doc. Written next to the code, indexed on push — browsed here, never edited here."
+        actions={
+          empty || loading ? undefined : (
+            <div className="relative w-full sm:w-[230px]">
+              <Search
+                strokeWidth={2}
+                className="pointer-events-none absolute left-3 top-1/2 h-[13px] w-[13px] -translate-y-1/2 text-muted-foreground/70"
+              />
+              <input
+                value={q}
+                onChange={(e) => setQ(e.target.value)}
+                placeholder="Search title, path, entity…"
+                className="h-[33px] w-full rounded-[9px] border border-border bg-card pl-8 pr-3 text-[13px] text-foreground outline-none transition-colors placeholder:text-muted-foreground/60 focus:border-foreground/30"
+              />
+            </div>
+          )
+        }
+      />
 
-      {/* filter chips */}
-      <div className="flex flex-wrap items-center gap-1.5">
-        <FilterChip label="All kinds" active={kind === null} onClick={() => setKind(null)} />
-        {kinds.map((k) => (
-          <FilterChip key={k} label={k} active={kind === k} onClick={() => setKind(kind === k ? null : k)} />
-        ))}
-        {roles.length > 1 ? <span className="mx-1 h-4 w-px bg-border" /> : null}
-        {roles.map((r) => (
-          <FilterChip key={r} label={r} active={role === r} onClick={() => setRole(role === r ? null : r)} muted />
-        ))}
-      </div>
-
-      {filtered.length === 0 ? (
-        <EmptyState
-          icon={BookOpen}
-          title="No docs match"
-          description="Clear the search or filters to see the full library."
-        />
+      {loading ? (
+        <HubSkeleton />
+      ) : empty ? (
+        <HubEmptyState />
       ) : (
-        [...grouped.entries()].map(([k, entities]) => (
-          <section key={k} className="flex flex-col gap-2.5">
-            <div className="flex items-center gap-2 pt-1">
-              <PathIcon d={iconForKind(k)} size={14} strokeWidth={1.8} className="text-muted-foreground/70" />
-              <h2 className="m-0 text-[13px] font-semibold text-foreground/90">{k}</h2>
-              <span className="font-mono text-[11px] text-muted-foreground/60">{entities.size}</span>
+        <>
+          {/* role filter chips + library count */}
+          <ChipRow className="mt-[26px]">
+            <Chip active={role === null} onClick={() => setRole(null)}>
+              All roles
+            </Chip>
+            {roles.map((r) => (
+              <Chip key={r} active={role === r} onClick={() => setRole(role === r ? null : r)}>
+                {docRoleLabel(r)}
+              </Chip>
+            ))}
+            <span className="ml-auto hidden shrink-0 text-xs text-muted-foreground/80 sm:inline">
+              {filtered.length} {filtered.length === 1 ? "doc" : "docs"} · {shelves.length}{" "}
+              {shelves.length === 1 ? "entity" : "entities"}
+            </span>
+          </ChipRow>
+
+          {filtered.length === 0 ? (
+            <div className="mt-7 rounded-xl border bg-card px-5 py-12 text-center">
+              <div className="text-[13.5px] font-medium">No docs match</div>
+              <p className="mt-1 text-[12.5px] text-muted-foreground">
+                Clear the search or role filter to see the full library.
+              </p>
             </div>
-            <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
-              {[...entities.entries()]
-                .sort((a, b) => a[1][0]!.entityName.localeCompare(b[1][0]!.entityName))
-                .map(([ref, shelf]) => (
-                  <EntityShelfCard key={ref} orgSlug={orgSlug} shelf={shelf} />
-                ))}
-            </div>
-          </section>
-        ))
+          ) : (
+            shelves.map((shelf) => (
+              <EntityShelf key={shelf[0]!.entityRef} orgSlug={orgSlug} shelf={shelf} />
+            ))
+          )}
+
+          <DashedNote className="mt-8">
+            Docs live in your repositories under{" "}
+            <span className="font-mono text-xs text-secondary-foreground">docs.overview</span> and{" "}
+            <span className="font-mono text-xs text-secondary-foreground">docs.pages</span> in the entity manifest.
+            Push to publish — the library reflects the latest projection.
+          </DashedNote>
+        </>
       )}
-    </div>
+    </Screen>
   );
 }
 
-function FilterChip({
-  label,
-  active,
-  onClick,
-  muted,
-}: {
-  label: string;
-  active: boolean;
-  onClick: () => void;
-  muted?: boolean;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className="h-7 rounded-full border px-3 text-[12px] transition-colors"
-      style={{
-        borderColor: active ? "hsl(var(--primary) / 0.45)" : "hsl(var(--border))",
-        background: active ? "hsl(var(--primary) / 0.08)" : "transparent",
-        color: active ? "hsl(var(--foreground))" : muted ? "hsl(var(--muted-foreground) / 0.8)" : "hsl(var(--muted-foreground))",
-      }}
-    >
-      {label}
-    </button>
-  );
-}
-
-/** One entity's shelf: the entity header + its docs, each row into the reader. */
-function EntityShelfCard({ orgSlug, shelf }: { orgSlug: string; shelf: CatalogDoc[] }) {
+/** One entity's shelf: header (name + mono ref + count) over the doc cards. */
+function EntityShelf({ orgSlug, shelf }: { orgSlug: string; shelf: CatalogDoc[] }) {
   const first = shelf[0]!;
   const entityKey = encodeEntityKey({
     sourceProjectId: first.projectId,
@@ -190,45 +163,69 @@ function EntityShelfCard({ orgSlug, shelf }: { orgSlug: string; shelf: CatalogDo
     entityRef: first.entityRef,
   });
   return (
-    <div className="rounded-[13px] border border-border bg-card">
-      <div className="flex items-center gap-2 border-b border-border px-4 py-2.5">
+    <section className="mt-7">
+      <div className="mb-2.5 flex flex-wrap items-baseline gap-x-2.5 gap-y-0.5">
         <Link
           href={`/orgs/${orgSlug}/catalog/${entityKey}`}
-          className="truncate text-[13px] font-medium text-foreground/90 hover:text-foreground"
+          className="text-[13.5px] font-semibold transition-colors hover:text-foreground/80"
         >
           {first.entityName}
         </Link>
-        <span className="ml-auto shrink-0 font-mono text-[10.5px] text-muted-foreground/60">
+        <MonoRef className="min-w-0 truncate text-muted-foreground/70">{first.entityRef}</MonoRef>
+        <span className="ml-auto shrink-0 text-[11.5px] text-muted-foreground/80">
           {shelf.length} doc{shelf.length === 1 ? "" : "s"}
         </span>
       </div>
-      <div className="p-1.5">
-        {shelf.map((d) => {
-          const commit = shortCommit(d.commitSha);
-          return (
-            <Link
-              key={d.docKey}
-              href={`/orgs/${orgSlug}/docs/${entityKey}/${encodeURIComponent(d.docKey)}`}
-              className="flex items-center gap-2.5 rounded-[9px] px-2.5 py-2 transition-colors hover:bg-foreground/[0.03]"
-            >
-              <PathIcon
-                d={d.docKey === "overview" ? DOC_ICON.file : docRoleIcon(d.role)}
-                size={14}
-                strokeWidth={1.7}
-                className="shrink-0 text-muted-foreground/80"
-              />
-              <span className="min-w-0 flex-1 truncate text-[13px] text-foreground/90">{d.title}</span>
-              <span className="hidden shrink-0 rounded-[5px] border border-input px-1.5 py-px text-[10px] text-muted-foreground/70 sm:inline">
-                {d.docKey === "overview" ? "front page" : d.role}
-              </span>
-              <span className="hidden shrink-0 font-mono text-[10.5px] text-muted-foreground/50 md:inline">
-                {d.path}
-                {commit ? ` @ ${commit}` : ""}
-              </span>
-            </Link>
-          );
-        })}
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        {shelf.map((d) => (
+          <DocCard key={d.docKey} orgSlug={orgSlug} entityKey={entityKey} doc={d} />
+        ))}
       </div>
+    </section>
+  );
+}
+
+/** One doc card: colored role label, title, mono "path · sha" provenance. */
+function DocCard({ orgSlug, entityKey, doc }: { orgSlug: string; entityKey: string; doc: CatalogDoc }) {
+  const commit = shortCommit(doc.commitSha);
+  return (
+    <Link
+      href={`/orgs/${orgSlug}/docs/${entityKey}/${encodeURIComponent(doc.docKey)}`}
+      className="block rounded-[11px] border border-border bg-card px-[17px] py-[15px] transition-colors duration-100 hover:border-foreground/20 hover:bg-muted"
+    >
+      <div
+        className="text-[10.5px] font-semibold uppercase tracking-[0.08em]"
+        style={{ color: docRoleColor(doc.role).fg }}
+      >
+        {docRoleLabel(doc.role)}
+      </div>
+      <div className="mt-2 truncate text-[13.5px] font-medium leading-snug">{doc.title}</div>
+      <div className="mt-1 truncate font-mono text-[11px] text-muted-foreground/80">
+        {doc.path}
+        {commit ? ` · ${commit}` : ""}
+      </div>
+    </Link>
+  );
+}
+
+function HubSkeleton() {
+  return (
+    <div aria-hidden className="mt-[26px]">
+      <div className="flex gap-[7px]">
+        {Array.from({ length: 4 }).map((_, i) => (
+          <Skeleton key={i} className="h-[29px] w-20 rounded-full" />
+        ))}
+      </div>
+      {Array.from({ length: 2 }).map((_, s) => (
+        <div key={s} className="mt-7">
+          <Skeleton className="h-4 w-56" />
+          <div className="mt-2.5 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            {Array.from({ length: 3 }).map((_, i) => (
+              <Skeleton key={i} className="h-[92px] w-full rounded-[11px]" />
+            ))}
+          </div>
+        </div>
+      ))}
     </div>
   );
 }
@@ -245,20 +242,22 @@ function HubEmptyState() {
     "      - { path: docs/runbook.md, role: runbook }",
   ].join("\n");
   return (
-    <div className="mx-auto flex max-w-xl flex-col items-center gap-4 py-16 text-center">
+    <div className="mx-auto mt-4 flex max-w-xl flex-col items-center gap-4 py-14 text-center">
       <span className="grid h-12 w-12 place-items-center rounded-2xl border border-border bg-muted">
-        <BookOpen className="h-6 w-6 text-muted-foreground" />
+        <BookOpen className="h-6 w-6 text-muted-foreground" strokeWidth={1.8} />
       </span>
       <div>
-        <h1 className="m-0 text-lg font-semibold tracking-tight">Documentation, from the repo</h1>
-        <p className="mx-auto mt-2 max-w-md text-sm leading-relaxed text-muted-foreground">
+        <h2 className="m-0 font-serif text-[22px] font-medium tracking-[-0.01em]">
+          Documentation, from the repo
+        </h2>
+        <p className="mx-auto mt-2 max-w-md text-[13px] leading-relaxed text-muted-foreground">
           Point any entity&apos;s <code className="rounded bg-muted px-1 py-0.5 font-mono text-[12px]">docs</code> block
           at markdown files in its repo. The next{" "}
           <code className="rounded bg-muted px-1 py-0.5 font-mono text-[12px]">orun plan</code> carries them into the
-          catalog — pinned to the commit, rendered here, browsable by kind and role. No CMS, no sync job, no drift.
+          catalog — pinned to the commit, rendered here, browsable by role. No CMS, no sync job, no drift.
         </p>
       </div>
-      <pre className="w-full overflow-x-auto rounded-lg border border-border bg-muted p-4 text-left font-mono text-[12px] leading-[1.55] text-foreground/85">
+      <pre className="w-full overflow-x-auto rounded-[10px] border border-border bg-muted p-4 text-left font-mono text-[12px] leading-[1.55] text-foreground/85">
         {snippet}
       </pre>
     </div>

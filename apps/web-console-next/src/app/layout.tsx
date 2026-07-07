@@ -1,7 +1,18 @@
 import type { Metadata, Viewport } from "next";
+import { Newsreader } from "next/font/google";
 import "../styles/globals.css";
 import { Providers } from "./providers";
 import { CONSOLE_TITLE, PRODUCT_DESCRIPTION, PRODUCT_NAME } from "@/lib/app-config";
+
+// Northwind display serif — page titles, greetings, stat numerals. Exposed as
+// a CSS variable so globals.css can fold it into --font-serif.
+const newsreader = Newsreader({
+  subsets: ["latin"],
+  weight: ["400", "500", "600"],
+  style: ["normal", "italic"],
+  display: "swap",
+  variable: "--font-newsreader",
+});
 
 export const metadata: Metadata = {
   title: CONSOLE_TITLE,
@@ -21,8 +32,8 @@ export const viewport: Viewport = {
   initialScale: 1,
   viewportFit: "cover",
   themeColor: [
-    { media: "(prefers-color-scheme: light)", color: "#fefdfb" },
-    { media: "(prefers-color-scheme: dark)", color: "#08080a" },
+    { media: "(prefers-color-scheme: light)", color: "#fafafa" },
+    { media: "(prefers-color-scheme: dark)", color: "#121212" },
   ],
 };
 
@@ -37,7 +48,7 @@ export const dynamic = "force-dynamic";
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" suppressHydrationWarning>
+    <html lang="en" suppressHydrationWarning className={newsreader.variable}>
       <body className="min-h-screen bg-background text-foreground antialiased">
         {/*
           esbuild's `keepNames` helper (`__name`) is referenced by the

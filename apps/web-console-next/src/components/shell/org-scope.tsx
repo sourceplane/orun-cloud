@@ -1,16 +1,13 @@
 "use client";
 
 import * as React from "react";
-import Link from "next/link";
-import { usePathname } from "next/navigation";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { EmptyState } from "@/components/ui/empty-state";
 import type { PublicOrganization } from "@saas/contracts/membership";
 import { useOrgBySlug } from "@/lib/use-org";
 import { readLastOrgSlug, clearLastOrgSlug } from "@/lib/last-org";
-import { buildBreadcrumbs } from "./breadcrumbs";
-import { AlertTriangle, ChevronRight } from "lucide-react";
+import { AlertTriangle } from "lucide-react";
 
 /**
  * Shared wrapper for per-org pages: resolves slug → org, surfaces
@@ -44,7 +41,7 @@ export function OrgScope({
 
   if (loading) {
     return (
-      <div className="space-y-4">
+      <div className="mx-auto w-full max-w-[1060px] space-y-4 px-5 pt-8 sm:px-8 lg:px-12 lg:pt-[52px]">
         <Skeleton className="h-8 w-48" />
         <div className="grid sm:grid-cols-2 gap-4">
           {Array.from({ length: 4 }).map((_, i) => (
@@ -64,7 +61,7 @@ export function OrgScope({
 
   if (error) {
     return (
-      <Card>
+      <Card className="mx-auto mt-8 w-full max-w-lg lg:mt-[52px]">
         <CardHeader>
           <CardTitle className="text-destructive flex items-center gap-2">
             <AlertTriangle className="h-4 w-4" />
@@ -87,53 +84,9 @@ export function OrgScope({
     );
   }
 
-  if (bare) return <>{children(org)}</>;
-
-  return (
-    <div className="space-y-6">
-      <OrgBreadcrumbs orgSlug={org.slug} orgName={org.name} />
-      {children(org)}
-    </div>
-  );
-}
-
-/**
- * Persistent wayfinding: a real breadcrumb `<nav>` derived from the URL (the
- * source of truth for scope), replacing the old `slug-chip + name` echo.
- */
-function OrgBreadcrumbs({ orgSlug, orgName }: { orgSlug: string; orgName: string }) {
-  const pathname = usePathname();
-  const crumbs = buildBreadcrumbs({ orgSlug, orgName, pathname });
-
-  return (
-    <nav aria-label="Breadcrumb">
-      <ol className="flex flex-wrap items-center gap-1 text-sm">
-        {crumbs.map((crumb, i) => {
-          const last = i === crumbs.length - 1;
-          return (
-            <li key={`${crumb.label}-${i}`} className="flex min-w-0 items-center gap-1">
-              {i > 0 && (
-                <ChevronRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground/50" aria-hidden />
-              )}
-              {crumb.href && !last ? (
-                <Link
-                  href={crumb.href}
-                  className="truncate text-muted-foreground transition-colors hover:text-foreground"
-                >
-                  {crumb.label}
-                </Link>
-              ) : (
-                <span
-                  aria-current={last ? "page" : undefined}
-                  className={last ? "truncate font-medium" : "truncate text-muted-foreground"}
-                >
-                  {crumb.label}
-                </span>
-              )}
-            </li>
-          );
-        })}
-      </ol>
-    </nav>
-  );
+  // Northwind screens own their chrome: top-level surfaces have no persistent
+  // breadcrumb (drill-downs render their own via ui/northwind `Breadcrumbs`),
+  // so the wrapper is pass-through in both modes. `bare` is kept for callers.
+  void bare;
+  return <>{children(org)}</>;
 }

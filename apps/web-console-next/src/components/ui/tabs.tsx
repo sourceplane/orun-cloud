@@ -13,7 +13,9 @@ export const TabsList = React.forwardRef<
   <TabsPrimitive.List
     ref={ref}
     className={cn(
-      "inline-flex h-9 items-center justify-center rounded-lg bg-muted p-1 text-muted-foreground",
+      // Northwind underline tabs: transparent rail over a hairline baseline.
+      // Callers needing the old pill look can pass bg/rounded classes.
+      "flex items-center gap-5 border-b border-border text-muted-foreground",
       className,
     )}
     {...props}
@@ -28,10 +30,10 @@ export const TabsTrigger = React.forwardRef<
   <TabsPrimitive.Trigger
     ref={ref}
     className={cn(
-      "inline-flex items-center justify-center whitespace-nowrap rounded-md px-3 py-1 text-sm font-medium ring-offset-background transition-all",
-      "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+      "-mb-px inline-flex items-center justify-center gap-1.5 whitespace-nowrap border-b-2 border-transparent px-0.5 py-2 text-[13px] ring-offset-background transition-colors",
+      "hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
       "disabled:pointer-events-none disabled:opacity-50",
-      "data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow",
+      "data-[state=active]:border-link data-[state=active]:font-semibold data-[state=active]:text-foreground",
       className,
     )}
     {...props}

@@ -3,15 +3,15 @@
 import * as React from "react";
 import { useRouter } from "next/navigation";
 import { z } from "zod";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Chip, ChipRow, Kicker } from "@/components/ui/northwind";
 import { useSession } from "@/lib/session";
 import { resolvePostAuthDestination } from "@/lib/last-org";
 import { wrap, createClient } from "@/lib/api";
-import { CONSOLE_TITLE } from "@/lib/app-config";
+import { PRODUCT_NAME } from "@/lib/app-config";
 import { OrunMark } from "@/components/brand/logo";
 import { useToast } from "@/components/ui/toast";
 import { ZodForm } from "@/components/ui/zod-form";
@@ -84,51 +84,48 @@ export default function LoginPage() {
   );
 
   return (
-    <div className="bg-grid-glow grid min-h-screen place-items-center bg-background px-4">
-      <div className="w-full max-w-md space-y-4">
-        <div className="flex items-center gap-3">
+    <div className="bg-grid-glow flex min-h-screen flex-col items-center bg-background px-5 pb-14 pt-[9vh] sm:pt-[12vh]">
+      <div className="w-full max-w-[400px] animate-fade-up">
+        <div className="flex flex-col items-center gap-5 text-center">
           <OrunMark size={34} className="text-foreground" />
           <div>
-            <div className="text-base font-semibold tracking-tight">{CONSOLE_TITLE}</div>
-            <div className="text-xs text-muted-foreground">
-              {isLocked ? `locked to ${target.name}` : `target: ${target.name}`}
-            </div>
+            <h1 className="font-serif text-[30px] font-medium leading-tight tracking-[-0.01em]">
+              Sign in to {PRODUCT_NAME}
+            </h1>
+            <p className="mt-2 text-[12.5px] text-muted-foreground">
+              {isLocked ? `Locked to ${target.name}` : `Signing in against ${target.name}`}
+            </p>
           </div>
         </div>
 
-        <Card className="animate-fade-in">
-          <CardHeader>
-            <CardTitle>Sign in</CardTitle>
-            <CardDescription>Use email code or paste a bearer token for prod testing.</CardDescription>
-          </CardHeader>
-          <CardContent>
-            {oauthProviders.length > 0 && (
-              <div className="space-y-2 pb-4">
-                {oauthProviders.map((p) => (
-                  <Button
-                    key={p.id}
-                    variant="outline"
-                    className="w-full gap-2"
-                    onClick={() => startOAuth(p.id)}
-                  >
-                    {PROVIDER_ICONS[p.id] ?? null}
-                    Continue with {p.displayName}
-                  </Button>
-                ))}
-                <div className="relative py-1">
-                  <div className="absolute inset-0 flex items-center">
-                    <span className="w-full border-t" />
-                  </div>
-                  <div className="relative flex justify-center">
-                    <span className="bg-card px-2 text-[11px] uppercase tracking-wide text-muted-foreground">
-                      or
-                    </span>
-                  </div>
+        <div className="mt-7 rounded-xl border bg-card p-6">
+          {oauthProviders.length > 0 && (
+            <div className="space-y-2 pb-5">
+              {oauthProviders.map((p) => (
+                <Button
+                  key={p.id}
+                  variant="outline"
+                  className="w-full gap-2"
+                  onClick={() => startOAuth(p.id)}
+                >
+                  {PROVIDER_ICONS[p.id] ?? null}
+                  Continue with {p.displayName}
+                </Button>
+              ))}
+              <div className="relative py-1.5">
+                <div className="absolute inset-0 flex items-center">
+                  <span className="w-full border-t border-border" />
+                </div>
+                <div className="relative flex justify-center">
+                  <span className="bg-card px-2.5 text-[10.5px] font-semibold uppercase tracking-[0.09em] text-muted-foreground/85">
+                    or
+                  </span>
                 </div>
               </div>
-            )}
+            </div>
+          )}
             <Tabs defaultValue="email" className="w-full">
-              <TabsList className="grid w-full grid-cols-2">
+              <TabsList>
                 <TabsTrigger value="email">Email code</TabsTrigger>
                 <TabsTrigger value="token">Bearer token</TabsTrigger>
               </TabsList>
@@ -163,7 +160,7 @@ export default function LoginPage() {
                 )}
                 {stage === "code" && (
                   <div className="space-y-3">
-                    <div className="rounded-md border bg-muted/30 p-3 text-xs">
+                    <div className="rounded-[9px] border border-border bg-muted px-3.5 py-2.5 text-xs">
                       Code sent to <strong>{emailHint}</strong>.
                       {debugCode && (
                         <>
@@ -248,26 +245,24 @@ export default function LoginPage() {
             </Tabs>
 
             {!isLocked && availableTargets.length > 1 && (
-              <div className="mt-4 border-t pt-3 space-y-1.5">
-                <Label className="text-xs">API target</Label>
-                <div className="flex flex-wrap gap-2">
+              <div className="mt-5 space-y-2.5 border-t border-border pt-4">
+                <Kicker>API target</Kicker>
+                <ChipRow className="-mx-0 px-0">
                   {availableTargets.map((t) => (
-                    <Button
+                    <Chip
                       key={t.name}
-                      size="sm"
-                      variant={t.name === target.name ? "default" : "outline"}
+                      active={t.name === target.name}
                       onClick={() => setTarget(t)}
                     >
                       {t.name}
-                    </Button>
+                    </Chip>
                   ))}
-                </div>
+                </ChipRow>
               </div>
             )}
-          </CardContent>
-        </Card>
+        </div>
 
-        <p className="text-center text-[11px] text-muted-foreground">
+        <p className="mt-5 text-center text-[12px] text-muted-foreground">
           By signing in you agree to the Acceptable Use Policy.
         </p>
       </div>

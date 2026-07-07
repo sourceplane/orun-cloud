@@ -18,17 +18,20 @@ export function EmptyState({ icon: Icon, title, description, primaryAction, seco
   return (
     <div
       className={cn(
-        "flex flex-col items-center justify-center text-center rounded-xl border border-dashed bg-card/50 px-6 py-14",
+        // Northwind empty state: quiet centered white card, hairline border.
+        "flex flex-col items-center justify-center rounded-xl border bg-card px-6 py-14 text-center",
         className,
       )}
     >
       {Icon && (
-        <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-primary/10 text-primary">
-          <Icon className="h-6 w-6" />
+        <div className="mb-4 flex h-9 w-9 items-center justify-center rounded-full bg-secondary text-muted-foreground">
+          <Icon className="h-[18px] w-[18px]" strokeWidth={1.8} />
         </div>
       )}
-      <h3 className="text-base font-semibold tracking-tight">{title}</h3>
-      {description && <p className="mt-1 max-w-md text-sm text-muted-foreground">{description}</p>}
+      <h3 className="text-[13.5px] font-semibold tracking-tight">{title}</h3>
+      {description && (
+        <p className="mt-1.5 max-w-md text-[12.5px] leading-normal text-muted-foreground">{description}</p>
+      )}
       {(primaryAction || secondaryAction) && (
         <div className="mt-5 flex flex-wrap items-center justify-center gap-2">
           {primaryAction &&

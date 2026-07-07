@@ -43,17 +43,25 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
               if (!open) setItems((cur) => cur.filter((x) => x.id !== t.id));
             }}
             className={cn(
-              "group pointer-events-auto relative flex w-full items-center gap-3 overflow-hidden rounded-lg border p-4 pr-8 shadow-lg",
-              "data-[state=open]:animate-fade-in bg-popover text-popover-foreground",
-              t.kind === "success" && "border-success/30",
-              t.kind === "warning" && "border-warning/30",
-              t.kind === "error" && "border-destructive/30",
+              // Northwind toast: white card, hairline border, soft shadow, tone dot.
+              "group pointer-events-auto relative flex w-full items-start gap-3 overflow-hidden rounded-xl border bg-popover p-4 pr-8 text-popover-foreground shadow-[0_8px_30px_rgba(0,0,0,0.10)]",
+              "data-[state=open]:animate-fade-in",
             )}
           >
+            <span
+              aria-hidden
+              className={cn(
+                "mt-[5px] inline-block h-[7px] w-[7px] shrink-0 rounded-full",
+                t.kind === "success" && "bg-success",
+                t.kind === "warning" && "bg-warning-accent",
+                t.kind === "error" && "bg-destructive",
+                t.kind === "default" && "bg-foreground/30",
+              )}
+            />
             <div className="grid gap-1">
-              <ToastPrimitive.Title className="text-sm font-semibold">{t.title}</ToastPrimitive.Title>
+              <ToastPrimitive.Title className="text-[13px] font-semibold leading-snug">{t.title}</ToastPrimitive.Title>
               {t.description && (
-                <ToastPrimitive.Description className="text-xs text-muted-foreground">
+                <ToastPrimitive.Description className="text-[12.5px] leading-normal text-muted-foreground">
                   {t.description}
                 </ToastPrimitive.Description>
               )}

@@ -3,40 +3,38 @@
 import * as React from "react";
 import Link from "next/link";
 import { useParams, useSearchParams } from "next/navigation";
-import {
-  Activity,
-  AlertOctagon,
-  AlertTriangle,
-  Bell,
-  ChevronDown,
-  Flame,
-  Info,
-  Layers,
-  Radio,
-  RefreshCw,
-  X,
-  type LucideIcon,
-} from "lucide-react";
+import { Activity, Check, ChevronDown, Layers, RefreshCw, X } from "lucide-react";
 import type { PublicEvent, PublicEventGroup, PublicEventGroupMember } from "@saas/contracts/events";
 import { eventDedupKey } from "@saas/contracts/event-catalog";
 import { OrgScope } from "@/components/shell/org-scope";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Input } from "@/components/ui/input";
 import { CopyButton } from "@/components/ui/copy-button";
-import { Switch } from "@/components/ui/switch";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
+import {
+  Chip,
+  ChipDivider,
+  ChipRow,
+  Kicker,
+  ListCard,
+  PageHeader,
+  Pill,
+  Screen,
+  StatusDot,
+  StatusText,
+  toneDot,
+  type Tone,
+} from "@/components/ui/northwind";
 import { cn } from "@/lib/cn";
 import { wrap } from "@/lib/api";
 import { useSession } from "@/lib/session";
@@ -58,27 +56,23 @@ import {
   hasMoreEvents,
   prependNewEvents,
   presetFromIso,
-  severityAccent,
   type EventFilterFormValues,
   type EventLogState,
   type EventTimePreset,
 } from "@/components/events/event-log";
 
-const SEVERITY_ICONS: Record<string, LucideIcon> = {
-  Info,
-  Bell,
-  AlertTriangle,
-  AlertOctagon,
-  Flame,
+/** Severity ladder → Northwind tone (bar, pill, and dot colors). */
+const SEVERITY_NW_TONE: Record<string, Tone> = {
+  info: "info",
+  notice: "success",
+  warning: "warning",
+  error: "error",
+  critical: "error",
 };
 
-const SEVERITY_TONE: Record<string, string> = {
-  slate: "bg-muted text-muted-foreground",
-  blue: "bg-sky-500/10 text-sky-500",
-  amber: "bg-amber-500/10 text-amber-500",
-  rose: "bg-rose-500/10 text-rose-500",
-  red: "bg-red-500/10 text-red-500",
-};
+function severityTone(severity: string): Tone {
+  return SEVERITY_NW_TONE[severity] ?? "neutral";
+}
 
 const POLL_INTERVAL_MS = 5000;
 
@@ -97,6 +91,18 @@ function localToIso(value: string): string {
   if (!value) return "";
   const d = new Date(value);
   return Number.isNaN(d.getTime()) ? "" : d.toISOString();
+}
+
+/** ISO → local wall-clock HH:MM:SS for the 64px time column. */
+function formatClockTime(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "—";
+  return d.toLocaleTimeString(undefined, {
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+  });
 }
 
 export default function EventsPage() {
@@ -267,56 +273,63 @@ function Inner({ orgId, orgSlug }: { orgId: string; orgSlug: string }) {
     setCustomTo("");
   };
 
-  return (
-    <div className="space-y-5">
-      <header className="flex items-end justify-between gap-4">
-        <div>
-          <h1 className="text-xl font-semibold tracking-tight">Events</h1>
-          <p className="text-sm text-muted-foreground">
-            The live event stream for this workspace — everything the platform emits, faceted and searchable.
-          </p>
-        </div>
-        <div className="flex items-center gap-3">
-          <label className="flex cursor-pointer items-center gap-1.5 text-xs text-muted-foreground">
-            <Radio className={cn("h-3.5 w-3.5", livePoll && "text-emerald-500")} />
-            Live
-            <Switch checked={livePoll} onCheckedChange={setLivePoll} aria-label="Live poll" />
-          </label>
-          <Button
-            type="button"
-            variant="outline"
-            size="icon"
-            aria-label="Refresh"
-            onClick={() => setRefreshNonce((n) => n + 1)}
-            disabled={loading}
-          >
-            <RefreshCw className={cn("h-4 w-4", loading && "animate-spin")} />
-          </Button>
-        </div>
-      </header>
+  const presetLabel = EVENT_TIME_PRESETS.find((p) => p.value === preset)?.label ?? "Any time";
 
-      <Tabs value={tab} onValueChange={(v) => setTab(v as "stream" | "groups")}>
-        <TabsList>
-          <TabsTrigger value="stream">
-            <Activity className="mr-1.5 h-3.5 w-3.5" />
+  return (
+    <Screen>
+      <PageHeader
+        title="Events"
+        description="The raw event bus — everything the platform emitted, as it happened."
+        actions={
+          <>
+            <button
+              type="button"
+              onClick={() => setLivePoll((v) => !v)}
+              aria-pressed={livePoll}
+              className={cn(
+                "inline-flex items-center gap-2 rounded-[9px] border px-3.5 py-[7px] text-[12.5px] font-medium transition-colors",
+                livePoll
+                  ? "border-info/30 bg-info-soft text-info"
+                  : "border-border bg-card text-muted-foreground hover:border-foreground/25 hover:text-foreground",
+              )}
+            >
+              <StatusDot tone={livePoll ? "info" : "neutral"} live={livePoll} />
+              {livePoll ? "Live tail on" : "Live tail off"}
+            </button>
+            <Button
+              type="button"
+              variant="outline"
+              size="icon"
+              aria-label="Refresh"
+              onClick={() => setRefreshNonce((n) => n + 1)}
+              disabled={loading}
+            >
+              <RefreshCw className={cn("h-4 w-4", loading && "animate-spin")} strokeWidth={1.8} />
+            </Button>
+          </>
+        }
+      />
+
+      <Tabs value={tab} onValueChange={(v) => setTab(v as "stream" | "groups")} className="mt-[26px]">
+        <TabsList className="h-auto gap-[7px] bg-transparent p-0">
+          <TabsTrigger value="stream" className={tabTriggerCls}>
             Stream
           </TabsTrigger>
-          <TabsTrigger value="groups">
-            <Layers className="mr-1.5 h-3.5 w-3.5" />
+          <TabsTrigger value="groups" className={tabTriggerCls}>
             Correlation stories
           </TabsTrigger>
         </TabsList>
 
-        <TabsContent value="stream">
-          {/* Filter toolbar — selects apply instantly, text inputs debounce. */}
-          <div className="space-y-2">
-            <div className="flex flex-wrap items-center gap-2">
+        <TabsContent value="stream" className="mt-5">
+          {/* Filter toolbar — dropdown chips apply instantly, the query input debounces. */}
+          <div className="space-y-2.5">
+            <div className="flex flex-col gap-2.5 sm:flex-row sm:items-center sm:gap-[7px]">
               <Input
                 value={type}
                 onChange={(e) => setType(e.target.value)}
-                placeholder="Type glob (scm.* / notification.sent / *)"
+                placeholder="type: run.*"
                 aria-label="Event type"
-                className="h-8 w-[280px] text-xs"
+                className="w-full rounded-[9px] bg-card font-mono placeholder:text-muted-foreground/70 sm:h-[31px] sm:w-[240px] sm:text-[12.5px]"
                 list="event-type-options"
               />
               <datalist id="event-type-options">
@@ -328,56 +341,55 @@ function Inner({ orgId, orgSlug }: { orgId: string; orgSlug: string }) {
                 ))}
               </datalist>
 
-              <Select value={severity} onValueChange={setSeverity}>
-                <SelectTrigger className="h-8 w-[150px] text-xs" aria-label="Severity floor">
-                  <SelectValue placeholder="Severity" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">Any severity</SelectItem>
-                  {EVENT_SEVERITY_OPTIONS.map((s) => (
-                    <SelectItem key={s} value={s}>
-                      {s} and up
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <ChipRow className="sm:min-w-0 sm:flex-1">
+                <ChipMenu
+                  label={severity === "all" ? "Severity ≥ any" : `Severity ≥ ${severity}`}
+                  active={severity !== "all"}
+                  value={severity}
+                  onChange={setSeverity}
+                  ariaLabel="Severity floor"
+                  options={[
+                    { value: "all", label: "Any severity" },
+                    ...EVENT_SEVERITY_OPTIONS.map((s) => ({ value: s, label: `${s} and up` })),
+                  ]}
+                />
+                <ChipMenu
+                  label={`Category: ${category}`}
+                  active={category !== "all"}
+                  value={category}
+                  onChange={setCategory}
+                  ariaLabel="Category"
+                  options={[
+                    { value: "all", label: "All categories" },
+                    ...EVENT_CATEGORY_OPTIONS.map((c) => ({ value: c, label: c })),
+                  ]}
+                />
+                <ChipMenu
+                  label={presetLabel}
+                  active={preset !== "any"}
+                  value={preset}
+                  onChange={(v) => setPreset(v as EventTimePreset)}
+                  ariaLabel="Time range"
+                  options={EVENT_TIME_PRESETS.map((p) => ({ value: p.value, label: p.label }))}
+                />
+                <ChipDivider />
+                <Chip
+                  active={advancedOpen}
+                  onClick={() => setAdvancedOpen((o) => !o)}
+                  aria-expanded={advancedOpen}
+                >
+                  Advanced
+                  <ChevronDown
+                    className={cn("h-3 w-3 opacity-70 transition-transform", advancedOpen && "rotate-180")}
+                    strokeWidth={1.8}
+                    aria-hidden
+                  />
+                </Chip>
+              </ChipRow>
 
-              <Select value={category} onValueChange={setCategory}>
-                <SelectTrigger className="h-8 w-[150px] text-xs" aria-label="Category">
-                  <SelectValue placeholder="Category" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All categories</SelectItem>
-                  {EVENT_CATEGORY_OPTIONS.map((c) => (
-                    <SelectItem key={c} value={c}>
-                      {c}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-
-              <Select value={preset} onValueChange={(v) => setPreset(v as EventTimePreset)}>
-                <SelectTrigger className="h-8 w-[150px] text-xs" aria-label="Time range">
-                  <SelectValue placeholder="Time range" />
-                </SelectTrigger>
-                <SelectContent>
-                  {EVENT_TIME_PRESETS.map((p) => (
-                    <SelectItem key={p.value} value={p.value}>
-                      {p.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-
-              <button
-                type="button"
-                onClick={() => setAdvancedOpen((o) => !o)}
-                className="inline-flex items-center gap-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
-                aria-expanded={advancedOpen}
-              >
-                Advanced
-                <ChevronDown className={cn("h-3.5 w-3.5 transition-transform", advancedOpen && "rotate-180")} />
-              </button>
+              <span className="hidden shrink-0 text-xs text-muted-foreground sm:inline">
+                {visible.length} {visible.length === 1 ? "event" : "events"}
+              </span>
             </div>
 
             {preset === "custom" ? (
@@ -387,7 +399,7 @@ function Inner({ orgId, orgSlug }: { orgId: string; orgSlug: string }) {
                   value={customFrom}
                   onChange={(e) => setCustomFrom(e.target.value)}
                   aria-label="From"
-                  className="h-8 w-[210px] text-xs"
+                  className="w-[210px] rounded-[9px] sm:h-[31px] sm:text-xs"
                 />
                 <span className="text-xs text-muted-foreground">to</span>
                 <Input
@@ -395,7 +407,7 @@ function Inner({ orgId, orgSlug }: { orgId: string; orgSlug: string }) {
                   value={customTo}
                   onChange={(e) => setCustomTo(e.target.value)}
                   aria-label="To"
-                  className="h-8 w-[210px] text-xs"
+                  className="w-[210px] rounded-[9px] sm:h-[31px] sm:text-xs"
                 />
               </div>
             ) : null}
@@ -405,23 +417,23 @@ function Inner({ orgId, orgSlug }: { orgId: string; orgSlug: string }) {
                 <Input
                   value={sourceInput}
                   onChange={(e) => setSourceInput(e.target.value)}
-                  placeholder="Source (events-worker, scm…)"
+                  placeholder="source: events-worker"
                   aria-label="Source"
-                  className="h-8 w-[220px] text-xs"
+                  className="w-full rounded-[9px] font-mono sm:h-[31px] sm:w-[220px] sm:text-xs"
                 />
                 <Input
                   value={projectInput}
                   onChange={(e) => setProjectInput(e.target.value)}
-                  placeholder="Project id (prj_…)"
+                  placeholder="project: prj_…"
                   aria-label="Project id"
-                  className="h-8 w-[200px] text-xs"
+                  className="w-full rounded-[9px] font-mono sm:h-[31px] sm:w-[200px] sm:text-xs"
                 />
                 <Input
                   value={environmentInput}
                   onChange={(e) => setEnvironmentInput(e.target.value)}
-                  placeholder="Environment id (env_…)"
+                  placeholder="environment: env_…"
                   aria-label="Environment id"
-                  className="h-8 w-[200px] text-xs"
+                  className="w-full rounded-[9px] font-mono sm:h-[31px] sm:w-[200px] sm:text-xs"
                 />
               </div>
             ) : null}
@@ -433,11 +445,11 @@ function Inner({ orgId, orgSlug }: { orgId: string; orgSlug: string }) {
                     key={chip.key}
                     type="button"
                     onClick={() => clearChip(chip.key)}
-                    className="group inline-flex max-w-[280px] items-center gap-1 rounded-full border bg-muted/50 py-0.5 pl-2.5 pr-1.5 text-[11px] text-muted-foreground transition-colors hover:text-foreground"
+                    className="group inline-flex max-w-[280px] items-center gap-1 rounded-full border border-border bg-card py-0.5 pl-2.5 pr-1.5 font-mono text-[11px] text-muted-foreground transition-colors hover:border-foreground/25 hover:text-foreground"
                     aria-label={`Remove filter ${chip.label}`}
                   >
                     <span className="truncate">{chip.label}</span>
-                    <X className="h-3 w-3 opacity-60 group-hover:opacity-100" />
+                    <X className="h-3 w-3 opacity-60 group-hover:opacity-100" strokeWidth={1.8} />
                   </button>
                 ))}
                 <button
@@ -451,26 +463,33 @@ function Inner({ orgId, orgSlug }: { orgId: string; orgSlug: string }) {
             ) : null}
           </div>
 
-          <div className="mt-4">
+          <div className="mt-1">
             {loading ? (
-              <Card>
-                <CardContent className="space-y-2 pt-6">
-                  {Array.from({ length: 6 }).map((_, i) => (
-                    <Skeleton key={i} className="h-12 w-full" />
-                  ))}
-                </CardContent>
-              </Card>
+              <ListCard className="mt-6">
+                {Array.from({ length: 6 }).map((_, i) => (
+                  <div key={i} className="flex items-center gap-3.5 border-t border-border/50 px-5 py-3 first:border-t-0">
+                    <Skeleton className="h-[30px] w-[3px] rounded-[2px]" />
+                    <Skeleton className="h-3.5 w-[64px]" />
+                    <div className="flex-1 space-y-1.5">
+                      <Skeleton className="h-3.5 w-2/5" />
+                      <Skeleton className="h-3 w-3/5" />
+                    </div>
+                    <Skeleton className="h-4 w-12 rounded-full" />
+                  </div>
+                ))}
+              </ListCard>
             ) : error ? (
-              <Card>
-                <CardHeader>
-                  <CardTitle className="text-destructive">{error.code}</CardTitle>
-                  <CardDescription>{error.message}</CardDescription>
-                </CardHeader>
+              <Card className="mt-6 px-5 py-4">
+                <StatusText tone="error" className="font-mono text-[12.5px] font-semibold">
+                  {error.code}
+                </StatusText>
+                <p className="mt-1.5 text-[13px] text-muted-foreground">{error.message}</p>
               </Card>
             ) : visible.length === 0 ? (
               <EmptyState
                 icon={Activity}
                 title="No matching events"
+                className="mt-6"
                 description={
                   filtersActive
                     ? "No events match the current filters. Widen the time range or clear a filter."
@@ -479,35 +498,41 @@ function Inner({ orgId, orgSlug }: { orgId: string; orgSlug: string }) {
                 {...(filtersActive ? { primaryAction: { label: "Clear filters", onClick: clearAll } } : {})}
               />
             ) : (
-              <div className="space-y-5">
+              <>
                 {groups.map((group) => (
                   <section key={group.key} aria-label={group.label}>
-                    <h2 className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                      {group.label}
-                    </h2>
-                    <Card className="divide-y divide-border p-0">
+                    <Kicker className="mb-[9px] mt-6">{group.label}</Kicker>
+                    <ListCard>
                       {group.events.map((e) => (
                         <EventRow key={e.id} event={e} onOpen={() => setSelected(e)} />
                       ))}
-                    </Card>
+                    </ListCard>
                   </section>
                 ))}
 
                 {hasMoreEvents(log) ? (
-                  <div className="flex justify-center pt-1">
-                    <Button type="button" variant="outline" onClick={() => void loadMore()} loading={loadingMore}>
+                  <div className="mt-4 flex justify-center">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="h-auto px-[18px] py-2 text-[12.5px] font-normal text-muted-foreground"
+                      onClick={() => void loadMore()}
+                      loading={loadingMore}
+                    >
                       Load more
                     </Button>
                   </div>
                 ) : (
-                  <p className="pt-1 text-center text-[11px] text-muted-foreground">End of the stream for these filters.</p>
+                  <p className="mt-4 text-center text-[11px] text-muted-foreground">
+                    End of the stream for these filters.
+                  </p>
                 )}
-              </div>
+              </>
             )}
           </div>
         </TabsContent>
 
-        <TabsContent value="groups">
+        <TabsContent value="groups" className="mt-5">
           <GroupStories orgId={orgId} onOpenEvent={setSelected} />
         </TabsContent>
       </Tabs>
@@ -521,49 +546,97 @@ function Inner({ orgId, orgSlug }: { orgId: string; orgSlug: string }) {
           setTab("groups");
         }}
       />
-    </div>
+    </Screen>
+  );
+}
+
+/** Northwind chip-styled tab trigger (the shared Tabs primitive is still the gray shadcn pill). */
+const tabTriggerCls =
+  "rounded-full border border-border bg-card px-[13px] py-[5px] text-[12.5px] font-normal text-muted-foreground shadow-none transition-colors hover:border-foreground/25 hover:text-foreground data-[state=active]:border-primary data-[state=active]:bg-primary data-[state=active]:font-medium data-[state=active]:text-primary-foreground data-[state=active]:shadow-none";
+
+/** Filter chip that opens a single-select dropdown (severity / category / range). */
+function ChipMenu({
+  label,
+  active,
+  value,
+  options,
+  onChange,
+  ariaLabel,
+}: {
+  label: string;
+  active: boolean;
+  value: string;
+  options: ReadonlyArray<{ value: string; label: string }>;
+  onChange: (value: string) => void;
+  ariaLabel: string;
+}) {
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Chip active={active} aria-label={ariaLabel}>
+          {label}
+          <ChevronDown className="h-3 w-3 opacity-70" strokeWidth={1.8} aria-hidden />
+        </Chip>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="start" className="min-w-[160px]">
+        {options.map((o) => (
+          <DropdownMenuItem
+            key={o.value}
+            onSelect={() => onChange(o.value)}
+            className={cn("text-[12.5px]", o.value === value && "font-medium")}
+          >
+            <Check
+              className={cn("h-3.5 w-3.5", o.value === value ? "opacity-100" : "opacity-0")}
+              strokeWidth={1.8}
+              aria-hidden
+            />
+            {o.label}
+          </DropdownMenuItem>
+        ))}
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }
 
 function EventRow({ event, onOpen }: { event: PublicEvent; onOpen: () => void }) {
-  const accent = severityAccent(event.severity);
-  const Icon = SEVERITY_ICONS[accent.icon] ?? Info;
+  const tone = severityTone(event.severity);
+  const isError = tone === "error";
   const absolute = new Date(event.occurredAt).toLocaleString();
+  const scope = event.environmentId ?? event.projectId ?? "org";
   return (
     <button
       type="button"
       onClick={onOpen}
-      className="flex w-full items-start gap-3 px-4 py-3 text-left transition-colors hover:bg-accent/50"
+      className={cn(
+        "flex min-h-[40px] w-full items-center gap-3 border-t border-border/50 px-4 py-3 text-left transition-colors first:border-t-0 sm:gap-3.5 sm:px-5",
+        isError ? "bg-destructive-wash hover:bg-destructive-soft" : "hover:bg-muted",
+      )}
     >
-      <span
-        className={cn("mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full", SEVERITY_TONE[accent.tone])}
-        aria-hidden
+      <span className={cn("h-[30px] w-[3px] shrink-0 rounded-[2px]", toneDot[tone])} aria-hidden />
+      <time
+        className="w-[52px] shrink-0 font-mono text-xs text-muted-foreground sm:w-[64px]"
+        dateTime={event.occurredAt}
+        title={`${absolute} · ${formatRelativeTime(event.occurredAt)}`}
       >
-        <Icon className="h-3.5 w-3.5" />
-      </span>
+        {formatClockTime(event.occurredAt)}
+      </time>
       <span className="min-w-0 flex-1">
-        <span className="block truncate text-sm">{event.title}</span>
-        <span className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-muted-foreground">
-          <span className="font-mono">{event.type}</span>
-          <span aria-hidden>·</span>
-          <span className="font-mono">{event.source}</span>
-          {event.subject?.name ? (
-            <>
-              <span aria-hidden>·</span>
-              <span className="truncate">{event.subject.name}</span>
-            </>
-          ) : null}
+        <span className="block truncate text-[13px]">
+          <span className="font-mono text-xs font-semibold text-foreground">{event.type}</span>
+          <span className="text-muted-foreground"> — {event.title}</span>
         </span>
-      </span>
-      <span className="flex shrink-0 items-center gap-2 pt-0.5">
-        <Badge variant="secondary" className="hidden text-[10px] sm:inline-flex">
+        <span className="mt-px block truncate font-mono text-[11px] text-muted-foreground/80">
+          source: {event.source}
+          {event.correlationId ? ` · corr: ${event.correlationId}` : ""}
+          {` · ${scope}`}
+        </span>
+        <Pill tone={tone} className="mt-1.5 px-[9px] text-[11px] sm:hidden">
           {event.severity}
-        </Badge>
-        <time className="whitespace-nowrap text-[11px] text-muted-foreground" title={absolute} dateTime={event.occurredAt}>
-          {formatRelativeTime(event.occurredAt)}
-        </time>
-        <ChevronDown className="h-3.5 w-3.5 -rotate-90 text-muted-foreground/60" aria-hidden />
+        </Pill>
       </span>
+      <Pill tone={tone} className="hidden px-[9px] text-[11px] sm:inline-flex">
+        {event.severity}
+      </Pill>
     </button>
   );
 }
@@ -589,15 +662,27 @@ function EventDetailSheet({
 
   return (
     <Sheet open={event !== null} onOpenChange={(o) => (!o ? onClose() : undefined)}>
-      <SheetContent side="right" className="w-full overflow-y-auto sm:max-w-xl">
+      <SheetContent side="right" className="w-full overflow-y-auto p-6 sm:max-w-xl">
         {event ? (
           <>
-            <SheetHeader>
-              <SheetTitle className="pr-8 text-base">{event.title}</SheetTitle>
-              <p className="font-mono text-xs text-muted-foreground">{event.type}</p>
+            <SheetHeader className="space-y-0">
+              <Kicker>Event</Kicker>
+              <SheetTitle className="mt-2 pr-8 font-serif text-[22px] font-medium leading-snug tracking-[-0.01em]">
+                {event.title}
+              </SheetTitle>
+              <p className="mt-1.5 font-mono text-xs text-muted-foreground">{event.type}</p>
             </SheetHeader>
 
-            <div className="mt-2 flex flex-wrap gap-2">
+            <div className="flex flex-wrap items-center gap-1.5">
+              <Pill tone={severityTone(event.severity)} dot className="text-[11px]">
+                {event.severity}
+              </Pill>
+              <Pill tone="neutral" className="text-[11px]">
+                {event.category}
+              </Pill>
+            </div>
+
+            <div className="flex flex-wrap gap-2">
               <Button asChild size="sm">
                 <Link href={`/orgs/${orgSlug}/settings/notifications/rules?type=${encodeURIComponent(event.type)}&new=1`}>
                   Create rule from this event
@@ -605,46 +690,50 @@ function EventDetailSheet({
               </Button>
               {dedupKey ? (
                 <Button size="sm" variant="outline" onClick={onViewStories}>
-                  <Layers className="mr-1.5 h-3.5 w-3.5" />
+                  <Layers className="mr-1.5 h-3.5 w-3.5" strokeWidth={1.8} />
                   View correlation stories
                 </Button>
               ) : null}
             </div>
 
-            <dl className="mt-4 grid grid-cols-1 gap-x-6 gap-y-2 text-xs sm:grid-cols-2">
-              <DetailPair label="Event id" value={event.id} mono copyValue={event.id} />
-              <DetailPair label="Occurred" value={new Date(event.occurredAt).toLocaleString()} />
-              <DetailPair label="Severity" value={event.severity} />
-              <DetailPair label="Category" value={event.category} />
-              <DetailPair label="Version" value={String(event.version)} />
-              <DetailPair label="Source" value={event.source} mono />
-              <DetailPair label="Actor" value={`${event.actor.type}:${event.actor.id}`} mono copyValue={event.actor.id} />
-              <DetailPair
-                label="Subject"
-                value={`${event.subject.kind}:${event.subject.id}`}
-                mono
-                copyValue={event.subject.id}
-              />
-              {event.projectId ? <DetailPair label="Project" value={event.projectId} mono copyValue={event.projectId} /> : null}
-              {event.environmentId ? (
-                <DetailPair label="Environment" value={event.environmentId} mono copyValue={event.environmentId} />
-              ) : null}
-              <DetailPair label="Request" value={event.requestId} mono copyValue={event.requestId} />
-              {event.correlationId ? (
-                <DetailPair label="Correlation" value={event.correlationId} mono copyValue={event.correlationId} />
-              ) : null}
-              {event.causationId ? (
-                <DetailPair label="Causation" value={event.causationId} mono copyValue={event.causationId} />
-              ) : null}
-              {dedupKey ? <DetailPair label="Dedup key" value={dedupKey} mono copyValue={dedupKey} /> : null}
-            </dl>
+            <div className="rounded-xl border bg-card px-4 py-3">
+              <dl className="grid grid-cols-1 gap-x-6 gap-y-2 text-xs sm:grid-cols-2">
+                <DetailPair label="Event id" value={event.id} mono copyValue={event.id} />
+                <DetailPair label="Occurred" value={new Date(event.occurredAt).toLocaleString()} />
+                <DetailPair label="Severity" value={event.severity} />
+                <DetailPair label="Category" value={event.category} />
+                <DetailPair label="Version" value={String(event.version)} />
+                <DetailPair label="Source" value={event.source} mono />
+                <DetailPair label="Actor" value={`${event.actor.type}:${event.actor.id}`} mono copyValue={event.actor.id} />
+                <DetailPair
+                  label="Subject"
+                  value={`${event.subject.kind}:${event.subject.id}`}
+                  mono
+                  copyValue={event.subject.id}
+                />
+                {event.projectId ? (
+                  <DetailPair label="Project" value={event.projectId} mono copyValue={event.projectId} />
+                ) : null}
+                {event.environmentId ? (
+                  <DetailPair label="Environment" value={event.environmentId} mono copyValue={event.environmentId} />
+                ) : null}
+                <DetailPair label="Request" value={event.requestId} mono copyValue={event.requestId} />
+                {event.correlationId ? (
+                  <DetailPair label="Correlation" value={event.correlationId} mono copyValue={event.correlationId} />
+                ) : null}
+                {event.causationId ? (
+                  <DetailPair label="Causation" value={event.causationId} mono copyValue={event.causationId} />
+                ) : null}
+                {dedupKey ? <DetailPair label="Dedup key" value={dedupKey} mono copyValue={dedupKey} /> : null}
+              </dl>
+            </div>
 
-            <div className="mt-4">
-              <div className="mb-1 flex items-center justify-between">
-                <span className="text-[11px] uppercase tracking-wide text-muted-foreground">Payload</span>
+            <div>
+              <div className="mb-1.5 flex items-center justify-between">
+                <Kicker>Payload</Kicker>
                 <CopyButton value={JSON.stringify(event.payload, null, 2)} variant="ghost" size="sm" />
               </div>
-              <pre className="max-h-[420px] overflow-auto rounded-md border bg-background p-3 font-mono text-[11px] leading-relaxed">
+              <pre className="max-h-[420px] overflow-auto rounded-[10px] border bg-[#FCFCFC] p-3.5 font-mono text-[11px] leading-relaxed dark:bg-secondary">
                 {JSON.stringify(event.payload, null, 2)}
               </pre>
             </div>
@@ -705,31 +794,32 @@ function GroupStories({
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center gap-2">
-        <Select value={status} onValueChange={(v) => setStatus(v as "all" | "open" | "closed")}>
-          <SelectTrigger className="h-8 w-[150px] text-xs" aria-label="Group status">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="open">Open stories</SelectItem>
-            <SelectItem value="closed">Closed stories</SelectItem>
-            <SelectItem value="all">All stories</SelectItem>
-          </SelectContent>
-        </Select>
-      </div>
+      <ChipRow>
+        {(
+          [
+            { value: "open", label: "Open stories" },
+            { value: "closed", label: "Closed stories" },
+            { value: "all", label: "All stories" },
+          ] as const
+        ).map((opt) => (
+          <Chip key={opt.value} active={status === opt.value} onClick={() => setStatus(opt.value)}>
+            {opt.label}
+          </Chip>
+        ))}
+      </ChipRow>
 
       {loading ? (
-        <div className="space-y-2">
+        <div className="space-y-3">
           {Array.from({ length: 4 }).map((_, i) => (
-            <Skeleton key={i} className="h-20 w-full" />
+            <Skeleton key={i} className="h-[68px] w-full rounded-xl" />
           ))}
         </div>
       ) : error ? (
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-destructive">{error.code}</CardTitle>
-            <CardDescription>{error.message}</CardDescription>
-          </CardHeader>
+        <Card className="px-5 py-4">
+          <StatusText tone="error" className="font-mono text-[12.5px] font-semibold">
+            {error.code}
+          </StatusText>
+          <p className="mt-1.5 text-[13px] text-muted-foreground">{error.message}</p>
         </Card>
       ) : items.length === 0 ? (
         <EmptyState
@@ -744,7 +834,13 @@ function GroupStories({
           ))}
           {cursor !== null ? (
             <div className="flex justify-center pt-1">
-              <Button type="button" variant="outline" onClick={() => void loadMore()} loading={loadingMore}>
+              <Button
+                type="button"
+                variant="outline"
+                className="h-auto px-[18px] py-2 text-[12.5px] font-normal text-muted-foreground"
+                onClick={() => void loadMore()}
+                loading={loadingMore}
+              >
                 Load more
               </Button>
             </div>
@@ -765,7 +861,7 @@ function GroupCard({
   onOpenEvent: (event: PublicEvent) => void;
 }) {
   const { client } = useSession();
-  const accent = severityAccent(group.maxSeverity);
+  const tone = severityTone(group.maxSeverity);
   const [open, setOpen] = React.useState(false);
   const [members, setMembers] = React.useState<ReadonlyArray<PublicEventGroupMember> | null>(null);
   const [loading, setLoading] = React.useState(false);
@@ -787,41 +883,38 @@ function GroupCard({
   };
 
   return (
-    <Card className="p-0">
+    <div className="overflow-hidden rounded-xl border bg-card">
       <button
         type="button"
         onClick={() => void toggle()}
         aria-expanded={open}
-        className="flex w-full items-start gap-3 px-4 py-3 text-left transition-colors hover:bg-accent/50"
+        className="flex min-h-[40px] w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-muted sm:gap-3.5 sm:px-5"
       >
-        <span
-          className={cn("mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full", SEVERITY_TONE[accent.tone])}
-          aria-hidden
-        >
-          <Layers className="h-3.5 w-3.5" />
-        </span>
+        <span className={cn("h-[30px] w-[3px] shrink-0 rounded-[2px]", toneDot[tone])} aria-hidden />
         <span className="min-w-0 flex-1">
           <span className="flex items-center gap-2">
-            <span className="truncate font-mono text-sm">{group.groupKey}</span>
-            <Badge variant={group.status === "open" ? "default" : "secondary"} className="text-[10px]">
+            <span className="truncate font-mono text-xs font-semibold text-foreground">{group.groupKey}</span>
+            <Pill tone={group.status === "open" ? "info" : "neutral"} className="px-[9px] text-[11px]">
               {group.status}
-            </Badge>
+            </Pill>
           </span>
-          <span className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-muted-foreground">
-            <span>{group.maxSeverity}</span>
-            <span aria-hidden>·</span>
-            <span>{group.eventCount} events</span>
-            <span aria-hidden>·</span>
-            <span title={new Date(group.firstAt).toLocaleString()}>first {formatRelativeTime(group.firstAt)}</span>
-            <span aria-hidden>·</span>
-            <span title={new Date(group.lastAt).toLocaleString()}>last {formatRelativeTime(group.lastAt)}</span>
+          <span className="mt-px block truncate font-mono text-[11px] text-muted-foreground/80">
+            {group.eventCount} {group.eventCount === 1 ? "event" : "events"} · first{" "}
+            {formatRelativeTime(group.firstAt)} · last {formatRelativeTime(group.lastAt)}
           </span>
         </span>
-        <ChevronDown className={cn("mt-1 h-3.5 w-3.5 shrink-0 text-muted-foreground/60 transition-transform", open && "rotate-180")} aria-hidden />
+        <Pill tone={tone} className="px-[9px] text-[11px]">
+          {group.maxSeverity}
+        </Pill>
+        <ChevronDown
+          className={cn("h-3.5 w-3.5 shrink-0 text-muted-foreground/60 transition-transform", open && "rotate-180")}
+          strokeWidth={1.8}
+          aria-hidden
+        />
       </button>
 
       {open ? (
-        <div className="border-t border-dashed bg-muted/30 px-4 py-3">
+        <div className="border-t border-border/50 bg-muted/40 px-4 py-3 sm:px-5">
           {loading ? (
             <div className="space-y-2">
               {Array.from({ length: 3 }).map((_, i) => (
@@ -835,11 +928,15 @@ function GroupCard({
                   <button
                     type="button"
                     onClick={() => void openMember(m.eventId)}
-                    className="truncate font-mono text-primary underline-offset-2 hover:underline"
+                    className="truncate font-mono text-[11.5px] text-link underline-offset-2 hover:underline"
                   >
                     {m.eventId}
                   </button>
-                  <time className="whitespace-nowrap text-muted-foreground" title={new Date(m.addedAt).toLocaleString()} dateTime={m.addedAt}>
+                  <time
+                    className="whitespace-nowrap text-[11.5px] text-muted-foreground"
+                    title={new Date(m.addedAt).toLocaleString()}
+                    dateTime={m.addedAt}
+                  >
                     {formatRelativeTime(m.addedAt)}
                   </time>
                 </li>
@@ -850,7 +947,7 @@ function GroupCard({
           )}
         </div>
       ) : null}
-    </Card>
+    </div>
   );
 }
 
@@ -868,7 +965,7 @@ function DetailPair({
   return (
     <div className="flex min-w-0 items-center gap-1.5">
       <dt className="shrink-0 text-muted-foreground">{label}</dt>
-      <dd className={cn("truncate", mono && "font-mono")} title={value}>
+      <dd className={cn("truncate text-secondary-foreground", mono && "font-mono text-[11.5px]")} title={value}>
         {value}
       </dd>
       {copyValue ? <CopyButton value={copyValue} variant="ghost" size="sm" className="h-5 w-5 shrink-0 p-0" /> : null}

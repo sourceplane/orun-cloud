@@ -58,20 +58,24 @@ export default function OAuthCallbackPage() {
 
   if (error) {
     return (
-      <div className="min-h-screen grid place-items-center px-4">
-        <div className="w-full max-w-md space-y-4 text-center">
-          <h1 className="text-lg font-semibold tracking-tight">Sign-in failed</h1>
-          <p className="text-sm text-muted-foreground">
+      <div className="bg-grid-glow grid min-h-screen place-items-center bg-background px-5">
+        <div className="w-full max-w-[400px] animate-fade-up rounded-xl border bg-card p-7 text-center">
+          <h1 className="font-serif text-[26px] font-medium leading-tight tracking-[-0.01em]">
+            Sign-in failed
+          </h1>
+          <p className="mt-2.5 text-[13px] leading-normal text-muted-foreground">
             {ERROR_COPY[error] ?? ERROR_COPY.oauth_failed}
           </p>
-          <Button onClick={() => router.replace("/login")}>Back to sign in</Button>
+          <Button className="mt-5" onClick={() => router.replace("/login")}>
+            Back to sign in
+          </Button>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen grid place-items-center text-sm text-muted-foreground">
+    <div className="bg-grid-glow grid min-h-screen place-items-center bg-background text-[13px] text-muted-foreground">
       Completing sign-in…
     </div>
   );

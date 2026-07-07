@@ -7,7 +7,6 @@ import {
   BookOpen,
   Building2,
   ChevronDown,
-  ChevronLeft,
   ChevronRight,
   FolderKanban,
   Boxes,
@@ -38,7 +37,6 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { buildNavSections, isLinkActive } from "./nav-items";
-import { buildSettingsNav, flattenSettingsNav, isSettingsLinkActive } from "./settings-nav";
 import { SidebarAccount } from "./sidebar-account";
 import { SidebarOrgSwitcher } from "./sidebar-org-switcher";
 import { SidebarFind } from "./sidebar-find";
@@ -96,38 +94,18 @@ export function NavContent({
   // genuinely-selected org instead of collapsing to an empty rail.
   const orgSlug = useEffectiveOrgSlug();
 
-  // The left rail swaps to a dedicated sub-panel for the settings scope only
-  // (`/settings`), mirroring how Vercel turns the whole rail into a settings
-  // menu. The catalog keeps the stable product nav — its own list is the
-  // navigation now, so the rail no longer swaps per selected entity (calmer,
-  // and the entity page is a 3-panel surface that keeps the list in view).
-  const inSettings = !!orgSlug && !!pathname && pathname.startsWith(`/orgs/${orgSlug}/settings`);
-  const mode: "settings" | "product" = inSettings ? "settings" : "product";
-
-  // Subtle directional swap: a sub-panel slides in from the right, back-to-app
-  // from the left. The `key` remounts the panel so the animation replays.
-  const prev = React.useRef(mode);
-  let anim = "";
-  if (!mobile && mode !== prev.current) {
-    anim = mode === "product" ? "animate-sidebar-in-left" : "animate-sidebar-in-right";
-  }
-  React.useEffect(() => {
-    prev.current = mode;
-  }, [mode]);
-
+  // Northwind keeps one stable product rail everywhere. Inside `/settings`
+  // the Settings row simply stays lit and the settings surface renders its own
+  // in-page secondary nav (see the settings layout) — the rail never swaps.
   return (
-    <div key={mode} className={cn("flex min-h-full flex-col", anim)}>
-      {inSettings && orgSlug && pathname ? (
-        <SettingsNavContent orgSlug={orgSlug} pathname={pathname} onNavigate={onNavigate} mobile={mobile} />
-      ) : (
-        <ProductNav
-          orgSlug={orgSlug}
-          projectSlug={params?.projectSlug ?? null}
-          pathname={pathname}
-          onNavigate={onNavigate}
-          mobile={mobile}
-        />
-      )}
+    <div className="flex min-h-full flex-col">
+      <ProductNav
+        orgSlug={orgSlug}
+        projectSlug={params?.projectSlug ?? null}
+        pathname={pathname}
+        onNavigate={onNavigate}
+        mobile={mobile}
+      />
     </div>
   );
 }
@@ -187,75 +165,15 @@ function ProductNav({
   );
 }
 
-/**
- * Settings-scoped sidebar: a "‹ Settings" back row that returns to the product
- * area, followed by the flat settings link list with the active item highlighted.
- */
-function SettingsNavContent({
-  orgSlug,
-  pathname,
-  onNavigate,
-  mobile = false,
-}: {
-  orgSlug: string;
-  pathname: string;
-  onNavigate?: (() => void) | undefined;
-  mobile?: boolean;
-}) {
-  const links = flattenSettingsNav(buildSettingsNav(orgSlug));
-  return (
-    <nav className="px-2 pb-4 pt-3">
-      {/* Back button on the left, "Settings" centered (Vercel pattern). */}
-      <div className={cn("relative mb-2 flex items-center justify-center", mobile ? "h-11" : "h-8")}>
-        <Link
-          href={`/orgs/${orgSlug}/projects`}
-          {...(onNavigate ? { onClick: onNavigate } : {})}
-          aria-label="Back to app"
-          className={cn(
-            "absolute left-0 grid place-items-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground active:bg-accent",
-            mobile ? "h-9 w-9" : "h-7 w-7",
-          )}
-        >
-          <ChevronLeft className={mobile ? "h-5 w-5" : "h-4 w-4"} />
-        </Link>
-        <span className={cn("font-medium tracking-tight", mobile ? "text-base" : "text-sm")}>
-          Settings
-        </span>
-      </div>
-      <div className="space-y-0.5">
-        {links.map((link) => {
-          const active = isSettingsLinkActive(link, pathname);
-          return (
-            <Link
-              key={link.href}
-              href={link.href}
-              {...(onNavigate ? { onClick: onNavigate } : {})}
-              aria-current={active ? "page" : undefined}
-              className={cn(
-                "flex items-center rounded-md transition-colors",
-                mobile ? "min-h-11 px-3 text-[15px] active:bg-accent" : "px-2 py-1.5 text-sm",
-                active
-                  ? "bg-primary/10 font-medium text-primary"
-                  : "text-muted-foreground hover:bg-accent/60 hover:text-foreground",
-              )}
-            >
-              {link.label}
-            </Link>
-          );
-        })}
-      </div>
-    </nav>
-  );
-}
-
 export function Sidebar() {
   return (
     // Sticky, full-viewport-height rail that stays put while the page scrolls.
     // `self-start` keeps it from stretching to the (taller) content so `sticky`
     // can pin it; the nav scrolls in its own region and the account chip is
     // pinned at the bottom.
-    <aside className="sticky top-0 hidden h-dvh w-60 shrink-0 flex-col self-start border-r bg-card/40 md:flex">
-      <div className="shrink-0 space-y-2 border-b p-2">
+    // Northwind rail: 230px, #F5F5F5, hairline right border.
+    <aside className="sticky top-0 hidden h-dvh w-[230px] shrink-0 flex-col self-start border-r bg-secondary md:flex">
+      <div className="shrink-0 space-y-2.5 px-2.5 pb-2.5 pt-3">
         <SidebarOrgSwitcher />
         <SidebarFind />
       </div>
@@ -264,7 +182,7 @@ export function Sidebar() {
         <NavContent />
       </div>
 
-      <div className="shrink-0 border-t p-2">
+      <div className="shrink-0 border-t p-2.5">
         <SidebarAccount />
       </div>
     </aside>
@@ -287,10 +205,10 @@ function Section({
   if (mobile) {
     return (
       <div>
-        <div className="px-3 py-1 text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
+        <div className="px-3 pb-1.5 pt-1 text-[10.5px] font-semibold uppercase tracking-[0.09em] text-muted-foreground/85">
           {label}
         </div>
-        <div className="mt-1 space-y-0.5">{children}</div>
+        <div className="space-y-px">{children}</div>
       </div>
     );
   }
@@ -300,12 +218,12 @@ function Section({
       <button
         type="button"
         onClick={() => setOpen((o) => !o)}
-        className="flex w-full items-center justify-between px-2 py-1 text-[11px] font-medium uppercase tracking-wider text-muted-foreground hover:text-foreground"
+        className="flex w-full items-center justify-between px-2 pb-1.5 pt-1 text-[10.5px] font-semibold uppercase tracking-[0.09em] text-muted-foreground/85 hover:text-foreground"
       >
         <span className="truncate">{label}</span>
         <ChevronDown className={cn("h-3 w-3 transition-transform", !open && "-rotate-90")} />
       </button>
-      {open && <div className="mt-1 space-y-0.5">{children}</div>}
+      {open && <div className="space-y-px">{children}</div>}
     </div>
   );
 }
@@ -333,16 +251,16 @@ function SidebarLink({
       href={href}
       {...(onClick ? { onClick } : {})}
       className={cn(
-        "flex items-center rounded-md transition-colors",
-        mobile ? "min-h-11 gap-3 px-3 text-[15px] active:bg-accent" : "gap-2 px-2 py-1.5 text-sm",
+        "flex items-center rounded-[7px] transition-colors duration-100",
+        mobile ? "min-h-11 gap-3 px-3 text-[15px] active:bg-accent" : "gap-[9px] px-2 py-1.5 text-[13px]",
         active
-          ? "bg-primary/10 font-medium text-primary"
-          : "text-muted-foreground hover:bg-accent/60 hover:text-foreground",
+          ? "bg-foreground/[0.09] font-semibold text-foreground"
+          : "text-muted-foreground hover:bg-accent hover:text-foreground",
       )}
     >
-      <Icon className={cn(active ? "opacity-100" : "opacity-80", mobile ? "h-5 w-5" : "h-4 w-4")} />
+      <Icon strokeWidth={1.8} className={cn(mobile ? "h-5 w-5" : "h-[15px] w-[15px]")} />
       <span className="min-w-0 flex-1 truncate">{children}</span>
-      {chevron && <ChevronRight className={cn("shrink-0 opacity-50", mobile ? "h-4 w-4" : "h-3.5 w-3.5")} />}
+      {chevron && <ChevronRight className={cn("shrink-0 opacity-50", mobile ? "h-4 w-4" : "h-3 w-3")} />}
     </Link>
   );
 }
