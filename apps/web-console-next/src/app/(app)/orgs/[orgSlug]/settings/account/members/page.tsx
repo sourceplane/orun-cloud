@@ -4,11 +4,10 @@ import * as React from "react";
 import { useParams } from "next/navigation";
 import { Users } from "lucide-react";
 import { OrgScope } from "@/components/shell/org-scope";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Table, TableHeader, TableRow, TableHead, TableBody, TableCell } from "@/components/ui/table";
-import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { EmptyState } from "@/components/ui/empty-state";
+import { SettingsHeader, SettingsPanel } from "@/components/settings/settings-primitives";
+import { ListCard, ListRow, Pill } from "@/components/ui/northwind";
 import { wrap } from "@/lib/api";
 import { useSession } from "@/lib/session";
 import { useApiQuery, qk } from "@/lib/query";
@@ -18,12 +17,12 @@ function OriginBadge({ origin }: { origin: AccountMemberOrigin }) {
   if (origin === "account_role") {
     // The cascade admins the roster exists to surface: authority everywhere,
     // membership nowhere.
-    return <Badge variant="warning">account role only</Badge>;
+    return <Pill tone="warning">account role only</Pill>;
   }
   if (origin === "both") {
-    return <Badge variant="default">member + account role</Badge>;
+    return <Pill tone="info">member + account role</Pill>;
   }
-  return <Badge variant="outline">member</Badge>;
+  return <Pill tone="neutral">member</Pill>;
 }
 
 export default function AccountMembersPage() {
@@ -39,30 +38,23 @@ function Inner({ orgId }: { orgId: string }) {
   );
 
   return (
-    <div className="space-y-5">
-      <header>
-        <h1 className="text-xl font-semibold tracking-tight">Account members</h1>
-        <p className="text-sm text-muted-foreground">
-          Everyone with account-level presence: members of the account root, plus holders of account-wide
-          roles — including admins who appear in no workspace member list.
-        </p>
-      </header>
+    <div className="space-y-[18px]">
+      <SettingsHeader
+        title="Account members"
+        description="Everyone with account-level presence: members of the account root, plus holders of account-wide roles — including admins who appear in no workspace member list."
+      />
 
       {members.loading ? (
-        <Card>
-          <CardContent className="pt-6 space-y-2">
-            {Array.from({ length: 4 }).map((_, i) => (
-              <Skeleton key={i} className="h-9 w-full" />
-            ))}
-          </CardContent>
-        </Card>
+        <SettingsPanel className="space-y-2">
+          {Array.from({ length: 4 }).map((_, i) => (
+            <Skeleton key={i} className="h-9 w-full" />
+          ))}
+        </SettingsPanel>
       ) : members.error ? (
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-destructive">{members.error.code}</CardTitle>
-            <CardDescription>{members.error.message}</CardDescription>
-          </CardHeader>
-        </Card>
+        <SettingsPanel>
+          <div className="text-[13.5px] font-semibold text-destructive">{members.error.code}</div>
+          <p className="mt-1.5 text-[12.5px] text-muted-foreground">{members.error.message}</p>
+        </SettingsPanel>
       ) : !members.data || members.data.length === 0 ? (
         <EmptyState
           icon={Users}
@@ -70,32 +62,24 @@ function Inner({ orgId }: { orgId: string }) {
           description="No one holds account-level membership or an account role yet."
         />
       ) : (
-        <Card>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Subject</TableHead>
-                <TableHead>Presence</TableHead>
-                <TableHead>Account roles</TableHead>
-                <TableHead>Joined</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {members.data.map((m) => (
-                <TableRow key={m.subjectId}>
-                  <TableCell className="font-mono text-xs">{m.subjectId}</TableCell>
-                  <TableCell><OriginBadge origin={m.origin} /></TableCell>
-                  <TableCell className="text-muted-foreground">
-                    {m.accountRoles.length > 0 ? m.accountRoles.join(", ") : "—"}
-                  </TableCell>
-                  <TableCell className="text-muted-foreground">
-                    {m.joinedAt ? new Date(m.joinedAt).toLocaleDateString() : "—"}
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </Card>
+        <ListCard>
+          {members.data.map((m) => (
+            <ListRow key={m.subjectId} className="items-start">
+              <div className="min-w-0 flex-1 space-y-1">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="truncate font-mono text-xs">{m.subjectId}</span>
+                  <OriginBadge origin={m.origin} />
+                </div>
+                <div className="text-[11.5px] text-muted-foreground">
+                  {m.accountRoles.length > 0 ? m.accountRoles.join(", ") : "—"}
+                </div>
+              </div>
+              <span className="shrink-0 text-[11.5px] text-muted-foreground">
+                {m.joinedAt ? new Date(m.joinedAt).toLocaleDateString() : "—"}
+              </span>
+            </ListRow>
+          ))}
+        </ListCard>
       )}
     </div>
   );

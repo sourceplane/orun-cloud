@@ -5,14 +5,14 @@ import { useParams } from "next/navigation";
 import { CheckCircle2, Pencil, Plus, Send, Slack, Trash2 } from "lucide-react";
 import type { PublicNotificationChannel } from "@saas/contracts/notifications";
 import { OrgScope } from "@/components/shell/org-scope";
-import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { EmptyState } from "@/components/ui/empty-state";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { SettingsHeader, SettingsPanel } from "@/components/settings/settings-primitives";
+import { ListCard, Pill } from "@/components/ui/northwind";
 import {
   Dialog,
   DialogContent,
@@ -79,38 +79,29 @@ function Inner({ orgId }: { orgId: string }) {
   };
 
   return (
-    <div className="space-y-5">
-      <header className="flex items-end justify-between gap-4">
-        <div>
-          <div className="flex items-center gap-2">
-            <Slack className="h-5 w-5 text-muted-foreground" />
-            <h1 className="text-xl font-semibold tracking-tight">Delivery channels</h1>
-          </div>
-          <p className="text-sm text-muted-foreground">
-            Slack channels notification rules can deliver to. The webhook URL is write-only and never shown again.
-          </p>
-        </div>
-        <Button type="button" onClick={openCreate}>
-          <Plus className="mr-1.5 h-4 w-4" />
-          Add Slack channel
-        </Button>
-      </header>
+    <div className="space-y-[18px]">
+      <SettingsHeader
+        title="Delivery channels"
+        description="Slack channels notification rules can deliver to. The webhook URL is write-only and never shown again."
+        actions={
+          <Button type="button" onClick={openCreate}>
+            <Plus className="mr-1.5 h-4 w-4" strokeWidth={1.8} />
+            Add Slack channel
+          </Button>
+        }
+      />
 
       {channels.loading ? (
-        <Card>
-          <CardContent className="space-y-2 pt-6">
-            {Array.from({ length: 3 }).map((_, i) => (
-              <Skeleton key={i} className="h-14 w-full" />
-            ))}
-          </CardContent>
-        </Card>
+        <SettingsPanel className="space-y-2">
+          {Array.from({ length: 3 }).map((_, i) => (
+            <Skeleton key={i} className="h-14 w-full" />
+          ))}
+        </SettingsPanel>
       ) : channels.error ? (
-        <Card>
-          <CardContent className="pt-6">
-            <div className="text-sm font-medium text-destructive">{channels.error.code}</div>
-            <div className="text-xs text-muted-foreground">{channels.error.message}</div>
-          </CardContent>
-        </Card>
+        <SettingsPanel>
+          <div className="text-[13px] font-medium text-destructive">{channels.error.code}</div>
+          <div className="text-xs text-muted-foreground">{channels.error.message}</div>
+        </SettingsPanel>
       ) : (channels.data ?? []).length === 0 ? (
         <EmptyState
           icon={Slack}
@@ -119,29 +110,28 @@ function Inner({ orgId }: { orgId: string }) {
           primaryAction={{ label: "Add Slack channel", onClick: openCreate }}
         />
       ) : (
-        <Card className="divide-y divide-border p-0">
+        <ListCard>
           {(channels.data ?? []).map((channel) => (
-            <div key={channel.id} className="flex items-center gap-3 px-4 py-3.5">
+            <div
+              key={channel.id}
+              className="flex items-center gap-3 border-t border-border/60 px-5 py-[13px] first:border-t-0"
+            >
               <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-muted text-muted-foreground" aria-hidden>
-                <Slack className="h-4 w-4" />
+                <Slack className="h-4 w-4" strokeWidth={1.8} />
               </span>
               <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-2">
-                  <span className="truncate text-sm font-medium">{channel.name}</span>
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="truncate text-[13px] font-medium">{channel.name}</span>
                   {channel.lastVerifiedAt ? (
-                    <Badge variant="success" className="gap-1 text-[10px]">
-                      <CheckCircle2 className="h-3 w-3" />
+                    <Pill tone="success" className="gap-1">
+                      <CheckCircle2 className="h-3 w-3" strokeWidth={1.8} />
                       verified
-                    </Badge>
+                    </Pill>
                   ) : (
-                    <Badge variant="secondary" className="text-[10px]">
-                      unverified
-                    </Badge>
+                    <Pill tone="neutral">unverified</Pill>
                   )}
                   {channel.status && channel.status !== "active" ? (
-                    <Badge variant="warning" className="text-[10px]">
-                      {channel.status}
-                    </Badge>
+                    <Pill tone="warning">{channel.status}</Pill>
                   ) : null}
                 </div>
                 <div className="mt-0.5 text-[11px] text-muted-foreground">
@@ -151,19 +141,19 @@ function Inner({ orgId }: { orgId: string }) {
               </div>
               <div className="flex shrink-0 items-center gap-1">
                 <Button type="button" size="sm" variant="outline" onClick={() => void testSend(channel)} loading={testingId === channel.id}>
-                  <Send className="mr-1.5 h-3.5 w-3.5" />
+                  <Send className="mr-1.5 h-3.5 w-3.5" strokeWidth={1.8} />
                   Test
                 </Button>
                 <Button type="button" size="icon" variant="ghost" aria-label="Edit channel" onClick={() => openEdit(channel)}>
-                  <Pencil className="h-4 w-4" />
+                  <Pencil className="h-4 w-4" strokeWidth={1.8} />
                 </Button>
                 <Button type="button" size="icon" variant="ghost" aria-label="Delete channel" onClick={() => setDeleting(channel)}>
-                  <Trash2 className="h-4 w-4" />
+                  <Trash2 className="h-4 w-4" strokeWidth={1.8} />
                 </Button>
               </div>
             </div>
           ))}
-        </Card>
+        </ListCard>
       )}
 
       <ChannelDialog

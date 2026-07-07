@@ -4,13 +4,12 @@ import * as React from "react";
 import { useParams } from "next/navigation";
 import { Users } from "lucide-react";
 import { OrgScope } from "@/components/shell/org-scope";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { Table, TableHeader, TableRow, TableHead, TableBody, TableCell } from "@/components/ui/table";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { EmptyState } from "@/components/ui/empty-state";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { SettingsHeader, SettingsPanel } from "@/components/settings/settings-primitives";
+import { ListCard, PersonAvatar, Pill } from "@/components/ui/northwind";
 import { wrap } from "@/lib/api";
 import { useSession } from "@/lib/session";
 import { useApiQuery, qk } from "@/lib/query";
@@ -44,7 +43,7 @@ function Inner({ orgId }: { orgId: string }) {
   };
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-[18px]">
       <ConfirmDialog
         open={pendingRemove !== null}
         onOpenChange={(open) => !open && setPendingRemove(null)}
@@ -54,26 +53,24 @@ function Inner({ orgId }: { orgId: string }) {
         confirmLabel="Remove member"
         onConfirm={() => (pendingRemove ? removeMember(pendingRemove.id) : undefined)}
       />
-      <header>
-        <h1 className="text-xl font-semibold tracking-tight">Members</h1>
-        <p className="text-sm text-muted-foreground">Users and service principals attached to this workspace.</p>
-      </header>
+      <SettingsHeader
+        title="Members"
+        description="Users and service principals attached to this workspace."
+      />
 
       {members.loading ? (
-        <Card>
-          <CardContent className="pt-6 space-y-2">
-            {Array.from({ length: 4 }).map((_, i) => (
-              <Skeleton key={i} className="h-9 w-full" />
-            ))}
-          </CardContent>
-        </Card>
+        <SettingsPanel className="space-y-2">
+          {Array.from({ length: 4 }).map((_, i) => (
+            <Skeleton key={i} className="h-9 w-full" />
+          ))}
+        </SettingsPanel>
       ) : members.error ? (
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-destructive">{members.error.code}</CardTitle>
-            <CardDescription>{members.error.message}</CardDescription>
-          </CardHeader>
-        </Card>
+        <SettingsPanel tone="danger">
+          <div className="text-[13.5px] font-semibold text-destructive">{members.error.code}</div>
+          <p className="mt-1.5 text-[12.5px] leading-relaxed text-muted-foreground">
+            {members.error.message}
+          </p>
+        </SettingsPanel>
       ) : !members.data || members.data.length === 0 ? (
         <EmptyState
           icon={Users}
@@ -82,85 +79,42 @@ function Inner({ orgId }: { orgId: string }) {
           primaryAction={{ label: "Go to invitations", href: `./invitations` }}
         />
       ) : (
-        <>
-          {/* Mobile: stacked cards */}
-          <div className="space-y-3 md:hidden">
-            {members.data.map((m) => (
-              <Card key={m.id} className="space-y-3 p-4">
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0 space-y-1.5">
-                    <div className="break-all font-mono text-xs">{m.subjectId}</div>
-                    <div className="flex flex-wrap gap-1">
-                      <Badge variant="secondary">{m.subjectType}</Badge>
-                      <Badge variant={m.status === "active" ? "success" : "warning"}>{m.status}</Badge>
-                    </div>
-                  </div>
-                  <Button size="sm" variant="ghost" onClick={() => setPendingRemove({ id: m.id, subjectId: m.subjectId })}>
-                    Remove
-                  </Button>
+        <ListCard>
+          {members.data.map((m) => (
+            <div
+              key={m.id}
+              className="flex items-center gap-3 border-t border-border/50 px-5 py-[13px] first:border-t-0"
+            >
+              <PersonAvatar name={m.subjectId} size={28} />
+              <div className="min-w-0 flex-1">
+                <div className="truncate text-[13px] font-medium">{m.subjectId}</div>
+                <div className="truncate text-[11.5px] text-muted-foreground">
+                  {m.subjectType}
+                  {" · joined "}
+                  {new Date(m.joinedAt).toLocaleDateString()}
                 </div>
-                {m.roles.length > 0 && (
-                  <div className="flex flex-wrap gap-1">
-                    {m.roles.map((r, i) => (
-                      <Badge key={i} variant="outline">
+              </div>
+              <div className="flex shrink-0 items-center gap-2">
+                {m.roles.length > 0
+                  ? m.roles.map((r, i) => (
+                      <Pill key={i} tone={r.role === "owner" ? "info" : "neutral"}>
                         {r.role}
-                      </Badge>
-                    ))}
-                  </div>
-                )}
-                <div className="text-xs text-muted-foreground">
-                  Joined {new Date(m.joinedAt).toLocaleDateString()}
-                </div>
-              </Card>
-            ))}
-          </div>
-
-          {/* Desktop: table */}
-          <Card className="hidden md:block">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Subject</TableHead>
-                  <TableHead>Type</TableHead>
-                  <TableHead>Roles</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead>Joined</TableHead>
-                  <TableHead className="text-right">Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {members.data.map((m) => (
-                  <TableRow key={m.id}>
-                    <TableCell className="font-mono text-xs">{m.subjectId}</TableCell>
-                    <TableCell>
-                      <Badge variant="secondary">{m.subjectType}</Badge>
-                    </TableCell>
-                    <TableCell>
-                      <div className="flex flex-wrap gap-1">
-                        {m.roles.map((r, i) => (
-                          <Badge key={i} variant="outline">
-                            {r.role}
-                          </Badge>
-                        ))}
-                      </div>
-                    </TableCell>
-                    <TableCell>
-                      <Badge variant={m.status === "active" ? "success" : "warning"}>{m.status}</Badge>
-                    </TableCell>
-                    <TableCell className="text-xs text-muted-foreground">
-                      {new Date(m.joinedAt).toLocaleDateString()}
-                    </TableCell>
-                    <TableCell className="text-right">
-                      <Button size="sm" variant="ghost" onClick={() => setPendingRemove({ id: m.id, subjectId: m.subjectId })}>
-                        Remove
-                      </Button>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </Card>
-        </>
+                      </Pill>
+                    ))
+                  : null}
+                <Pill tone={m.status === "active" ? "success" : "warning"}>{m.status}</Pill>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="text-destructive hover:text-destructive"
+                  onClick={() => setPendingRemove({ id: m.id, subjectId: m.subjectId })}
+                >
+                  Remove
+                </Button>
+              </div>
+            </div>
+          ))}
+        </ListCard>
       )}
     </div>
   );

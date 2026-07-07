@@ -11,12 +11,12 @@ import type {
 } from "@saas/contracts/integrations";
 import type { PublicEnvironment } from "@saas/contracts/projects";
 import { OrgScope } from "@/components/shell/org-scope";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Skeleton } from "@/components/ui/skeleton";
+import { ListCard, ListCardHeader, Pill } from "@/components/ui/northwind";
 import { PreconditionInsight } from "@/components/precondition/insight";
 import { useToast } from "@/components/ui/toast";
 import { wrap, type ApiErrorBody } from "@/lib/api";
@@ -115,24 +115,18 @@ function Inner({ orgId, orgSlug, projectSlug }: { orgId: string; orgSlug: string
 
   return (
     <div className="space-y-5">
-      <header className="flex items-center justify-between">
-        <div>
-          <div className="flex items-center gap-2">
-            <GitBranch className="h-5 w-5 text-muted-foreground" />
-            <h1 className="text-xl font-semibold tracking-tight">Git</h1>
-          </div>
-          <p className="text-sm text-muted-foreground">
-            Link repositories to this project and map branches to environments. Pushes and pull
-            requests on linked repos emit project-scoped events.
-          </p>
-        </div>
+      <div className="flex items-start justify-between gap-3">
+        <p className="max-w-[560px] text-[13px] leading-normal text-muted-foreground">
+          Link repositories to this project and map branches to environments. Pushes and pull
+          requests on linked repos emit project-scoped events.
+        </p>
         {activeConnection ? (
-          <Button onClick={() => setPickerOpen(true)} disabled={!project}>
+          <Button size="sm" onClick={() => setPickerOpen(true)} disabled={!project}>
             <Plus className="mr-1.5 h-4 w-4" />
             Link repository
           </Button>
         ) : null}
-      </header>
+      </div>
 
       {gateError ? (
         <PreconditionInsight
@@ -168,42 +162,36 @@ function Inner({ orgId, orgSlug, projectSlug }: { orgId: string; orgSlug: string
           primaryAction={{ label: "Link repository", onClick: () => setPickerOpen(true) }}
         />
       ) : (
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Linked repositories</CardTitle>
-            <CardDescription>
-              Branch → environment mappings resolve which environment an event belongs to.
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <ul className="divide-y divide-border">
-              {(links.data ?? []).map((link) => (
-                <li key={link.id} className="flex items-center justify-between gap-4 py-3">
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-2">
-                      <Github className="h-4 w-4 text-muted-foreground" />
-                      <span className="truncate text-sm font-medium">{link.repoFullName}</span>
-                    </div>
-                    <div className="mt-1 flex flex-wrap items-center gap-1.5">
-                      {Object.entries(link.branchEnvMap).length === 0 ? (
-                        <span className="text-xs text-muted-foreground">No branch mappings</span>
-                      ) : (
-                        Object.entries(link.branchEnvMap).map(([branch, envSlug]) => (
-                          <Badge key={branch} variant="secondary" className="font-mono text-[11px]">
-                            {branch} → {envSlug}
-                          </Badge>
-                        ))
-                      )}
-                    </div>
-                  </div>
-                  <Button variant="outline" size="sm" onClick={() => setUnlinkTarget(link)}>
-                    Unlink
-                  </Button>
-                </li>
-              ))}
-            </ul>
-          </CardContent>
-        </Card>
+        <ListCard>
+          <ListCardHeader title="Linked repositories" />
+          {(links.data ?? []).map((link) => (
+            <div
+              key={link.id}
+              className="flex items-center justify-between gap-4 border-t border-border/50 px-5 py-3.5 first:border-t-0"
+            >
+              <div className="min-w-0">
+                <div className="flex items-center gap-2">
+                  <Github className="h-4 w-4 shrink-0 text-muted-foreground" strokeWidth={1.8} />
+                  <span className="truncate text-[13.5px] font-medium">{link.repoFullName}</span>
+                </div>
+                <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+                  {Object.entries(link.branchEnvMap).length === 0 ? (
+                    <span className="text-xs text-muted-foreground">No branch mappings</span>
+                  ) : (
+                    Object.entries(link.branchEnvMap).map(([branch, envSlug]) => (
+                      <Pill key={branch} tone="neutral" className="font-mono text-[11px]">
+                        {branch} → {envSlug}
+                      </Pill>
+                    ))
+                  )}
+                </div>
+              </div>
+              <Button variant="outline" size="sm" onClick={() => setUnlinkTarget(link)}>
+                Unlink
+              </Button>
+            </div>
+          ))}
+        </ListCard>
       )}
 
       {activeConnection && project ? (

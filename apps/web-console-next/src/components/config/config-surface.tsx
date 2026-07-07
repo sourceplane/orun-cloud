@@ -11,7 +11,6 @@ import type {
   PublicFeatureFlag,
 } from "@saas/contracts/config";
 import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
 import { Switch } from "@/components/ui/switch";
 import { EmptyState } from "@/components/ui/empty-state";
 import {
@@ -22,7 +21,6 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import { Table, TableHeader, TableRow, TableHead, TableBody, TableCell } from "@/components/ui/table";
 import { ZodForm } from "@/components/ui/zod-form";
 import { useSession } from "@/lib/session";
 import { useApiQuery, qk } from "@/lib/query";
@@ -32,6 +30,16 @@ import { parseConfigValueInput, formatConfigValue, configScopeKey } from "./valu
 import { ListSkeleton, LoadError } from "./config-shared";
 import { SecretsPanel } from "./secrets-panel";
 import { SecretPoliciesPanel } from "./secret-policies-panel";
+
+/**
+ * Bridge for the Secrets page's PageHeader "New secret" button: the console
+ * writes an opener into this ref, the Secrets panel populates it with its own
+ * create-dialog trigger. Absent (null) on the project-config and environment
+ * pages that also render `ConfigSurface`, so their behaviour is untouched.
+ */
+export const NewSecretContext = React.createContext<React.MutableRefObject<(() => void) | null> | null>(
+  null,
+);
 
 /**
  * The console face of config-worker: secrets, feature flags, settings, and
@@ -60,21 +68,21 @@ export function ConfigSurface({ scope }: { scope: ConfigScope }) {
         {showPolicies ? <TabsTrigger value="policies">Policies</TabsTrigger> : null}
         <TabsTrigger value="activity">Activity</TabsTrigger>
       </TabsList>
-      <TabsContent value="secrets" className="pt-4">
+      <TabsContent value="secrets" className="pt-5">
         <SecretsPanel scope={scope} scopeKey={scopeKey} />
       </TabsContent>
-      <TabsContent value="flags" className="pt-4">
+      <TabsContent value="flags" className="pt-5">
         <FlagsTab scope={scope} scopeKey={scopeKey} />
       </TabsContent>
-      <TabsContent value="settings" className="pt-4">
+      <TabsContent value="settings" className="pt-5">
         <SettingsTab scope={scope} scopeKey={scopeKey} />
       </TabsContent>
       {showPolicies ? (
-        <TabsContent value="policies" className="pt-4">
+        <TabsContent value="policies" className="pt-5">
           <SecretPoliciesPanel scope={scope} scopeKey={scopeKey} />
         </TabsContent>
       ) : null}
-      <TabsContent value="activity" className="pt-4">
+      <TabsContent value="activity" className="pt-5">
         <SecretActivityTab />
       </TabsContent>
     </Tabs>
@@ -103,6 +111,26 @@ function SecretActivityTab() {
   );
 }
 
+/** Shared header for a config tab: a lede line + a right-aligned "New …" button. */
+function TabHeader({
+  lede,
+  actionLabel,
+  onAction,
+}: {
+  lede: React.ReactNode;
+  actionLabel: string;
+  onAction: () => void;
+}) {
+  return (
+    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
+      <p className="max-w-[560px] text-[12.5px] leading-normal text-muted-foreground">{lede}</p>
+      <Button size="sm" className="shrink-0" onClick={onAction}>
+        <Plus className="mr-1.5 h-4 w-4" strokeWidth={1.8} /> {actionLabel}
+      </Button>
+    </div>
+  );
+}
+
 // ---------------------------------------------------------------------------
 // Settings
 // ---------------------------------------------------------------------------
@@ -125,49 +153,47 @@ function SettingsTab({ scope, scopeKey }: { scope: ConfigScope; scopeKey: string
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between gap-4">
-        <p className="text-sm text-muted-foreground">
-          Key–value configuration. Values accept JSON literals or plain strings.
-        </p>
-        <Dialog open={createOpen} onOpenChange={setCreateOpen}>
-          <Button onClick={() => setCreateOpen(true)}>
-            <Plus className="mr-1.5 h-4 w-4" /> New setting
-          </Button>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>Create setting</DialogTitle>
-              <DialogDescription>Scoped to this {scope.kind}.</DialogDescription>
-            </DialogHeader>
-            <ZodForm
-              schema={settingSchema}
-              defaultValues={{ key: "", value: "", description: "" }}
-              fields={[
-                { name: "key", label: "Key", placeholder: "default_region" },
-                { name: "value", label: "Value", placeholder: '"eu-west-1" or {"a":1} or 42', hint: "Valid JSON is stored typed; anything else as a string." },
-                { name: "description", label: "Description", placeholder: "Optional" },
-              ]}
-              submitLabel="Create setting"
-              cancel={{ label: "Cancel", onClick: () => setCreateOpen(false) }}
-              onSubmit={async (v) => {
-                const r = await wrap(() =>
-                  client.config.createSetting(scope, {
-                    key: v.key,
-                    value: parseConfigValueInput(v.value),
-                    description: v.description || null,
-                  }),
-                );
-                if (!r.ok) {
-                  toast({ kind: "error", title: "Create failed", description: r.error.message });
-                  return;
-                }
-                setCreateOpen(false);
-                toast({ kind: "success", title: "Setting created" });
-                settings.reload();
-              }}
-            />
-          </DialogContent>
-        </Dialog>
-      </div>
+      <TabHeader
+        lede="Key–value configuration. Values accept JSON literals or plain strings."
+        actionLabel="New setting"
+        onAction={() => setCreateOpen(true)}
+      />
+
+      <Dialog open={createOpen} onOpenChange={setCreateOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Create setting</DialogTitle>
+            <DialogDescription>Scoped to this {scope.kind}.</DialogDescription>
+          </DialogHeader>
+          <ZodForm
+            schema={settingSchema}
+            defaultValues={{ key: "", value: "", description: "" }}
+            fields={[
+              { name: "key", label: "Key", placeholder: "default_region" },
+              { name: "value", label: "Value", placeholder: '"eu-west-1" or {"a":1} or 42', hint: "Valid JSON is stored typed; anything else as a string." },
+              { name: "description", label: "Description", placeholder: "Optional" },
+            ]}
+            submitLabel="Create setting"
+            cancel={{ label: "Cancel", onClick: () => setCreateOpen(false) }}
+            onSubmit={async (v) => {
+              const r = await wrap(() =>
+                client.config.createSetting(scope, {
+                  key: v.key,
+                  value: parseConfigValueInput(v.value),
+                  description: v.description || null,
+                }),
+              );
+              if (!r.ok) {
+                toast({ kind: "error", title: "Create failed", description: r.error.message });
+                return;
+              }
+              setCreateOpen(false);
+              toast({ kind: "success", title: "Setting created" });
+              settings.reload();
+            }}
+          />
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={editing !== null} onOpenChange={(o) => !o && setEditing(null)}>
         <DialogContent>
@@ -222,40 +248,41 @@ function SettingsTab({ scope, scopeKey }: { scope: ConfigScope; scopeKey: string
           primaryAction={{ label: "New setting", onClick: () => setCreateOpen(true) }}
         />
       ) : (
-        <Card>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Key</TableHead>
-                <TableHead>Value</TableHead>
-                <TableHead className="hidden md:table-cell">Description</TableHead>
-                <TableHead className="hidden md:table-cell">Updated</TableHead>
-                <TableHead className="text-right">Actions</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {settings.data.map((s) => (
-                <TableRow key={s.id}>
-                  <TableCell className="font-mono text-xs">{s.key}</TableCell>
-                  <TableCell className="max-w-[260px] truncate font-mono text-xs">
-                    {formatConfigValue(s.value)}
-                  </TableCell>
-                  <TableCell className="hidden max-w-[220px] truncate text-xs text-muted-foreground md:table-cell">
-                    {s.description ?? "—"}
-                  </TableCell>
-                  <TableCell className="hidden text-xs text-muted-foreground md:table-cell">
-                    {new Date(s.updatedAt).toLocaleDateString()}
-                  </TableCell>
-                  <TableCell className="text-right">
-                    <Button size="sm" variant="ghost" onClick={() => setEditing(s)}>
-                      Edit
-                    </Button>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </Card>
+        <div className="overflow-hidden rounded-xl border bg-card">
+          <div className="overflow-x-auto">
+            <div
+              className="grid min-w-[560px] items-center gap-3 border-b border-border/70 px-[22px] py-[10px] text-[11px] font-semibold uppercase tracking-[0.07em] text-muted-foreground/80"
+              style={{ gridTemplateColumns: "minmax(160px,1fr) minmax(160px,1.2fr) 1fr 90px 88px" }}
+            >
+              <span>Key</span>
+              <span>Value</span>
+              <span>Description</span>
+              <span>Updated</span>
+              <span className="text-right">Actions</span>
+            </div>
+            {settings.data.map((s) => (
+              <div
+                key={s.id}
+                className="grid min-w-[560px] items-center gap-3 border-t border-border/50 px-[22px] py-[13px] first:border-t-0"
+                style={{ gridTemplateColumns: "minmax(160px,1fr) minmax(160px,1.2fr) 1fr 90px 88px" }}
+              >
+                <span className="truncate font-mono text-[12.5px] font-medium">{s.key}</span>
+                <span className="truncate font-mono text-[12px] text-secondary-foreground">
+                  {formatConfigValue(s.value)}
+                </span>
+                <span className="truncate text-[12px] text-muted-foreground">{s.description ?? "—"}</span>
+                <span className="text-[12px] text-muted-foreground">
+                  {new Date(s.updatedAt).toLocaleDateString()}
+                </span>
+                <span className="text-right">
+                  <Button size="sm" variant="ghost" onClick={() => setEditing(s)}>
+                    Edit
+                  </Button>
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
       )}
     </div>
   );
@@ -296,48 +323,46 @@ function FlagsTab({ scope, scopeKey }: { scope: ConfigScope; scopeKey: string })
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between gap-4">
-        <p className="text-sm text-muted-foreground">
-          Toggles your product reads at runtime. Changes apply immediately.
-        </p>
-        <Dialog open={createOpen} onOpenChange={setCreateOpen}>
-          <Button onClick={() => setCreateOpen(true)}>
-            <Plus className="mr-1.5 h-4 w-4" /> New flag
-          </Button>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>Create feature flag</DialogTitle>
-              <DialogDescription>Created disabled; flip it on when ready.</DialogDescription>
-            </DialogHeader>
-            <ZodForm
-              schema={flagSchema}
-              defaultValues={{ flagKey: "", description: "" }}
-              fields={[
-                { name: "flagKey", label: "Flag key", placeholder: "new_dashboard" },
-                { name: "description", label: "Description", placeholder: "Optional" },
-              ]}
-              submitLabel="Create flag"
-              cancel={{ label: "Cancel", onClick: () => setCreateOpen(false) }}
-              onSubmit={async (v) => {
-                const r = await wrap(() =>
-                  client.config.createFeatureFlag(scope, {
-                    flagKey: v.flagKey,
-                    enabled: false,
-                    description: v.description || null,
-                  }),
-                );
-                if (!r.ok) {
-                  toast({ kind: "error", title: "Create failed", description: r.error.message });
-                  return;
-                }
-                setCreateOpen(false);
-                toast({ kind: "success", title: "Flag created" });
-                flags.reload();
-              }}
-            />
-          </DialogContent>
-        </Dialog>
-      </div>
+      <TabHeader
+        lede="Toggles your product reads at runtime. Changes apply immediately."
+        actionLabel="New flag"
+        onAction={() => setCreateOpen(true)}
+      />
+
+      <Dialog open={createOpen} onOpenChange={setCreateOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Create feature flag</DialogTitle>
+            <DialogDescription>Created disabled; flip it on when ready.</DialogDescription>
+          </DialogHeader>
+          <ZodForm
+            schema={flagSchema}
+            defaultValues={{ flagKey: "", description: "" }}
+            fields={[
+              { name: "flagKey", label: "Flag key", placeholder: "new_dashboard" },
+              { name: "description", label: "Description", placeholder: "Optional" },
+            ]}
+            submitLabel="Create flag"
+            cancel={{ label: "Cancel", onClick: () => setCreateOpen(false) }}
+            onSubmit={async (v) => {
+              const r = await wrap(() =>
+                client.config.createFeatureFlag(scope, {
+                  flagKey: v.flagKey,
+                  enabled: false,
+                  description: v.description || null,
+                }),
+              );
+              if (!r.ok) {
+                toast({ kind: "error", title: "Create failed", description: r.error.message });
+                return;
+              }
+              setCreateOpen(false);
+              toast({ kind: "success", title: "Flag created" });
+              flags.reload();
+            }}
+          />
+        </DialogContent>
+      </Dialog>
 
       {flags.loading ? (
         <ListSkeleton />
@@ -351,40 +376,38 @@ function FlagsTab({ scope, scopeKey }: { scope: ConfigScope; scopeKey: string })
           primaryAction={{ label: "New flag", onClick: () => setCreateOpen(true) }}
         />
       ) : (
-        <Card>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead className="w-[60px]">On</TableHead>
-                <TableHead>Flag</TableHead>
-                <TableHead className="hidden md:table-cell">Description</TableHead>
-                <TableHead className="hidden md:table-cell">Updated</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {flags.data.map((f) => (
-                <TableRow key={f.id}>
-                  <TableCell>
-                    <Switch
-                      checked={f.enabled}
-                      onCheckedChange={(on) => void toggle(f, on)}
-                      aria-label={`Toggle ${f.flagKey}`}
-                    />
-                  </TableCell>
-                  <TableCell className="font-mono text-xs">{f.flagKey}</TableCell>
-                  <TableCell className="hidden max-w-[260px] truncate text-xs text-muted-foreground md:table-cell">
-                    {f.description ?? "—"}
-                  </TableCell>
-                  <TableCell className="hidden text-xs text-muted-foreground md:table-cell">
-                    {new Date(f.updatedAt).toLocaleDateString()}
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </Card>
+        <div className="overflow-hidden rounded-xl border bg-card">
+          <div className="overflow-x-auto">
+            <div
+              className="grid min-w-[480px] items-center gap-3 border-b border-border/70 px-[22px] py-[10px] text-[11px] font-semibold uppercase tracking-[0.07em] text-muted-foreground/80"
+              style={{ gridTemplateColumns: "56px minmax(160px,1fr) 1.2fr 100px" }}
+            >
+              <span>On</span>
+              <span>Flag</span>
+              <span>Description</span>
+              <span>Updated</span>
+            </div>
+            {flags.data.map((f) => (
+              <div
+                key={f.id}
+                className="grid min-w-[480px] items-center gap-3 border-t border-border/50 px-[22px] py-[13px] first:border-t-0"
+                style={{ gridTemplateColumns: "56px minmax(160px,1fr) 1.2fr 100px" }}
+              >
+                <Switch
+                  checked={f.enabled}
+                  onCheckedChange={(on) => void toggle(f, on)}
+                  aria-label={`Toggle ${f.flagKey}`}
+                />
+                <span className="truncate font-mono text-[12.5px] font-medium">{f.flagKey}</span>
+                <span className="truncate text-[12px] text-muted-foreground">{f.description ?? "—"}</span>
+                <span className="text-[12px] text-muted-foreground">
+                  {new Date(f.updatedAt).toLocaleDateString()}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
       )}
     </div>
   );
 }
-

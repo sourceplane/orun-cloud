@@ -5,9 +5,7 @@ import { useParams } from "next/navigation";
 import { Inbox, RotateCcw, ShieldAlert } from "lucide-react";
 import type { DeadLetterStatus, PublicDeadLetter } from "@saas/contracts/events";
 import { OrgScope } from "@/components/shell/org-scope";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { CopyButton } from "@/components/ui/copy-button";
@@ -18,6 +16,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { SettingsHeader, SettingsPanel } from "@/components/settings/settings-primitives";
+import { ListCard, Pill, type Tone } from "@/components/ui/northwind";
 import { wrap } from "@/lib/api";
 import { useSession } from "@/lib/session";
 import { useApiQuery, qk } from "@/lib/query";
@@ -32,10 +32,10 @@ import { formatRelativeTime } from "@/components/events/event-log";
  */
 const ADMIN_ACTION = "organization.settings.update";
 
-const STATUS_BADGE: Record<DeadLetterStatus, "warning" | "success" | "secondary"> = {
+const STATUS_TONE: Record<DeadLetterStatus, Tone> = {
   open: "warning",
   replayed: "success",
-  discarded: "secondary",
+  discarded: "neutral",
 };
 
 export default function DeadLettersPage() {
@@ -59,13 +59,11 @@ function Inner({ orgId }: { orgId: string }) {
 
   if (access.loading) {
     return (
-      <Card>
-        <CardContent className="space-y-2 pt-6">
-          {Array.from({ length: 4 }).map((_, i) => (
-            <Skeleton key={i} className="h-14 w-full" />
-          ))}
-        </CardContent>
-      </Card>
+      <SettingsPanel className="space-y-2">
+        {Array.from({ length: 4 }).map((_, i) => (
+          <Skeleton key={i} className="h-14 w-full" />
+        ))}
+      </SettingsPanel>
     );
   }
 
@@ -137,45 +135,36 @@ function DeadLettersView({ orgId }: { orgId: string }) {
   };
 
   return (
-    <div className="space-y-5">
-      <header className="flex items-end justify-between gap-4">
-        <div>
-          <div className="flex items-center gap-2">
-            <Inbox className="h-5 w-5 text-muted-foreground" />
-            <h1 className="text-xl font-semibold tracking-tight">Dead letters</h1>
-          </div>
-          <p className="text-sm text-muted-foreground">
-            Events a delivery lane failed to process. Replay an open letter to re-run its lane handler.
-          </p>
-        </div>
-        <Select value={status} onValueChange={(v) => setStatus(v as "all" | DeadLetterStatus)}>
-          <SelectTrigger className="h-8 w-[160px] text-xs" aria-label="Status">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="open">Open</SelectItem>
-            <SelectItem value="replayed">Replayed</SelectItem>
-            <SelectItem value="discarded">Discarded</SelectItem>
-            <SelectItem value="all">All</SelectItem>
-          </SelectContent>
-        </Select>
-      </header>
+    <div className="space-y-[18px]">
+      <SettingsHeader
+        title="Dead letters"
+        description="Events a delivery lane failed to process. Replay an open letter to re-run its lane handler."
+        actions={
+          <Select value={status} onValueChange={(v) => setStatus(v as "all" | DeadLetterStatus)}>
+            <SelectTrigger className="h-8 w-[160px] text-xs" aria-label="Status">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="open">Open</SelectItem>
+              <SelectItem value="replayed">Replayed</SelectItem>
+              <SelectItem value="discarded">Discarded</SelectItem>
+              <SelectItem value="all">All</SelectItem>
+            </SelectContent>
+          </Select>
+        }
+      />
 
       {loading ? (
-        <Card>
-          <CardContent className="space-y-2 pt-6">
-            {Array.from({ length: 4 }).map((_, i) => (
-              <Skeleton key={i} className="h-16 w-full" />
-            ))}
-          </CardContent>
-        </Card>
+        <SettingsPanel className="space-y-2">
+          {Array.from({ length: 4 }).map((_, i) => (
+            <Skeleton key={i} className="h-16 w-full" />
+          ))}
+        </SettingsPanel>
       ) : error ? (
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-destructive">{error.code}</CardTitle>
-            <CardDescription>{error.message}</CardDescription>
-          </CardHeader>
-        </Card>
+        <SettingsPanel>
+          <div className="text-[13px] font-medium text-destructive">{error.code}</div>
+          <div className="text-xs text-muted-foreground">{error.message}</div>
+        </SettingsPanel>
       ) : items.length === 0 ? (
         <EmptyState
           icon={Inbox}
@@ -183,18 +172,17 @@ function DeadLettersView({ orgId }: { orgId: string }) {
           description="Nothing has failed delivery for this status. That's a good thing."
         />
       ) : (
-        <Card className="divide-y divide-border p-0">
+        <ListCard>
           {items.map((dl) => (
-            <div key={dl.id} className="flex items-start gap-3 px-4 py-3.5">
+            <div
+              key={dl.id}
+              className="flex items-start gap-3 border-t border-border/60 px-5 py-[13px] first:border-t-0"
+            >
               <div className="min-w-0 flex-1">
                 <div className="flex flex-wrap items-center gap-2">
-                  <span className="text-sm font-medium">{dl.reason || "delivery failed"}</span>
-                  <Badge variant={STATUS_BADGE[dl.status]} className="text-[10px]">
-                    {dl.status}
-                  </Badge>
-                  <Badge variant="outline" className="font-mono text-[10px]">
-                    lane {dl.laneKey}
-                  </Badge>
+                  <span className="text-[13px] font-medium">{dl.reason || "delivery failed"}</span>
+                  <Pill tone={STATUS_TONE[dl.status]}>{dl.status}</Pill>
+                  <Pill tone="neutral" className="font-mono">lane {dl.laneKey}</Pill>
                 </div>
                 <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-muted-foreground">
                   <span className="inline-flex items-center gap-1">
@@ -215,19 +203,19 @@ function DeadLettersView({ orgId }: { orgId: string }) {
                 loading={replayingId === dl.id}
                 onClick={() => void replay(dl)}
               >
-                <RotateCcw className="mr-1.5 h-3.5 w-3.5" />
+                <RotateCcw className="mr-1.5 h-3.5 w-3.5" strokeWidth={1.8} />
                 Replay
               </Button>
             </div>
           ))}
           {cursor !== null ? (
-            <div className="flex justify-center py-3">
+            <div className="flex justify-center border-t border-border/60 py-3">
               <Button type="button" variant="outline" onClick={() => void loadMore()} loading={loadingMore}>
                 Load more
               </Button>
             </div>
           ) : null}
-        </Card>
+        </ListCard>
       )}
     </div>
   );

@@ -18,7 +18,6 @@ import { useDebounced } from "@/lib/use-debounced";
 import { useMediaQuery } from "@/lib/use-media-query";
 import { collectOrgCatalog } from "@/lib/catalog-portal/fetch";
 import { decodeEntityKey, parseEntityRef } from "@/lib/catalog-entity-key";
-import { cn } from "@/lib/cn";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   buildContext,
@@ -47,8 +46,9 @@ import {
 } from "@/lib/catalog-portal/filter";
 import dynamic from "next/dynamic";
 import { buildBoard, buildMap } from "@/lib/catalog-portal/layout";
-import { CatalogHeader } from "./portal/header";
-import { MetricTiles } from "./portal/metric-tiles";
+import { isResource } from "@/lib/catalog-portal/model";
+import { Screen, PageHeader, Chip, ChipRow, ChipDivider } from "@/components/ui/northwind";
+import { Search } from "lucide-react";
 import { CatalogToolbar, type PortalView } from "./portal/toolbar";
 import { TableView } from "./portal/table-view";
 
@@ -68,13 +68,6 @@ const MapView = dynamic(() => import("./portal/map-view").then((m) => m.MapView)
   loading: ViewLoading,
 });
 const DetailDrawer = dynamic(() => import("./portal/detail-drawer").then((m) => m.DetailDrawer));
-
-// On mobile the catalog is a *naturally scrolling page* (the window scrolls),
-// so the fixed-height frame — which would slide under the bottom tab bar and
-// trap the list in a tiny inner scroller — is desktop-only. On desktop (md+)
-// the top bar is gone (#212), so the frame only subtracts the main padding
-// (3rem).
-const FRAME_DESKTOP = "md:h-[calc(100dvh-3rem)] md:overflow-hidden";
 
 export function CatalogPortal({ orgId, orgSlug }: { orgId: string; orgSlug: string }) {
   const isDesktop = useMediaQuery("(min-width: 768px)");
@@ -196,6 +189,20 @@ export function CatalogPortal({ orgId, orgSlug }: { orgId: string; orgSlug: stri
   const map = React.useMemo(() => buildMap(filtered), [filtered]);
   const chips = React.useMemo(() => activeChips(filters), [filters]);
 
+  // Live per-kind counts for the filter chips, over the full (unfiltered) set so
+  // the chip counts stay stable as the user narrows.
+  const kindCounts = React.useMemo(() => {
+    let component = 0;
+    let api = 0;
+    let resource = 0;
+    for (const s of services) {
+      if (isResource(s)) resource++;
+      else if (s.kind.toLowerCase() === "api") api++;
+      else component++;
+    }
+    return { component, api, resource };
+  }, [services]);
+
   // Decorate every service once per dataset into a key→row map (PERF C3). The
   // map is keyed by the stable service objects, so it survives filter / sort /
   // selection / typing re-renders; `decorate` becomes an O(1) lookup and the
@@ -303,39 +310,55 @@ export function CatalogPortal({ orgId, orgSlug }: { orgId: string; orgSlug: stri
   }, []);
 
   return (
-    <div className={cn("relative flex flex-col gap-4 md:gap-[18px]", FRAME_DESKTOP)}>
-      {/* title + metrics */}
-      <div className="flex shrink-0 flex-col gap-3">
-        <CatalogHeader />
-        <MetricTiles
-          rollup={metrics}
-          attention={filters.attention}
-          onToggleAttention={() => setFilters({ attention: !filters.attention })}
-        />
-        {/* teams-ownership TO5 — unmapped-owner backlog: owner strings declared in
-            git that don't resolve to a team (an account-admin action item). */}
-        {coverage && coverage.unmappedOwners.length > 0 ? (
-          <div className="rounded-lg border border-amber-500/40 bg-amber-500/5 px-3.5 py-2.5 text-[13px]">
-            <span className="font-medium text-foreground">
-              {coverage.coveragePct}% ownership coverage
-            </span>
-            <span className="text-muted-foreground">
-              {" "}· {coverage.unmapped} {coverage.unmapped === 1 ? "entity has" : "entities have"} an unmapped owner:{" "}
-              {coverage.unmappedOwners.slice(0, 6).map((u, i) => (
-                <span key={u.owner}>
-                  {i > 0 ? ", " : ""}
-                  <code className="text-foreground">{u.owner}</code>
-                  {u.count > 1 ? ` (${u.count})` : ""}
-                </span>
-              ))}
-              {coverage.unmappedOwners.length > 6 ? `, +${coverage.unmappedOwners.length - 6} more` : ""}. Map them to a team on the Teams page.
-            </span>
+    <Screen className="relative">
+      {/* Header — serif title + description, with the filter search as the
+          header action (desktop). Derived from git, never authored here. */}
+      <PageHeader
+        title="Catalog"
+        description="Every service, API, and resource — derived from git, never authored here."
+        actions={
+          <div className="relative hidden w-[230px] items-center sm:flex">
+            <Search className="pointer-events-none absolute left-3 h-[13px] w-[13px] text-muted-foreground/70" />
+            <input
+              value={filters.query}
+              onChange={(e) => setFilters({ query: e.target.value })}
+              placeholder="Filter by name or ref…"
+              aria-label="Filter by name or ref"
+              className="h-[34px] w-full rounded-[9px] border border-border bg-card pl-9 pr-3 text-[13px] text-foreground outline-none placeholder:text-muted-foreground/70"
+            />
           </div>
-        ) : null}
+        }
+      />
+
+      {/* Kind filter chips + needs-attention, with a live "X of Y shown". */}
+      <div className="mt-[26px] flex items-center">
+        <ChipRow>
+          <Chip active={filters.kind === "all"} onClick={() => setFilters({ kind: "all" })}>
+            All · {metrics.total}
+          </Chip>
+          <Chip active={filters.kind === "Component"} onClick={() => setFilters({ kind: "Component" })}>
+            Components · {kindCounts.component}
+          </Chip>
+          <Chip active={filters.kind === "API"} onClick={() => setFilters({ kind: "API" })}>
+            APIs · {kindCounts.api}
+          </Chip>
+          <Chip active={filters.kind === "Resource"} onClick={() => setFilters({ kind: "Resource" })}>
+            Resources · {kindCounts.resource}
+          </Chip>
+          <ChipDivider />
+          <Chip active={filters.attention} onClick={() => setFilters({ attention: !filters.attention })}>
+            <span className="h-1.5 w-1.5 rounded-full bg-warning-accent" />
+            Needs attention · {metrics.attention}
+          </Chip>
+        </ChipRow>
+        <span className="ml-auto hidden shrink-0 pl-3 text-[12px] text-muted-foreground/70 sm:inline">
+          {filtered.length} of {metrics.total} shown
+        </span>
       </div>
 
-      {/* toolbar */}
-      <div className="shrink-0">
+      {/* Secondary controls — lifecycle/health/group-by/My services filters,
+          mobile search + the Table/Board/Map view switcher. */}
+      <div className="mt-3.5">
         <CatalogToolbar
           filters={filters}
           setFilters={setFilters}
@@ -347,15 +370,32 @@ export function CatalogPortal({ orgId, orgSlug }: { orgId: string; orgSlug: stri
           sortDir={sortDir}
           onSort={onSort}
           isDesktop={isDesktop}
+          hideDesktopSearch
         />
       </div>
 
-      {/* active filter chips */}
-      {chips.length > 0 ? (
-        <div className="-mt-1.5 flex shrink-0 flex-wrap items-center gap-2">
-          <span className="text-[11.5px] text-muted-foreground/80">
-            {filtered.length} of {metrics.total}
+      {/* teams-ownership TO5 — unmapped-owner backlog: owner strings declared in
+          git that don't resolve to a team (an account-admin action item). */}
+      {coverage && coverage.unmappedOwners.length > 0 ? (
+        <div className="mt-3.5 rounded-xl border border-warning-accent/40 bg-warning-wash px-3.5 py-2.5 text-[13px]">
+          <span className="font-medium text-foreground">{coverage.coveragePct}% ownership coverage</span>
+          <span className="text-muted-foreground">
+            {" "}· {coverage.unmapped} {coverage.unmapped === 1 ? "entity has" : "entities have"} an unmapped owner:{" "}
+            {coverage.unmappedOwners.slice(0, 6).map((u, i) => (
+              <span key={u.owner}>
+                {i > 0 ? ", " : ""}
+                <code className="text-foreground">{u.owner}</code>
+                {u.count > 1 ? ` (${u.count})` : ""}
+              </span>
+            ))}
+            {coverage.unmappedOwners.length > 6 ? `, +${coverage.unmappedOwners.length - 6} more` : ""}. Map them to a team on the Teams page.
           </span>
+        </div>
+      ) : null}
+
+      {/* active filter chips (removable) */}
+      {chips.length > 0 ? (
+        <div className="mt-3 flex flex-wrap items-center gap-2">
           {chips.map((chip) => (
             <button
               key={`${chip.field}:${chip.label}`}
@@ -380,7 +420,7 @@ export function CatalogPortal({ orgId, orgSlug }: { orgId: string; orgSlug: stri
 
       {/* incident banner */}
       {metrics.incidents > 0 ? (
-        <div className="-mt-1 flex shrink-0 items-center gap-2.5 rounded-[9px] border border-destructive/25 bg-destructive/[0.07] px-3.5 py-[9px]">
+        <div className="mt-3.5 flex items-center gap-2.5 rounded-[9px] border border-destructive/25 bg-destructive-wash px-3.5 py-[9px]">
           <span className="h-[7px] w-[7px] shrink-0 rounded-full bg-destructive shadow-[0_0_0_3px_hsl(var(--destructive)/0.18)]" />
           <span className="text-[12.5px] text-destructive">
             {metrics.incidents} open incident{metrics.incidents === 1 ? "" : "s"} — affecting{" "}
@@ -391,20 +431,20 @@ export function CatalogPortal({ orgId, orgSlug }: { orgId: string; orgSlug: stri
       ) : null}
 
       {/* body */}
-      <div className="flex md:min-h-0 md:flex-1 md:pb-[22px]">
-        <div className="flex min-w-0 flex-1 flex-col">
-          {loading ? (
-            <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-hidden rounded-[13px] border border-border bg-card p-3">
-              {Array.from({ length: 8 }).map((_, i) => (
-                <Skeleton key={i} className="h-12 w-full rounded-lg bg-muted" />
-              ))}
-            </div>
-          ) : error ? (
-            <div className="rounded-[13px] border border-border bg-card p-8 text-center">
-              <div className="text-[14px] font-medium text-destructive">{error.code}</div>
-              <div className="mt-1 text-[12.5px] text-muted-foreground/80">{error.message}</div>
-            </div>
-          ) : view === "list" ? (
+      <div className="mt-3.5">
+        {loading ? (
+          <div className="flex flex-col gap-2 overflow-hidden rounded-xl border border-border bg-card p-3">
+            {Array.from({ length: 8 }).map((_, i) => (
+              <Skeleton key={i} className="h-12 w-full rounded-lg bg-muted" />
+            ))}
+          </div>
+        ) : error ? (
+          <div className="rounded-xl border border-border bg-card p-8 text-center">
+            <div className="text-[14px] font-medium text-destructive">{error.code}</div>
+            <div className="mt-1 text-[12.5px] text-muted-foreground/80">{error.message}</div>
+          </div>
+        ) : view === "list" ? (
+          <>
             <TableView
               groups={grouped}
               flat={filtered}
@@ -420,7 +460,13 @@ export function CatalogPortal({ orgId, orgSlug }: { orgId: string; orgSlug: stri
               onClearFilters={clearFilters}
               isDesktop={isDesktop}
             />
-          ) : view === "board" ? (
+            {/* Footnote — snapshots resolve from git on every push. */}
+            <div className="mt-3 text-[12px] leading-relaxed text-muted-foreground/70">
+              Select a row for the entity summary. Snapshots resolve from git on every push — never authored in the console.
+            </div>
+          </>
+        ) : view === "board" ? (
+          <div className="flex min-h-[60dvh] flex-col">
             <BoardView
               columns={board}
               decorate={decorate}
@@ -429,15 +475,16 @@ export function CatalogPortal({ orgId, orgSlug }: { orgId: string; orgSlug: stri
               onQuickView={isDesktop ? quickView : undefined}
               isDesktop={isDesktop}
             />
-          ) : (
+          </div>
+        ) : (
+          <div className="flex min-h-[60dvh] flex-col">
             <MapView model={map} selectedKey={selectedKey} onSelect={quickView} onOpen={openFull} />
-          )}
-        </div>
+          </div>
+        )}
       </div>
 
-      {/* Entity detail drawer — anchored to the catalog frame so it spans the
-          full height (over the header, tiles and toolbar), matching the design's
-          full-height sheet, with the scrim dimming the whole surface. */}
+      {/* Entity peek drawer — a right-anchored floating panel over a scrim,
+          desktop-only (phones tap straight through to the full page). */}
       {selected && isDesktop ? (
         <DetailDrawer
           sel={selected}
@@ -445,11 +492,12 @@ export function CatalogPortal({ orgId, orgSlug }: { orgId: string; orgSlug: stri
           onSelectRef={setSelectedKey}
           onViewMap={() => setView("graph")}
           onOpenPage={() => selectedKey && openFull(selectedKey)}
+          onViewDocs={() => router.push(`/orgs/${orgSlug}/docs`)}
         />
       ) : null}
 
       {/* filters-active hint for empty assistive state (a11y) */}
       <span className="sr-only">{hasActiveFilters(filters) ? "Filters active" : "No filters"}</span>
-    </div>
+    </Screen>
   );
 }

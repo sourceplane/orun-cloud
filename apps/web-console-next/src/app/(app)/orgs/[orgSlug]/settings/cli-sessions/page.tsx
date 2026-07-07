@@ -3,12 +3,11 @@
 import * as React from "react";
 import { Terminal } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Badge } from "@/components/ui/badge";
 import { EmptyState } from "@/components/ui/empty-state";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
-import { Table, TableHeader, TableRow, TableHead, TableBody, TableCell } from "@/components/ui/table";
+import { SettingsHeader, SettingsPanel } from "@/components/settings/settings-primitives";
+import { ListCard, ListRow, Pill } from "@/components/ui/northwind";
 import { useSession } from "@/lib/session";
 import { useApiQuery, qk } from "@/lib/query";
 import { useToast } from "@/components/ui/toast";
@@ -45,7 +44,7 @@ export default function CliSessionsPage() {
   const active = (sessions.data ?? []).filter((s) => !s.revokedAt);
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-[18px]">
       <ConfirmDialog
         open={pendingRevoke !== null}
         onOpenChange={(open) => !open && setPendingRevoke(null)}
@@ -56,29 +55,27 @@ export default function CliSessionsPage() {
         onConfirm={() => (pendingRevoke ? revoke(pendingRevoke.id) : undefined)}
       />
 
-      <header>
-        <h1 className="text-xl font-semibold tracking-tight">Sessions &amp; devices</h1>
-        <p className="text-sm text-muted-foreground">
-          Devices where you&rsquo;ve signed the Orun CLI in with{" "}
-          <span className="font-mono">orun auth login</span>. Revoke any you don&rsquo;t recognize.
-        </p>
-      </header>
+      <SettingsHeader
+        title="Sessions & devices"
+        description={
+          <>
+            Devices where you&rsquo;ve signed the Orun CLI in with{" "}
+            <span className="font-mono">orun auth login</span>. Revoke any you don&rsquo;t recognize.
+          </>
+        }
+      />
 
       {sessions.loading ? (
-        <Card>
-          <CardContent className="pt-6 space-y-2">
-            {Array.from({ length: 3 }).map((_, i) => (
-              <Skeleton key={i} className="h-9 w-full" />
-            ))}
-          </CardContent>
-        </Card>
+        <SettingsPanel className="space-y-2">
+          {Array.from({ length: 3 }).map((_, i) => (
+            <Skeleton key={i} className="h-9 w-full" />
+          ))}
+        </SettingsPanel>
       ) : sessions.error ? (
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-destructive">{sessions.error.code}</CardTitle>
-            <CardDescription>{sessions.error.message}</CardDescription>
-          </CardHeader>
-        </Card>
+        <SettingsPanel>
+          <div className="text-[13.5px] font-semibold text-destructive">{sessions.error.code}</div>
+          <p className="mt-1.5 text-[12.5px] text-muted-foreground">{sessions.error.message}</p>
+        </SettingsPanel>
       ) : active.length === 0 ? (
         <EmptyState
           icon={Terminal}
@@ -86,65 +83,32 @@ export default function CliSessionsPage() {
           description="Run `orun auth login` (or `orun auth login --device` on a headless box) to connect the Orun CLI to this account."
         />
       ) : (
-        <>
-          {/* Mobile: stacked cards */}
-          <div className="space-y-3 md:hidden">
-            {active.map((s) => (
-              <Card key={s.id} className="space-y-3 p-4">
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0 space-y-1.5">
-                    <div className="truncate font-medium">{s.host ?? "Unknown device"}</div>
-                    <div className="font-mono text-xs text-muted-foreground">{s.id}</div>
-                  </div>
-                  <Button size="sm" variant="ghost" onClick={() => setPendingRevoke({ id: s.id, host: s.host })}>
-                    Revoke
-                  </Button>
+        <ListCard>
+          {active.map((s) => (
+            <ListRow key={s.id} className="items-start">
+              <div className="min-w-0 flex-1 space-y-1">
+                <div className="flex items-center gap-2">
+                  <span className="truncate text-[13px] font-medium">{s.host ?? "Unknown device"}</span>
+                  <Pill tone="neutral">cli</Pill>
                 </div>
-                <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
-                  <Badge variant="outline">cli</Badge>
+                <div className="font-mono text-[11.5px] text-muted-foreground">{s.id}</div>
+                <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[11.5px] text-muted-foreground">
                   <span>created {new Date(s.createdAt).toLocaleDateString()}</span>
                   <span>last used {new Date(s.lastUsedAt).toLocaleDateString()}</span>
+                  <span>expires {new Date(s.expiresAt).toLocaleDateString()}</span>
                 </div>
-              </Card>
-            ))}
-          </div>
-
-          {/* Desktop: table */}
-          <Card className="hidden md:block">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Device</TableHead>
-                  <TableHead>Created</TableHead>
-                  <TableHead>Last used</TableHead>
-                  <TableHead>Expires</TableHead>
-                  <TableHead className="text-right">Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {active.map((s) => (
-                  <TableRow key={s.id}>
-                    <TableCell className="font-medium">{s.host ?? "Unknown device"}</TableCell>
-                    <TableCell className="text-xs text-muted-foreground">
-                      {new Date(s.createdAt).toLocaleDateString()}
-                    </TableCell>
-                    <TableCell className="text-xs text-muted-foreground">
-                      {new Date(s.lastUsedAt).toLocaleDateString()}
-                    </TableCell>
-                    <TableCell className="text-xs text-muted-foreground">
-                      {new Date(s.expiresAt).toLocaleDateString()}
-                    </TableCell>
-                    <TableCell className="text-right">
-                      <Button size="sm" variant="ghost" onClick={() => setPendingRevoke({ id: s.id, host: s.host })}>
-                        Revoke
-                      </Button>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </Card>
-        </>
+              </div>
+              <Button
+                size="sm"
+                variant="ghost"
+                className="shrink-0 text-destructive hover:text-destructive"
+                onClick={() => setPendingRevoke({ id: s.id, host: s.host })}
+              >
+                Revoke
+              </Button>
+            </ListRow>
+          ))}
+        </ListCard>
       )}
     </div>
   );

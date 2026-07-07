@@ -4,13 +4,15 @@ import * as React from "react";
 import { useParams } from "next/navigation";
 import { Receipt, ExternalLink } from "lucide-react";
 import { OrgScope } from "@/components/shell/org-scope";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Table, TableHeader, TableRow, TableHead, TableBody, TableCell } from "@/components/ui/table";
 import { PreconditionInsight } from "@/components/precondition/insight";
 import { BillingActions } from "@/components/billing/billing-actions";
+import { SettingsHeader, SettingsPanel, PanelTitle } from "@/components/settings/settings-primitives";
+import { ListCard, ListCardHeader, ListRow, Pill, type Tone } from "@/components/ui/northwind";
 import { wrap } from "@/lib/api";
 import { useSession } from "@/lib/session";
 import { useApiQuery, qk } from "@/lib/query";
@@ -28,27 +30,27 @@ function Inner({ orgId }: { orgId: string }) {
   const inv = useApiQuery(qk.invoices(orgId), () => wrap(() => client.billing.listInvoices(orgId)));
 
   return (
-    <div className="space-y-6">
-      <header>
-        <h1 className="text-xl font-semibold tracking-tight">Billing</h1>
-        <p className="text-sm text-muted-foreground">Plan, entitlements, and invoices for this workspace.</p>
-      </header>
+    <div className="space-y-3.5">
+      <SettingsHeader
+        title="Billing & plan"
+        description="The workspace bills to this account, monthly."
+      />
 
       {/* Plan / customer */}
       {summary.loading ? (
-        <Card>
-          <CardContent className="pt-6">
-            <Skeleton className="h-16 w-full" />
-          </CardContent>
-        </Card>
+        <SettingsPanel className="mt-[18px]">
+          <Skeleton className="h-16 w-full" />
+        </SettingsPanel>
       ) : summary.error ? (
         summary.error.code === "precondition_failed" ? (
-          <PreconditionInsight
-            error={{ code: summary.error.code, message: summary.error.message }}
-            resource="billing"
-          />
+          <div className="mt-[18px]">
+            <PreconditionInsight
+              error={{ code: summary.error.code, message: summary.error.message }}
+              resource="billing"
+            />
+          </div>
         ) : (
-          <Card>
+          <Card className="mt-[18px]">
             <CardHeader>
               <CardTitle className="text-destructive">{summary.error.code}</CardTitle>
               <CardDescription>{summary.error.message}</CardDescription>
@@ -66,44 +68,48 @@ function Inner({ orgId }: { orgId: string }) {
               ? `${formatMoney(plan.priceAmountCents, plan.priceCurrency)} on ${formatDate(sub.currentPeriodEnd)}`
               : null;
           return (
-            <Card>
-              <CardHeader>
-                <div className="flex items-start justify-between gap-4">
-                  <div>
-                    <CardTitle className="text-base">{plan ? plan.name : "No active plan"}</CardTitle>
-                    <CardDescription>{plan ? planPriceLabel(plan) : "No active subscription"}</CardDescription>
+            <SettingsPanel className="mt-[18px]">
+              <div className="flex items-start justify-between gap-4">
+                <div className="min-w-0">
+                  <div className="flex items-baseline gap-2">
+                    <span className="font-serif text-[24px] font-medium leading-tight">
+                      {plan ? plan.name : "No active plan"}
+                    </span>
+                    <span className="text-[12.5px] text-muted-foreground">
+                      {plan ? planPriceLabel(plan) : "No active subscription"}
+                    </span>
                   </div>
-                  {sub ? <Badge variant={statusVariant(sub.status)}>{sub.status}</Badge> : null}
+                  <div className="mt-3.5 grid grid-cols-2 gap-x-6 gap-y-3 text-[12.5px] sm:grid-cols-4">
+                    <Stat label="Started" value={formatDate(sub?.currentPeriodStart ?? null)} />
+                    <Stat label="Renews on" value={formatDate(sub?.currentPeriodEnd ?? null)} />
+                    <Stat label="Next charge" value={nextCharge ?? "—"} />
+                    <Stat
+                      label="Billing contact"
+                      value={summary.data.customer?.displayName ?? summary.data.customer?.email ?? "—"}
+                    />
+                  </div>
+                  {nextCharge ? (
+                    <p className="mt-3 text-[11.5px] text-muted-foreground">
+                      Estimated — applicable taxes are calculated at billing.
+                    </p>
+                  ) : null}
                 </div>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 text-sm">
-                  <Stat label="Started" value={formatDate(sub?.currentPeriodStart ?? null)} />
-                  <Stat label="Renews on" value={formatDate(sub?.currentPeriodEnd ?? null)} />
-                  <Stat label="Next charge" value={nextCharge ?? "—"} />
-                  <Stat
-                    label="Billing contact"
-                    value={summary.data.customer?.displayName ?? summary.data.customer?.email ?? "—"}
-                  />
-                </div>
-                {nextCharge ? (
-                  <p className="text-xs text-muted-foreground">
-                    Estimated — applicable taxes are calculated at billing.
-                  </p>
+                {sub ? (
+                  <Badge variant={statusVariant(sub.status)} className="shrink-0">
+                    {sub.status}
+                  </Badge>
                 ) : null}
-              </CardContent>
-            </Card>
+              </div>
+            </SettingsPanel>
           );
         })()
       ) : null}
 
       {/* Manage plan: upgrade checkout + customer portal */}
       {summary.loading ? (
-        <Card>
-          <CardContent className="pt-6">
-            <Skeleton className="h-24 w-full" />
-          </CardContent>
-        </Card>
+        <SettingsPanel>
+          <Skeleton className="h-24 w-full" />
+        </SettingsPanel>
       ) : summary.data ? (
         <BillingActions
           orgId={orgId}
@@ -114,9 +120,7 @@ function Inner({ orgId }: { orgId: string }) {
 
       {/* Entitlements */}
       <section className="space-y-2">
-        <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-          Entitlements
-        </h2>
+        <PanelTitle className="text-[13px]">Entitlements</PanelTitle>
         {ents.loading ? (
           <Skeleton className="h-32 w-full" />
         ) : ents.error ? (
@@ -136,7 +140,7 @@ function Inner({ orgId }: { orgId: string }) {
         ) : !ents.data || ents.data.entitlements.length === 0 ? (
           <EmptyState icon={Receipt} title="No entitlements" description="No entitlement records configured." />
         ) : (
-          <Card>
+          <Card className="overflow-x-auto">
             <Table>
               <TableHeader>
                 <TableRow>
@@ -173,66 +177,60 @@ function Inner({ orgId }: { orgId: string }) {
 
       {/* Invoices */}
       <section className="space-y-2">
-        <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">Invoices</h2>
         {inv.loading ? (
-          <Skeleton className="h-24 w-full" />
+          <>
+            <PanelTitle className="text-[13px]">Invoices</PanelTitle>
+            <Skeleton className="h-24 w-full" />
+          </>
         ) : inv.error ? (
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-destructive text-sm">{inv.error.code}</CardTitle>
-              <CardDescription>{inv.error.message}</CardDescription>
-            </CardHeader>
-          </Card>
+          <>
+            <PanelTitle className="text-[13px]">Invoices</PanelTitle>
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-destructive text-sm">{inv.error.code}</CardTitle>
+                <CardDescription>{inv.error.message}</CardDescription>
+              </CardHeader>
+            </Card>
+          </>
         ) : !inv.data || inv.data.invoices.length === 0 ? (
-          <EmptyState icon={Receipt} title="No invoices" description="Invoices will appear here after first billing cycle." />
+          <>
+            <PanelTitle className="text-[13px]">Invoices</PanelTitle>
+            <EmptyState
+              icon={Receipt}
+              title="No invoices"
+              description="Invoices will appear here after first billing cycle."
+            />
+          </>
         ) : (
-          <Card>
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Number</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead>Due</TableHead>
-                  <TableHead>Paid</TableHead>
-                  <TableHead>Issued</TableHead>
-                  <TableHead className="text-right">Receipt</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {inv.data.invoices.map((i) => (
-                  <TableRow key={i.id}>
-                    <TableCell className="font-mono text-xs">{i.number ?? i.id.slice(0, 12)}</TableCell>
-                    <TableCell>
-                      <Badge
-                        variant={
-                          i.status === "paid" ? "success" : i.status === "void" ? "secondary" : "warning"
-                        }
-                      >
-                        {i.status}
-                      </Badge>
-                    </TableCell>
-                    <TableCell>{formatMoney(i.amountDueCents, i.currency)}</TableCell>
-                    <TableCell>{formatMoney(i.amountPaidCents, i.currency)}</TableCell>
-                    <TableCell className="text-xs text-muted-foreground">{formatDate(i.issuedAt)}</TableCell>
-                    <TableCell className="text-right">
-                      {i.hostedUrl ? (
-                        <a
-                          href={i.hostedUrl}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="inline-flex items-center gap-1 text-xs text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
-                        >
-                          View <ExternalLink className="h-3 w-3" />
-                        </a>
-                      ) : (
-                        <span className="text-xs text-muted-foreground">—</span>
-                      )}
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </Card>
+          <ListCard>
+            <ListCardHeader title="Invoices" />
+            {inv.data.invoices.map((i) => (
+              <ListRow key={i.id}>
+                <span className="text-[13px]">{formatDate(i.issuedAt)}</span>
+                <span className="font-mono text-[11.5px] text-muted-foreground">
+                  {i.number ?? i.id.slice(0, 12)}
+                </span>
+                <span className="ml-auto flex items-center gap-4">
+                  <Pill tone={invoiceTone(i.status)}>{i.status}</Pill>
+                  <span className="text-[13px] tabular-nums">
+                    {formatMoney(i.amountPaidCents ?? i.amountDueCents, i.currency)}
+                  </span>
+                  {i.hostedUrl ? (
+                    <a
+                      href={i.hostedUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1 text-xs text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
+                    >
+                      View <ExternalLink className="h-3 w-3" strokeWidth={1.8} />
+                    </a>
+                  ) : (
+                    <span className="text-xs text-muted-foreground">—</span>
+                  )}
+                </span>
+              </ListRow>
+            ))}
+          </ListCard>
         )}
       </section>
     </div>
@@ -241,9 +239,9 @@ function Inner({ orgId }: { orgId: string }) {
 
 function Stat({ label, value }: { label: string; value: string }) {
   return (
-    <div>
+    <div className="min-w-0">
       <div className="text-[11px] uppercase tracking-wide text-muted-foreground">{label}</div>
-      <div className="font-medium truncate">{value}</div>
+      <div className="truncate font-medium">{value}</div>
     </div>
   );
 }
@@ -278,4 +276,11 @@ function statusVariant(status: string): "success" | "warning" | "secondary" | "d
   if (status === "past_due") return "warning";
   if (status === "canceled" || status === "expired") return "destructive";
   return "secondary";
+}
+
+/** Northwind pill tone for an invoice status: paid=success, void=neutral, else warning. */
+function invoiceTone(status: string): Tone {
+  if (status === "paid") return "success";
+  if (status === "void") return "neutral";
+  return "warning";
 }

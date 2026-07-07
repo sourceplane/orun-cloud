@@ -9,8 +9,6 @@ import type {
   EvaluateSecretPolicyResponse,
 } from "@saas/contracts/config";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
@@ -22,6 +20,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Kicker, ListCard, Pill } from "@/components/ui/northwind";
+import { cn } from "@/lib/cn";
 import { useSession } from "@/lib/session";
 import { useApiQuery } from "@/lib/query";
 import { useToast } from "@/components/ui/toast";
@@ -55,10 +55,10 @@ export function SecretPoliciesPanel({ scope, scopeKey }: { scope: ConfigScope; s
     <div className="grid gap-6 lg:grid-cols-2">
       <div className="space-y-4">
         <div>
-          <h3 className="text-sm font-medium">Policy documents</h3>
-          <p className="text-sm text-muted-foreground">
+          <h3 className="text-[13.5px] font-semibold">Policy documents</h3>
+          <p className="mt-1 text-[12.5px] leading-normal text-muted-foreground">
             Layer-2 conditions the resolve evaluates, in tier order (composition → stack → intent).
-            Pushed via <span className="font-mono">orun policy push</span>.
+            Pushed via <span className="font-mono text-[11.5px]">orun policy push</span>.
           </p>
         </div>
         {policies.loading ? (
@@ -90,31 +90,32 @@ function PolicyList({ policies }: { policies: PublicSecretPolicy[] }) {
         return (
           <div key={tier.id} className="space-y-2">
             <div className="flex items-center gap-2">
-              <h4 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                {tier.label}
-              </h4>
-              <span className="text-[11px] text-muted-foreground">{tier.hint}</span>
+              <Kicker>{tier.label}</Kicker>
+              <span className="text-[11px] text-muted-foreground/80">{tier.hint}</span>
             </div>
-            <Card className="divide-y divide-border p-0">
+            <ListCard>
               {inTier.map((p) => {
                 const ruleCount = Array.isArray((p.document as { rules?: unknown[] }).rules)
                   ? (p.document as { rules: unknown[] }).rules.length
                   : 0;
                 return (
-                  <div key={`${p.name}-${p.documentHash}`} className="flex items-center justify-between gap-3 px-4 py-3">
+                  <div
+                    key={`${p.name}-${p.documentHash}`}
+                    className="flex items-center justify-between gap-3 border-t border-border/50 px-4 py-3 first:border-t-0"
+                  >
                     <div className="min-w-0">
-                      <div className="truncate font-mono text-xs">{p.name}</div>
+                      <div className="truncate font-mono text-[12.5px] font-medium">{p.name}</div>
                       <div className="mt-0.5 flex flex-wrap items-center gap-x-2 text-[11px] text-muted-foreground">
                         <span className="truncate">source: {p.source}</span>
                         <span aria-hidden>·</span>
                         <span>{ruleCount} rule{ruleCount === 1 ? "" : "s"}</span>
                       </div>
                     </div>
-                    <Badge variant={p.scope === "project" ? "secondary" : "default"}>{p.scope}</Badge>
+                    <Pill tone={p.scope === "project" ? "neutral" : "info"}>{p.scope}</Pill>
                   </div>
                 );
               })}
-            </Card>
+            </ListCard>
           </div>
         );
       })}
@@ -153,15 +154,15 @@ function PolicyTester({ scope }: { scope: ConfigScope }) {
   };
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="text-base">Policy test</CardTitle>
-        <p className="text-sm text-muted-foreground">
+    <div className="rounded-xl border bg-card px-6 py-5">
+      <div className="mb-4">
+        <h3 className="text-[13.5px] font-semibold">Policy test</h3>
+        <p className="mt-1 text-[12.5px] leading-normal text-muted-foreground">
           Dry-run a hypothetical resolve. Reports the Layer-1 role decision and the Layer-2
           SecretPolicy decision without serving any value.
         </p>
-      </CardHeader>
-      <CardContent className="space-y-3">
+      </div>
+      <div className="space-y-3">
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <Field label="Secret key">
             <Input value={form.key} onChange={(e) => set("key", e.target.value)} placeholder="STRIPE_KEY" />
@@ -234,8 +235,8 @@ function PolicyTester({ scope }: { scope: ConfigScope }) {
         </div>
 
         {result ? <ResultCard result={result} /> : null}
-      </CardContent>
-    </Card>
+      </div>
+    </div>
   );
 }
 
@@ -252,12 +253,12 @@ function ResultCard({ result }: { result: EvaluateSecretPolicyResponse }) {
   const allow = result.decision.allow;
   return (
     <div
-      className={
-        "space-y-3 rounded-md border p-3 " +
-        (allow ? "border-success/40 bg-success/10" : "border-destructive/40 bg-destructive/10")
-      }
+      className={cn(
+        "space-y-3 rounded-[10px] border p-3.5",
+        allow ? "border-success/30 bg-success-soft" : "border-destructive/30 bg-destructive-soft",
+      )}
     >
-      <div className={"flex items-center gap-2 text-sm font-medium " + (allow ? "text-success" : "text-destructive")}>
+      <div className={cn("flex items-center gap-2 text-sm font-medium", allow ? "text-success" : "text-destructive")}>
         {allow ? <ShieldCheck className="h-5 w-5" /> : <ShieldX className="h-5 w-5" />}
         {allow ? "Allowed" : "Denied"}
       </div>
@@ -285,7 +286,7 @@ function LayerRow({ label, allow, detail }: { label: string; allow: boolean; det
         <span className="truncate font-mono text-[11px]" title={detail}>
           {detail}
         </span>
-        <Badge variant={allow ? "success" : "destructive"}>{allow ? "allow" : "deny"}</Badge>
+        <Pill tone={allow ? "success" : "error"}>{allow ? "allow" : "deny"}</Pill>
       </span>
     </div>
   );

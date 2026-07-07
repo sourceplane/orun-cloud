@@ -5,13 +5,13 @@ import { useParams, useSearchParams } from "next/navigation";
 import { BellRing, Pencil, Play, Plus, Trash2 } from "lucide-react";
 import type { PublicNotificationRule } from "@saas/contracts/notifications";
 import { OrgScope } from "@/components/shell/org-scope";
-import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Switch } from "@/components/ui/switch";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { SettingsHeader, SettingsPanel } from "@/components/settings/settings-primitives";
+import { ListCard, Pill } from "@/components/ui/northwind";
 import { wrap } from "@/lib/api";
 import { useSession } from "@/lib/session";
 import { useApiQuery, qk } from "@/lib/query";
@@ -89,38 +89,29 @@ function Inner({ orgId }: { orgId: string }) {
   };
 
   return (
-    <div className="space-y-5">
-      <header className="flex items-end justify-between gap-4">
-        <div>
-          <div className="flex items-center gap-2">
-            <BellRing className="h-5 w-5 text-muted-foreground" />
-            <h1 className="text-xl font-semibold tracking-tight">Notification rules</h1>
-          </div>
-          <p className="text-sm text-muted-foreground">
-            Route matching events to email or a Slack channel, with a severity floor and throttle.
-          </p>
-        </div>
-        <Button type="button" onClick={openCreate}>
-          <Plus className="mr-1.5 h-4 w-4" />
-          New rule
-        </Button>
-      </header>
+    <div className="space-y-[18px]">
+      <SettingsHeader
+        title="Notification rules"
+        description="Route matching events to email or a Slack channel, with a severity floor and throttle."
+        actions={
+          <Button type="button" onClick={openCreate}>
+            <Plus className="mr-1.5 h-4 w-4" strokeWidth={1.8} />
+            New rule
+          </Button>
+        }
+      />
 
       {rules.loading ? (
-        <Card>
-          <CardContent className="space-y-2 pt-6">
-            {Array.from({ length: 4 }).map((_, i) => (
-              <Skeleton key={i} className="h-16 w-full" />
-            ))}
-          </CardContent>
-        </Card>
+        <SettingsPanel className="space-y-2">
+          {Array.from({ length: 4 }).map((_, i) => (
+            <Skeleton key={i} className="h-16 w-full" />
+          ))}
+        </SettingsPanel>
       ) : rules.error ? (
-        <Card>
-          <CardContent className="pt-6">
-            <div className="text-sm font-medium text-destructive">{rules.error.code}</div>
-            <div className="text-xs text-muted-foreground">{rules.error.message}</div>
-          </CardContent>
-        </Card>
+        <SettingsPanel>
+          <div className="text-[13px] font-medium text-destructive">{rules.error.code}</div>
+          <div className="text-xs text-muted-foreground">{rules.error.message}</div>
+        </SettingsPanel>
       ) : (rules.data ?? []).length === 0 ? (
         <EmptyState
           icon={BellRing}
@@ -129,20 +120,17 @@ function Inner({ orgId }: { orgId: string }) {
           primaryAction={{ label: "New rule", onClick: openCreate }}
         />
       ) : (
-        <Card className="divide-y divide-border p-0">
+        <ListCard>
           {(rules.data ?? []).map((rule) => (
-            <div key={rule.id} className="flex items-start gap-3 px-4 py-3.5">
+            <div
+              key={rule.id}
+              className="flex items-start gap-3 border-t border-border/60 px-5 py-[13px] first:border-t-0"
+            >
               <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-2">
-                  <span className="truncate text-sm font-medium">{rule.name}</span>
-                  <Badge variant={rule.status === "enabled" ? "success" : "secondary"} className="text-[10px]">
-                    {rule.status}
-                  </Badge>
-                  {rule.projectId ? (
-                    <Badge variant="outline" className="text-[10px]">
-                      project
-                    </Badge>
-                  ) : null}
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="truncate text-[13px] font-medium">{rule.name}</span>
+                  <Pill tone={rule.status === "enabled" ? "success" : "neutral"}>{rule.status}</Pill>
+                  {rule.projectId ? <Pill tone="neutral">project</Pill> : null}
                 </div>
                 <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-muted-foreground">
                   <span className="font-mono">{rule.eventTypes.join(", ")}</span>
@@ -161,18 +149,18 @@ function Inner({ orgId }: { orgId: string }) {
                   aria-label={`Enable ${rule.name}`}
                 />
                 <Button type="button" size="icon" variant="ghost" aria-label="Test rule" onClick={() => setTesting(rule)}>
-                  <Play className="h-4 w-4" />
+                  <Play className="h-4 w-4" strokeWidth={1.8} />
                 </Button>
                 <Button type="button" size="icon" variant="ghost" aria-label="Edit rule" onClick={() => openEdit(rule)}>
-                  <Pencil className="h-4 w-4" />
+                  <Pencil className="h-4 w-4" strokeWidth={1.8} />
                 </Button>
                 <Button type="button" size="icon" variant="ghost" aria-label="Delete rule" onClick={() => setDeleting(rule)}>
-                  <Trash2 className="h-4 w-4" />
+                  <Trash2 className="h-4 w-4" strokeWidth={1.8} />
                 </Button>
               </div>
             </div>
           ))}
-        </Card>
+        </ListCard>
       )}
 
       <RuleBuilderDialog

@@ -145,6 +145,7 @@ export function CatalogToolbar({
   sortDir,
   onSort,
   isDesktop,
+  hideDesktopSearch = false,
 }: {
   filters: CatalogFilters;
   setFilters: (patch: Partial<CatalogFilters>) => void;
@@ -156,6 +157,8 @@ export function CatalogToolbar({
   sortDir: SortDir;
   onSort: (k: SortKey) => void;
   isDesktop: boolean;
+  /** Suppress the desktop search box — the page header owns search. */
+  hideDesktopSearch?: boolean;
 }) {
   const [sheetOpen, setSheetOpen] = React.useState(false);
 
@@ -308,23 +311,20 @@ export function CatalogToolbar({
 
   return (
     <div className="flex flex-wrap items-center gap-2.5">
-      <div className="relative flex items-center">
-        <Search className="pointer-events-none absolute left-2.5 h-3.5 w-3.5 text-muted-foreground/80" />
-        <input
-          value={filters.query}
-          onChange={(e) => setFilters({ query: e.target.value })}
-          placeholder="Search services, refs, owners…"
-          aria-label="Search services"
-          className="h-[34px] w-[260px] rounded-lg border border-border bg-card pl-[30px] pr-[11px] text-[13px] text-foreground outline-none placeholder:text-muted-foreground/60"
-        />
-      </div>
+      {!hideDesktopSearch ? (
+        <div className="relative flex items-center">
+          <Search className="pointer-events-none absolute left-2.5 h-3.5 w-3.5 text-muted-foreground/80" />
+          <input
+            value={filters.query}
+            onChange={(e) => setFilters({ query: e.target.value })}
+            placeholder="Search services, refs, owners…"
+            aria-label="Search services"
+            className="h-[34px] w-[260px] rounded-lg border border-border bg-card pl-[30px] pr-[11px] text-[13px] text-foreground outline-none placeholder:text-muted-foreground/60"
+          />
+        </div>
+      ) : null}
 
-      <PortalSelect ariaLabel="Kind" value={filters.kind} onChange={(v) => setFilters({ kind: v })}>
-        <option value="all">All kinds</option>
-        <option value="Component">Component</option>
-        <option value="API">API</option>
-        <option value="Resource">Resource</option>
-      </PortalSelect>
+      {/* Kind is driven by the header chip row, so it's not repeated here. */}
 
       <PortalSelect ariaLabel="Lifecycle" value={filters.lifecycle} onChange={(v) => setFilters({ lifecycle: v })}>
         <option value="all">Any lifecycle</option>
