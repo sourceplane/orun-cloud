@@ -24,8 +24,8 @@ export interface PersonalNavLink {
 /** Build the personal-area navigation (Profile, Security, Sessions & devices). */
 export function buildPersonalNav(): PersonalNavLink[] {
   return [
-    { key: "profile", href: "/account", label: "Profile", icon: "User2" },
-    { key: "security", href: "/account/security", label: "Security activity", icon: "ShieldCheck" },
-    { key: "sessions", href: "/account/sessions", label: "Sessions & devices", icon: "Terminal" },
+    { key: "profile", href: "/you", label: "Profile", icon: "User2" },
+    { key: "security", href: "/you/security", label: "Security activity", icon: "ShieldCheck" },
+    { key: "sessions", href: "/you/sessions", label: "Sessions & devices", icon: "Terminal" },
   ];
 }

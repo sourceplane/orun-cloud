@@ -82,7 +82,7 @@ export function Topbar() {
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="min-w-[220px]">
               <DropdownMenuLabel>Account</DropdownMenuLabel>
-              <DropdownMenuItem onSelect={() => router.push("/account")}>
+              <DropdownMenuItem onSelect={() => router.push("/you")}>
                 <User2 className="h-4 w-4 opacity-70" /> Profile
               </DropdownMenuItem>
               <DropdownMenuItem onSelect={() => router.push("/orgs")}>

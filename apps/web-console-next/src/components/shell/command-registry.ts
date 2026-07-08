@@ -97,16 +97,16 @@ export function buildBaseCommands(ctx: CommandContext): CommandDescriptor[] {
     label: "Account profile",
     group: "Navigation",
     kind: "navigate",
-    to: "/account",
+    to: "/you",
     icon: "User2",
-    keywords: ["profile", "account", "me", "name", "display name", "sign out", "logout"],
+    keywords: ["profile", "account", "you", "me", "name", "display name", "sign out", "logout"],
   });
   out.push({
     id: "nav.account.security",
     label: "Security activity",
     group: "Navigation",
     kind: "navigate",
-    to: "/account/security",
+    to: "/you/security",
     icon: "ShieldCheck",
     keywords: ["security", "sessions", "activity", "login", "account"],
   });

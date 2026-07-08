@@ -122,7 +122,7 @@ export function buildNavSections(scope: NavScope): NavSection[] {
 export function isLinkActive(href: string, pathname: string | null): boolean {
   if (!pathname) return false;
   if (href === "/orgs") return pathname === "/orgs";
-  if (href === "/account") return pathname === "/account";
+  if (href === "/you") return pathname === "/you";
   // The org root (`/orgs/<slug>`, no further segment) is an exact match.
   if (/^\/orgs\/[^/]+$/.test(href)) return pathname === href;
   return pathname === href || pathname.startsWith(`${href}/`);
