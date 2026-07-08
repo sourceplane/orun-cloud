@@ -9,6 +9,7 @@ import type {
   CatalogHead,
   CreateRunInput,
   CreateRunJobInput,
+  RunJobSeed,
   CreateRunOutcome,
   CreateWorkspaceLinkInput,
   CursorPosition,
@@ -23,6 +24,10 @@ import type {
   OrgCatalogEntity,
   RepoFacet,
   UpsertRepoFacetInput,
+  CatalogDoc,
+  UpsertCatalogDocInput,
+  ListCatalogDocsQuery,
+  PendingCatalogProjection,
   StateStorageUsage,
   UpsertOrgCatalogEntityInput,
   ListRunsQuery,
@@ -274,6 +279,29 @@ function mapRepoFacet(row: Record<string, unknown>): RepoFacet {
   };
 }
 
+function mapCatalogDoc(row: Record<string, unknown>): CatalogDoc {
+  return {
+    id: row.id as string,
+    orgId: row.org_id as string,
+    sourceProjectId: row.source_project_id as string,
+    sourceEnvironment: (row.source_environment as string) ?? null,
+    entityRef: row.entity_ref as string,
+    entityKind: row.entity_kind as string,
+    entityName: row.entity_name as string,
+    docKey: row.doc_key as string,
+    title: row.title as string,
+    role: row.role as string,
+    path: row.path as string,
+    commitSha: (row.commit_sha as string) ?? null,
+    digest: row.digest as string,
+    sizeBytes: row.size_bytes == null ? null : Number(row.size_bytes),
+    position: Number(row.position ?? 0),
+    headDigest: row.head_digest as string,
+    syncedAt: toDate(row.synced_at),
+    createdAt: toDate(row.created_at),
+  };
+}
+
 function mapWorkspaceLink(row: Record<string, unknown>): WorkspaceLink {
   return {
     id: row.id as string,
@@ -503,6 +531,48 @@ export function createStateRepository(executor: SqlExecutor): StateRepository {
           return { ok: false, error: { kind: "conflict", entity: "run_job" } };
         }
         return safeError("Failed to create run job");
+      }
+    },
+
+    async createRunJobsBulk(
+      orgId: Uuid,
+      projectId: Uuid,
+      runId: Uuid,
+      jobs: RunJobSeed[],
+    ): Promise<StateResult<number>> {
+      if (jobs.length === 0) return { ok: true, value: 0 };
+      try {
+        // One statement for the whole DAG. The jobs travel as ONE jsonb param
+        // (::text::jsonb for the same driver reason as createRunJob) and unpack
+        // via jsonb_to_recordset; ON CONFLICT DO NOTHING makes it idempotent
+        // under replays and the create/heal race — re-inserting an existing
+        // (run_id, job_id) is a no-op, never an error.
+        const result = await executor.execute(
+          `INSERT INTO state.run_jobs
+             (id, org_id, project_id, run_id, job_id, component, deps, status,
+              attempt, created_at, updated_at)
+           SELECT gen_random_uuid(), $1, $2, $3, j.job_id, j.component,
+                  COALESCE(j.deps, '[]'::jsonb), 'queued', 1, now(), now()
+             FROM jsonb_to_recordset($4::text::jsonb)
+                    AS j(job_id TEXT, component TEXT, deps JSONB)
+           ON CONFLICT (run_id, job_id) DO NOTHING
+           RETURNING job_id`,
+          [
+            orgId,
+            projectId,
+            runId,
+            JSON.stringify(
+              jobs.map((j) => ({
+                job_id: j.jobId,
+                component: j.component ?? null,
+                deps: j.deps ?? [],
+              })),
+            ),
+          ],
+        );
+        return { ok: true, value: result.rows.length };
+      } catch {
+        return safeError("Failed to seed run jobs");
       }
     },
 
@@ -1138,6 +1208,236 @@ export function createStateRepository(executor: SqlExecutor): StateRepository {
         return { ok: true, value: result.rows.map(mapRepoFacet) };
       } catch {
         return safeError("Failed to list repo facets");
+      }
+    },
+
+    async upsertCatalogDoc(input: UpsertCatalogDocInput): Promise<StateResult<CatalogDoc>> {
+      try {
+        const result = await executor.execute<Record<string, unknown>>(
+          `INSERT INTO state.catalog_docs
+             (id, org_id, source_project_id, source_environment, entity_ref,
+              entity_kind, entity_name, doc_key, title, role, path, commit_sha,
+              digest, size_bytes, position, head_digest, synced_at, created_at)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, now(), now())
+           ON CONFLICT (org_id, source_project_id, COALESCE(source_environment, ''), entity_ref, doc_key)
+             DO UPDATE SET
+               entity_kind = EXCLUDED.entity_kind,
+               entity_name = EXCLUDED.entity_name,
+               title = EXCLUDED.title,
+               role = EXCLUDED.role,
+               path = EXCLUDED.path,
+               commit_sha = EXCLUDED.commit_sha,
+               digest = EXCLUDED.digest,
+               size_bytes = EXCLUDED.size_bytes,
+               position = EXCLUDED.position,
+               head_digest = EXCLUDED.head_digest,
+               synced_at = now()
+           RETURNING *`,
+          [
+            input.id,
+            input.orgId,
+            input.sourceProjectId,
+            input.sourceEnvironment ?? null,
+            input.entityRef,
+            input.entityKind,
+            input.entityName,
+            input.docKey,
+            input.title,
+            input.role,
+            input.path,
+            input.commitSha ?? null,
+            input.digest,
+            input.sizeBytes ?? null,
+            input.position,
+            input.headDigest,
+          ],
+        );
+        return { ok: true, value: mapCatalogDoc(result.rows[0]!) };
+      } catch {
+        return safeError("Failed to upsert catalog doc");
+      }
+    },
+
+    async deleteCatalogDocsForScope(
+      orgId: Uuid,
+      sourceProjectId: Uuid,
+      sourceEnvironment: string | null,
+    ): Promise<StateResult<number>> {
+      try {
+        const result = await executor.execute(
+          `DELETE FROM state.catalog_docs
+            WHERE org_id = $1 AND source_project_id = $2
+              AND COALESCE(source_environment, '') = COALESCE($3, '')`,
+          [orgId, sourceProjectId, sourceEnvironment],
+        );
+        return { ok: true, value: result.rowCount ?? 0 };
+      } catch {
+        return safeError("Failed to delete catalog docs for scope");
+      }
+    },
+
+    async listCatalogDocs(
+      orgId: Uuid,
+      params: PageQueryParams,
+      query?: ListCatalogDocsQuery,
+    ): Promise<StateResult<PagedResult<CatalogDoc>>> {
+      const values: unknown[] = [orgId];
+      let sql = `SELECT * FROM state.catalog_docs WHERE org_id = $1`;
+      if (query?.sourceProjectId) {
+        values.push(query.sourceProjectId);
+        sql += ` AND source_project_id = $${values.length}`;
+      }
+      if (query?.sourceEnvironment !== undefined) {
+        if (query.sourceEnvironment === null) {
+          sql += ` AND source_environment IS NULL`;
+        } else {
+          values.push(query.sourceEnvironment);
+          sql += ` AND source_environment = $${values.length}`;
+        }
+      }
+      if (query?.entityKind) {
+        values.push(query.entityKind);
+        sql += ` AND entity_kind = $${values.length}`;
+      }
+      if (query?.entityRef) {
+        values.push(query.entityRef);
+        sql += ` AND entity_ref = $${values.length}`;
+      }
+      if (query?.role) {
+        values.push(query.role);
+        sql += ` AND role = $${values.length}`;
+      }
+      if (query?.q) {
+        values.push(`%${query.q}%`);
+        sql += ` AND (title ILIKE $${values.length} OR path ILIKE $${values.length} OR entity_name ILIKE $${values.length})`;
+      }
+      return pagedList(executor, sql, values, params.limit, params.cursor, mapCatalogDoc);
+    },
+
+    async findCatalogDocProject(orgId: Uuid, digest: string): Promise<StateResult<Uuid | null>> {
+      try {
+        // The digest must be referenced by this org's catalog read model —
+        // that IS the authorization (a user who can read the catalog can read
+        // the docs it points at) and yields the object's project scope. The
+        // catalog_docs index (CD3) is the first, exact-match leg: every
+        // attached doc (overview + pages) has a row there; the doc_ref legs
+        // remain for read models projected before the doc index existed.
+        //
+        // Match on doc_ref cast to text with a substring on the (globally unique,
+        // `sha256:`-prefixed) digest, NOT `doc_ref->>'digest'`: doc_ref is written
+        // by upsertRepoFacet/upsertOrgCatalogEntity as a bare JSON.stringify param
+        // into a jsonb column, so the pg driver stores it as a jsonb *string value*
+        // (double-encoded) and `->>'digest'` yields NULL (see the `::text::jsonb`
+        // note on the run-jobs deps insert). The text match is encoding-agnostic —
+        // it works whether doc_ref is a proper object or a string scalar, so no
+        // re-projection is needed. `$2` carries the `sha256:` prefix, so it can
+        // never collide with the sibling `sha` (bare-hex) field.
+        const result = await executor.execute<Record<string, unknown>>(
+          `SELECT source_project_id FROM state.catalog_docs
+             WHERE org_id = $1 AND digest = $2
+           UNION
+           SELECT source_project_id FROM state.repo_facet
+             WHERE org_id = $1 AND doc_ref::text LIKE '%' || $2 || '%'
+           UNION
+           SELECT source_project_id FROM state.org_catalog_entities
+             WHERE org_id = $1 AND doc_ref::text LIKE '%' || $2 || '%'
+           LIMIT 1`,
+          [orgId, digest],
+        );
+        if (result.rowCount === 0) return { ok: true, value: null };
+        return { ok: true, value: result.rows[0]!.source_project_id as Uuid };
+      } catch {
+        return safeError("Failed to resolve catalog doc project");
+      }
+    },
+
+    async recordCatalogProjectionSuccess(
+      orgId: Uuid,
+      projectId: Uuid,
+      environment: string | null,
+      digest: string,
+    ): Promise<StateResult<void>> {
+      try {
+        await executor.execute(
+          `INSERT INTO state.catalog_projection
+             (org_id, project_id, environment, projected_digest, projected_at, attempts, last_error, updated_at)
+           VALUES ($1, $2, $3, $4, now(), 0, NULL, now())
+           ON CONFLICT (org_id, project_id, COALESCE(environment, ''))
+             DO UPDATE SET projected_digest = EXCLUDED.projected_digest,
+                           projected_at = now(), attempts = 0, last_error = NULL, updated_at = now()`,
+          [orgId, projectId, environment, digest],
+        );
+        return { ok: true, value: undefined };
+      } catch {
+        return safeError("Failed to record catalog projection success");
+      }
+    },
+
+    async recordCatalogProjectionFailure(
+      orgId: Uuid,
+      projectId: Uuid,
+      environment: string | null,
+      error: string,
+    ): Promise<StateResult<void>> {
+      try {
+        // Keep the last good projected_digest so the sweep keeps the scope pending
+        // and retries; just bump the counter and record why.
+        await executor.execute(
+          `INSERT INTO state.catalog_projection
+             (org_id, project_id, environment, projected_digest, attempts, last_error, updated_at)
+           VALUES ($1, $2, $3, NULL, 1, $4, now())
+           ON CONFLICT (org_id, project_id, COALESCE(environment, ''))
+             DO UPDATE SET attempts = state.catalog_projection.attempts + 1,
+                           last_error = EXCLUDED.last_error, updated_at = now()`,
+          [orgId, projectId, environment, error.slice(0, 2000)],
+        );
+        return { ok: true, value: undefined };
+      } catch {
+        return safeError("Failed to record catalog projection failure");
+      }
+    },
+
+    async listPendingCatalogProjections(
+      limit: number,
+      maxAttempts: number,
+    ): Promise<StateResult<PendingCatalogProjection[]>> {
+      try {
+        // Drive from catalog_heads (the authoritative desired head, latest per
+        // scope) LEFT JOIN the outbox. A scope is pending when its read model has
+        // not caught up to its current head — including scopes with no outbox row
+        // yet (projected_digest IS NULL), so a head that advanced before the
+        // outbox existed self-heals on the first pass. Poison scopes are parked
+        // after maxAttempts consecutive failures (still visible via last_error).
+        const result = await executor.execute<Record<string, unknown>>(
+          `WITH latest AS (
+             SELECT DISTINCT ON (org_id, project_id, COALESCE(environment, ''))
+                    org_id, project_id, environment, digest, commit, advanced_at
+               FROM state.catalog_heads
+              ORDER BY org_id, project_id, COALESCE(environment, ''), advanced_at DESC
+           )
+           SELECT l.org_id, l.project_id, l.environment, l.digest, l.commit
+             FROM latest l
+             LEFT JOIN state.catalog_projection p
+               ON p.org_id = l.org_id AND p.project_id = l.project_id
+              AND COALESCE(p.environment, '') = COALESCE(l.environment, '')
+            WHERE p.projected_digest IS DISTINCT FROM l.digest
+              AND COALESCE(p.attempts, 0) < $1
+            ORDER BY l.advanced_at ASC
+            LIMIT $2`,
+          [maxAttempts, limit],
+        );
+        return {
+          ok: true,
+          value: result.rows.map((r) => ({
+            orgId: r.org_id as string,
+            projectId: r.project_id as string,
+            environment: (r.environment as string | null) ?? null,
+            digest: r.digest as string,
+            commit: (r.commit as string | null) ?? null,
+          })),
+        };
+      } catch {
+        return safeError("Failed to list pending catalog projections");
       }
     },
 

@@ -5,20 +5,19 @@
 // from the state store: the org-global runs projection merged across every
 // project (newest first, keyset "Load more").
 //
-// Redesigned to the visual contract
-// (`specs/epics/saas-catalog-portal/design/Service_Catalog.dc.html` → Activity):
-//   • a Live header, a five-up summary strip (runs today + sparkline, success
-//     rate, running now, failed, p50 duration),
-//   • status FACET pills with live counts (client-side over the loaded feed),
-//   • repo + environment selects (server-side facets that meaningfully narrow),
-//   • an "In progress" band of live run cards with progress bars, and
-//   • a rich runs table (run · repo · trigger · env · jobs · duration · created)
+// Northwind design (scratchpad design/activities.html):
+//   • serif PageHeader with a right-aligned HeaderStat strip (runs · 7d,
+//     % succeeded, running now) computed over the loaded feed,
+//   • a ChipRow of status facets with tone dots + counts, a divider, then the
+//     My-teams toggle and the Repo / Env selectors as chips,
+//   • an "In progress" band of live run cards with segmented progress bars, and
+//   • an "Earlier" white table card (dot · run · sha · actor · duration · when)
 //     drilling into the shared run detail route.
 //
 // Honest by construction: every value is derived from the run projection. The
-// summary/facets/sparkline are computed over the rows currently loaded; "Load
-// more" extends the feed. A slow auto-refresh keeps live runs current without
-// disturbing a reader who has paged further down.
+// header stats and facet counts are computed over the rows currently loaded;
+// "Load older runs" extends the feed. A slow auto-refresh keeps live runs
+// current without disturbing a reader who has paged further down.
 
 import * as React from "react";
 import type { Run, RunStatus, StateCursor } from "@saas/contracts/state";
@@ -26,6 +25,15 @@ import { Card, CardHeader, CardTitle, CardDescription } from "@/components/ui/ca
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import {
+  Chip,
+  ChipDivider,
+  ChipRow,
+  HeaderStat,
+  Kicker,
+  PageHeader,
+  Screen,
+} from "@/components/ui/northwind";
 import { wrap } from "@/lib/api";
 import { useSession } from "@/lib/session";
 import { useApiQuery, qk } from "@/lib/query";
@@ -39,9 +47,8 @@ import {
   splitRuns,
   type RunRow,
 } from "@/lib/runs-portal/model";
-import { RunsSummary } from "./runs-summary";
 import { StatusFacets } from "./status-facets";
-import { LiveRuns, RunsTable, RunCards } from "./run-rows";
+import { LiveRuns, RunsTable } from "./run-rows";
 
 // `env` selection sentinels: ALL = no env filter; DEFAULT = resolve to the
 // highest-tier env once the first page reveals which environments exist.
@@ -52,6 +59,12 @@ const ENV_DEFAULT = "__default__";
 const LIVE_REFRESH_MS = 20_000;
 /** Tick the relative-time clock this often (running durations, "5m ago"). */
 const CLOCK_TICK_MS = 5_000;
+
+const DAY_MS = 86_400_000;
+
+/** Select trigger restyled as a Northwind filter chip ("Repo: all ▾"). */
+const SELECT_CHIP =
+  "h-auto w-auto shrink-0 gap-1.5 whitespace-nowrap rounded-full border-border bg-card px-[13px] py-[5px] text-[12.5px] text-muted-foreground transition-colors hover:border-foreground/25 hover:text-foreground focus:ring-0 focus:ring-offset-0 [&>svg]:h-3.5 [&>svg]:w-3.5";
 
 function union(prev: readonly string[], next: readonly string[]): string[] {
   const set = new Set(prev);
@@ -200,6 +213,7 @@ export function ActivityWorkbench({ orgId, orgSlug }: { orgId: string; orgSlug: 
     [runs, projectLabelOf, now],
   );
   const summary = React.useMemo(() => summarize(rows, runs, now), [rows, runs, now]);
+  const runs7d = React.useMemo(() => rows.filter((r) => r.createdMs >= now - 7 * DAY_MS).length, [rows, now]);
   const facets = React.useMemo(() => buildFacets(rows, statusFacet), [rows, statusFacet]);
   const visibleRows = React.useMemo(() => {
     const faceted = applyFacet(rows, statusFacet);
@@ -229,6 +243,7 @@ export function ActivityWorkbench({ orgId, orgSlug }: { orgId: string; orgSlug: 
   // The env filter is still resolving its default until it leaves the sentinel.
   const resolving = env === ENV_DEFAULT;
   const showSkeleton = projects.loading || loading || resolving;
+  const ready = !showSkeleton && !projects.error && !error;
 
   const hrefOf = React.useCallback(
     (r: RunRow): string | null => {
@@ -241,54 +256,42 @@ export function ActivityWorkbench({ orgId, orgSlug }: { orgId: string; orgSlug: 
   const envChoices = React.useMemo(() => [...envOptions].sort((a, b) => a.localeCompare(b)), [envOptions]);
 
   return (
-    <div className="flex flex-col gap-[18px]">
-      {/* title + live indicator */}
-      <div className="flex items-end justify-between gap-4">
-        <div className="min-w-0">
-          <div className="mb-1.5 font-mono text-[11px] uppercase tracking-[0.14em] text-primary">Runs</div>
-          <h1 className="m-0 text-[22px] font-semibold tracking-[-0.01em] text-foreground">Activity</h1>
-          <p className="mt-[5px] max-w-[620px] text-[13px] text-muted-foreground">
-            Run activity across the workspace, newest first — merged from the state store over every repo.
-          </p>
-        </div>
-        <span
-          className="hidden h-[26px] shrink-0 items-center gap-[7px] rounded-[7px] border px-[10px] sm:flex"
-          style={{ borderColor: "hsl(var(--success) / 0.25)", background: "hsl(var(--success) / 0.07)" }}
-        >
-          <span className="h-[6px] w-[6px] animate-pulse rounded-full" style={{ background: "hsl(var(--success))" }} />
-          <span className="text-[11.5px]" style={{ color: "hsl(var(--success))" }}>
-            Live
-          </span>
-          <span className="font-mono text-[11px] text-muted-foreground/70">auto-refresh</span>
-        </span>
-      </div>
+    <Screen>
+      <PageHeader
+        title="Activities"
+        description="Every plan and deploy across the workspace — newest first."
+        actions={
+          ready ? (
+            <div className="flex gap-6">
+              <HeaderStat value={runs7d} caption="runs · 7d" />
+              <HeaderStat value={`${summary.rate}%`} caption="succeeded" tone="success" />
+              <HeaderStat value={summary.running} caption="running" {...(summary.running > 0 ? { tone: "info" as const } : {})} />
+            </div>
+          ) : undefined
+        }
+      />
 
       {showSkeleton ? (
-        <SummarySkeleton />
+        <FeedSkeleton />
       ) : projects.error ? (
         <ErrorCard code={projects.error.code} message={projects.error.message} />
       ) : error ? (
         <ErrorCard code={error.code} message={error.message} />
       ) : (
         <>
-          <RunsSummary summary={summary} />
-
-          {/* filter bar */}
-          <div className="flex flex-wrap items-center gap-[9px]">
+          {/* filter chips */}
+          <ChipRow className="mt-[26px]">
             <StatusFacets facets={facets} onSelect={setStatusFacet} />
-            <span className="mx-1 h-[22px] w-px bg-border" aria-hidden="true" />
+            <ChipDivider />
             {/* teams-ownership TO3 — My teams' activity (owned services' projects). */}
-            <button
-              type="button"
-              onClick={() => setMine((v) => !v)}
-              aria-pressed={mine}
-              className={`h-8 rounded-md border px-2.5 text-xs outline-none ${mine ? "border-primary bg-primary/10 text-foreground" : "border-border bg-card text-muted-foreground hover:text-foreground"}`}
-            >
+            <Chip active={mine} aria-pressed={mine} onClick={() => setMine((v) => !v)}>
               My teams
-            </button>
+            </Chip>
             <Select value={repo} onValueChange={setRepo}>
-              <SelectTrigger className="h-8 w-[180px] text-xs" aria-label="Repo">
-                <SelectValue placeholder="Repo" />
+              <SelectTrigger className={SELECT_CHIP} aria-label="Repo">
+                <SelectValue placeholder="Repo: all">
+                  {repo === "all" ? "Repo: all" : `Repo: ${projectLabelOf(repo)}`}
+                </SelectValue>
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All repos</SelectItem>
@@ -306,8 +309,10 @@ export function ActivityWorkbench({ orgId, orgSlug }: { orgId: string; orgSlug: 
                 setEnv(v);
               }}
             >
-              <SelectTrigger className="h-8 w-[180px] text-xs" aria-label="Environment">
-                <SelectValue placeholder="Environment" />
+              <SelectTrigger className={SELECT_CHIP} aria-label="Environment">
+                <SelectValue placeholder="Env: all">
+                  {resolving || env === ENV_ALL ? "Env: all" : `Env: ${env}`}
+                </SelectValue>
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value={ENV_ALL}>All environments</SelectItem>
@@ -322,80 +327,74 @@ export function ActivityWorkbench({ orgId, orgSlug }: { orgId: string; orgSlug: 
               <button
                 type="button"
                 onClick={clearAll}
-                className="cursor-pointer border-none bg-transparent text-[12px] text-muted-foreground underline underline-offset-2"
+                className="shrink-0 cursor-pointer border-none bg-transparent text-xs text-muted-foreground underline underline-offset-2 transition-colors hover:text-foreground"
               >
                 Reset
               </button>
             ) : null}
-            <span className="ml-auto font-mono text-[11.5px] text-muted-foreground/70">{visibleRows.length} runs</span>
-          </div>
+            <span className="ml-auto hidden shrink-0 text-xs text-muted-foreground/85 sm:inline">
+              {visibleRows.length} runs
+            </span>
+          </ChipRow>
 
-          {/* in-progress live runs (desktop band) */}
-          <div className="hidden md:block">
-            <LiveRuns rows={live} hrefOf={hrefOf} />
-          </div>
+          {/* in-progress live runs */}
+          <LiveRuns rows={live} hrefOf={hrefOf} />
 
-          {/* empty / table */}
+          {/* empty / earlier table */}
           {visibleRows.length === 0 ? (
-            <div className="rounded-[13px] border border-border bg-card px-5 py-[52px] text-center">
+            <div className="mt-[26px] rounded-xl border bg-card px-5 py-[52px] text-center">
               <div className="text-[13.5px] text-foreground/80">No runs match the current selection.</div>
-              <div className="mt-1 text-[12px] text-muted-foreground/70">
+              <div className="mt-1 text-[12.5px] text-muted-foreground/70">
                 Widen the repo, environment, or status filter.
               </div>
             </div>
-          ) : (
+          ) : done.length > 0 ? (
             <>
-              {/* desktop: done runs table */}
-              <div className="hidden md:block">
-                {done.length > 0 ? <RunsTable rows={done} hrefOf={hrefOf} /> : null}
-              </div>
-              {/* mobile: all rows (live first) as stacked cards */}
-              <div className="md:hidden">
-                <RunCards rows={visibleRows} hrefOf={hrefOf} />
-              </div>
+              <Kicker className="mb-[9px] mt-[26px]">Earlier</Kicker>
+              <RunsTable rows={done} hrefOf={hrefOf} />
             </>
-          )}
+          ) : null}
 
-          {/* load more */}
+          {/* load older */}
           {cursor !== null ? (
-            <div className="flex justify-center pt-1">
+            <div className="mt-4 flex justify-center">
               <Button type="button" variant="outline" onClick={() => void loadMore()} loading={loadingMore}>
-                Load more
+                Load older runs
               </Button>
             </div>
           ) : visibleRows.length > 0 ? (
-            <p className="pt-1 text-center text-[11px] text-muted-foreground/70">
+            <p className="mt-4 text-center text-[11px] text-muted-foreground/70">
               End of the activity feed for this selection.
             </p>
           ) : null}
         </>
       )}
-    </div>
+    </Screen>
   );
 }
 
-function SummarySkeleton() {
+function FeedSkeleton() {
   return (
-    <div className="flex flex-col gap-[18px]">
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+    <div className="mt-[26px] flex flex-col gap-[22px]">
+      <div className="flex gap-[7px]">
         {Array.from({ length: 5 }).map((_, i) => (
-          <Skeleton key={i} className="h-[72px] w-full rounded-xl" />
+          <Skeleton key={i} className="h-[29px] w-24 rounded-full" />
         ))}
       </div>
-      <Card>
-        <div className="space-y-2 p-4">
+      <div className="overflow-hidden rounded-xl border bg-card p-4">
+        <div className="space-y-2.5">
           {Array.from({ length: 8 }).map((_, i) => (
             <Skeleton key={i} className="h-9 w-full" />
           ))}
         </div>
-      </Card>
+      </div>
     </div>
   );
 }
 
 function ErrorCard({ code, message }: { code: string; message: string }) {
   return (
-    <Card>
+    <Card className="mt-[26px]">
       <CardHeader>
         <CardTitle className="text-destructive">{code}</CardTitle>
         <CardDescription>{message}</CardDescription>

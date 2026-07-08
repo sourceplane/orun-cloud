@@ -3,7 +3,7 @@
 Status: Draft. Milestones are PR-sized coherent units with one primary outcome
 each; the spine is strictly ordered, the tails are detachable.
 
-## ES0 — Foundation (dormant) — 🗓️ Planned
+## ES0 — Foundation (dormant) — ✅ Shipped (#325)
 
 - `packages/contracts/src/event-catalog.ts`: `CatalogEntry`, `EventCategory`,
   `EventSeverity`, `EVENT_CATALOG` covering every currently-emitted type
@@ -13,7 +13,7 @@ each; the spine is strictly ordered, the tails are detachable.
 - CI guard in `tests/contracts`: every event type literal passed to
   `appendEvent`/`appendEventWithAudit` across the workspace is registered in
   the catalog; unregistered types fail the build.
-- Migration `470_event_streams_foundation` (schema `events`, manifest entry,
+- Migration `580_event_streams_foundation` (schema `events`, manifest entry,
   checksum): `subscriber_lanes`, `lane_cursors`, `dead_letters`,
   `notification_rules`, `rule_targets`, `event_groups`, `event_group_members`
   per design §§4–5, §7 — tables only, nothing reads them yet.
@@ -34,7 +34,7 @@ the catalog CI guard passes with every existing emitter registered;
 notifications-worker test suite; no runtime behavior changes anywhere else
 (webhooks fan-out and audit reads byte-identical).
 
-## ES1 — The router: shared lanes + dead letters — 🗓️ Planned
+## ES1 — The router: shared lanes + dead letters — ✅ Shipped (#331)
 
 - events-worker gains `scheduled()` (cron `* * * * *`, matching the shipped
   drains) + the lane dispatcher: per active lane × org, batch-read past the
@@ -45,7 +45,7 @@ notifications-worker test suite; no runtime behavior changes anywhere else
   `'notifications'` (handler lands in ES2; registered paused).
 - webhooks-worker cutover to `events.lane_cursors`: backfill from
   `webhooks.webhook_dispatch_cursor` in one migration
-  (`490_webhooks_lane_adoption`), read/write the shared table, drop the old
+  (`590_webhooks_lane_adoption`), read/write the shared table, drop the old
   one after a verified soak — zero lost or duplicated deliveries (R6 protocol:
   copy → dual-read assert → cutover → drop).
 - Dead-letter lifecycle: `event.delivery_failed`, `dead_letter.created`,
@@ -61,7 +61,7 @@ cutover-soak assertion; a lane handler that throws on one event dead-letters
 that event, advances past it, and the replay route re-processes it
 successfully; pausing a lane halts its dispatch within one cron tick.
 
-## ES2 — Notification rules — 🗓️ Planned
+## ES2 — Notification rules — ✅ Shipped (#334)
 
 - Rules/targets CRUD on events-worker + api-edge facade:
   `GET/POST /v1/organizations/{orgId}/notification-rules`,
@@ -73,10 +73,14 @@ successfully; pausing a lane halts its dispatch within one cron tick.
   `min_severity` (catalog ladder) → org/project scope → conjunctive attribute
   filters (`eq|neq|in`), cheapest-first; per-rule throttle windows enforced via
   a small `rule_throttle_state` upsert.
-- Targets V1: `email` (address) and `webhook_endpoint` (existing B5 endpoint —
-  the rule enqueues a delivery attempt through the shipped webhooks machinery
-  rather than a second HTTP path). `slack_channel` kind is schema-live but
-  rejected until ES3.
+- Targets V1: `email` (address), delivered through B2. **Amended at
+  implementation:** `webhook_endpoint` moves to ES3 with the channel seam —
+  B5's `webhook_delivery_attempts` carries a NOT NULL `subscription_id`, a
+  `(subscription_id, event_id, attempt_number)` uniqueness, and replay
+  semantics keyed on the subscription; reusing it for subscription-less rule
+  deliveries would invade the shipped delivery plane (see
+  IMPLEMENTATION-STATUS 2026-07-04). Both `slack_channel` and
+  `webhook_endpoint` kinds are schema-live but rejected at CRUD until ES3.
 - Enqueue path: one notification per surviving `(rule, target)` via
   `packages/notifications-client` with deterministic
   `idempotencyKey = hash(ruleId, targetId, eventId)` — cron overlap cannot
@@ -90,9 +94,9 @@ and an email target delivers exactly one email per matching event on stage
 are covered by worker tests; a throttled rule provably caps at
 `throttle_max` per window; the entitlement gate 412s beyond the plan limit.
 
-## ES3 — Channels: provider seam + Slack — 🗓️ Planned
+## ES3 — Channels: provider seam + Slack — In review
 
-- Migration `480_notification_channels`: `notification_channels` table +
+- Migration `610_notification_channels`: `notification_channels` table +
   channel CHECK lift (`'email'` → `'email','slack'`) across the four
   notification tables (design §6).
 - `ChannelProvider` seam in `apps/notifications-worker/src/channels/`

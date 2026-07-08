@@ -4,9 +4,10 @@ import * as React from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { OrgScope } from "@/components/shell/org-scope";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
+import { InteractiveCard } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
+import { SettingsHeader, SettingsPanel, PanelTitle } from "@/components/settings/settings-primitives";
+import { Kicker, Pill } from "@/components/ui/northwind";
 import { wrap } from "@/lib/api";
 import { useSession } from "@/lib/session";
 import { useApiQuery, qk } from "@/lib/query";
@@ -18,19 +19,17 @@ export default function AccountOverviewPage() {
   return <OrgScope slug={slug}>{(org) => <Inner org={org} slug={slug} />}</OrgScope>;
 }
 
-function StatCard({ label, value, href, loading }: { label: string; value: number | undefined; href: string; loading: boolean }) {
+function StatTile({ label, value, href, loading }: { label: string; value: number | undefined; href: string; loading: boolean }) {
   return (
     <Link href={href} className="block">
-      <Card className="transition-colors hover:bg-accent/50">
-        <CardHeader className="pb-2">
-          <CardDescription>{label}</CardDescription>
-          {loading ? (
-            <Skeleton className="h-8 w-12" />
-          ) : (
-            <CardTitle className="text-2xl tabular-nums">{value ?? "—"}</CardTitle>
-          )}
-        </CardHeader>
-      </Card>
+      <InteractiveCard className="px-[22px] py-5">
+        <Kicker>{label}</Kicker>
+        {loading ? (
+          <Skeleton className="mt-3 h-[34px] w-12" />
+        ) : (
+          <div className="mt-3 font-serif text-[34px] font-medium leading-none tabular-nums">{value ?? "—"}</div>
+        )}
+      </InteractiveCard>
     </Link>
   );
 }
@@ -55,38 +54,36 @@ function Inner({ org, slug }: { org: PublicOrganization; slug: string }) {
   const isRoot = org.kind === "account" || org.isAccountRoot === true;
 
   return (
-    <div className="space-y-5">
-      <header>
-        <div className="flex items-center gap-2">
-          <h1 className="text-xl font-semibold tracking-tight">Account</h1>
-          {org.accountId ? (
-            <Badge variant="outline" className="font-mono text-xs">{org.accountId}</Badge>
-          ) : null}
-        </div>
-        <p className="text-sm text-muted-foreground">
-          {isRoot
+    <div className="space-y-[18px]">
+      <SettingsHeader
+        title="Account"
+        description={
+          isRoot
             ? "This workspace is the account root. Everything here spans every workspace under it."
-            : "The account this workspace belongs to. Everything here spans every workspace under it."}
-        </p>
-      </header>
+            : "The account this workspace belongs to. Everything here spans every workspace under it."
+        }
+        actions={
+          org.accountId ? (
+            <Pill tone="neutral" className="font-mono">{org.accountId}</Pill>
+          ) : undefined
+        }
+      />
 
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <StatCard label="Workspaces" value={workspaces.data?.length} href={`${base}/account/workspaces`} loading={workspaces.loading} />
-        <StatCard label="Account members" value={members.data?.length} href={`${base}/account/members`} loading={members.loading} />
-        <StatCard label="Account roles" value={roles.data?.length} href={`${base}/account/roles`} loading={roles.loading} />
-        <StatCard label="Teams" value={teams.data?.length} href={`${base}/teams`} loading={teams.loading} />
+        <StatTile label="Workspaces" value={workspaces.data?.length} href={`${base}/account/workspaces`} loading={workspaces.loading} />
+        <StatTile label="Account members" value={members.data?.length} href={`${base}/account/members`} loading={members.loading} />
+        <StatTile label="Account roles" value={roles.data?.length} href={`${base}/account/roles`} loading={roles.loading} />
+        <StatTile label="Teams" value={teams.data?.length} href={`/orgs/${slug}/teams`} loading={teams.loading} />
       </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">How the account works</CardTitle>
-          <CardDescription>
-            The account is a surface over your workspace set, not another tenancy level. Teams are owned by
-            the account and can be granted roles on any workspace; account roles cascade to every workspace,
-            current and future. Grants and revocations are audited.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="text-sm text-muted-foreground space-y-1">
+      <SettingsPanel>
+        <PanelTitle>How the account works</PanelTitle>
+        <p className="mt-1.5 text-[12.5px] leading-normal text-muted-foreground">
+          The account is a surface over your workspace set, not another tenancy level. Teams are owned by
+          the account and can be granted roles on any workspace; account roles cascade to every workspace,
+          current and future. Grants and revocations are audited.
+        </p>
+        <div className="mt-3.5 space-y-1 text-[12.5px] leading-normal text-muted-foreground">
           <p>
             <span className="font-medium text-foreground">Workspaces</span> — every workspace under this
             account, with a jump-off to each.
@@ -99,8 +96,8 @@ function Inner({ org, slug }: { org: PublicOrganization; slug: string }) {
             <span className="font-medium text-foreground">Account roles</span> — account-wide authority
             (owner, admin, billing admin) — granted here, revoked here.
           </p>
-        </CardContent>
-      </Card>
+        </div>
+      </SettingsPanel>
     </div>
   );
 }

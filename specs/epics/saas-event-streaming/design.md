@@ -119,7 +119,7 @@ because the contract is "cursor over an ordered log," it is *also* the
 extraction seam spec 09 promised — a lane maps 1:1 onto a Kafka consumer group
 or a Queues consumer if D2 ever flips.
 
-Data model — migration `470_event_streams_foundation`, schema `events` (every
+Data model — migration `580_event_streams_foundation`, schema `events` (every
 table `org_id UUID NOT NULL` where tenant-scoped, keyset-paginated
 `(org_id, created_at DESC, id DESC)`, public IDs via the standard
 `prefix_<32hex>` encoding):
@@ -191,7 +191,7 @@ often." Rules are data, owned by the `events` schema, evaluated inside the
 Spec 14 shipped email with the type deliberately widened for future channels
 but the DB CHECKs hard-locked to `'email'`. ES3 does the lift:
 
-- Migration `480_notification_channels`: `CHECK (channel IN ('email','slack'))`
+- Migration `590_notification_channels`: `CHECK (channel IN ('email','slack'))`
   across the four notification tables, plus
   `notifications.notification_channels` — `id (chan_…)`, `org_id`, `kind`
   (`'slack_incoming_webhook'` first), `name`, `config_ciphertext` (AES-GCM via
@@ -248,7 +248,7 @@ lane *before* notification evaluation:
   fields (the envelope has carried them since migration 030) get storytelling
   for free.
 
-Data model (in `470_…`, activated by ES4):
+Data model (in `580_…`, activated by ES4):
 
 - `events.event_groups` — `id (grp_…)`, `org_id`, `group_key` (rendered dedup
   key), `status (open|closed)`, `first_event_id`, `last_event_id`,

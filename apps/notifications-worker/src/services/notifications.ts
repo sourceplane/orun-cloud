@@ -8,6 +8,7 @@ import type {
 } from "@saas/contracts/notifications";
 import { NOTIFICATION_EVENT_TYPES } from "@saas/contracts/notifications";
 import type {
+  NotificationChannelsRepository,
   NotificationsRepository,
   StoredNotification,
   StoredNotificationAttempt,
@@ -15,6 +16,7 @@ import type {
 import type { Env } from "../env.js";
 import { notificationPublicId, parseNotificationPublicId, parseOrgIdInput } from "../ids.js";
 import { emitEvent } from "../events-client.js";
+import { deliverAttempt } from "./dispatch.js";
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const ALLOWED_CATEGORIES = new Set(["invitation", "billing", "security", "support", "product"]);
@@ -50,11 +52,18 @@ export function validateEnqueueRequest(body: unknown): ValidatedEnqueue {
   if (!recipient || typeof recipient !== "object") {
     errors.recipient = ["Required"];
   } else {
-    if (recipient.channel !== "email") {
-      errors["recipient.channel"] = ['Only "email" is supported in V1'];
-    }
-    if (typeof recipient.address !== "string" || !EMAIL_RE.test(recipient.address)) {
-      errors["recipient.address"] = ["Must be a valid email address"];
+    // ES3: email (address = email) or slack (address = chan_<hex> channel id).
+    if (recipient.channel !== "email" && recipient.channel !== "slack") {
+      errors["recipient.channel"] = ['Must be "email" or "slack"'];
+    } else if (recipient.channel === "email") {
+      if (typeof recipient.address !== "string" || !EMAIL_RE.test(recipient.address)) {
+        errors["recipient.address"] = ["Must be a valid email address"];
+      }
+    } else {
+      // slack: address is the configured channel's public id.
+      if (typeof recipient.address !== "string" || !/^chan_[0-9a-f]{32}$/.test(recipient.address)) {
+        errors["recipient.address"] = ["Must be a notification channel id (chan_...)"];
+      }
     }
     if (recipient.subjectKind !== undefined && recipient.subjectKind !== "user" && recipient.subjectKind !== "organization") {
       errors["recipient.subjectKind"] = ['Must be "user" or "organization"'];
@@ -107,7 +116,7 @@ export function toDeliveryStatus(
     templateKey: n.templateKey,
     status: n.status as NotificationDeliveryStatus["status"],
     recipient: {
-      channel: n.channel as "email",
+      channel: n.channel as NotificationDeliveryStatus["recipient"]["channel"],
       address: n.recipientAddress,
     },
     providerMessageId: n.providerMessageId,
@@ -133,6 +142,10 @@ export interface NotificationsServiceDeps {
   actorType: string;
   actorId: string;
   requestId: string;
+  /** ES3: channel config store for slack delivery (undefined ⇒ slack disabled). */
+  channelsRepo?: NotificationChannelsRepository | undefined;
+  /** ES3: injectable fetch for the slack provider (tests). */
+  fetchImpl?: typeof fetch | undefined;
 }
 
 export interface EnqueueOutcome {
@@ -291,54 +304,29 @@ export async function enqueueNotification(
     occurredAt: now,
   });
 
-  // Synchronous send via provider.
-  const sendResult = await provider.send({
-    notificationId: notification.id,
-    orgId: notification.orgId,
-    category: notification.category as EnqueueNotificationRequest["category"],
-    templateKey: notification.templateKey,
-    templateData: (notification.templateData as Record<string, string | number | boolean | null>) ?? {},
-    recipient: {
-      channel: notification.channel as "email",
-      address: notification.recipientAddress,
-      ...(notification.recipientSubjectKind && notification.recipientSubjectId
-        ? {
-            subjectKind: notification.recipientSubjectKind as "user" | "organization",
-            subjectId: notification.recipientSubjectId,
-          }
-        : {}),
+  // Attempt 1 (synchronous fast path). Channel-aware provider resolution +
+  // retry scheduling live in the shared dispatch layer (ES3); a transient
+  // failure schedules next_retry_at for the async cron to pick up.
+  const deliver = await deliverAttempt(
+    {
+      repo,
+      emailProvider: provider,
+      channelsRepo: deps.channelsRepo,
+      encryptionKey: deps.env.SECRET_ENCRYPTION_KEY,
+      consoleBaseUrl: deps.env.CONSOLE_BASE_URL,
+      ...(deps.fetchImpl ? { fetchImpl: deps.fetchImpl } : {}),
     },
-  });
+    notification,
+    orgUuid,
+    1,
+    now,
+    genUuid,
+  );
 
-  // Record attempt + update status.
-  const attemptId = genUuid();
-  await repo.recordAttempt({
-    id: attemptId,
-    notificationId: notification.id,
-    orgId: notification.orgId,
-    attemptNumber: 1,
-    status: sendResult.ok ? "sent" : "failed",
-    providerMessageId: sendResult.ok ? sendResult.providerMessageId : sendResult.providerMessageId,
-    errorReason: sendResult.ok ? null : sendResult.errorReason,
-    attemptedAt: now,
-  });
-
-  const finalStatus = sendResult.ok ? "sent" : "failed";
-  const updated = await repo.markNotificationStatus({
-    id: notification.id,
-    orgId: notification.orgId,
-    status: finalStatus,
-    providerMessageId: sendResult.ok ? sendResult.providerMessageId : sendResult.providerMessageId,
-    lastError: sendResult.ok ? null : sendResult.errorReason,
-    sentAt: sendResult.ok ? now : null,
-    failedAt: sendResult.ok ? null : now,
-    updatedAt: now,
-  });
-
-  const finalRow = updated.ok ? updated.value : notification;
+  const finalRow = deliver.row;
 
   await emit(deps.env, {
-    type: sendResult.ok ? NOTIFICATION_EVENT_TYPES.SENT : NOTIFICATION_EVENT_TYPES.FAILED,
+    type: deliver.ok ? NOTIFICATION_EVENT_TYPES.SENT : NOTIFICATION_EVENT_TYPES.FAILED,
     notificationId: notificationPublicId(finalRow.id),
     orgId: finalRow.orgId,
     subjectKind: "notification",
@@ -348,16 +336,16 @@ export async function enqueueNotification(
     requestId: deps.requestId,
     correlationId: request.correlationId ?? null,
     category: "notifications",
-    description: sendResult.ok
-      ? `Notification ${notificationPublicId(finalRow.id)} sent via ${provider.name}`
-      : `Notification ${notificationPublicId(finalRow.id)} failed via ${provider.name}`,
+    description: deliver.ok
+      ? `Notification ${notificationPublicId(finalRow.id)} sent via ${deliver.providerName}`
+      : `Notification ${notificationPublicId(finalRow.id)} failed via ${deliver.providerName}`,
     payload: {
       orgId: finalRow.orgId,
       category: finalRow.category,
       templateKey: finalRow.templateKey,
       recipient: { channel: finalRow.channel, address: finalRow.recipientAddress },
-      providerName: provider.name,
-      ...(sendResult.ok ? {} : { errorReason: sendResult.errorReason }),
+      providerName: deliver.providerName,
+      ...(deliver.ok ? {} : { errorReason: deliver.errorReason, willRetry: !deliver.terminal }),
     },
     occurredAt: now,
   });

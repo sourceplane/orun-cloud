@@ -1,10 +1,8 @@
 "use client";
 
 import * as React from "react";
-import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import {
-  ChevronLeft,
   RefreshCcw,
   Webhook as WebhookIcon,
   Pencil,
@@ -26,6 +24,11 @@ import {
   TableHead,
   TableCell,
 } from "@/components/ui/table";
+import {
+  SettingsPanel,
+  PanelTitle,
+} from "@/components/settings/settings-primitives";
+import { Breadcrumbs, AttentionBanner } from "@/components/ui/northwind";
 import { useSession } from "@/lib/session";
 import { useAsync } from "@/lib/use-async";
 import { useApiQuery, qk } from "@/lib/query";
@@ -121,78 +124,70 @@ function Inner({
   const isDisabled = endpoint.status === "disabled";
 
   return (
-    <div className="space-y-5">
-      <div>
-        <Link
-          href={`/orgs/${orgSlug}/settings/webhooks`}
-          className="inline-flex items-center text-xs text-muted-foreground hover:text-foreground"
-        >
-          <ChevronLeft className="h-3 w-3 mr-0.5" />
-          Webhooks
-        </Link>
-      </div>
+    <div>
+      <Breadcrumbs
+        items={[
+          { label: "Webhooks", href: `/orgs/${orgSlug}/settings/webhooks` },
+          { label, mono: !endpoint.name },
+        ]}
+      />
 
-      <header className="flex items-start justify-between gap-4">
-        <div className="space-y-1 min-w-0">
-          <h1 className="text-xl font-semibold tracking-tight truncate">
+      <header className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+        <div className="min-w-0 space-y-1">
+          <h1 className="truncate text-[15px] font-semibold leading-tight">
             {endpoint.name ?? "Webhook endpoint"}
           </h1>
-          <p className="text-xs text-muted-foreground font-mono break-all">
+          <p className="break-all font-mono text-xs text-muted-foreground">
             {endpoint.url}
           </p>
         </div>
-        <div className="shrink-0 flex items-center gap-2 flex-wrap justify-end">
+        <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
           <Button variant="outline" onClick={() => setEditOpen(true)}>
-            <Pencil className="h-4 w-4 mr-1.5" />
+            <Pencil className="mr-1.5 h-4 w-4" strokeWidth={1.8} />
             Edit
           </Button>
           {!isDisabled && (
             <Button variant="outline" onClick={() => setDisableOpen(true)}>
-              <ShieldOff className="h-4 w-4 mr-1.5" />
+              <ShieldOff className="mr-1.5 h-4 w-4" strokeWidth={1.8} />
               Disable
             </Button>
           )}
           {isDisabled && (
             <Button variant="outline" onClick={() => setEnableOpen(true)}>
-              <ShieldCheck className="h-4 w-4 mr-1.5" />
+              <ShieldCheck className="mr-1.5 h-4 w-4" strokeWidth={1.8} />
               Re-enable endpoint
             </Button>
           )}
           <Button variant="outline" onClick={() => setRotateOpen(true)}>
-            <RefreshCcw className="h-4 w-4 mr-1.5" />
+            <RefreshCcw className="mr-1.5 h-4 w-4" strokeWidth={1.8} />
             Rotate secret
           </Button>
           <Button variant="destructive" onClick={() => setDeleteOpen(true)}>
-            <Trash2 className="h-4 w-4 mr-1.5" />
+            <Trash2 className="mr-1.5 h-4 w-4" strokeWidth={1.8} />
             Delete
           </Button>
         </div>
       </header>
 
       {isDisabled && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-sm">This endpoint is disabled</CardTitle>
-            <CardDescription>
-              No deliveries are being attempted. Use{" "}
-              <span className="font-medium">Re-enable endpoint</span> above
-              to resume delivery on the next matching event — the signing
-              secret is preserved.
-            </CardDescription>
-          </CardHeader>
-        </Card>
+        <div className="mt-[18px]">
+          <AttentionBanner tone="warning">
+            <span className="font-medium">This endpoint is disabled.</span> No
+            deliveries are being attempted. Use{" "}
+            <span className="font-medium">Re-enable endpoint</span> above to
+            resume delivery on the next matching event — the signing secret is
+            preserved.
+          </AttentionBanner>
+        </div>
       )}
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-sm">Endpoint metadata</CardTitle>
-          <CardDescription>
-            Read-only fields. The signing secret is never displayed here — it is
-            shown exactly once at rotation time.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <dl className="grid sm:grid-cols-2 gap-x-6 gap-y-3 text-xs">
+      <SettingsPanel className="mt-[18px]">
+        <PanelTitle>Endpoint metadata</PanelTitle>
+        <p className="mt-1.5 text-[12.5px] leading-normal text-muted-foreground">
+          Read-only fields. The signing secret is never displayed here — it is
+          shown exactly once at rotation time.
+        </p>
+        <dl className="mt-4 grid gap-x-6 gap-y-3 text-xs sm:grid-cols-2">
             <Field label="ID" value={<span className="font-mono">{endpoint.id}</span>} />
             <Field
               label="Status"
@@ -234,10 +229,11 @@ function Inner({
               />
             )}
           </dl>
-        </CardContent>
-      </Card>
+      </SettingsPanel>
 
-      <DeliveryHistoryPanel orgId={orgId} endpointId={endpoint.id} />
+      <div className="mt-3.5">
+        <DeliveryHistoryPanel orgId={orgId} endpointId={endpoint.id} />
+      </div>
 
       <RotateSecretDialog
         orgId={orgId}
@@ -374,16 +370,14 @@ function DeliveryHistoryPanel({
   );
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="text-sm">Delivery history</CardTitle>
-        <CardDescription>
-          Recent delivery attempts for this endpoint, newest first. Failure
-          summaries are safe — no raw response bodies or event payloads are
-          shown.
-        </CardDescription>
-      </CardHeader>
-      <CardContent>
+    <SettingsPanel>
+      <PanelTitle>Delivery history</PanelTitle>
+      <p className="mt-1.5 text-[12.5px] leading-normal text-muted-foreground">
+        Recent delivery attempts for this endpoint, newest first. Failure
+        summaries are safe — no raw response bodies or event payloads are
+        shown.
+      </p>
+      <div className="mt-4">
         {initial.loading ? (
           <div className="space-y-2">
             <Skeleton className="h-9 w-full" />
@@ -472,8 +466,8 @@ function DeliveryHistoryPanel({
             )}
           </div>
         )}
-      </CardContent>
-    </Card>
+      </div>
+    </SettingsPanel>
   );
 }
 

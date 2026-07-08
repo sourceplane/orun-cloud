@@ -36,11 +36,27 @@ import {
 import {
   handleAdvanceCatalogHead,
   handleGetCatalogHead,
+  handleReprojectCatalogHead,
   handleCatalogHeadHistory,
   handleListCatalogEntities,
   handleListOrgCatalogEntities,
 } from "./handlers/catalog.js";
-import { handleListOrgRepoFacets, handleGetOrgRepoFacet } from "./handlers/repo-facets.js";
+import {
+  handleListOrgRepoFacets,
+  handleGetOrgRepoFacet,
+  handleGetOrgCatalogDoc,
+  handleListOrgCatalogDocs,
+} from "./handlers/repo-facets.js";
+import {
+  handleCreateWorkSpec,
+  handleCreateWorkTask,
+  handleListWorkEvents,
+  handleStreamWorkEvents,
+  handleIngestWorkObservation,
+  handleWorkImport,
+  handleWorkSummary,
+  handleWorkTaskAction,
+} from "./handlers/work.js";
 import { handleGetOrgStateStorage } from "./handlers/state-usage.js";
 import { handleGetStateGcReport } from "./handlers/gc-report.js";
 import { handleCollectStateGc } from "./handlers/gc-collect.js";
@@ -138,6 +154,7 @@ const OBJECT_UPLOAD_COMPLETE_RE = new RegExp(
   `^${STATE_BASE}/objects/(sha256:[0-9a-f]{64})/uploads/([^/]+)/complete$`,
 );
 const CATALOG_HEAD_RE = new RegExp(`^${STATE_BASE}/catalog/head$`);
+const CATALOG_REPROJECT_RE = new RegExp(`^${STATE_BASE}/catalog/reproject$`);
 const CATALOG_HEADS_HISTORY_RE = new RegExp(`^${STATE_BASE}/catalog/heads/history$`);
 const CATALOG_ENTITIES_RE = new RegExp(`^${STATE_BASE}/catalog/entities$`);
 // OV9 — object GC reachability report (report-only; no deletion).
@@ -149,12 +166,29 @@ const ORG_CATALOG_ENTITIES_RE = /^\/v1\/organizations\/([^/]+)\/catalog\/entitie
 // WO5 — repo self-description read model (org-scoped list + per-project get).
 const ORG_REPO_FACETS_RE = /^\/v1\/organizations\/([^/]+)\/repo-facets$/;
 const ORG_REPO_FACET_RE = /^\/v1\/organizations\/([^/]+)\/repo-facets\/([^/]+)$/;
+// WO5 — console-facing overview doc read (org catalog-scoped, deframed; digest as
+// a query param so its `sha256:` colon decodes normally).
+const ORG_CATALOG_DOC_RE = /^\/v1\/organizations\/([^/]+)\/catalog\/doc$/;
+// CD3 — the org-wide catalog doc index (the Docs hub browse). Disjoint from the
+// singular /catalog/doc body read above.
+const ORG_CATALOG_DOCS_RE = /^\/v1\/organizations\/([^/]+)\/catalog\/docs$/;
 // OV9 — org state-plane storage footprint (no project scope): the STOCK gauge.
 const ORG_STATE_USAGE_RE = /^\/v1\/organizations\/([^/]+)\/state\/usage$/;
 // Org-global runs feed (no project scope): the console "Activities" surface, the
 // merged run history across every project. Distinct from the project-scoped
 // /projects/{id}/state/runs below (no project segment ⇒ disjoint paths).
 const ORG_RUNS_RE = /^\/v1\/organizations\/([^/]+)\/state\/runs$/;
+
+// orun-work v2 (WP1) — the work lens: fold query API + coordination mutators.
+// Workspace-scoped (no project segment); lifecycle is derived on every read.
+const ORG_WORK_RE = /^\/v1\/organizations\/([^/]+)\/work$/;
+const ORG_WORK_EVENTS_RE = /^\/v1\/organizations\/([^/]+)\/work\/events$/;
+const ORG_WORK_EVENTS_STREAM_RE = /^\/v1\/organizations\/([^/]+)\/work\/events\/stream$/;
+const ORG_WORK_SPECS_RE = /^\/v1\/organizations\/([^/]+)\/work\/specs$/;
+const ORG_WORK_TASKS_RE = /^\/v1\/organizations\/([^/]+)\/work\/tasks$/;
+const ORG_WORK_TASK_ACTION_RE = /^\/v1\/organizations\/([^/]+)\/work\/tasks\/([^/]+)\/(comment|assign|pin|cancel|contract)$/;
+const ORG_WORK_IMPORT_RE = /^\/v1\/organizations\/([^/]+)\/work\/import$/;
+const ORG_WORK_OBSERVATIONS_RE = /^\/v1\/organizations\/([^/]+)\/work\/observations$/;
 
 // OV1 — hosted RefStore (design-v2 §2). Ref names carry slashes
 // (catalogs/current, executions/by-id/<id>), so the name is a greedy tail.
@@ -259,6 +293,21 @@ export async function route(request: Request, env: Env, ctx?: ExecutionContext):
     if (request.method !== "GET") return methodNotAllowed(requestId);
     return handleListOrgRepoFacets(request, env, requestId, actor, orgId);
   }
+  m = pathname.match(ORG_CATALOG_DOC_RE);
+  if (m) {
+    const orgId = parseOrgPublicId(m[1]!);
+    if (!orgId) return notFound(requestId, pathname);
+    if (request.method !== "GET") return methodNotAllowed(requestId);
+    return handleGetOrgCatalogDoc(request, env, requestId, actor, orgId);
+  }
+  // GET /v1/organizations/{orgId}/catalog/docs — the org doc index (CD3).
+  m = pathname.match(ORG_CATALOG_DOCS_RE);
+  if (m) {
+    const orgId = parseOrgPublicId(m[1]!);
+    if (!orgId) return notFound(requestId, pathname);
+    if (request.method !== "GET") return methodNotAllowed(requestId);
+    return handleListOrgCatalogDocs(request, env, requestId, actor, orgId);
+  }
 
   // GET /v1/organizations/{orgId}/state/usage — org state-plane storage footprint
   // (OV9). Org-scoped (no project); dispatched here at the top level BEFORE the
@@ -280,6 +329,76 @@ export async function route(request: Request, env: Env, ctx?: ExecutionContext):
     if (!orgId) return notFound(requestId, pathname);
     if (request.method !== "GET") return methodNotAllowed(requestId);
     return handleListOrgRuns(request, env, requestId, actor, orgId);
+  }
+
+  // ── orun-work v2 (WP1) — the work lens. ──
+  m = pathname.match(ORG_WORK_RE);
+  if (m) {
+    const orgId = parseOrgPublicId(m[1]!);
+    if (!orgId) return notFound(requestId, pathname);
+    if (request.method !== "GET") return methodNotAllowed(requestId);
+    return handleWorkSummary(request, env, requestId, actor, orgId);
+  }
+
+  // Match the stream route before the plain events route (same prefix).
+  m = pathname.match(ORG_WORK_EVENTS_STREAM_RE);
+  if (m) {
+    const orgId = parseOrgPublicId(m[1]!);
+    if (!orgId) return notFound(requestId, pathname);
+    if (request.method !== "GET") return methodNotAllowed(requestId);
+    return handleStreamWorkEvents(request, env, requestId, actor, orgId);
+  }
+
+  m = pathname.match(ORG_WORK_EVENTS_RE);
+  if (m) {
+    const orgId = parseOrgPublicId(m[1]!);
+    if (!orgId) return notFound(requestId, pathname);
+    if (request.method !== "GET") return methodNotAllowed(requestId);
+    return handleListWorkEvents(request, env, requestId, actor, orgId);
+  }
+
+  m = pathname.match(ORG_WORK_SPECS_RE);
+  if (m) {
+    const orgId = parseOrgPublicId(m[1]!);
+    if (!orgId) return notFound(requestId, pathname);
+    if (request.method !== "POST") return methodNotAllowed(requestId);
+    return handleCreateWorkSpec(request, env, requestId, actor, orgId);
+  }
+
+  m = pathname.match(ORG_WORK_TASKS_RE);
+  if (m) {
+    const orgId = parseOrgPublicId(m[1]!);
+    if (!orgId) return notFound(requestId, pathname);
+    if (request.method !== "POST") return methodNotAllowed(requestId);
+    return handleCreateWorkTask(request, env, requestId, actor, orgId);
+  }
+
+  m = pathname.match(ORG_WORK_TASK_ACTION_RE);
+  if (m) {
+    const orgId = parseOrgPublicId(m[1]!);
+    if (!orgId) return notFound(requestId, pathname);
+    if (request.method !== "POST") return methodNotAllowed(requestId);
+    return handleWorkTaskAction(
+      request, env, requestId, actor, orgId,
+      decodeURIComponent(m[2]!),
+      m[3]! as "comment" | "assign" | "pin" | "cancel" | "contract",
+    );
+  }
+
+  m = pathname.match(ORG_WORK_OBSERVATIONS_RE);
+  if (m) {
+    const orgId = parseOrgPublicId(m[1]!);
+    if (!orgId) return notFound(requestId, pathname);
+    if (request.method !== "POST") return methodNotAllowed(requestId);
+    return handleIngestWorkObservation(request, env, requestId, actor, orgId);
+  }
+
+  m = pathname.match(ORG_WORK_IMPORT_RE);
+  if (m) {
+    const orgId = parseOrgPublicId(m[1]!);
+    if (!orgId) return notFound(requestId, pathname);
+    if (request.method !== "POST") return methodNotAllowed(requestId);
+    return handleWorkImport(request, env, requestId, actor, orgId);
   }
 
   // ── OP2 — Run coordination plane (§2). ──
@@ -524,6 +643,15 @@ async function routeObjectAndCatalog(
       return handleGetCatalogHead(request, env, requestId, actor, scope.orgId, scope.projectId);
     }
     return methodNotAllowed(requestId);
+  }
+
+  // POST …/state/catalog/reproject — force re-projection of the current head.
+  m = pathname.match(CATALOG_REPROJECT_RE);
+  if (m) {
+    const scope = parseScope(m[1]!, m[2]!);
+    if (!scope) return notFound(requestId, pathname);
+    if (request.method !== "POST") return methodNotAllowed(requestId);
+    return handleReprojectCatalogHead(request, env, requestId, actor, scope.orgId, scope.projectId);
   }
 
   // GET …/state/catalog/heads/history?cursor= — advance history.

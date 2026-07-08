@@ -15,7 +15,7 @@ export type BadgeVariant = "default" | "secondary" | "destructive" | "warning" |
 
 /** Canonical catalog kinds, in display casing. `Repo` is the declared
  *  self-description kind (saas-workspace-overview WO3/WO4). */
-const KINDS = ["Component", "API", "Resource", "System", "Domain", "Group", "Repo"];
+export const KINDS = ["Component", "API", "Resource", "System", "Domain", "Group", "Repo"];
 
 /** One neutral avatar tint for every kind — differentiation is by icon alone. */
 const NEUTRAL_AVATAR = "bg-muted text-muted-foreground";

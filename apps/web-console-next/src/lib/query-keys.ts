@@ -29,6 +29,14 @@ export const qk = {
   webhookEndpoint: (orgId: string, endpointId: string) =>
     ["webhookEndpoint", orgId, endpointId] as const,
   notificationPrefs: (orgId: string) => ["notificationPrefs", orgId] as const,
+  // saas-event-streaming ES6 — console surfaces for the event bus.
+  events: (orgId: string, filterKey: string) => ["events", orgId, filterKey] as const,
+  event: (orgId: string, eventId: string) => ["event", orgId, eventId] as const,
+  eventGroups: (orgId: string, status: string) => ["eventGroups", orgId, status] as const,
+  eventGroup: (orgId: string, groupId: string) => ["eventGroup", orgId, groupId] as const,
+  notificationRules: (orgId: string) => ["notificationRules", orgId] as const,
+  notificationChannels: (orgId: string) => ["notificationChannels", orgId] as const,
+  deadLetters: (orgId: string, status: string) => ["deadLetters", orgId, status] as const,
   integrations: (orgId: string) => ["integrations", orgId] as const,
   connectionGrants: (orgId: string, connectionId: string) =>
     ["connectionGrants", orgId, connectionId] as const,
@@ -43,10 +51,17 @@ export const qk = {
   configSecrets: (scopeKey: string) => ["configSecrets", scopeKey] as const,
   orgCatalog: (orgId: string) => ["orgCatalog", orgId] as const,
   orgRuns: (orgId: string) => ["orgRuns", orgId] as const,
+  orgWork: (orgId: string) => ["orgWork", orgId] as const,
   accountRuns: (orgId: string) => ["accountRuns", orgId] as const,
   repoFacets: (orgId: string) => ["repoFacets", orgId] as const,
   docObject: (orgId: string, projectId: string, digest: string) =>
     ["docObject", orgId, projectId, digest] as const,
+  /** The whole org doc index (the Docs hub library, saas-catalog-docs CD5). */
+  orgDocs: (orgId: string) => ["orgDocs", orgId] as const,
+  /** One entity's doc set from the org doc index (saas-catalog-docs CD4). */
+  entityDocs: (orgId: string, entityRef: string) => ["entityDocs", orgId, entityRef] as const,
+  /** A doc body by content digest (immutable — cached indefinitely). */
+  docBody: (orgId: string, digest: string) => ["docBody", orgId, digest] as const,
   catalogEntity: (orgId: string, entityKey: string) => ["catalogEntity", orgId, entityKey] as const,
   run: (orgId: string, projectId: string, runId: string) => ["run", orgId, projectId, runId] as const,
   runJobs: (orgId: string, projectId: string, runId: string) => ["runJobs", orgId, projectId, runId] as const,

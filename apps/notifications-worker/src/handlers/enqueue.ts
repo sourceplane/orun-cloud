@@ -1,7 +1,7 @@
 import type { Env } from "../env.js";
 import type { InternalActor } from "../router.js";
 import { createSqlExecutor } from "@saas/db/hyperdrive";
-import { createNotificationsRepository } from "@saas/db/notifications";
+import { createNotificationsRepository, createNotificationChannelsRepository } from "@saas/db/notifications";
 import { successResponse, errorResponse, validationError } from "../http.js";
 import { resolveProvider } from "../providers/index.js";
 import { enqueueNotification, validateEnqueueRequest } from "../services/notifications.js";
@@ -39,6 +39,10 @@ export async function handleEnqueueNotification(
   try {
     const repo = deps?.service?.repo ?? createNotificationsRepository(executor!);
     const provider = deps?.service?.provider ?? resolveProvider(env);
+    // Slack channel resolution needs the channel store; only available with a
+    // real DB (tests inject via deps.service.channelsRepo).
+    const channelsRepo =
+      deps?.service?.channelsRepo ?? (executor ? createNotificationChannelsRepository(executor) : undefined);
 
     const result = await enqueueNotification(
       {
@@ -51,6 +55,8 @@ export async function handleEnqueueNotification(
         now: deps?.service?.now,
         generateUuid: deps?.service?.generateUuid,
         emit: deps?.service?.emit,
+        channelsRepo,
+        fetchImpl: deps?.service?.fetchImpl,
       },
       validated.value!,
     );

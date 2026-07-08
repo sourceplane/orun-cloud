@@ -25,10 +25,17 @@
 /**
  * Notification channels that may carry a transactional notification.
  *
- * V1 ships with email only; the type is widened here so future channels
- * (sms, push, in-app) can be added without breaking the contract.
+ * V1 shipped email only; saas-event-streaming ES3 adds `slack` (delivered via
+ * a configured incoming-webhook channel). Further channels (sms, push,
+ * in-app) can be added without breaking the contract.
  */
-export type NotificationChannel = "email";
+export type NotificationChannel = "email" | "slack";
+
+/**
+ * Configured delivery-channel kinds (ES3). A channel row holds an encrypted
+ * bearer credential; `slack_incoming_webhook` is the first kind.
+ */
+export type NotificationChannelKind = "slack_incoming_webhook";
 
 /**
  * High-level routing category. Used for preferences and audit categorisation.
@@ -325,3 +332,198 @@ export const NOTIFICATION_EVENT_TYPES = {
 
 export type NotificationEventType =
   (typeof NOTIFICATION_EVENT_TYPES)[keyof typeof NOTIFICATION_EVENT_TYPES];
+
+// ---------------------------------------------------------------------------
+// Notification rules (saas-event-streaming ES2) — served by events-worker,
+// forwarded through the api-edge notification-rules facade.
+// ---------------------------------------------------------------------------
+
+/** Rule lifecycle. A disabled rule matches nothing until re-enabled. */
+export type NotificationRuleStatus = "enabled" | "disabled";
+
+/** Delivery target kind attached to a rule. */
+export type NotificationRuleTargetKind = "email" | "slack_channel";
+
+/** Comparison operator for a rule attribute filter. */
+export type NotificationRuleFilterOp = "eq" | "neq" | "in";
+
+/**
+ * A payload-attribute predicate (`{path, op, value}`). `path` is a dotted
+ * payload path; `value` is a scalar (or an array of scalars for `in`).
+ */
+export interface NotificationRuleAttributeFilter {
+  path: string;
+  op: NotificationRuleFilterOp;
+  value: unknown;
+}
+
+/** A single delivery target as seen at the API boundary (`toPublicTarget`). */
+export interface PublicNotificationRuleTarget {
+  id: string;
+  kind: string;
+  ref: string;
+  enabled: boolean;
+  createdAt: string;
+}
+
+/**
+ * A notification rule as seen at the API boundary (`toPublicRule`). Internal
+ * org/project UUIDs are projected to their public forms; `targets` is present
+ * on single-rule reads and on list responses.
+ */
+export interface PublicNotificationRule {
+  id: string;
+  orgId: string;
+  projectId: string | null;
+  name: string;
+  status: NotificationRuleStatus;
+  eventTypes: string[];
+  minSeverity: string;
+  sources: string[] | null;
+  attributeFilters: NotificationRuleAttributeFilter[] | null;
+  throttleWindowSeconds: number;
+  throttleMax: number;
+  createdAt: string;
+  updatedAt: string;
+  targets?: PublicNotificationRuleTarget[];
+}
+
+/** A rule delivery target in a create/update request body. */
+export interface NotificationRuleTargetInput {
+  kind: NotificationRuleTargetKind;
+  ref: string;
+}
+
+/** Request body for POST …/notification-rules. */
+export interface CreateNotificationRuleRequest {
+  name: string;
+  projectId?: string | null;
+  eventTypes: string[];
+  minSeverity?: string;
+  sources?: string[] | null;
+  attributeFilters?: NotificationRuleAttributeFilter[] | null;
+  throttleWindowSeconds?: number;
+  throttleMax?: number;
+  targets?: NotificationRuleTargetInput[];
+}
+
+/** Request body for PATCH …/notification-rules/:ruleId (all fields optional). */
+export interface UpdateNotificationRuleRequest {
+  name?: string;
+  status?: NotificationRuleStatus;
+  projectId?: string | null;
+  eventTypes?: string[];
+  minSeverity?: string;
+  sources?: string[] | null;
+  attributeFilters?: NotificationRuleAttributeFilter[] | null;
+  throttleWindowSeconds?: number;
+  throttleMax?: number;
+}
+
+/** Request body for POST …/notification-rules/:ruleId/test. */
+export interface TestNotificationRuleRequest {
+  type: string;
+  source?: string;
+  severity?: string;
+  projectId?: string;
+  payload?: Record<string, unknown>;
+}
+
+export interface ListNotificationRulesResponse {
+  data: { notificationRules: PublicNotificationRule[] };
+  meta: { requestId: string; cursor: string | null };
+}
+
+export interface GetNotificationRuleResponse {
+  data: { notificationRule: PublicNotificationRule };
+  meta: { requestId: string };
+}
+
+export interface CreateNotificationRuleResponse {
+  data: { notificationRule: PublicNotificationRule };
+  meta: { requestId: string };
+}
+
+export interface UpdateNotificationRuleResponse {
+  data: { notificationRule: PublicNotificationRule };
+  meta: { requestId: string };
+}
+
+export interface DeleteNotificationRuleResponse {
+  data: { deleted: true };
+  meta: { requestId: string };
+}
+
+/** Response for the dry-run test-fire endpoint (never sends anything). */
+export interface TestNotificationRuleResponse {
+  data: {
+    matched: boolean;
+    ruleStatus: NotificationRuleStatus;
+    matchedTargets: PublicNotificationRuleTarget[];
+  };
+  meta: { requestId: string };
+}
+
+// ---------------------------------------------------------------------------
+// Notification channels (saas-event-streaming ES3) — served by
+// notifications-worker, forwarded through the api-edge notification-channels
+// facade. The channel config (Slack webhook URL / ciphertext) is WRITE-ONLY:
+// it is never returned on a read, so the public shapes below deliberately omit
+// it.
+// ---------------------------------------------------------------------------
+
+/**
+ * A configured delivery channel as seen at the API boundary
+ * (`toPublicChannel`). NOTE: no `webhookUrl` / `config_ciphertext` — the
+ * secret is write-only and never echoed back.
+ */
+export interface PublicNotificationChannel {
+  id: string;
+  orgId: string;
+  kind: string;
+  name: string;
+  status: string;
+  lastVerifiedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** Request body for POST …/notification-channels. `webhookUrl` is write-only. */
+export interface CreateNotificationChannelRequest {
+  name: string;
+  kind?: NotificationChannelKind;
+  webhookUrl: string;
+}
+
+/** Request body for PATCH …/notification-channels/:channelId. */
+export interface UpdateNotificationChannelRequest {
+  name?: string;
+  status?: "active" | "disabled";
+  webhookUrl?: string;
+}
+
+export interface ListNotificationChannelsResponse {
+  data: { notificationChannels: PublicNotificationChannel[] };
+  meta: { requestId: string };
+}
+
+export interface CreateNotificationChannelResponse {
+  data: { notificationChannel: PublicNotificationChannel };
+  meta: { requestId: string };
+}
+
+export interface UpdateNotificationChannelResponse {
+  data: { notificationChannel: PublicNotificationChannel };
+  meta: { requestId: string };
+}
+
+export interface DeleteNotificationChannelResponse {
+  data: { deleted: true };
+  meta: { requestId: string };
+}
+
+/** Response for the channel test-send endpoint. */
+export interface TestNotificationChannelResponse {
+  data: { verified: true };
+  meta: { requestId: string };
+}

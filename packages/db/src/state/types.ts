@@ -161,6 +161,13 @@ export interface CreateRunJobInput {
   deps?: string[];
 }
 
+/** One plan-DAG job for the bulk (single-statement) run_jobs insert. */
+export interface RunJobSeed {
+  jobId: string;
+  component?: string | null;
+  deps?: string[];
+}
+
 // ── Objects (CAS index) ─────────────────────────────────────
 
 export type StateObjectKind =
@@ -404,6 +411,69 @@ export interface UpsertRepoFacetInput {
   sourceCommit?: string | null;
 }
 
+/** One row in the org-wide catalog doc index (state.catalog_docs) — one
+ *  attached doc of one entity's doc set (saas-catalog-docs CD3). Identity is
+ *  (entityRef, docKey); digest is the CAS content address the body reads by. */
+export interface CatalogDoc {
+  id: string;
+  orgId: string;
+  sourceProjectId: string;
+  sourceEnvironment: string | null;
+  entityRef: string;
+  entityKind: string;
+  entityName: string;
+  docKey: string;
+  title: string;
+  role: string;
+  path: string;
+  commitSha: string | null;
+  digest: string;
+  sizeBytes: number | null;
+  position: number;
+  headDigest: string;
+  syncedAt: Date;
+  createdAt: Date;
+}
+
+export interface UpsertCatalogDocInput {
+  id: string;
+  orgId: Uuid;
+  sourceProjectId: Uuid;
+  sourceEnvironment?: string | null;
+  entityRef: string;
+  entityKind: string;
+  entityName: string;
+  docKey: string;
+  title: string;
+  role: string;
+  path: string;
+  commitSha?: string | null;
+  digest: string;
+  sizeBytes?: number | null;
+  position: number;
+  headDigest: string;
+}
+
+/** Docs-hub browse filters (all optional). */
+export interface ListCatalogDocsQuery {
+  sourceProjectId?: Uuid;
+  sourceEnvironment?: string | null;
+  entityKind?: string;
+  entityRef?: string;
+  role?: string;
+  q?: string;
+}
+
+/** One scope needing (re)projection: the current head the read model must catch
+ *  up to. Returned by listPendingCatalogProjections (the cron-sweep drive set). */
+export interface PendingCatalogProjection {
+  orgId: string;
+  projectId: string;
+  environment: string | null;
+  digest: string; // the current head digest the read model must reach
+  commit: string | null;
+}
+
 /** Org-global browse filters (all optional; provenance + facets). */
 export interface ListOrgCatalogEntitiesQuery {
   sourceProjectId?: Uuid;
@@ -570,6 +640,19 @@ export interface StateRepository {
 
   // Run jobs
   createRunJob(input: CreateRunJobInput): Promise<StateResult<RunJob>>;
+  /**
+   * Seed the plan DAG in ONE statement (conflict-ignored on (run_id, job_id)).
+   * Returns the number of rows actually inserted. One round-trip regardless of
+   * plan width — a 98-job DAG must not be 98 sequential inserts: that window is
+   * what let a dying createRun leave a partial read model, and per-row healing
+   * under a replay thundering-herd saturates the pool and times clients out.
+   */
+  createRunJobsBulk(
+    orgId: Uuid,
+    projectId: Uuid,
+    runId: Uuid,
+    jobs: RunJobSeed[],
+  ): Promise<StateResult<number>>;
   getRunJob(orgId: Uuid, projectId: Uuid, runId: Uuid, jobId: string): Promise<StateResult<RunJob>>;
   listRunJobs(orgId: Uuid, projectId: Uuid, runId: Uuid): Promise<StateResult<RunJob[]>>;
   /** Frontier: queued jobs whose deps are all terminal-success. */
@@ -672,6 +755,53 @@ export interface StateRepository {
   getRepoFacet(orgId: Uuid, sourceProjectId: Uuid): Promise<StateResult<RepoFacet | null>>;
   /** List every projected repo facet for an org (the Git Repos list). */
   listRepoFacets(orgId: Uuid): Promise<StateResult<RepoFacet[]>>;
+  /** Resolve a doc blob digest to the project that references it in this org's
+   *  catalog read model (repo_facet or org_catalog_entities doc_ref) — both the
+   *  authorization ("is this a catalog doc in my org?") and the object's scope
+   *  for the read. Returns null when the digest is not a catalog doc here. */
+  findCatalogDocProject(orgId: Uuid, digest: string): Promise<StateResult<Uuid | null>>;
+
+  // Catalog doc index (saas-catalog-docs CD3) — one row per attached doc.
+  /** Idempotently project one attached doc of an entity's doc set. */
+  upsertCatalogDoc(input: UpsertCatalogDocInput): Promise<StateResult<CatalogDoc>>;
+  /** Remove a scope's doc rows — the "replace the scope" primitive, run in the
+   *  same projection pass as deleteOrgCatalogEntitiesForScope. */
+  deleteCatalogDocsForScope(
+    orgId: Uuid,
+    sourceProjectId: Uuid,
+    sourceEnvironment: string | null,
+  ): Promise<StateResult<number>>;
+  /** Browse the org-wide doc index (Docs hub / entity Docs tab), keyset-paged. */
+  listCatalogDocs(
+    orgId: Uuid,
+    params: PageQueryParams,
+    query?: ListCatalogDocsQuery,
+  ): Promise<StateResult<PagedResult<CatalogDoc>>>;
+
+  // Catalog-projection outbox (projection reliability) — records which head each
+  // scope's read model has caught up to, so a stuck projection is self-healing.
+  /** Record that a scope's read model was successfully projected at `digest`
+   *  (clears the failure counter). */
+  recordCatalogProjectionSuccess(
+    orgId: Uuid,
+    projectId: Uuid,
+    environment: string | null,
+    digest: string,
+  ): Promise<StateResult<void>>;
+  /** Record a failed projection attempt for a scope (increments attempts, keeps
+   *  the last good projected_digest so the sweep keeps retrying). */
+  recordCatalogProjectionFailure(
+    orgId: Uuid,
+    projectId: Uuid,
+    environment: string | null,
+    error: string,
+  ): Promise<StateResult<void>>;
+  /** The cron-sweep drive set: scopes whose current catalog head has not been
+   *  projected (projected_digest lags the head), capped by attempts and bounded. */
+  listPendingCatalogProjections(
+    limit: number,
+    maxAttempts: number,
+  ): Promise<StateResult<PendingCatalogProjection[]>>;
 
   /**
    * Current state-plane storage footprint for an org (OV9): live object + log

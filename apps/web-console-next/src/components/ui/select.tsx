@@ -16,7 +16,8 @@ export const SelectTrigger = React.forwardRef<
   <SelectPrimitive.Trigger
     ref={ref}
     className={cn(
-      "flex h-9 w-full items-center justify-between gap-2 rounded-md border border-input bg-background px-3 py-2 text-sm",
+      // Northwind input surface: near-white fill, hairline border, 13px text.
+      "flex h-9 w-full items-center justify-between gap-2 rounded-[8px] border border-border bg-[#FCFCFC] px-3 py-2 text-[13px] dark:bg-card",
       "ring-offset-background placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-1",
       "disabled:cursor-not-allowed disabled:opacity-50 [&>span]:line-clamp-1",
       className,
@@ -40,7 +41,8 @@ export const SelectContent = React.forwardRef<
       ref={ref}
       position={position}
       className={cn(
-        "relative z-50 max-h-96 min-w-[8rem] overflow-hidden rounded-md border bg-popover text-popover-foreground shadow-lg",
+        // Northwind popover: white, hairline border, 10px radius, soft shadow.
+        "relative z-50 max-h-96 min-w-[8rem] overflow-hidden rounded-[10px] border bg-popover text-popover-foreground shadow-[0_8px_30px_rgba(0,0,0,0.10)]",
         "data-[state=open]:animate-pop-in data-[state=closed]:animate-pop-out",
         position === "popper" && "data-[side=bottom]:translate-y-1 data-[side=top]:-translate-y-1",
         className,
@@ -72,7 +74,10 @@ export const SelectLabel = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <SelectPrimitive.Label
     ref={ref}
-    className={cn("px-2 py-1.5 text-xs font-medium text-muted-foreground", className)}
+    className={cn(
+      "px-2 pb-1 pt-1.5 text-[10.5px] font-semibold uppercase tracking-[0.09em] text-muted-foreground/85",
+      className,
+    )}
     {...props}
   />
 ));
@@ -85,7 +90,7 @@ export const SelectItem = React.forwardRef<
   <SelectPrimitive.Item
     ref={ref}
     className={cn(
-      "relative flex w-full cursor-default select-none items-center rounded-sm py-1.5 pl-8 pr-2 text-sm outline-none",
+      "relative flex w-full cursor-default select-none items-center rounded-[7px] py-1.5 pl-8 pr-2 text-[13px] outline-none",
       "focus:bg-accent focus:text-accent-foreground data-[disabled]:pointer-events-none data-[disabled]:opacity-50",
       className,
     )}

@@ -64,7 +64,17 @@ export function buildNavSections(scope: NavScope): NavSection[] {
         // rail's home row — first, above Catalog.
         { href: orgBase, label: "Overview", icon: "LayoutDashboard" },
         { href: `${orgBase}/catalog`, label: "Catalog", icon: "Boxes" },
+        // Docs — the org-wide catalog doc library (saas-catalog-docs CD5):
+        // git-authored entity docs, browsed by kind/role, rendered by digest.
+        { href: `${orgBase}/docs`, label: "Docs", icon: "BookOpen" },
         { href: `${orgBase}/activities`, label: "Activities", icon: "Activity" },
+        // Events — the raw event-bus explorer (saas-event-streaming ES6):
+        // faceted stream + correlation stories, a Datadog-style events surface.
+        { href: `${orgBase}/events`, label: "Events", icon: "Radio" },
+        { href: `${orgBase}/work`, label: "Work", icon: "ListChecks" },
+        // Teams — the human-scale organizing primitive, promoted out of Settings
+        // to a first-class product surface (à la Datadog Teams).
+        { href: `${orgBase}/teams`, label: "Teams", icon: "UsersRound" },
         { href: `${orgBase}/projects`, label: "Git Repos", icon: "FolderKanban" },
         // Integrations is a first-class connections hub (GitHub today; Supabase,
         // Cloudflare, Slack on the roadmap), promoted out of Settings.

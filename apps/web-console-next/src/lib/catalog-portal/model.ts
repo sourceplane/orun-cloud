@@ -69,6 +69,9 @@ export interface CatalogService {
   lastDeployHours?: number | null;
   onCall?: string | null;
   hasRunbook?: boolean | null;
+  /** Whether the entity has ANY attached git-authored doc (from the org doc
+   *  index, saas-catalog-docs); null/undefined = index not loaded. */
+  hasDocs?: boolean | null;
   testsPassing?: boolean | null;
   criticalVulns?: number | null;
 }
@@ -271,7 +274,7 @@ export const CHECKS: Array<{ id: string; label: string }> = [
   { id: "pipeline", label: "Deploys via pipeline" },
 ];
 
-export type CheckStatus = "pass" | "warn" | "fail";
+export type CheckStatus = "pass" | "warn" | "fail" | "unknown";
 export interface CheckResult {
   id: string;
   label: string;
@@ -283,8 +286,12 @@ export interface CheckResult {
 /**
  * Evaluate the eight readiness checks against the signals we actually have.
  * A check is `fail` only when a hard signal is provably absent (no owner, no
- * docs), `pass` when a real positive signal exists, and `warn` ("unknown")
- * when the signal is not yet wired — never a false `pass`.
+ * docs), `pass` when a real positive signal exists, `warn` when a wired
+ * signal is in a degraded-but-known state, and `unknown` when the signal has
+ * no source at all — never a false `pass`, and (scorecard v2) never a score
+ * penalty for a signal nobody can produce yet: `unknown` checks are excluded
+ * from the score denominator, and Gold additionally requires ≥5 known checks
+ * (the coverage floor) so a two-signal entity can't coast to the top tier.
  */
 export function computeChecks(s: CatalogService): CheckResult[] {
   return CHECKS.map(({ id, label }) => {
@@ -319,23 +326,32 @@ function checkStatus(id: string, s: CatalogService): CheckStatus {
       if (s.ownerState === undefined) return s.owner ? "pass" : "fail";
       return s.ownerState === "owned" ? "pass" : "fail";
     case "docs":
+      // Real git-authored docs (the org doc index) win; a declared description
+      // still counts as the minimum bar; both provably absent → fail.
+      if (s.hasDocs === true) return "pass";
       return s.description && s.description.trim() ? "pass" : "fail";
     case "oncall":
-      return s.onCall ? "pass" : "warn";
+      // No on-call source is wired yet — unknown, never a score penalty.
+      return s.onCall ? "pass" : "unknown";
     case "slo":
-      if (s.slo == null || s.sloTarget == null) return "warn";
+      if (s.slo == null || s.sloTarget == null) return "unknown";
       return s.slo >= s.sloTarget ? "pass" : "fail";
     case "runbook":
-      return s.hasRunbook == null ? "warn" : s.hasRunbook ? "pass" : "fail";
+      // Wired from the org doc index (saas-catalog-docs): a runbook-role doc
+      // attached in git. false = docs are indexed and none is a runbook.
+      return s.hasRunbook == null ? "unknown" : s.hasRunbook ? "pass" : "fail";
     case "tests":
-      return s.testsPassing == null ? "warn" : s.testsPassing ? "pass" : "fail";
+      // Wired from the runs feed: the project's latest terminal orun run.
+      return s.testsPassing == null ? "unknown" : s.testsPassing ? "pass" : "fail";
     case "vulns":
-      return s.criticalVulns == null ? "warn" : s.criticalVulns === 0 ? "pass" : "fail";
+      return s.criticalVulns == null ? "unknown" : s.criticalVulns === 0 ? "pass" : "fail";
     case "pipeline":
-      if (s.deploysPerWeek == null) return "warn";
+      // Wired from the runs feed: deploys happen via orun runs. A known
+      // pipeline with zero recent runs is a real warn, not unknown.
+      if (s.deploysPerWeek == null) return "unknown";
       return s.deploysPerWeek > 0 ? "pass" : "warn";
     default:
-      return "warn";
+      return "unknown";
   }
 }
 
@@ -344,28 +360,49 @@ function checkStatus(id: string, s: CatalogService): CheckStatus {
 // service's own immutable fields, so memoize per service object (PERF C3):
 // `toServices` produces stable objects, so the cache survives filter / sort /
 // selection / typing re-renders and the scorecard is computed once per entity.
-const scoreCache = new WeakMap<CatalogService, number | null>();
+export interface Scorecard {
+  /** 0–100 over the KNOWN checks only, or null (resource / nothing known). */
+  score: number | null;
+  /** How many of the eight checks had a real signal (the coverage). */
+  known: number;
+}
 
-/** 0–100 readiness score, or null for resources (which are not scored). */
-export function scoreOf(s: CatalogService): number | null {
-  const cached = scoreCache.get(s);
+const scorecardCache = new WeakMap<CatalogService, Scorecard>();
+
+/** The unknown-aware scorecard (v2): score over known checks + coverage. */
+export function scorecardOf(s: CatalogService): Scorecard {
+  const cached = scorecardCache.get(s);
   if (cached !== undefined) return cached;
-  const v = computeScore(s);
-  scoreCache.set(s, v);
+  const v = computeScorecard(s);
+  scorecardCache.set(s, v);
   return v;
 }
 
-function computeScore(s: CatalogService): number | null {
-  if (isResource(s)) return null;
-  const checks = computeChecks(s);
-  const v = checks.reduce((a, c) => a + (c.status === "pass" ? 1 : c.status === "warn" ? 0.5 : 0), 0);
-  return Math.round((v / checks.length) * 100);
+/** 0–100 readiness score, or null for resources (which are not scored). */
+export function scoreOf(s: CatalogService): number | null {
+  return scorecardOf(s).score;
 }
 
-/** Maturity tier from a score (Gold ≥85 · Silver ≥70 · Bronze), or null. */
-export function tierOf(score: number | null): TierKey | null {
+function computeScorecard(s: CatalogService): Scorecard {
+  if (isResource(s)) return { score: null, known: 0 };
+  const checks = computeChecks(s);
+  const known = checks.filter((c) => c.status !== "unknown");
+  if (known.length === 0) return { score: null, known: 0 };
+  const v = known.reduce((a, c) => a + (c.status === "pass" ? 1 : c.status === "warn" ? 0.5 : 0), 0);
+  return { score: Math.round((v / known.length) * 100), known: known.length };
+}
+
+/** Gold requires this many KNOWN checks — the coverage floor that stops a
+ *  two-signal entity from coasting to the top tier on unknowns. */
+export const GOLD_COVERAGE_FLOOR = 5;
+
+/** Maturity tier from a score (Gold ≥85 · Silver ≥70 · Bronze), or null.
+ *  Gold additionally requires the coverage floor; a Gold-score entity below
+ *  it caps at Silver until more signals are wired. */
+export function tierOf(score: number | null, known?: number): TierKey | null {
   if (score == null) return null;
-  return score >= 85 ? "Gold" : score >= 70 ? "Silver" : "Bronze";
+  if (score >= 85) return known === undefined || known >= GOLD_COVERAGE_FLOOR ? "Gold" : "Silver";
+  return score >= 70 ? "Silver" : "Bronze";
 }
 
 /** Non-resource AND (unhealthy OR unowned) — the design's attention rule. */
@@ -373,6 +410,65 @@ export function needsAttention(s: CatalogService): boolean {
   if (isResource(s)) return false;
   const h = healthOf(s);
   return h === "degraded" || h === "down" || !s.owner;
+}
+
+/**
+ * Stamp each service with its doc-index signals (saas-catalog-docs / SC5):
+ * hasDocs (any attached git-authored doc) and hasRunbook (a runbook-role doc).
+ * Only called once the org doc index has loaded, so false is a REAL negative
+ * ("docs are indexed and none is a runbook"), never an unknown.
+ */
+export function annotateDocSignals(
+  services: CatalogService[],
+  docs: Array<{ entityRef: string; role: string }>,
+): CatalogService[] {
+  const byRef = new Map<string, { any: boolean; runbook: boolean }>();
+  for (const d of docs) {
+    const cur = byRef.get(d.entityRef) ?? { any: false, runbook: false };
+    cur.any = true;
+    if (d.role === "runbook") cur.runbook = true;
+    byRef.set(d.entityRef, cur);
+  }
+  return services.map((s) => {
+    const hit = byRef.get(s.entityRef);
+    return { ...s, hasDocs: !!hit, hasRunbook: hit?.runbook ?? false };
+  });
+}
+
+const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
+
+/**
+ * Stamp each service with its runs-feed signals: testsPassing (the source
+ * project's latest terminal orun run succeeded — the platform's own CI verdict)
+ * and deploysPerWeek (that project's runs in the last 7 days — deploys happen
+ * via orun runs, so the pipeline check reads the real pipeline). A project
+ * with no runs at all keeps both signals unknown (never a false negative from
+ * a feed that simply hasn't seen the project).
+ */
+export function annotateRunSignals(
+  services: CatalogService[],
+  runs: Array<{ projectId: string; status: string; createdAt: string }>,
+  nowMs: number,
+): CatalogService[] {
+  const byProject = new Map<string, { latestTerminal: string | null; lastWeek: number }>();
+  for (const r of runs) {
+    const cur = byProject.get(r.projectId) ?? { latestTerminal: null, lastWeek: 0 };
+    // The feed arrives newest-first; keep the first terminal status we see.
+    if (cur.latestTerminal === null && (r.status === "succeeded" || r.status === "failed")) {
+      cur.latestTerminal = r.status;
+    }
+    if (nowMs - Date.parse(r.createdAt) <= WEEK_MS) cur.lastWeek++;
+    byProject.set(r.projectId, cur);
+  }
+  return services.map((s) => {
+    const hit = byProject.get(s.sourceProjectId);
+    if (!hit) return s;
+    return {
+      ...s,
+      testsPassing: hit.latestTerminal == null ? null : hit.latestTerminal === "succeeded",
+      deploysPerWeek: hit.lastWeek,
+    };
+  });
 }
 
 // ── Used-by index ────────────────────────────────────────────
@@ -446,8 +542,8 @@ export interface DecoratedService {
 
 export function decorateService(s: CatalogService, ctx: CatalogContext): DecoratedService {
   const res = isResource(s);
-  const score = scoreOf(s);
-  const tier = tierOf(score);
+  const { score, known } = scorecardOf(s);
+  const tier = tierOf(score, known);
   const t = tier ? TIER[tier] : null;
   const hk = healthOf(s);
   const h = HEALTH[hk];
@@ -555,6 +651,7 @@ export interface SelectedService extends DecoratedService {
   passCount: number;
   warnCount: number;
   failCount: number;
+  unknownCount: number;
   checks: CheckResult[];
   ownerSub: string;
   hasOnCall: boolean;
@@ -583,6 +680,7 @@ export function buildSelected(s: CatalogService, ctx: CatalogContext): SelectedS
   const pass = checks.filter((c) => c.status === "pass").length;
   const warn = checks.filter((c) => c.status === "warn").length;
   const fail = checks.filter((c) => c.status === "fail").length;
+  const unknown = checks.filter((c) => c.status === "unknown").length;
   const sloBreach = !res && s.slo != null && s.sloTarget != null && s.slo < s.sloTarget;
   const usedBy = ctx.usedBy.get(s.entityRef) ?? [];
   return {
@@ -598,6 +696,7 @@ export function buildSelected(s: CatalogService, ctx: CatalogContext): SelectedS
     passCount: pass,
     warnCount: warn,
     failCount: fail,
+    unknownCount: unknown,
     checks,
     ownerSub: s.owner ? "team · git-authored" : "no owner declared",
     hasOnCall: !!s.onCall,

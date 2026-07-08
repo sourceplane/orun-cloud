@@ -32,7 +32,8 @@ export const Checkbox = React.forwardRef<HTMLButtonElement, CheckboxProps>(
         "inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-[4px] border transition-colors",
         "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
         "disabled:cursor-not-allowed disabled:opacity-50",
-        checked ? "border-primary bg-primary text-primary-foreground" : "border-input bg-background",
+        // Northwind ink accent when checked; near-white input surface when not.
+        checked ? "border-foreground bg-foreground text-background" : "border-input bg-[#FCFCFC] dark:bg-card",
         className,
       )}
       {...aria}

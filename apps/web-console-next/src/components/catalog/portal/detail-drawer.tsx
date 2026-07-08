@@ -1,318 +1,141 @@
 /**
- * Catalog portal entity detail drawer (saas-catalog-portal CP3).
+ * Catalog portal entity peek drawer (saas-catalog-portal CP3), Northwind design.
  *
- * The right-anchored overlay sheet from the design: identity, ops stats,
- * production-readiness scorecard (ring + checks), ownership + on-call, the
- * dependency neighborhood, and footer quick links. Driven by `buildSelected`.
- * Degrades per design.md §4 (ops hidden without runtime signals, etc.).
+ * A right-anchored floating panel over a scrim (per entity-drawer.html): kind
+ * kicker + health pill + close, serif name, mono ref, description, two stat
+ * tiles (SLO / Deploys), key-value rows, and a footer with "Open entity page"
+ * (primary ink) + "View docs" (outline). On phones it becomes a bottom sheet.
+ * Esc-close and scrim-click-close are preserved by the caller + the scrim button.
  */
 
 import * as React from "react";
-import { X, Github, AreaChart, BookText, ArrowUpRight } from "lucide-react";
-import type { SelectedService, MiniRef } from "@/lib/catalog-portal/model";
-import { CHECK_COLOR } from "@/lib/catalog-portal/palette";
-import { CHECK_MARK } from "@/lib/catalog-portal/icons";
-import { PathIcon } from "./icon";
+import { X } from "lucide-react";
+import type { SelectedService } from "@/lib/catalog-portal/model";
+import type { HealthKey } from "@/lib/catalog-portal/palette";
+import { Kicker, Pill, type Tone } from "@/components/ui/northwind";
 
-const SECTION = "border-b border-b-border";
-const MONO_LABEL = "font-mono text-[10.5px] uppercase tracking-[0.1em] text-muted-foreground/80";
+const HEALTH_TONE: Record<HealthKey, Tone> = {
+  healthy: "success",
+  degraded: "warning",
+  down: "error",
+  managed: "neutral",
+};
 
-function Chip({ children, color }: { children: React.ReactNode; color?: string }) {
+const KV_LABEL = "text-[13px] text-muted-foreground";
+
+function KeyValue({ label, value, mono }: { label: string; value: React.ReactNode; mono?: boolean }) {
   return (
-    <span
-      className="inline-flex h-[23px] items-center gap-1.5 rounded-md border border-input px-[9px] text-[11.5px]"
-      style={{ color: color ?? "hsl(var(--muted-foreground))" }}
-    >
-      {children}
-    </span>
-  );
-}
-
-function MiniRow({ m, onSelect }: { m: MiniRef; onSelect: (key: string) => void }) {
-  return (
-    <button
-      type="button"
-      data-row
-      onClick={() => m.key && onSelect(m.key)}
-      disabled={!m.key}
-      className="flex w-full items-center gap-[9px] rounded-[7px] bg-transparent px-2 py-[7px] text-left transition-colors hover:bg-foreground/[0.022] disabled:cursor-default"
-    >
-      <span className="grid shrink-0 place-items-center text-muted-foreground/80">
-        <PathIcon d={m.iconD} size={14} />
+    <div className="flex items-center justify-between gap-3">
+      <span className={KV_LABEL}>{label}</span>
+      <span className={mono ? "font-mono text-[12px] text-foreground" : "text-[13px] font-medium text-foreground"}>
+        {value}
       </span>
-      <span className="min-w-0 flex-1 truncate text-[12.5px] text-foreground/90">{m.name}</span>
-      <span className="h-1.5 w-1.5 shrink-0 rounded-full" style={{ background: m.healthColor }} />
-    </button>
+    </div>
   );
 }
 
-const RING_R = 27;
-const RING_CIRC = 2 * Math.PI * RING_R;
+function StatTile({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-[10px] border border-border p-[12px_14px]">
+      <div className="text-[11px] font-semibold uppercase tracking-[0.07em] text-muted-foreground/70">{label}</div>
+      <div className="mt-[5px] font-serif text-[22px] font-medium leading-none text-foreground">{value}</div>
+    </div>
+  );
+}
 
 export function DetailDrawer({
   sel,
   onClose,
-  onSelectRef,
-  onViewMap,
   onOpenPage,
+  onViewDocs,
 }: {
   sel: SelectedService;
   onClose: () => void;
-  onSelectRef: (key: string) => void;
-  onViewMap: () => void;
+  /** Kept for API compatibility (dep peeks); unused in the Northwind drawer. */
+  onSelectRef?: (key: string) => void;
+  /** Kept for API compatibility (map jump); unused in the Northwind drawer. */
+  onViewMap?: () => void;
   onOpenPage: () => void;
+  onViewDocs: () => void;
 }) {
-  // Desktop-only: on mobile the catalog taps straight through to the full
-  // service page, so this peek drawer is never mounted on small screens.
-  const ringOffset = RING_CIRC * (1 - (sel.score ?? 0) / 100);
+  const healthTone = HEALTH_TONE[sel.healthKey];
+  // Source line: the short commit when known, else the entity ref namespace.
+  const source = sel.svc.sourceCommit ? sel.svc.sourceCommit.replace(/^sha\d*:/i, "").slice(0, 9) : sel.system;
   return (
     <>
+      {/* scrim — click closes */}
       <button
         type="button"
         aria-label="Close detail"
         onClick={onClose}
-        className="absolute inset-0 z-[5] animate-fade-in bg-foreground/10 backdrop-blur-[2px]"
+        className="fixed inset-0 z-40 animate-scrim-in bg-[rgba(0,0,0,0.22)]"
       />
-      <aside className="absolute inset-y-0 right-0 z-[6] flex w-[512px] max-w-[92vw] animate-slide-in-right flex-col overflow-hidden border-l border-l-border bg-card shadow-[-16px_0_48px_hsl(0_0%_0%/0.18)]">
+      {/* panel — right-inset floating card on desktop, bottom sheet on mobile */}
+      <aside
+        className="fixed inset-x-2 bottom-2 top-auto z-[41] flex max-h-[85dvh] animate-drawer-in flex-col overflow-hidden rounded-[14px] border border-border bg-card shadow-[0_18px_50px_rgba(0,0,0,0.16)] sm:inset-x-auto sm:inset-y-3 sm:right-3 sm:top-3 sm:bottom-3 sm:max-h-none sm:w-[440px]"
+      >
+        {/* header */}
+        <div className="flex items-center gap-2.5 px-[22px] pt-[18px]">
+          <Kicker>{sel.kindLabel}</Kicker>
+          <Pill tone={healthTone} dot>
+            {sel.healthLabel}
+          </Pill>
+          <button
+            type="button"
+            aria-label="Close"
+            onClick={onClose}
+            className="ml-auto grid h-7 w-7 place-items-center rounded-[7px] text-muted-foreground/70 transition-colors hover:bg-muted hover:text-foreground"
+          >
+            <X className="h-[15px] w-[15px]" strokeWidth={2} />
+          </button>
+        </div>
+
         <div className="min-h-0 flex-1 overflow-y-auto">
           {/* identity */}
-          <div className={`px-[18px] pb-4 pt-[18px] ${SECTION}`}>
-            <div className="flex items-start gap-3">
-              <span className="grid h-[42px] w-[42px] shrink-0 place-items-center rounded-[11px] border border-border bg-muted text-foreground/90">
-                <PathIcon d={sel.iconD} size={21} strokeWidth={1.7} />
-              </span>
-              <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-2">
-                  <h2 className="m-0 truncate text-[16px] font-semibold text-foreground">{sel.name}</h2>
-                  <span className="shrink-0 rounded border border-input px-[5px] text-[10px] text-muted-foreground/80">
-                    {sel.kindLabel}
-                  </span>
-                </div>
-                <div className="mt-1 break-all font-mono text-[11px] text-muted-foreground/60">{sel.ref}</div>
-              </div>
-              <button
-                type="button"
-                aria-label="Close"
-                onClick={onClose}
-                className="grid h-7 w-7 shrink-0 place-items-center rounded-[7px] border border-border bg-transparent text-muted-foreground/80 hover:text-foreground"
-              >
-                <X className="h-3.5 w-3.5" />
-              </button>
+          <div className="px-[22px] pt-[10px]">
+            <div className="font-serif text-[26px] font-medium leading-tight tracking-[-0.01em] text-foreground">
+              {sel.name}
             </div>
+            <div className="mt-1 break-all font-mono text-[12px] text-muted-foreground/70">{sel.ref}</div>
             {sel.description ? (
-              <p className="mt-[13px] text-[12.5px] leading-[1.55] text-muted-foreground">{sel.description}</p>
-            ) : null}
-            <div className="mt-[13px] flex flex-wrap gap-[7px]">
-              {sel.lifeShow ? (
-                <Chip color={sel.lifeText}>
-                  <span className="h-1.5 w-1.5 rounded-full" style={{ background: sel.lifeColor }} />
-                  <span className="capitalize">{sel.lifeLabel}</span>
-                </Chip>
-              ) : null}
-              <Chip color={sel.healthText}>
-                <span className="h-1.5 w-1.5 rounded-full" style={{ background: sel.healthColor }} />
-                {sel.healthLabel}
-              </Chip>
-              {sel.language ? <Chip>{sel.language}</Chip> : null}
-              <Chip>{sel.system}</Chip>
-            </div>
-            <button
-              type="button"
-              onClick={onOpenPage}
-              className="mt-3.5 flex h-[34px] w-full items-center justify-center gap-[7px] rounded-[8px] border border-border bg-foreground/[0.04] text-[12.5px] font-medium text-foreground transition-colors hover:bg-foreground/[0.07]"
-            >
-              Open full service page
-              <ArrowUpRight className="h-3.5 w-3.5 text-muted-foreground" strokeWidth={2} />
-            </button>
-          </div>
-
-          {/* operational stats */}
-          {sel.hasOps ? (
-            <div className={`grid grid-cols-3 ${SECTION}`}>
-              <div className="border-r border-r-border px-4 py-3.5">
-                <div className={MONO_LABEL}>SLO</div>
-                <div className="mt-1.5 text-[16px] font-semibold" style={{ color: sel.sloColor }}>
-                  {sel.sloCur != null ? `${sel.sloCur}%` : "—"}
-                </div>
-                <div className="mt-0.5 text-[10.5px] text-muted-foreground/60">
-                  {sel.sloTarget != null ? `target ${sel.sloTarget}%` : "no target"}
-                </div>
-              </div>
-              <div className="border-r border-r-border px-4 py-3.5">
-                <div className={MONO_LABEL}>Incidents</div>
-                <div className="mt-1.5 text-[16px] font-semibold" style={{ color: sel.incColor }}>
-                  {sel.incidents}
-                </div>
-                <div className="mt-0.5 text-[10.5px] text-muted-foreground/60">open now</div>
-              </div>
-              <div className="px-4 py-3.5">
-                <div className={MONO_LABEL}>Deploys</div>
-                <div className="mt-1.5 text-[16px] font-semibold text-foreground">{sel.deploysWeek}</div>
-                <div className="mt-0.5 text-[10.5px] text-muted-foreground/60">last {sel.deployLabel}</div>
-              </div>
-            </div>
-          ) : null}
-
-          {/* scorecard */}
-          {sel.hasScore ? (
-            <div className={`px-[18px] py-4 ${SECTION}`}>
-              <div className="mb-3.5 flex items-center gap-2">
-                <span className={MONO_LABEL}>Production readiness</span>
-              </div>
-              <div className="flex items-center gap-4">
-                <div className="relative h-16 w-16 shrink-0">
-                  <svg width="64" height="64" viewBox="0 0 64 64" className="-rotate-90">
-                    <circle cx="32" cy="32" r={RING_R} fill="none" stroke="hsl(var(--border))" strokeWidth="6" />
-                    <circle
-                      cx="32"
-                      cy="32"
-                      r={RING_R}
-                      fill="none"
-                      stroke={sel.tierColor}
-                      strokeWidth="6"
-                      strokeLinecap="round"
-                      strokeDasharray={RING_CIRC.toFixed(1)}
-                      strokeDashoffset={ringOffset.toFixed(1)}
-                    />
-                  </svg>
-                  <div className="absolute inset-0 flex flex-col items-center justify-center">
-                    <span className="text-[18px] font-bold leading-none text-foreground">{sel.scoreNum}</span>
-                  </div>
-                </div>
-                <div className="min-w-0 flex-1">
-                  <div
-                    className="inline-flex h-[22px] items-center gap-1.5 rounded-md px-[9px] text-[12px] font-semibold"
-                    style={{ background: sel.tierBg, border: `1px solid ${sel.tierBorder}`, color: sel.tierColor }}
-                  >
-                    {sel.tierLabel} tier
-                  </div>
-                  <div className="mt-2 flex gap-3 text-[11.5px] text-muted-foreground/80">
-                    <span>
-                      <span className="font-semibold text-success">{sel.passCount}</span> pass
-                    </span>
-                    <span>
-                      <span className="font-semibold text-primary">{sel.warnCount}</span> warn
-                    </span>
-                    <span>
-                      <span className="font-semibold text-destructive">{sel.failCount}</span> fail
-                    </span>
-                  </div>
-                </div>
-              </div>
-              <div className="mt-[15px] flex flex-col gap-px">
-                {sel.checks.map((ck) => {
-                  const c = CHECK_COLOR[ck.status];
-                  return (
-                    <div key={ck.id} className="flex flex-col gap-0.5 py-1.5">
-                      <div className="flex items-center gap-2.5">
-                        <span
-                          className="grid h-4 w-4 shrink-0 place-items-center rounded-[5px]"
-                          style={{ background: c.bg, color: c.c }}
-                        >
-                          <PathIcon d={CHECK_MARK[ck.status]} size={10} strokeWidth={3} />
-                        </span>
-                        <span className="flex-1 text-[12.5px] text-foreground/90">{ck.label}</span>
-                        <span className="text-[11px] capitalize" style={{ color: c.c }}>
-                          {ck.status}
-                        </span>
-                      </div>
-                      {/* teams-ownership TO4 — remediation copy on a failing check. */}
-                      {ck.detail ? (
-                        <span className="ml-[26px] text-[11px] text-muted-foreground">{ck.detail}</span>
-                      ) : null}
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          ) : null}
-
-          {/* ownership */}
-          <div className={`px-[18px] py-4 ${SECTION}`}>
-            <div className={`${MONO_LABEL} mb-3`}>Ownership</div>
-            <div className="flex items-center gap-[11px]">
-              <span
-                className="grid h-[34px] w-[34px] shrink-0 place-items-center rounded-[9px] text-[12px] font-semibold"
-                style={{
-                  background: sel.owned ? "hsl(var(--accent))" : "transparent",
-                  border: sel.owned ? "1px solid hsl(var(--input))" : "1px dashed hsl(var(--input))",
-                  color: sel.owned ? "hsl(var(--foreground) / 0.9)" : "hsl(var(--muted-foreground) / 0.6)",
-                }}
-              >
-                {sel.ownerInitials}
-              </span>
-              <div className="min-w-0">
-                <div className="text-[13px] font-medium" style={{ color: sel.owned ? "hsl(var(--foreground) / 0.9)" : "hsl(var(--muted-foreground) / 0.8)" }}>
-                  {sel.ownerName}
-                </div>
-                <div className="text-[11px] text-muted-foreground/60">{sel.ownerSub}</div>
-              </div>
-            </div>
-            {sel.hasOnCall ? (
-              <div className="mt-3 flex items-center gap-2.5 border-t border-dashed border-t-border pt-3">
-                <span className="h-2 w-2 shrink-0 rounded-full bg-success shadow-[0_0_0_3px_hsl(var(--success)/0.15)]" />
-                <span className="text-[12.5px] text-foreground/90">{sel.onCall}</span>
-                <span className="text-[11px] text-muted-foreground/60">on-call</span>
-              </div>
+              <p className="mt-3 text-[13.5px] leading-[1.55] text-secondary-foreground">{sel.description}</p>
             ) : null}
           </div>
 
-          {/* dependencies */}
-          <div className="px-[18px] py-4">
-            <div className="mb-3 flex items-center gap-2">
-              <span className={MONO_LABEL}>Dependencies</span>
-              <button
-                type="button"
-                onClick={onViewMap}
-                className="ml-auto flex items-center gap-1 bg-transparent text-[11px] text-muted-foreground transition-colors hover:text-foreground"
-              >
-                View map
-                <ArrowUpRight className="h-[11px] w-[11px]" strokeWidth={2} />
-              </button>
-            </div>
-            {sel.hasDeps ? (
-              <>
-                <div className="mb-1 text-[11px] text-muted-foreground/60">Depends on {sel.dependsOn.length}</div>
-                <div className="mb-3.5 flex flex-col gap-px">
-                  {sel.dependsOn.map((d, i) => (
-                    <MiniRow key={`${d.key ?? d.name}-${i}`} m={d} onSelect={onSelectRef} />
-                  ))}
-                </div>
-              </>
-            ) : null}
-            {sel.hasUsedBy ? (
-              <>
-                <div className="mb-1 text-[11px] text-muted-foreground/60">Used by {sel.usedByList.length}</div>
-                <div className="flex flex-col gap-px">
-                  {sel.usedByList.map((u, i) => (
-                    <MiniRow key={`${u.key ?? u.name}-${i}`} m={u} onSelect={onSelectRef} />
-                  ))}
-                </div>
-              </>
-            ) : null}
-            {sel.noRelations ? <p className="m-0 text-[12.5px] text-muted-foreground/60">No relations declared.</p> : null}
+          {/* stat tiles */}
+          <div className="grid grid-cols-2 gap-2.5 px-[22px] pt-[18px]">
+            <StatTile label="SLO · 30d" value={sel.sloCur != null ? `${sel.sloCur}%` : "—"} />
+            <StatTile label="Deploys" value={sel.deploysWeek} />
+          </div>
+
+          {/* key-value rows */}
+          <div className="flex flex-col gap-3 px-[22px] py-[18px]">
+            <KeyValue label="Owner" value={sel.ownerName} />
+            <KeyValue label="Lifecycle" value={<span className="capitalize">{sel.lifeShow ? sel.lifeLabel : "—"}</span>} />
+            <KeyValue label="Language" value={sel.language ?? "—"} />
+            <KeyValue label="Source" value={source} mono />
+            <KeyValue label="Maturity" value={sel.tierLabel || "—"} />
           </div>
         </div>
 
-        {/* footer quick links */}
-        <div className="flex shrink-0 gap-2 border-t border-t-border bg-background px-4 py-3">
-          <FooterLink icon={<Github className="h-[13px] w-[13px]" />} label="Repo" />
-          <FooterLink icon={<AreaChart className="h-[13px] w-[13px]" />} label="Dashboards" />
-          <FooterLink icon={<BookText className="h-[13px] w-[13px]" />} label="Runbook" />
+        {/* footer actions */}
+        <div className="mt-auto flex gap-2.5 border-t border-t-border/70 px-[22px] py-4">
+          <button
+            type="button"
+            onClick={onOpenPage}
+            className="flex-1 rounded-[9px] bg-primary py-[9px] text-[13px] font-semibold text-primary-foreground transition-colors hover:brightness-110"
+          >
+            Open entity page
+          </button>
+          <button
+            type="button"
+            onClick={onViewDocs}
+            className="flex-1 rounded-[9px] border border-border bg-card py-[9px] text-[13px] font-medium text-foreground transition-colors hover:bg-muted"
+          >
+            View docs
+          </button>
         </div>
       </aside>
     </>
-  );
-}
-
-function FooterLink({ icon, label }: { icon: React.ReactNode; label: string }) {
-  return (
-    <button
-      type="button"
-      className="flex h-8 flex-1 items-center justify-center gap-1.5 rounded-[7px] border border-border bg-muted text-[12px] text-foreground/90 hover:border-input"
-    >
-      {icon}
-      {label}
-    </button>
   );
 }

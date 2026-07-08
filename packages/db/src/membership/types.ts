@@ -120,6 +120,8 @@ export interface Team {
   /** Opaque avatar reference (teams-foundation TF1); `null` → initials+colour. */
   avatarRef: string | null;
   status: string;
+  /** Active member count — populated by `listTeams` only (undefined elsewhere). */
+  memberCount?: number;
   createdAt: Date;
   updatedAt: Date;
 }

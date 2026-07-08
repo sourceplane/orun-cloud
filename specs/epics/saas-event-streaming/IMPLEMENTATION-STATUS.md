@@ -1,21 +1,21 @@
 # saas-event-streaming — Implementation Status
 
 As-built record. Epic authored 2026-07-02 from the current-state audit of the
-eventing stack (events/notifications/webhooks/integrations workers); nothing
-has shipped yet.
+eventing stack (events/notifications/webhooks/integrations workers).
 
 ## Summary
 
 | ID | Status |
 |----|--------|
-| ES0 — Foundation (catalog, `470_event_streams_foundation`, repo layer, notifications emit fix, spec 09/14 amendments) | 🗓️ Planned |
-| ES1 — Router: shared lanes + dead letters + webhooks cutover | 🗓️ Planned |
-| ES2 — Notification rules | 🗓️ Planned |
-| ES3 — Channels: provider seam + Slack incoming webhook + async retry | 🗓️ Planned |
-| ES4 — Correlation & dedup (event groups) | 🗓️ Planned |
-| ES5 — Custom event ingest + SDK/CLI | 🗓️ Planned |
-| ES6 — Console: Events explorer + rules/channels UX | 🗓️ Planned |
-| ES7 — Scale & lifecycle (retention, fairness, storm breaker) | 🗓️ Planned |
+| ES0 — Foundation (catalog, `580_event_streams_foundation`, repo layer, notifications emit fix, spec 09/14 amendments) | ✅ Shipped (#325) |
+| ES1 — Router: shared lanes + dead letters + webhooks cutover | ✅ Shipped (#331) |
+| ES2 — Notification rules | ✅ Shipped (#334) |
+| ES3 — Channels: provider seam + Slack incoming webhook + async retry | ✅ Shipped (#338) |
+| ES4 — Correlation & dedup (event groups) | ✅ Shipped (#339) |
+| ES5a — Custom event ingest + explorer read API | ✅ Shipped (#345) |
+| ES5b — SDK + CLI + custom-event grouping + metering | ✅ Shipped (#349) |
+| ES6 — Console: Events explorer + rules/channels UX | ✅ Shipped (#353) |
+| ES7 — Scale & lifecycle (retention, fairness, storm breaker) | ✅ Shipped (#354) |
 
 ## Notes
 
@@ -28,8 +28,178 @@ has shipped yet.
   `idempotency_key` present since `030_events_audit_core` and unconsumed;
   notification channel CHECKs hard-locked to `'email'` across all four tables
   (`120_notifications_core`).
-- 2026-07-02: Migration numbers `470`/`480`/`490` reserved by this plan
-  against current head `460_state_repo_facet`; renumber at ES0 landing if the
-  head has moved.
+- 2026-07-02: Migration numbers `470`/`480`/`490` were reserved against head `460_state_repo_facet`; parallel work consumed 470-570, so ES0 landed as `580_event_streams_foundation` (follow-ons renumbered `590`/`600`).
+- 2026-07-04: ES0 shipped (#325) — catalog + CI guard live, migration 580
+  applied on stage and prod via db-migrate (CI lanes green), notification.*
+  events now auditable. Both latent defects from the audit are closed.
+- 2026-07-04: ES1 landed the webhooks cursor cutover as migration
+  `590_webhooks_lane_adoption` (renumbered from the planned 600 — parallel
+  work made 590 the next free slot; the ES3 channels migration takes the next
+  free number at its landing). Dual-read fallback kept the legacy
+  webhook_dispatch_cursor table intact per R6; the drop is a follow-up
+  migration after the soak. The dispatcher ships dark (no events-owned lane
+  handler until ES2; 'notifications' lane seeded paused).
+- 2026-07-04: ES1 shipped (#331) — dispatcher live (dark), webhooks cursor on
+  the shared lane table with dual-read fallback, dead-letter list/replay
+  surface end-to-end.
+- 2026-07-04: ES2 scope amendment — `webhook_endpoint` rule targets deferred
+  to ES3. Implementation audit showed B5's webhook_delivery_attempts requires
+  a NOT NULL subscription_id with (subscription, event, attempt) uniqueness
+  and subscription-keyed replay; a subscription-less rule delivery would need
+  invasive changes to the shipped delivery plane. Under "rules route,
+  channels deliver", a webhook endpoint becomes a channel-kind delivery in
+  ES3's provider seam instead (own retry mechanics via the notifications
+  cron). ES2 ships email targets live; slack_channel/webhook_endpoint kinds
+  are schema-live, CRUD-rejected. Entitlements seeded: feature.event_routing
+  all tiers, limit.notification_rules 10/50/200/unlimited (D3 defaults);
+  events-worker added to billing's internal-caller allow-list; notifications
+  lane flipped active by 600_notification_rule_throttle.
+- 2026-07-05: ES2 shipped (#334) — rules engine live on the router; email
+  targets deliver; slack_channel/webhook_endpoint schema-live but CRUD-rejected.
+  Rebased through a parallel policy-engine change (owner action count).
+- 2026-07-05: ES3 in review — channel-provider seam in notifications-worker
+  with the Slack incoming-webhook provider (Block Kit, D1 default: no OAuth
+  app, credential-free). Migration `610_notification_channels` creates the
+  encrypted-config channel table (config_ciphertext = AES-GCM envelope, never
+  returned on CRUD reads — R4), lifts the channel CHECK to ('email','slack')
+  on the three channel-bearing tables, and adds next_retry_at + attempt_count
+  for the async retry cron (30s·4^(n-1), 5 attempts). Channels CRUD + test-send
+  on notifications-worker (org-scoped, policy organization.notification_channel
+  .read/write, feature.notifications.slack + limit.notification_channels
+  entitlements) behind a new api-edge facade; notifications-worker gained
+  membership/policy/billing bindings (no dep cycle — verified via orun plan).
+  slack_channel rule targets unblocked end-to-end; webhook_endpoint still
+  deferred. Slack URLs are irrecoverable: write-only ciphertext, network
+  errors reduced to a fixed non-secret reason.
+- 2026-07-05: ES3 shipped (#338) — channel-provider seam live in
+  notifications-worker with the Slack incoming-webhook provider; migration
+  `610_notification_channels` applied. slack_channel rule targets deliver
+  end-to-end; webhook_endpoint still deferred.
+- 2026-07-05: ES4 in review — correlation & dedup. The event catalog gains
+  strict `dedupKey` templates for the scm/state.run families
+  (`run:{orgId}:{repoFullName}:{headSha}`) with `renderDedupKey`/`eventDedupKey`
+  helpers that return null when any referenced field is absent (no partial
+  grouping). A new events-owned **grouping lane** (seeded active by migration
+  `630_event_grouping`) sweeps inactive groups once per tick (30-min inactivity
+  window), then upserts `event_groups` + members keyed by the rendered dedup
+  key, recovering from create races by appending to the winner. Org discovery
+  uses `listRecentlyActiveOrgIds` (2-day lookback). Notification admission is
+  now group-aware: dedup-keyed events fire once per group and re-fire only on
+  severity **escalation** via the `rule_group_notifications` ledger
+  (`tryNotifyGroup`, severity ladder info→critical), decoupled from the grouping
+  lane's own state so there is no cross-lane timing dependency; unkeyed events
+  keep the existing throttle window. Read-only groups API
+  (`GET …/event-groups`, `…/event-groups/{grp_…}` with member timeline) behind
+  a new api-edge facade; new policy actions `organization.event.read`
+  (owner/admin/builder/viewer) and `organization.event.ingest` (owner/admin,
+  reserved for ES5 custom ingest). No new worker dependency edges — verified
+  via `orun plan` (no cycle).
+- 2026-07-05: ES4 shipped (#339) — grouping lane + group-aware notifications
+  live; migration `630_event_grouping` applied (renumbered from 620 after a
+  parallel `620_state_catalog_docs` landed first).
+- 2026-07-05: ES5 split into ES5a (this PR) and ES5b (next) to keep each PR
+  reviewable — the plan itself lands the ingest/SDK/CLI surfaces
+  incrementally. **ES5a in review — custom event ingest + explorer read API.**
+  `POST /v1/organizations/{orgId}/events` is events-worker's first write route:
+  the `custom.*` namespace is enforced server-side (a `billing.invoice_paid`
+  escape is rejected), payload capped at 32KiB, body pre-check at 64KiB, policy
+  `organization.event.ingest`, entitlement `feature.events.custom_ingest` (402
+  when off-plan), and a per-day quota `limit.custom_events_per_day` enforced by
+  a same-context `count(*) WHERE type LIKE 'custom.%'` over the UTC day (412
+  with the limit + upgrade hint) — no metering-worker edge. Idempotency-key
+  replay returns the original event, never a duplicate insert. The explorer read
+  API (`GET …/events` + `…/events/{evt_…}`) is the operational twin of the audit
+  query: type-glob/source/project/environment/time filters, keyset pagination,
+  redaction-respecting, enriched with catalog-derived severity/category/title.
+  Both behind a new api-edge events facade (GET+POST; bearer never forwarded).
+  Entitlement defaults seeded in `plan-catalog.ts` (feature on all tiers; quota
+  1k/10k/100k/unlimited). No migrations, no new worker dependency edges —
+  verified via `orun plan` (no cycle). Deferred to **ES5b**: the SDK
+  (`events.emit/list/get`, `eventGroups.list`, `notificationRules/Channels.*`),
+  the CLI (`events emit|list|tail`), custom-event grouping via a caller-supplied
+  `dedupKey` (persisted on the event now, honored by the grouping lane in ES5b),
+  and metering rollups.
+- 2026-07-05: ES5a shipped (#345) — custom ingest + explorer read API live.
+- 2026-07-05: ES5b in review — SDK + CLI + custom-event grouping + metering,
+  completing ES5's "custom events are full citizens" promise. **SDK**
+  (`@saas/sdk`): `EventsClient` gains the event-stream surface
+  (`emitEvent`/`listEvents`/`listEventsPage`/`iterEvents`/`exportEventsNdjson`/
+  `getEvent`, mirroring the audit iterator's `seenCursors`+max-pages guards);
+  new `EventGroupsClient` (`list`/`get`), `NotificationRulesClient`
+  (list/create/get/update/delete/test) and `NotificationChannelsClient`
+  (list/create/update/delete/testSend — no `get`, the facade exposes no
+  single-channel GET; channel config stays write-only, never in a response
+  type), all wired into `OrunCloud`. **CLI** (`@saas/cli`): `events
+  emit|list|tail` (tail is a bounded poll over a unit-tested `tailOnce` seam,
+  `--max-polls`) and `notification-rules list|create|test`. **Grouping**: the
+  ES4 lane now falls back to a caller-authored key — a `custom.*` event whose
+  payload carries a non-empty `dedupKey` groups on `custom:{orgId}:{dedupKey}`
+  (org-scoped, so no cross-tenant fusion); catalog grouping unchanged.
+  **Metering**: each accepted custom ingest records one `custom_events_ingested`
+  usage unit via the db-package metering repo over events-worker's own
+  PLATFORM_DB executor — the same direct-write pattern state-worker already
+  uses for run metering, so NO new worker dependency edge (verified via `orun
+  plan`, no cycle); the event id is the usage idempotency key and the
+  idempotent-replay path returns before recording, so replays never
+  double-count. New contract types: event-group + notification-rule/channel
+  request/response shapes. No migrations.
+- 2026-07-05: ES5b shipped (#349) — SDK + CLI + custom-event grouping + metering.
+- 2026-07-05: ES6 in review — console to Datadog standard, in
+  `apps/web-console-next` on top of the ES5b SDK clients (no backend changes
+  beyond an additive `DeadLettersClient` the SDK was missing). Four surfaces:
+  (1) an **Events explorer** (`/orgs/{slug}/events`) — URL-driven faceted
+  filters, keyset pagination, a 5s live-poll toggle that prepends new rows, a
+  per-row detail sheet (envelope + pretty payload), a Correlation Stories tab
+  over `eventGroups` with lazy member timelines, and a "create rule from this
+  event" deep-link; (2) a **rules** surface (`settings/notifications/rules`) —
+  list + catalog-fed builder (type glob, severity floor, attribute-filter rows,
+  email/slack target picker, throttle) + test-fire preview; (3) a **channels**
+  surface — Slack paste → test-send → verified badge, the webhook URL never
+  rendered; (4) an admin-gated **dead-letter** ops view — list + replay. Plus
+  nav/settings-nav/Cmd-K entries and `qk` query keys. Documented product
+  limits from the current read APIs: severity/category are client-side filters
+  (the explorer query API takes only type/source/project/environment/time),
+  rule targets are set at create time (`UpdateNotificationRuleRequest` has no
+  targets field), and there is no recent-firings panel, DL discard, or channel
+  last-delivery health column (no read API yet — candidates for a later pass).
+  Console typecheck/lint clean, console tests 479, sdk 198, `orun plan` no
+  cycle. No migrations.
+- 2026-07-05: ES6 shipped (#353) — console surfaces live.
+- 2026-07-05: ES7 in review — scale & lifecycle, the epic's capstone. Migration
+  `640_event_lifecycle` adds storm-breaker state to `events.notification_rules`
+  (`suppressed_at`/`suppressed_reason`/`saturated_window_count`/
+  `last_saturated_at`) + partial indexes for the cooldown/audit and the
+  fixed-window sweeps. **(a) Retention sweep** — an events-worker `scheduled`
+  pass gated to UTC hour 4 (derived from `controller.scheduledTime`, never
+  `Date.now()`), enforcing the new `limit.event_retention_days` entitlement
+  (30/90/365/unlimited) per org: batched `ctid` deletes of past-window
+  `event_log` + `audit_entries` honoring the design §10 **security-category
+  floor** (security audit rows survive forever; the raw log rows behind them are
+  retained via a `NOT EXISTS` guard, which ALSO excludes events still referenced
+  by an `event_group_members` row — the FK has no cascade), plus fixed 30-day
+  platform windows for terminal dead letters and closed groups. Fail-safe:
+  unlimited/denied/service-error → skip (never deletes when retention can't be
+  confirmed). **(b) Hot-org fairness** — `MAX_ORGS_PER_LANE_PER_TICK` with a
+  `scheduledTime`-derived rotating offset (round-robin; deferred count reported,
+  never silently truncated) and a per-(lane,org) **lane-lag** metric emitting one
+  `event.lane_lagging` per tick past a 900s budget (the pipeline monitors
+  itself). **(c) Storm breaker** — `tryConsumeThrottle` tracks consecutive
+  throttle saturation; after 5 saturated windows a rule auto-suppresses, emits
+  `notification_rule.suppressed` exactly once (idempotent transition), drops out
+  of the working set, and re-enables after a 3600s cooldown; the ES6 rules page
+  renders the derived `suppressed` status. Admin signal is the routed
+  `notification_rule.suppressed` event + console banner (a dedicated admin email
+  would need membership resolution — deferred, no new dependency edge).
+  **(d) admin-worker** read surfaces (support-gated, direct-DB): cross-org lane
+  health, dead-letter counts, rule-storm audit. New catalog types
+  `event.lane_lagging` + `notification_rule.suppressed` (both `system`/`warning`,
+  and `notification_rule.` added to the dispatcher's lane-suppression guard so
+  they can't recurse). typecheck/lint clean; db 847, events-worker 94,
+  contracts 147, admin-worker 33, billing 159 tests pass; `orun plan` no cycle.
+- 2026-07-05: ES7 shipped (#354) — migration `640_event_lifecycle` applied on
+  stage and prod via db-migrate (CI lanes green). **THE EPIC IS COMPLETE**: the
+  full spine (catalog → router → rules → channels → correlation →
+  ingest/SDK/CLI → console → scale/lifecycle) is shipped end to end across
+  PRs #325, #331, #334, #338, #339, #345, #349, #353, #354.
 - Decision gates D1–D4 are open with defaults recommended; none block the
   spine (see `risks-and-open-questions.md`).

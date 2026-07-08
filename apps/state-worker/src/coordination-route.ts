@@ -8,6 +8,7 @@
 
 import type { RunFoldState } from "@saas/contracts/coordination";
 import { planProjection } from "@saas/contracts/coordination-projector";
+import { gateObservationsFromRunFold, insertWorkObservation } from "@saas/db/work";
 import { applyProjection, type ProjectionScope } from "@saas/db/state";
 import { createSqlExecutor, type SqlExecutor } from "@saas/db/hyperdrive";
 import type { Env } from "./env.js";
@@ -192,12 +193,21 @@ export async function projectCoordinatorRun(
 ): Promise<void> {
   const fold = await readCoordinatorState(env, runId);
   if (fold === null) return;
-  const cur = await executor.execute<{ last_seq: string | number }>(
-    `SELECT last_seq FROM state.runs WHERE org_id = $1 AND project_id = $2 AND run_ulid = $3`,
+  const cur = await executor.execute<{ last_seq: string | number; git_commit: string | null }>(
+    `SELECT last_seq, git_commit FROM state.runs WHERE org_id = $1 AND project_id = $2 AND run_ulid = $3`,
     [scope.orgId, scope.projectId, runId],
   );
   const appliedSeq = cur.rows[0] ? Number(cur.rows[0].last_seq) : 0;
   await applyProjection(executor, scope, planProjection(fold, appliedSeq));
+
+  // orun-work v2 (WP3): terminal jobs are gate verdicts — orun's OWN
+  // execution truth (P-3), keyed to the run's git revision. Idempotent per
+  // (run, job, phase), so sweeps and per-verb projections re-emit safely.
+  const gitCommit = cur.rows[0] ? ((cur.rows[0].git_commit as string | null) ?? null) : null;
+  const gates = gateObservationsFromRunFold(runId, gitCommit, fold, new Date().toISOString());
+  for (const draft of gates) {
+    await insertWorkObservation(executor, scope.orgId, { ...draft, workspace: scope.orgId });
+  }
 }
 
 /**

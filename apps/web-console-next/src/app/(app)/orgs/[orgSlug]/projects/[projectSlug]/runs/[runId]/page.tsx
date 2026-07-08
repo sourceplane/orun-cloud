@@ -1,9 +1,11 @@
 "use client";
 
-// The run detail view (OV7), redesigned to the visual contract
-// (`specs/epics/saas-catalog-portal/design/Service_Catalog.dc.html` → run
-// detail): a status hero (identity + provenance + actor), a jobs rail, and a
-// terminal-style log panel for the selected job with live-tail.
+// The run detail view (OV7), in the Northwind design (scratchpad
+// design/run-detail.html): breadcrumb (Activities / run id), a serif hero with
+// a live status pill and a mono provenance line, a full-width segmented run
+// progress bar, then a 280px/1fr grid — the jobs rail (check / pulsing dot /
+// hollow-ring rows) and a terminal-style dark log pane with live-tail. The log
+// pane stays dark in both themes (it's a terminal).
 //
 // One run's projection (status, provenance, timings, job counts) plus its
 // plan-DAG jobs (status, component, deps, attempt, failure summary, logs).
@@ -14,20 +16,27 @@
 
 import * as React from "react";
 import { useParams } from "next/navigation";
-import Link from "next/link";
-import { ArrowLeft, Play } from "lucide-react";
+import { Check, Play, X } from "lucide-react";
 import type { Run, RunJob } from "@saas/contracts/state";
 import { OrgScope } from "@/components/shell/org-scope";
 import { Card, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { EmptyState } from "@/components/ui/empty-state";
+import {
+  Breadcrumbs,
+  Kicker,
+  Pill,
+  RunProgress,
+  Screen,
+  StatusDot,
+} from "@/components/ui/northwind";
+import { cn } from "@/lib/cn";
 import { wrap } from "@/lib/api";
 import { formatTimestamp } from "@/lib/format";
 import { useSession } from "@/lib/session";
 import { useApiQuery, qk } from "@/lib/query";
 import { buildRunDetail, type JobView } from "@/lib/runs-portal/model";
-import { StatusMark, ActorChip } from "@/components/activity/run-status-icon";
+import { ActorBadge, RUN_TONE } from "@/components/activity/run-rows";
 
 const CLOCK_TICK_MS = 5_000;
 
@@ -88,181 +97,239 @@ function Inner({
 
   const [selectedJob, setSelectedJob] = React.useState<string | null>(null);
 
-  const backLink = (
-    <div className="flex h-[34px] items-center gap-2.5 text-[13px] text-muted-foreground">
-      <span className="text-muted-foreground/80">{orgSlug}</span>
-      <span className="text-muted-foreground/40">/</span>
-      <Link href={runsHref} className="transition-colors hover:text-foreground">
-        Activity
-      </Link>
-      <span className="text-muted-foreground/40">/</span>
-      <span className="truncate font-mono text-foreground">{runId}</span>
-      <Link
-        href={runsHref}
-        className="ml-auto inline-flex items-center gap-1.5 rounded-[7px] border border-border px-[11px] py-1.5 text-[12.5px] text-muted-foreground transition-colors hover:text-foreground"
-      >
-        <ArrowLeft className="h-3.5 w-3.5" />
-        All runs
-      </Link>
-    </div>
+  const crumbs = (
+    <Breadcrumbs
+      items={[
+        { label: "Activities", href: runsHref },
+        { label: runId, mono: true },
+      ]}
+    />
   );
 
   if (projectsList.loading || (project && run.loading)) {
     return (
-      <div className="space-y-5">
-        {backLink}
-        <Skeleton className="h-[68px] w-full rounded-xl" />
-        <div className="grid grid-cols-1 gap-[18px] md:grid-cols-[248px_minmax(0,1fr)]">
-          <Skeleton className="h-[260px] w-full rounded-[13px]" />
-          <Skeleton className="h-[260px] w-full rounded-[13px]" />
+      <Screen detail>
+        {crumbs}
+        <Skeleton className="h-[72px] w-full rounded-xl" />
+        <Skeleton className="mt-[22px] h-1.5 w-full rounded-[3px]" />
+        <div className="mt-[26px] grid grid-cols-1 items-start gap-[14px] md:grid-cols-[280px_minmax(0,1fr)]">
+          <Skeleton className="h-[260px] w-full rounded-xl" />
+          <Skeleton className="h-[320px] w-full rounded-xl" />
         </div>
-      </div>
+      </Screen>
     );
   }
   if (projectsList.error || !project) {
     return (
-      <div className="space-y-5">
-        {backLink}
+      <Screen detail>
+        {crumbs}
         <EmptyState icon={Play} title="Run not found" description={`No repo "${projectSlug}" in this workspace.`} />
-      </div>
+      </Screen>
     );
   }
   if (run.error || !run.data) {
     return (
-      <div className="space-y-5">
-        {backLink}
+      <Screen detail>
+        {crumbs}
         <Card>
           <CardHeader>
             <CardTitle className="text-destructive">{run.error?.code ?? "not_found"}</CardTitle>
             <CardDescription>{run.error?.message ?? `Run ${runId} was not found.`}</CardDescription>
           </CardHeader>
         </Card>
-      </div>
+      </Screen>
     );
   }
 
   const r: Run = run.data;
   const jobList: RunJob[] = jobs.data ?? [];
   const detail = buildRunDetail(r, jobList, repoLabel, now);
+  const hero = detail.hero;
   const activeJobId = selectedJob ?? detail.defaultJobId;
   const activeJob = detail.jobs.find((j) => j.jobId === activeJobId) ?? detail.jobs[0] ?? null;
 
-  return (
-    <div className="space-y-5">
-      {backLink}
+  const counts = r.jobCounts;
+  const totalJobs = counts.queued + counts.running + counts.succeeded + counts.failed;
+  const finishedJobs = counts.succeeded + counts.failed;
+  const donePct = totalJobs > 0 ? (finishedJobs / totalJobs) * 100 : hero.live ? 0 : 100;
+  const runPct = totalJobs > 0 ? (counts.running / totalJobs) * 100 : 0;
 
-      {/* HERO */}
-      <div className="flex items-start gap-[15px]">
-        <StatusMark vis={detail.hero.vis} box={42} glyph={20} radius={11} strokeWidth={2.2} />
-        <div className="min-w-0 flex-1">
-          <div className="flex flex-wrap items-center gap-2.5">
-            <h1 className="m-0 truncate text-[19px] font-semibold tracking-[-0.01em] text-foreground">
-              {detail.hero.title}
-            </h1>
-            <span className="text-[12.5px]" style={{ color: detail.hero.vis.color }}>
-              {detail.hero.statusLabel}
+  const startedUtc = utcTime(r.startedAt);
+  const provenance = [hero.branch, hero.commit7].filter(Boolean).join(" · ") || hero.runId;
+  const pillLabel =
+    hero.status === "running"
+      ? `Running · ${hero.duration}`
+      : !hero.live && hero.duration !== "—"
+        ? `${hero.statusLabel} · ${hero.duration}`
+        : hero.statusLabel;
+
+  return (
+    <Screen detail>
+      {crumbs}
+
+      {/* hero */}
+      <div className="min-w-0">
+        <div className="flex flex-wrap items-center gap-3">
+          <h1 className="min-w-0 truncate font-serif text-[26px] font-medium leading-tight tracking-[-0.01em] sm:text-[28px]">
+            {hero.repo}
+          </h1>
+          <Pill tone={RUN_TONE[hero.status]} dot live={hero.status === "running"}>
+            {pillLabel}
+          </Pill>
+        </div>
+        <div className="mt-[9px] flex flex-wrap items-center gap-x-2.5 gap-y-1.5 text-[12.5px] text-muted-foreground">
+          <span className="font-mono text-xs">{provenance}</span>
+          <Sep />
+          <span className="flex min-w-0 items-center gap-1.5">
+            <ActorBadge actor={hero.actor} />
+            <span className="truncate">
+              {hero.actor.name} · via {hero.sourceLabel}
             </span>
-          </div>
-          <div className="mt-[9px] flex flex-wrap items-center gap-2 font-mono text-[12px] text-muted-foreground/70">
-            <span className="text-muted-foreground">{detail.hero.repo}</span>
-            <Dot />
-            <span>{detail.hero.runId}</span>
-            <Dot />
-            <span>{detail.hero.provenance}</span>
-            <span className="inline-flex h-[19px] items-center rounded-[5px] border border-border bg-muted px-[7px] text-muted-foreground">
-              {detail.hero.envLabel}
-            </span>
-          </div>
-          <div className="mt-[10px] flex flex-wrap items-center gap-2">
-            <ActorChip actor={detail.hero.actor} box={18} />
-            <span className="text-[12px] text-muted-foreground">
-              {detail.hero.actor.name} triggered via {detail.hero.sourceLabel}
-            </span>
-            <span className="font-mono text-[12px] text-muted-foreground/70" title={formatTimestamp(r.createdAt)}>
-              · {detail.hero.rel} · {detail.hero.duration}
-            </span>
-          </div>
+          </span>
+          {hero.env ? (
+            <>
+              <Sep />
+              <span>{hero.envLabel}</span>
+            </>
+          ) : null}
         </div>
       </div>
 
-      {/* JOBS + LOGS */}
+      {/* run progress */}
+      <RunProgress className="mt-[22px]" donePercent={donePct} runningPercent={runPct} />
+      <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-[11.5px] text-muted-foreground/85">
+        <span>
+          {finishedJobs} of {totalJobs} jobs finished
+        </span>
+        <span title={r.startedAt ? formatTimestamp(r.startedAt) : formatTimestamp(r.createdAt)}>
+          {startedUtc ? `started ${startedUtc} UTC` : `created ${hero.rel}`}
+        </span>
+      </div>
+
+      {/* jobs rail + log pane */}
       {jobs.loading ? (
-        <div className="grid grid-cols-1 gap-[18px] md:grid-cols-[248px_minmax(0,1fr)]">
-          <Skeleton className="h-[260px] w-full rounded-[13px]" />
-          <Skeleton className="h-[260px] w-full rounded-[13px]" />
+        <div className="mt-[26px] grid grid-cols-1 items-start gap-[14px] md:grid-cols-[280px_minmax(0,1fr)]">
+          <Skeleton className="h-[260px] w-full rounded-xl" />
+          <Skeleton className="h-[320px] w-full rounded-xl" />
         </div>
       ) : jobs.error ? (
-        <Card>
+        <Card className="mt-[26px]">
           <CardHeader>
             <CardTitle className="text-destructive">{jobs.error.code}</CardTitle>
             <CardDescription>{jobs.error.message}</CardDescription>
           </CardHeader>
         </Card>
       ) : detail.jobs.length === 0 ? (
-        <EmptyState icon={Play} title="No jobs" description="This run has no jobs in its plan DAG." />
+        <div className="mt-[26px]">
+          <EmptyState icon={Play} title="No jobs" description="This run has no jobs in its plan DAG." />
+        </div>
       ) : (
-        <div className="grid grid-cols-1 items-start gap-[18px] md:grid-cols-[248px_minmax(0,1fr)]">
-          {/* jobs rail */}
-          <div className="rounded-[13px] border border-border bg-card p-2">
-            <div className="flex items-center gap-[7px] px-[9px] pb-[9px] pt-[7px]">
-              <span className="text-[11px] font-semibold uppercase tracking-[0.07em] text-muted-foreground">Jobs</span>
-              <span className="font-mono text-[11px] text-muted-foreground/70">{detail.jobs.length}</span>
+        <div className="mt-[26px] grid grid-cols-1 items-start gap-[14px] md:grid-cols-[280px_minmax(0,1fr)]">
+          {/* jobs rail (stacks above the log pane on mobile) */}
+          <div className="overflow-hidden rounded-xl border bg-card">
+            <div className="px-[18px] pb-[9px] pt-[13px]">
+              <Kicker>Jobs · {detail.jobs.length}</Kicker>
             </div>
             {detail.jobs.map((j) => {
               const active = j.jobId === activeJob?.jobId;
+              const liveJob = j.status === "running" || j.status === "claimed";
+              const okJob = j.status === "succeeded";
+              const badJob = j.status === "failed" || j.status === "timed_out";
+              const queued = j.status === "queued";
               return (
                 <button
                   key={j.jobId}
                   type="button"
                   onClick={() => setSelectedJob(j.jobId)}
-                  className="mb-0.5 flex w-full items-center gap-2.5 rounded-[9px] border px-2.5 py-[9px] text-left transition-colors"
-                  style={{
-                    borderColor: active ? "hsl(var(--border))" : "transparent",
-                    background: active ? "hsl(var(--primary) / 0.07)" : "transparent",
-                  }}
+                  aria-pressed={active}
+                  className={cn(
+                    "flex w-full items-center gap-[9px] border-t border-border/50 px-[18px] py-[9px] text-left text-[12.5px] transition-colors",
+                    liveJob ? "border-l-2 border-l-info bg-info-soft pl-4" : "hover:bg-muted",
+                    active && !liveJob && "bg-secondary/70",
+                    (queued || j.status === "canceled") && "text-muted-foreground",
+                  )}
                 >
-                  <StatusMark vis={j.vis} box={18} glyph={13} radius={5} strokeWidth={2.2} />
-                  <span
-                    className="min-w-0 flex-1 truncate font-mono text-[13px]"
-                    style={{ color: active ? "hsl(var(--foreground))" : "hsl(var(--foreground) / 0.85)" }}
-                  >
+                  {okJob ? (
+                    <Check aria-hidden className="h-[13px] w-[13px] shrink-0 text-success" strokeWidth={2.4} />
+                  ) : badJob ? (
+                    <X aria-hidden className="h-[13px] w-[13px] shrink-0 text-destructive" strokeWidth={2.4} />
+                  ) : liveJob ? (
+                    <StatusDot tone="info" live className="h-2 w-2" />
+                  ) : j.status === "canceled" ? (
+                    <span aria-hidden className="h-2 w-2 shrink-0 rounded-full bg-foreground/25" />
+                  ) : (
+                    <span aria-hidden className="h-2 w-2 shrink-0 rounded-full border-[1.5px] border-foreground/30" />
+                  )}
+                  <span className={cn("min-w-0 flex-1 truncate font-mono", liveJob && "font-semibold")}>
                     {j.name}
                   </span>
-                  <span className="shrink-0 font-mono text-[11px] text-muted-foreground/70">{j.dur}</span>
+                  <span
+                    className={cn(
+                      "shrink-0 text-[11px]",
+                      liveJob ? "text-info" : badJob ? "text-destructive" : "text-muted-foreground/85",
+                    )}
+                  >
+                    {queued
+                      ? "queued"
+                      : j.status === "canceled"
+                        ? "canceled"
+                        : liveJob
+                          ? `${j.dur}…`
+                          : j.dur}
+                  </span>
                 </button>
               );
             })}
           </div>
 
-          {/* selected job: header + log stream */}
+          {/* selected job: dark terminal log pane */}
           {activeJob ? (
-            <JobLogPanel
-              key={activeJob.jobId}
-              job={activeJob}
-              orgId={orgId}
-              projectId={projectId}
-              runId={runId}
-            />
+            <JobLogPanel key={activeJob.jobId} job={activeJob} orgId={orgId} projectId={projectId} runId={runId} />
           ) : null}
         </div>
       )}
-    </div>
+    </Screen>
   );
 }
 
-function Dot() {
-  return <span className="text-muted-foreground/40">·</span>;
+function Sep() {
+  return (
+    <span aria-hidden className="text-foreground/25">
+      ·
+    </span>
+  );
+}
+
+/** "HH:MM:SS" UTC clock time of an ISO instant, or null. */
+function utcTime(iso: string | null | undefined): string | null {
+  if (!iso) return null;
+  const t = new Date(iso);
+  if (Number.isNaN(t.getTime())) return null;
+  return t.toISOString().slice(11, 19);
 }
 
 /** How often live-tail polls the log tail while a job is still producing output. */
 const LOG_TAIL_INTERVAL_MS = 3000;
 
+/** Ghost button on the dark terminal header (the design's "Raw log" recipe). */
+const DARK_BTN =
+  "shrink-0 rounded-[7px] border border-[#404040] bg-transparent px-2.5 py-1 text-[11px] text-[#A8A8A8] transition-colors hover:bg-white/[0.06] hover:text-[#E0E0E0] disabled:pointer-events-none disabled:opacity-50";
+
+/** Terminal-ish tint for a log line — errors red, warnings amber, checks green. */
+function lineTint(ln: string): string {
+  if (/error|failed|✗/i.test(ln)) return "#E08E88";
+  if (/warn/i.test(ln)) return "#D9B96A";
+  if (ln.includes("✓")) return "#7FBF98";
+  return "#C9C9C9";
+}
+
 /**
  * The selected job's header + assembled logs with live-tail, rendered in the
- * design's terminal panel. The initial load replaces; subsequent fetches append
- * from the server's nextSeq cursor. While the log is incomplete and auto-tail is
- * on, it polls the tail every few seconds (silently, so the panel doesn't
- * flicker); it stops the moment the server reports `complete`.
+ * design's dark terminal panel (dark in BOTH themes). The initial load
+ * replaces; subsequent fetches append from the server's nextSeq cursor. While
+ * the log is incomplete and auto-tail is on, it polls the tail every few
+ * seconds (silently, so the panel doesn't flicker); it stops the moment the
+ * server reports `complete`.
  */
 function JobLogPanel({
   job,
@@ -323,40 +390,65 @@ function JobLogPanel({
 
   const lines = React.useMemo(() => (content ? content.replace(/\n$/, "").split("\n") : []), [content]);
 
+  const liveJob = job.status === "running" || job.status === "claimed";
+  const okJob = job.status === "succeeded";
+  const badJob = job.status === "failed" || job.status === "timed_out";
+
   return (
-    <div className="overflow-hidden rounded-[13px] border border-border bg-card">
+    <div className="min-w-0 overflow-hidden rounded-xl bg-[#171717]">
       {/* panel header */}
-      <div className="flex items-center gap-2.5 border-b border-border bg-muted/40 px-4 py-[13px]">
-        <StatusMark vis={job.vis} box={20} glyph={14} radius={5} strokeWidth={2.2} />
-        <span className="font-mono text-[13.5px] font-semibold text-foreground">{job.name}</span>
+      <div className="flex min-w-0 items-center gap-2.5 border-b border-[#333333] px-[18px] py-3">
+        <span
+          aria-hidden
+          className={cn(
+            "h-[7px] w-[7px] shrink-0 rounded-full",
+            liveJob
+              ? "animate-livepulse bg-[#7FA6E0]"
+              : okJob
+                ? "bg-[#7FBF98]"
+                : badJob
+                  ? "bg-[#E08E88]"
+                  : "bg-[#707070]",
+          )}
+        />
+        <span className="truncate font-mono text-[12.5px] font-semibold text-[#F0F0F0]">{job.name}</span>
+        <span className="shrink-0 text-[11.5px] text-[#737373]">
+          {complete ? "complete" : autoTail ? "streaming" : "paused"}
+        </span>
         {job.attempt > 1 ? (
-          <span className="font-mono text-[11.5px] text-muted-foreground/70">attempt {job.attempt}</span>
+          <span className="hidden shrink-0 font-mono text-[11px] text-[#737373] sm:inline">
+            attempt {job.attempt}
+          </span>
         ) : null}
         {job.deps.length > 0 ? (
-          <span className="hidden font-mono text-[11.5px] text-muted-foreground/70 sm:inline" title={job.deps.join(", ")}>
+          <span
+            className="hidden shrink-0 font-mono text-[11px] text-[#737373] sm:inline"
+            title={job.deps.join(", ")}
+          >
             needs {job.deps.length}
           </span>
         ) : null}
-        <div className="ml-auto flex items-center gap-2">
-          <span className="font-mono text-[12px] text-muted-foreground/70">{job.dur}</span>
-          {complete ? (
-            <span className="rounded-md border border-border bg-muted px-2 py-0.5 text-[11px] text-muted-foreground">
-              complete
-            </span>
-          ) : (
+        <div className="ml-auto flex shrink-0 items-center gap-2">
+          <span className="font-mono text-[11px] text-[#737373]">{job.dur}</span>
+          {complete ? null : (
             <>
-              <Button
-                size="sm"
-                variant={autoTail ? "secondary" : "outline"}
+              <button
+                type="button"
                 onClick={() => setAutoTail((on) => !on)}
                 title={autoTail ? "Pause live tail" : "Resume live tail"}
                 aria-pressed={autoTail}
+                className={DARK_BTN}
               >
                 {autoTail ? "Live" : "Paused"}
-              </Button>
-              <Button size="sm" variant="outline" onClick={() => void fetchFrom(nextSeq, false)} loading={loading}>
+              </button>
+              <button
+                type="button"
+                onClick={() => void fetchFrom(nextSeq, false)}
+                disabled={loading}
+                className={DARK_BTN}
+              >
                 Refresh
-              </Button>
+              </button>
             </>
           )}
         </div>
@@ -364,28 +456,25 @@ function JobLogPanel({
 
       {/* failure summary banner */}
       {job.errorText ? (
-        <div
-          className="border-b border-border px-4 py-2.5 font-mono text-[12px]"
-          style={{ background: "hsl(var(--destructive) / 0.08)", color: "hsl(var(--destructive))" }}
-        >
+        <div className="border-b border-[#333333] bg-[#C94A44]/15 px-[18px] py-2.5 font-mono text-[12px] text-[#E39A95]">
           {job.errorText}
         </div>
       ) : null}
 
       {/* terminal log body */}
-      <div className="bg-background px-4 py-3 font-mono text-[12px] leading-[1.7]">
+      <div className="px-5 pb-5 pt-4 font-mono text-[12px] leading-[1.85] text-[#C9C9C9]">
         {error ? (
-          <p className="text-destructive">
+          <p className="text-[#E08E88]">
             {error.code}: {error.message}
           </p>
         ) : lines.length === 0 ? (
-          <p className="text-muted-foreground/60">{loading ? "Loading…" : "No log output for this job."}</p>
+          <p className="text-[#737373]">{loading ? "Loading…" : "No log output for this job."}</p>
         ) : (
           <div className="max-h-[60vh] overflow-auto">
             {lines.map((ln, i) => (
-              <div key={i} className="flex gap-3.5">
-                <span className="shrink-0 select-none text-muted-foreground/30">{String(i + 1).padStart(3, " ")}</span>
-                <span className="min-w-0 whitespace-pre-wrap break-words text-foreground/80">{ln || " "}</span>
+              <div key={i} className="flex gap-3.5 whitespace-pre">
+                <span className="shrink-0 select-none text-[#555555]">{String(i + 1).padStart(3, " ")}</span>
+                <span style={{ color: lineTint(ln) }}>{ln || " "}</span>
               </div>
             ))}
           </div>

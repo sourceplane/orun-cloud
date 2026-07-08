@@ -17,7 +17,12 @@
 import type { Env } from "./env.js";
 import type { SqlExecutor } from "@saas/db/hyperdrive";
 import type { Uuid } from "@saas/db/ids";
-import { createStateRepository, type UpsertOrgCatalogEntityInput, type CatalogEntityRelation } from "@saas/db/state";
+import {
+  createStateRepository,
+  type UpsertOrgCatalogEntityInput,
+  type UpsertCatalogDocInput,
+  type CatalogEntityRelation,
+} from "@saas/db/state";
 import { requireBucket, objectKey } from "./object-store.js";
 import { readTree, readJsonBlob, type ObjectFetcher } from "./object-model.js";
 import { generateUuid } from "./ids.js";
@@ -126,6 +131,66 @@ function docRefOf(docs: Record<string, unknown> | undefined): Record<string, unk
   return null;
 }
 
+/** One attached doc of an entity's doc set (saas-catalog-docs CD3), extracted
+ *  from the wire docs block: the reserved overview (a {path,commit,sha,digest}
+ *  ref once attached; a bare path string when declared-only) plus the ordered
+ *  docs.pages entries. Only digest-bearing entries index — a declared-only
+ *  entry has nothing to read (it stays visible on the entity JSON). */
+export interface ProjectedDoc {
+  docKey: string;
+  title: string;
+  role: string;
+  path: string;
+  commitSha: string | null;
+  digest: string;
+  sizeBytes: number | null;
+  position: number;
+}
+
+function docsOf(docs: Record<string, unknown> | undefined): ProjectedDoc[] {
+  if (!docs) return [];
+  const str = (v: unknown): string | null => (typeof v === "string" && v.length > 0 ? v : null);
+  const out: ProjectedDoc[] = [];
+  const ov = docs.overview;
+  if (ov && typeof ov === "object" && !Array.isArray(ov)) {
+    const o = ov as Record<string, unknown>;
+    const digest = str(o.digest);
+    const path = str(o.path);
+    if (digest && path) {
+      out.push({
+        docKey: "overview",
+        title: "Overview",
+        role: "overview",
+        path,
+        commitSha: str(o.commit),
+        digest,
+        sizeBytes: null,
+        position: 0,
+      });
+    }
+  }
+  const pages = Array.isArray(docs.pages) ? docs.pages : [];
+  pages.forEach((raw, i) => {
+    if (!raw || typeof raw !== "object" || Array.isArray(raw)) return;
+    const p = raw as Record<string, unknown>;
+    const digest = str(p.digest);
+    const key = str(p.key);
+    const path = str(p.path);
+    if (!digest || !key || !path) return;
+    out.push({
+      docKey: key,
+      title: str(p.title) ?? key,
+      role: str(p.role) ?? "guide",
+      path,
+      commitSha: str(p.commit),
+      digest,
+      sizeBytes: typeof p.size === "number" && Number.isFinite(p.size) ? p.size : null,
+      position: i + 1,
+    });
+  });
+  return out;
+}
+
 function relationsOf(rels: EntityRelationJson[] | undefined): CatalogEntityRelation[] {
   if (!Array.isArray(rels)) return [];
   const out: CatalogEntityRelation[] = [];
@@ -154,6 +219,8 @@ export interface ProjectedEntity {
   tags: string[];
   /** {path,ref,sha,digest} pointer to docs.overview in CAS (WO4), or null. */
   docRef: Record<string, unknown> | null;
+  /** The attached doc set (overview + pages) for the org doc index (CD3). */
+  docs: ProjectedDoc[];
   /** Repo-entity-only fields, for the state.repo_facet projection (WO4). */
   displayName?: string | null;
   links?: Array<Record<string, unknown>>;
@@ -171,6 +238,7 @@ function componentEntity(m: ComponentManifestJson): ProjectedEntity | null {
     lifecycle: pickString(m.lifecycle, "stage", "lifecycle"),
     relations: relationsOf(m.relations),
     docRef: docRefOf(m.docs),
+    docs: docsOf(m.docs),
     ...portal,
   };
 }
@@ -196,6 +264,7 @@ function derivedEntity(e: EntityJson): ProjectedEntity | null {
     language: pickString(e.spec, "language"),
     tags,
     docRef: docRefOf(e.docs),
+    docs: docsOf(e.docs),
     displayName: pickString(e.metadata, "displayName"),
     links: Array.isArray(e.links) ? e.links : [],
   };
@@ -276,32 +345,38 @@ export async function projectCatalogSnapshot(
         .then(async (o) => (o ? new Uint8Array(await o.arrayBuffer()) : null));
   }
 
-  let entities: ProjectedEntity[];
-  try {
-    entities = await collectEntities(fetcher, scope.digest);
-  } catch (err) {
-    // Snapshot unreadable (R2 miss / bad bytes) or a parse error walking the
-    // tree. Surface it, then rethrow so caller behavior is unchanged.
-    console.error(JSON.stringify({ level: "error", reason: "collect_failed", error: String(err), ...base }));
-    throw err;
-  }
-  if (entities.length === 0) {
-    // Root unreadable (readTree → null) or a snapshot carrying no components/
-    // entities. Either way the console stays empty for this scope.
-    console.warn(JSON.stringify({ level: "warn", reason: "zero_entities", ...base }));
-  }
-
   if (!deps?.executor && !env.PLATFORM_DB) return null;
   const executor = deps?.executor ?? (await import("@saas/db/hyperdrive")).createSqlExecutor(env.PLATFORM_DB!);
   const owned = !deps?.executor;
+  const repo = createStateRepository(executor);
+
+  // Track which phase failed so the diagnostic reason stays precise, and so any
+  // failure is recorded on the catalog_projection outbox (attempts++). The cron
+  // sweep drives from that outbox: it keeps re-projecting a scope whose read
+  // model lags its head, then parks a poison scope after maxAttempts. This is
+  // what closes the "frozen read model" gap when the on-advance ctx.waitUntil
+  // projection is torn down mid-flight (state-worker invoked over a service
+  // binding — migration 570).
+  let phase: "collect" | "write" = "collect";
   try {
-    const repo = createStateRepository(executor);
+    const entities = await collectEntities(fetcher, scope.digest);
+    if (entities.length === 0) {
+      // Root unreadable (readTree → null) or a snapshot carrying no components/
+      // entities. A valid-but-empty snapshot still "catches up" this scope's
+      // read model to the head, so it is recorded as a success below.
+      console.warn(JSON.stringify({ level: "warn", reason: "zero_entities", ...base }));
+    }
+
+    phase = "write";
     // Replace the scope: drop the prior projection, then upsert the new set.
     const deleted = await repo.deleteOrgCatalogEntitiesForScope(scope.orgId, scope.projectId, scope.environment);
     // The repo facet is keyed per project (env-independent): clear it and
     // re-derive from this snapshot's Repo entity (if any), so dropping the
     // `repo:` block clears the stale facet — the same bijection.
     await repo.deleteRepoFacetForScope(scope.orgId, scope.projectId);
+    // The doc index replaces with the same scope bijection (CD3): rows exist
+    // exactly for the docs the new snapshot attaches.
+    await repo.deleteCatalogDocsForScope(scope.orgId, scope.projectId, scope.environment);
     let projected = 0;
     for (const e of entities) {
       const input: UpsertOrgCatalogEntityInput = {
@@ -326,6 +401,30 @@ export async function projectCatalogSnapshot(
       const up = await repo.upsertOrgCatalogEntity(input);
       if (up.ok) projected++;
 
+      // Index the entity's attached doc set (CD3) — one row per digest-bearing
+      // doc, same pass, same scope bijection.
+      for (const d of e.docs) {
+        const docInput: UpsertCatalogDocInput = {
+          id: generateUuid(),
+          orgId: scope.orgId,
+          sourceProjectId: scope.projectId,
+          sourceEnvironment: scope.environment,
+          entityRef: e.entityRef,
+          entityKind: e.kind,
+          entityName: e.name,
+          docKey: d.docKey,
+          title: d.title,
+          role: d.role,
+          path: d.path,
+          commitSha: d.commitSha,
+          digest: d.digest,
+          sizeBytes: d.sizeBytes,
+          position: d.position,
+          headDigest: scope.digest,
+        };
+        await repo.upsertCatalogDoc(docInput);
+      }
+
       // The declared Repo entity also drives the per-project repo_facet.
       if (e.kind === "Repo") {
         await repo.upsertRepoFacet({
@@ -343,12 +442,25 @@ export async function projectCatalogSnapshot(
         });
       }
     }
-    // No success log: the diagnostic signal lives in the warn/error paths
-    // above (zero_entities / collect_failed / write_failed). A clean run with
-    // entities projected leaves no log and a populated console.
+    // Durably record that this scope's read model has caught up to `digest` (and
+    // reset the failure counter) so the cron sweep stops re-projecting it. A
+    // clean run otherwise leaves no log — a populated console is the signal.
+    await repo.recordCatalogProjectionSuccess(scope.orgId, scope.projectId, scope.environment, scope.digest);
     return { deleted: deleted.ok ? deleted.value : 0, projected };
   } catch (err) {
-    console.error(JSON.stringify({ level: "error", reason: "write_failed", error: String(err), ...base }));
+    console.error(
+      JSON.stringify({
+        level: "error",
+        reason: phase === "collect" ? "collect_failed" : "write_failed",
+        error: String(err),
+        ...base,
+      }),
+    );
+    // Best-effort: record the failure so the sweep tracks attempts; never mask
+    // the original error.
+    await repo
+      .recordCatalogProjectionFailure(scope.orgId, scope.projectId, scope.environment, String(err))
+      .catch(() => {});
     throw err;
   } finally {
     if (owned && "dispose" in executor && typeof (executor as { dispose?: unknown }).dispose === "function") {

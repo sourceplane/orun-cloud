@@ -101,6 +101,21 @@ export const PLAN_CATALOG: PlanDefinition[] = [
       // regress the free tier.)
       { entitlementKey: "feature.integrations.github", valueType: "boolean", enabled: true, limitValue: null },
       { entitlementKey: "limit.repo_links", valueType: "quantity", enabled: true, limitValue: 1 },
+      // Event routing (saas-event-streaming ES2, D3 defaults): rules are an
+      // activation feature — enabled on free with a conservative cap.
+      { entitlementKey: "feature.event_routing", valueType: "boolean", enabled: true, limitValue: null },
+      { entitlementKey: "limit.notification_rules", valueType: "quantity", enabled: true, limitValue: 10 },
+      { entitlementKey: "feature.notifications.slack", valueType: "boolean", enabled: true, limitValue: null },
+      { entitlementKey: "limit.notification_channels", valueType: "quantity", enabled: true, limitValue: 3 },
+      // Custom event ingest (saas-event-streaming ES5): an activation feature —
+      // enabled on every tier with a per-day quota that scales with the plan.
+      { entitlementKey: "feature.events.custom_ingest", valueType: "boolean", enabled: true, limitValue: null },
+      { entitlementKey: "limit.custom_events_per_day", valueType: "quantity", enabled: true, limitValue: 1000 },
+      // Event/audit retention window (saas-event-streaming ES7, D3 placeholder
+      // tiers). The retention sweep deletes past-window rows; the security
+      // category floor is kept regardless of plan (compliance is not a plan
+      // feature). null = unlimited (Enterprise). Config edit, not a migration.
+      { entitlementKey: "limit.event_retention_days", valueType: "quantity", enabled: true, limitValue: 30 },
     ],
   },
   {
@@ -120,6 +135,13 @@ export const PLAN_CATALOG: PlanDefinition[] = [
       { entitlementKey: "limit.organizations", valueType: "quantity", enabled: true, limitValue: 1 },
       { entitlementKey: "feature.integrations.github", valueType: "boolean", enabled: true, limitValue: null },
       { entitlementKey: "limit.repo_links", valueType: "quantity", enabled: true, limitValue: 10 },
+      { entitlementKey: "feature.event_routing", valueType: "boolean", enabled: true, limitValue: null },
+      { entitlementKey: "limit.notification_rules", valueType: "quantity", enabled: true, limitValue: 50 },
+      { entitlementKey: "feature.notifications.slack", valueType: "boolean", enabled: true, limitValue: null },
+      { entitlementKey: "limit.notification_channels", valueType: "quantity", enabled: true, limitValue: 10 },
+      { entitlementKey: "feature.events.custom_ingest", valueType: "boolean", enabled: true, limitValue: null },
+      { entitlementKey: "limit.custom_events_per_day", valueType: "quantity", enabled: true, limitValue: 10000 },
+      { entitlementKey: "limit.event_retention_days", valueType: "quantity", enabled: true, limitValue: 90 },
     ],
   },
   {
@@ -139,6 +161,13 @@ export const PLAN_CATALOG: PlanDefinition[] = [
       { entitlementKey: "limit.organizations", valueType: "quantity", enabled: true, limitValue: 5 },
       { entitlementKey: "feature.integrations.github", valueType: "boolean", enabled: true, limitValue: null },
       { entitlementKey: "limit.repo_links", valueType: "quantity", enabled: true, limitValue: 50 },
+      { entitlementKey: "feature.event_routing", valueType: "boolean", enabled: true, limitValue: null },
+      { entitlementKey: "limit.notification_rules", valueType: "quantity", enabled: true, limitValue: 200 },
+      { entitlementKey: "feature.notifications.slack", valueType: "boolean", enabled: true, limitValue: null },
+      { entitlementKey: "limit.notification_channels", valueType: "quantity", enabled: true, limitValue: 25 },
+      { entitlementKey: "feature.events.custom_ingest", valueType: "boolean", enabled: true, limitValue: null },
+      { entitlementKey: "limit.custom_events_per_day", valueType: "quantity", enabled: true, limitValue: 100000 },
+      { entitlementKey: "limit.event_retention_days", valueType: "quantity", enabled: true, limitValue: 365 },
     ],
   },
   {
@@ -158,6 +187,13 @@ export const PLAN_CATALOG: PlanDefinition[] = [
       { entitlementKey: "limit.organizations", valueType: "quantity", enabled: true, limitValue: null },
       { entitlementKey: "feature.integrations.github", valueType: "boolean", enabled: true, limitValue: null },
       { entitlementKey: "limit.repo_links", valueType: "quantity", enabled: true, limitValue: null },
+      { entitlementKey: "feature.event_routing", valueType: "boolean", enabled: true, limitValue: null },
+      { entitlementKey: "limit.notification_rules", valueType: "quantity", enabled: true, limitValue: null },
+      { entitlementKey: "feature.notifications.slack", valueType: "boolean", enabled: true, limitValue: null },
+      { entitlementKey: "limit.notification_channels", valueType: "quantity", enabled: true, limitValue: null },
+      { entitlementKey: "feature.events.custom_ingest", valueType: "boolean", enabled: true, limitValue: null },
+      { entitlementKey: "limit.custom_events_per_day", valueType: "quantity", enabled: true, limitValue: null },
+      { entitlementKey: "limit.event_retention_days", valueType: "quantity", enabled: true, limitValue: null },
     ],
   },
 ];

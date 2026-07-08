@@ -1,177 +1,166 @@
 /**
- * Run rows (Activities redesign): the In-progress live cards, the desktop runs
- * table, and the mobile stacked cards. All three render the decorated `RunRow`
- * shape from the view-model and link into the shared run detail route.
+ * Run rows (Activities, Northwind design): the "In progress" live cards and the
+ * "Earlier" runs table. Both render the decorated `RunRow` shape from the
+ * view-model and link into the shared run detail route.
  */
 
 import * as React from "react";
 import Link from "next/link";
-import { ChevronRight } from "lucide-react";
+import { Bot } from "lucide-react";
+import type { RunStatus } from "@saas/contracts/state";
+import { cn } from "@/lib/cn";
 import type { RunRow } from "@/lib/runs-portal/model";
-import { RUN_BLUE } from "@/lib/runs-portal/palette";
-import { StatusMark, ActorChip } from "./run-status-icon";
+import type { ActorAvatar } from "@/lib/runs-portal/palette";
+import {
+  PersonAvatar,
+  RowChevron,
+  RunProgress,
+  StatusDot,
+  toneDot,
+  type Tone,
+} from "@/components/ui/northwind";
 
 /** Resolve a row's detail href, or null when its repo slug is unknown. */
 export type HrefOf = (row: RunRow) => string | null;
 
-/** The stacked jobs bar (succeeded / failed / running / queued segments). */
-function JobsBar({ row }: { row: RunRow }) {
-  const j = row.jobs;
-  return (
-    <div className="flex h-[5px] overflow-hidden rounded-[3px] bg-muted">
-      <span style={{ width: `${j.okPct}%`, background: "hsl(var(--success))" }} />
-      <span style={{ width: `${j.failPct}%`, background: "hsl(var(--destructive))" }} />
-      <span style={{ width: `${j.runPct}%`, background: RUN_BLUE }} />
-      <span style={{ width: `${j.queuedPct}%`, background: "hsl(var(--muted-foreground) / 0.35)" }} />
-    </div>
-  );
-}
+/** Run status → Northwind tone (dots, pills, tinted text). */
+export const RUN_TONE: Record<RunStatus, Tone> = {
+  succeeded: "success",
+  failed: "error",
+  running: "info",
+  pending: "neutral",
+  canceled: "neutral",
+};
 
-function JobsSummary({ row }: { row: RunRow }) {
-  const j = row.jobs;
-  return (
-    <span className="font-mono text-[11px] text-muted-foreground">
-      {j.succeeded}✓ {j.hasFail ? <span style={{ color: "hsl(var(--destructive))" }}>{j.failed}✗ </span> : null}·{" "}
-      {j.total}
-    </span>
-  );
+/** 17px actor mark: neutral person avatar for humans, bot square for automation. */
+export function ActorBadge({ actor, size = 17 }: { actor: ActorAvatar; size?: number }) {
+  if (actor.bot) {
+    return (
+      <span
+        aria-hidden
+        title={actor.name}
+        className="grid shrink-0 place-items-center rounded-md bg-secondary text-muted-foreground"
+        style={{ width: size, height: size }}
+      >
+        <Bot strokeWidth={2} style={{ width: Math.round(size * 0.62), height: Math.round(size * 0.62) }} />
+      </span>
+    );
+  }
+  return <PersonAvatar name={actor.name} size={size} />;
 }
-
-const ENV_BADGE =
-  "inline-flex h-5 items-center rounded-[5px] border border-border bg-muted px-2 font-mono text-[11px] text-muted-foreground";
 
 // ── In-progress live cards ───────────────────────────────────
 
 export function LiveRuns({ rows, hrefOf }: { rows: RunRow[]; hrefOf: HrefOf }) {
   if (rows.length === 0) return null;
   return (
-    <div className="flex flex-col gap-[9px]">
-      <div className="flex items-center gap-2">
-        <span className="h-[6px] w-[6px] animate-pulse rounded-full" style={{ background: RUN_BLUE }} />
-        <span className="text-[11px] font-semibold uppercase tracking-[0.07em] text-muted-foreground">
-          In progress
-        </span>
+    <div className="mt-[22px]">
+      <div className="mb-[9px] flex items-center gap-2">
+        <StatusDot tone="info" live />
+        <span className="text-[11px] font-semibold uppercase tracking-[0.08em] text-info">In progress</span>
       </div>
-      {rows.map((r) => {
-        const href = hrefOf(r);
-        const inner = (
-          <>
-            <div className="flex items-center gap-[10px]">
-              <StatusMark vis={r.vis} box={28} glyph={15} radius={8} strokeWidth={2.2} />
-              <span className="text-[13px] font-medium text-foreground">{r.repo}</span>
-              <span className="min-w-0 truncate text-[13px] text-muted-foreground">{r.title}</span>
-              <span className={`ml-auto shrink-0 ${ENV_BADGE}`}>{r.envLabel}</span>
-              <span className="shrink-0 font-mono text-[11.5px] text-muted-foreground/70">{r.duration}</span>
-            </div>
-            <div className="mt-[11px] h-[5px] overflow-hidden rounded-[3px] bg-muted">
-              <div
-                className="h-full animate-pulse rounded-[3px]"
-                style={{ width: `${r.jobs.progress}%`, background: RUN_BLUE }}
-              />
-            </div>
-            <div className="mt-[9px] flex items-center gap-2">
-              <span className="flex items-center gap-1.5">
-                <ActorChip actor={r.actor} box={17} />
-                <span className="font-mono text-[11.5px] text-muted-foreground">
-                  {r.shortId} · {r.provenance} · {r.sourceLabel}
+      <div className="flex flex-col gap-[9px]">
+        {rows.map((r) => {
+          const href = hrefOf(r);
+          const finished = r.jobs.succeeded + r.jobs.failed;
+          const inner = (
+            <>
+              <div className="flex items-center gap-[11px]">
+                <span className="min-w-0 truncate text-[13.5px] font-semibold">{r.repo}</span>
+                <span className="hidden min-w-0 truncate font-mono text-[11.5px] text-muted-foreground md:inline">
+                  {r.shortId} · {r.provenance}
                 </span>
-              </span>
-              <span className="ml-auto font-mono text-[11.5px] text-muted-foreground/70">
-                {r.jobs.succeeded} done · {r.jobs.running} running · {r.jobs.queued} queued
-              </span>
+                <span className="ml-auto shrink-0 text-xs tabular-nums text-info">
+                  {r.status === "pending" ? "queued" : `${r.duration} elapsed`}
+                </span>
+              </div>
+              <RunProgress
+                className="mt-[13px]"
+                donePercent={r.jobs.okPct + r.jobs.failPct}
+                runningPercent={r.jobs.runPct}
+              />
+              <div className="mt-[10px] flex flex-wrap items-center gap-x-3 gap-y-1.5 text-xs text-muted-foreground">
+                <span>
+                  {finished} of {r.jobs.total} jobs finished
+                </span>
+                <span aria-hidden className="hidden sm:inline">
+                  ·
+                </span>
+                <span>
+                  {r.jobs.running} running · {r.jobs.queued} queued
+                  {r.jobs.failed > 0 ? <span className="text-destructive"> · {r.jobs.failed} failed</span> : null}
+                </span>
+                <span className="ml-auto flex min-w-0 items-center gap-1.5">
+                  <ActorBadge actor={r.actor} />
+                  <span className="truncate">
+                    {r.actor.name} · via {r.sourceLabel}
+                  </span>
+                </span>
+              </div>
+            </>
+          );
+          const cls = "block rounded-xl border border-info/30 bg-card px-5 py-4 text-left transition-colors";
+          return href ? (
+            <Link key={r.key} href={href} data-runrow className={cn(cls, "hover:border-info/60")}>
+              {inner}
+            </Link>
+          ) : (
+            <div key={r.key} data-runrow className={cls}>
+              {inner}
             </div>
-          </>
-        );
-        const cls =
-          "block rounded-[11px] border border-border bg-card p-[13px_15px] text-left transition-colors hover:border-input";
-        return href ? (
-          <Link key={r.key} href={href} data-runrow className={cls}>
-            {inner}
-          </Link>
-        ) : (
-          <div key={r.key} data-runrow className={cls}>
-            {inner}
-          </div>
-        );
-      })}
+          );
+        })}
+      </div>
     </div>
   );
 }
 
-// ── Desktop table ────────────────────────────────────────────
+// ── Earlier runs table ───────────────────────────────────────
 
-const COLS = "minmax(150px,1.3fr) minmax(120px,1fr) minmax(150px,1.2fr) 116px minmax(140px,1fr) 96px 92px 30px";
-const HEAD = "text-[11px] font-semibold uppercase tracking-[0.05em] text-muted-foreground";
+const COLS = "16px minmax(180px,1.4fr) minmax(160px,1.2fr) 110px 90px 90px 34px";
 
 export function RunsTable({ rows, hrefOf }: { rows: RunRow[]; hrefOf: HrefOf }) {
   return (
-    <div className="overflow-hidden rounded-[13px] border border-border bg-card">
+    <div className="overflow-hidden rounded-xl border bg-card">
       <div className="overflow-x-auto">
-        <div className="min-w-[1040px]">
-          {/* header */}
-          <div
-            className="grid items-center gap-3 border-b border-border bg-muted/40 px-4 py-[10px]"
-            style={{ gridTemplateColumns: COLS }}
-          >
-            <span className={HEAD}>Run</span>
-            <span className={HEAD}>Repo</span>
-            <span className={HEAD}>Trigger</span>
-            <span className={HEAD}>Environment</span>
-            <span className={HEAD}>Jobs</span>
-            <span className={HEAD}>Duration</span>
-            <span className={HEAD}>Created</span>
-            <span />
-          </div>
+        <div className="min-w-[760px]">
           {rows.map((r) => {
             const href = hrefOf(r);
+            const failed = r.status === "failed";
             const cells = (
               <>
-                {/* run id + title */}
-                <span className="flex min-w-0 items-center gap-[9px]">
-                  <StatusMark vis={r.vis} box={24} glyph={13} />
-                  <span className="flex min-w-0 flex-col">
-                    <span className="truncate text-[13px] text-foreground">{r.title}</span>
-                    <span className="font-mono text-[11px] text-muted-foreground/70">{r.shortId}</span>
+                <span
+                  aria-hidden
+                  className={cn("h-2 w-2 justify-self-start rounded-full", toneDot[RUN_TONE[r.status]])}
+                />
+                <span className="min-w-0">
+                  <span className="block truncate text-[13px] font-medium text-foreground">{r.repo}</span>
+                  <span className="mt-px block truncate font-mono text-[11px] text-muted-foreground/85">
+                    {r.shortId}
+                    {r.branch ? ` · ${r.branch}` : ""}
                   </span>
                 </span>
-                {/* repo */}
-                <span className="truncate text-[13px] text-foreground/90">{r.repo}</span>
-                {/* trigger */}
-                <span className="flex min-w-0 items-center gap-[7px]">
-                  <ActorChip actor={r.actor} box={18} />
-                  <span className="flex min-w-0 flex-col">
-                    <span className="text-[12px] text-muted-foreground">{r.sourceLabel}</span>
-                    <span className="truncate font-mono text-[11px] text-muted-foreground/70">{r.provenance}</span>
-                  </span>
+                <span className="truncate font-mono text-[11.5px] text-muted-foreground">{r.commit7 ?? "—"}</span>
+                <span className="flex min-w-0 items-center gap-1.5 text-xs text-secondary-foreground">
+                  <ActorBadge actor={r.actor} />
+                  <span className="truncate">{r.actor.name}</span>
                 </span>
-                {/* env */}
-                <span>
-                  <span className={ENV_BADGE}>{r.envLabel}</span>
+                <span className={cn("text-xs tabular-nums", failed ? "text-destructive" : "text-muted-foreground")}>
+                  {r.duration}
                 </span>
-                {/* jobs */}
-                <span className="flex min-w-0 flex-col gap-[5px]">
-                  <JobsBar row={r} />
-                  <JobsSummary row={r} />
-                </span>
-                {/* duration */}
-                <span className="font-mono text-[12px] text-muted-foreground">{r.duration}</span>
-                {/* created */}
-                <span className="whitespace-nowrap font-mono text-[12px] text-muted-foreground/70">{r.rel}</span>
-                {/* chevron */}
-                <span className="grid place-items-center text-muted-foreground/50" data-rowgo>
-                  <ChevronRight className="h-3.5 w-3.5" />
+                <span className="whitespace-nowrap text-xs text-muted-foreground">{r.rel}</span>
+                <span className="grid place-items-center">
+                  <RowChevron className="ml-0" />
                 </span>
               </>
             );
-            const cls = "grid items-center gap-3 border-b border-border/60 px-4 py-[11px] transition-colors";
+            const cls = cn(
+              "grid items-center gap-3 border-b border-border/50 px-5 py-[13px] transition-colors last:border-b-0",
+              failed ? "bg-destructive-wash" : href && "hover:bg-muted",
+              href && "group cursor-pointer",
+            );
             return href ? (
-              <Link
-                key={r.key}
-                href={href}
-                data-runrow
-                className={`${cls} hover:bg-muted/40`}
-                style={{ gridTemplateColumns: COLS }}
-              >
+              <Link key={r.key} href={href} data-runrow className={cls} style={{ gridTemplateColumns: COLS }}>
                 {cells}
               </Link>
             ) : (
@@ -182,50 +171,6 @@ export function RunsTable({ rows, hrefOf }: { rows: RunRow[]; hrefOf: HrefOf }) 
           })}
         </div>
       </div>
-    </div>
-  );
-}
-
-// ── Mobile stacked cards ─────────────────────────────────────
-
-export function RunCards({ rows, hrefOf }: { rows: RunRow[]; hrefOf: HrefOf }) {
-  return (
-    <div className="space-y-3">
-      {rows.map((r) => {
-        const href = hrefOf(r);
-        const inner = (
-          <>
-            <div className="flex items-start gap-[10px]">
-              <StatusMark vis={r.vis} box={26} glyph={14} radius={7} />
-              <div className="min-w-0 flex-1">
-                <div className="truncate text-[13px] font-medium text-foreground">{r.title}</div>
-                <div className="font-mono text-[11px] text-muted-foreground/70">{r.repo} · {r.shortId}</div>
-              </div>
-              <span className={ENV_BADGE}>{r.envLabel}</span>
-            </div>
-            <div className="mt-[10px] flex flex-wrap items-center gap-x-3 gap-y-1.5">
-              <span className="flex items-center gap-1.5">
-                <ActorChip actor={r.actor} box={16} />
-                <span className="font-mono text-[11px] text-muted-foreground">
-                  {r.sourceLabel} · {r.provenance}
-                </span>
-              </span>
-              <JobsSummary row={r} />
-              <span className="ml-auto font-mono text-[11px] text-muted-foreground/70">{r.rel}</span>
-            </div>
-          </>
-        );
-        const cls = "block rounded-[11px] border border-border bg-card p-4 text-left";
-        return href ? (
-          <Link key={r.key} href={href} className={cls}>
-            {inner}
-          </Link>
-        ) : (
-          <div key={r.key} className={cls}>
-            {inner}
-          </div>
-        );
-      })}
     </div>
   );
 }

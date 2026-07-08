@@ -48,6 +48,7 @@ import {
   initCoordinator,
   projectorReady,
   planFromJobs,
+  runIsDoBacked,
   useDoCoordination,
 } from "../coordination-route.js";
 
@@ -235,10 +236,86 @@ export async function handleCreateRun(
   try {
     const repo = createStateRepository(executor);
 
+    // ── Shard self-heal for replays (the poisoned-run gap). createRun is not
+    //    atomic: the run row lands first, then run_jobs one-by-one, then the DO
+    //    shard seed. If the ORIGINAL creator's request dies mid-way (isolate
+    //    eviction, CPU/time limits on a wide DAG), the row exists but the shard
+    //    was never seeded — and since the native claim gate DELIBERATELY never
+    //    lazy-seeds from the (possibly partial) run_jobs rows, every :claim
+    //    404s forever while every replayed createRun happily returns 200: the
+    //    exact distributed-matrix CI stall. The heal is safe where lazy-seeding
+    //    was not, because it seeds from THIS REQUEST's complete plan body (the
+    //    same bytes every matrix job carries), never from partial DB rows; the
+    //    DO init is idempotent by planDigest, so concurrent healers and the
+    //    original creator's late seed all converge. Fail the replay loudly if
+    //    the seed fails — a 200 for an unclaimable run is the bug this fixes.
+    const healShardIfUnseeded = async (): Promise<Response | null> => {
+      if (!useDoCoordination(env) || !planJobs || planJobs.length === 0) return null;
+      if (await runIsDoBacked(env, runId as string)) return null;
+      const initRes = await initCoordinator(env, runId as string, {
+        plan: planFromJobs(planJobs),
+        planDigest,
+        sourceHash: gitCommit ?? planDigest,
+        environment,
+        actor: { id: actor.subjectId, type: actor.subjectType },
+      });
+      if (initRes.status >= 300) {
+        console.error(
+          `[coordination] createRun ${runId}: replay found run row without a DO shard and the heal seed failed (${initRes.status})`,
+        );
+        return errorResponse("internal_error", "Coordinator init failed", 503, requestId);
+      }
+      console.warn(
+        `[coordination] createRun ${runId}: healed an unseeded coordination shard on replay (original create died mid-way)`,
+      );
+      return null;
+    };
+
+    // ── Read-model row heal, the shard heal's sibling. The same mid-create
+    //    death also leaves state.run_jobs PARTIAL (rows insert one-by-one,
+    //    before the shard seed). The projector only UPDATEs job rows it finds,
+    //    and the log-append lease check 404s on a missing row — so jobs beyond
+    //    the dead creator's last insert execute fine (the DO has the full plan)
+    //    but can never deliver logs ("state may be stale on the server") and
+    //    are invisible to job counts. Reconcile from THIS request's complete
+    //    plan: inserts are conflict-ignored on the unique (run_id, job_id), so
+    //    concurrent replays and the original creator's late inserts converge.
+    //    Healed rows land 'queued'; the next projected verb (the job's own
+    //    claim at minimum) stamps real status/lease before any log append.
+    //    Applies on BOTH backends — OP2 claims also read these rows. The counts
+    //    sum is only a cheap gate ('canceled' falls outside its buckets, so a
+    //    rare false positive just re-runs an idempotent no-op insert). ONE
+    //    statement, not per-row inserts: every matrix job of a rerun replays
+    //    createRun at once, and a per-row sweep under that thundering herd
+    //    saturates the pool and times the CLI out before headers.
+    const healMissingJobRows = async (runRowId: Uuid, counts: RunJobCounts | null): Promise<boolean> => {
+      if (!planJobs || planJobs.length === 0) return false;
+      const seen = counts ? counts.queued + counts.running + counts.succeeded + counts.failed : -1;
+      if (seen >= planJobs.length) return false;
+      const healed = await repo.createRunJobsBulk(orgId, projectId, runRowId, planJobs);
+      if (!healed.ok) {
+        // Best-effort — the next replay retries; the replay itself still 200s.
+        console.error(`[coordination] createRun ${runId}: run_jobs row heal failed (${healed.error.kind})`);
+        return false;
+      }
+      if (healed.value > 0) {
+        console.warn(
+          `[coordination] createRun ${runId}: healed ${healed.value} missing run_jobs row(s) on replay (original create died mid-way)`,
+        );
+      }
+      return healed.value > 0;
+    };
+
     // ── Replay short-circuit: a known ULID returns the existing run (200). ──
     const existing = await repo.getRunByUlid(orgId, projectId, runId as string);
     if (existing.ok) {
-      const counts = await repo.getRunJobCounts(orgId, projectId, asUuid(existing.value.id));
+      const healFail = await healShardIfUnseeded();
+      if (healFail) return healFail;
+      const runRowId = asUuid(existing.value.id);
+      let counts = await repo.getRunJobCounts(orgId, projectId, runRowId);
+      if (await healMissingJobRows(runRowId, counts.ok ? counts.value : null)) {
+        counts = await repo.getRunJobCounts(orgId, projectId, runRowId);
+      }
       const payload: CreateRunResponse = {
         run: toPublicRun(existing.value, counts.ok ? counts.value : zeroCounts()),
       };
@@ -332,8 +409,17 @@ export async function handleCreateRun(
     if (!created.ok) return errorResponse("internal_error", "Service unavailable", 503, requestId);
 
     if (!created.value.created) {
-      // Lost the create race to a concurrent replay — return the existing run.
-      const counts = await repo.getRunJobCounts(orgId, projectId, asUuid(created.value.run.id));
+      // Lost the create race to a concurrent replay — return the existing run
+      // (healing the shard and any missing job rows first if the winner hasn't
+      // finished seeding them yet; both heals are idempotent, so racing the
+      // winner's own inserts just converges faster).
+      const healFail = await healShardIfUnseeded();
+      if (healFail) return healFail;
+      const runRowId = asUuid(created.value.run.id);
+      let counts = await repo.getRunJobCounts(orgId, projectId, runRowId);
+      if (await healMissingJobRows(runRowId, counts.ok ? counts.value : null)) {
+        counts = await repo.getRunJobCounts(orgId, projectId, runRowId);
+      }
       const payload: CreateRunResponse = {
         run: toPublicRun(created.value.run, counts.ok ? counts.value : zeroCounts()),
       };
@@ -353,22 +439,15 @@ export async function handleCreateRun(
       idempotencySeed: run.runUlid,
     });
 
-    // ── Persist the plan DAG as run_jobs. ──
+    // ── Persist the plan DAG as run_jobs — ONE statement for the whole DAG
+    //    (conflict-ignored, so a concurrent replay's heal converges). The old
+    //    per-row loop is what made wide-DAG creates slow enough for the creator
+    //    to die mid-insert (the poisoned-run gap the replay heals fix) and for
+    //    the CLI to time out awaiting headers. ──
     if (planJobs && planJobs.length > 0) {
-      for (const j of planJobs) {
-        const jobResult = await repo.createRunJob({
-          id: generateUuid(),
-          orgId,
-          projectId,
-          runId: asUuid(run.id),
-          jobId: j.jobId,
-          component: j.component,
-          deps: j.deps,
-        });
-        // A duplicate (run, jobId) is the only conflict; ignore (idempotent).
-        if (!jobResult.ok && jobResult.error.kind !== "conflict") {
-          return errorResponse("internal_error", "Service unavailable", 503, requestId);
-        }
+      const seeded = await repo.createRunJobsBulk(orgId, projectId, asUuid(run.id), planJobs);
+      if (!seeded.ok) {
+        return errorResponse("internal_error", "Service unavailable", 503, requestId);
       }
     }
 

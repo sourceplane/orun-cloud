@@ -1,6 +1,6 @@
 # Events, Audit, And Observability
 
-Status: Shipped — live on main (trust code over this doc). Owning work epic: see specs/epics/ + specs/roadmap.md.
+Status: Shipped (log + audit read) / In progress (router half). The deferred router/fan-out/dead-letter layer this spec mandates is owned by `specs/epics/saas-event-streaming/` (ES): the typed event catalog lives in `packages/contracts/src/event-catalog.ts`, and the shared lane substrate (subscriber_lanes, lane_cursors, dead_letters — migration `580_event_streams_foundation`) is the router's storage. Trust code over this doc.
 
 Primary monorepo targets:
 

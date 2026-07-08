@@ -7,13 +7,13 @@ import { GitBranch, Github, Terminal } from "lucide-react";
 import type { WorkspaceLink } from "@saas/sdk";
 import type { PublicRepoLink } from "@saas/contracts/integrations";
 import { OrgScope } from "@/components/shell/org-scope";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { CopyButton } from "@/components/ui/copy-button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Kicker, ListCard, ListCardHeader, Pill } from "@/components/ui/northwind";
 import { useToast } from "@/components/ui/toast";
 import { wrap } from "@/lib/api";
 import { useSession } from "@/lib/session";
@@ -95,40 +95,31 @@ function Inner({
 
   return (
     <div className="space-y-5">
-      <header>
-        <div className="flex items-center gap-2">
-          <Terminal className="h-5 w-5 text-muted-foreground" />
-          <h1 className="text-xl font-semibold tracking-tight">CLI</h1>
-        </div>
-        <p className="text-sm text-muted-foreground">
-          Connect a local clone to this project with the Orun CLI. Once linked,{" "}
-          <code className="font-mono text-xs">orun run --remote-state</code> needs no flags — it
-          resolves the org and project from the git remote.
-        </p>
-      </header>
+      <p className="max-w-[560px] text-[13px] leading-normal text-muted-foreground">
+        Connect a local clone to this project with the Orun CLI. Once linked,{" "}
+        <code className="rounded bg-muted px-1 py-0.5 font-mono text-xs">orun run --remote-state</code> needs no
+        flags — it resolves the org and project from the git remote.
+      </p>
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Connect this workspace</CardTitle>
-          <CardDescription>
-            Run this from inside a clone of the repository you want to link. The CLI lists your
-            orgs, creates or selects this project, and caches the link.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="flex items-center justify-between gap-3 rounded-md border bg-muted p-3">
-            <code className="font-mono text-sm">
-              <span className="text-muted-foreground">$ </span>
-              {CONNECT_SNIPPET}
-            </code>
-            <CopyButton value={CONNECT_SNIPPET} />
-          </div>
-          <p className="mt-2 text-xs text-muted-foreground">
-            Not signed in to the CLI yet? Run{" "}
-            <code className="font-mono">orun auth login</code> first.
-          </p>
-        </CardContent>
-      </Card>
+      {/* Connect this workspace — dark doc-style snippet. */}
+      <div className="rounded-xl border bg-card p-6">
+        <Kicker>Connect this workspace</Kicker>
+        <p className="mt-2 text-[13px] leading-normal text-muted-foreground">
+          Run this from inside a clone of the repository you want to link. The CLI lists your orgs,
+          creates or selects this project, and caches the link.
+        </p>
+        <div className="mt-4 flex items-center justify-between gap-3 overflow-x-auto rounded-[10px] bg-[#171717] p-4 font-mono text-[12.5px] leading-[1.7] text-[#D4D4D4]">
+          <code className="whitespace-pre">
+            <span className="text-[#8A8A8A]">$ </span>
+            {CONNECT_SNIPPET}
+          </code>
+          <CopyButton value={CONNECT_SNIPPET} />
+        </div>
+        <p className="mt-2.5 text-xs text-muted-foreground">
+          Not signed in to the CLI yet? Run{" "}
+          <code className="rounded bg-muted px-1 py-0.5 font-mono text-xs">orun auth login</code> first.
+        </p>
+      </div>
 
       {loading ? (
         <Card>
@@ -145,56 +136,47 @@ function Inner({
           description="Run orun auth login in a clone of this repo to connect it."
         />
       ) : (
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Linked remotes</CardTitle>
-            <CardDescription>
-              Each remote resolves to this project for remote-state runs. Unlinking breaks the next
-              CLI call until the workspace is re-linked.
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <ul className="divide-y divide-border">
-              {(links.data ?? []).map((link) => {
-                const fullName = githubFullName(link.remoteUrl);
-                const igLink = fullName
-                  ? repoLinkByFullName.get(fullName.toLowerCase())
-                  : undefined;
-                return (
-                  <li key={link.id} className="flex items-center justify-between gap-4 py-3">
-                    <div className="min-w-0">
-                      <div className="flex items-center gap-2">
-                        <GitBranch className="h-4 w-4 text-muted-foreground" />
-                        <span className="truncate font-mono text-sm">{link.remoteUrl}</span>
-                      </div>
-                      <div className="mt-1 flex flex-wrap items-center gap-1.5">
-                        <span className="text-xs text-muted-foreground">
-                          Linked {new Date(link.createdAt).toLocaleDateString()}
-                        </span>
-                        {igLink ? (
-                          <Badge variant="secondary" className="gap-1 text-[11px]">
-                            <Github className="h-3 w-3" />
-                            GitHub connection: {igLink.repoFullName}
-                          </Badge>
-                        ) : null}
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      {igLink ? (
-                        <Button variant="ghost" size="sm" asChild>
-                          <a href={`/orgs/${orgSlug}/projects/${projectSlug}/git`}>View in Git</a>
-                        </Button>
-                      ) : null}
-                      <Button variant="outline" size="sm" onClick={() => setUnlinkTarget(link)}>
-                        Unlink
-                      </Button>
-                    </div>
-                  </li>
-                );
-              })}
-            </ul>
-          </CardContent>
-        </Card>
+        <ListCard>
+          <ListCardHeader title="Linked remotes" />
+          {(links.data ?? []).map((link) => {
+            const fullName = githubFullName(link.remoteUrl);
+            const igLink = fullName ? repoLinkByFullName.get(fullName.toLowerCase()) : undefined;
+            return (
+              <div
+                key={link.id}
+                className="flex items-center justify-between gap-4 border-t border-border/50 px-5 py-3.5 first:border-t-0"
+              >
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2">
+                    <GitBranch className="h-4 w-4 shrink-0 text-muted-foreground" strokeWidth={1.8} />
+                    <span className="truncate font-mono text-[13px]">{link.remoteUrl}</span>
+                  </div>
+                  <div className="mt-1 flex flex-wrap items-center gap-1.5">
+                    <span className="text-xs text-muted-foreground">
+                      Linked {new Date(link.createdAt).toLocaleDateString()}
+                    </span>
+                    {igLink ? (
+                      <Pill tone="neutral" className="gap-1">
+                        <Github className="h-3 w-3" strokeWidth={1.8} />
+                        GitHub connection: {igLink.repoFullName}
+                      </Pill>
+                    ) : null}
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  {igLink ? (
+                    <Button variant="ghost" size="sm" asChild>
+                      <a href={`/orgs/${orgSlug}/projects/${projectSlug}/git`}>View in Git</a>
+                    </Button>
+                  ) : null}
+                  <Button variant="outline" size="sm" onClick={() => setUnlinkTarget(link)}>
+                    Unlink
+                  </Button>
+                </div>
+              </div>
+            );
+          })}
+        </ListCard>
       )}
 
       <ConfirmDialog

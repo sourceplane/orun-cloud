@@ -268,6 +268,70 @@ export async function handleAdvanceCatalogHead(
   }
 }
 
+// ── POST …/state/catalog/reproject ──────────────────────────
+//
+// Force a re-projection of the current catalog head into the org read model
+// (org_catalog_entities + repo_facet) — the operator lever for a scope whose
+// projection was dropped (e.g. the on-advance ctx.waitUntil torn down under a
+// service-binding invoke). Idempotent (replace-the-scope) and inline, so the
+// response reflects the committed projection. The cron catalog-projection-sweep
+// heals the same scopes automatically; this endpoint is the immediate path.
+
+export async function handleReprojectCatalogHead(
+  request: Request,
+  env: Env,
+  requestId: string,
+  actor: ActorContext,
+  orgId: Uuid,
+  projectId: Uuid,
+  deps?: CatalogHandlerDeps,
+): Promise<Response> {
+  const authz = await authorizeRun(env, requestId, actor, orgId, projectId, STATE_POLICY_ACTIONS.CATALOG_PUBLISH);
+  if (!authz.ok) return authz.response;
+
+  // Optional environment selector (default: the project-wide head).
+  let environment: string | null = null;
+  const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
+  if (typeof body.environment === "string" && body.environment.length > 0) environment = body.environment;
+
+  const executor = deps?.executor ?? createSqlExecutor(env.PLATFORM_DB!);
+  const owned = !deps?.executor;
+  try {
+    const repo = createStateRepository(executor);
+    const headResult = await repo.getCatalogHead(orgId, projectId, environment);
+    if (!headResult.ok) {
+      return errorResponse("not_found", "No catalog head for this scope", 404, requestId, { environment });
+    }
+    const head = headResult.value;
+    const summary = await projectCatalogSnapshot(
+      env,
+      {
+        orgId,
+        projectId,
+        orgPublic: orgPublicId(orgId),
+        projectPublic: projectPublicId(projectId),
+        environment: head.environment,
+        digest: head.digest,
+        commit: head.commit,
+      },
+      { executor },
+    );
+    return successResponse(
+      {
+        digest: head.digest,
+        environment: head.environment,
+        projected: summary?.projected ?? 0,
+        deleted: summary?.deleted ?? 0,
+      },
+      requestId,
+    );
+  } catch (err) {
+    return errorResponse("internal_error", "Reprojection failed", 500, requestId, { error: String(err) });
+  } finally {
+    if (owned) await dispose(executor);
+  }
+}
+
 // ── GET …/state/catalog/head?environment= ───────────────────
 
 export async function handleGetCatalogHead(

@@ -144,6 +144,36 @@ export class Transport {
     return response.text();
   }
 
+  /**
+   * Streaming sibling of `request<T>`: same URL / auth / request-id / abort
+   * semantics, but sends `accept: text/event-stream` (overridable) and
+   * returns the raw `Response` so the caller can read `response.body`
+   * incrementally. For server-sent-event endpoints (the work events stream).
+   * Non-2xx still decodes to a typed `OrunCloudError`.
+   */
+  async requestStream(input: PerformInput, opts: RequestOptions = {}): Promise<Response> {
+    const url = this.buildUrl(input.path, input.query);
+    const requestId = opts.requestId ?? generateRequestId();
+
+    const headers = new Headers();
+    for (const [k, v] of Object.entries(this.defaultHeaders)) headers.set(k, v);
+    if (this.auth) applyAuth(headers, this.auth);
+    headers.set("accept", "text/event-stream");
+    headers.set("x-request-id", requestId);
+    if (opts.headers) {
+      for (const [k, v] of Object.entries(opts.headers)) headers.set(k, v);
+    }
+
+    const init: RequestInit = { method: input.method, headers };
+    if (opts.signal !== undefined) init.signal = opts.signal;
+
+    const response = await this.fetchImpl(url, init);
+    if (!response.ok) {
+      throw await decodeError(response, requestId);
+    }
+    return response;
+  }
+
   private async performRequest<T>(
     input: PerformInput,
     opts: RequestOptions,

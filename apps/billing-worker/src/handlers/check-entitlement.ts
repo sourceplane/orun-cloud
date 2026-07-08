@@ -60,6 +60,13 @@ const DEFAULT_TIER_ENTITLEMENTS: Record<string, number> = {
   // repo link. Catalog rows override these the moment plans configure them.
   "feature.integrations.github": 1,
   "limit.repo_links": 1,
+  // saas-event-streaming ES2 (D3 defaults): rules available on the default
+  // tier with a conservative cap; catalog rows override once materialized.
+  "feature.event_routing": 1,
+  "limit.notification_rules": 10,
+  // saas-event-streaming ES3: Slack channels available on the default tier.
+  "feature.notifications.slack": 1,
+  "limit.notification_channels": 3,
 };
 
 

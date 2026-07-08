@@ -8,6 +8,13 @@
   "compatibility_flags": ["nodejs_compat"],
   "main": "src/index.ts",
   "minify": false,
+  // Async retry drain (saas-event-streaming ES3): minutely, matching the
+  // webhooks/events drains. Also: SECRET_ENCRYPTION_KEY (channel credential
+  // encryption) is set out-of-band via `wrangler secret put
+  // SECRET_ENCRYPTION_KEY --env <env>` on stage/prod.
+  "triggers": {
+    "crons": ["* * * * *"]
+  },
   "vars": {
     "ENVIRONMENT": "local",
     "NOTIFICATIONS_PROVIDER": "local-debug",
@@ -51,8 +58,16 @@
       ],
       "services": [
         {
-          "binding": "EVENTS_WORKER",
-          "service": "events-worker-stage"
+          "binding": "MEMBERSHIP_WORKER",
+          "service": "membership-worker-stage"
+        },
+        {
+          "binding": "POLICY_WORKER",
+          "service": "policy-worker-stage"
+        },
+        {
+          "binding": "BILLING_WORKER",
+          "service": "billing-worker-stage"
         }
       ]
     },
@@ -79,8 +94,16 @@
       ],
       "services": [
         {
-          "binding": "EVENTS_WORKER",
-          "service": "events-worker-prod"
+          "binding": "MEMBERSHIP_WORKER",
+          "service": "membership-worker-prod"
+        },
+        {
+          "binding": "POLICY_WORKER",
+          "service": "policy-worker-prod"
+        },
+        {
+          "binding": "BILLING_WORKER",
+          "service": "billing-worker-prod"
         }
       ]
     }

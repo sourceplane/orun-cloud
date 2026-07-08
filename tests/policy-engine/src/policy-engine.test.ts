@@ -726,8 +726,12 @@ describe("listEffectivePermissions", () => {
 
     const allowed = result.permissions.filter((p) => p.allow);
     // 42 base + 7 saas-teams TM4 team.* actions + secret.reveal (SM1)
-    // + 2 teams-ownership TO1 team.owner_handle.* actions.
-    expect(allowed.length).toBe(52);
+    // + 2 teams-ownership TO1 team.owner_handle.* actions
+    // + 2 ES1 dead_letter.* actions + 2 orun-work WP1 work.* actions
+    // + 2 ES2 organization.notification_rule.* actions
+    // + 2 ES3 organization.notification_channel.* actions
+    // + 2 ES4 organization.event.{read,ingest} actions.
+    expect(allowed.length).toBe(62);
   });
 
   it("returns limited permissions for viewer", () => {
@@ -741,8 +745,11 @@ describe("listEffectivePermissions", () => {
     expect(allowed.map((p) => p.action).sort()).toEqual([
       "catalog.read",
       "organization.config.read",
+      "organization.event.read",
       "organization.integration.read",
       "organization.metering.read",
+      "organization.notification_channel.read",
+      "organization.notification_rule.read",
       "organization.read",
       "organization.webhook.read",
       "project.list",
@@ -750,6 +757,7 @@ describe("listEffectivePermissions", () => {
       "secret.read",
       "state.object.read",
       "state.run.read",
+      "work.read",
     ]);
   });
 
@@ -947,6 +955,47 @@ describe("audit.read authorization", () => {
     expect(result.allow).toBe(false);
     expect(result.reason).toBe("no_matching_role");
   });
+});
+
+describe("dead_letter authorization (saas-event-streaming ES1)", () => {
+  for (const action of ["dead_letter.read", "dead_letter.replay"] as const) {
+    it(`allows organization owner for ${action}`, () => {
+      const result = authorize(authReq(action, "org_1", [orgFact("owner", "org_1")]));
+      expect(result.allow).toBe(true);
+      expect(result.reason).toBe("org_owner");
+    });
+
+    it(`allows organization admin for ${action}`, () => {
+      const result = authorize(authReq(action, "org_1", [orgFact("admin", "org_1")]));
+      expect(result.allow).toBe(true);
+      expect(result.reason).toBe("org_admin");
+    });
+
+    it(`denies builder for ${action}`, () => {
+      const result = authorize(authReq(action, "org_1", [orgFact("builder", "org_1")]));
+      expect(result.allow).toBe(false);
+    });
+
+    it(`denies viewer for ${action}`, () => {
+      const result = authorize(authReq(action, "org_1", [orgFact("viewer", "org_1")]));
+      expect(result.allow).toBe(false);
+    });
+
+    it(`denies billing_admin for ${action}`, () => {
+      const result = authorize(authReq(action, "org_1", [orgFact("billing_admin", "org_1")]));
+      expect(result.allow).toBe(false);
+    });
+
+    it(`denies project-scoped roles for ${action}`, () => {
+      const result = authorize(authReq(action, "org_1", [projectFact("project_admin", "org_1", "prj_1")]));
+      expect(result.allow).toBe(false);
+    });
+
+    it(`denies cross-org memberships for ${action}`, () => {
+      const result = authorize(authReq(action, "org_1", [orgFact("owner", "org_other")]));
+      expect(result.allow).toBe(false);
+    });
+  }
 });
 
 describe("service-principal binding actions", () => {
@@ -1270,5 +1319,23 @@ describe("effective-access provenance (TM6b)", () => {
     expect(read?.via).toEqual({ kind: "team", teamId: "team_abc" });
     const denied = res.permissions.find((p) => !p.allow);
     if (denied) expect(denied.via).toBeUndefined();
+  });
+});
+
+describe("orun-work actions (WP1 — the unknown_action regression)", () => {
+  it("work.read and work.write are known and granted, not unknown_action", () => {
+    const req = (action: string, role: string): AuthorizationRequest => ({
+      subject,
+      action,
+      resource: { kind: "organization", orgId: "org_1" },
+      context: { memberships: [orgFact(role, "org_1")] },
+    });
+    expect(authorize(req("work.read", "viewer"))).toMatchObject({ allow: true });
+    expect(authorize(req("work.write", "viewer"))).toMatchObject({ allow: false });
+    const viewerWrite = authorize(req("work.write", "viewer"));
+    expect((viewerWrite as { reason?: string }).reason).not.toBe("unknown_action");
+    expect(authorize(req("work.write", "builder"))).toMatchObject({ allow: true });
+    expect(authorize(req("work.write", "admin"))).toMatchObject({ allow: true });
+    expect(authorize(req("work.read", "owner"))).toMatchObject({ allow: true });
   });
 });

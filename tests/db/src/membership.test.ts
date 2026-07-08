@@ -1966,16 +1966,20 @@ describe("MembershipRepository", () => {
         if (!result.ok) expect(result.error.kind).toBe("not_found");
       });
 
-      it("listTeams scopes by account and orders oldest-first", async () => {
-        const { executor, queries } = createFakeExecutor({ rows: [SAMPLE_TEAM_ROW] });
+      it("listTeams scopes by account, orders oldest-first, and carries a member count", async () => {
+        const { executor, queries } = createFakeExecutor({ rows: [{ ...SAMPLE_TEAM_ROW, member_count: 3 }] });
         const repo = createMembershipRepository(executor);
 
-        await repo.listTeams(ORG1);
+        const result = await repo.listTeams(ORG1);
 
         expect(queries[0]!.text).toContain("account_org_id = $1");
         expect(queries[0]!.text).toContain("status <> 'deleted'");
-        expect(queries[0]!.text).toContain("ORDER BY created_at ASC");
+        expect(queries[0]!.text).toContain("ORDER BY t.created_at ASC");
+        // teams-platform — the directory renders member counts without an N+1.
+        expect(queries[0]!.text).toContain("member_count");
         expect(queries[0]!.params).toEqual([ORG1]);
+        expect(result.ok).toBe(true);
+        if (result.ok) expect(result.value[0]!.memberCount).toBe(3);
       });
     });
 

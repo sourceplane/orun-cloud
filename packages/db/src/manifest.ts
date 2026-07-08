@@ -516,5 +516,77 @@ export const manifest: MigrationManifest = {
       description:
         "The work lens — two append-only logs (orun-work v2 WP0). Recreates the work schema (v1 dropped by 490_work_teardown) as: work.specs + work.tasks (droppable fold caches of the coordination log — intent envelopes only), work.events (the authored coordination log: closed 9-kind vocabulary with NO lifecycle-write kind, mandatory typed actor, per-workspace seq = the sync cursor), work.observations (the world-authored fact log: closed 6-kind vocabulary, named versioned source, dedupe_key idempotency), and work.sequences (task-key PREFIX-n + the two log counters). No status/lifecycle/gate/released column exists anywhere — lifecycle is a derived query (WP-3); workspace-scoped tenancy, no project partition (WP-7). Additive + idempotent.",
     },
+    {
+      id: "570_state_catalog_projection",
+      context: "state",
+      path: "570_state_catalog_projection/up.sql",
+      checksum:
+        "014eecc8aa5349b45702f861fe3ed6ece094dff0a3767cb22042329c067523b6",
+      description:
+        "Durable catalog-projection outbox (saas-workspace-overview projection reliability). Creates state.catalog_projection (org_id, project_id, environment; projected_digest, projected_at, attempts, last_error, updated_at) recording the last head digest whose read-model projection committed, with a unique index on (org_id, project_id, COALESCE(environment,'')). The cron catalog-projection-sweep drives from state.catalog_heads LEFT JOIN this table and re-projects any scope whose projected_digest lags its current head — the reliable backstop for the on-advance ctx.waitUntil projection that can be torn down when state-worker is invoked over a service binding (leaving org_catalog_entities + repo_facet frozen). A scope stale before this table existed is detected on the first pass (projected_digest NULL) — no backfill. Additive + idempotent.",
+    },
+    {
+      id: "580_event_streams_foundation",
+      context: "events",
+      path: "580_event_streams_foundation/up.sql",
+      checksum:
+        "e6c317e08a17ae53f4f6e18009e0b4492db3331a048f52fac1bdcb2824c69039",
+      description:
+        "Event streams foundation (saas-event-streaming ES0) — lays the shared substrate for the spec-09 router that was never built: events.subscriber_lanes (the lane registry — a lane is a named, at-least-once, cursored subscription over event_log; pausing one is the operational kill switch), events.lane_cursors (per-(lane, org) keyset dispatch positions — the events-owned generalization of webhooks.webhook_dispatch_cursor, which the webhooks lane adopts in ES1), events.dead_letters (poisoned deliveries as pointer + forensics with a (lane, event) uniqueness so retries update rather than fork), events.notification_rules + events.rule_targets (org/project-scoped routing rules with mandatory throttle fields, evaluated from ES2; target_kind forward-defined for team/inbox), and events.event_groups + events.event_group_members (the dedup/correlation read-model — one open story per (org, rendered dedup key) via a partial unique index, activated in ES4). Tables only; nothing reads or writes them until the owning milestones land. Additive + idempotent; no cross-context FKs.",
+    },
+    {
+      id: "590_webhooks_lane_adoption",
+      context: "events",
+      path: "590_webhooks_lane_adoption/up.sql",
+      checksum:
+        "0bdabe9ef1ea1e4adf0719138956326547ff0626ef4c7c880e71f52b6106aa97",
+      description:
+        "Webhooks lane adoption (saas-event-streaming ES1) — seeds the subscriber-lane registry with the two launch lanes ('webhooks' active, owned by webhooks-worker with delivery mechanics unchanged; 'notifications' PAUSED until the ES2 rules engine lands) and backfills events.lane_cursors from webhooks.webhook_dispatch_cursor (one-time one-directional copy INTO the events context per the R6 cutover protocol: copy -> dual-read -> cutover -> drop later; the legacy table stays intact as the runtime read-through fallback and rollback path). Idempotent via ON CONFLICT DO NOTHING throughout; no cross-context foreign keys.",
+    },
+    {
+      id: "600_notification_rule_throttle",
+      context: "events",
+      path: "600_notification_rule_throttle/up.sql",
+      checksum:
+        "0f356cd02a0ec20588aa8f40f34c5596a3f8608a2ab48a7b809d4c1ab3e15f84",
+      description:
+        "Notification-rule throttle state + notifications lane activation (saas-event-streaming ES2) — creates events.rule_throttle_state (one row per rule; fixed window anchored at first fire; fired_count consumed via a single atomic upsert so overlapping cron ticks cannot double-admit — the ledger behind the mandatory throttle_window_seconds/throttle_max rule fields, R1 storm control) and flips the 'notifications' subscriber lane from its seeded PAUSED state to active now that the ES2 rules engine gives the lane a handler. Operators keep the pause switch via subscriber_lanes.status. Additive + idempotent; same-context FK only.",
+    },
+    {
+      id: "610_notification_channels",
+      context: "notifications",
+      path: "610_notification_channels/up.sql",
+      checksum:
+        "e60a7ee8d80931638963f9917e78cbe2aff5897dfb16e6f099ed3d3f1f64deb0",
+      description:
+        "Notification channels + async-retry scaffolding (saas-event-streaming ES3) — creates notifications.notification_channels (per-org channel config; config_ciphertext holds an AES-GCM CiphertextEnvelope of a bearer credential like a Slack incoming-webhook URL, write-only and never returned on CRUD reads, mirroring webhooks.webhook_endpoints.secret_ciphertext), lifts the channel CHECK from ('email') to ('email','slack') across the three channel-bearing tables (preferences, notifications, suppressions; attempts has no channel column), and adds next_retry_at + attempt_count to notifications plus a partial retry index so the new notifications-worker cron can drain and re-send failed rows on the webhooks-style backoff ladder (synchronous enqueue send = attempt 1). Additive + idempotent (DROP CONSTRAINT IF EXISTS before re-add, ADD COLUMN IF NOT EXISTS); no cross-context FKs.",
+    },
+    {
+      id: "620_state_catalog_docs",
+      context: "state",
+      path: "620_state_catalog_docs/up.sql",
+      checksum:
+        "d4540e32c92f559482c4fe03a0ec6864810472c20486f45f81796c5fad717aeb",
+      description:
+        "Org-wide catalog doc index (saas-catalog-docs CD3) — creates state.catalog_docs: one row per attached (digest-bearing) doc of every catalog entity (the reserved overview + the ordered docs.pages set from CLI CD1/CD2), keyed (org, project, env, entity_ref, doc_key) with denormalized entity kind/name for the Docs-hub browse, role/title/path/commit provenance, the CAS digest the console renders the body by, and (org, digest) + (org, kind, role) + keyset indexes. Projected in the same delete-then-upsert pass as org_catalog_entities and swept by the migration-570 outbox. Derived, never authored; additive + idempotent.",
+    },
+    {
+      id: "630_event_grouping",
+      context: "events",
+      path: "630_event_grouping/up.sql",
+      checksum:
+        "56bed9b11b6f860bc296358c3a6626a6df0f9424359be6e64a7e187e7c6b4018",
+      description:
+        "Event grouping activation + group-aware notification ledger (saas-event-streaming ES4) — seeds the 'grouping' subscriber lane (active; the events-worker grouping handler renders catalog dedup keys and maintains events.event_groups as an open-story-per-key read-model) and creates events.rule_group_notifications, the notifications lane's own (rule_id, group_key) high-water-severity ledger that fires a rule on a group's first matching event and on severity escalation but not on every member (one story, not five pings). The ledger is owned solely by the notifications lane, so group-aware firing is race-free regardless of lane dispatch order. Additive + idempotent (ON CONFLICT DO NOTHING seed, CREATE TABLE IF NOT EXISTS); same-context FK only.",
+    },
+    {
+      id: "640_event_lifecycle",
+      context: "events",
+      path: "640_event_lifecycle/up.sql",
+      checksum:
+        "1e5ad371b35b2b8b1d38ad7ccc92ed97ad798b801b91197c27ae8cef75e9b5a3",
+      description:
+        "Event lifecycle — retention-sweep support + per-rule storm breaker (saas-event-streaming ES7). Adds storm-breaker state to events.notification_rules (suppressed_at/suppressed_reason — the auto-suppression overlay on top of the operator status column, a rule fires only when status='enabled' AND suppressed_at IS NULL, the read maps suppressed_at back onto the 'suppressed' status; saturated_window_count/last_saturated_at — the consecutive-saturation bookkeeping the throttle admission path maintains, reset on admit, incremented on deny, tripping auto-suppression past a threshold, cleared after a cooldown). Adds a partial notification_rules_suppressed_idx for the cooldown re-enable scan + admin storm audit, and two retention cutoff-scan partial indexes not already covered by the ES0/ES4 indexes: dead_letters_terminal_updated_idx (terminal-status age scan for the fixed-window dead-letter sweep) and event_groups_closed_at_idx (closed_at age scan for the closed-group sweep). event_log / audit_entries cutoff deletes reuse the existing (org_id, occurred_at) indexes; the design §10 security-category floor is enforced in the delete predicate, not the schema. Additive + idempotent (ADD COLUMN IF NOT EXISTS / CREATE INDEX IF NOT EXISTS, no DROP); same-context references only.",
+    },
   ],
 };

@@ -6,9 +6,7 @@ import { z } from "zod";
 import { Plus, KeyRound, Copy, Check } from "lucide-react";
 import { OrgScope } from "@/components/shell/org-scope";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Badge } from "@/components/ui/badge";
 import { EmptyState } from "@/components/ui/empty-state";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import {
@@ -21,8 +19,9 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { ZodForm } from "@/components/ui/zod-form";
-import { Table, TableHeader, TableRow, TableHead, TableBody, TableCell } from "@/components/ui/table";
 import { PreconditionInsight } from "@/components/precondition/insight";
+import { SettingsHeader, SettingsPanel } from "@/components/settings/settings-primitives";
+import { ListCard, Pill } from "@/components/ui/northwind";
 import { useSession } from "@/lib/session";
 import { useApiQuery, qk } from "@/lib/query";
 import { useToast } from "@/components/ui/toast";
@@ -66,7 +65,7 @@ function Inner({ orgId }: { orgId: string }) {
   };
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-[18px]">
       <ConfirmDialog
         open={pendingRevoke !== null}
         onOpenChange={(open) => !open && setPendingRevoke(null)}
@@ -76,51 +75,49 @@ function Inner({ orgId }: { orgId: string }) {
         confirmLabel="Revoke key"
         onConfirm={() => (pendingRevoke ? revokeKey(pendingRevoke.id) : undefined)}
       />
-      <header className="flex items-end justify-between gap-4">
-        <div>
-          <h1 className="text-xl font-semibold tracking-tight">API keys</h1>
-          <p className="text-sm text-muted-foreground">
-            Long-lived credentials for service principals. Secrets are shown once at creation.
-          </p>
-        </div>
-        <Dialog open={open} onOpenChange={setOpen}>
-          <DialogTrigger asChild>
-            <Button>
-              <Plus className="h-4 w-4 mr-1.5" />
-              New API key
-            </Button>
-          </DialogTrigger>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>Create API key</DialogTitle>
-              <DialogDescription>The secret will only be shown once. Store it securely.</DialogDescription>
-            </DialogHeader>
-            <ZodForm
-              schema={schema}
-              defaultValues={{ label: "", role: "builder" }}
-              fields={[
-                { name: "label", label: "Label", placeholder: "ci-deploy-bot" },
-                { name: "role", label: "Role", hint: ORGANIZATION_ROLES.join(" · ") },
-              ]}
-              submitLabel="Create key"
-              cancel={{ label: "Cancel", onClick: () => setOpen(false) }}
-              onSubmit={async (v) => {
-                const r = await wrap(async () =>
-                  (await client.apiKeys.create(orgId, { label: v.label, role: v.role })).apiKey,
-                );
-                if (!r.ok) {
-                  if (r.error.code === "precondition_failed") setPrecondition(r.error);
-                  else toast({ kind: "error", title: "Create failed", description: r.error.message });
-                  return;
-                }
-                setOpen(false);
-                setReveal({ label: r.data.label, secret: r.data.secret });
-                keys.reload();
-              }}
-            />
-          </DialogContent>
-        </Dialog>
-      </header>
+      <SettingsHeader
+        title="API keys"
+        description="Long-lived credentials for service principals. Secrets are shown once at creation."
+        actions={
+          <Dialog open={open} onOpenChange={setOpen}>
+            <DialogTrigger asChild>
+              <Button>
+                <Plus className="h-4 w-4" strokeWidth={1.8} />
+                New API key
+              </Button>
+            </DialogTrigger>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Create API key</DialogTitle>
+                <DialogDescription>The secret will only be shown once. Store it securely.</DialogDescription>
+              </DialogHeader>
+              <ZodForm
+                schema={schema}
+                defaultValues={{ label: "", role: "builder" }}
+                fields={[
+                  { name: "label", label: "Label", placeholder: "ci-deploy-bot" },
+                  { name: "role", label: "Role", hint: ORGANIZATION_ROLES.join(" · ") },
+                ]}
+                submitLabel="Create key"
+                cancel={{ label: "Cancel", onClick: () => setOpen(false) }}
+                onSubmit={async (v) => {
+                  const r = await wrap(async () =>
+                    (await client.apiKeys.create(orgId, { label: v.label, role: v.role })).apiKey,
+                  );
+                  if (!r.ok) {
+                    if (r.error.code === "precondition_failed") setPrecondition(r.error);
+                    else toast({ kind: "error", title: "Create failed", description: r.error.message });
+                    return;
+                  }
+                  setOpen(false);
+                  setReveal({ label: r.data.label, secret: r.data.secret });
+                  keys.reload();
+                }}
+              />
+            </DialogContent>
+          </Dialog>
+        }
+      />
 
       {precondition && (
         <PreconditionInsight error={precondition} resource="api key" onDismiss={() => setPrecondition(null)} />
@@ -148,7 +145,7 @@ function Inner({ orgId }: { orgId: string }) {
                 setTimeout(() => setCopied(false), 1500);
               }}
             >
-              {copied ? <Check className="h-4 w-4 mr-1.5" /> : <Copy className="h-4 w-4 mr-1.5" />}
+              {copied ? <Check className="h-4 w-4" strokeWidth={1.8} /> : <Copy className="h-4 w-4" strokeWidth={1.8} />}
               {copied ? "Copied" : "Copy"}
             </Button>
             <Button onClick={() => setReveal(null)}>Done</Button>
@@ -157,20 +154,18 @@ function Inner({ orgId }: { orgId: string }) {
       </Dialog>
 
       {keys.loading ? (
-        <Card>
-          <CardContent className="pt-6 space-y-2">
-            {Array.from({ length: 3 }).map((_, i) => (
-              <Skeleton key={i} className="h-9 w-full" />
-            ))}
-          </CardContent>
-        </Card>
+        <SettingsPanel className="space-y-2">
+          {Array.from({ length: 3 }).map((_, i) => (
+            <Skeleton key={i} className="h-9 w-full" />
+          ))}
+        </SettingsPanel>
       ) : keys.error ? (
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-destructive">{keys.error.code}</CardTitle>
-            <CardDescription>{keys.error.message}</CardDescription>
-          </CardHeader>
-        </Card>
+        <SettingsPanel tone="danger">
+          <div className="text-[13.5px] font-semibold text-destructive">{keys.error.code}</div>
+          <p className="mt-1.5 text-[12.5px] leading-relaxed text-muted-foreground">
+            {keys.error.message}
+          </p>
+        </SettingsPanel>
       ) : !keys.data || keys.data.length === 0 ? (
         <EmptyState
           icon={KeyRound}
@@ -179,76 +174,36 @@ function Inner({ orgId }: { orgId: string }) {
           primaryAction={{ label: "New API key", onClick: () => setOpen(true) }}
         />
       ) : (
-        <>
-          {/* Mobile: stacked cards */}
-          <div className="space-y-3 md:hidden">
-            {keys.data.map((k) => (
-              <Card key={k.id} className="space-y-3 p-4">
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0 space-y-1.5">
-                    <div className="truncate font-medium">{k.label}</div>
-                    <div className="font-mono text-xs text-muted-foreground">{k.prefix}…</div>
-                  </div>
-                  {k.revokedAt ? (
-                    <Badge variant="destructive">revoked</Badge>
-                  ) : (
-                    <Button size="sm" variant="ghost" onClick={() => setPendingRevoke({ id: k.id, label: k.label })}>
-                      Revoke
-                    </Button>
-                  )}
+        <ListCard>
+          {keys.data.map((k) => (
+            <div
+              key={k.id}
+              className="flex items-center gap-3 border-t border-border/50 px-5 py-[13px] first:border-t-0"
+            >
+              <div className="min-w-0 flex-1">
+                <div className="truncate text-[13px] font-medium">{k.label}</div>
+                <div className="truncate font-mono text-[11.5px] text-muted-foreground">
+                  {k.prefix}… · {k.servicePrincipal.role} · created {new Date(k.createdAt).toLocaleDateString()}
                 </div>
-                <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
-                  <Badge variant="outline">{k.servicePrincipal.role}</Badge>
-                  <span>created {new Date(k.createdAt).toLocaleDateString()}</span>
-                  <span>
-                    last used {k.lastUsedAt ? new Date(k.lastUsedAt).toLocaleDateString() : "never"}
-                  </span>
-                </div>
-              </Card>
-            ))}
-          </div>
-
-          {/* Desktop: table */}
-          <Card className="hidden md:block">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Label</TableHead>
-                  <TableHead>Prefix</TableHead>
-                  <TableHead>Role</TableHead>
-                  <TableHead>Created</TableHead>
-                  <TableHead>Last used</TableHead>
-                  <TableHead className="text-right">Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {keys.data.map((k) => (
-                  <TableRow key={k.id}>
-                    <TableCell className="font-medium">{k.label}</TableCell>
-                    <TableCell className="font-mono text-xs">{k.prefix}…</TableCell>
-                    <TableCell>
-                      <Badge variant="outline">{k.servicePrincipal.role}</Badge>
-                    </TableCell>
-                    <TableCell className="text-xs text-muted-foreground">
-                      {new Date(k.createdAt).toLocaleDateString()}
-                    </TableCell>
-                    <TableCell className="text-xs text-muted-foreground">
-                      {k.lastUsedAt ? new Date(k.lastUsedAt).toLocaleDateString() : "never"}
-                    </TableCell>
-                    <TableCell className="text-right">
-                      {!k.revokedAt && (
-                        <Button size="sm" variant="ghost" onClick={() => setPendingRevoke({ id: k.id, label: k.label })}>
-                          Revoke
-                        </Button>
-                      )}
-                      {k.revokedAt && <Badge variant="destructive">revoked</Badge>}
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </Card>
-        </>
+              </div>
+              <span className="hidden shrink-0 text-[12px] text-muted-foreground sm:inline">
+                last used {k.lastUsedAt ? new Date(k.lastUsedAt).toLocaleDateString() : "never"}
+              </span>
+              {k.revokedAt ? (
+                <Pill tone="neutral">revoked</Pill>
+              ) : (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="text-destructive hover:text-destructive"
+                  onClick={() => setPendingRevoke({ id: k.id, label: k.label })}
+                >
+                  Revoke
+                </Button>
+              )}
+            </div>
+          ))}
+        </ListCard>
       )}
     </div>
   );

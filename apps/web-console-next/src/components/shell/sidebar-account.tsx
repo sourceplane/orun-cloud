@@ -58,16 +58,16 @@ export function SidebarAccount() {
           "hover:bg-accent focus:outline-none focus-visible:ring-2 focus-visible:ring-ring",
         )}
       >
-        <span className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-gradient-to-br from-primary to-primary/40 text-[11px] font-bold text-primary-foreground">
+        <span className="grid h-[26px] w-[26px] shrink-0 place-items-center rounded-full bg-[#E0E0E0] text-[11px] font-semibold text-[#555555] dark:bg-accent dark:text-accent-foreground">
           {seed}
         </span>
         <span className="flex min-w-0 flex-1 flex-col">
-          <span className="truncate text-sm font-medium leading-tight">{name}</span>
+          <span className="truncate text-[12.5px] font-medium leading-tight">{name}</span>
           {email && email !== name && (
             <span className="truncate text-[11px] leading-tight text-muted-foreground">{email}</span>
           )}
         </span>
-        <ChevronsUpDown className="h-4 w-4 shrink-0 text-muted-foreground" />
+        <ChevronsUpDown className="h-3.5 w-3.5 shrink-0 text-muted-foreground/70" />
       </DropdownMenuTrigger>
       <DropdownMenuContent side="top" align="start" className="min-w-[220px]">
         {email && <DropdownMenuLabel className="truncate font-normal text-muted-foreground">{email}</DropdownMenuLabel>}

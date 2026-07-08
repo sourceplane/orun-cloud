@@ -15,10 +15,15 @@ import { AuthClient } from "./auth.js";
 import { CliSessionsClient } from "./cliSessions.js";
 import { IntegrationsClient } from "./integrations.js";
 import { StateClient } from "./state.js";
+import { WorkClient } from "./work.js";
 import { BillingClient } from "./billing.js";
 import { ConfigClient } from "./config.js";
 import { EnvironmentsClient } from "./environments.js";
 import { EventsClient } from "./events.js";
+import { EventGroupsClient } from "./eventGroups.js";
+import { DeadLettersClient } from "./deadLetters.js";
+import { NotificationRulesClient } from "./notificationRules.js";
+import { NotificationChannelsClient } from "./notificationChannels.js";
 import { MembershipsClient } from "./memberships.js";
 import { TeamsClient } from "./teams.js";
 import { AccountClient } from "./account.js";
@@ -64,6 +69,14 @@ export class OrunCloud {
   readonly metering: MeteringClient;
   readonly billing: BillingClient;
   readonly events: EventsClient;
+  /** Event Groups resource — read-only dedup/correlation stories (ES4). */
+  readonly eventGroups: EventGroupsClient;
+  /** Dead Letters resource — undeliverable-event ops: list + replay (ES1). */
+  readonly deadLetters: DeadLettersClient;
+  /** Notification Rules resource — routing-rule CRUD + test-fire (ES2). */
+  readonly notificationRules: NotificationRulesClient;
+  /** Notification Channels resource — delivery-channel CRUD + test-send (ES3). */
+  readonly notificationChannels: NotificationChannelsClient;
   readonly securityEvents: SecurityEventsClient;
   readonly config: ConfigClient;
   readonly notifications: NotificationsClient;
@@ -71,6 +84,7 @@ export class OrunCloud {
   readonly cliSessions: CliSessionsClient;
   readonly integrations: IntegrationsClient;
   readonly state: StateClient;
+  readonly work: WorkClient;
   /** Underlying HTTP transport. Exposed for advanced extension. */
   readonly transport: Transport;
 
@@ -90,6 +104,10 @@ export class OrunCloud {
     this.metering = new MeteringClient(this.transport);
     this.billing = new BillingClient(this.transport);
     this.events = new EventsClient(this.transport);
+    this.eventGroups = new EventGroupsClient(this.transport);
+    this.deadLetters = new DeadLettersClient(this.transport);
+    this.notificationRules = new NotificationRulesClient(this.transport);
+    this.notificationChannels = new NotificationChannelsClient(this.transport);
     this.securityEvents = new SecurityEventsClient(this.transport);
     this.config = new ConfigClient(this.transport);
     this.notifications = new NotificationsClient(this.transport);
@@ -97,6 +115,7 @@ export class OrunCloud {
     this.cliSessions = new CliSessionsClient(this.transport);
     this.integrations = new IntegrationsClient(this.transport);
     this.state = new StateClient(this.transport);
+    this.work = new WorkClient(this.transport);
   }
 }
 
@@ -125,10 +144,20 @@ export { BillingClient } from "./billing.js";
 export {
   EventsClient,
   AUDIT_ITERATOR_MAX_PAGES,
+  EVENT_ITERATOR_MAX_PAGES,
   type AuditEntryFilters,
+  type EventStreamFilters,
   type ListAuditEntriesQuery,
   type ListAuditEntriesResult,
 } from "./events.js";
+export {
+  EventGroupsClient,
+  EVENT_GROUP_ITERATOR_MAX_PAGES,
+  type ListEventGroupsQuery,
+} from "./eventGroups.js";
+export { DeadLettersClient, type ListDeadLettersQuery } from "./deadLetters.js";
+export { NotificationRulesClient } from "./notificationRules.js";
+export { NotificationChannelsClient } from "./notificationChannels.js";
 export {
   SecurityEventsClient,
   type ListSecurityEventsQuery,
@@ -325,6 +354,23 @@ export type {
   PublicAuditEntry,
   ListAuditEntriesResponse,
   EventActorType,
+  // Event stream (custom ingest + explorer, ES5).
+  PublicEvent,
+  CustomEventInput,
+  ListEventsResponse,
+  GetEventResponse,
+  EventLogQueryFilters,
+  // Event groups (dedup/correlation stories, ES4).
+  PublicEventGroup,
+  PublicEventGroupMember,
+  EventGroupStatus,
+  ListEventGroupsResponse,
+  GetEventGroupResponse,
+  // Dead letters (undeliverable-event ops, ES1).
+  DeadLetterStatus,
+  PublicDeadLetter,
+  ListDeadLettersResponse,
+  ReplayDeadLetterResponse,
 } from "@saas/contracts/events";
 
 export type {
@@ -397,6 +443,33 @@ export type {
   NotificationSuppression,
   SuppressRecipientRequest,
   SuppressRecipientResponse,
+  // Notification rules (ES2).
+  NotificationRuleStatus,
+  NotificationRuleTargetKind,
+  NotificationRuleFilterOp,
+  NotificationRuleAttributeFilter,
+  NotificationRuleTargetInput,
+  PublicNotificationRule,
+  PublicNotificationRuleTarget,
+  CreateNotificationRuleRequest,
+  UpdateNotificationRuleRequest,
+  TestNotificationRuleRequest,
+  ListNotificationRulesResponse,
+  GetNotificationRuleResponse,
+  CreateNotificationRuleResponse,
+  UpdateNotificationRuleResponse,
+  DeleteNotificationRuleResponse,
+  TestNotificationRuleResponse,
+  // Notification channels (ES3) — config is write-only.
+  NotificationChannelKind,
+  PublicNotificationChannel,
+  CreateNotificationChannelRequest,
+  UpdateNotificationChannelRequest,
+  ListNotificationChannelsResponse,
+  CreateNotificationChannelResponse,
+  UpdateNotificationChannelResponse,
+  DeleteNotificationChannelResponse,
+  TestNotificationChannelResponse,
 } from "@saas/contracts/notifications";
 
 export type {
@@ -437,3 +510,5 @@ export type {
   ApproveCliGrantResponse,
   DenyCliGrantResponse,
 } from "@saas/contracts/auth";
+
+export { WorkClient };

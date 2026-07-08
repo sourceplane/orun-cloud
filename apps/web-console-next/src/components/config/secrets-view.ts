@@ -57,16 +57,31 @@ export interface RotationStatus {
   ageDays: number;
   /** True when a rotation policy exists and the age meets/exceeds it. */
   due: boolean;
-  /** Short human label for the rotation column. */
+  /** Short human label for the rotation column (legacy phrasing). */
   label: string;
+  /**
+   * Terser label the Northwind Secrets table renders: "31d / 180d" (in-window),
+   * "Due · 94d / 90d" (overdue), "61d old · no policy".
+   */
+  displayLabel: string;
   /** Badge tone the panel maps to a variant. */
   tone: BadgeTone;
+  /** True when a rotation policy is configured for this secret. */
+  hasPolicy: boolean;
+  /** The policy window in days, or null when no policy is configured. */
+  policyDays: number | null;
+  /** Whole days past the policy when overdue; null otherwise. */
+  overdueByDays: number | null;
 }
 
 /**
  * Derive the rotation view-model for a secret. `lastRotatedAt` anchors the age
  * when present, else `createdAt`. A secret with no rotation policy is never
  * "due"; its label is a bare age.
+ *
+ * The Northwind Secrets table renders the mock's terser labels — "31d / 180d"
+ * (in-window), "Due · 94d / 90d" (overdue), "61d old · no policy" — while the
+ * base `label` keeps its legacy phrasing for any surface still reading it.
  */
 export function rotationStatus(
   meta: Pick<PublicSecretMetadata, "rotationPolicy" | "lastRotatedAt" | "createdAt">,
@@ -80,14 +95,27 @@ export function rotationStatus(
 
   const policyDays = parseRotationPolicyDays(meta.rotationPolicy);
   if (policyDays === null) {
-    return { ageDays, due: false, label: `${ageDays}d old`, tone: "secondary" };
+    return {
+      ageDays,
+      due: false,
+      label: `${ageDays}d old`,
+      displayLabel: `${ageDays}d old · no policy`,
+      tone: "secondary",
+      hasPolicy: false,
+      policyDays: null,
+      overdueByDays: null,
+    };
   }
   const due = ageDays >= policyDays;
   return {
     ageDays,
     due,
     label: due ? `Rotation due (${ageDays}d)` : `${ageDays}d / ${policyDays}d`,
+    displayLabel: due ? `Due · ${ageDays}d / ${policyDays}d` : `${ageDays}d / ${policyDays}d`,
     tone: due ? "warning" : "success",
+    hasPolicy: true,
+    policyDays,
+    overdueByDays: due ? ageDays - policyDays : null,
   };
 }
 
@@ -119,6 +147,66 @@ export function chainBadges(
     badges.push({ label: "Locked", tone: "warning" });
   }
   return badges;
+}
+
+// ---------------------------------------------------------------------------
+// Scope-chain mini-chips (Northwind Secrets table)
+// ---------------------------------------------------------------------------
+
+/**
+ * A single mini-chip in the Secrets table's "Scope chain" column.
+ * `tone: "env"` renders in the info tint; `override` adds the ⌃ marker for a
+ * rung that shadows a broader scope. `tone: "neutral"` covers org/repo rungs.
+ */
+export interface ScopeChainChip {
+  label: string;
+  tone: "neutral" | "env";
+  override: boolean;
+}
+
+/**
+ * Derive the scope-chain chips for a secret row from its metadata alone (no
+ * value read). Mirrors the mock: a neutral chip for the owning org/project
+ * scope, the serving rung on a chain read (env rungs tinted + marked when they
+ * override a broader scope), a personal-overlay chip, and a Locked guardrail.
+ */
+export function scopeChainChips(
+  meta: Pick<
+    PublicSecretMetadata,
+    "scopeKind" | "servesFrom" | "overridable" | "personal"
+  >,
+): ScopeChainChip[] {
+  const chips: ScopeChainChip[] = [];
+
+  switch (meta.scopeKind) {
+    case "organization":
+      chips.push({ label: "org", tone: "neutral", override: false });
+      break;
+    case "project":
+      chips.push({ label: "project", tone: "neutral", override: false });
+      break;
+    case "environment":
+      chips.push({ label: "environment", tone: "env", override: false });
+      break;
+    default:
+      if (meta.scopeKind) chips.push({ label: meta.scopeKind, tone: "neutral", override: false });
+  }
+
+  // On a chain read the serving rung records where the head resolved. Show it
+  // (tinted + marked when an environment/personal rung shadows a broader scope).
+  if (meta.servesFrom && meta.servesFrom !== meta.scopeKind) {
+    const env = meta.servesFrom === "environment" || meta.servesFrom === "personal";
+    chips.push({
+      label: meta.servesFrom,
+      tone: env ? "env" : "neutral",
+      override: env,
+    });
+  }
+
+  if (meta.personal) chips.push({ label: "personal", tone: "env", override: true });
+  if (meta.overridable === false) chips.push({ label: "locked", tone: "neutral", override: false });
+
+  return chips;
 }
 
 // ---------------------------------------------------------------------------

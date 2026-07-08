@@ -10,8 +10,10 @@ spec:
   domain: starter-runtime
   path: apps/notifications-worker
   dependsOn:
-    - component: events-worker
     - component: db-migrate
+    - component: membership-worker
+    - component: policy-worker
+    - component: billing-worker
   subscribe:
     environments:
       - name: dev

@@ -58,12 +58,6 @@ export function buildSettingsNav(orgSlug: string): SettingsNavGroup[] {
           description: "People with access",
         },
         {
-          href: `${base}/teams`,
-          label: "Teams",
-          icon: "Users",
-          description: "Account-owned groups you grant roles to",
-        },
-        {
           href: `${base}/access`,
           label: "Access",
           icon: "Users",
@@ -127,6 +121,32 @@ export function buildSettingsNav(orgSlug: string): SettingsNavGroup[] {
           label: "Billing & plan",
           icon: "Receipt",
           description: "Plan, invoices, payment",
+        },
+      ],
+    },
+    {
+      // Event-routing surfaces (saas-event-streaming ES6): rules that fan events
+      // out to channels, the channels themselves, and the dead-letter ops view.
+      id: "notifications",
+      label: "Notifications",
+      links: [
+        {
+          href: `${base}/notifications/rules`,
+          label: "Rules",
+          icon: "BellRing",
+          description: "Route events to email or Slack",
+        },
+        {
+          href: `${base}/notifications/channels`,
+          label: "Channels",
+          icon: "Slack",
+          description: "Slack delivery channels",
+        },
+        {
+          href: `${base}/notifications/dead-letters`,
+          label: "Dead letters",
+          icon: "Inbox",
+          description: "Failed deliveries — replay",
         },
       ],
     },

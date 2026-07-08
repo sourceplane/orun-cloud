@@ -4,10 +4,10 @@ import * as React from "react";
 import { useParams } from "next/navigation";
 import { Boxes } from "lucide-react";
 import { OrgScope } from "@/components/shell/org-scope";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Table, TableHeader, TableRow, TableHead, TableBody, TableCell } from "@/components/ui/table";
 import { Skeleton } from "@/components/ui/skeleton";
 import { EmptyState } from "@/components/ui/empty-state";
+import { SettingsHeader, SettingsPanel } from "@/components/settings/settings-primitives";
+import { ListCard, ListRow, MonoRef } from "@/components/ui/northwind";
 import { wrap } from "@/lib/api";
 import { useSession } from "@/lib/session";
 import { useApiQuery, qk } from "@/lib/query";
@@ -25,29 +25,23 @@ function Inner({ orgId }: { orgId: string }) {
   );
 
   return (
-    <div className="space-y-5">
-      <header>
-        <h1 className="text-xl font-semibold tracking-tight">Workspaces</h1>
-        <p className="text-sm text-muted-foreground">
-          Every workspace under this account. Teams and account roles reach all of them.
-        </p>
-      </header>
+    <div className="space-y-[18px]">
+      <SettingsHeader
+        title="Workspaces"
+        description="Every workspace under this account. Teams and account roles reach all of them."
+      />
 
       {workspaces.loading ? (
-        <Card>
-          <CardContent className="pt-6 space-y-2">
-            {Array.from({ length: 3 }).map((_, i) => (
-              <Skeleton key={i} className="h-9 w-full" />
-            ))}
-          </CardContent>
-        </Card>
+        <SettingsPanel className="space-y-2">
+          {Array.from({ length: 3 }).map((_, i) => (
+            <Skeleton key={i} className="h-9 w-full" />
+          ))}
+        </SettingsPanel>
       ) : workspaces.error ? (
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-destructive">{workspaces.error.code}</CardTitle>
-            <CardDescription>{workspaces.error.message}</CardDescription>
-          </CardHeader>
-        </Card>
+        <SettingsPanel>
+          <div className="text-[13.5px] font-semibold text-destructive">{workspaces.error.code}</div>
+          <p className="mt-1.5 text-[12.5px] text-muted-foreground">{workspaces.error.message}</p>
+        </SettingsPanel>
       ) : !workspaces.data || workspaces.data.length === 0 ? (
         <EmptyState
           icon={Boxes}
@@ -55,26 +49,17 @@ function Inner({ orgId }: { orgId: string }) {
           description="This account has no child workspaces yet. New workspaces created under it will appear here."
         />
       ) : (
-        <Card>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Name</TableHead>
-                <TableHead>Workspace ID</TableHead>
-                <TableHead>Org ID</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {workspaces.data.map((w) => (
-                <TableRow key={w.orgId}>
-                  <TableCell className="font-medium">{w.name}</TableCell>
-                  <TableCell className="font-mono text-xs text-muted-foreground">{w.workspaceRef}</TableCell>
-                  <TableCell className="font-mono text-xs text-muted-foreground">{w.orgId}</TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </Card>
+        <ListCard>
+          {workspaces.data.map((w) => (
+            <ListRow key={w.orgId} className="items-start">
+              <div className="min-w-0 flex-1 space-y-0.5">
+                <div className="truncate text-[13px] font-medium">{w.name}</div>
+                <MonoRef className="block truncate">{w.workspaceRef}</MonoRef>
+              </div>
+              <MonoRef className="shrink-0">{w.orgId}</MonoRef>
+            </ListRow>
+          ))}
+        </ListCard>
       )}
     </div>
   );

@@ -19,7 +19,8 @@ import { useSession } from "@/lib/session";
 import { wrap } from "@/lib/api";
 import { useApiQuery, qk } from "@/lib/query";
 import { collectOrgCatalog } from "@/lib/catalog-portal/fetch";
-import { buildContext, toServices } from "@/lib/catalog-portal/model";
+import { buildContext, toServices, annotateDocSignals, annotateRunSignals } from "@/lib/catalog-portal/model";
+import { useOrgDocs } from "@/components/catalog/docs/entity-docs";
 import { buildPage } from "@/lib/catalog-portal/page";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -49,7 +50,18 @@ export function ServicePageLoader({
     ),
   );
 
-  const services = React.useMemo(() => toServices(entities ?? []), [entities]);
+  // Scorecard v2 signals (same sources + caches as the index) so the deep
+  // page's ring/tier agree with the portal row that drilled in.
+  const { data: orgDocs } = useOrgDocs(orgId);
+  const { data: orgRuns } = useApiQuery(qk.orgRuns(orgId), () =>
+    wrap(async () => (await client.state.listOrgRuns(orgId, { limit: 24 })).runs),
+  );
+  const services = React.useMemo(() => {
+    let out = toServices(entities ?? []);
+    if (orgDocs) out = annotateDocSignals(out, orgDocs);
+    if (orgRuns) out = annotateRunSignals(out, orgRuns, Date.now());
+    return out;
+  }, [entities, orgDocs, orgRuns]);
   const ctx = React.useMemo(() => buildContext(services), [services]);
   const selected = React.useMemo(() => services.find((s) => s.key === entityKey) ?? null, [services, entityKey]);
   const page = React.useMemo(() => (selected ? buildPage(selected, ctx) : null), [selected, ctx]);
@@ -63,15 +75,13 @@ export function ServicePageLoader({
 
   if (page) {
     return (
-      <div className="md:h-[calc(100dvh-3rem)] md:overflow-hidden">
-        <ServicePage page={page} orgLabel={orgSlug} onBack={onBack} onViewMap={onViewMap} onSelectRef={onSelectRef} />
-      </div>
+      <ServicePage page={page} orgId={orgId} orgSlug={orgSlug} orgLabel={orgSlug} onBack={onBack} onViewMap={onViewMap} onSelectRef={onSelectRef} />
     );
   }
 
   if (loading && !entities) {
     return (
-      <div className="flex flex-col gap-4 p-1 md:h-[calc(100dvh-3rem)] md:overflow-hidden">
+      <div className="mx-auto flex w-full max-w-[1060px] flex-col gap-4 px-5 pt-7 sm:px-8 sm:pt-10 lg:px-12">
         <div className="flex items-start gap-4">
           <Skeleton className="h-[54px] w-[54px] rounded-[14px] bg-muted" />
           <div className="flex-1 space-y-2">

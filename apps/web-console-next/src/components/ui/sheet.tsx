@@ -22,8 +22,8 @@ const SheetOverlay = React.forwardRef<
   <DialogPrimitive.Overlay
     ref={ref}
     className={cn(
-      // Solid scrim (no backdrop-blur) so the slide stays at 60fps on mobile.
-      "fixed inset-0 z-50 bg-black/50 data-[state=open]:animate-fade-in data-[state=closed]:animate-fade-out",
+      // Solid Northwind scrim (no backdrop-blur) so the slide stays at 60fps on mobile.
+      "fixed inset-0 z-50 bg-black/[0.22] data-[state=open]:animate-scrim-in data-[state=closed]:animate-fade-out",
       className,
     )}
     {...props}
@@ -57,7 +57,9 @@ export const SheetContent = React.forwardRef<
     <DialogPrimitive.Content
       ref={ref}
       className={cn(
-        "fixed z-50 flex flex-col gap-4 bg-card text-card-foreground p-4 shadow-xl will-change-transform",
+        // Northwind panel surface: white, hairline edge, deep drawer shadow.
+        // Callers may override the surface (e.g. the mobile nav passes bg-secondary).
+        "fixed z-50 flex flex-col gap-4 bg-card p-4 text-card-foreground shadow-[0_18px_50px_rgba(0,0,0,0.16)] will-change-transform",
         sideClasses[side],
         sideAnim[side],
         className,
@@ -84,7 +86,7 @@ export const SheetTitle = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <DialogPrimitive.Title
     ref={ref}
-    className={cn("text-sm font-semibold tracking-tight", className)}
+    className={cn("text-[15px] font-semibold tracking-tight", className)}
     {...props}
   />
 ));
@@ -96,7 +98,7 @@ export const SheetDescription = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <DialogPrimitive.Description
     ref={ref}
-    className={cn("text-xs text-muted-foreground", className)}
+    className={cn("text-[12.5px] text-muted-foreground", className)}
     {...props}
   />
 ));

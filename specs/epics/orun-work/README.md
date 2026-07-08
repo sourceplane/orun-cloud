@@ -5,10 +5,16 @@
 > owns, how it binds to the platform, and the as-built record. The v1 design
 > and its code were scrapped (see "v1 teardown" below); v1's frozen spec is
 > archived at `orun/specs/archive/orun-work-v1/`.
+>
+> **Evolved by [`orun-work-v3/`](../orun-work-v3/)** (cluster **PM**) — the
+> project surface: Linear-class cloud authoring (initiatives, spec documents,
+> comments, board, cycles, views, agents-as-teammates) built ON this
+> substrate. v3 is purely additive: the two logs, the fold, and the derived
+> ladder here are unchanged and remain the truth engine v3 authors against.
 
 | | |
 |---|---|
-| **Status** | Draft (v2 spec landed; implementation not started) |
+| **Status** | Shipped end-to-end (WP0–WP5, incl. the WP4 remote leg and the WP1b SSE tail); the P2-gated overlay call site and the live dogfood import remain |
 | **Repos** | `sourceplane/orun` (model/fold oracle, CLI, import), `sourceplane/orun-cloud` (logs, ingesters, query API, console) |
 | **Cluster** | **WP** (`WP0 → WP5`, plan in `orun/specs/orun-work/implementation-plan.md`) |
 | **Pairs with** | `saas-resources-runtime` (P2 — `liveObservation` → `revision_live`), `saas-integration-tenancy` (IT — the webhook ingester's tenancy), `teams-ownership` (TO — owner→team routing for blast radius), `saas-console-ux` (U — the board surfaces) |
@@ -75,12 +81,12 @@ conformance-oracle pattern (Go model ↔ TS mirror over shared fixtures).
 
 | ID | Cloud deliverable | Status |
 |----|-------------------|--------|
-| WP0 | `work` context v2 schema + mutators + fold + query API + read-only console list; import target for `orun work import` | 🏗️ In progress — substrate landed (`560_work_foundation_v2`, `@saas/db/work` v2: model+fold replaying the shared conformance fixtures, memory+Postgres repositories, one-event-per-mutator, observation dedupe); query API + console list ride WP1 |
-| WP1 | Local-first console store (snapshot + cursor replay over SSE), optimistic apply + verdicts, pins, activity feed | 🗓️ Not started |
-| WP2 | GitHub webhook ingester (+ affected-set producer contract), claim join, drift inbox | 🗓️ Not started |
-| WP3 | Run-stream `gate_result` + overlay `revision_live` ingesters; Done/Released rungs light up | 🗓️ Not started |
-| WP4 | Seal/pull support (workspace-routed refs) | 🗓️ Not started |
-| WP5 | MCP write path through the same mutators | 🗓️ Not started |
+| WP0 | `work` context v2 schema + mutators + fold + query API + read-only console list; import target for `orun work import` | ✅ Shipped — substrate (#318: `560_work_foundation_v2`, `@saas/db/work` v2 model+fold+repositories) + read surface (WP1 PR: fold query API with evidence, mutator routes with verdicts, import apply, SDK `WorkClient`, console Work page) |
+| WP1 | Local-first console store (snapshot + cursor replay over SSE), optimistic apply + verdicts, pins, activity feed | ✅ Shipped — read surface (#319) + WP1b: pin/unpin + comment actions with inline mutator verdicts, and log-cursor live refresh. The transport-agnostic seam paid off as designed: the SSE tail (`GET …/work/events/stream`, bounded legs, `id:`=seq resume) replaced the 12s poll interior without touching the mutation/verdict path — the console streams first and degrades to one poll round per failed leg, so liveness degrades, never disappears. Also fixed here: `work.read`/`work.write` were missing from the policy engine's ALL_KNOWN_ACTIONS registry, so every console call denied as unknown_action → resource-hiding 404 (the "Work page not found" bug) — regression-tested. The deploy-side gap that kept the fix from reaching prod (a packages/* change never rescoped its consuming worker) is closed platform-wide by orun v2.22.0 `dependsOn[].input`, adopted across this repo's component.yamls |
+| WP2 | GitHub webhook ingester (+ affected-set producer contract), claim join, drift inbox | ✅ Shipped — the inbox drain projects normalized scm.* PR/branch events into `work.observations` in the same delivery transaction (semantic dedupe keys, task keys parsed from branch/title); `POST …/work/observations` admits the named `ci` producer for affected sets; claim join (key parse + unambiguous overlap) and the drift inbox were already in the WP0 fold and now light up from live facts |
+| WP3 | Run-stream `gate_result` + overlay `revision_live` ingesters; Done/Released rungs light up | 🏗️ Mostly shipped — the run projector emits `gate_result` facts from terminal job phases keyed to the run's git revision (P-3: orun execution truth, never GitHub statuses; idempotent per run/job/phase), and the `deploy-overlay → revision_live` bridge is built + tested; the Done→Released walk is proven from facts. Remaining: the runtime call site for `workObservationFromLiveDeployment` awaits `saas-resources-runtime` (P2, not started) — Released lights up the moment that feed lands, no rework |
+| WP4 | Seal/pull support (workspace-routed refs) | 🏗️ Orun-side shipped (orun #458): seal core (canonical JSON, ContentID, intent-only SpecSnapshot, chained log segments) + `orun spec pull` with pin verification, sealed client-side from this repo's fold API. Remaining here: server-side sealing + the refs/work remote leg |
+| WP5 | MCP write path through the same mutators | ✅ Shipped orun-side (orun WP5 PR): `orun mcp serve` — reads with evidence + sealed briefs; exactly four write tools through this repo's WP1 mutator routes; no lifecycle/pin tool exists (asserted). This repo's mutators already enforce the server-side guardrails (agent-pin 422) |
 
 ## Design rules this repo must not break
 
