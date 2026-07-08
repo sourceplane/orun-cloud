@@ -16,6 +16,7 @@ import type {
   WorkAssignRequest,
   WorkCommentRequest,
   WorkContractRequest,
+  WorkEventView,
   WorkImportRequest,
   WorkImportResponse,
   WorkMutationResponse,
@@ -27,6 +28,23 @@ import type { Transport, RequestOptions } from "./transport.js";
 
 function workBase(orgId: string): string {
   return `/v1/organizations/${encodeURIComponent(orgId)}/work`;
+}
+
+/** Parses one SSE frame; only `event: work` frames carry an event view.
+ *  Comments (`: ka`) and `retry:` hints return null. Exported for tests. */
+export function parseWorkFrame(frame: string): WorkEventView | null {
+  let isWork = false;
+  const dataLines: string[] = [];
+  for (const line of frame.split("\n")) {
+    if (line.startsWith("event:")) isWork = line.slice(6).trim() === "work";
+    else if (line.startsWith("data:")) dataLines.push(line.slice(5).trimStart());
+  }
+  if (!isWork || dataLines.length === 0) return null;
+  try {
+    return JSON.parse(dataLines.join("\n")) as WorkEventView;
+  } catch {
+    return null;
+  }
 }
 
 export class WorkClient {
@@ -47,6 +65,54 @@ export class WorkClient {
       { method: "GET", path: `${workBase(orgId)}/events`, query: { from: fromSeq || undefined } },
       opts,
     );
+  }
+
+  /**
+   * Live coordination-log tail over server-sent events — the same events, the
+   * same `from` cursor as `listEvents`, pushed instead of polled. Yields each
+   * event as it arrives and RETURNS when the server closes its (deliberately
+   * bounded) stream; callers reconnect in a loop with the last yielded seq:
+   *
+   *   let from = summary.coordSeq;
+   *   for (;;) {
+   *     for await (const e of client.work.streamEvents(orgId, from, { signal })) {
+   *       from = e.seq; onEvent(e);
+   *     }
+   *   }
+   *
+   * Abort via `opts.signal` to stop. Throws a typed OrunCloudError when the
+   * initial request is rejected (so a 404/403 does NOT silently retry).
+   */
+  async *streamEvents(orgId: string, fromSeq = 0, opts: RequestOptions = {}): AsyncGenerator<WorkEventView, void, void> {
+    const response = await this.transport.requestStream(
+      { method: "GET", path: `${workBase(orgId)}/events/stream`, query: { from: fromSeq || undefined } },
+      opts,
+    );
+    if (!response.body) return;
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    try {
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        // SSE frames are separated by a blank line; the tail stays buffered.
+        const frames = buffer.split("\n\n");
+        buffer = frames.pop() ?? "";
+        for (const frame of frames) {
+          const view = parseWorkFrame(frame);
+          if (view) yield view;
+        }
+      }
+    } finally {
+      // Releases the connection on abort/early break as well as normal end.
+      try {
+        await reader.cancel();
+      } catch {
+        // already closed
+      }
+    }
   }
 
   createSpec(orgId: string, body: CreateWorkSpecRequest, opts: RequestOptions = {}): Promise<CreateWorkSpecResponse> {
