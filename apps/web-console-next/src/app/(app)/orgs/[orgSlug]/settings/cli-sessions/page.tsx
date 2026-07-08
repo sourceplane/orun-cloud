@@ -7,5 +7,5 @@ import { redirect } from "next/navigation";
  * links working.
  */
 export default function LegacyCliSessionsRedirect() {
-  redirect(`/account/sessions`);
+  redirect(`/you/sessions`);
 }

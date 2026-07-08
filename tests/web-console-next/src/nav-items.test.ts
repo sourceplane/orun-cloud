@@ -125,10 +125,10 @@ describe("isLinkActive", () => {
     expect(isLinkActive("/orgs", "/orgs/acme/projects")).toBe(false);
   });
 
-  it("matches /account exactly so it does not swallow /account/security", () => {
-    expect(isLinkActive("/account", "/account")).toBe(true);
-    expect(isLinkActive("/account", "/account/security")).toBe(false);
-    expect(isLinkActive("/account/security", "/account/security")).toBe(true);
+  it("matches /you exactly so it does not swallow /you/security (SI5: personal area renamed from /account)", () => {
+    expect(isLinkActive("/you", "/you")).toBe(true);
+    expect(isLinkActive("/you", "/you/security")).toBe(false);
+    expect(isLinkActive("/you/security", "/you/security")).toBe(true);
   });
 
   it("matches the org root (Overview) exactly, not its sub-routes", () => {

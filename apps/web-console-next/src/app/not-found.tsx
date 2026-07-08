@@ -28,7 +28,7 @@ export default function NotFound() {
             Back to workspaces
           </Link>
           <Link
-            href="/account"
+            href="/you"
             className="inline-flex h-9 items-center rounded-md border border-border px-4 text-sm font-medium hover:bg-accent"
           >
             Account
