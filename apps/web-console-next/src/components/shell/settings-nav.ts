@@ -71,9 +71,9 @@ export function buildSettingsNav(orgSlug: string): SettingsNavGroup[] {
         },
         {
           href: `${base}/notifications`,
-          label: "Notifications",
+          label: "Email notifications",
           icon: "Bell",
-          description: "Your email preferences",
+          description: "Your personal email notification preferences",
         },
       ],
     },
@@ -110,13 +110,10 @@ export function buildSettingsNav(orgSlug: string): SettingsNavGroup[] {
           icon: "ShieldCheck",
           description: "Account-wide authority — grant, list, revoke",
         },
-      ],
-    },
-    {
-      id: "billing",
-      label: "Billing",
-      links: [
         {
+          // Billing is an account concern: the plan bills at the account
+          // (`effectiveBillingOrgId`), not per workspace (saas-settings-ia SI1).
+          // The route stays `/settings/billing`; only its nav home moves here.
           href: `${base}/billing`,
           label: "Billing & plan",
           icon: "Receipt",
@@ -127,8 +124,10 @@ export function buildSettingsNav(orgSlug: string): SettingsNavGroup[] {
     {
       // Event-routing surfaces (saas-event-streaming ES6): rules that fan events
       // out to channels, the channels themselves, and the dead-letter ops view.
+      // Labelled "Event routing" to disambiguate from a person's own
+      // "Email notifications" preferences above (saas-settings-ia SI1).
       id: "notifications",
-      label: "Notifications",
+      label: "Event routing",
       links: [
         {
           href: `${base}/notifications/rules`,
@@ -160,12 +159,8 @@ export function buildSettingsNav(orgSlug: string): SettingsNavGroup[] {
           icon: "KeyRound",
           description: "Programmatic access tokens",
         },
-        {
-          href: `${base}/cli-sessions`,
-          label: "Sessions & devices",
-          icon: "Terminal",
-          description: "Active Orun CLI logins",
-        },
+        // Sessions & devices moved to the personal account area — CLI sessions
+        // are per-user, not workspace-scoped (saas-settings-ia SI1).
         {
           href: `${base}/webhooks`,
           label: "Webhooks",

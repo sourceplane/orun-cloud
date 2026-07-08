@@ -5,12 +5,33 @@ import {
 } from "@web-console-next/components/shell/settings-nav";
 
 describe("buildSettingsNav", () => {
-  it("groups settings into Organization, Account, Billing, Notifications, and Developer", () => {
+  it("groups settings into Workspace, Account, Event routing, and Developer (SI1: Billing folded into Account)", () => {
     const ids = buildSettingsNav("acme").map((g) => g.id);
-    expect(ids).toEqual(["organization", "account", "billing", "notifications", "developer"]);
+    expect(ids).toEqual(["organization", "account", "notifications", "developer"]);
   });
 
-  it("exposes the event-routing surfaces under the Notifications group", () => {
+  it("files Billing & plan under the Account group — the plan bills at the account (SI1)", () => {
+    const account = buildSettingsNav("acme").find((g) => g.id === "account")!;
+    expect(account.links.map((l) => l.href)).toContain("/orgs/acme/settings/billing");
+    // No standalone Billing group remains.
+    expect(buildSettingsNav("acme").some((g) => g.id === "billing")).toBe(false);
+  });
+
+  it("relabels the event-routing group to disambiguate it from personal Email notifications (SI1)", () => {
+    const routing = buildSettingsNav("acme").find((g) => g.id === "notifications")!;
+    expect(routing.label).toBe("Event routing");
+    const personal = flattenSettingsNav(buildSettingsNav("acme")).find(
+      (l) => l.href === "/orgs/acme/settings/notifications",
+    )!;
+    expect(personal.label).toBe("Email notifications");
+  });
+
+  it("no longer lists Sessions & devices — CLI sessions are per-user, moved to the account area (SI1)", () => {
+    const hrefs = flattenSettingsNav(buildSettingsNav("acme")).map((l) => l.href);
+    expect(hrefs).not.toContain("/orgs/acme/settings/cli-sessions");
+  });
+
+  it("exposes the event-routing surfaces under the Event routing group", () => {
     const hrefs = flattenSettingsNav(buildSettingsNav("acme")).map((l) => l.href);
     expect(hrefs).toEqual(
       expect.arrayContaining([
@@ -55,7 +76,7 @@ describe("buildSettingsNav", () => {
   it("no longer lists Config under Developer — promoted to the top-level Secrets surface", () => {
     const hrefs = flattenSettingsNav(buildSettingsNav("acme")).map((l) => l.href);
     expect(hrefs).not.toContain("/orgs/acme/settings/config");
-    // The Developer group survives (api keys, sessions, webhooks, audit remain).
+    // The Developer group survives (api keys, webhooks, audit remain).
     const developer = buildSettingsNav("acme").find((g) => g.id === "developer")!;
     expect(developer.links.length).toBeGreaterThan(0);
   });

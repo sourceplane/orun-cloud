@@ -6,10 +6,11 @@ import { cn } from "@/lib/cn";
 const TABS = [
   { key: "profile", label: "Profile", href: "/account" },
   { key: "security", label: "Security activity", href: "/account/security" },
+  { key: "sessions", label: "Sessions & devices", href: "/account/sessions" },
 ] as const;
 
 /** Sub-navigation shared by the account pages. */
-export function AccountTabs({ active }: { active: "profile" | "security" }) {
+export function AccountTabs({ active }: { active: "profile" | "security" | "sessions" }) {
   return (
     <div className="flex items-center gap-1 border-b">
       {TABS.map((t) => (
