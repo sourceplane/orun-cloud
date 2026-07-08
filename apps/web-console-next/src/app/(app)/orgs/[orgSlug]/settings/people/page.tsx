@@ -6,6 +6,7 @@ import { OrgScope } from "@/components/shell/org-scope";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { MembersPanel } from "@/components/people/members-panel";
 import { InvitationsPanel } from "@/components/people/invitations-panel";
+import { RolesPanel } from "@/components/people/roles-panel";
 import { AccessPanel } from "@/components/people/access-panel";
 import { buildPeopleTabs, resolvePeopleTab } from "@/components/people/people-tabs";
 
@@ -54,6 +55,9 @@ export default function PeoplePage() {
             </TabsContent>
             <TabsContent value="pending" className="mt-5">
               <InvitationsPanel orgId={org.id} />
+            </TabsContent>
+            <TabsContent value="roles" className="mt-5">
+              <RolesPanel />
             </TabsContent>
             <TabsContent value="access" className="mt-5">
               <AccessPanel orgId={org.id} />

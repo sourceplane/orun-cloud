@@ -8,7 +8,7 @@
  * like the other nav models.
  */
 
-export type PeopleTab = "members" | "pending" | "access";
+export type PeopleTab = "members" | "pending" | "roles" | "access";
 
 export interface PeopleTabDef {
   key: PeopleTab;
@@ -23,11 +23,12 @@ export function buildPeopleTabs(orgSlug: string): PeopleTabDef[] {
   return [
     { key: "members", label: "Members", href: base },
     { key: "pending", label: "Pending", href: `${base}?tab=pending` },
+    { key: "roles", label: "Roles", href: `${base}?tab=roles` },
     { key: "access", label: "Access", href: `${base}?tab=access` },
   ];
 }
 
-const TABS: readonly PeopleTab[] = ["members", "pending", "access"];
+const TABS: readonly PeopleTab[] = ["members", "pending", "roles", "access"];
 
 /** Resolve the `?tab=` param to a valid tab, defaulting to Members. */
 export function resolvePeopleTab(param: string | null | undefined): PeopleTab {
