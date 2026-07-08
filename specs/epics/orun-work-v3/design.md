@@ -169,6 +169,11 @@ The Work page graduates from one workbench to a section:
 /orgs/{slug}/work/triage         → drift + suggestions + review-parked + mentions + contract proposals
 ```
 
+Built on the shipped **Northwind** design system (the console-wide restyle
+already applied to Catalog / Repos / Settings / Secrets) so the work surface
+reads as one product, not a bolted-on tracker — the same Screen / PageHeader /
+ListCard / Pill primitives, the same scope-in-URL and Cmd-K conventions.
+
 Component notes, in the repo's established idiom (session SDK client, `wrap`
 + `useApiQuery`, inline verdict rendering from 422s):
 
@@ -193,27 +198,64 @@ Component notes, in the repo's established idiom (session SDK client, `wrap`
 - **Cmd-K** — verbs registered into the console-wide palette
   (saas-console-ux): create task, comment, pin, label, jump-to-spec, etc.
 
-## 4. Agents (PM5, cross-repo)
+## 4. Agents — the project surface, not the runtime (PM5)
 
-- **Dispatch**: a Ready task's page (and Cmd-K) offers "dispatch to agent" —
-  the console calls the existing seal path to produce `spec@sha256:…` and
-  hands it to the configured agent runner (first: copy-paste-able `orun`
-  invocation + MCP config; runner integration is out of scope here).
-- **Contract-review queue**: `contract_propose` flags already exist as
-  coordination comments; PM5 gives them a first-class Triage lane with
-  accept (no-op — the edit already applied; accepting clears the flag by
-  comment convention) / revert (a human `contract` edit back).
-- **Agent seats**: actor chips + a workspace people view listing agent
-  principals with their recent timeline. No new identity model — membership
-  principals (`service_principal` → agent) already carry this.
-- **orun repo legs**: `orun spec pull` unchanged (V3-2); MCP may gain
-  read-only `work_timeline` and `doc_get` tools (still no status/pin tool —
-  the forbidden-tool sweep test extends).
+**Ownership boundary (decided).** The agent *runtime* is the orun binary
+(`orun/specs/orun-agents/`, AG0–AG4); the *cloud control plane* — sandboxes,
+session identity, the Agents tab, the dispatch trigger, the autonomy ladder —
+is `saas-agents` (AG5–AG11). Both already build on this work plane's four-tool
+agent surface, dispatch-is-assignment, and the no-status-write invariant. So
+v3 **does not build agent dispatch or a runner**; that would duplicate AG8/AG9.
+PM5 owns only what the *project surface* uniquely owes agent work: how it is
+**rendered, attributed, reviewed, and governed inside the board, timeline, and
+triage.** The seam between the two is deliberately thin and already exists —
+`assign` is the dispatch trigger (AG9), `contract_propose` is the design-run
+output (AG8), and progress is observed either way.
+
+What PM5 owns:
+
+- **Agents are assignable teammates.** The board/task assignee model renders
+  agent principals (`sp_` service principals with a responsible owner, per
+  AG6) alongside people — same picker, same chips. Assigning a task to an
+  agent is the ordinary `assign` mutator; AG9 is what hooks a dispatched run
+  onto that assignment. v3 provides the affordance; AG provides the behavior.
+- **Session state renders beside a rung, never as one.** When AG relays a
+  live session for an assigned task, the task row/page shows an infra-fact
+  chip (`provisioning` / `running` / `suspended`) visibly distinct from the
+  derived rung — matching AG's decision that control-plane state is
+  categorically not a work rung. A link opens the Agents-tab transcript; v3
+  renders the chip and the link, AG owns the relay.
+- **The contract-review queue is a first-class Triage lane.** A design run
+  (AG8) applies a contract edit through the mutator AND flags it for review;
+  PM5's Triage surface (design §3) collects those flags into an actionable
+  lane — accept (clears the flag) / revert (a human `contract` edit back).
+  This is the human-in-the-loop gate for "an agent redefined a definition of
+  done," and it belongs to the PM surface, not the runtime.
+- **Agent work carries the same evidence discipline as human work.** Timeline
+  actor chips distinguish `user` / `agent` / `automation`; an agent moves a
+  task exactly as a human does — by opening a PR that the observation log
+  sees — so nothing about the timeline is agent-special except attribution
+  and a deep-link to the sealed session (AG's `AgentSessionSnapshot`).
+- **orun repo legs (read-only):** the work MCP may gain `work_timeline` and
+  `doc_get` reads for the in-sandbox runtime; still no status or pin tool —
+  the forbidden-tool sweep extends. `orun spec pull` is unchanged (V3-2); it
+  is already how AG8 hands an agent a frozen brief.
+
+Explicitly **out of PM5** (owned by AG): the sandbox provider seam, session
+tokens, the DO relay/transcript store, the "Design with agent" / dispatch
+buttons themselves, the autonomy ladder, concurrency caps, agent metering.
+PM5 is the surface those attach to; if a flow needs both, it lands in AG with
+v3 providing the assignee/triage/timeline primitives it renders into.
 
 ## 5. Ordering, dependencies, compat
 
 - PM0 → PM1 → PM2 form the Linear/GitHub parity core and land in order.
-  PM3 (cycles) and PM4 (flow) are parallel after PM2. PM5 closes.
+  PM3 (cycles) and PM4 (flow) are parallel after PM2. PM5 (the agent project
+  surface) closes, and pairs with `saas-agents` AG6–AG9 — the assignee/triage/
+  timeline primitives PM5 ships are what AG's dispatch and design runs render
+  into. PM5 is unblocked without AG (agents render as ordinary assignees the
+  moment they exist as principals); the live session-state chip and transcript
+  deep-link light up as AG6/AG7 land.
 - No breaking change to any v2 surface at any point; the v2 conformance
   fixtures keep passing untouched (the fold is not modified — new folded
   intent fields are additive envelope data, not lifecycle inputs).

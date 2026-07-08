@@ -95,6 +95,12 @@ the same public surfaces a human uses.
 - **`orun-work` (WP)** — the task source. This epic adds zero work-plane
   surface: design runs use the four agent tools, dispatch *is* `assign`,
   progress is observed. WP1/WP2/WP5 are dependencies of AG8/AG9.
+- **`orun-work-v3` (PM)** — the *project surface* AG renders into. PM5 owns
+  the board/timeline/triage view of agent work — agents as assignable seats,
+  the infra-fact session chip beside a rung, the contract-review Triage lane,
+  timeline attribution — while AG owns the runtime and the dispatch trigger.
+  The seam is the same `assign` mutator and `contract_propose` flag; neither
+  epic re-implements the other's half.
 - **`saas-mcp-server` (MCP)** — the platform MCP the in-sandbox runtime calls
   (with the session credential) for runs/logs/audit/usage. MCP scoped out the
   runtime; this epic scopes out the tool plane.
