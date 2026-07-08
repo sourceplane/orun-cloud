@@ -5,16 +5,17 @@ import {
 } from "@web-console-next/components/shell/settings-nav";
 
 describe("buildSettingsNav", () => {
-  it("groups settings into Workspace, Account, Event routing, and Developer (SI1: Billing folded into Account)", () => {
+  it("is workspace-scoped only — Workspace, Event routing, Developer (SI2: Account promoted to its own doorway)", () => {
     const ids = buildSettingsNav("acme").map((g) => g.id);
-    expect(ids).toEqual(["organization", "account", "notifications", "developer"]);
+    expect(ids).toEqual(["organization", "notifications", "developer"]);
   });
 
-  it("files Billing & plan under the Account group — the plan bills at the account (SI1)", () => {
-    const account = buildSettingsNav("acme").find((g) => g.id === "account")!;
-    expect(account.links.map((l) => l.href)).toContain("/orgs/acme/settings/billing");
-    // No standalone Billing group remains.
-    expect(buildSettingsNav("acme").some((g) => g.id === "billing")).toBe(false);
+  it("no longer renders the Account group inline — it moved to the Account doorway (SI2)", () => {
+    expect(buildSettingsNav("acme").some((g) => g.id === "account")).toBe(false);
+    // Account-scoped links (Billing bills at the account) leave the workspace rail.
+    const hrefs = flattenSettingsNav(buildSettingsNav("acme")).map((l) => l.href);
+    expect(hrefs).not.toContain("/orgs/acme/settings/billing");
+    expect(hrefs).not.toContain("/orgs/acme/settings/account");
   });
 
   it("relabels the event-routing group to disambiguate it from personal Email notifications (SI1)", () => {
@@ -60,7 +61,6 @@ describe("buildSettingsNav", () => {
       expect.arrayContaining([
         "/orgs/acme/settings/members",
         "/orgs/acme/settings/invitations",
-        "/orgs/acme/settings/billing",
         "/orgs/acme/settings/api-keys",
         "/orgs/acme/settings/webhooks",
         "/orgs/acme/settings/audit",
