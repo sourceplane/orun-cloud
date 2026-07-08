@@ -45,7 +45,7 @@ The architect-style ground rules:
 | **TM** | [`epics/saas-teams/`](./epics/saas-teams/) | Draft | Account-owned **Teams as principals** (the access-grant slice of the `teams-*` program): TM1 model (`teams`+`team_members`) · TM2 grants via `role_assignments` (`subject_type='team'`) · TM3 authz-context fact expansion (engine unchanged) · TM4 management surfaces + `team.*` RBAC + audit · TM5 PERF note (actor cache holds no team data) · TM6 effective-access + provenance. Account-scope grants cascade to all (incl. future) workspaces. Principal-group, **not** a hierarchy level. Builds on **WID6** (shipped). |
 | **TEAMS** | [`epics/teams-platform/`](./epics/teams-platform/) | Draft (program) | **World-class Teams** program over **TM** — Team as the product's organizing primitive across three planes, no tenancy remodel. **TF** teams-foundation (entity + handle + team-roles + provenance) · **TO** teams-ownership (owner→team **resolver** respecting `18-state`; My Teams/My Services) · **TH** teams-hub (Account Hub surface + Team Page + cross-workspace fan-out) · **TC** teams-collaboration (team notification target + `@team` + on-call defaults) · **TG** teams-governance (SCIM group→team ⛔B10 · restriction/ABAC decision · custom roles · access reviews). Keystones: the ownership resolver + thickening the account **surface** (not the tree). Sequencing: TF→TO→{TH,TC}→TG. |
 | **MCP** | [`epics/saas-mcp-server/`](./epics/saas-mcp-server/) | Draft | The AI-agent client surface (promotes the agent-surface half of P7): MCP0 tool plane (`packages/mcp`, ≤ 25 task-shaped read tools over SDK) · MCP1 stdio via CLI · MCP2 remote worker (`sk_` keys) · MCP3 OAuth 2.1 over OP1 · MCP4 resources/prompts · MCP5 gated writes (idempotent, annotated, audited) · MCP6 metering + `feature.mcp_server` · MCP7 console Connect page · MCP8 conformance + agent evals. Invariant: a client of the public API, never a fourth plane — RBAC/rate-limits/audit unchanged. |
-| **AG** | [`epics/saas-agents/`](./epics/saas-agents/) | Draft | The agent runtime (the execution half of the agent bet; MCP is the client half): AG0 foundation (component `19`, `agents` schema, provider/harness seams) · AG1 sandbox plane (Daytona adapter + base snapshot + dev adapter) · AG2 session identity (`sp_` principals + responsible owner, session-bound tokens, `how: agent-session` secrets, IG4 repo tokens) · AG3 lifecycle + per-session DO event plane · AG4 console Agents tab · AG5 MCP-as-hands + tool policy/approvals · AG6 design runs (Spec → epic files + contracts via `catalog_affected`) · AG7 dispatch-is-assignment autonomy ladder · AG8 metering/entitlement · AG9 hardening + agent evals. |
+| **AG** | [`epics/saas-agents/`](./epics/saas-agents/) + [`orun/specs/orun-agents/`](../../orun/specs/orun-agents/) | Draft | The agent framework, cross-repo. **orun owns the runtime (AG0–AG4):** the `AgentType`/`AgentSession` object kinds (`agents/*.md` sealed like `SpecSnapshot`), the `internal/agent` delegation loop, the `AgentDriver` seam (Claude Code first), base literacy, the TUI Agent mode, `orun agent run/serve`. **orun-cloud owns the control plane (AG5–AG11):** AG5 sandbox plane (Daytona + dev adapter) · AG6 session identity + `orun agent serve` ↔ per-session DO relay · AG7 console Agents tab · AG8 design runs (Spec → epic files + contracts via `catalog affected`) · AG9 dispatch-is-assignment autonomy ladder · AG10 metering/entitlement · AG11 hardening + evals. |
 | **P1, P3–P7** | [`epics/saas-product-areas/`](./epics/saas-product-areas/) | Holding register | P1 promote-flow · P3 observability · P4 notification inbox · P5 marketplace (⬆ promoted → `saas-integrations`) · P6 changelog/status · P7 AI-native. |
 
 For the status legend (`Draft → In progress → ✅ Shipped → ⛔ Blocked → Closed`),
@@ -139,17 +139,26 @@ see [`README.md`](./README.md).
   coordinates with SC0 (whichever lands second adapts — MCP risks D2). Nothing
   in MCP competes with B/U/PERF for files; it turns already-live backend
   capability into a new client population, the same posture as PX.
-- **AG (agents)** is the execution half of the platform's agent bet and the
-  consumer that makes WP + MCP compound: WP laid the dispatch-is-assignment
-  rails and the four-tool write surface; MCP makes the truth plane legible;
-  AG runs the agents against both. Sequencing inside the epic is deliberate:
-  **AG0–AG4 (foundation → interactive remote sessions ending in a PR) have
-  zero dependency on WP or MCP progress** and de-risk the sandbox-provider
-  seam early — only AG5–AG7 (MCP wiring, design runs, dispatch) wait on
-  MCP0–MCP2 and WP1/WP2/WP5. The two credential gates (Daytona org, model
-  keys) block live paths only; the `local-docker` dev adapter + recorded
-  fixtures keep every milestone mergeable (the IG/Polar park-and-continue
-  posture). Nothing in AG0–AG4 competes with WP or MCP for files.
+- **AG (agents)** is the platform's agent bet and the consumer that makes the
+  object model + WP + MCP compound — and its defining decision is **where the
+  runtime lives**. The runtime is the **orun binary**, not a cloud worker
+  (obeying orun's local-first constitution): `agents/*.md` seals to a
+  content-addressed `AgentTypeSnapshot` in the same object graph as sources,
+  catalogs, and specs; the delegation loop, the `AgentDriver` seam (Claude Code
+  first, any binary via a conformance oracle), and session sealing are all in
+  `internal/agent`. A cloud session is that same binary (`orun agent serve`) in
+  a Daytona box; a laptop session (`orun agent`, a new TUI mode) is the whole
+  framework with no cloud. So sequencing is: **orun AG0–AG4 (the runtime) land
+  first and entirely human-independently** (a local agent runs against a local
+  `.orun/` with the env model key); the **cloud AG5–AG11** host and govern it —
+  AG5–AG7 (sandbox + identity + console) need no WP/MCP progress, only AG8/AG9
+  (design/dispatch) wait on WP1/WP2/WP4/WP5 and MCP0–MCP2. AG1's snapshot seal
+  shares plumbing with WP4's `spec pull` — co-develop them. Credential gates
+  (Daytona, model keys) block live paths only; the `local-docker` dev adapter +
+  fixtures keep the cloud milestones mergeable (the IG/Polar park-and-continue
+  posture). This is the moat spend: a Merkle chain from intent to production
+  with the agent's inputs and actions as content, which no bolt-on agent
+  product can copy without orun's graph underneath.
 - **BF (bootstrap factory)** is orthogonal to B/U/P and mostly human-independent:
   BF0–BF2 (docs truth, infra `dependsOn` edges, parameterizing the Terraform +
   stack identity surface) are safe to schedule any time and improve this
