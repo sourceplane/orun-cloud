@@ -49,7 +49,7 @@ describe("buildBaseCommands", () => {
     }
     // Create flows for moved resources target the Settings paths too.
     const invite = byId.get("create.invitation")!;
-    if (invite.kind === "navigate") expect(invite.to).toBe("/orgs/acme/settings/invitations?new=1");
+    if (invite.kind === "navigate") expect(invite.to).toBe("/orgs/acme/settings/people?tab=pending");
   });
 
   it("exposes Secrets & Config as a top-level navigation command (not under settings)", () => {
