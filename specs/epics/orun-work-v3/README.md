@@ -11,7 +11,7 @@
 | **Status** | Draft — spec landed, PM0 not started |
 | **Cluster** | **PM** (`PM0 → PM5`, plan in `./implementation-plan.md`) |
 | **Builds on** | orun-work v2 (WP0–WP5, shipped): two-log substrate, fold, mutator/verdict seam, SSE tail, sealing, MCP |
-| **Pairs with** | `saas-event-streaming` (ES — notification rules for mentions/subscriptions), `saas-console-ux` (U — Cmd-K, design system), `saas-mcp-server` (MCP — remote transport later), `teams-collaboration` (TC — @team mentions), `saas-resources-runtime` (P2 — `revision_live`, unchanged) |
+| **Pairs with** | `saas-agents` + `orun-agents` (**AG** — the agent runtime + cloud control plane; PM5 renders/reviews/governs the agent work AG dispatches, it does not build dispatch), `saas-event-streaming` (ES — notification rules for mentions/subscriptions), `saas-console-ux` (U — Cmd-K, the Northwind design system), `saas-mcp-server` (MCP — the platform MCP the in-sandbox agent calls; distinct from the work MCP), `teams-collaboration` (TC — @team mentions), `saas-resources-runtime` (P2 — `revision_live`, unchanged) |
 | **Inspiration** | Linear (speed, keyboard-first, initiatives/cycles/views), GitHub Issues (the timeline, threaded conversation, cross-references) |
 
 ## The one-paragraph thesis
@@ -107,9 +107,18 @@ Shipped and load-bearing, all of it reused rather than rebuilt:
   tool, `contract_propose` applies AND flags for review.
 - **Notification rules** (ES2, `apps/events-worker`): multi-segment globs,
   severity, throttle windows — the delivery rail PM1 mentions ride.
-- **Console** (`apps/web-console-next`): the Work page (rung badges with
-  evidence, pins beside truth, drift inbox, comment/pin forms), the session
-  SDK client, the design system, Cmd-K (saas-console-ux).
+- **Console + the Northwind design system** (`apps/web-console-next`): the
+  Work page (rung badges with evidence, pins beside truth, drift inbox,
+  comment/pin forms), the session SDK client, the Northwind primitives
+  (Screen / PageHeader / ListCard / Pill), scope-in-URL, Cmd-K (saas-console-ux).
+- **The agent framework** (cluster **AG**, authored while v2 shipped):
+  `orun/specs/orun-agents/` (the runtime — agent types as content-addressed
+  objects, the delegation loop, sealed session proof) and
+  `saas-agents/` (the cloud control plane — sandboxes, session identity, the
+  Agents tab, design runs, dispatch-is-assignment, the autonomy ladder). Both
+  already build on this work plane's four-tool agent surface and no-status-write
+  invariant. PM5 is the *project surface* they render into — see below and
+  design §4; v3 owns none of the runtime or dispatch machinery.
 
 ## What we refuse to copy
 
@@ -132,7 +141,7 @@ The ladder is PM0 → PM5, each independently shippable, plan in
 | PM2 | Board & views | Kanban by rung (drag = pin/order), filters, saved views, labels/priority/estimates |
 | PM3 | Cycles & derived progress | Authored time-boxes; burn-ups and rollups from the fold |
 | PM4 | Flow | Cmd-K verbs, optimistic apply with verdict rollback, keyboard-first, realtime everywhere |
-| PM5 | Agents as teammates | Dispatch-to-agent with sealed briefs, the contract-review queue, agent seats |
+| PM5 | The agent project surface | Render/attribute/review/govern agent work in the board — assignable agent seats, session-state chips (infra, not rungs), the contract-review Triage lane, timeline attribution. Pairs **AG**; owns no dispatch/runtime |
 
 Architecture detail (schema deltas, event vocabulary growth, API routes,
 UI structure, compat): [`design.md`](./design.md).

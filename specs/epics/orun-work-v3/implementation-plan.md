@@ -40,16 +40,19 @@ route, and tool); every mutation appends exactly one coordination event
 **Done when:** work verbs register in the console Cmd-K palette (create task, comment, pin, label, jump); the optimistic store applies intent locally, confirms via the SSE tail, and rolls back rendering the 422 verdict; every list/board/timeline updates live from the existing stream without route-specific transport code; p95 create-to-render is measured in dogfood and recorded in this file.
 **Deps:** PM2
 
-## PM5 — Agents as teammates
+## PM5 — The agent project surface
 
-**Goal:** Agent work is dispatched, reviewed, and rendered with the same evidence discipline as human work.
-**Done when:** a Ready task offers dispatch-to-agent producing a sealed `spec@sha256` brief; the Triage surface ships (drift + suggestions + review-parked + mentions + contract proposals) with the contract-review lane actionable; agent actor chips and the agent-seat view render from membership principals; the MCP gains read-only timeline/doc tools with the forbidden-tool sweep extended (still no status or pin tool).
-**Deps:** PM1, PM2
+**Goal:** Agent work is rendered, attributed, reviewed, and governed in the board with the same evidence discipline as human work — the project surface the `saas-agents` (AG) runtime and dispatch render into, not a second dispatch path.
+**Done when:** agent principals (`sp_` service principals with a responsible owner) render as assignable teammates in the board/task assignee model, and assigning a task to one is the ordinary `assign` mutator (AG9 hooks dispatch onto it); an infra-fact session chip (`provisioning`/`running`/`suspended`) renders beside a rung, visibly distinct from it, with a deep-link to the Agents-tab transcript; the Triage surface ships (drift + suggestions + review-parked + mentions + contract proposals) with the **contract-review lane** actionable (accept clears the flag; revert is a human `contract` edit); timeline actor chips distinguish user/agent/automation and deep-link the sealed session; the work MCP gains read-only timeline/doc tools with the forbidden-tool sweep extended (still no status or pin tool). **v3 builds no sandbox, session token, relay, dispatch button, or autonomy ladder** — those are AG5–AG11.
+**Deps:** PM1, PM2 · pairs `saas-agents` AG6–AG9 (unblocked without them: agents render as ordinary assignees the moment they exist as principals; the live chip + transcript link light up as AG lands)
 
 ## Explicitly out of scope (this epic)
 
 - CRDT/multiplayer document editing (fork-visible LWW first; measure in dogfood).
 - Growing the observation vocabulary (V3-1) or any fold/lifecycle change.
-- A runner integration for agent dispatch (PM5 hands off a sealed brief).
+- The agent runtime, sandbox provider, session identity/tokens, the DO relay/
+  transcript store, the "Design with agent"/dispatch buttons, the autonomy
+  ladder, concurrency caps, and agent metering — all owned by `saas-agents`
+  (AG5–AG11) + `orun/specs/orun-agents/` (AG0–AG4). PM5 renders into them.
 - SLAs/escalations (`teams-collaboration` owns paging), roadmapping/Gantt.
 - Public/anonymous portals; guest roles ride the membership epics.
