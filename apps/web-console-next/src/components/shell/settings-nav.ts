@@ -52,22 +52,12 @@ export function buildSettingsNav(orgSlug: string): SettingsNavGroup[] {
           exact: true,
         },
         {
-          href: `${base}/members`,
-          label: "Members",
+          // People & Access (saas-settings-ia SI3): Members, Invitations
+          // (Pending), and Access consolidated onto one tabbed surface.
+          href: `${base}/people`,
+          label: "People & Access",
           icon: "Users",
-          description: "People with access",
-        },
-        {
-          href: `${base}/access`,
-          label: "Access",
-          icon: "Users",
-          description: "Your effective access here, and how you got it",
-        },
-        {
-          href: `${base}/invitations`,
-          label: "Invitations",
-          icon: "Mail",
-          description: "Pending invites",
+          description: "Members, invitations, roles, and effective access",
         },
         {
           href: `${base}/notifications`,

@@ -59,13 +59,20 @@ describe("buildSettingsNav", () => {
     const hrefs = flattenSettingsNav(buildSettingsNav("acme")).map((l) => l.href);
     expect(hrefs).toEqual(
       expect.arrayContaining([
-        "/orgs/acme/settings/members",
-        "/orgs/acme/settings/invitations",
         "/orgs/acme/settings/api-keys",
         "/orgs/acme/settings/webhooks",
         "/orgs/acme/settings/audit",
       ]),
     );
+  });
+
+  it("consolidates Members, Invitations, and Access into one People & Access link (SI3)", () => {
+    const hrefs = flattenSettingsNav(buildSettingsNav("acme")).map((l) => l.href);
+    expect(hrefs).toContain("/orgs/acme/settings/people");
+    // The three former standalone links are gone from the rail.
+    expect(hrefs).not.toContain("/orgs/acme/settings/members");
+    expect(hrefs).not.toContain("/orgs/acme/settings/invitations");
+    expect(hrefs).not.toContain("/orgs/acme/settings/access");
   });
 
   it("no longer lists Integrations — promoted to the top-level connections hub", () => {
