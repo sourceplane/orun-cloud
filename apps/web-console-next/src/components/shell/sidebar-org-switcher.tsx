@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { useRouter } from "next/navigation";
-import { ChevronsUpDown, Check, Plus, Building2 } from "lucide-react";
+import { ChevronsUpDown, Check, Plus, Building2, Boxes } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuTrigger,
@@ -93,6 +93,19 @@ export function SidebarOrgSwitcher({ onNavigate }: { onNavigate?: () => void } =
             </DropdownMenuItem>
           );
         })}
+        {orgSlug ? (
+          <>
+            <DropdownMenuSeparator />
+            {/* Settings follow the switcher (saas-settings-ia SI2): the
+                Workspace and Account doorways for the current org. */}
+            <DropdownMenuItem onSelect={() => go(`/orgs/${orgSlug}/settings`)}>
+              <Building2 className="h-4 w-4 opacity-70" /> Workspace settings
+            </DropdownMenuItem>
+            <DropdownMenuItem onSelect={() => go(`/orgs/${orgSlug}/settings/account`)}>
+              <Boxes className="h-4 w-4 opacity-70" /> Account settings
+            </DropdownMenuItem>
+          </>
+        ) : null}
         <DropdownMenuSeparator />
         <DropdownMenuItem onSelect={() => go("/orgs")}>
           View all workspaces…

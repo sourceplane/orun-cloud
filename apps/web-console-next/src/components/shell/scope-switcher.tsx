@@ -106,6 +106,21 @@ export function ScopeSwitcher() {
               <DropdownMenuSeparator />
             </>
           ) : null}
+          {effectiveOrgSlug ? (
+            <>
+              {/* Settings follow the switcher (saas-settings-ia SI2): the
+                  Workspace and Account doorways for the current org. */}
+              <DropdownMenuItem onSelect={() => router.push(`/orgs/${effectiveOrgSlug}/settings`)}>
+                <Building2 className="h-4 w-4 opacity-70" /> Workspace settings
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                onSelect={() => router.push(`/orgs/${effectiveOrgSlug}/settings/account`)}
+              >
+                <Boxes className="h-4 w-4 opacity-70" /> Account settings
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+            </>
+          ) : null}
           <DropdownMenuItem onSelect={() => router.push("/orgs")}>View all workspaces…</DropdownMenuItem>
         </Crumb>
       </div>

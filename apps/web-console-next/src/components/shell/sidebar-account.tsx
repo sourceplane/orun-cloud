@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { useRouter } from "next/navigation";
-import { ChevronsUpDown, LogOut, User2, ShieldCheck, Sun, Moon } from "lucide-react";
+import { ChevronsUpDown, LogOut, User2, ShieldCheck, Terminal, Sun, Moon } from "lucide-react";
 import { useTheme } from "next-themes";
 import {
   DropdownMenu,
@@ -76,6 +76,9 @@ export function SidebarAccount() {
         </DropdownMenuItem>
         <DropdownMenuItem onSelect={() => router.push("/account/security")}>
           <ShieldCheck className="h-4 w-4 opacity-70" /> Security activity
+        </DropdownMenuItem>
+        <DropdownMenuItem onSelect={() => router.push("/account/sessions")}>
+          <Terminal className="h-4 w-4 opacity-70" /> Sessions &amp; devices
         </DropdownMenuItem>
         <DropdownMenuItem
           onSelect={(e) => {

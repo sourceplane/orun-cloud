@@ -2,18 +2,13 @@
 
 import Link from "next/link";
 import { cn } from "@/lib/cn";
+import { buildPersonalNav } from "@/components/shell/personal-nav";
 
-const TABS = [
-  { key: "profile", label: "Profile", href: "/account" },
-  { key: "security", label: "Security activity", href: "/account/security" },
-  { key: "sessions", label: "Sessions & devices", href: "/account/sessions" },
-] as const;
-
-/** Sub-navigation shared by the account pages. */
+/** Sub-navigation shared by the personal account pages (saas-settings-ia SI2). */
 export function AccountTabs({ active }: { active: "profile" | "security" | "sessions" }) {
   return (
     <div className="flex items-center gap-1 border-b">
-      {TABS.map((t) => (
+      {buildPersonalNav().map((t) => (
         <Link
           key={t.key}
           href={t.href}

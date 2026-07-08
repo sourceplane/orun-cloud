@@ -77,50 +77,11 @@ export function buildSettingsNav(orgSlug: string): SettingsNavGroup[] {
         },
       ],
     },
-    {
-      // The Account Hub (teams-hub TH1e): the surface over the account that
-      // owns this workspace set. A *surface*, not a tenancy level — every page
-      // reads through the current org and resolves up to the account
-      // server-side, so the same nav works from the account root or any child.
-      id: "account",
-      label: "Account",
-      links: [
-        {
-          href: `${base}/account`,
-          label: "Overview",
-          icon: "Building2",
-          description: "The account above this workspace",
-          exact: true,
-        },
-        {
-          href: `${base}/account/workspaces`,
-          label: "Workspaces",
-          icon: "Boxes",
-          description: "All workspaces under the account",
-        },
-        {
-          href: `${base}/account/members`,
-          label: "Account members",
-          icon: "Users",
-          description: "Everyone with account-level presence",
-        },
-        {
-          href: `${base}/account/roles`,
-          label: "Account roles",
-          icon: "ShieldCheck",
-          description: "Account-wide authority — grant, list, revoke",
-        },
-        {
-          // Billing is an account concern: the plan bills at the account
-          // (`effectiveBillingOrgId`), not per workspace (saas-settings-ia SI1).
-          // The route stays `/settings/billing`; only its nav home moves here.
-          href: `${base}/billing`,
-          label: "Billing & plan",
-          icon: "Receipt",
-          description: "Plan, invoices, payment",
-        },
-      ],
-    },
+    // The Account groups (Overview, Workspaces, Members, Roles, Billing) are no
+    // longer rendered inline here: SI2 promoted them to their own Account
+    // doorway (`account-nav.ts` / `buildAccountNav`), reached from the scope
+    // switcher's Account chip, so the parent scope is not a subsection of a
+    // child workspace's settings.
     {
       // Event-routing surfaces (saas-event-streaming ES6): rules that fan events
       // out to channels, the channels themselves, and the dead-letter ops view.
