@@ -12,7 +12,7 @@ consolidates that IA. **Relabel and regroup, not remodel.**
 
 | Field | Value |
 |-------|-------|
-| Status | **Draft** |
+| Status | **✅ Shipped** (SI1–SI5 merged; epic closed & archived) |
 | Cluster | **SI** (SI1–SI5) |
 | Owner(s) | `apps/web-console-next` (shell nav + settings routes); read-only facades in `packages/contracts` for the roles matrix |
 | Target branch | `main` |
@@ -81,13 +81,15 @@ preserved end to end.
 
 ## Milestones at a glance
 
-| ID | Milestone | Risk | Status |
-|----|-----------|------|--------|
-| SI1 | Re-file the four mis-scoped surfaces (Billing → Account; Sessions + personal Notifications → You; keep event-routing at Workspace; de-orphan Config). Pure nav + redirects, no new screens. | Low | Draft |
-| SI2 | Scope doorways — settings follow the switcher: personal `/you/*` off the identity chip, Account settings off the Account chip, Workspace off the workspace chip. Adds `buildAccountNav`; hosts the TH1 Account Hub. | Medium | Draft |
-| SI3 | People & Access — one tabbed surface per scope (Members · Pending · Teams · Roles · Access); fold invitations into Pending; inline role editing; provenance column. | Medium | Draft |
-| SI4 | Roles as a destination — a permission matrix rendered from the policy-engine role catalogs; the seam custom roles (TG) plug into later. Read-only first. | Low | Draft |
-| SI5 | Naming & copy — `/account` → `/you`, resolve the tenant/person "account" collision, consistent scope framing, Cmd-K actions. | Low | Draft |
+| ID | Milestone | Risk | Status | PR |
+|----|-----------|------|--------|----|
+| SI1 | Re-file the mis-scoped surfaces (Billing → Account; Sessions → personal area; disambiguate the two Notifications; Config already de-orphaned). Pure nav + redirects. | Low | ✅ Shipped | #365 |
+| SI2 | Scope doorways — settings follow the switcher: Account settings off the Account chip, Workspace off the workspace chip, personal off the identity chip. Adds `buildAccountNav`/`buildPersonalNav`. | Medium | ✅ Shipped | #366 |
+| SI3 | People & Access — one tabbed surface (Members · Pending · Roles · Access); invitations become Pending; inline role editing; access provenance on the Access tab. | Medium | ✅ Shipped | #367 |
+| SI4 | Roles as a destination — a permission matrix mirroring the policy-engine role catalog; the seam custom roles (TG) plug into later. Read-only. | Low | ✅ Shipped | #368 |
+| SI5 | Naming — `/account` → `/you`, resolving the tenant/person "account" collision; every entry point + Cmd-K updated. | Low | ✅ Shipped | #369 |
+
+> As-built (including deviations): see [`IMPLEMENTATION-STATUS.md`](./IMPLEMENTATION-STATUS.md).
 
 ## Scope boundary
 
