@@ -5,6 +5,12 @@
 > owns, how it binds to the platform, and the as-built record. The v1 design
 > and its code were scrapped (see "v1 teardown" below); v1's frozen spec is
 > archived at `orun/specs/archive/orun-work-v1/`.
+>
+> **Evolved by [`orun-work-v3/`](../orun-work-v3/)** (cluster **PM**) — the
+> project surface: Linear-class cloud authoring (initiatives, spec documents,
+> comments, board, cycles, views, agents-as-teammates) built ON this
+> substrate. v3 is purely additive: the two logs, the fold, and the derived
+> ladder here are unchanged and remain the truth engine v3 authors against.
 
 | | |
 |---|---|
