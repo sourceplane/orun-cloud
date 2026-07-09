@@ -210,6 +210,46 @@ export function createAgentsRepository(sql: TransactionalSqlExecutor): AgentsRep
       return res.rows[0] ? mapSession(res.rows[0] as Row) : null;
     },
 
+    async getSessionProfile(scope: WorkspaceScope, sessionPublicId: string): Promise<AgentProfile | null> {
+      const res = await sql.execute(
+        `SELECT p.* FROM agents.agent_profiles p
+           JOIN agents.agent_sessions s ON s.profile_id = p.id
+         WHERE s.org_id = $1 AND s.public_id = $2`,
+        [scope.orgId, sessionPublicId],
+      );
+      return res.rows[0] ? mapProfile(res.rows[0] as Row) : null;
+    },
+
+    async touchSessionLease(
+      scope: WorkspaceScope,
+      sessionPublicId: string,
+      leaseExpiresAt: string,
+    ): Promise<AgentSession> {
+      // Refuses terminal states in the WHERE — a dead session's lease never
+      // revives (the sweep's over-destroy posture stays sound).
+      const res = await sql.execute(
+        `UPDATE agents.agent_sessions SET lease_expires_at = $3
+         WHERE org_id = $1 AND public_id = $2
+           AND state NOT IN ('completed','failed','canceled','expired')
+         RETURNING *`,
+        [scope.orgId, sessionPublicId, leaseExpiresAt],
+      );
+      if (!res.rows[0]) {
+        const exists = await sql.execute(
+          `SELECT state FROM agents.agent_sessions WHERE org_id = $1 AND public_id = $2`,
+          [scope.orgId, sessionPublicId],
+        );
+        if (!exists.rows[0]) {
+          throw new AgentsError("agent_session_not_found", `session ${sessionPublicId} not found`);
+        }
+        throw new AgentsError(
+          "agent_session_bad_transition",
+          `session is ${String((exists.rows[0] as Row).state)}; lease cannot revive it`,
+        );
+      }
+      return mapSession(res.rows[0] as Row);
+    },
+
     async listSessions(scope: WorkspaceScope, filter?: { state?: SessionState }): Promise<AgentSession[]> {
       const res = filter?.state
         ? await sql.execute(

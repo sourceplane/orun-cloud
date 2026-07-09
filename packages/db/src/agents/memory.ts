@@ -124,6 +124,29 @@ export class MemoryAgentsRepository implements AgentsRepository {
     return this.store(scope.orgId).sessions.find((x) => x.publicId === publicId) ?? null;
   }
 
+  async getSessionProfile(scope: WorkspaceScope, sessionPublicId: string): Promise<AgentProfile | null> {
+    const s = this.store(scope.orgId);
+    const session = s.sessions.find((x) => x.publicId === sessionPublicId);
+    if (!session) return null;
+    return s.profiles.find((p) => p.id === session.profileId) ?? null;
+  }
+
+  async touchSessionLease(
+    scope: WorkspaceScope,
+    sessionPublicId: string,
+    leaseExpiresAt: string,
+  ): Promise<AgentSession> {
+    const session = await this.getSession(scope, sessionPublicId);
+    if (!session) {
+      throw new AgentsError("agent_session_not_found", `session ${sessionPublicId} not found`);
+    }
+    if (isTerminal(session.state)) {
+      throw new AgentsError("agent_session_bad_transition", `session is ${session.state}; lease cannot revive it`);
+    }
+    session.leaseExpiresAt = leaseExpiresAt;
+    return session;
+  }
+
   async listSessions(scope: WorkspaceScope, filter?: { state?: SessionState }): Promise<AgentSession[]> {
     let rows = this.store(scope.orgId).sessions;
     if (filter?.state) rows = rows.filter((x) => x.state === filter.state);

@@ -5,6 +5,7 @@ import { handleLoginComplete } from "./handlers/login-complete.js";
 import { handleSession } from "./handlers/session.js";
 import { handleResolveBearer } from "./handlers/resolve-bearer.js";
 import { handleOidcExchange } from "./handlers/oidc-exchange.js";
+import { handleMintAgentSessionToken } from "./handlers/internal-agent-session-token.js";
 import { handleLogout } from "./handlers/logout.js";
 import { handleSecurityEvents } from "./handlers/security-events.js";
 import { handleProfile } from "./handlers/profile.js";
@@ -82,6 +83,12 @@ export async function route(request: Request, env: Env): Promise<Response> {
     if (url.pathname === "/v1/auth/oidc/exchange") {
       if (request.method !== "POST") return methodNotAllowed(requestId);
       return handleOidcExchange(request, env, requestId);
+    }
+
+    // Agent-session token mint (saas-agents AG6): service-binding-only —
+    // api-edge never forwards /v1/internal/*.
+    if (url.pathname === "/v1/internal/identity/agent-session-token") {
+      return handleMintAgentSessionToken(request, env, requestId);
     }
 
     if (url.pathname === "/v1/auth/logout") {

@@ -4,7 +4,12 @@ import { createIdentityRepository } from "@saas/db/identity";
 import { createAuthService } from "../services/auth.js";
 import { successResponse, errorResponse, extractBearerToken, withTimings } from "../http.js";
 import { createTimings } from "@saas/contracts/timing";
-import { looksLikeCliAccessToken, verifyCliAccessToken, verifyWorkflowAccessToken } from "../cli/jwt.js";
+import {
+  looksLikeCliAccessToken,
+  verifyAgentSessionToken,
+  verifyCliAccessToken,
+  verifyWorkflowAccessToken,
+} from "../cli/jwt.js";
 
 export async function handleResolveBearer(request: Request, env: Env, requestId: string): Promise<Response> {
   const token = extractBearerToken(request);
@@ -46,6 +51,24 @@ export async function handleResolveBearer(request: Request, env: Env, requestId:
             orgId: wf.orgId,
             projectId: wf.projectId,
           },
+        },
+        requestId,
+        200,
+      );
+    }
+    // Same envelope, agent-session actor (saas-agents AG6 §3.2): resolve to
+    // the profile's SERVICE PRINCIPAL — no new identity plane — with the
+    // session id surfaced for audit and session-bound route gates.
+    const ag = await verifyAgentSessionToken(env, token, now);
+    if (ag) {
+      return successResponse(
+        {
+          actor: {
+            actorType: "service_principal",
+            actorId: ag.sub,
+            orgId: ag.orgId,
+          },
+          agentSession: { id: ag.sessionId },
         },
         requestId,
         200,

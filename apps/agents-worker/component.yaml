@@ -21,6 +21,8 @@ spec:
     # AG12: provider-key custody rides the CONFIG_WORKER service binding, so
     # config-worker must exist before agents-worker deploys (Cloudflare 10143).
     - component: config-worker
+    # AG6: agent-session token mint rides the IDENTITY_WORKER service binding.
+    - component: identity-worker
   subscribe:
     environments:
       - name: dev

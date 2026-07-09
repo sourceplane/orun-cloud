@@ -15,6 +15,7 @@ import type { PolicyResource } from "@saas/contracts/policy";
 import { createProviderKeyClient, type ProviderKeyClient } from "./config-client.js";
 import { createProviderVerifier, type ProviderVerifier } from "./verifiers.js";
 import { createDaytonaProvider } from "./providers/daytona.js";
+import { createSessionTokenMinter, type SessionTokenMinter } from "./identity-client.js";
 import type { SandboxProvider } from "@saas/contracts/agents";
 
 /** Builds the sandbox adapter for a provider connection (AG5 seam); null when
@@ -36,6 +37,8 @@ export interface AgentsDeps {
   verifier?: ProviderVerifier;
   /** Sandbox adapters keyed by provider (AG5); stubbed in tests. */
   sandboxes?: SandboxFactory;
+  /** Agent-session token mint over the identity binding (AG6 §3.2). */
+  sessionTokens?: SessionTokenMinter;
   /** Release any resources (a real DB executor) after the request. */
   dispose(): Promise<void>;
 }
@@ -53,6 +56,7 @@ export function buildDeps(env: Env): AgentsDeps {
     repo,
     ...(env.CONFIG_WORKER ? { providerKeys: createProviderKeyClient(env.CONFIG_WORKER) } : {}),
     verifier: createProviderVerifier(),
+    ...(env.IDENTITY_WORKER ? { sessionTokens: createSessionTokenMinter(env.IDENTITY_WORKER) } : {}),
     sandboxes(provider, apiKey, config) {
       if (provider !== "daytona") return null;
       return createDaytonaProvider({

@@ -1,0 +1,162 @@
+// Runtime dial-home routes (saas-agents AG6 §3–4): the in-sandbox
+// `orun agent serve` reaches these THROUGH api-edge with its agent-session
+// token. resolve-bearer resolves that token to the profile's service
+// principal with the session id surfaced; the gate here binds all three —
+// the actor must BE the session's principal, presenting a token minted for
+// THIS session. There is no other writer: humans read sessions, the runtime
+// advances them.
+//
+//   POST /sessions/{id}/heartbeat — extend the lease; first beat flips
+//     provisioning → running (the infrastructure fact "the runtime is up").
+//   POST /sessions/{id}/events    — ingest relay events (idempotent on seq,
+//     closed vocabulary — the AG5 schema rules hold at this door too).
+//   POST /sessions/{id}/token     — lease-gated refresh: a live session gets
+//     its next short-TTL bearer; a lapsed lease or terminal state refuses,
+//     which is exactly how a kill or a runaway dies within one TTL.
+
+import type { AgentsDeps } from "../deps.js";
+import type { ActorContext } from "../router.js";
+import type { AgentSession } from "@saas/db/agents";
+import { AgentsError, isTerminal } from "@saas/db/agents";
+import { errorResponse, notFound, successResponse, validationError } from "../http.js";
+import { toPublicSession } from "../mappers.js";
+
+/** Lease horizon per heartbeat/refresh (design §3.2: ~15 min TTL chain). */
+export const LEASE_TTL_MS = 15 * 60 * 1000;
+
+interface SessionGate {
+  session: AgentSession;
+}
+
+/**
+ * The session-actor gate: service principal + principal match + session-bound
+ * token. Returns a Response (the refusal) or the session.
+ */
+async function gateSessionActor(
+  deps: AgentsDeps,
+  orgId: string,
+  sessionId: string,
+  actor: ActorContext,
+  requestId: string,
+): Promise<SessionGate | Response> {
+  const session = await deps.repo.getSession({ orgId }, sessionId);
+  if (!session) return notFound(requestId, sessionId);
+  if (actor.subjectType !== "service_principal" || actor.agentSessionId !== session.publicId) {
+    return errorResponse("forbidden", "Not this session's credential", 403, requestId);
+  }
+  const profile = await deps.repo.getSessionProfile({ orgId }, sessionId);
+  if (!profile || profile.principalId !== actor.subjectId) {
+    return errorResponse("forbidden", "Not this session's principal", 403, requestId);
+  }
+  return { session };
+}
+
+export async function handleSessionHeartbeat(
+  deps: AgentsDeps,
+  orgId: string,
+  sessionId: string,
+  actor: ActorContext,
+  requestId: string,
+  now: () => Date = () => new Date(),
+): Promise<Response> {
+  const gate = await gateSessionActor(deps, orgId, sessionId, actor, requestId);
+  if (gate instanceof Response) return gate;
+  const { session } = gate;
+
+  const lease = new Date(now().getTime() + LEASE_TTL_MS).toISOString();
+  try {
+    const updated =
+      session.state === "provisioning"
+        ? await deps.repo.advanceSession(
+            { orgId },
+            { publicId: session.publicId, to: "running", leaseExpiresAt: lease },
+          )
+        : await deps.repo.touchSessionLease({ orgId }, session.publicId, lease);
+    return successResponse(toPublicSession(updated), requestId);
+  } catch (e) {
+    if (e instanceof AgentsError) {
+      return errorResponse(e.code, e.message, 409, requestId);
+    }
+    throw e;
+  }
+}
+
+export async function handleIngestSessionEvent(
+  request: Request,
+  deps: AgentsDeps,
+  orgId: string,
+  sessionId: string,
+  actor: ActorContext,
+  requestId: string,
+): Promise<Response> {
+  const gate = await gateSessionActor(deps, orgId, sessionId, actor, requestId);
+  if (gate instanceof Response) return gate;
+
+  let body: unknown;
+  try {
+    body = await request.json();
+  } catch {
+    return validationError(requestId, { body: ["invalid JSON"] });
+  }
+  // Accept one event or a batch — the relay flushes in small batches.
+  const events = Array.isArray(body) ? body : [body];
+  if (events.length === 0 || events.length > 100) {
+    return validationError(requestId, { body: ["1–100 events per call"] });
+  }
+  try {
+    for (const raw of events) {
+      const e = raw as Record<string, unknown>;
+      if (typeof e.seq !== "number" || typeof e.kind !== "string") {
+        return validationError(requestId, { events: ["each event needs seq (number) + kind"] });
+      }
+      await deps.repo.appendSessionEvent(
+        { orgId },
+        {
+          sessionPublicId: sessionId,
+          seq: e.seq,
+          kind: e.kind as never,
+          ...(typeof e.payload === "object" && e.payload !== null
+            ? { payload: e.payload as Record<string, unknown> }
+            : {}),
+          ...(typeof e.ref === "string" ? { ref: e.ref } : {}),
+        },
+      );
+    }
+  } catch (e) {
+    if (e instanceof AgentsError) {
+      return errorResponse(e.code, e.message, 422, requestId);
+    }
+    throw e;
+  }
+  return successResponse({ accepted: events.length }, requestId);
+}
+
+export async function handleRefreshSessionToken(
+  deps: AgentsDeps,
+  orgId: string,
+  sessionId: string,
+  actor: ActorContext,
+  requestId: string,
+  now: () => Date = () => new Date(),
+): Promise<Response> {
+  const gate = await gateSessionActor(deps, orgId, sessionId, actor, requestId);
+  if (gate instanceof Response) return gate;
+  const { session } = gate;
+
+  // The lease IS the refresh gate (design §3.2): terminal or lapsed → the
+  // chain dies; kill works by never extending it.
+  if (isTerminal(session.state)) {
+    return errorResponse("conflict", `Session is ${session.state}`, 409, requestId);
+  }
+  if (!session.leaseExpiresAt || new Date(session.leaseExpiresAt).getTime() <= now().getTime()) {
+    return errorResponse("forbidden", "Session lease has lapsed", 403, requestId);
+  }
+  if (!deps.sessionTokens) {
+    return errorResponse("internal_error", "Token service unavailable", 503, requestId);
+  }
+  const minted = await deps.sessionTokens.mint(actor.subjectId, orgId, session.publicId, requestId);
+  if (!minted) {
+    return errorResponse("internal_error", "Token mint failed", 502, requestId);
+  }
+  return successResponse(minted, requestId, 201);
+}

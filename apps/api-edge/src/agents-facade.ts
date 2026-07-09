@@ -14,6 +14,11 @@ const ORG_AGENTS_SESSIONS_RE = /^\/v1\/organizations\/[^/]+\/agents\/sessions$/;
 const ORG_AGENTS_SESSION_RE = /^\/v1\/organizations\/[^/]+\/agents\/sessions\/[^/]+$/;
 const ORG_AGENTS_SESSION_EVENTS_RE = /^\/v1\/organizations\/[^/]+\/agents\/sessions\/[^/]+\/events$/;
 const ORG_AGENTS_SESSION_PROVISION_RE = /^\/v1\/organizations\/[^/]+\/agents\/sessions\/[^/]+\/provision$/;
+// Runtime dial-home (AG6): heartbeat + lease-gated token refresh; event
+// ingest rides the events route (POST). Authenticated by the agent-session
+// bearer like everything else through this facade.
+const ORG_AGENTS_SESSION_HEARTBEAT_RE = /^\/v1\/organizations\/[^/]+\/agents\/sessions\/[^/]+\/heartbeat$/;
+const ORG_AGENTS_SESSION_TOKEN_RE = /^\/v1\/organizations\/[^/]+\/agents\/sessions\/[^/]+\/token$/;
 // Provider connections (AG12 §10): BYO Daytona / Anthropic keys. The apiKey in
 // the create body transits this facade exactly once, straight to the worker —
 // never logged, never cached (idempotency stores replay by key, not body).
@@ -30,6 +35,8 @@ export function isAgentsRoute(pathname: string): boolean {
     ORG_AGENTS_SESSION_RE.test(pathname) ||
     ORG_AGENTS_SESSION_EVENTS_RE.test(pathname) ||
     ORG_AGENTS_SESSION_PROVISION_RE.test(pathname) ||
+    ORG_AGENTS_SESSION_HEARTBEAT_RE.test(pathname) ||
+    ORG_AGENTS_SESSION_TOKEN_RE.test(pathname) ||
     ORG_AGENTS_PROVIDERS_RE.test(pathname) ||
     ORG_AGENTS_PROVIDER_RE.test(pathname) ||
     ORG_AGENTS_PROVIDER_VERIFY_RE.test(pathname)
@@ -65,6 +72,12 @@ export async function handleAgentsRoute(
     headers.set("x-actor-subject-id", sessionResult.subjectId);
     headers.set("x-actor-subject-type", sessionResult.subjectType);
     headers.set("x-actor-email", sessionResult.email);
+    // Session-bound runtime credential (AG6): the worker gates heartbeat/
+    // ingest/refresh on this binding. Set ONLY from the resolved bearer —
+    // an inbound x-actor-* header is never trusted or forwarded.
+    if (sessionResult.agentSessionId) {
+      headers.set("x-actor-agent-session-id", sessionResult.agentSessionId);
+    }
     for (const name of FORWARDED_HEADERS) {
       if (name === "x-request-id") continue;
       const value = request.headers.get(name);

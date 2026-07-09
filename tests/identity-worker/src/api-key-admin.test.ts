@@ -229,6 +229,20 @@ function createFakeEventsRepo(): FakeEventsRepo {
     async countCustomEventsSince(): Promise<EventsResult<number>> {
       return { ok: true as const, value: 0 };
     },
+    // Retention sweep surface (unused by these tests; keeps the fake
+    // structurally complete as EventsRepository grows).
+    async deleteExpiredEvents(): Promise<EventsResult<number>> {
+      return { ok: true as const, value: 0 };
+    },
+    async deleteExpiredAuditEntries(): Promise<EventsResult<number>> {
+      return { ok: true as const, value: 0 };
+    },
+    async deleteExpiredDeadLetters(): Promise<EventsResult<number>> {
+      return { ok: true as const, value: 0 };
+    },
+    async deleteClosedGroupsBefore(): Promise<EventsResult<number>> {
+      return { ok: true as const, value: 0 };
+    },
   };
 }
 
