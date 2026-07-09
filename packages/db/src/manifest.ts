@@ -588,5 +588,14 @@ export const manifest: MigrationManifest = {
       description:
         "Event lifecycle — retention-sweep support + per-rule storm breaker (saas-event-streaming ES7). Adds storm-breaker state to events.notification_rules (suppressed_at/suppressed_reason — the auto-suppression overlay on top of the operator status column, a rule fires only when status='enabled' AND suppressed_at IS NULL, the read maps suppressed_at back onto the 'suppressed' status; saturated_window_count/last_saturated_at — the consecutive-saturation bookkeeping the throttle admission path maintains, reset on admit, incremented on deny, tripping auto-suppression past a threshold, cleared after a cooldown). Adds a partial notification_rules_suppressed_idx for the cooldown re-enable scan + admin storm audit, and two retention cutoff-scan partial indexes not already covered by the ES0/ES4 indexes: dead_letters_terminal_updated_idx (terminal-status age scan for the fixed-window dead-letter sweep) and event_groups_closed_at_idx (closed_at age scan for the closed-group sweep). event_log / audit_entries cutoff deletes reuse the existing (org_id, occurred_at) indexes; the design §10 security-category floor is enforced in the delete predicate, not the schema. Additive + idempotent (ADD COLUMN IF NOT EXISTS / CREATE INDEX IF NOT EXISTS, no DROP); same-context references only.",
     },
+    {
+      id: "650_agents_foundation",
+      context: "agents",
+      path: "650_agents_foundation/up.sql",
+      checksum:
+        "76daff1f0510762a25b00c22c029686c1018365e04d579db8035e96b74d6eff7",
+      description:
+        "Agent-session control plane foundation (saas-agents AG5/AG6) — the DORMANT schema the control plane projects onto (no worker consumes it until AG6). Creates schema agents with: agent_profiles (a workspace's binding of an orun agent TYPE to a membership service principal with a MANDATORY responsible owner; capability overrides narrow-only; UNIQUE(org_id,name)); agent_sessions (one hosted run of the orun runtime — state is an INFRASTRUCTURE fact via a CHECK'd 10-value vocabulary, categorically distinct from the derived work rung; carries the sealed AgentSessionSnapshot id + lease_expires_at for the reclaim sweep; partial lease index over non-terminal states); session_events (the control-plane RELAY mirror of the runtime's append-only log for console snapshot/replay — closed 11-kind vocabulary with no status/lifecycle kind, dedupe UNIQUE(session_id,seq), bulk payloads by R2 ref); autonomy_policies (per-spec/workspace autonomy level + caps, agent-plane config not work truth). Workspace-scoped (org_id). Additive + idempotent (CREATE ... IF NOT EXISTS throughout); references only its own schema.",
+    },
   ],
 };
