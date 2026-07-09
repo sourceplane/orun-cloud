@@ -204,8 +204,9 @@ export interface AgentSessionEventWire {
 // apps/agents-worker/src/providers/.
 
 export interface SandboxSpec {
-  /** The base snapshot to boot from (ships the orun binary + drivers). */
-  baseSnapshot: string;
+  /** Snapshot/image to boot from, when the connection pins one. Omitted =
+   * the provider account's default image (the bootstrap installs orun). */
+  baseSnapshot?: string;
   /** Non-secret environment for the sandbox. Secrets never appear here. */
   env?: Record<string, string>;
   /** Hard TTL after which the control plane reclaims the sandbox. */
@@ -237,7 +238,7 @@ export interface SandboxHealth {
 export interface SandboxProvider {
   readonly id: string;
   create(spec: SandboxSpec): Promise<SandboxRef>;
-  /** Start `orun agent serve` (or any command) in the sandbox. */
+  /** Start the session bootstrap (or any command) in the sandbox. */
   exec(ref: SandboxRef, cmd: string[], opts?: { env?: Record<string, string> }): Promise<void>;
   snapshot(ref: SandboxRef): Promise<string>;
   resume(snapshotId: string): Promise<SandboxRef>;

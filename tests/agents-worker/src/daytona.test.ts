@@ -53,6 +53,15 @@ describe("daytona sandbox adapter", () => {
     expect(body.autoStopInterval).toBe(90); // 5400s → minutes
   });
 
+  it("omits the snapshot key when the spec pins none — the account's default image boots", async () => {
+    // The regression this locks: a fabricated snapshot name (e.g. agents-base)
+    // 404s against a workspace's own Daytona account. No pin → no key at all.
+    const { fetchImpl, calls } = fakeFetch();
+    const p = createDaytonaProvider({ apiKey: "k", fetchImpl });
+    await p.create({ ttlSeconds: 5400, egressAllow: ["api.anthropic.com"], env: { ORUN_SESSION_ID: "as_1" } });
+    expect("snapshot" in (calls[0]!.body as Record<string, unknown>)).toBe(false);
+  });
+
   it("respects a custom apiUrl and target from the connection config", async () => {
     const { fetchImpl, calls } = fakeFetch();
     const p = createDaytonaProvider({

@@ -29,9 +29,40 @@ const DEFAULT_EGRESS = [
   "api.anthropic.com",
   "github.com",
   "objects.githubusercontent.com",
+  "raw.githubusercontent.com",
   "registry.npmjs.org",
   "proxy.golang.org",
 ];
+
+/**
+ * The in-sandbox bootstrap (design §2 + AG6 §3): runs as the exec command with
+ * the secrets in its process env, so it works on ANY image — the account's
+ * default when the connection pins no snapshot. It installs the orun binary
+ * (best-effort), then supervises the session by heartbeating home over the
+ * lease: the FIRST beat flips provisioning → running (AG6 §4), each loop
+ * refreshes the short-TTL session token, and a refused heartbeat (kill,
+ * lapsed lease, terminal state) exits the loop — the credential chain dies
+ * with it. Stands in as the supervisor until the runtime ships
+ * `orun agent serve`.
+ */
+function bootstrapScript(): string {
+  const session = '"$ORUN_CLOUD_API/v1/organizations/$ORUN_ORG_ID/agents/sessions/$ORUN_SESSION_ID"';
+  const auth = '-H "authorization: Bearer $ORUN_SESSION_TOKEN"';
+  return [
+    "set -u",
+    // The binary rides the image OR gets installed here — never assumed.
+    "command -v orun >/dev/null 2>&1 || curl -fsSL https://raw.githubusercontent.com/sourceplane/orun/main/install.sh | sh || echo 'orun install failed' >&2",
+    'export PATH="$HOME/.local/bin:$PATH"',
+    "while :; do",
+    `  curl -fsS -X POST ${auth} ${session}/heartbeat >/dev/null || exit 0`,
+    // Rotate the bearer inside its TTL; on a failed refresh keep the old one
+    // and let the next heartbeat decide (the lease, not the loop, is the gate).
+    `  next=$(curl -fsS -X POST ${auth} ${session}/token | sed -n 's/.*"token":"\\([^"]*\\)".*/\\1/p')`,
+    '  [ -n "$next" ] && ORUN_SESSION_TOKEN="$next"',
+    "  sleep 300",
+    "done",
+  ].join("\n");
+}
 
 /**
  * Connection selection (design §10.4): a workspace's sole connection for the
@@ -105,7 +136,10 @@ export async function handleProvisionSession(
   const orgPublic = orgPublicId(orgId);
   const cfg = daytona.config;
   const spec: SandboxSpec = {
-    baseSnapshot: typeof cfg.snapshot === "string" && cfg.snapshot ? cfg.snapshot : "agents-base",
+    // Only a connection-pinned snapshot is ever named; otherwise the account's
+    // default image boots and the bootstrap installs orun (a made-up name
+    // would 404 the create against the workspace's own Daytona account).
+    ...(typeof cfg.snapshot === "string" && cfg.snapshot ? { baseSnapshot: cfg.snapshot } : {}),
     ttlSeconds: typeof cfg.ttlSeconds === "number" && cfg.ttlSeconds > 0 ? cfg.ttlSeconds : 3600,
     egressAllow: DEFAULT_EGRESS,
     // Non-secret only — create-time env can outlive a suspend snapshot. The
@@ -115,6 +149,7 @@ export async function handleProvisionSession(
       ORUN_ORG_ID: orgPublic,
       ORUN_RUN_KIND: session.runKind,
       ...(session.taskKey ? { ORUN_TASK_KEY: session.taskKey } : {}),
+      ...(deps.apiBaseUrl ? { ORUN_CLOUD_API: deps.apiBaseUrl } : {}),
     },
   };
 
@@ -136,7 +171,7 @@ export async function handleProvisionSession(
     try {
       // Secrets ride the exec env only (design §10.4): TTL'd with the
       // process, never in the manifest, never surviving suspend.
-      await provider.exec(ref, ["orun", "agent", "serve"], {
+      await provider.exec(ref, ["sh", "-lc", bootstrapScript()], {
         env: { ANTHROPIC_API_KEY: anthropicKey, ORUN_SESSION_TOKEN: sessionToken.token },
       });
     } catch (e) {

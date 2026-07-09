@@ -43,6 +43,9 @@ export interface AgentsDeps {
   sessionTokens?: SessionTokenMinter;
   /** feature.agents entitlement gate (AG10 §8); absent = open (D3). */
   entitlement?: (orgId: string, requestId: string) => Promise<AgentsEntitlementGate>;
+  /** Public platform API base URL the in-sandbox bootstrap dials home to
+   * (heartbeat/events/token). Derived from ENVIRONMENT in production. */
+  apiBaseUrl?: string;
   /** Usage emission (AG10 §8); absent = no metering. Fire-and-forget. */
   usage?: UsageRecorder;
   /** Release any resources (a real DB executor) after the request. */
@@ -70,6 +73,9 @@ export function buildDeps(env: Env): AgentsDeps {
         }
       : {}),
     ...(env.METERING_WORKER ? { usage: createUsageRecorder(env.METERING_WORKER) } : {}),
+    // The same host the console + CLI use (custom hostnames route here too);
+    // workers.dev is always live, so the bootstrap needs no per-env DNS.
+    apiBaseUrl: `https://api-edge-${env.ENVIRONMENT}.oruncloud.workers.dev`,
     sandboxes(provider, apiKey, config) {
       if (provider !== "daytona") return null;
       return createDaytonaProvider({

@@ -3,13 +3,14 @@
 // The workspace's own Daytona account (an AG12 provider connection) supplies
 // the credential + config; nothing platform-owned is baked in. The adapter
 // speaks the public Daytona REST API (the same host the AG12 verification
-// ping proves): sandboxes boot from the agents-base snapshot (the orun binary
-// + drivers, no credentials), commands run through the toolbox exec, and
-// suspend/resume map to Daytona stop/start. All error surfaces are redacted
-// to a status code — a provider body may echo account details.
+// ping proves): sandboxes boot from the snapshot the connection pins — or the
+// account's default image when none is (the bootstrap installs orun) —
+// commands run through the toolbox exec, and suspend/resume map to Daytona
+// stop/start. All error surfaces are redacted to a status code — a provider
+// body may echo account details.
 //
 // No inbound path: the control plane only calls Daytona's API; the in-sandbox
-// `orun agent serve` dials out to the session relay.
+// bootstrap dials out to the platform API.
 
 import type { SandboxHealth, SandboxProvider, SandboxRef, SandboxSpec } from "@saas/contracts/agents";
 
@@ -60,7 +61,9 @@ export function createDaytonaProvider(cfg: DaytonaConfig): SandboxProvider {
 
     async create(spec: SandboxSpec): Promise<SandboxRef> {
       const res = await call("POST", "/sandbox", {
-        snapshot: spec.baseSnapshot,
+        // No snapshot key when the spec doesn't pin one: Daytona then boots
+        // the account's default image (a nonexistent name 404s the create).
+        ...(spec.baseSnapshot ? { snapshot: spec.baseSnapshot } : {}),
         ...(spec.env ? { env: spec.env } : {}),
         ...(cfg.target ? { target: cfg.target } : {}),
         // Provider-side reclaim backstops the control plane's lease sweep
