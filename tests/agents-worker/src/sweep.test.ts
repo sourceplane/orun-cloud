@@ -9,8 +9,8 @@ import type { ProviderKeyClient } from "@agents-worker/config-client";
 import type { SandboxProvider } from "@saas/contracts/agents";
 import { MemoryAgentsRepository, providerSecretRef } from "@saas/db/agents";
 
-const ORG = "org_b281a9a0f43d463e9c83d6b6597ab2d2"; // public org id carried in the URL
-const ORG_UUID = "b281a9a0-f43d-463e-9c83-d6b6597ab2d2"; // what the router decodes to (repo scope)
+// The sweep never sees the public org id — it walks repo scopes directly.
+const ORG_UUID = "b281a9a0-f43d-463e-9c83-d6b6597ab2d2";
 const NOW = new Date("2026-07-09T12:00:00Z");
 
 function stubProvider(destroyed: string[], failDestroy = false): SandboxProvider {

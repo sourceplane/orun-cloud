@@ -145,6 +145,7 @@ async function fixture(overrides?: {
     sandboxes:
       overrides?.factory ??
       ((provider) => (provider === "daytona" ? stubProvider(log, overrides?.providerOverrides) : null)),
+    apiBaseUrl: "https://api-edge-test.oruncloud.workers.dev",
     async dispose() {
       /* no-op */
     },
@@ -155,7 +156,7 @@ async function fixture(overrides?: {
 const provisionPath = (id: string) => `/v1/organizations/${ORG}/agents/sessions/${id}/provision`;
 
 describe("agents-worker session provisioning (AG5)", () => {
-  it("provisions: creates the sandbox, execs orun agent serve with the model key, records the ref", async () => {
+  it("provisions: creates the sandbox, execs the bootstrap with the model key, records the ref", async () => {
     const f = await fixture();
     const res = await route(req("POST", provisionPath(f.sessionId)), env, f.deps);
     expect(res.status).toBe(200);
@@ -165,17 +166,29 @@ describe("agents-worker session provisioning (AG5)", () => {
     // Create-time env is non-secret; the model key rides the exec only.
     expect(f.log.created.length).toBe(1);
     const spec = f.log.created[0]!;
-    expect(spec.baseSnapshot).toBe("agents-base");
+    // No connection-pinned snapshot → none named (the account default boots).
+    expect(spec.baseSnapshot).toBeUndefined();
     expect(spec.env).toEqual({
       ORUN_SESSION_ID: f.sessionId,
       ORUN_ORG_ID: ORG,
       ORUN_RUN_KIND: "implementation",
       ORUN_TASK_KEY: "ORN-142",
+      ORUN_CLOUD_API: "https://api-edge-test.oruncloud.workers.dev",
     });
     expect(JSON.stringify(spec.env)).not.toContain("key-for");
 
+    // The bootstrap is a self-contained supervisor: installs orun, then
+    // heartbeats home (first beat flips provisioning → running) and rotates
+    // the session token over the lease.
     expect(f.log.execs.length).toBe(1);
-    expect(f.log.execs[0]!.cmd).toEqual(["orun", "agent", "serve"]);
+    const [shell, dashC, script] = f.log.execs[0]!.cmd;
+    expect([shell, dashC]).toEqual(["sh", "-lc"]);
+    expect(script).toContain("install.sh");
+    expect(script).toContain("$ORUN_CLOUD_API/v1/organizations/$ORUN_ORG_ID/agents/sessions/$ORUN_SESSION_ID");
+    expect(script).toContain("/heartbeat");
+    expect(script).toContain("/token");
+    // The script itself carries no secret — the token arrives via exec env.
+    expect(script).not.toContain("ast(");
     expect(f.log.execs[0]!.env).toEqual({
       ANTHROPIC_API_KEY: "key-for(agents/providers/anthropic/default/API_KEY)",
       ORUN_SESSION_TOKEN: `ast(sp_1,${ORG},${f.sessionId})`,
