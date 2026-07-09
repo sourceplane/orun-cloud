@@ -134,6 +134,46 @@ describe("MemoryAgentsRepository", () => {
     await expect(r.touchSessionLease(scope, "as_missing", "2099-01-01T00:00:00Z")).rejects.toThrow(/not found/);
   });
 
+  it("lists lapsed sessions cross-org for the sweep (AG6 §4.3)", async () => {
+    const r = repo();
+    const otherScope: WorkspaceScope = { orgId: "org_2" };
+    const p1 = await seedProfile(r);
+    const p2 = await r.createProfile(otherScope, {
+      name: "impl",
+      principalId: "sp_2",
+      owner: "team/platform",
+      agentType: "implementer",
+      harness: "claude-code",
+      model: "claude-opus-4-8",
+    });
+
+    // org_1: a running session with a lapsed lease.
+    const lapsed = await r.createSession(scope, { profileId: p1.publicId, runKind: "design", spawnedBy: "u" });
+    await r.advanceSession(scope, { publicId: lapsed.publicId, to: "provisioning" });
+    await r.advanceSession(scope, {
+      publicId: lapsed.publicId,
+      to: "running",
+      leaseExpiresAt: "1970-01-01T00:00:00.000Z",
+    });
+    // org_1: a healthy running session.
+    const live = await r.createSession(scope, { profileId: p1.publicId, runKind: "design", spawnedBy: "u" });
+    await r.advanceSession(scope, { publicId: live.publicId, to: "provisioning" });
+    await r.advanceSession(scope, { publicId: live.publicId, to: "running", leaseExpiresAt: "2099-01-01T00:00:00Z" });
+    // org_2: a stalled provisioning session.
+    const stalled = await r.createSession(otherScope, { publicId: undefined, profileId: p2.publicId, runKind: "fix", spawnedBy: "u" } as never);
+    await r.advanceSession(otherScope, { publicId: stalled.publicId, to: "provisioning" });
+
+    const found = await r.listLapsedSessions({
+      leaseCutoff: "2026-01-01T00:00:00Z",
+      provisioningCutoff: "2099-01-01T00:00:00Z",
+      limit: 10,
+    });
+    const ids = found.map((s) => s.publicId).sort();
+    expect(ids).toEqual([lapsed.publicId, stalled.publicId].sort());
+    // Cross-org: both workspaces' sessions surfaced; the healthy one did not.
+    expect(found.map((s) => s.orgId).sort()).toEqual(["org_1", "org_2"]);
+  });
+
   it("upserts autonomy policy per (org, spec)", async () => {
     const r = repo();
     await r.setAutonomy(scope, { level: "assist" }); // workspace default

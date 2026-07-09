@@ -24,6 +24,7 @@ import type {
   CreateConnectionInput,
   CreateProfileInput,
   CreateSessionInput,
+  ListLapsedSessionsInput,
   SetAutonomyInput,
   SetConnectionStatusInput,
   WorkspaceScope,
@@ -145,6 +146,21 @@ export class MemoryAgentsRepository implements AgentsRepository {
     }
     session.leaseExpiresAt = leaseExpiresAt;
     return session;
+  }
+
+  async listLapsedSessions(input: ListLapsedSessionsInput): Promise<AgentSession[]> {
+    const out: AgentSession[] = [];
+    for (const s of this.byOrg.values()) {
+      for (const session of s.sessions) {
+        const lapsed =
+          (session.state === "running" || session.state === "awaiting_approval") &&
+          session.leaseExpiresAt !== undefined &&
+          session.leaseExpiresAt < input.leaseCutoff;
+        const stalled = session.state === "provisioning" && session.createdAt < input.provisioningCutoff;
+        if (lapsed || stalled) out.push(session);
+      }
+    }
+    return out.sort((a, b) => a.createdAt.localeCompare(b.createdAt)).slice(0, input.limit);
   }
 
   async listSessions(scope: WorkspaceScope, filter?: { state?: SessionState }): Promise<AgentSession[]> {

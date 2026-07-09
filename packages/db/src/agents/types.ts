@@ -61,6 +61,14 @@ export interface AppendSessionEventInput {
   ref?: string;
 }
 
+export interface ListLapsedSessionsInput {
+  /** Sessions in running/awaiting_approval with a lease older than this. */
+  leaseCutoff: string;
+  /** Provisioning sessions created before this never booted — reclaim them. */
+  provisioningCutoff: string;
+  limit: number;
+}
+
 export interface SetAutonomyInput {
   specKey?: string;
   level: AutonomyLevel;
@@ -87,6 +95,10 @@ export interface AgentsRepository extends ProviderConnectionsRepository {
   /** Extend the session lease (heartbeat) without a state transition. Refuses
    * on terminal states — a dead session's lease never revives. */
   touchSessionLease(scope: WorkspaceScope, sessionPublicId: string, leaseExpiresAt: string): Promise<AgentSession>;
+  /** CROSS-ORG reclaim query for the lease sweep (design §4.3): active
+   * sessions whose lease lapsed, plus provisioning sessions stalled past the
+   * boot horizon (they never heartbeat, so they never earn a lease). */
+  listLapsedSessions(input: ListLapsedSessionsInput): Promise<AgentSession[]>;
 
   appendSessionEvent(scope: WorkspaceScope, input: AppendSessionEventInput): Promise<void>;
   listSessionEvents(scope: WorkspaceScope, sessionPublicId: string): Promise<SessionEvent[]>;
