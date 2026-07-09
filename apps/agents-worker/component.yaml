@@ -56,7 +56,10 @@ spec:
     owner: sourceplane
     repo: orun-cloud
 
-    secretsWorker: agents-worker
+    # No secretsWorker: agents-worker holds no worker-level secrets (provider
+    # keys live in config-worker custody; the model key and session token ride
+    # the sandbox exec env). Declaring one without a secrets.manifest.json
+    # entry fails the deploy lane's secrets-live step.
     turboFilter: "@saas/agents-worker"
     wranglerConfig: wrangler.jsonc
     wranglerTemplate: wrangler.template.jsonc
