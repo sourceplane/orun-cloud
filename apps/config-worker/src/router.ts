@@ -23,6 +23,7 @@ import { handleListSecretPolicies } from "./handlers/list-secret-policies.js";
 import { handleRecordSecretSync } from "./handlers/record-secret-sync.js";
 import { handleListSecretSyncs } from "./handlers/list-secret-syncs.js";
 import { handleInternalResolveSecrets } from "./handlers/internal-resolve-secrets.js";
+import { handleProviderKeyStore, handleProviderKeyResolve } from "./handlers/internal-provider-keys.js";
 import { errorResponse, notFound, methodNotAllowed } from "./http.js";
 import { generateRequestId, parseOrgPublicId, parseProjectPublicId, parseEnvironmentPublicId, parseSettingPublicId, parseFeatureFlagPublicId, parseSecretMetadataPublicId } from "./ids.js";
 
@@ -111,6 +112,10 @@ const PRJ_SECRET_POLICIES_EVALUATE_RE = /^\/v1\/organizations\/([^/]+)\/projects
 // service binding. NOT exposed through api-edge (no /v1/internal/* forwarding),
 // and does NOT require a user bearer: it trusts the calling worker.
 const INTERNAL_SECRETS_RESOLVE_PATH = "/v1/internal/config/secrets/resolve";
+// Provider-key custody (saas-agents AG12): service-binding-only, restricted to
+// the reserved agents/providers/* namespace inside the handlers.
+const INTERNAL_PROVIDER_KEYS_STORE_PATH = "/v1/internal/config/provider-keys/store";
+const INTERNAL_PROVIDER_KEYS_RESOLVE_PATH = "/v1/internal/config/provider-keys/resolve";
 
 // Materialization provenance (SM5): POST records a sync, GET lists them.
 // `syncs` is a fixed sub-path (like `import`), matched before the {id} route.
@@ -537,6 +542,25 @@ export async function route(request: Request, env: Env): Promise<Response> {
         return errorResponse("unauthenticated", "Actor headers required", 401, requestId);
       }
       return handleInternalResolveSecrets(request, env, requestId, internalActor);
+    }
+
+    // Provider-key custody (AG12): same trust posture as the resolve above —
+    // the calling worker (agents-worker) has already authorized the actor;
+    // the handlers additionally hard-restrict to the reserved namespace.
+    if (
+      url.pathname === INTERNAL_PROVIDER_KEYS_STORE_PATH ||
+      url.pathname === INTERNAL_PROVIDER_KEYS_RESOLVE_PATH
+    ) {
+      if (request.method !== "POST") {
+        return methodNotAllowed(requestId);
+      }
+      const internalActor = resolveActor(request);
+      if (!internalActor) {
+        return errorResponse("unauthenticated", "Actor headers required", 401, requestId);
+      }
+      return url.pathname === INTERNAL_PROVIDER_KEYS_STORE_PATH
+        ? handleProviderKeyStore(request, env, requestId, internalActor)
+        : handleProviderKeyResolve(request, env, requestId, internalActor);
     }
 
     const matchedResolve = matchResolveRoute(url.pathname);

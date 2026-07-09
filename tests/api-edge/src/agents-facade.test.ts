@@ -70,9 +70,15 @@ describe("api-edge agents facade", () => {
       expect(isAgentsRoute("/v1/organizations/org_abc/agents/sessions/as_1")).toBe(true);
       expect(isAgentsRoute("/v1/organizations/org_abc/agents/sessions/as_1/events")).toBe(true);
     });
+    it("matches the provider connections collection + item + verify (AG12)", () => {
+      expect(isAgentsRoute("/v1/organizations/org_abc/agents/providers")).toBe(true);
+      expect(isAgentsRoute("/v1/organizations/org_abc/agents/providers/apc_1")).toBe(true);
+      expect(isAgentsRoute("/v1/organizations/org_abc/agents/providers/apc_1/verify")).toBe(true);
+    });
     it("does not match unrelated or internal routes", () => {
       expect(isAgentsRoute("/v1/organizations/org_abc/config/settings")).toBe(false);
       expect(isAgentsRoute("/v1/internal/agents/sessions/as_1/events")).toBe(false);
+      expect(isAgentsRoute("/v1/internal/config/provider-keys/store")).toBe(false);
       expect(isAgentsRoute("/v1/organizations/org_abc/agents")).toBe(false);
     });
   });
@@ -123,11 +129,28 @@ describe("api-edge agents facade", () => {
       expect(res.status).toBe(503);
     });
 
+    it("forwards a DELETE (provider connection) without a body", async () => {
+      const { fetcher: identityFetcher } = createSessionFetcher("usr_test");
+      const { fetcher: agentsFetcher, calls } = createFakeFetcher(
+        Response.json({ data: { deleted: true }, meta: { requestId: "r", cursor: null } }),
+      );
+      const env = createEnv({ IDENTITY_WORKER: identityFetcher, AGENTS_WORKER: agentsFetcher });
+      const path = "/v1/organizations/org_abc/agents/providers/apc_1";
+      const req = new Request(`https://api-edge${path}`, {
+        method: "DELETE",
+        headers: { authorization: "Bearer tok_test" },
+      });
+      const res = await handleAgentsRoute(req, env as never, "req_test", path);
+      expect(res.status).toBe(200);
+      expect(calls[0]!.init.method).toBe("DELETE");
+      expect(calls[0]!.init.body).toBeUndefined();
+    });
+
     it("405s an unsupported method", async () => {
       const env = createEnv();
       const path = "/v1/organizations/org_abc/agents/profiles";
       const req = new Request(`https://api-edge${path}`, {
-        method: "DELETE",
+        method: "PATCH",
         headers: { authorization: "Bearer tok_test" },
       });
       const res = await handleAgentsRoute(req, env as never, "req_test", path);

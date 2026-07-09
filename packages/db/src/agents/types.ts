@@ -11,6 +11,9 @@ import type {
   AgentSession,
   AutonomyLevel,
   AutonomyPolicy,
+  ConnectionStatus,
+  Provider,
+  ProviderConnection,
   RunKind,
   SessionEvent,
   SessionEventKind,
@@ -69,7 +72,7 @@ export interface SetAutonomyInput {
  * transitions are guarded by the model's transition table; an illegal
  * transition throws rather than corrupting state.
  */
-export interface AgentsRepository {
+export interface AgentsRepository extends ProviderConnectionsRepository {
   createProfile(scope: WorkspaceScope, input: CreateProfileInput): Promise<AgentProfile>;
   getProfile(scope: WorkspaceScope, name: string): Promise<AgentProfile | null>;
   listProfiles(scope: WorkspaceScope): Promise<AgentProfile[]>;
@@ -84,4 +87,41 @@ export interface AgentsRepository {
 
   setAutonomy(scope: WorkspaceScope, input: SetAutonomyInput): Promise<AutonomyPolicy>;
   getAutonomy(scope: WorkspaceScope, specKey?: string): Promise<AutonomyPolicy | null>;
+}
+
+// ── Provider connections (AG12) ─────────────────────────────
+
+export interface CreateConnectionInput {
+  provider: string;
+  name: string;
+  config?: Record<string, unknown>;
+  secretRef: string;
+  keyHint?: string;
+  createdBy: string;
+}
+
+export interface SetConnectionStatusInput {
+  publicId: string;
+  status: ConnectionStatus;
+  statusReason?: string;
+}
+
+export interface ProviderConnectionsRepository {
+  createConnection(
+    scope: WorkspaceScope,
+    input: CreateConnectionInput,
+  ): Promise<ProviderConnection>;
+  listConnections(
+    scope: WorkspaceScope,
+    provider?: Provider,
+  ): Promise<ProviderConnection[]>;
+  getConnection(
+    scope: WorkspaceScope,
+    publicId: string,
+  ): Promise<ProviderConnection | null>;
+  setConnectionStatus(
+    scope: WorkspaceScope,
+    input: SetConnectionStatusInput,
+  ): Promise<ProviderConnection>;
+  deleteConnection(scope: WorkspaceScope, publicId: string): Promise<boolean>;
 }

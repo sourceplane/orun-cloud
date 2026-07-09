@@ -521,6 +521,8 @@ export function createWorkRepository(
         [scope.orgId, specKey],
       );
       return res.rows.map((r) => {
+        // Rest-destructure strips body from the listing shape.
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
         const { body: _b, ...rest } = mapDocRevision({ ...r, body: "" });
         return rest;
       });

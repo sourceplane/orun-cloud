@@ -35,3 +35,4 @@ apps/integrations-worker/wrangler.jsonc
 apps/webhooks-worker/wrangler.jsonc
 apps/state-worker/wrangler.jsonc
 apps/mcp-worker/wrangler.jsonc
+apps/agents-worker/wrangler.jsonc

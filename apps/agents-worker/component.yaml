@@ -18,6 +18,9 @@ spec:
       input: true
     - component: membership-worker
     - component: policy-worker
+    # AG12: provider-key custody rides the CONFIG_WORKER service binding, so
+    # config-worker must exist before agents-worker deploys (Cloudflare 10143).
+    - component: config-worker
   subscribe:
     environments:
       - name: dev

@@ -10,6 +10,8 @@ export interface Env {
   MEMBERSHIP_WORKER?: Fetcher;
   /** Policy worker — deny-by-default authorization on control-plane routes. */
   POLICY_WORKER?: Fetcher;
+  /** Config worker — provider-key custody (store/resolve, AG12). */
+  CONFIG_WORKER?: Fetcher;
   /** Deploy environment name ("dev" | "stage" | "prod" | "local"). */
   ENVIRONMENT: string;
 }

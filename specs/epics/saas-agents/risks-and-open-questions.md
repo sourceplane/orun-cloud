@@ -8,11 +8,9 @@ second.
 
 | # | Question | Default lean |
 |---|----------|--------------|
-| A1 | **Daytona commercial/credential posture.** Which Daytona org + plan per environment (stage/prod)? Is a self-hosted Daytona (or the `local-docker` adapter hardened) acceptable as a fallback if the vendor relationship changes? | One managed Daytona org per environment, credential escrowed via `saas-secrets-sync`; keep the seam honest by maintaining the dev adapter's conformance parity so a second provider is an adapter, not a rescue project. |
 | A2 | **Free-vs-paid line.** Is any agent usage in the free tier (e.g. N session-minutes/month) or is `feature.agents` paid-only from day one? Interacts with the MCP6 free-vs-paid decision. | Small free allowance (enough to feel the loop once: one design run + one implementation run), paid beyond; concurrency > 1 is paid. |
 | A3 | **Autonomy ceiling.** May a workspace waive the human contract-ack gate (true `full` autonomy: spec created → agents design, ack their own contracts, implement)? | No in v1 — the contract ack is the one human gate autonomy never skips; revisit with eval data. The ladder's `full` still auto-spawns everything but blocks on ack. |
-| A4 | **Model credential ownership.** Tenant-supplied model keys only (current design), or a platform-provided model pool with margin (Copilot-style premium requests)? | Tenant-supplied in v1 (zero platform model spend, no margin accounting); the metering seam (AG8) is where a pooled offering would bolt on later. |
-| A5 | **Session data residency/retention.** Transcript chunks (R2) and session events: retention window, tenant-configurable purge, and whether suspended snapshots at the provider count as tenant data needing contractual cover. | 90-day default retention, org-configurable down to 7; snapshots destroyed at `expired`; provider DPA reviewed before prod (pairs with A1). |
+| A5 | **Session data residency/retention.** Transcript chunks (R2) and session events: retention window, tenant-configurable purge, and whether suspended snapshots at the provider count as tenant data needing contractual cover. | 90-day default retention, org-configurable down to 7; snapshots destroyed at `expired`; provider DPA reviewed before prod (now per-workspace: the connected Daytona account is the tenant's own, D10). |
 | A6 | **Sidebar placement.** Agents after Activities (design §5) vs. adjacent to the future Work tab as one "delivery" cluster once WP1 ships. | After Activities now; revisit rail grouping when the Work tab lands (a nav-items reshuffle is cheap and test-covered). |
 
 ## ✅ Decisions made
@@ -29,6 +27,7 @@ second.
 | D7 | Streaming/partition architecture | Per-session Durable Object as live **relay** + partition unit (not a supervisor); it mirrors orun's streamed session events to R2 + `session_relay` for console reads and carries the steer/approval return queue. The system of record is the sealed `AgentSessionSnapshot` in orun's graph; the DO is reconstructible from storage. |
 | D8 | Repo write path | IG4 token-broker installation tokens; PRs authored by the GitHub App, responsible owner attributed; task-keyed branches so WP2's claim join needs no new protocol. |
 | D9 | Secrets | Only through the SM3 lease-bound resolve with `how: agent-session`; nothing baked in snapshots; redaction at capture (SD-8); credentials never survive suspend. |
+| D10 | **Provider credentials (resolves A1 + A4)** | **Workspace-connected accounts are the primary posture** (AG12): a workspace connects its own Daytona account and Anthropic key as provider connections — rows in `agents.provider_connections`, key custody in the secret manager under the reserved `agents/providers/*` namespace, config-worker the only decrypt path, verification pings before use. Operator-escrowed platform Daytona credentials demote to an optional fallback; a platform model pool stays parked on the AG10 metering seam. |
 
 ## Risks
 

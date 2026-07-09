@@ -2,7 +2,7 @@
 
 The as-built record, kept distinct from the design/plan docs. The runtime half
 (AG0–AG4) is complete in `sourceplane/orun` (`orun/specs/orun-agents/`); this
-file tracks the orun-cloud control plane (AG5–AG11).
+file tracks the orun-cloud control plane (AG5–AG12).
 
 | Milestone | Status | As-built |
 |-----------|--------|----------|
@@ -13,3 +13,4 @@ file tracks the orun-cloud control plane (AG5–AG11).
 | AG9 — Dispatch + autonomy | 🗓️ Not started | — |
 | AG10 — Metering + entitlement | 🗓️ Not started | — |
 | AG11 — Hardening + evals | 🗓️ Not started | — |
+| AG12 — Provider connections (BYO Daytona + Anthropic) | ✅ Shipped (API; console cards ride AG7) | Workspace-connected provider accounts (design §10): `agents.provider_connections` (migration **`680`**; `UNIQUE (org_id, provider, name)`, CHECK'd provider/status vocabularies, `secret_ref` + last4 `key_hint` — **no key column**). `@saas/db/agents`: `ProviderConnection` model + `providerSecretRef()` (reserved `agents/providers/<provider>/<name>/API_KEY` namespace) + repository/memory connection methods (create/list/get/setStatus/delete; verified stamps `last_verified_at`). `@saas/contracts/agents`: wire shape + `CreateProviderConnectionRequest` + provider error codes. **Key custody**: config-worker gains two service-binding-only internal routes (`/v1/internal/config/provider-keys/store\|resolve`) gated by regex to the reserved namespace — config-worker stays the ONLY decrypt path (key-hierarchy guard test updated to enumerate it as the third authorized importer); plaintext lives only in the resolve response. **agents-worker**: `/agents/providers` (GET/POST) · `/providers/{id}` (DELETE) · `/providers/{id}/verify` (POST), authorized as `organization.agent.provider.read\|write`; create is custody-first (store fails ⇒ no row), then a read-only verification ping (`GET {daytonaApi}/sandbox` Bearer · `GET api.anthropic.com/v1/models` x-api-key) sets `verified`/`invalid` with a **redacted** reason (status code only); `ProviderKeyClient` + `ProviderVerifier` seams keep tests binding-free. **api-edge**: facade forwards the three provider routes (adds DELETE; body forwarded only on POST). Deploy DAG: agents-worker→config-worker and api-edge→agents-worker `dependsOn` edges added (the latter a latent AG6 gap the deployment-config guard caught). Verified: db 862 + config-worker 357 + agents-worker 22 + api-edge 487 tests green; typecheck + lint green across all five packages. **Remaining:** the spawn-time `resolve → ANTHROPIC_API_KEY` injection and the Daytona `SandboxProvider` adapter consume these connections (AG5/AG6 live slices — now unblocked by BYO keys); console Integration cards ride AG7. |

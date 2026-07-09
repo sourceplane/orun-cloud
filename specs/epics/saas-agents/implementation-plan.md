@@ -1,4 +1,4 @@
-# saas-agents — Implementation Plan (AG5–AG11, the control plane)
+# saas-agents — Implementation Plan (AG5–AG12, the control plane)
 
 The cloud-owned milestones. The runtime (AG0–AG4) lives in
 `orun/specs/orun-agents/implementation-plan.md` and is a hard dependency.
@@ -110,6 +110,38 @@ autonomy, **3** scale + hardening. Design refs are to [`design.md`](./design.md)
 - **Done when:** the eval suite is a CI gate; injection fixtures show no status
   assertion, no secret egress, no off-allowlist call; the runbook is exercised
   once against stage.
+
+
+## AG12 — Provider connections (BYO Daytona + Anthropic) — 🗓️ Planned (un-gates AG5-live + AG9)
+
+Workspace-connected provider accounts (design §10): the two credential gates
+become a product feature.
+
+- `packages/db`: migration `agents.provider_connections` (org_id, provider
+  CHECK `daytona|anthropic`, name, non-secret config JSONB, secret_ref, status
+  CHECK `unverified|verified|invalid`, last_verified_at, created_by;
+  UNIQUE(org_id, provider, name)); model/types/repository/memory.
+- `apps/config-worker`: two service-binding-only internal routes —
+  `provider-keys/store` + `provider-keys/resolve` — restricted to the reserved
+  `agents/providers/*` namespace; reuse the shipped envelope encryption +
+  decrypt; audit `secret.created`/`secret.accessed`; config-worker stays the
+  only decrypt path.
+- `apps/agents-worker`: `GET/POST/DELETE /v1/organizations/{orgId}/agents/providers`
+  (+ `POST …/{id}/verify`); CONFIG_WORKER service binding; provider verifiers
+  (Daytona list-ping, Anthropic `GET /v1/models`) behind a `ProviderVerifier`
+  seam so tests stub the vendor; spawn-time resolve + `ANTHROPIC_API_KEY`
+  injection seam.
+- `apps/api-edge`: extend the agents facade for `/agents/providers*`.
+- Console (rides AG7): Integrations-hub cards + the Agents "Providers" block;
+  write-only key display with `…{last4}` hint.
+- Owner: `apps/agents-worker` + `apps/config-worker` + `packages/db` +
+  `apps/api-edge` + console.
+- **Done when:** connect→verify→list→disconnect round-trips through api-edge
+  with the key readable back through NO surface; a stubbed-vendor test drives
+  `unverified→verified` and `invalid` (bad key) transitions; the key lands
+  encrypted under the reserved namespace and resolves only via the internal
+  route (audited); a live verification against a real Daytona org + Anthropic
+  key succeeds (the keys the epic owner offered).
 
 ## Sequencing note
 

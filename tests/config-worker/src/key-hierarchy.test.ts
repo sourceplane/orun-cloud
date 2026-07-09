@@ -174,8 +174,15 @@ describe("getOrCreateActiveDek", () => {
 
 describe("decryption is imported only by the internal resolve + reveal handlers (SM3/SEC7)", () => {
   // SEC7 adds the SECOND authorized decrypt consumer: the audited break-glass
-  // reveal handler. No other handler and not the router may import decryption.
-  const ALLOWED_DECRYPT_IMPORTERS = new Set(["internal-resolve-secrets.ts", "reveal-secret.ts"]);
+  // reveal handler. saas-agents AG12 adds the THIRD: internal provider-key
+  // resolve (BYO Daytona/Anthropic keys), service-binding-only and gated to
+  // the reserved agents/providers/* namespace. No other handler and not the
+  // router may import decryption.
+  const ALLOWED_DECRYPT_IMPORTERS = new Set([
+    "internal-resolve-secrets.ts",
+    "reveal-secret.ts",
+    "internal-provider-keys.ts",
+  ]);
 
   it("no handler or router imports decryption except the internal resolve + reveal handlers", () => {
     const srcRoot = join(testDir, "..", "..", "..", "apps", "config-worker", "src");
