@@ -121,6 +121,26 @@ export interface AgentProfile {
   updatedAt: string;
 }
 
+/** Create body for POST /agents/profiles. */
+export interface CreateAgentProfileRequest {
+  name: string;
+  principalId: string;
+  owner: string;
+  agentType: string;
+  harness: string;
+  model: string;
+  autonomyDefault?: AgentAutonomyLevel;
+  capability?: Record<string, unknown>;
+}
+
+/** Create body for POST /agents/sessions (spawnedBy comes from the actor). */
+export interface CreateAgentSessionRequest {
+  profileId: string;
+  runKind: AgentRunKind;
+  workRef?: string;
+  taskKey?: string;
+}
+
 /**
  * A hosted session — one run of the orun runtime inside a sandbox. The system
  * of record for what the agent DID is the sealed AgentSessionSnapshot in

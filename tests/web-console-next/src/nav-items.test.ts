@@ -46,6 +46,8 @@ describe("buildNavSections", () => {
     expect(hrefs).toContain("/orgs/acme/catalog");
     expect(hrefs).toContain("/orgs/acme/activities");
     expect(hrefs).toContain("/orgs/acme/work");
+    // Agents — hosted orun sessions (saas-agents AG7), beside Work.
+    expect(hrefs).toContain("/orgs/acme/agents");
     // Integrations is a first-class connections hub in the product nav.
     expect(hrefs).toContain("/orgs/acme/integrations");
     // Secrets & Config is a dedicated top-level product surface.

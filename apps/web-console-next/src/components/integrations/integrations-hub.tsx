@@ -46,6 +46,7 @@ import {
   visibleConnections,
 } from "@/components/integrations/connections";
 import { roadmapProviders } from "@/components/integrations/providers";
+import { ProviderConnections } from "@/components/agents/provider-connections";
 import { ConnectionAdmission } from "@/components/integrations/connection-admission";
 
 const POLL_INTERVAL_MS = 2500;
@@ -187,6 +188,11 @@ export function IntegrationsHub({ orgId, orgSlug }: { orgId: string; orgSlug: st
           ))}
         </div>
       )}
+
+      {/* BYO agent providers (saas-agents AG12 §10.5): Daytona compute +
+          Anthropic model keys, the same connections the Agents tab manages. */}
+      <Kicker className="mb-2.5 mt-8">AI &amp; compute providers</Kicker>
+      <ProviderConnections orgId={orgId} />
 
       {/* Roadmap providers — honest "Soon" slots so the hub reads as a hub. */}
       <Kicker className="mb-2.5 mt-8">On the roadmap</Kicker>
