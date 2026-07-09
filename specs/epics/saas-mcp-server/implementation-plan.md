@@ -1,13 +1,13 @@
 # saas-mcp-server — Implementation Plan (MCP0–MCP8)
 
-Status: Ready. Milestones are PR-sized coherent units; the Orchestrator
-sequences them. MCP0–MCP2 are human-independent and ride entirely on shipped
-surfaces (SDK, state plane, OP1 auth, `sk_` API keys, ES events, CD catalog
-docs) — **and are a named dependency of `saas-agents` (AG6's in-sandbox
-runtime calls this server), so they lead the queue**. The spine is
-**MCP0 → MCP1 → MCP2**; MCP3 unlocks interactive remote clients, everything
-else attaches. Highest-leverage first slice: **MCP0 + MCP1** (a local agent can
-query the catalog and debug a failed run the day it merges).
+Status: ✅ Complete — all milestones MCP0–MCP8 shipped (as-built record in
+`IMPLEMENTATION-STATUS.md`). Original sequencing rationale, for the record:
+milestones are PR-sized coherent units; MCP0–MCP2 are human-independent and
+ride entirely on shipped surfaces (SDK, state plane, OP1 auth, `sk_` API keys,
+ES events, CD catalog docs) — **and are a named dependency of `saas-agents`
+(AG6's in-sandbox runtime calls this server), so they led the queue**. The
+spine was **MCP0 → MCP1 → MCP2**; MCP3 unlocked interactive remote clients,
+everything else attached.
 
 ## MCP0 — Tool-plane foundation (`packages/mcp`) — ✅ Shipped (see IMPLEMENTATION-STATUS.md)
 
@@ -165,7 +165,7 @@ transport/entitlement seam).
 under two minutes without leaving the page; the page reflects live grant/usage
 state; copy passes the buyer-credibility bar (U-track conventions).
 
-## MCP8 — Conformance + agent-eval harness — 🗓️ Planned
+## MCP8 — Conformance + agent-eval harness — ✅ Shipped (see IMPLEMENTATION-STATUS.md)
 
 - `tests/mcp`: contract tests pinning tool schemas to `@saas/contracts` DTOs;
   MCP Inspector (or equivalent protocol conformance) smoke in verify lanes for
