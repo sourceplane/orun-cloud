@@ -1,8 +1,10 @@
 # saas-mcp-server — Implementation Plan (MCP0–MCP8)
 
-Status: Draft. Milestones are PR-sized coherent units; the Orchestrator
+Status: Ready. Milestones are PR-sized coherent units; the Orchestrator
 sequences them. MCP0–MCP2 are human-independent and ride entirely on shipped
-surfaces (SDK, state plane, OP1 auth, `sk_` API keys). The spine is
+surfaces (SDK, state plane, OP1 auth, `sk_` API keys, ES events, CD catalog
+docs) — **and are a named dependency of `saas-agents` (AG6's in-sandbox
+runtime calls this server), so they lead the queue**. The spine is
 **MCP0 → MCP1 → MCP2**; MCP3 unlocks interactive remote clients, everything
 else attaches. Highest-leverage first slice: **MCP0 + MCP1** (a local agent can
 query the catalog and debug a failed run the day it merges).
@@ -23,8 +25,9 @@ The registry and the read-only core toolset, transport-agnostic.
 - Error mapper: SDK typed errors → MCP tool errors preserving the platform
   `code` set; `rate_limited` carries retry-after.
 - The read toolset from design §4: `whoami`, `workspaces_list`,
-  `projects_list`, `catalog_search`, `catalog_get_entity`, `catalog_read_doc`,
-  `runs_list`, `runs_get`, `runs_read_logs`, `audit_search`,
+  `projects_list`, `catalog_search`, `catalog_get_entity`, `catalog_read_doc`
+  (CD's `listCatalogDocs`/`readCatalogDoc`), `runs_list`, `runs_get`,
+  `runs_read_logs`, `audit_search`, `events_search` (ES's typed explorer),
   `security_events_list`, `access_explain`, `usage_summary`, `quota_check`,
   `billing_summary`, `config_read`, `secrets_list` (metadata only),
   `webhook_deliveries_list`.
@@ -65,8 +68,10 @@ command registration + auth-missing behavior.
 - Streamable HTTP transport, **stateless-first** (no session DO; revisit only
   if subscriptions/server-push demand it — risks D5).
 - Auth: `Authorization: Bearer` accepted and forwarded verbatim to api-edge via
-  the SDK — `sk_` API keys work day one; unauthenticated requests get a 401
-  with `WWW-Authenticate` pointing at the (MCP3) resource metadata.
+  the SDK — `sk_` API keys work day one, and **AG6 agent-session tokens work by
+  the same construction** (they are bearers for `sp_` principals; nothing to
+  special-case). Unauthenticated requests get a 401 with `WWW-Authenticate`
+  pointing at the (MCP3) resource metadata.
 - Connection-level cap per principal (design §8); health route; structured
   request logs consistent with the other workers.
 - `tests/mcp` component: conformance smoke against the worker in verify lanes.

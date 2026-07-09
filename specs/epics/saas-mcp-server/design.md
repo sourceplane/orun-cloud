@@ -19,9 +19,15 @@ questions this platform is uniquely able to answer:
   deliveries failed this week?"
 - **Action (later, gated)** — "create a staging environment", "replay that
   delivery", "flip this flag", "invite this teammate".
+- **Hosted agents (AG)** — the same questions, asked by the platform's own
+  sandboxed `orun agent serve` sessions with an AG6 session credential. The
+  in-sandbox runtime is the anchor client: its egress allow-list reserves this
+  server's hostname, and its "for runs/logs/audit/usage" calls land here.
 
-Non-goals are as load-bearing as goals: this is **not** an agent runtime, not a
-second API, not a policy surface, and not a path to secret values.
+Non-goals are as load-bearing as goals: this is **not** an agent runtime (AG),
+not the work MCP (`orun mcp serve` — work-plane reads and the four mutators
+live there), not a second API, not a policy surface, and not a path to secret
+values.
 
 ## 2. Architecture: one tool plane, two transports
 
@@ -86,6 +92,7 @@ Three credentials, all pre-existing; the epic adds acquisition plumbing only:
 | Local agent on a dev machine | CLI token (session bearer or pasted API key) | existing `orun-cloud login` + token store (`packages/cli/src/token-store/`) | MCP1 |
 | Headless / CI / server-side agent | org-scoped API key (`sk_…`, service principal `sp_…`) | existing `api-key create`; sent as `Authorization: Bearer` | MCP2 |
 | Interactive remote client (Claude.ai, hosted IDEs) | OAuth 2.1 access token (short-lived JWT + rotating refresh) | new authorization endpoints on identity-worker, riding the shipped OP1 CLI-session machinery | MCP3 |
+| Hosted agent session (AG sandbox) | AG6 session-scoped token for the profile's `sp_` principal (short-TTL, lease-coupled) | minted by `apps/agents-worker` at session start (owned by AG — nothing to build here) | works from MCP2 (it's a bearer) |
 
 MCP3 specifics (spec revision 2025-06-18): `apps/mcp-worker` serves **protected
 resource metadata** (`/.well-known/oauth-protected-resource`) pointing at
@@ -118,11 +125,12 @@ the agent worse, not better. Grouping and the wrapped SDK surface:
 | `projects_list` | `repos.list` + `environments.list` | per-workspace, with environments inlined |
 | `catalog_search` | `state.listOrgCatalogEntities` | facets: `kind`, `owner`, `project`, `environment`, free-text `q`; cursor pagination passed through |
 | `catalog_get_entity` | OV6 list filtered by ref (→ SC0 `getOrgCatalogEntity` when it ships) | identity + relations + provenance |
-| `catalog_read_doc` | `state.readObjectText` | the entity/repo `docs.overview` markdown blob by digest |
+| `catalog_read_doc` | `state.listCatalogDocs` + `readCatalogDoc` (CD, shipped) | doc-set browse per entity + markdown body by digest |
 | `runs_list` | `state.listRuns` / `listOrgRuns` | org- or project-scoped, status filter |
 | `runs_get` | `state.getRun` + `listRunJobs` | run detail + plan-DAG job statuses |
 | `runs_read_logs` | `state.readRunJobLogs` | tail with `fromSeq`; size-capped output |
 | `audit_search` | `events.iterAuditEntries` | time range, actor, action filters |
+| `events_search` | `events.listEventsPage` / `getEvent` (ES, shipped) | typed `event_log` explorer: type-glob, source, project/env, time filters; event groups |
 | `security_events_list` | `securityEvents` | |
 | `access_explain` | `memberships` + `teams` + effective-access | "who can do what, via which grant" (direct / team / account-cascade provenance) |
 | `usage_summary` | `metering` usage summary | |
@@ -144,7 +152,12 @@ the agent worse, not better. Grouping and the wrapped SDK surface:
 
 Deliberately excluded from v1 writes: API-key creation/revocation, billing
 mutations, team/role grants, anything under `admin` — high blast radius, low
-agent value; revisit with per-key tool scoping (MCP7) in place.
+agent value; revisit with per-key tool scoping (MCP7) in place. **Work-plane
+surfaces are excluded categorically** (locked decision 8): reads-with-evidence
+and the four work mutators belong to the work MCP (`orun mcp serve`, WP5).
+**Agent-session read tools** (`agent_sessions_list`, `agent_session_events`
+over the AG6 edge routes) are natural additions once the SDK grows an agents
+client — tracked as a post-MCP2 candidate, not v1 (the tool budget holds).
 
 **Naming.** `<domain>_<verb>`, no vendor prefix (the server name namespaces in
 multi-server clients). Tool descriptions are written for model consumption:
@@ -191,9 +204,9 @@ public API (additive by default).
 ## 7. Write path and safety rails (MCP5)
 
 - **One write path.** Write tools call the same public mutations as the console
-  and CLI — never a bespoke seam. When the work-plane sync contract
-  (`packages/db/src/work/sync.ts`, W5) surfaces here, work-item mutations ride
-  its accept/reject verdict as designed.
+  and CLI — never a bespoke seam. Work-item mutations are not this server's to
+  make at all: the work MCP (WP5, shipped) owns them, with its forbidden-tool
+  assertions (`packages/db/src/work/model.ts`) as the enforced boundary.
 - **Idempotency.** Every write tool auto-generates an `Idempotency-Key` per
   logical attempt (and accepts a caller-supplied one), so agent retries are
   replay-safe at the edge (B3).

@@ -25,7 +25,8 @@ SC0 (`saas-service-catalog`) defines `state.getOrgCatalogEntity`. If SC0 lands
 first, the tool wraps it; if this epic gets there first, the tool emulates via
 the OV6 list endpoint's filters and migrates later (contract-compatible either
 way). Coordinate in whichever PR lands second — do **not** add a parallel
-endpoint from this epic.
+endpoint from this epic. *(Rechecked 2026-07-09: SC0 has not landed —
+`StateClient` still exposes only `listOrgCatalogEntities`; MCP0 emulates.)*
 
 ### D3 — The free-vs-paid line (MCP6)
 
@@ -73,8 +74,9 @@ track upgrades as ordinary PRs with conformance runs (MCP8), not silent bumps.
 - **R3 — Secret exfiltration pressure.** Agents will ask for secret values;
   the platform's write-only invariant is the defense and it must stay
   transport-level (no tool exists), not policy-level (nothing to misconfigure).
-  Any future "agent needs a secret" story goes through runtime grants
-  (OV8/`orun-secrets`), never through MCP reads.
+  Any future "agent needs a secret" story goes through
+  `saas-secret-manager`'s lease-bound run-scoped resolve (SM3,
+  `how: agent-session`), never through MCP reads.
 - **R4 — Coupling drift between tools and contracts.** Plain-TS contracts mean
   no runtime source of truth; the `satisfies` discipline plus MCP8 contract
   tests are the guard. If contracts ever gain runtime schemas, migrate
@@ -87,9 +89,11 @@ track upgrades as ordinary PRs with conformance runs (MCP8), not silent bumps.
   question → 5 tool calls → 5 edge requests). The per-identity 60/min default
   is probably fine; if not, tune the `mcp`-relevant route families or add an
   agent-aware bucket — measured first (PERF discipline), not preemptively.
-- **R7 — Cross-repo confusion with `orun` (the CLI/compiler).** `orun` (the
-  intent compiler) may grow its own MCP server for *local* plan/catalog
-  introspection someday. This epic is the **Orun Cloud** (SaaS) server only;
-  the shared vocabulary should be coordinated in naming (server names,
-  tool prefixes) if/when that happens — noted here so the collision is
-  designed, not discovered.
+- **R7 — Cross-repo confusion with `orun`'s MCP servers.** *Materialized and
+  resolved (2026-07-09):* `orun mcp serve` shipped as the **work MCP**
+  (orun-work WP5 — work-plane reads-with-evidence + the four mutators), and
+  the ecosystem vocabulary is now fixed across `saas-agents` and `orun-work-v3`:
+  **work MCP = orun's; platform MCP = this epic** (locked decision 8). Residual
+  risk is tool-name overlap when one agent connects to both servers — keep this
+  server's tool names free of work-plane vocabulary (`work_*`, `task_*`,
+  `spec_*`) and coordinate any future shared nouns in the paired specs.
