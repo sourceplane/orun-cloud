@@ -46,6 +46,12 @@ export function connectionTone(status: ProviderConnectionStatus): Tone {
   }
 }
 
+/** The work:// pointer a spawned session carries back to its Work item
+ * (AG8): provenance from session → item without restating work truth. */
+export function workRefForItem(orgId: string, itemKey: string): string {
+  return `work://${orgId}/${itemKey}`;
+}
+
 export const PROVIDER_META = {
   daytona: {
     name: "Daytona",
