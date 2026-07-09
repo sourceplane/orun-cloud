@@ -1,12 +1,26 @@
 // Shared test scaffolding: tools only ever touch the SDK methods they call,
 // so a plain object of spies stands in for the full `OrunCloud` client.
 
+import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
+import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import type { OrunCloud } from "@saas/sdk";
 import { ForbiddenError } from "@saas/sdk";
 
 import { DEFAULT_LIMITS, executeTool, getTool } from "../registry.js";
 import type { ToolLimits } from "../registry.js";
+
+/** Connect an in-memory MCP client to a server for protocol-level tests. */
+export async function connectedClient(server: McpServer): Promise<Client> {
+  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+  const client = new Client({ name: "test-client", version: "0.0.0" });
+  await Promise.all([
+    server.connect(serverTransport),
+    client.connect(clientTransport),
+  ]);
+  return client;
+}
 
 export function stubSdk(stub: Record<string, unknown>): OrunCloud {
   return stub as unknown as OrunCloud;

@@ -27,7 +27,31 @@ export {
   type CreateMcpServerOptions,
 } from "./server.js";
 
-export { toErrorResult, ToolInputError } from "./errors.js";
+export {
+  toErrorResult,
+  toResourceReadError,
+  ResourceReadError,
+  ToolInputError,
+} from "./errors.js";
+
+export {
+  allResources,
+  catalogEntityResource,
+  runSummaryResource,
+  encodeEntityKey,
+  decodeEntityKey,
+  RESOURCE_MIME_TYPE,
+  type McpResource,
+} from "./resources.js";
+
+export {
+  allPrompts,
+  investigateFailedRunPrompt,
+  accessReviewPrompt,
+  usageReviewPrompt,
+  serviceSnapshotPrompt,
+  type McpPrompt,
+} from "./prompts.js";
 
 export {
   workspaceArg,

@@ -102,7 +102,7 @@ authorization flow against stage without a pasted key; tokens expire and
 refresh per OP1 semantics; revocation from the console kills the session;
 `orun-cloud` CLI flows are untouched.
 
-## MCP4 — Resources & prompts — 🗓️ Planned
+## MCP4 — Resources & prompts — ✅ Shipped (see IMPLEMENTATION-STATUS.md)
 
 - Resources: `catalog://{workspace}/{entityKey}` (overview markdown +
   identity/relations) and `runs://{workspace}/{project}/{runId}` (design §6).
