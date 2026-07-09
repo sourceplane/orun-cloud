@@ -100,3 +100,15 @@ spec:
 # Events nav shows while the API 404s — same signature as the Work page). This
 # marker republishes the current bundle, unblocking Events + dead-letters +
 # notification rules/channels in one deploy.
+# ci: redeploy with the saas-agents bundle. Fifth occurrence of the same
+# failure mode: PR #397 added the eight organization.agent.* actions
+# (provider/session/profile/autonomy read+write) to the role maps and
+# ALL_KNOWN_ACTIONS in `packages/policy-engine`, but touched nothing under
+# this component's `path` — so `orun plan --changed` never scheduled the
+# deploy profile and prod kept serving the pre-agents bundle. Every
+# `organization.agent.provider.write` check denied for owners (Connect Daytona
+# on the console Agents tab surfaced "Not authorized"; api-edge forwarded fine
+# and agents-worker's deny-by-default authorize() refused because the action
+# was absent from the stale ALL_KNOWN_ACTIONS). This marker republishes the
+# current bundle, unblocking the whole agent control-plane surface in one
+# deploy.
