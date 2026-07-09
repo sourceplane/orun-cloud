@@ -21,6 +21,7 @@ export {
 
 export {
   createMcpServer,
+  applyWorkspaceDefault,
   SERVER_NAME,
   SERVER_VERSION,
   type CreateMcpServerOptions,

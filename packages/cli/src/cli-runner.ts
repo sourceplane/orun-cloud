@@ -76,6 +76,7 @@ import {
   notificationRulesCreateCommand,
   notificationRulesTestCommand,
 } from "./commands/notification-rules.js";
+import { mcpServeCommand, mcpToolsCommand } from "./commands/mcp.js";
 import { parseOutputMode, type OutputMode } from "./output/index.js";
 import { ContextStore } from "./context/store.js";
 import { selectTokenStore } from "./token-store/index.js";
@@ -259,6 +260,9 @@ function buildRouter(opts: RunOptions): Router {
   r.register(["team", "owner-list"], "List the account's owner-handle → team aliases", teamOwnerListCommand);
   r.register(["team", "owner-set"], "Alias a git owner string to a team", teamOwnerSetCommand);
   r.register(["team", "owner-remove"], "Remove an owner-handle alias", teamOwnerRemoveCommand);
+  // MCP (saas-mcp-server MCP1) — local stdio transport over the tool plane.
+  r.register(["mcp", "serve"], "Serve the platform MCP tool plane over stdio (for local agents)", mcpServeCommand);
+  r.register(["mcp", "tools"], "List the tools the MCP server exposes", mcpToolsCommand);
   // Account Hub (teams-hub TH1d) — the account above the workspaces.
   r.register(["account", "workspaces"], "List the workspaces under the active account", accountWorkspacesCommand);
   r.register(["account", "members"], "List the derived account-member roster (origin-tagged)", accountMembersCommand);
@@ -330,6 +334,10 @@ function printHelp(stdout: (line: string) => void): void {
       "",
       "SECURITY:",
       `  ${CLI_BIN} security events [--limit=N] [--cursor=CURSOR] [--all] [--output=human|json]`,
+      "",
+      "MCP:",
+      `  ${CLI_BIN} mcp serve [--read-only] [--workspace=REF] [--api-url=URL]`,
+      `  ${CLI_BIN} mcp tools [--read-only] [--output=human|json]`,
       "",
       "GLOBAL FLAGS:",
       "  --output=human|json   Output format (default: human)",

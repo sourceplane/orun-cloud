@@ -24,6 +24,8 @@
     "vitest": "^3.2.6"
   },
   "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "@saas/mcp": "workspace:*",
     "@saas/sdk": "workspace:*",
     "@saas/webhook-verifier": "workspace:*"
   },
