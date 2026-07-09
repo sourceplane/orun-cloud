@@ -82,7 +82,7 @@ enforced (a viewer-role key is `forbidden` on gated reads); the worker deploys
 via `orun run` like every other component; no service bindings besides none —
 the worker's only egress is the public api-edge URL.
 
-## MCP3 — OAuth 2.1 for interactive remote clients — 🗓️ Planned (decision: DCR posture)
+## MCP3 — OAuth 2.1 for interactive remote clients — ✅ Shipped (see IMPLEMENTATION-STATUS.md)
 
 - `apps/mcp-worker`: `/.well-known/oauth-protected-resource` (RFC 9728)
   naming identity-worker as the authorization server; bearer-token validation
@@ -92,15 +92,17 @@ the worker's only egress is the public api-edge URL.
   explicit tenancy), token + refresh endpoints reusing OP1 issuance/rotation
   (short-lived access JWT, rotating refresh, reuse-detection), PKCE S256
   mandatory.
-- Client registration per the D1 decision: dynamic client registration
-  (RFC 7591) or a vetted public-client allow-list to start.
+- Client registration per the D1 decision (**decided 2026-07-09: Option A** —
+  vetted public-client allow-list in `@saas/contracts`; no open DCR).
 - Security events + audit entries for grants/revocations; console session
   security page lists MCP grants next to CLI sessions.
 
 **Done when:** Claude (web) or another OAuth-capable MCP client completes the
 authorization flow against stage without a pasted key; tokens expire and
 refresh per OP1 semantics; revocation from the console kills the session;
-`orun-cloud` CLI flows are untouched.
+`orun-cloud` CLI flows are untouched. *(Stage E2E with a live MCP client is a
+deploy-lane follow-up, as with MCP1/MCP2 — the full flow is exercised in
+tests end-to-end over the service layer.)*
 
 ## MCP4 — Resources & prompts — ✅ Shipped (see IMPLEMENTATION-STATUS.md)
 

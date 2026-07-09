@@ -29,6 +29,12 @@ export function generateRefreshToken(): string {
   return `ocrt_${randomHex(32)}`;
 }
 
+/** Opaque OAuth 2.1 authorization code (MCP3): `ocac_<64 hex>`. Single-use,
+ *  short-TTL, hashed at rest like the loopback cli_code it rides beside. */
+export function generateOAuthAuthorizationCode(): string {
+  return `ocac_${randomHex(32)}`;
+}
+
 /** Internal opaque session-correlation secret hashed into sessions.token_hash
  *  (parity with web sessions; the CLI never sees this — it uses access+refresh). */
 export function generateSessionTokenSecret(): string {

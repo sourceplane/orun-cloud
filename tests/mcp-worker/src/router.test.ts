@@ -9,7 +9,11 @@ import type { McpWorkerDeps } from "@mcp-worker/deps";
 import type { Env } from "@mcp-worker/env";
 import { route } from "@mcp-worker/router";
 
-const env: Env = { ENVIRONMENT: "test", API_EDGE_URL: "https://api.test" };
+const env: Env = {
+  ENVIRONMENT: "test",
+  API_EDGE_URL: "https://api.test",
+  OAUTH_AUTHORIZATION_SERVER_URL: "https://api.test",
+};
 const BASE = "https://mcp-worker.test";
 
 interface JsonRpcResponse {
@@ -93,6 +97,17 @@ describe("mcp-worker route (smoke)", () => {
     expect(res.status).toBe(400);
     const body = (await res.json()) as { error: { code: number } };
     expect(body.error.code).toBe(-32700);
+  });
+
+  it("serves the RFC 9728 protected-resource metadata the 401 challenge points at (MCP3)", async () => {
+    const res = await route(new Request(`${BASE}/.well-known/oauth-protected-resource`), env, stubDeps);
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as Record<string, unknown>;
+    expect(body).toEqual({
+      resource: BASE,
+      authorization_servers: ["https://api.test"],
+      bearer_methods_supported: ["header"],
+    });
   });
 
   it("serves /health with the tool count", async () => {

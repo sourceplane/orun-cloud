@@ -287,7 +287,8 @@ export interface OidcExchangeResponse {
  *  POST /v1/auth/cli/grants/{grantId}/approve|deny. */
 export interface CliGrantView {
   id: string;
-  flow: "loopback" | "device";
+  /** "oauth" rows back MCP3 authorization codes; they ride the same table. */
+  flow: "loopback" | "device" | "oauth";
   host: string | null;
   status: "pending" | "approved" | "denied" | "redeemed" | "expired";
   expiresAt: string;
@@ -303,6 +304,207 @@ export interface ApproveCliGrantResponse {
 
 export interface DenyCliGrantResponse {
   grant: CliGrantView;
+}
+
+// ---------------------------------------------------------------------------
+// OAuth 2.1 authorization for remote MCP clients (saas-mcp-server MCP3).
+//
+// identity-worker is the authorization server (rides the OP1 CLI-session
+// machinery — an MCP grant mints a CLI-shaped session labeled `mcp:<clientId>`;
+// no new token kind exists, risks R5). Client registration follows the D1
+// decision (Option A, 2026-07-09): a static, code-reviewed allow-list of vetted
+// PUBLIC clients — no open dynamic client registration. PKCE S256 is mandatory.
+// ---------------------------------------------------------------------------
+
+/** A vetted OAuth 2.1 public client (D1 Option A). */
+export interface OAuthPublicClient {
+  /** Stable client_id presented on the authorize/token requests. */
+  clientId: string;
+  /** Human-readable name rendered on the consent page + sessions list. */
+  name: string;
+  /**
+   * Registered redirect URIs. Matching is EXACT, except loopback `http://`
+   * URIs (host `127.0.0.1` or `localhost`), which match on any port per
+   * RFC 8252 §7.3 (native apps bind an ephemeral loopback port).
+   */
+  redirectUris: readonly string[];
+  /** Always true — the allow-list carries public (no-secret) clients only. */
+  public: true;
+}
+
+/**
+ * The static allow-list (D1 Option A). Amendments are ordinary code-reviewed
+ * PRs; an unknown `client_id` or a non-matching `redirect_uri` is rejected
+ * server-side and the user is NEVER redirected to an unregistered URI.
+ */
+export const OAUTH_PUBLIC_CLIENTS: readonly OAuthPublicClient[] = [
+  {
+    clientId: "claude-code",
+    name: "Claude Code",
+    // Loopback listener on an ephemeral port (RFC 8252 §7.3).
+    redirectUris: ["http://localhost/callback", "http://127.0.0.1/callback"],
+    public: true,
+  },
+  {
+    clientId: "claude-web",
+    name: "Claude",
+    redirectUris: [
+      "https://claude.ai/api/mcp/auth_callback",
+      "https://claude.com/api/mcp/auth_callback",
+    ],
+    public: true,
+  },
+  {
+    clientId: "cursor",
+    name: "Cursor",
+    redirectUris: [
+      "cursor://anysphere.cursor-retrieval/oauth/callback",
+      "http://localhost/oauth/callback",
+      "http://127.0.0.1/oauth/callback",
+    ],
+    public: true,
+  },
+  {
+    clientId: "vscode",
+    name: "Visual Studio Code",
+    redirectUris: [
+      "https://vscode.dev/redirect",
+      "http://localhost/",
+      "http://127.0.0.1/",
+    ],
+    public: true,
+  },
+  {
+    // Local development / testing client — loopback only, never a hosted URI.
+    clientId: "orun-cloud-dev",
+    name: "Orun Cloud dev client",
+    redirectUris: ["http://localhost/callback", "http://127.0.0.1/callback"],
+    public: true,
+  },
+];
+
+export function findOAuthPublicClient(clientId: string): OAuthPublicClient | null {
+  return OAUTH_PUBLIC_CLIENTS.find((c) => c.clientId === clientId) ?? null;
+}
+
+const LOOPBACK_HOSTS = new Set(["127.0.0.1", "localhost"]);
+
+/**
+ * Does a presented redirect_uri match a registered one? Exact string match,
+ * with the single RFC 8252 §7.3 carve-out: for loopback `http://` URIs the
+ * port is ignored (scheme, host, path, and query must still match exactly).
+ */
+export function oauthRedirectUriMatches(registered: string, presented: string): boolean {
+  if (registered === presented) return true;
+  let reg: URL;
+  let pres: URL;
+  try {
+    reg = new URL(registered);
+    pres = new URL(presented);
+  } catch {
+    return false;
+  }
+  if (reg.protocol !== "http:" || pres.protocol !== "http:") return false;
+  if (!LOOPBACK_HOSTS.has(reg.hostname) || !LOOPBACK_HOSTS.has(pres.hostname)) return false;
+  return (
+    reg.hostname === pres.hostname &&
+    reg.pathname === pres.pathname &&
+    reg.search === pres.search &&
+    pres.hash === "" &&
+    reg.hash === ""
+  );
+}
+
+export function isOAuthRedirectUriAllowed(client: OAuthPublicClient, redirectUri: string): boolean {
+  return client.redirectUris.some((registered) => oauthRedirectUriMatches(registered, redirectUri));
+}
+
+/**
+ * POST /v1/auth/oauth2/authorize/complete — called by the console after the
+ * signed-in user consents. Actor-authenticated (api-edge injects x-actor-*).
+ * Mints a single-use, short-TTL (~60s) authorization code bound to
+ * (clientId, redirectUri, codeChallenge, user).
+ */
+export interface OAuthAuthorizeCompleteRequest {
+  clientId: string;
+  redirectUri: string;
+  /** PKCE code challenge — base64url(SHA-256(verifier)), 43 chars. */
+  codeChallenge: string;
+  /** Only S256 is supported (`plain` is rejected). */
+  codeChallengeMethod: "S256";
+  /** Requested scope, informational — OP1 tokens are workspace-agnostic. */
+  scope?: string;
+}
+
+export interface OAuthAuthorizeCompleteResponse {
+  /** The single-use authorization code to append to the redirect_uri. */
+  code: string;
+  /** Absolute code expiry (ISO 8601, ~60s). */
+  expiresAt: string;
+}
+
+/**
+ * POST /v1/auth/oauth2/token — the RFC 6749 token endpoint (public client,
+ * `token_endpoint_auth_methods_supported: ["none"]`). The request body is
+ * `application/x-www-form-urlencoded` per spec (JSON is also accepted); the
+ * response is a RAW OAuth token JSON body, NOT the platform envelope.
+ */
+export interface OAuthTokenRequest {
+  grant_type: "authorization_code" | "refresh_token";
+  /** authorization_code: the code from the authorize redirect. */
+  code?: string;
+  /** authorization_code: must match the code's bound redirect_uri. */
+  redirect_uri?: string;
+  /** authorization_code: must match the code's bound client_id. */
+  client_id?: string;
+  /** authorization_code: the PKCE verifier for the bound S256 challenge. */
+  code_verifier?: string;
+  /** refresh_token: the current (single-use, rotating) refresh token. */
+  refresh_token?: string;
+}
+
+export interface OAuthTokenSuccessResponse {
+  /** Short-lived access JWT — same claims/TTL as the OP1 CLI access token. */
+  access_token: string;
+  token_type: "Bearer";
+  /** Seconds until access_token expiry. */
+  expires_in: number;
+  /** The next rotating refresh token (single-use; reuse revokes the family). */
+  refresh_token: string;
+}
+
+/** RFC 6749 §5.2 error body (400/401, `Cache-Control: no-store`). */
+export type OAuthTokenErrorCode =
+  | "invalid_request"
+  | "invalid_client"
+  | "invalid_grant"
+  | "unauthorized_client"
+  | "unsupported_grant_type"
+  | "invalid_scope"
+  | "server_error";
+
+export interface OAuthTokenErrorResponse {
+  error: OAuthTokenErrorCode;
+  error_description?: string;
+}
+
+/** GET /.well-known/oauth-authorization-server (RFC 8414), served raw (no envelope). */
+export interface AuthorizationServerMetadata {
+  issuer: string;
+  /** The console consent page (browser navigation, not an API endpoint). */
+  authorization_endpoint: string;
+  token_endpoint: string;
+  response_types_supported: string[];
+  grant_types_supported: string[];
+  code_challenge_methods_supported: string[];
+  token_endpoint_auth_methods_supported: string[];
+}
+
+/** GET /.well-known/oauth-protected-resource (RFC 9728) on the mcp-worker. */
+export interface ProtectedResourceMetadata {
+  resource: string;
+  authorization_servers: string[];
+  bearer_methods_supported: string[];
 }
 
 export interface ApiSuccessEnvelope<T> {

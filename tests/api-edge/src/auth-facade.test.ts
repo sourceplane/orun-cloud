@@ -710,7 +710,7 @@ describe("api-edge auth facade", () => {
       expect(calls[0]!.url).toContain("?code=abc&state=xyz");
     });
 
-    it("passes a 302 redirect (Location + Set-Cookie) back to the caller", async () => {
+    it("passes a 302 redirect (Location + Set-Cookie) back to the caller (oauth sign-in)", async () => {
       const downstream = new Response(null, {
         status: 302,
         headers: {
@@ -733,6 +733,155 @@ describe("api-edge auth facade", () => {
       expect(response.status).toBe(302);
       expect(response.headers.get("location")).toContain("github.com/login/oauth/authorize");
       expect(response.headers.get("set-cookie")).toContain("sp_oauth_state=abc");
+    });
+  });
+
+  // OAuth 2.1 for MCP clients (saas-mcp-server MCP3).
+  describe("oauth2 routes (MCP3)", () => {
+    function createResolvingFetcher(userId: string): { fetcher: Fetcher; calls: FetchCall[] } {
+      const calls: FetchCall[] = [];
+      const fetcher = {
+        fetch(input: string | Request | URL, init?: RequestInit): Promise<Response> {
+          const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
+          calls.push({ url, init: init ?? {} });
+          if (url.includes("/v1/auth/resolve")) {
+            return Promise.resolve(
+              Response.json({
+                data: {
+                  actor: { actorType: "user", actorId: userId, email: "user@test.com" },
+                  session: { id: "ses_o2", expiresAt: "2026-12-01T00:00:00Z", createdAt: "2026-01-01T00:00:00Z" },
+                  user: { id: userId, email: "user@test.com", displayName: "Test" },
+                },
+                meta: { requestId: "req_inner", cursor: null },
+              }),
+            );
+          }
+          return Promise.resolve(Response.json({ data: {}, meta: { requestId: "req_test", cursor: null } }));
+        },
+        connect() {
+          throw new Error("not implemented");
+        },
+      } as unknown as Fetcher;
+      return { fetcher, calls };
+    }
+
+    it("recognises the oauth2 routes via isAuthRoute", () => {
+      expect(isAuthRoute("/.well-known/oauth-authorization-server")).toBe(true);
+      expect(isAuthRoute("/v1/auth/oauth2/token")).toBe(true);
+      expect(isAuthRoute("/v1/auth/oauth2/authorize/complete")).toBe(true);
+      expect(isAuthRoute("/.well-known/oauth-protected-resource")).toBe(false);
+    });
+
+    it("forwards GET /.well-known/oauth-authorization-server as PUBLIC (no actor headers)", async () => {
+      const { fetcher, calls } = createFakeFetcher();
+      const request = new Request("https://api.example.com/.well-known/oauth-authorization-server", {
+        method: "GET",
+      });
+
+      const response = await handleAuthRoute(
+        request,
+        { IDENTITY_WORKER: fetcher, ENVIRONMENT: "test" },
+        "req_o2md",
+        "/.well-known/oauth-authorization-server",
+      );
+
+      expect(response.status).toBe(200);
+      expect(calls).toHaveLength(1);
+      expect(calls[0]!.url).toContain("/.well-known/oauth-authorization-server");
+      expect(calls[0]!.init.method).toBe("GET");
+      const headers = calls[0]!.init.headers as Headers;
+      expect(headers.get("x-actor-subject-id")).toBeNull();
+    });
+
+    it("forwards POST /v1/auth/oauth2/token as PUBLIC with the form-encoded body", async () => {
+      const { fetcher, calls } = createFakeFetcher();
+      const request = new Request("https://api.example.com/v1/auth/oauth2/token", {
+        method: "POST",
+        headers: { "content-type": "application/x-www-form-urlencoded" },
+        body: new URLSearchParams({ grant_type: "refresh_token", refresh_token: "ocrt_x" }).toString(),
+      });
+
+      const response = await handleAuthRoute(
+        request,
+        { IDENTITY_WORKER: fetcher, ENVIRONMENT: "test" },
+        "req_o2tk",
+        "/v1/auth/oauth2/token",
+      );
+
+      expect(response.status).toBe(200);
+      expect(calls).toHaveLength(1);
+      expect(calls[0]!.url).toContain("/v1/auth/oauth2/token");
+      expect(calls[0]!.init.method).toBe("POST");
+      expect(calls[0]!.init.body).toBeDefined();
+      const headers = calls[0]!.init.headers as Headers;
+      expect(headers.get("content-type")).toContain("application/x-www-form-urlencoded");
+      expect(headers.get("x-actor-subject-id")).toBeNull();
+    });
+
+    it("resolves the actor and injects x-actor-* on POST /v1/auth/oauth2/authorize/complete", async () => {
+      const { fetcher, calls } = createResolvingFetcher("usr_oauth2");
+      const request = new Request("https://api.example.com/v1/auth/oauth2/authorize/complete", {
+        method: "POST",
+        headers: {
+          authorization: "Bearer sps_ses_oauth2_unique.secret",
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({ clientId: "claude-web" }),
+      });
+
+      const response = await handleAuthRoute(
+        request,
+        { IDENTITY_WORKER: fetcher, ENVIRONMENT: "test" },
+        "req_o2ac",
+        "/v1/auth/oauth2/authorize/complete",
+      );
+
+      expect(response.status).toBe(200);
+      // resolve + forward
+      expect(calls).toHaveLength(2);
+      expect(calls[0]!.url).toContain("/v1/auth/resolve");
+      expect(calls[1]!.url).toContain("/v1/auth/oauth2/authorize/complete");
+      const headers = calls[1]!.init.headers as Headers;
+      expect(headers.get("x-actor-subject-id")).toBe("usr_oauth2");
+      expect(headers.get("x-actor-subject-type")).toBe("user");
+    });
+
+    it("401s POST /v1/auth/oauth2/authorize/complete without a bearer", async () => {
+      const { fetcher, calls } = createFakeFetcher();
+      const request = new Request("https://api.example.com/v1/auth/oauth2/authorize/complete", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({}),
+      });
+
+      const response = await handleAuthRoute(
+        request,
+        { IDENTITY_WORKER: fetcher, ENVIRONMENT: "test" },
+        "req_o2noauth",
+        "/v1/auth/oauth2/authorize/complete",
+      );
+
+      expect(response.status).toBe(401);
+      expect(calls).toHaveLength(0);
+    });
+
+    it("405s wrong methods on the oauth2 routes", async () => {
+      const { fetcher } = createFakeFetcher();
+      const md = await handleAuthRoute(
+        new Request("https://api.example.com/.well-known/oauth-authorization-server", { method: "POST" }),
+        { IDENTITY_WORKER: fetcher, ENVIRONMENT: "test" },
+        "req_o2m1",
+        "/.well-known/oauth-authorization-server",
+      );
+      expect(md.status).toBe(405);
+
+      const tk = await handleAuthRoute(
+        new Request("https://api.example.com/v1/auth/oauth2/token", { method: "GET" }),
+        { IDENTITY_WORKER: fetcher, ENVIRONMENT: "test" },
+        "req_o2m2",
+        "/v1/auth/oauth2/token",
+      );
+      expect(tk.status).toBe(405);
     });
   });
 });

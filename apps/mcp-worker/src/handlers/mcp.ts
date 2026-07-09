@@ -37,8 +37,8 @@ export async function handleMcpPost(
 ): Promise<Response> {
   const token = BEARER_RE.exec(request.headers.get("authorization") ?? "")?.[1];
   if (token === undefined) {
-    // Points at the (MCP3) protected-resource metadata; the route itself is
-    // a 404 until MCP3 ships (see router.ts).
+    // Points at the RFC 9728 protected-resource metadata (MCP3), which names
+    // the OAuth 2.1 authorization server (see router.ts).
     const origin = new URL(request.url).origin;
     return errorResponse("unauthenticated", "Authentication required", 401, requestId, {
       "WWW-Authenticate": `Bearer resource_metadata="${origin}/.well-known/oauth-protected-resource"`,

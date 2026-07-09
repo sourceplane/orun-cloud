@@ -5,7 +5,11 @@ import type { McpWorkerDeps } from "../src/deps.js";
 import type { Env } from "../src/env.js";
 import { MAX_CONCURRENT_REQUESTS, route } from "../src/router.js";
 
-const env: Env = { ENVIRONMENT: "test", API_EDGE_URL: "https://api.test" };
+const env: Env = {
+  ENVIRONMENT: "test",
+  API_EDGE_URL: "https://api.test",
+  OAUTH_AUTHORIZATION_SERVER_URL: "https://api.test",
+};
 const BASE = "https://mcp-worker.test";
 
 interface JsonRpcResponse {
@@ -157,13 +161,48 @@ describe("mcp-worker route", () => {
     expect(body.error.code).toBe(-32700);
   });
 
-  it("404s the protected-resource metadata route (MCP3)", async () => {
+  it("serves RFC 9728 protected-resource metadata naming the authorization server (MCP3)", async () => {
     const res = await route(
       new Request(`${BASE}/.well-known/oauth-protected-resource`),
       env,
       apiEdgeStub([]),
     );
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as Record<string, unknown>;
+    // Raw spec-shaped JSON — no platform envelope.
+    expect(body).toEqual({
+      resource: BASE,
+      authorization_servers: ["https://api.test"],
+      bearer_methods_supported: ["header"],
+    });
+  });
+
+  it("normalizes a trailing slash on the configured authorization-server URL", async () => {
+    const res = await route(
+      new Request(`${BASE}/.well-known/oauth-protected-resource`),
+      { ...env, OAUTH_AUTHORIZATION_SERVER_URL: "https://api.test/" },
+      apiEdgeStub([]),
+    );
+    const body = (await res.json()) as { authorization_servers: string[] };
+    expect(body.authorization_servers).toEqual(["https://api.test"]);
+  });
+
+  it("404s the protected-resource metadata when the issuer var is unset", async () => {
+    const res = await route(
+      new Request(`${BASE}/.well-known/oauth-protected-resource`),
+      { ENVIRONMENT: "test", API_EDGE_URL: "https://api.test" },
+      apiEdgeStub([]),
+    );
     expect(res.status).toBe(404);
+  });
+
+  it("405s non-GET on the protected-resource metadata", async () => {
+    const res = await route(
+      new Request(`${BASE}/.well-known/oauth-protected-resource`, { method: "POST" }),
+      env,
+      apiEdgeStub([]),
+    );
+    expect(res.status).toBe(405);
   });
 
   it("503s when API_EDGE_URL is not configured", async () => {

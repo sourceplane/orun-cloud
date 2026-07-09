@@ -161,6 +161,26 @@ describe("AuthClient", () => {
     expect(headers.get("idempotency-key")).toBe("ikey_complete_1");
   });
 
+  it("oauthAuthorizeComplete POSTs /v1/auth/oauth2/authorize/complete with the consent body (MCP3)", async () => {
+    const body = { code: "ocac_abc", expiresAt: "2026-07-09T12:01:00Z" };
+    const { fetch, calls } = captureFetch(jsonResponse(envelope(body)));
+    const out = await client(fetch).auth.oauthAuthorizeComplete({
+      clientId: "claude-web",
+      redirectUri: "https://claude.ai/api/mcp/auth_callback",
+      codeChallenge: "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM",
+      codeChallengeMethod: "S256",
+    });
+    expect(calls[0]!.url).toBe("https://api.test/v1/auth/oauth2/authorize/complete");
+    expect(calls[0]!.init.method).toBe("POST");
+    expect(JSON.parse(String(calls[0]!.init.body))).toEqual({
+      clientId: "claude-web",
+      redirectUri: "https://claude.ai/api/mcp/auth_callback",
+      codeChallenge: "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM",
+      codeChallengeMethod: "S256",
+    });
+    expect(out.code).toBe("ocac_abc");
+  });
+
   it("getSession GETs /v1/auth/session", async () => {
     const { fetch, calls } = captureFetch(
       jsonResponse(
