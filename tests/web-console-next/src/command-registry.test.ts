@@ -71,6 +71,8 @@ describe("buildBaseCommands", () => {
     expect(work.keywords).toEqual(expect.arrayContaining(["kanban", "board", "task"]));
     const board = byId.get("nav.work-board")!;
     if (board.kind === "navigate") expect(board.to).toBe("/orgs/acme/work?layout=board");
+    const triage = byId.get("nav.work-triage")!;
+    if (triage.kind === "navigate") expect(triage.to).toBe("/orgs/acme/work/triage");
     for (const [id, kind] of [
       ["create.work-task", "task"],
       ["create.work-spec", "spec"],

@@ -29,6 +29,7 @@ import {
   handleCreateWorkCycle,
   handleListWorkCycles,
   handleWorkBurnup,
+  handleWorkTriage,
 } from "@state-worker/handlers/work";
 
 const ORG = "11111111-1111-1111-1111-111111111111";
@@ -665,6 +666,97 @@ describe("PM3 cycles (authored time-boxes; derived progress)", () => {
     const q3 = body.data.initiatives.find((i) => i.key === "q3")!;
     expect(q3.specs).toEqual(["demo"]);
     expect(q3.progress).toEqual({ ready: 1 });
+  });
+});
+
+describe("PM5 triage (the agent project surface)", () => {
+  it("summary tasks carry folded assignees; an sp_ seat assigns through the ordinary mutator", async () => {
+    const repo = new MemoryWorkRepository(fixedClock);
+    const key = await seedTask(repo);
+    const env = createEnv();
+    const org = asUuid(ORG);
+    await handleWorkTaskAction(post("/x", { subject: "sp_agent_1" }), env, "r", USER, org, key, "assign", { repo });
+    const res = await handleWorkSummary(get("/x"), env, "r", USER, org, { repo });
+    const body = (await res.json()) as { data: { tasks: Array<{ key: string; assignees?: string[] }> } };
+    expect(body.data.tasks.find((t) => t.key === key)!.assignees).toEqual(["sp_agent_1"]);
+  });
+
+  it("a contract proposal opens in triage, Accept (reviewing comment) clears it", async () => {
+    const repo = new MemoryWorkRepository(fixedClock);
+    const key = await seedTask(repo);
+    const env = createEnv();
+    const org = asUuid(ORG);
+
+    // The agent proposes (contract_propose = apply + flag).
+    const prop = await handleWorkTaskAction(
+      post("/x", { contract: { goal: "wider", affects: ["ns/repo/api"], doneWhen: ["d"], gatesDefined: true } }),
+      env, "r", AGENT, org, key, "contract", { repo },
+    );
+    expect(prop.status).toBe(200);
+
+    let res = await handleWorkTriage(get("/x"), env, "r", USER, org, { repo });
+    expect(res.status).toBe(200);
+    let body = (await res.json()) as {
+      data: { contractProposals: Array<{ key: string; eventId: string; proposedBy: { type: string }; previousContract?: { goal?: string } }> };
+    };
+    expect(body.data.contractProposals).toHaveLength(1);
+    const proposal = body.data.contractProposals[0]!;
+    expect(proposal.proposedBy.type).toBe("agent");
+    expect(proposal.previousContract?.goal).toBe("g"); // the revert target
+
+    // Accept = a human comment naming the proposal.
+    await handleWorkTaskAction(
+      post("/x", { body: "accepted", reviewsEvent: proposal.eventId }),
+      env, "r", USER, org, key, "comment", { repo },
+    );
+    res = await handleWorkTriage(get("/x"), env, "r", USER, org, { repo });
+    body = (await res.json()) as typeof body;
+    expect(body.data.contractProposals).toHaveLength(0);
+  });
+
+  it("Revert (a human contract edit) clears the proposal too", async () => {
+    const repo = new MemoryWorkRepository(fixedClock);
+    const key = await seedTask(repo);
+    const env = createEnv();
+    const org = asUuid(ORG);
+    await handleWorkTaskAction(
+      post("/x", { contract: { goal: "wider" } }),
+      env, "r", AGENT, org, key, "contract", { repo },
+    );
+    await handleWorkTaskAction(
+      post("/x", { contract: { goal: "g", affects: ["ns/repo/api"], doneWhen: ["d"], gates: ["tests"] } }),
+      env, "r", USER, org, key, "contract", { repo },
+    );
+    const res = await handleWorkTriage(get("/x"), env, "r", USER, org, { repo });
+    const body = (await res.json()) as { data: { contractProposals: unknown[] } };
+    expect(body.data.contractProposals).toHaveLength(0);
+  });
+
+  it("review-parked and mentions surface; policy deny hides the route (404)", async () => {
+    const repo = new MemoryWorkRepository(fixedClock);
+    const key = await seedTask(repo);
+    const env = createEnv();
+    const org = asUuid(ORG);
+    // Merge without a gate verdict → parked In Review by honest degradation.
+    await handleIngestWorkObservation(
+      post("/x", {
+        source: "ci",
+        kind: "pr_merged",
+        dedupeKey: "pr:9:merged",
+        payload: { pr: "o/r#9", revision: "sha256:zz", taskKeys: [key] },
+      }),
+      env, "r", USER, org, { repo },
+    );
+    await handleWorkTaskAction(post("/x", { body: "@rahul look" }), env, "r", USER, org, key, "comment", { repo });
+
+    const res = await handleWorkTriage(get("/x"), env, "r", USER, org, { repo });
+    const body = (await res.json()) as {
+      data: { reviewParked: Array<{ key: string }>; mentions: Array<{ handles: string[] }> };
+    };
+    expect(body.data.reviewParked.map((t) => t.key)).toEqual([key]);
+    expect(body.data.mentions[0]!.handles).toEqual(["rahul"]);
+
+    expect((await handleWorkTriage(get("/x"), createEnv(false), "r", USER, org, { repo })).status).toBe(404);
   });
 });
 

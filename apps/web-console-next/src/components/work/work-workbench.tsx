@@ -5,6 +5,9 @@
 // and a pin always renders beside observed truth, never instead of it.
 
 import * as React from "react";
+import Link from "next/link";
+import { useParams } from "next/navigation";
+import type { AgentProfile, AgentSession } from "@saas/contracts/agents";
 import type {
   WorkCycleView,
   WorkRung,
@@ -33,7 +36,7 @@ import { EditWorkItemDialog, WorkCreateMenu, type WorkItemKind } from "@/compone
 import { SpecDocSheet } from "@/components/work/spec-doc-sheet";
 import { TaskConversationSheet } from "@/components/work/task-conversation-sheet";
 import { CyclesSection } from "@/components/work/cycles-section";
-import { WorkBoard } from "@/components/work/work-board";
+import { AssigneeChip, SessionChip, WorkBoard } from "@/components/work/work-board";
 import { WorkViewBar, type WorkLayout } from "@/components/work/work-view-bar";
 import { SpawnAgentDialog } from "@/components/agents/spawn-agent-dialog";
 
@@ -127,6 +130,51 @@ export function WorkWorkbench({ orgId }: { orgId: string }) {
     };
   }, [client, orgId, summaryData]);
 
+  // PM5: the agent project surface — profiles are assignable seats, live
+  // sessions join tasks by taskKey as INFRA facts beside the rungs. Both
+  // are additive: the page renders fine when the agents plane is absent.
+  const [agentProfiles, setAgentProfiles] = React.useState<AgentProfile[]>([]);
+  const [sessions, setSessions] = React.useState<AgentSession[]>([]);
+  React.useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const profiles = await client.agents.listProfiles(orgId);
+        if (!cancelled) setAgentProfiles(profiles);
+      } catch {
+        // agents plane absent/denied — assign menu just doesn't render
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [client, orgId]);
+  React.useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const list = await client.agents.listSessions(orgId);
+        if (!cancelled) setSessions(list);
+      } catch {
+        // no session chips, nothing else changes
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [client, orgId, summaryData]);
+  const params = useParams<{ orgSlug?: string }>();
+  const orgSlug = params?.orgSlug ?? "";
+  const sessionsByTask = React.useMemo(() => {
+    const terminal = new Set(["completed", "failed", "canceled", "expired"]);
+    const map = new Map<string, AgentSession>();
+    for (const sess of sessions) {
+      if (sess.taskKey && !terminal.has(sess.state)) map.set(sess.taskKey, sess);
+    }
+    return map;
+  }, [sessions]);
+  const sessionHref = React.useCallback((sessionId: string) => `/orgs/${orgSlug}/agents/${sessionId}`, [orgSlug]);
+
   // PM4 flow: the optimistic overlay — intent renders immediately, the SSE
   // tail confirms it (prune when coordSeq catches the mutation's seq), and a
   // 422 verdict rolls the overlay back so the fold's answer shows through.
@@ -188,6 +236,9 @@ export function WorkWorkbench({ orgId }: { orgId: string }) {
         orgId={orgId}
         tasks={filteredTasks}
         cycles={cycles}
+        agentProfiles={agentProfiles}
+        sessionsByTask={sessionsByTask}
+        sessionHref={sessionHref}
         applyIntent={applyIntent}
         onMutated={summary.reload}
       />
@@ -197,6 +248,8 @@ export function WorkWorkbench({ orgId }: { orgId: string }) {
       <WorkSummary
         data={{ ...data, tasks: filteredTasks }}
         orgId={orgId}
+        sessionsByTask={sessionsByTask}
+        sessionHref={sessionHref}
         onMutated={summary.reload}
       />
     );
@@ -212,6 +265,12 @@ export function WorkWorkbench({ orgId }: { orgId: string }) {
               actions: (
                 <div className="flex items-center gap-5">
                   {!empty ? <HeaderStats tasks={data.tasks} /> : null}
+                  <Link
+                    href={`/orgs/${orgSlug}/work/triage`}
+                    className="text-[12.5px] text-muted-foreground underline-offset-2 hover:underline"
+                  >
+                    Triage
+                  </Link>
                   <WorkCreateMenu
                     orgId={orgId}
                     specs={data.specs}
@@ -273,10 +332,14 @@ function HeaderStats({ tasks }: { tasks: WorkTaskView[] }) {
 function WorkSummary({
   data,
   orgId,
+  sessionsByTask,
+  sessionHref,
   onMutated,
 }: {
   data: WorkSummaryResponse;
   orgId: string;
+  sessionsByTask?: Map<string, AgentSession> | undefined;
+  sessionHref?: ((sessionId: string) => string) | undefined;
   onMutated: () => void;
 }) {
   const groups = groupTasksBySpec(data.tasks);
@@ -297,6 +360,8 @@ function WorkSummary({
           group={group}
           {...(group.spec ? { spec: specsByKey.get(group.spec) } : {})}
           orgId={orgId}
+          sessionsByTask={sessionsByTask}
+          sessionHref={sessionHref}
           onMutated={onMutated}
         />
       ))}
@@ -306,6 +371,8 @@ function WorkSummary({
           group={{ spec: s.key, tasks: [] }}
           spec={s}
           orgId={orgId}
+          sessionsByTask={sessionsByTask}
+          sessionHref={sessionHref}
           onMutated={onMutated}
         />
       ))}
@@ -317,11 +384,15 @@ function SpecGroupSection({
   group,
   spec,
   orgId,
+  sessionsByTask,
+  sessionHref,
   onMutated,
 }: {
   group: SpecGroup;
   spec?: WorkSpecView | undefined;
   orgId: string;
+  sessionsByTask?: Map<string, AgentSession> | undefined;
+  sessionHref?: ((sessionId: string) => string) | undefined;
   onMutated: () => void;
 }) {
   const title = spec?.title;
@@ -396,7 +467,14 @@ function SpecGroupSection({
         <ListCard>
           <ul>
             {group.tasks.map((task) => (
-              <TaskRow key={task.key} task={task} orgId={orgId} onMutated={onMutated} />
+              <TaskRow
+                key={task.key}
+                task={task}
+                orgId={orgId}
+                session={sessionsByTask?.get(task.key)}
+                sessionHref={sessionHref}
+                onMutated={onMutated}
+              />
             ))}
           </ul>
         </ListCard>
@@ -557,10 +635,14 @@ function RungPill({ rung }: { rung: WorkRung }) {
 function TaskRow({
   task,
   orgId,
+  session,
+  sessionHref,
   onMutated,
 }: {
   task: WorkTaskView;
   orgId: string;
+  session?: AgentSession | undefined;
+  sessionHref?: ((sessionId: string) => string) | undefined;
   onMutated: () => void;
 }) {
   const lc = task.lifecycle;
@@ -640,6 +722,10 @@ function TaskRow({
             {tag}
           </span>
         ))}
+        {task.assignees?.map((a) => (
+          <AssigneeChip key={a} subject={a} />
+        ))}
+        {session ? <SessionChip session={session} href={sessionHref?.(session.id)} /> : null}
         {lc.pinned ? (
           <span
             className="shrink-0"

@@ -6,6 +6,8 @@
 // Nothing here writes a rung; a comment is conversation, a reaction is a nod.
 
 import * as React from "react";
+import Link from "next/link";
+import { useParams } from "next/navigation";
 import type { WorkEventView, WorkTimelineEntry } from "@saas/contracts/work";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -186,8 +188,19 @@ export function TaskConversationSheet({
 }
 
 function ActorChip({ actor }: { actor: WorkEventView["actor"] }) {
+  const params = useParams<{ orgSlug?: string }>();
   const tone = actor.type === "agent" ? "warning" : actor.type === "automation" ? "info" : "neutral";
-  return <Pill tone={tone}>{actor.type}</Pill>;
+  const pill = <Pill tone={tone}>{actor.type}</Pill>;
+  // PM5: agent work is attributable — the chip deep-links the Agents tab
+  // where the sealed session transcripts live.
+  if (actor.type === "agent" && params?.orgSlug) {
+    return (
+      <Link href={`/orgs/${params.orgSlug}/agents`} title={`${actor.id} — open agent sessions`}>
+        {pill}
+      </Link>
+    );
+  }
+  return pill;
 }
 
 function CommentRow({

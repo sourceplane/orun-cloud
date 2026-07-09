@@ -239,6 +239,7 @@ export class MemoryWorkRepository implements WorkRepository {
       body: input.body,
       parentEvent: input.parentEvent,
       anchor: input.anchor,
+      reviewsEvent: input.reviewsEvent,
     });
   }
 

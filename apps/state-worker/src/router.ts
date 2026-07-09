@@ -68,6 +68,7 @@ import {
   handleCreateWorkCycle,
   handleListWorkCycles,
   handleWorkBurnup,
+  handleWorkTriage,
 } from "./handlers/work.js";
 import { handleGetOrgStateStorage } from "./handlers/state-usage.js";
 import { handleGetStateGcReport } from "./handlers/gc-report.js";
@@ -206,6 +207,7 @@ const ORG_WORK_SPEC_DOC_HISTORY_RE = /^\/v1\/organizations\/([^/]+)\/work\/specs
 const ORG_WORK_TASKS_RE = /^\/v1\/organizations\/([^/]+)\/work\/tasks$/;
 const ORG_WORK_TASK_ACTION_RE = /^\/v1\/organizations\/([^/]+)\/work\/tasks\/([^/]+)\/(comment|assign|pin|cancel|contract|label|priority|estimate|relate|order|cycle)$/;
 const ORG_WORK_VIEWS_RE = /^\/v1\/organizations\/([^/]+)\/work\/views$/;
+const ORG_WORK_TRIAGE_RE = /^\/v1\/organizations\/([^/]+)\/work\/triage$/;
 const ORG_WORK_CYCLES_RE = /^\/v1\/organizations\/([^/]+)\/work\/cycles$/;
 const ORG_WORK_CYCLE_BURNUP_RE = /^\/v1\/organizations\/([^/]+)\/work\/cycles\/([^/]+)\/burnup$/;
 const ORG_WORK_IMPORT_RE = /^\/v1\/organizations\/([^/]+)\/work\/import$/;
@@ -464,6 +466,14 @@ export async function route(request: Request, env: Env, ctx?: ExecutionContext):
     if (request.method === "POST") return handleSaveWorkView(request, env, requestId, actor, orgId);
     if (request.method === "GET") return handleListWorkViews(request, env, requestId, actor, orgId);
     return methodNotAllowed(requestId);
+  }
+
+  m = pathname.match(ORG_WORK_TRIAGE_RE);
+  if (m) {
+    const orgId = parseOrgPublicId(m[1]!);
+    if (!orgId) return notFound(requestId, pathname);
+    if (request.method !== "GET") return methodNotAllowed(requestId);
+    return handleWorkTriage(request, env, requestId, actor, orgId);
   }
 
   // Match /burnup before the plain cycles route (same prefix).

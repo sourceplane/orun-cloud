@@ -42,6 +42,7 @@ import type {
   WorkCycleView,
   WorkTimelineEntry,
   WorkTimelineResponse,
+  WorkTriageResponse,
   WorkActor,
   WorkAssignRequest,
   WorkCommentRequest,
@@ -65,7 +66,11 @@ import {
   buildEnvelopes,
   burnup,
   extractMentions,
+  foldAssignees,
   foldRelations,
+  openContractProposals,
+  recentMentions,
+  reviewParkedKeys,
   insertWorkObservation,
   taskKeysIn,
   contractComplete,
@@ -161,7 +166,7 @@ function workErrorResponse(err: WorkError, requestId: string): Response {
   }
 }
 
-function taskView(t: Task, foldResult: FoldResult): WorkTaskView {
+function taskView(t: Task, foldResult: FoldResult, assignees?: Map<string, string[]>): WorkTaskView {
   const lc = foldResult.lifecycles[t.key];
   return {
     key: t.key,
@@ -176,6 +181,7 @@ function taskView(t: Task, foldResult: FoldResult): WorkTaskView {
     estimate: t.estimate,
     relations: t.relations,
     cycleKey: t.cycleKey,
+    assignees: assignees?.get(t.key),
     lifecycle: {
       rung: lc?.rung ?? (contractComplete(t.contract) ? "ready" : "draft"),
       ready: lc?.ready ?? contractComplete(t.contract),
@@ -218,9 +224,12 @@ function summarize(orgId: string, ws: WorkSet): WorkSummaryResponse {
       ...(members.length > 0 ? { specs: members, progress: rollup } : {}),
     };
   });
+  // v3 PM5: assignees fold from assigned/unassigned events — an sp_ subject
+  // is an agent seat; no separate identity, no cache column.
+  const assignees = foldAssignees(ws.events);
   return {
     specs: specViews,
-    tasks: ws.tasks.map((t) => taskView(t, foldResult)),
+    tasks: ws.tasks.map((t) => taskView(t, foldResult, assignees)),
     initiatives: initiativeViews,
     drift: foldResult.drift ?? [],
     suggestions: foldResult.suggestions ?? [],
@@ -797,6 +806,7 @@ export async function handleWorkTaskAction(
           body: body.body,
           parentEvent: body.parentEvent,
           anchor: body.anchor,
+          reviewsEvent: body.reviewsEvent,
           actor: workActor,
         });
         // PM1: mentions parse at write time; delivery rides ES2 rules. A
@@ -1062,6 +1072,61 @@ export async function handleWorkBurnup(
       startsAt: cycle.startsAt,
       endsAt: cycle.endsAt,
       points: burnup(ws, cycle, today),
+    };
+    return successResponse(payload, requestId);
+  } catch (err) {
+    if (err instanceof WorkError) return workErrorResponse(err, requestId);
+    return errorResponse("internal_error", "Service unavailable", 503, requestId);
+  } finally {
+    await dispose(owned);
+  }
+}
+
+// ── Triage (v3 PM5): everything needing a human decision, one surface ───────
+//
+// Pure aggregation over the two logs on every read. The contract-review
+// lane's state is itself log-derived (openContractProposals): there is no
+// flag column to clear and no way to dismiss an item except by answering in
+// the log — accept (a reviewing comment), revert (a human contract edit),
+// or, for review-parked work, facts arriving.
+
+export async function handleWorkTriage(
+  request: Request,
+  env: Env,
+  requestId: string,
+  actor: ActorContext,
+  orgId: Uuid,
+  deps?: WorkHandlerDeps,
+): Promise<Response> {
+  const authz = await authorizeOrg(env, requestId, actor, orgId, WORK_POLICY_ACTIONS.WORK_READ);
+  if (!authz.ok) return authz.response;
+  const { repo, owned } = repoOf(env, deps);
+  try {
+    const ws = await repo.getWorkSet({ orgId });
+    const foldResult = fold(ws);
+    const assignees = foldAssignees(ws.events);
+    const parked = new Set(reviewParkedKeys(foldResult.lifecycles));
+    const payload: WorkTriageResponse = {
+      drift: foldResult.drift ?? [],
+      suggestions: foldResult.suggestions ?? [],
+      reviewParked: ws.tasks.filter((t) => parked.has(t.key)).map((t) => taskView(t, foldResult, assignees)),
+      mentions: recentMentions(ws.events).map((m) => ({
+        key: m.key,
+        eventId: m.eventId,
+        at: m.at,
+        by: m.by,
+        handles: m.handles,
+        body: m.body,
+      })),
+      contractProposals: openContractProposals(ws.events).map((p) => ({
+        key: p.key,
+        eventId: p.eventId,
+        seq: p.seq,
+        at: p.at,
+        proposedBy: p.proposedBy,
+        contract: p.contract,
+        previousContract: p.previousContract,
+      })),
     };
     return successResponse(payload, requestId);
   } catch (err) {

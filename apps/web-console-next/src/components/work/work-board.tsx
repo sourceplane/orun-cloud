@@ -12,6 +12,7 @@
 // Nothing in this file writes a rung; the category is unrepresentable.
 
 import * as React from "react";
+import type { AgentProfile, AgentSession } from "@saas/contracts/agents";
 import type { WorkCycleView, WorkPriority, WorkRung, WorkTaskView } from "@saas/contracts/work";
 import { Button } from "@/components/ui/button";
 import {
@@ -49,12 +50,20 @@ export function WorkBoard({
   orgId,
   tasks,
   cycles = [],
+  agentProfiles = [],
+  sessionsByTask,
+  sessionHref,
   applyIntent,
   onMutated,
 }: {
   orgId: string;
   tasks: WorkTaskView[];
   cycles?: WorkCycleView[];
+  /** PM5: agent seats — assignable through the ordinary assign mutator. */
+  agentProfiles?: AgentProfile[];
+  /** PM5: live (non-terminal) sessions joined by taskKey — infra facts. */
+  sessionsByTask?: Map<string, AgentSession> | undefined;
+  sessionHref?: ((sessionId: string) => string) | undefined;
   applyIntent?: ApplyIntent | undefined;
   onMutated: () => void;
 }) {
@@ -136,6 +145,9 @@ export function WorkBoard({
                   orgId={orgId}
                   task={task}
                   cycles={cycles}
+                  agentProfiles={agentProfiles}
+                  session={sessionsByTask?.get(task.key)}
+                  sessionHref={sessionHref}
                   verdict={verdicts[task.key]}
                   onRun={run}
                   applyIntent={applyIntent}
@@ -174,6 +186,9 @@ function BoardCard({
   orgId,
   task,
   cycles,
+  agentProfiles,
+  session,
+  sessionHref,
   verdict,
   onRun,
   applyIntent,
@@ -181,6 +196,9 @@ function BoardCard({
   orgId: string;
   task: WorkTaskView;
   cycles: WorkCycleView[];
+  agentProfiles: AgentProfile[];
+  session?: AgentSession | undefined;
+  sessionHref?: ((sessionId: string) => string) | undefined;
   verdict: string | undefined;
   onRun: (key: string, fn: () => Promise<unknown>) => Promise<void>;
   applyIntent?: ApplyIntent | undefined;
@@ -219,6 +237,10 @@ function BoardCard({
           <CardMenu
             task={task}
             cycles={cycles}
+            agentProfiles={agentProfiles}
+            onAssign={(subject, unassign) =>
+              void onRun(task.key, () => client.work.assign(orgId, task.key, { subject, unassign }))
+            }
             onCycle={(cycle) =>
               void onRun(task.key, intent({ cycleKey: cycle }, () => client.work.setCycle(orgId, task.key, { cycle })))
             }
@@ -239,7 +261,7 @@ function BoardCard({
         </span>
       </div>
       <div className="mt-1 text-[12.5px] leading-snug">{task.title}</div>
-      {(task.tags?.length || lc.pinned || lc.blocked) ? (
+      {(task.tags?.length || task.assignees?.length || session || lc.pinned || lc.blocked) ? (
         <div className="mt-1.5 flex flex-wrap items-center gap-1">
           {lc.pinned ? (
             // Pin-beside-truth: the card sits in its pinned column, and this
@@ -251,6 +273,10 @@ function BoardCard({
             </span>
           ) : null}
           {lc.blocked ? <Pill tone="error">blocked</Pill> : null}
+          {task.assignees?.map((a) => (
+            <AssigneeChip key={a} subject={a} />
+          ))}
+          {session ? <SessionChip session={session} href={sessionHref?.(session.id)} /> : null}
           {task.tags?.map((tag) => (
             <span key={tag} className="rounded-full border border-border px-1.5 py-px text-[10.5px] text-muted-foreground">
               {tag}
@@ -292,6 +318,8 @@ function BoardCard({
 function CardMenu({
   task,
   cycles,
+  agentProfiles,
+  onAssign,
   onCycle,
   onPriority,
   onEstimate,
@@ -300,6 +328,8 @@ function CardMenu({
 }: {
   task: WorkTaskView;
   cycles: WorkCycleView[];
+  agentProfiles: AgentProfile[];
+  onAssign: (subject: string, unassign?: boolean) => void;
   onCycle: (cycle: string | null) => void;
   onPriority: (p: WorkPriority) => void;
   onEstimate: (points: number | null) => void;
@@ -349,6 +379,27 @@ function CardMenu({
             clear
           </button>
         </div>
+        {agentProfiles.length > 0 ? (
+          <>
+            <DropdownMenuSeparator />
+            {/* PM5: an agent seat is a teammate — assigning to one is the
+                ordinary assign mutator; AG dispatch hooks onto it. */}
+            <DropdownMenuLabel className="text-[11px]">Assign agent</DropdownMenuLabel>
+            {agentProfiles.map((profile) => {
+              const assigned = task.assignees?.includes(profile.principalId) ?? false;
+              return (
+                <DropdownMenuItem
+                  key={profile.id}
+                  onSelect={() => onAssign(profile.principalId, assigned)}
+                  className="text-[12px]"
+                >
+                  {profile.name}
+                  {assigned ? " ✓" : ""}
+                </DropdownMenuItem>
+              );
+            })}
+          </>
+        ) : null}
         {cycles.length > 0 ? (
           <>
             <DropdownMenuSeparator />
@@ -436,5 +487,40 @@ function PinDropDialog({
         </DialogFooter>
       </DialogContent>
     </Dialog>
+  );
+}
+
+/* ── PM5 chips: teammates and infra facts, never rungs ─────────── */
+
+/** An assignee chip — sp_ subjects render as agent seats, visually the
+ *  same teammate model as everyone else. */
+export function AssigneeChip({ subject }: { subject: string }) {
+  const isAgent = subject.startsWith("sp_");
+  return (
+    <span
+      title={subject}
+      className="inline-flex items-center gap-1 rounded-full border border-border px-1.5 py-px text-[10.5px] text-muted-foreground"
+    >
+      {isAgent ? <Pill tone="warning">agent</Pill> : null}
+      {subject.slice(0, 12)}
+    </span>
+  );
+}
+
+/** The session chip (PM5): an INFRA fact — what the sandbox is doing right
+ *  now — rendered visibly distinct from rungs (bordered, mono, prefixed),
+ *  deep-linking the Agents-tab transcript. Never a lifecycle. */
+export function SessionChip({ session, href }: { session: AgentSession; href?: string | undefined }) {
+  const body = (
+    <span className="inline-flex items-center gap-1 rounded border border-dashed border-border px-1.5 py-px font-mono text-[10px] text-muted-foreground">
+      <span aria-hidden className={session.state === "running" ? "text-success" : "text-warning-accent"}>●</span>
+      session: {session.state}
+    </span>
+  );
+  if (!href) return body;
+  return (
+    <a href={href} className="hover:underline" title={`open transcript ${session.id}`}>
+      {body}
+    </a>
   );
 }
