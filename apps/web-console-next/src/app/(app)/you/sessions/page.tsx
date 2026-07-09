@@ -13,15 +13,18 @@ import { useSession } from "@/lib/session";
 import { useApiQuery, qk } from "@/lib/query";
 import { useToast } from "@/components/ui/toast";
 import { wrap } from "@/lib/api";
+import { sessionClientLabel } from "@/lib/oauth-consent";
 
 /**
  * Account → Sessions & devices (saas-settings-ia SI1; was Settings › Developer).
  *
  * Lists the signed-in user's active Orun CLI logins (host, created, last used)
- * with revoke. CLI sessions are per-user — not org-scoped — so this lives in the
- * personal account area alongside Profile and Security, not under a workspace's
- * settings. Revoking kills the whole token family, so the CLI loses access at
- * its next refresh.
+ * with revoke. MCP OAuth grants (saas-mcp-server MCP3) appear in the same list —
+ * they ARE CLI-shaped sessions, labeled `mcp:<clientId>` and rendered with the
+ * vetted client's name. CLI sessions are per-user — not org-scoped — so this
+ * lives in the personal account area alongside Profile and Security, not under
+ * a workspace's settings. Revoking kills the whole token family, so the CLI or
+ * MCP client loses access at its next refresh.
  */
 export default function AccountSessionsPage() {
   const { client } = useSession();
@@ -93,12 +96,14 @@ export default function AccountSessionsPage() {
         />
       ) : (
         <ListCard>
-          {active.map((s) => (
+          {active.map((s) => {
+            const { label, kind } = sessionClientLabel(s.host);
+            return (
             <ListRow key={s.id} className="items-start">
               <div className="min-w-0 flex-1 space-y-1">
                 <div className="flex items-center gap-2">
-                  <span className="truncate text-[13px] font-medium">{s.host ?? "Unknown device"}</span>
-                  <Pill tone="neutral">cli</Pill>
+                  <span className="truncate text-[13px] font-medium">{label}</span>
+                  <Pill tone="neutral">{kind}</Pill>
                 </div>
                 <div className="font-mono text-[11.5px] text-muted-foreground">{s.id}</div>
                 <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[11.5px] text-muted-foreground">
@@ -111,12 +116,13 @@ export default function AccountSessionsPage() {
                 size="sm"
                 variant="ghost"
                 className="shrink-0 text-destructive hover:text-destructive"
-                onClick={() => setPendingRevoke({ id: s.id, host: s.host })}
+                onClick={() => setPendingRevoke({ id: s.id, host: label })}
               >
                 Revoke
               </Button>
             </ListRow>
-          ))}
+            );
+          })}
         </ListCard>
       )}
     </div>

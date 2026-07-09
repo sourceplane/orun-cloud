@@ -5,19 +5,29 @@ what is genuinely open, plus the risks worth naming before they bite.
 
 ## Open decisions
 
-### D1 — OAuth client registration posture (MCP3)
+### D1 — OAuth client registration posture (MCP3) — ✅ Decided: Option A (2026-07-09)
 
-Dynamic client registration (RFC 7591) is what the MCP spec ecosystem leans on,
-but open DCR on a multi-tenant identity plane is an abuse surface (unbounded
-client rows, phishing-shaped consent screens). Options:
+**Decided at MCP3 implementation start: Option A — vetted public-client
+allow-list; NO open dynamic client registration.** Rationale: open DCR on a
+multi-tenant identity plane is an abuse surface (unbounded client rows,
+phishing-shaped consent screens) with no near-term payoff — the interactive
+clients that matter (Claude, Cursor, VS Code, plus a loopback dev client) are
+enumerable and vetted by code review. As built: the static table lives in
+`@saas/contracts` (`OAUTH_PUBLIC_CLIENTS` in `src/auth.ts`) so identity-worker
+enforces and the console consent page renders from the same source; redirect
+URIs match exactly, with the RFC 8252 §7.3 loopback any-port carve-out; an
+unknown `client_id` or unregistered `redirect_uri` is rejected and the user is
+never redirected there. PKCE S256 is mandatory and consent always renders the
+requesting client's identity. Option B (DCR behind rate limits + unused-client
+GC) remains the documented later path if ecosystem pressure demands it — it
+would be additive on top of the same authorize/token endpoints.
+
+Original options, for the record:
 
 - **A. Vetted allow-list first** (Claude, Cursor, VS Code, generic loopback) —
-  smallest surface, unblocks MCP3, DCR added later behind rate limits. *Leaning.*
+  smallest surface, unblocks MCP3, DCR added later behind rate limits. *Taken.*
 - **B. Open DCR with hard rate limits + short-lived unused-client GC** — most
   compatible, most to defend.
-
-Decision needed by MCP3 implementation start. Either way PKCE S256 is
-mandatory and consent always renders the requesting client's identity.
 
 ### D2 — Where `catalog_get_entity` reads from
 

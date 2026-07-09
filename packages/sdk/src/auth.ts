@@ -4,6 +4,8 @@ import type {
   LoginStartRequest,
   LoginStartResponse,
   LogoutResponse,
+  OAuthAuthorizeCompleteRequest,
+  OAuthAuthorizeCompleteResponse,
   OAuthProvidersResponse,
   ProfileResponse,
   SessionResponse,
@@ -92,6 +94,28 @@ export class AuthClient {
     );
     url.searchParams.set("return_to", returnTo);
     return url.toString();
+  }
+
+  /**
+   * POST /v1/auth/oauth2/authorize/complete — mint a single-use OAuth 2.1
+   * authorization code after the signed-in user consents on the console's
+   * `/oauth/authorize` page (saas-mcp-server MCP3). Session-authenticated;
+   * the console appends the returned `code` (+ the client's `state`) to the
+   * validated redirect_uri. The token exchange itself is the CLIENT's job
+   * (POST /v1/auth/oauth2/token, form-encoded) — not exposed here.
+   */
+  oauthAuthorizeComplete(
+    input: OAuthAuthorizeCompleteRequest,
+    opts: RequestOptions = {},
+  ): Promise<OAuthAuthorizeCompleteResponse> {
+    return this.transport.request<OAuthAuthorizeCompleteResponse>(
+      {
+        method: "POST",
+        path: "/v1/auth/oauth2/authorize/complete",
+        body: input,
+      },
+      opts,
+    );
   }
 
   /** GET /v1/auth/session */

@@ -606,5 +606,14 @@ export const manifest: MigrationManifest = {
       description:
         "The project surface's intent plane (orun-work-v3 PM0) — work.doc_revisions (append-only content-addressed cloud document bodies; digest form equals the imported doc_ref so both sources share one column, V3-2), work.initiatives (the third item kind's droppable envelope cache, rebuilt from the coordination log alone), work.cycles + work.views (authored intent nouns; handlers arrive PM3/PM2), the coordination-log kind CHECK regenerated to the 19-kind closed vocabulary (every addition intent or conversation, V3-1 — STILL no lifecycle-write kind, WP-3; the observation CHECK is untouched), and nullable folded-intent cache columns on work.tasks (priority/estimate/cycle_key, folded by the PM2 mutators). Nothing stores a rung, progress, or burn-up — derived only (V3-3). Additive + idempotent (IF NOT EXISTS / ADD COLUMN IF NOT EXISTS; the CHECK swap is DROP IF EXISTS + ADD).",
     },
+    {
+      id: "670_identity_oauth_grants",
+      context: "identity",
+      path: "670_identity_oauth_grants/up.sql",
+      checksum:
+        "6af5b91fd8c66c0a9917d9a4b1ab767b0540b03dee8db30787cb3ee92602d56c",
+      description:
+        "OAuth 2.1 authorization codes for MCP clients (saas-mcp-server MCP3) — extends identity.cli_login_grants with a third 'oauth' flow instead of a new table (risks R5: no second token plane). The authorization code hashes into the existing cli_code_hash column (same single-use redeem semantics as the loopback cli_code); new nullable columns oauth_client_id / oauth_redirect_uri / oauth_code_challenge bind the code to its vetted public client (D1 Option A allow-list in code), exact redirect_uri, and PKCE S256 challenge. Flow + flow-secrets CHECKs regenerated (DROP IF EXISTS + ADD) to admit the oauth branch. Redeeming a code mints an ordinary cli-kind session labeled mcp:<clientId> via client_host — rotation, reuse detection, and console revocation unchanged. Additive + idempotent.",
+    },
   ],
 };

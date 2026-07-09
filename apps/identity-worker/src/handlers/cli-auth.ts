@@ -55,7 +55,9 @@ function cliErrorResponse(err: CliError, requestId: string): Response {
   return errorResponse(code, err.message, status, requestId);
 }
 
-function makeService(env: Env, request: Request, requestId: string, deps: CliAuthDeps | undefined, repo: IdentityRepository) {
+// Shared with handlers/oauth2.ts (MCP3) — the OAuth endpoints construct the
+// SAME OP1 service over the same repo/orgs wiring (risks R5: one issuance path).
+export function makeService(env: Env, request: Request, requestId: string, deps: CliAuthDeps | undefined, repo: IdentityRepository) {
   const ctx = extractRequestContext(request, requestId);
   const fetchOrgs =
     deps?.fetchOrgs ??
@@ -102,7 +104,7 @@ function sessionSummary(s: Session): CliSessionSummary {
   };
 }
 
-async function withRepo<T>(
+export async function withRepo<T>(
   env: Env,
   deps: CliAuthDeps | undefined,
   fn: (repo: IdentityRepository) => Promise<T>,

@@ -24,6 +24,11 @@ import {
   handleCliListSessions,
   handleCliRevokeSession,
 } from "./handlers/cli-auth.js";
+import {
+  handleOAuth2AuthorizationServerMetadata,
+  handleOAuth2AuthorizeComplete,
+  handleOAuth2Token,
+} from "./handlers/oauth2.js";
 import { errorResponse, notFound, methodNotAllowed } from "./http.js";
 
 const ORG_API_KEYS_RE = /^\/v1\/organizations\/[^/]+\/api-keys$/;
@@ -108,6 +113,23 @@ export async function route(request: Request, env: Env): Promise<Response> {
     if (OAUTH_CALLBACK_RE.test(url.pathname)) {
       if (request.method !== "GET") return methodNotAllowed(requestId);
       return handleOAuthCallback(request, env, requestId);
+    }
+
+    // --- OAuth 2.1 for MCP clients (saas-mcp-server MCP3) ---
+    // RFC 8414 authorization-server metadata (public, raw JSON — no envelope).
+    if (url.pathname === "/.well-known/oauth-authorization-server") {
+      if (request.method !== "GET") return methodNotAllowed(requestId);
+      return handleOAuth2AuthorizationServerMetadata(env, requestId);
+    }
+    // Console-called after user consent (actor headers injected by api-edge).
+    if (url.pathname === "/v1/auth/oauth2/authorize/complete") {
+      if (request.method !== "POST") return methodNotAllowed(requestId);
+      return handleOAuth2AuthorizeComplete(request, env, requestId);
+    }
+    // RFC 6749 token endpoint (public client; form-encoded; raw OAuth JSON).
+    if (url.pathname === "/v1/auth/oauth2/token") {
+      if (request.method !== "POST") return methodNotAllowed(requestId);
+      return handleOAuth2Token(request, env, requestId);
     }
 
     // --- CLI session auth (OP1) ---

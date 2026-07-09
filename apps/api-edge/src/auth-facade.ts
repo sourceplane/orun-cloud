@@ -26,7 +26,19 @@ const AUTH_ROUTES: Record<string, string> = {
   "/v1/auth/oidc/exchange": "POST",
   // Console: authenticated CLI session listing.
   "/v1/auth/cli/sessions": "GET",
+  // OAuth 2.1 for MCP clients (saas-mcp-server MCP3). The RFC 8414 metadata and
+  // the RFC 6749 token endpoint are PUBLIC (public clients, auth method "none");
+  // authorize/complete is console-called and authenticated (see
+  // OAUTH2_AUTHORIZE_COMPLETE_PATH below). All share the "auth" rate-limit
+  // family via replayOrExecute like every other route here.
+  "/.well-known/oauth-authorization-server": "GET",
+  "/v1/auth/oauth2/token": "POST",
+  "/v1/auth/oauth2/authorize/complete": "POST",
 };
+
+// Console-called after user consent — requires a resolved actor, exactly like
+// the CLI grant approve/deny routes.
+const OAUTH2_AUTHORIZE_COMPLETE_PATH = "/v1/auth/oauth2/authorize/complete";
 
 const AUTH_MULTI_METHOD_ROUTES: Record<string, Set<string>> = {
   "/v1/auth/profile": new Set(["GET", "PATCH"]),
@@ -52,6 +64,7 @@ function cliManagedRoute(pathname: string, method: string): boolean {
 
 /** Does this CLI route need the caller to be an authenticated console user? */
 function cliRouteRequiresAuth(pathname: string): boolean {
+  if (pathname === OAUTH2_AUTHORIZE_COMPLETE_PATH) return true;
   if (CLI_AUTHED_GET_PATHS.has(pathname)) return true;
   if (CLI_SESSION_ID_RE.test(pathname)) return true;
   if (CLI_GRANT_APPROVE_RE.test(pathname) || CLI_GRANT_DENY_RE.test(pathname)) return true;

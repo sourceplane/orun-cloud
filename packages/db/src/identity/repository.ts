@@ -97,6 +97,11 @@ function mapCliLoginGrant(row: Record<string, unknown>): CliLoginGrant {
     expiresAt: new Date(row.expires_at as string),
     createdAt: new Date(row.created_at as string),
     updatedAt: new Date(row.updated_at as string),
+    // OAuth flow columns (MCP3, migration 670). Null on loopback/device rows
+    // (and pre-670 rows read back through the column defaults).
+    oauthClientId: (row.oauth_client_id as string) ?? null,
+    oauthRedirectUri: (row.oauth_redirect_uri as string) ?? null,
+    oauthCodeChallenge: (row.oauth_code_challenge as string) ?? null,
   };
 }
 
@@ -723,8 +728,9 @@ export function createIdentityRepository(executor: SqlExecutor): IdentityReposit
         const result = await executor.execute<Record<string, unknown>>(
           `INSERT INTO identity.cli_login_grants
              (id, flow, cli_code_hash, device_code_hash, user_code_hash, client_host,
+              oauth_client_id, oauth_redirect_uri, oauth_code_challenge,
               expires_at, created_at, updated_at)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $8)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $11)
            ON CONFLICT (id) DO NOTHING
            RETURNING *`,
           [
@@ -734,6 +740,9 @@ export function createIdentityRepository(executor: SqlExecutor): IdentityReposit
             input.deviceCodeHash ?? null,
             input.userCodeHash ?? null,
             input.clientHost ?? null,
+            input.oauthClientId ?? null,
+            input.oauthRedirectUri ?? null,
+            input.oauthCodeChallenge ?? null,
             input.expiresAt.toISOString(),
             input.createdAt.toISOString(),
           ],

@@ -390,6 +390,9 @@ export function createFakeRepository(): IdentityRepository & {
         cliCodeHash: input.cliCodeHash ?? null,
         deviceCodeHash: input.deviceCodeHash ?? null,
         userCodeHash: input.userCodeHash ?? null,
+        oauthClientId: input.oauthClientId ?? null,
+        oauthRedirectUri: input.oauthRedirectUri ?? null,
+        oauthCodeChallenge: input.oauthCodeChallenge ?? null,
       };
       grants.set(input.id, grant);
       return { ok: true, value: grant };

@@ -4,6 +4,8 @@
 // GET /health; everything else 404/405. Structured request logs carry method,
 // path, status, duration, request id — NEVER the bearer.
 
+import type { ProtectedResourceMetadata } from "@saas/contracts/auth";
+
 import type { McpWorkerDeps } from "./deps.js";
 import { buildDeps } from "./deps.js";
 import type { Env } from "./env.js";
@@ -60,10 +62,23 @@ async function dispatch(
     return handleHealth(env, requestId);
   }
 
-  // MCP3 ships RFC 9728 protected-resource metadata here; 404 until then
-  // (the 401 WWW-Authenticate challenge already names this path).
+  // RFC 9728 protected-resource metadata (MCP3): names identity-worker (via
+  // its public api-edge origin) as the authorization server. The 401
+  // WWW-Authenticate challenge on /mcp points clients here. Raw spec-shaped
+  // JSON (no platform envelope). 404 when the per-env issuer var is unset.
   if (url.pathname === "/.well-known/oauth-protected-resource") {
-    return notFound(requestId, url.pathname);
+    if (request.method !== "GET") return methodNotAllowed(requestId);
+    const authorizationServer = env.OAUTH_AUTHORIZATION_SERVER_URL?.trim().replace(/\/+$/, "");
+    if (!authorizationServer) return notFound(requestId, url.pathname);
+    const metadata: ProtectedResourceMetadata = {
+      resource: url.origin,
+      authorization_servers: [authorizationServer],
+      bearer_methods_supported: ["header"],
+    };
+    return Response.json(metadata, {
+      status: 200,
+      headers: { "content-type": "application/json", "cache-control": "public, max-age=300" },
+    });
   }
 
   if (url.pathname === "/mcp" || url.pathname === "/") {

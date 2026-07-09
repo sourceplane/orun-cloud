@@ -16,7 +16,7 @@ apply unchanged.
 
 | Field | Value |
 |-------|-------|
-| Status | **Ready** — MCP0–MCP2 are human-independent, ride entirely on shipped surfaces (SDK, state plane, OP1 auth, ES events, CD catalog docs), and are now a named dependency of `saas-agents` (AG — the in-sandbox runtime calls this MCP); MCP3 (OAuth) and MCP6 (entitlement) carry decisions in `risks-and-open-questions.md` |
+| Status | **Ready** — MCP0–MCP2 are human-independent, ride entirely on shipped surfaces (SDK, state plane, OP1 auth, ES events, CD catalog docs), and are now a named dependency of `saas-agents` (AG — the in-sandbox runtime calls this MCP); MCP3 (OAuth) shipped under the D1 decision (Option A allow-list, no open DCR — see `risks-and-open-questions.md`); MCP6 (entitlement) still carries its decision there |
 | Cluster | **MCP** (agent client surface — promotes the agent-surface half of `saas-product-areas` **P7**; the **platform MCP**, distinct from orun's **work MCP** — see vocabulary note below) |
 | Owner(s) | `packages/mcp` (new, primary) + `packages/cli` (stdio transport) + `apps/mcp-worker` (new, remote transport) + `apps/identity-worker` (OAuth 2.1 authorization, MCP3) + `packages/contracts`/`sdk` (schema seam) + `apps/web-console-next` (Connect page, MCP7) + `apps/billing-worker`/`metering-worker` (entitlement + metering, MCP6) |
 | Target branch | `claude/orun-cloud-mcp-server-h95b57` (PRs merged incrementally) |
@@ -85,7 +85,7 @@ additive surface over shipped rails.
 | MCP0 | Tool-plane foundation: `packages/mcp` registry + zod schema discipline + scope resolution + error mapping + the read-only core toolset over `@saas/sdk` | ✅ Shipped (19 tools, 65 tests) |
 | MCP1 | Local stdio server: `orun-cloud mcp` CLI command riding the existing token store; per-client config snippets | ✅ Shipped (`mcp serve` + `mcp tools`) |
 | MCP2 | Remote server: `apps/mcp-worker` (Streamable HTTP, stateless-first) with `sk_` API-key bearer auth; own hostname; component intent | ✅ Shipped (stateless JSON transport; `mcp.<domain>` hostname is an infra follow-up) |
-| MCP3 | OAuth 2.1 for remote clients: protected-resource metadata + authorization server endpoints on identity-worker (rides OP1), PKCE + dynamic client registration | 🗓️ Planned (decision: DCR posture) |
+| MCP3 | OAuth 2.1 for remote clients: protected-resource metadata + authorization server endpoints on identity-worker (rides OP1), PKCE S256 + vetted public-client allow-list (D1 → Option A, no open DCR) | ✅ Shipped (console consent + authorize/token endpoints over OP1 sessions) |
 | MCP4 | Resources & prompts: catalog entity overviews and run logs as MCP resources; packaged prompts (investigate-failed-run, access-review, usage-review) | ✅ Shipped (2 resource templates + 4 prompts, both transports via `createMcpServer`) |
 | MCP5 | Write tools (gated): task-shaped mutations with `Idempotency-Key`, tool annotations, `via: mcp` audit provenance, read-only mode enforcement | 🗓️ Planned |
 | MCP6 | Metering + entitlement: `mcp.tool_call` usage events, `feature.mcp_server` seam + U7 upgrade UX, quota checks | 🗓️ Planned (decision: free-vs-paid line) |

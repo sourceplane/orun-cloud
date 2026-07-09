@@ -279,7 +279,7 @@ export interface SecurityEventPagedResult {
 
 // --- CLI login grants (loopback + device flows) ---
 
-export type CliLoginGrantFlow = "loopback" | "device";
+export type CliLoginGrantFlow = "loopback" | "device" | "oauth";
 export type CliLoginGrantStatus = "pending" | "approved" | "denied" | "redeemed" | "expired";
 
 export interface CliLoginGrant {
@@ -294,18 +294,28 @@ export interface CliLoginGrant {
   expiresAt: Date;
   createdAt: Date;
   updatedAt: Date;
+  /** OAuth flow (MCP3): the vetted public client_id the code is bound to. */
+  oauthClientId: string | null;
+  /** OAuth flow: the exact redirect_uri presented on authorize. */
+  oauthRedirectUri: string | null;
+  /** OAuth flow: the PKCE S256 code challenge (RFC 7636). */
+  oauthCodeChallenge: string | null;
 }
 
 export interface CreateCliLoginGrantInput {
   id: string;
   flow: CliLoginGrantFlow;
-  /** Loopback: hash of the one-time cli_code. */
+  /** Loopback: hash of the one-time cli_code. OAuth: hash of the authorization code. */
   cliCodeHash?: string | null;
   /** Device: hash of the machine-polled device_code. */
   deviceCodeHash?: string | null;
   /** Device: hash of the human-entered user_code. */
   userCodeHash?: string | null;
   clientHost?: string | null;
+  /** OAuth flow (MCP3): client/redirect/PKCE binding — required together. */
+  oauthClientId?: string | null;
+  oauthRedirectUri?: string | null;
+  oauthCodeChallenge?: string | null;
   expiresAt: Date;
   createdAt: Date;
 }
