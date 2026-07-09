@@ -8,7 +8,7 @@
 
 | | |
 |---|---|
-| **Status** | In progress — PM0–PM4 shipped (cloud authoring core; conversation; board & views; cycles & derived progress; flow: Work verbs in the Cmd-K palette, the optimistic apply store — intent renders instantly as an overlay, the SSE tail confirms by seq, a 422 verdict rolls it back to the fold's answer); PM5 next |
+| **Status** | **Shipped — PM0–PM5** (cloud #372 #395 #400 #403 #405 + PM5; orun #467 #472 #473). PM0 authoring core · PM1 conversation · PM2 board & views · PM3 cycles & derived progress · PM4 flow · PM5 the agent project surface: agent seats via the ordinary assign mutator, infra-fact session chips beside rungs, the Triage surface with the contract-review lane (accept = a reviewing comment, revert = a human contract edit — the flag is a fold over the conversation, no column exists), and read-only work_timeline/spec_doc MCP tools. p95 dogfood note pending the OIDC v2 CI cutover. |
 | **Cluster** | **PM** (`PM0 → PM5`, plan in `./implementation-plan.md`) |
 | **Builds on** | orun-work v2 (WP0–WP5, shipped): two-log substrate, fold, mutator/verdict seam, SSE tail, sealing, MCP |
 | **Pairs with** | `saas-agents` + `orun-agents` (**AG** — the agent runtime + cloud control plane; PM5 renders/reviews/governs the agent work AG dispatches, it does not build dispatch), `saas-event-streaming` (ES — notification rules for mentions/subscriptions), `saas-console-ux` (U — Cmd-K, the Northwind design system), `saas-mcp-server` (MCP — the platform MCP the in-sandbox agent calls; distinct from the work MCP), `teams-collaboration` (TC — @team mentions), `saas-resources-runtime` (P2 — `revision_live`, unchanged) |

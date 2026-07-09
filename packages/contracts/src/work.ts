@@ -87,6 +87,10 @@ export interface WorkTaskView {
   relations?: WorkRelation[] | undefined;
   /** v3 PM3: the authored time-box this task is planned into. */
   cycleKey?: string | undefined;
+  /** v3 PM5: current assignees (membership subjects — usr_/sp_/team_),
+   *  folded from assigned/unassigned events. An sp_ subject IS an agent
+   *  seat; assigning to one is the ordinary assign mutator. */
+  assignees?: string[] | undefined;
 }
 
 export interface WorkSpecView {
@@ -174,6 +178,9 @@ export interface WorkCommentRequest {
   parentEvent?: string | undefined;
   /** Doc range anchor (PM1): pins the comment to a revision's text range. */
   anchor?: { revision: string; start: number; end: number } | undefined;
+  /** Contract review (PM5): marks this comment as the human review of an
+   *  agent-proposed contract_edited event — the Triage lane's Accept. */
+  reviewsEvent?: string | undefined;
 }
 
 export interface WorkReactionRequest {
@@ -438,6 +445,44 @@ export interface IngestWorkObservationRequest {
 export interface IngestWorkObservationResponse {
   deduped: boolean;
   seq: number | null;
+}
+
+// ── Triage (v3 PM5): everything needing a human decision, one surface ───────
+//
+// Pure aggregation over the two logs — nothing here is a new stored state.
+// The contract-review lane's lifecycle is itself log-derived: a proposal is
+// an agent/automation-actored contract_edited event, OPEN until a later
+// human contract_edited on the same task (revert/supersede) or a human
+// comment whose payload.reviewsEvent names it (accept).
+
+export interface WorkMentionView {
+  key: string; // task/spec the comment sits on
+  eventId: string;
+  at: string;
+  by: WorkActor;
+  handles: string[];
+  body: string;
+}
+
+export interface WorkContractProposalView {
+  key: string;
+  eventId: string;
+  seq: number;
+  at: string;
+  proposedBy: WorkActor;
+  /** The contract as proposed (now in effect — proposals apply AND flag). */
+  contract: WorkContract;
+  /** The contract before the proposal — what Revert restores. */
+  previousContract?: WorkContract | undefined;
+}
+
+export interface WorkTriageResponse {
+  drift: WorkDriftView[];
+  suggestions: WorkSuggestionView[];
+  /** Merged but parked In Review by honest degradation (gates unknown/red). */
+  reviewParked: WorkTaskView[];
+  mentions: WorkMentionView[];
+  contractProposals: WorkContractProposalView[];
 }
 
 // ── Policy actions ──────────────────────────────────────────────────────────

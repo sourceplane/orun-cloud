@@ -146,6 +146,15 @@ export function buildBaseCommands(ctx: CommandContext): CommandDescriptor[] {
         "work",
         "specs",
       ]),
+      navItem("nav.work-triage", "Work: triage", `${orgBase}/work/triage`, "ListTodo", [
+        "triage",
+        "drift",
+        "review",
+        "mentions",
+        "contract",
+        "proposals",
+        "inbox",
+      ]),
       navItem("nav.integrations", "Integrations", `${orgBase}/integrations`, "Plug", [
         "integration",
         "connection",

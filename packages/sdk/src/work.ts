@@ -35,6 +35,7 @@ import type {
   WorkDocHistoryResponse,
   WorkReactionRequest,
   WorkTimelineResponse,
+  WorkTriageResponse,
   WorkAssignRequest,
   WorkCommentRequest,
   WorkContractRequest,
@@ -291,6 +292,16 @@ export class WorkClient {
   burnup(orgId: string, cycleKey: string, opts: RequestOptions = {}): Promise<WorkBurnupResponse> {
     return this.transport.request<WorkBurnupResponse>(
       { method: "GET", path: `${workBase(orgId)}/cycles/${encodeURIComponent(cycleKey)}/burnup` },
+      opts,
+    );
+  }
+
+  /** v3 PM5: everything needing a human decision — drift, suggestions,
+   *  review-parked work, mentions, and open contract proposals. Read-only;
+   *  lanes empty by answering in the log, never by dismissing. */
+  triage(orgId: string, opts: RequestOptions = {}): Promise<WorkTriageResponse> {
+    return this.transport.request<WorkTriageResponse>(
+      { method: "GET", path: `${workBase(orgId)}/triage` },
       opts,
     );
   }

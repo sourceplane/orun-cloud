@@ -83,6 +83,9 @@ export interface CommentInput {
   parentEvent?: string | undefined;
   /** Doc range anchor (PM1): pins the comment to a revision's text range. */
   anchor?: { revision: string; start: number; end: number } | undefined;
+  /** Contract review (PM5): marks this comment as the human review of an
+   *  agent-proposed contract_edited event — Accept in the Triage lane. */
+  reviewsEvent?: string | undefined;
   actor: Actor;
   at?: string | undefined;
 }
