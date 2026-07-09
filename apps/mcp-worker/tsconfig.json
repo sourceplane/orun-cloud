@@ -1,0 +1,11 @@
+{
+  "extends": "../../tooling/tsconfig/worker.json",
+  "include": [
+    "src/**/*.ts",
+    "test/**/*.ts"
+  ],
+  "exclude": [
+    "node_modules",
+    "dist"
+  ]
+}

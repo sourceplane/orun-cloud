@@ -1,0 +1,59 @@
+{
+  "name": "@saas/mcp-worker-tests",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc --noEmit",
+    "typecheck": "tsc --noEmit",
+    "test": "node --experimental-vm-modules node_modules/jest/bin/jest.js",
+    "lint": "eslint src"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20260612.1",
+    "@saas/eslint-config": "workspace:*",
+    "@saas/tsconfig": "workspace:*",
+    "@types/jest": "^29.5.14",
+    "@types/node": "^20.19.43",
+    "jest": "^29.7.0",
+    "ts-jest": "^29.4.11",
+    "typescript": "^5.9.3"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "@saas/contracts": "workspace:*",
+    "@saas/mcp": "workspace:*",
+    "@saas/sdk": "workspace:*"
+  },
+  "jest": {
+    "preset": "ts-jest/presets/default-esm",
+    "extensionsToTreatAsEsm": [
+      ".ts"
+    ],
+    "moduleNameMapper": {
+      "^(\\.{1,2}/.*)\\.js$": "$1",
+      "^@saas/contracts$": "<rootDir>/../../packages/contracts/src/index.ts",
+      "^@saas/contracts/(.*)$": "<rootDir>/../../packages/contracts/src/$1.ts",
+      "^@saas/sdk$": "<rootDir>/../../packages/sdk/src/index.ts",
+      "^@saas/mcp$": "<rootDir>/../../packages/mcp/src/index.ts",
+      "^@mcp-worker/(.*)$": "<rootDir>/../../apps/mcp-worker/src/$1.ts"
+    },
+    "transform": {
+      "^.+\\.ts$": [
+        "ts-jest",
+        {
+          "useESM": true,
+          "diagnostics": {
+            "exclude": [
+              "**/packages/**",
+              "**/apps/**"
+            ]
+          }
+        }
+      ]
+    },
+    "testMatch": [
+      "<rootDir>/src/**/*.test.ts"
+    ]
+  }
+}
