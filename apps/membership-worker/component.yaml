@@ -10,6 +10,16 @@ spec:
   domain: starter-runtime
   path: apps/membership-worker
   dependsOn:
+    # Build inputs (dependsOn[].input, orun v2.22.0): these workspace packages
+    # are bundled into this component's artifact, so a change to any of them
+    # rescopes this component in --changed (no more stale-bundle deploy gaps).
+    # Inert under the pinned orun v2.15.0; activates on the v2.22 CI cutover.
+    - component: contracts
+      input: true
+    - component: db
+      input: true
+    - component: notifications-client
+      input: true
     - component: policy-worker
     - component: billing-worker
   subscribe:
