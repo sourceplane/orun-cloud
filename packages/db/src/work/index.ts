@@ -7,7 +7,8 @@
 export * from "./model.js";
 export * from "./types.js";
 export { buildEnvelopes } from "./envelopes.js";
-export type { Envelopes, ItemCreatedPayload, ItemEditedPayload, ContractEditedPayload } from "./envelopes.js";
+export type { Envelopes, ItemCreatedPayload, ItemEditedPayload, ContractEditedPayload, DocEditedPayload } from "./envelopes.js";
+export { canonicalDocBody, docDigest } from "./doc.js";
 export { MemoryWorkRepository } from "./memory.js";
 export { createWorkRepository, insertWorkObservation } from "./repository.js";
 export { workObservationsFromScm, WORK_SCM_SOURCE, WORK_SCM_SOURCE_VERSION } from "./scm.js";

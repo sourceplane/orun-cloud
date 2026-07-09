@@ -8,11 +8,18 @@
 import type {
   IngestWorkObservationRequest,
   IngestWorkObservationResponse,
+  CreateWorkInitiativeRequest,
+  CreateWorkInitiativeResponse,
   CreateWorkSpecRequest,
   CreateWorkSpecResponse,
   CreateWorkTaskRequest,
   CreateWorkTaskResponse,
+  EditWorkItemRequest,
+  GetWorkDocResponse,
   ListWorkEventsResponse,
+  PutWorkDocRequest,
+  PutWorkDocResponse,
+  WorkDocHistoryResponse,
   WorkAssignRequest,
   WorkCommentRequest,
   WorkContractRequest,
@@ -125,6 +132,50 @@ export class WorkClient {
   createTask(orgId: string, body: CreateWorkTaskRequest, opts: RequestOptions = {}): Promise<CreateWorkTaskResponse> {
     return this.transport.request<CreateWorkTaskResponse>(
       { method: "POST", path: `${workBase(orgId)}/tasks`, body },
+      opts,
+    );
+  }
+
+  /** v3 PM0: a strategic grouping — envelope-only, no contract, no rung. */
+  createInitiative(orgId: string, body: CreateWorkInitiativeRequest, opts: RequestOptions = {}): Promise<CreateWorkInitiativeResponse> {
+    return this.transport.request<CreateWorkInitiativeResponse>(
+      { method: "POST", path: `${workBase(orgId)}/initiatives`, body },
+      opts,
+    );
+  }
+
+  /** v3 PM0: edit an item's envelope (title/description/labels) — intent
+   *  only; there is deliberately no way to write a rung here. */
+  editItem(orgId: string, key: string, body: EditWorkItemRequest, opts: RequestOptions = {}): Promise<WorkMutationResponse> {
+    return this.transport.request<WorkMutationResponse>(
+      { method: "POST", path: `${workBase(orgId)}/items/${encodeURIComponent(key)}/edit`, body },
+      opts,
+    );
+  }
+
+  /** v3 PM0: save a cloud document revision (content-addressed; an identical
+   *  body is a no-op — created:false, no event). Fork-visible LWW. */
+  putDoc(orgId: string, specKey: string, body: PutWorkDocRequest, opts: RequestOptions = {}): Promise<PutWorkDocResponse> {
+    return this.transport.request<PutWorkDocResponse>(
+      { method: "PUT", path: `${workBase(orgId)}/specs/${encodeURIComponent(specKey)}/doc`, body },
+      opts,
+    );
+  }
+
+  /** v3 PM0: read a document revision (latest when rev is omitted). 404s
+   *  with a typed error when the doc_ref points at a repo-imported body the
+   *  cloud never stored — render "imported from repo @ digest". */
+  getDoc(orgId: string, specKey: string, rev?: string, opts: RequestOptions = {}): Promise<GetWorkDocResponse> {
+    return this.transport.request<GetWorkDocResponse>(
+      { method: "GET", path: `${workBase(orgId)}/specs/${encodeURIComponent(specKey)}/doc`, query: { rev } },
+      opts,
+    );
+  }
+
+  /** v3 PM0: the revision chain, oldest first; forks are visible. */
+  docHistory(orgId: string, specKey: string, opts: RequestOptions = {}): Promise<WorkDocHistoryResponse> {
+    return this.transport.request<WorkDocHistoryResponse>(
+      { method: "GET", path: `${workBase(orgId)}/specs/${encodeURIComponent(specKey)}/doc/history` },
       opts,
     );
   }

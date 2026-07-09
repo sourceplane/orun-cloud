@@ -7,6 +7,7 @@
 import * as React from "react";
 import type {
   WorkRung,
+  WorkSpecView,
   WorkSummaryResponse,
   WorkTaskView,
 } from "@saas/contracts/work";
@@ -25,6 +26,8 @@ import { qk, useApiQuery } from "@/lib/query";
 import { useSession } from "@/lib/session";
 import { rungLabel, groupTasksBySpec, type SpecGroup } from "@/lib/work/model";
 import { TaskActions } from "@/components/work/task-actions";
+import { EditWorkItemDialog, WorkCreateMenu } from "@/components/work/create-work-item-dialog";
+import { SpecDocSheet } from "@/components/work/spec-doc-sheet";
 
 export function WorkWorkbench({ orgId }: { orgId: string }) {
   const { client } = useSession();
@@ -110,8 +113,17 @@ export function WorkWorkbench({ orgId }: { orgId: string }) {
     <Screen>
       <PageHeader
         title="Work"
-        description="Tasks grouped by spec, ordered by how close they are to shipped. Authored in git — the console reflects, and lets you pin a rung."
-        {...(data && !empty ? { actions: <HeaderStats tasks={data.tasks} /> } : {})}
+        description="Tasks grouped by spec, ordered by how close they are to shipped. Author here or import from git — lifecycle derives from delivery either way."
+        {...(data
+          ? {
+              actions: (
+                <div className="flex items-center gap-5">
+                  {!empty ? <HeaderStats tasks={data.tasks} /> : null}
+                  <WorkCreateMenu orgId={orgId} specs={data.specs} onCreated={reload} />
+                </div>
+              ),
+            }
+          : {})}
       />
       {body}
     </Screen>
@@ -154,17 +166,31 @@ function WorkSummary({
   onMutated: () => void;
 }) {
   const groups = groupTasksBySpec(data.tasks);
-  const specTitles = new Map(data.specs.map((s) => [s.key, s.title]));
+  const specsByKey = new Map(data.specs.map((s) => [s.key, s]));
+  // A spec with no tasks yet still renders (you can now create one in the
+  // console and write its doc before any task exists).
+  const grouped = new Set(groups.map((g) => g.spec));
+  const emptySpecs = data.specs.filter((s) => !grouped.has(s.key));
 
   return (
     <div className="mt-[30px] flex flex-col gap-[26px]">
+      {data.initiatives.length > 0 ? <Initiatives initiatives={data.initiatives} orgId={orgId} onMutated={onMutated} /> : null}
       {data.drift.length > 0 ? <DriftInbox drift={data.drift} /> : null}
       {data.suggestions.length > 0 ? <Suggestions suggestions={data.suggestions} /> : null}
       {groups.map((group) => (
         <SpecGroupSection
           key={group.spec ?? "__inbox__"}
           group={group}
-          {...(group.spec ? { title: specTitles.get(group.spec) } : {})}
+          {...(group.spec ? { spec: specsByKey.get(group.spec) } : {})}
+          orgId={orgId}
+          onMutated={onMutated}
+        />
+      ))}
+      {emptySpecs.map((s) => (
+        <SpecGroupSection
+          key={s.key}
+          group={{ spec: s.key, tasks: [] }}
+          spec={s}
           orgId={orgId}
           onMutated={onMutated}
         />
@@ -175,15 +201,18 @@ function WorkSummary({
 
 function SpecGroupSection({
   group,
-  title,
+  spec,
   orgId,
   onMutated,
 }: {
   group: SpecGroup;
-  title?: string | undefined;
+  spec?: WorkSpecView | undefined;
   orgId: string;
   onMutated: () => void;
 }) {
+  const title = spec?.title;
+  const [docOpen, setDocOpen] = React.useState(false);
+  const [renameOpen, setRenameOpen] = React.useState(false);
   const total = group.tasks.length;
   const done = group.tasks.filter(
     (t) => t.lifecycle.rung === "released" || t.lifecycle.rung === "done",
@@ -209,6 +238,24 @@ function SpecGroupSection({
           {total} {total === 1 ? "task" : "tasks"}
           {group.spec ? "" : " · no spec yet"}
         </span>
+        {group.spec && spec ? (
+          <span className="flex shrink-0 items-center gap-1.5">
+            <button
+              type="button"
+              onClick={() => setDocOpen(true)}
+              className="rounded px-1.5 py-0.5 text-[11.5px] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+            >
+              Doc{spec.docRef ? "" : " +"}
+            </button>
+            <button
+              type="button"
+              onClick={() => setRenameOpen(true)}
+              className="rounded px-1.5 py-0.5 text-[11.5px] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+            >
+              Rename
+            </button>
+          </span>
+        ) : null}
         {group.spec && total > 0 ? (
           <span
             aria-hidden
@@ -221,13 +268,108 @@ function SpecGroupSection({
           </span>
         ) : null}
       </div>
+      {total > 0 ? (
+        <ListCard>
+          <ul>
+            {group.tasks.map((task) => (
+              <TaskRow key={task.key} task={task} orgId={orgId} onMutated={onMutated} />
+            ))}
+          </ul>
+        </ListCard>
+      ) : (
+        <ListCard>
+          <div className="px-5 py-4 text-[12.5px] text-muted-foreground">
+            No tasks yet — create one from the New menu, or write the doc first.
+          </div>
+        </ListCard>
+      )}
+      {group.spec && spec ? (
+        <>
+          <SpecDocSheet
+            orgId={orgId}
+            specKey={group.spec}
+            docRef={spec.docRef}
+            open={docOpen}
+            onOpenChange={setDocOpen}
+            onMutated={onMutated}
+          />
+          <EditWorkItemDialog
+            orgId={orgId}
+            itemKey={group.spec}
+            currentTitle={title ?? group.spec}
+            open={renameOpen}
+            onOpenChange={setRenameOpen}
+            onSaved={onMutated}
+          />
+        </>
+      ) : null}
+    </section>
+  );
+}
+
+/* ── Initiatives (v3 PM0: envelope-only groupings; no rung, no contract) ── */
+
+function Initiatives({
+  initiatives,
+  orgId,
+  onMutated,
+}: {
+  initiatives: WorkSummaryResponse["initiatives"];
+  orgId: string;
+  onMutated: () => void;
+}) {
+  const [editing, setEditing] = React.useState<string | null>(null);
+  const current = initiatives.find((i) => i.key === editing);
+  return (
+    <section>
+      <div className="mb-2.5 flex flex-wrap items-baseline gap-x-2.5 gap-y-0.5">
+        <span className="text-[12.5px] font-semibold text-muted-foreground">Initiatives</span>
+        <span className="text-[11.5px] text-muted-foreground/85">
+          strategic groupings — progress is a rollup, never a number anyone types
+        </span>
+      </div>
       <ListCard>
-        <ul>
-          {group.tasks.map((task) => (
-            <TaskRow key={task.key} task={task} orgId={orgId} onMutated={onMutated} />
-          ))}
-        </ul>
+        {initiatives.map((i) => (
+          <div
+            key={i.key}
+            className="flex items-baseline gap-3 border-t border-border/50 px-5 py-2.5 first:border-t-0"
+          >
+            <span className="min-w-[56px] shrink-0 font-mono text-[11.5px] text-secondary-foreground">
+              {i.key}
+            </span>
+            <span className="min-w-0 flex-1 truncate text-[13px]">{i.title}</span>
+            {i.description ? (
+              <span className="hidden min-w-0 flex-1 truncate text-[12px] text-muted-foreground sm:block">
+                {i.description}
+              </span>
+            ) : null}
+            <button
+              type="button"
+              onClick={() => setEditing(i.key)}
+              className="shrink-0 rounded px-1.5 py-0.5 text-[11.5px] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+            >
+              Edit
+            </button>
+          </div>
+        ))}
       </ListCard>
+      {current ? (
+        <EditWorkItemDialog
+          orgId={orgId}
+          itemKey={current.key}
+          currentTitle={current.title}
+          currentDescription={current.description}
+          withDescription
+          open
+          onOpenChange={(o) => {
+            if (!o) setEditing(null);
+          }}
+          onSaved={() => {
+            setEditing(null);
+            onMutated();
+          }}
+        />
+      ) : null}
     </section>
   );
 }
@@ -265,13 +407,29 @@ function TaskRow({
   onMutated: () => void;
 }) {
   const lc = task.lifecycle;
+  const [renameOpen, setRenameOpen] = React.useState(false);
   return (
     <li className="group border-t border-border/50 px-5 py-3 transition-colors duration-100 first:border-t-0 hover:bg-muted/60">
       <div className="flex min-h-[20px] flex-wrap items-center gap-x-3 gap-y-1.5">
         <span className="min-w-[56px] shrink-0 font-mono text-[11.5px] text-muted-foreground/85">
           {task.key}
         </span>
-        <span className="min-w-0 flex-1 truncate text-[13.5px]">{task.title}</span>
+        <button
+          type="button"
+          onClick={() => setRenameOpen(true)}
+          className="min-w-0 flex-1 truncate text-left text-[13.5px] hover:underline decoration-border underline-offset-2"
+          title="Edit title"
+        >
+          {task.title}
+        </button>
+        <EditWorkItemDialog
+          orgId={orgId}
+          itemKey={task.key}
+          currentTitle={task.title}
+          open={renameOpen}
+          onOpenChange={setRenameOpen}
+          onSaved={onMutated}
+        />
         <TaskActions orgId={orgId} task={task} onMutated={onMutated} />
         {lc.pinned ? (
           <span
@@ -358,11 +516,11 @@ function EmptyWork() {
     <div className="mt-[30px] rounded-xl border bg-card px-6 py-14 text-center">
       <div className="text-[13.5px] font-medium">Nothing here yet</div>
       <p className="mx-auto mt-1.5 max-w-[460px] text-[12.5px] leading-relaxed text-muted-foreground">
-        Import a specs tree with{" "}
+        Create a spec or task from the New menu above, or import a specs tree with{" "}
         <code className="rounded bg-muted px-1 py-0.5 font-mono text-[11px] text-foreground">
           orun work import specs/ --workspace …
         </code>{" "}
-        — lifecycle derives from delivery history, not from anything you type.
+        — either way, lifecycle derives from delivery history, not from anything you type.
       </p>
     </div>
   );

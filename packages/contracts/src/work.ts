@@ -89,9 +89,19 @@ export interface WorkSuggestionView {
   taskKeys: string[];
 }
 
+export interface WorkInitiativeView {
+  key: string;
+  title: string;
+  description?: string | undefined;
+  createdBy: WorkActor;
+  createdAt?: string | undefined;
+}
+
 export interface WorkSummaryResponse {
   specs: WorkSpecView[];
   tasks: WorkTaskView[];
+  /** v3 (PM0): strategic groupings — envelope-only, no contract, no rung. */
+  initiatives: WorkInitiativeView[];
   drift: WorkDriftView[];
   suggestions: WorkSuggestionView[];
   /** Cursors of the two logs at fold time (the sync/bootstrap positions). */
@@ -150,6 +160,51 @@ export interface WorkContractRequest {
   contract: WorkContract;
 }
 
+export interface CreateWorkInitiativeRequest {
+  slug: string;
+  title: string;
+  description?: string | undefined;
+}
+
+export interface EditWorkItemRequest {
+  title?: string | undefined;
+  description?: string | undefined; // initiatives only
+  labels?: Record<string, string> | undefined;
+}
+
+// ── Cloud documents (orun-work-v3 PM0; content-addressed, fork-visible) ─────
+
+export interface PutWorkDocRequest {
+  body: string;
+  /** The revision this edit was made on; a stale parent still applies and
+   *  the fork stays visible in the history (fork-visible LWW, design §1.4). */
+  parent?: string | undefined;
+}
+
+export interface PutWorkDocResponse {
+  revision: string;
+  parent?: string | undefined;
+  /** false = the body hashed to the current doc_ref; nothing was written. */
+  created: boolean;
+  seq: number | null; // the doc_edited event's seq (null on no-op)
+}
+
+export interface WorkDocRevisionView {
+  revision: string;
+  parent?: string | undefined;
+  specKey: string;
+  createdBy: WorkActor;
+  createdAt: string;
+}
+
+export interface GetWorkDocResponse extends WorkDocRevisionView {
+  body: string;
+}
+
+export interface WorkDocHistoryResponse {
+  revisions: WorkDocRevisionView[];
+}
+
 export interface WorkMutationResponse {
   key: string;
   seq: number; // the appended coordination event's seq
@@ -161,6 +216,10 @@ export interface CreateWorkTaskResponse extends WorkMutationResponse {
 
 export interface CreateWorkSpecResponse extends WorkMutationResponse {
   spec: WorkSpecView;
+}
+
+export interface CreateWorkInitiativeResponse extends WorkMutationResponse {
+  initiative: WorkInitiativeView;
 }
 
 // ── Import (the dogfood path: `orun work import` applies its dry-run plan) ──

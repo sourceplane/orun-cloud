@@ -10,6 +10,8 @@ import type {
   Actor,
   Contract,
   CoordinationEvent,
+  DocRevision,
+  Initiative,
   Observation,
   Rung,
   Spec,
@@ -26,6 +28,14 @@ export interface CreateSpecInput {
   title: string;
   docRef?: string | undefined;
   labels?: Record<string, string> | undefined;
+  actor: Actor;
+  at?: string | undefined;
+}
+
+export interface CreateInitiativeInput {
+  slug: string;
+  title: string;
+  description?: string | undefined;
   actor: Actor;
   at?: string | undefined;
 }
@@ -97,6 +107,26 @@ export interface CommitOutcome {
   key: string;
 }
 
+export interface PutDocInput {
+  specKey: string;
+  body: string; // markdown; CRLF is normalized to LF before hashing
+  /** The revision this edit was made on. Defaults to the spec's current
+   *  doc_ref. A stale parent still applies — the fork stays visible in the
+   *  history (orun-work-v3 §1.4: fork-visible last-writer-wins). */
+  parent?: string | undefined;
+  actor: Actor;
+  at?: string | undefined;
+}
+
+export interface PutDocOutcome {
+  revision: string;
+  parent?: string | undefined;
+  /** false when the body hashes to the spec's current doc_ref — an
+   *  identical save is a no-op and appends NO event. */
+  created: boolean;
+  event: CoordinationEvent | null;
+}
+
 export type IngestObservationInput = Omit<Observation, "seq" | "obsId">;
 
 export interface IngestOutcome {
@@ -107,6 +137,7 @@ export interface IngestOutcome {
 export interface WorkRepository {
   createSpec(scope: WorkspaceScope, input: CreateSpecInput): Promise<CommitOutcome & { spec: Spec }>;
   createTask(scope: WorkspaceScope, input: CreateTaskInput): Promise<CommitOutcome & { task: Task }>;
+  createInitiative(scope: WorkspaceScope, input: CreateInitiativeInput): Promise<CommitOutcome & { initiative: Initiative }>;
   editItem(scope: WorkspaceScope, input: EditItemInput): Promise<CommitOutcome>;
   editContract(scope: WorkspaceScope, input: EditContractInput): Promise<CommitOutcome>;
   assign(scope: WorkspaceScope, input: AssignInput): Promise<CommitOutcome>;
@@ -118,6 +149,14 @@ export interface WorkRepository {
 
   /** The only fact writer — named ingesters call this; mutators cannot. */
   ingestObservation(scope: WorkspaceScope, input: IngestObservationInput): Promise<IngestOutcome>;
+
+  /** Cloud document revisions (orun-work-v3 PM0). Content-addressed; the
+   *  digest form matches the imported doc_ref, so `orun spec pull` seals a
+   *  cloud doc unchanged (V3-2). Bodies are content, not envelope — they
+   *  live beside the logs, keyed by digest. */
+  putDocRevision(scope: WorkspaceScope, input: PutDocInput): Promise<PutDocOutcome>;
+  getDocRevision(scope: WorkspaceScope, specKey: string, revision?: string): Promise<DocRevision>;
+  listDocHistory(scope: WorkspaceScope, specKey: string): Promise<Omit<DocRevision, "body">[]>;
 
   /** Everything the fold needs: envelopes + both logs, seq-ordered. */
   getWorkSet(scope: WorkspaceScope): Promise<WorkSet>;

@@ -42,8 +42,10 @@ export function rungIndex(r: Rung): number | undefined {
   return RUNG_ORDER[r];
 }
 
-/** The 9-kind coordination vocabulary. There is deliberately NO lifecycle
- *  write kind — the category "someone asserts a rung" is unrepresentable. */
+/** The closed coordination vocabulary (9 v2 kinds + 10 v3 intent/conversation
+ *  kinds — orun-work-v3 design §1.2). There is deliberately NO lifecycle
+ *  write kind — the category "someone asserts a rung" is unrepresentable.
+ *  V3-1: every addition here must be intent or conversation, never fact. */
 export const EVENT_KINDS = [
   "item_created",
   "item_edited",
@@ -54,6 +56,17 @@ export const EVENT_KINDS = [
   "ordered",
   "pinned",
   "canceled",
+  // v3 (PM0 lands the vocabulary; mutators arrive per-milestone):
+  "doc_edited", // {revision, parent?} — body in work.doc_revisions
+  "reaction_added", // {targetEvent, emoji}
+  "reaction_removed", // {targetEvent, emoji}
+  "labeled", // {label}
+  "unlabeled", // {label}
+  "prioritized", // {priority}
+  "estimated", // {points}
+  "cycle_set", // {cycle} — null clears
+  "related", // {rel: blocks|parent|relates, target}
+  "unrelated", // {rel, target}
 ] as const;
 export type EventKind = (typeof EVENT_KINDS)[number];
 
@@ -118,6 +131,32 @@ export interface Task {
   contract?: Contract | undefined;
   createdBy: Actor;
   createdAt?: string | undefined;
+}
+
+/** An initiative is envelope-only strategic grouping (orun-work-v3 §1.1):
+ *  no contract, no rung — its progress is a rollup of member specs. */
+export interface Initiative {
+  apiVersion: string;
+  kind: "Initiative";
+  id?: string | undefined;
+  key: string;
+  workspace: string;
+  title: string;
+  description?: string | undefined;
+  createdBy: Actor;
+  createdAt?: string | undefined;
+}
+
+/** A content-addressed cloud document revision (orun-work-v3 §1.4, V3-2).
+ *  The digest form matches v2's imported doc_ref exactly (`sha256:<hex>`),
+ *  so sealing/`orun spec pull` needs no new path. */
+export interface DocRevision {
+  revision: string; // 'sha256:<hex>' of the canonical body
+  parent?: string | undefined; // prior revision; forks are visible
+  specKey: string;
+  body: string;
+  createdBy: Actor;
+  createdAt: string;
 }
 
 export interface CoordinationEvent {
