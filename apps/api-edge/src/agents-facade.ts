@@ -13,6 +13,7 @@ const ORG_AGENTS_PROFILES_RE = /^\/v1\/organizations\/[^/]+\/agents\/profiles$/;
 const ORG_AGENTS_SESSIONS_RE = /^\/v1\/organizations\/[^/]+\/agents\/sessions$/;
 const ORG_AGENTS_SESSION_RE = /^\/v1\/organizations\/[^/]+\/agents\/sessions\/[^/]+$/;
 const ORG_AGENTS_SESSION_EVENTS_RE = /^\/v1\/organizations\/[^/]+\/agents\/sessions\/[^/]+\/events$/;
+const ORG_AGENTS_SESSION_PROVISION_RE = /^\/v1\/organizations\/[^/]+\/agents\/sessions\/[^/]+\/provision$/;
 // Provider connections (AG12 §10): BYO Daytona / Anthropic keys. The apiKey in
 // the create body transits this facade exactly once, straight to the worker —
 // never logged, never cached (idempotency stores replay by key, not body).
@@ -28,6 +29,7 @@ export function isAgentsRoute(pathname: string): boolean {
     ORG_AGENTS_SESSIONS_RE.test(pathname) ||
     ORG_AGENTS_SESSION_RE.test(pathname) ||
     ORG_AGENTS_SESSION_EVENTS_RE.test(pathname) ||
+    ORG_AGENTS_SESSION_PROVISION_RE.test(pathname) ||
     ORG_AGENTS_PROVIDERS_RE.test(pathname) ||
     ORG_AGENTS_PROVIDER_RE.test(pathname) ||
     ORG_AGENTS_PROVIDER_VERIFY_RE.test(pathname)

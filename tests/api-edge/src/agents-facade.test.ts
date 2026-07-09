@@ -65,10 +65,11 @@ describe("api-edge agents facade", () => {
     it("matches the profiles collection", () => {
       expect(isAgentsRoute("/v1/organizations/org_abc/agents/profiles")).toBe(true);
     });
-    it("matches the sessions collection + item + events", () => {
+    it("matches the sessions collection + item + events + provision", () => {
       expect(isAgentsRoute("/v1/organizations/org_abc/agents/sessions")).toBe(true);
       expect(isAgentsRoute("/v1/organizations/org_abc/agents/sessions/as_1")).toBe(true);
       expect(isAgentsRoute("/v1/organizations/org_abc/agents/sessions/as_1/events")).toBe(true);
+      expect(isAgentsRoute("/v1/organizations/org_abc/agents/sessions/as_1/provision")).toBe(true);
     });
     it("matches the provider connections collection + item + verify (AG12)", () => {
       expect(isAgentsRoute("/v1/organizations/org_abc/agents/providers")).toBe(true);

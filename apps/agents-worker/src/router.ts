@@ -15,6 +15,7 @@ import { handleHealth } from "./handlers/health.js";
 import { handleCreateProfile, handleListProfiles } from "./handlers/profiles.js";
 import { handleCreateSession, handleGetSession, handleListSessions } from "./handlers/sessions.js";
 import { handleListSessionEvents } from "./handlers/events.js";
+import { handleProvisionSession } from "./handlers/provision.js";
 import {
   handleCreateConnection,
   handleDeleteConnection,
@@ -52,6 +53,7 @@ const PROFILES_RE = /^\/v1\/organizations\/([^/]+)\/agents\/profiles$/;
 const SESSIONS_RE = /^\/v1\/organizations\/([^/]+)\/agents\/sessions$/;
 const SESSION_RE = /^\/v1\/organizations\/([^/]+)\/agents\/sessions\/([^/]+)$/;
 const SESSION_EVENTS_RE = /^\/v1\/organizations\/([^/]+)\/agents\/sessions\/([^/]+)\/events$/;
+const SESSION_PROVISION_RE = /^\/v1\/organizations\/([^/]+)\/agents\/sessions\/([^/]+)\/provision$/;
 const PROVIDERS_RE = /^\/v1\/organizations\/([^/]+)\/agents\/providers$/;
 const PROVIDER_RE = /^\/v1\/organizations\/([^/]+)\/agents\/providers\/([^/]+)$/;
 const PROVIDER_VERIFY_RE = /^\/v1\/organizations\/([^/]+)\/agents\/providers\/([^/]+)\/verify$/;
@@ -74,6 +76,7 @@ export async function route(request: Request, env: Env, injectedDeps?: AgentsDep
       SESSIONS_RE.test(url.pathname) ||
       SESSION_RE.test(url.pathname) ||
       SESSION_EVENTS_RE.test(url.pathname) ||
+      SESSION_PROVISION_RE.test(url.pathname) ||
       PROVIDERS_RE.test(url.pathname) ||
       PROVIDER_RE.test(url.pathname) ||
       PROVIDER_VERIFY_RE.test(url.pathname);
@@ -135,6 +138,14 @@ async function dispatch(
     const orgId = m[1]!;
     if (request.method === "GET") return handleListConnections(request, deps, orgId, actor, requestId);
     if (request.method === "POST") return handleCreateConnection(request, deps, orgId, actor, requestId);
+    return methodNotAllowed(requestId);
+  }
+
+  m = SESSION_PROVISION_RE.exec(url.pathname);
+  if (m) {
+    const orgId = m[1]!;
+    const sessionId = m[2]!;
+    if (request.method === "POST") return handleProvisionSession(deps, orgId, sessionId, actor, requestId);
     return methodNotAllowed(requestId);
   }
 
