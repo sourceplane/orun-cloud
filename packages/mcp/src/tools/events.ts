@@ -27,7 +27,7 @@ export const eventsSearchTool = defineTool({
     cursor: cursorArg.optional(),
     limit: limitArg.optional(),
   }),
-  annotations: { readOnlyHint: true, idempotentHint: true },
+  annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true },
   handler: async (input, ctx) => {
     if (input.eventId !== undefined) {
       const res = await ctx.sdk.events.getEvent(input.workspace, input.eventId);

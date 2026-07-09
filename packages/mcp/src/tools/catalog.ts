@@ -40,7 +40,7 @@ export const catalogSearchTool = defineTool({
     cursor: cursorArg.optional(),
     limit: limitArg.optional(),
   }),
-  annotations: { readOnlyHint: true, idempotentHint: true },
+  annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true },
   handler: async (input, ctx) => {
     const page = await ctx.sdk.state.listOrgCatalogEntities(
       input.workspace,
@@ -78,7 +78,7 @@ export const catalogGetEntityTool = defineTool({
       .optional(),
     environment: z.string().min(1).describe("Optional environment slug filter.").optional(),
   }),
-  annotations: { readOnlyHint: true, idempotentHint: true },
+  annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true },
   handler: async (input, ctx) => {
     // SC0's `state.getOrgCatalogEntity` has not shipped (epic saas-mcp-server,
     // risk D2): emulate the getter by exact-filtering the OV6 list endpoint.
@@ -128,7 +128,7 @@ export const catalogReadDocTool = defineTool({
     cursor: cursorArg.optional(),
     limit: limitArg.optional(),
   }),
-  annotations: { readOnlyHint: true, idempotentHint: true },
+  annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true },
   handler: async (input, ctx) => {
     if (input.digest !== undefined) {
       const body = await ctx.sdk.state.readCatalogDoc(input.workspace, input.digest);

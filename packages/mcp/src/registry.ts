@@ -14,13 +14,22 @@ import {
   catalogReadDocTool,
   catalogSearchTool,
 } from "./tools/catalog.js";
-import { configReadTool, secretsListTool } from "./tools/config.js";
+import { configReadTool, flagSetTool, secretsListTool } from "./tools/config.js";
 import { eventsSearchTool } from "./tools/events.js";
+import { memberInviteTool } from "./tools/members.js";
 import { quotaCheckTool, usageSummaryTool } from "./tools/metering.js";
-import { projectsListTool } from "./tools/projects.js";
+import {
+  environmentCreateTool,
+  projectCreateTool,
+  projectsListTool,
+} from "./tools/projects.js";
 import { runsGetTool, runsListTool, runsReadLogsTool } from "./tools/runs.js";
 import { securityEventsListTool } from "./tools/securityEvents.js";
-import { webhookDeliveriesListTool } from "./tools/webhooks.js";
+import {
+  webhookCreateTool,
+  webhookDeliveriesListTool,
+  webhookDeliveryReplayTool,
+} from "./tools/webhooks.js";
 import { whoamiTool } from "./tools/whoami.js";
 import { workspacesListTool } from "./tools/workspaces.js";
 
@@ -37,7 +46,11 @@ export {
   type ToolResult,
 } from "./tool.js";
 
-/** Every registered tool, in the order clients see them (orientation first). */
+/**
+ * Every registered tool, in the order clients see them (orientation first,
+ * the MCP5 write set last). 19 reads + 6 writes = 25 — the locked budget is
+ * now exactly consumed: a new tool must displace an existing one.
+ */
 export const allTools: ReadonlyArray<McpTool> = [
   whoamiTool,
   workspacesListTool,
@@ -58,7 +71,24 @@ export const allTools: ReadonlyArray<McpTool> = [
   configReadTool,
   secretsListTool,
   webhookDeliveriesListTool,
+  // Write tools (MCP5, design §4 — this set ONLY; api-key/billing/team-grant/
+  // admin writes and all work-plane surfaces are deliberately excluded).
+  projectCreateTool,
+  environmentCreateTool,
+  flagSetTool,
+  webhookCreateTool,
+  webhookDeliveryReplayTool,
+  memberInviteTool,
 ];
+
+/**
+ * The read-only roster — what a `readOnly` connection (design §7) advertises
+ * and serves. Shared by `createMcpServer`, the CLI `--read-only` flag, and
+ * the remote worker (which stays read-only until deliberately enabled).
+ */
+export const readOnlyTools: ReadonlyArray<McpTool> = allTools.filter(
+  (tool) => tool.annotations.readOnlyHint === true,
+);
 
 /** Look a tool up by its registered name; `undefined` when absent. */
 export function getTool(name: string): McpTool | undefined {

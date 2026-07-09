@@ -1,11 +1,15 @@
 import type {
+  CreateFeatureFlagRequest,
   PublicFeatureFlag,
   PublicSecretMetadata,
   PublicSetting,
+  UpdateFeatureFlagRequest,
 } from "@saas/contracts/config";
 import { z } from "zod";
 
-import { configScopeFromInput, projectArg, scopedShape } from "../scope.js";
+import { ToolInputError } from "../errors.js";
+import { idempotencyKeyArg, resolveIdempotencyKey } from "../idempotency.js";
+import { compact, configScopeFromInput, projectArg, scopedShape } from "../scope.js";
 import { defineTool } from "../tool.js";
 
 const configScopeShape = {
@@ -26,7 +30,7 @@ export const configReadTool = defineTool({
   description:
     "Read the settings and feature flags at one config scope — organization (default), project, or project+environment. Never returns secret values; for secret metadata use `secrets_list`.",
   inputSchema: z.object(configScopeShape),
-  annotations: { readOnlyHint: true, idempotentHint: true },
+  annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true },
   handler: async (input, ctx) => {
     const scope = configScopeFromInput(input);
     const [settings, flags] = await Promise.all([
@@ -55,7 +59,7 @@ export const secretsListTool = defineTool({
   description:
     "List secret METADATA (keys, versions, rotation state) at one config scope. Secret values are write-only platform-wide: no tool, flag, or argument can return one. Use `config_read` for settings/flags.",
   inputSchema: z.object(configScopeShape),
-  annotations: { readOnlyHint: true, idempotentHint: true },
+  annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true },
   handler: async (input, ctx) => {
     const res = await ctx.sdk.config.listSecretMetadata(configScopeFromInput(input));
     // Defense-in-depth for the no-secret-values invariant (design §7): the
@@ -73,6 +77,75 @@ export const secretsListTool = defineTool({
     };
     return {
       summary: `${res.secrets.length} secret(s) — metadata only, values are never readable`,
+      data,
+    };
+  },
+});
+
+// ---------------------------------------------------------------------------
+// Write tool (MCP5, design §4/§7). Same public feature-flag mutations as the
+// console/CLI — policy-gated, audited, idempotency-keyed. There is no secret
+// write here by design: the MCP plane never touches secret values.
+// ---------------------------------------------------------------------------
+
+export const flagSetTool = defineTool({
+  name: "flag_set",
+  title: "Set feature flag",
+  description:
+    "Set a feature flag at one config scope — organization (default), project, or project+environment: updates `enabled` and/or `value` for `flagKey`, creating the flag at that scope when it does not exist yet. This is a WRITE: policy-gated (builder-or-higher role) and audited like any console/CLI mutation; retries are replay-safe (an Idempotency-Key is generated per call unless you supply `idempotencyKey`). To read flags use `config_read`.",
+  inputSchema: z.object({
+    ...configScopeShape,
+    flagKey: z.string().min(1).describe("Flag key to set, e.g. `checkout.new_flow`."),
+    enabled: z
+      .boolean()
+      .describe("Turn the flag on or off. At least one of `enabled`/`value` is required.")
+      .optional(),
+    value: z
+      .unknown()
+      .describe("Optional JSON payload served with the flag (any JSON value).")
+      .optional(),
+    idempotencyKey: idempotencyKeyArg.optional(),
+  }),
+  annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
+  handler: async (input, ctx) => {
+    if (input.enabled === undefined && input.value === undefined) {
+      throw new ToolInputError("set at least one of `enabled` or `value`");
+    }
+    const scope = configScopeFromInput(input);
+    const idempotencyKey = resolveIdempotencyKey(input.idempotencyKey);
+    // Set semantics over the SDK's create/update pair: the scope's flag list
+    // is scope-exact, so a `flagKey` match means update-in-place.
+    const listed = await ctx.sdk.config.listFeatureFlags(scope);
+    const existing = listed.featureFlags.find((f) => f.flagKey === input.flagKey);
+    if (existing !== undefined) {
+      const body = compact<UpdateFeatureFlagRequest>({
+        enabled: input.enabled,
+        value: input.value,
+      });
+      const res = await ctx.sdk.config.updateFeatureFlag(scope, existing.id, body, {
+        idempotencyKey,
+      });
+      const data = { featureFlag: res.featureFlag, action: "updated" } satisfies {
+        featureFlag: PublicFeatureFlag;
+        action: string;
+      };
+      return {
+        summary: `updated flag ${res.featureFlag.flagKey} at ${scope.kind} scope (enabled: ${res.featureFlag.enabled})`,
+        data,
+      };
+    }
+    const body = compact<CreateFeatureFlagRequest>({
+      flagKey: input.flagKey,
+      enabled: input.enabled,
+      value: input.value,
+    });
+    const res = await ctx.sdk.config.createFeatureFlag(scope, body, { idempotencyKey });
+    const data = { featureFlag: res.featureFlag, action: "created" } satisfies {
+      featureFlag: PublicFeatureFlag;
+      action: string;
+    };
+    return {
+      summary: `created flag ${res.featureFlag.flagKey} at ${scope.kind} scope (enabled: ${res.featureFlag.enabled})`,
       data,
     };
   },

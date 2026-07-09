@@ -87,7 +87,7 @@ additive surface over shipped rails.
 | MCP2 | Remote server: `apps/mcp-worker` (Streamable HTTP, stateless-first) with `sk_` API-key bearer auth; own hostname; component intent | ✅ Shipped (stateless JSON transport; `mcp.<domain>` hostname is an infra follow-up) |
 | MCP3 | OAuth 2.1 for remote clients: protected-resource metadata + authorization server endpoints on identity-worker (rides OP1), PKCE S256 + vetted public-client allow-list (D1 → Option A, no open DCR) | ✅ Shipped (console consent + authorize/token endpoints over OP1 sessions) |
 | MCP4 | Resources & prompts: catalog entity overviews and run logs as MCP resources; packaged prompts (investigate-failed-run, access-review, usage-review) | ✅ Shipped (2 resource templates + 4 prompts, both transports via `createMcpServer`) |
-| MCP5 | Write tools (gated): task-shaped mutations with `Idempotency-Key`, tool annotations, `via: mcp` audit provenance, read-only mode enforcement | 🗓️ Planned |
+| MCP5 | Write tools (gated): task-shaped mutations with `Idempotency-Key`, tool annotations, `via: mcp` audit provenance, read-only mode enforcement | ✅ Shipped (6 write tools — budget now exactly 25/25; remote stays read-only pending a deliberate enable) |
 | MCP6 | Metering + entitlement: `mcp.tool_call` usage events, `feature.mcp_server` seam + U7 upgrade UX, quota checks | 🗓️ Planned (decision: free-vs-paid line) |
 | MCP7 | Console "Connect an agent" surface: install snippets, key minting with per-key tool scope, connection status; docs | 🗓️ Planned |
 | MCP8 | Conformance + agent-eval harness: `tests/mcp` contract suite, MCP Inspector smoke in CI, scripted agent-task evals, tool-budget guard | 🗓️ Planned |

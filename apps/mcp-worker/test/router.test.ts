@@ -1,4 +1,4 @@
-import { allTools } from "@saas/mcp";
+import { allTools, readOnlyTools } from "@saas/mcp";
 import { describe, expect, it } from "vitest";
 
 import type { McpWorkerDeps } from "../src/deps.js";
@@ -46,11 +46,17 @@ function initializeMessage(id = 1): Record<string, unknown> {
 }
 
 /** SDK-envelope fetch stub for api-edge routes the whoami tool calls. */
-function apiEdgeStub(calls: Array<{ url: string; authorization: string | null }>): McpWorkerDeps {
+function apiEdgeStub(
+  calls: Array<{ url: string; authorization: string | null; clientSurface: string | null }>,
+): McpWorkerDeps {
   const stub: typeof fetch = async (input, init) => {
     const request = new Request(input, init);
     const { pathname } = new URL(request.url);
-    calls.push({ url: request.url, authorization: request.headers.get("authorization") });
+    calls.push({
+      url: request.url,
+      authorization: request.headers.get("authorization"),
+      clientSurface: request.headers.get("x-client-surface"),
+    });
     const envelope = (data: unknown) =>
       Response.json({ data, meta: { requestId: "req_stub", cursor: null } });
     if (pathname === "/v1/auth/profile") {
@@ -97,16 +103,27 @@ describe("mcp-worker route", () => {
     expect(res.status).toBe(200);
   });
 
-  it("lists all 19 read-only tools", async () => {
+  it("lists exactly the 19 read-only tools — never the MCP5 write set (readOnly remote)", async () => {
     const body = await rpc({ jsonrpc: "2.0", id: 2, method: "tools/list", params: {} });
     const tools = body.result?.["tools"] as Array<{ name: string }>;
     expect(tools.length).toBe(19);
-    expect(tools.length).toBe(allTools.length);
-    expect(tools.map((t) => t.name)).toContain("whoami");
+    expect(tools.length).toBe(readOnlyTools.length);
+    const names = tools.map((t) => t.name);
+    expect(names).toContain("whoami");
+    // The registry now carries write tools; the remote surface must not.
+    for (const tool of allTools) {
+      if (tool.annotations.readOnlyHint !== true) {
+        expect(names, tool.name).not.toContain(tool.name);
+      }
+    }
   });
 
   it("executes whoami via the SDK against a stubbed api-edge, forwarding the bearer verbatim", async () => {
-    const calls: Array<{ url: string; authorization: string | null }> = [];
+    const calls: Array<{
+      url: string;
+      authorization: string | null;
+      clientSurface: string | null;
+    }> = [];
     const body = await rpc(
       { jsonrpc: "2.0", id: 3, method: "tools/call", params: { name: "whoami", arguments: {} } },
       apiEdgeStub(calls),
@@ -120,6 +137,9 @@ describe("mcp-worker route", () => {
     for (const call of calls) {
       expect(call.url.startsWith("https://api.test/")).toBe(true);
       expect(call.authorization).toBe("Bearer sk_test_token");
+      // Provenance (MCP5, design §7): every SDK call from the MCP plane is
+      // marked so audit queries can segment agent traffic.
+      expect(call.clientSurface).toBe("mcp");
     }
   });
 

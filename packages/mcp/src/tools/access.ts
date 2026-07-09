@@ -19,7 +19,7 @@ export const accessExplainTool = defineTool({
       .describe("Subject to explain (`usr_…` / `sp_…`). Defaults to the caller.")
       .optional(),
   }),
-  annotations: { readOnlyHint: true, idempotentHint: true },
+  annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true },
   handler: async (input, ctx) => {
     const [access, members, teams] = await Promise.all([
       ctx.sdk.teams.effectiveAccess(

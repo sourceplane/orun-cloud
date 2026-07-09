@@ -8,6 +8,7 @@
 
 export {
   allTools,
+  readOnlyTools,
   getTool,
   defineTool,
   executeTool,
@@ -24,8 +25,16 @@ export {
   applyWorkspaceDefault,
   SERVER_NAME,
   SERVER_VERSION,
+  CLIENT_SURFACE_HEADER,
+  CLIENT_SURFACE_VALUE,
   type CreateMcpServerOptions,
 } from "./server.js";
+
+export {
+  idempotencyKeyArg,
+  resolveIdempotencyKey,
+  deriveIdempotencyKey,
+} from "./idempotency.js";
 
 export {
   toErrorResult,

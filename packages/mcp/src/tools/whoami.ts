@@ -9,7 +9,7 @@ export const whoamiTool = defineTool({
   description:
     "Identify the authenticated actor and list the workspaces they belong to (with roles where the API reports them). Call this first to orient before any workspace-scoped tool; it takes no arguments.",
   inputSchema: z.object({}),
-  annotations: { readOnlyHint: true, idempotentHint: true },
+  annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true },
   handler: async (_input, ctx) => {
     const [profile, workspaces] = await Promise.all([
       ctx.sdk.auth.getProfile(),

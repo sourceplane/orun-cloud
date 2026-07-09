@@ -116,7 +116,7 @@ as context; each packaged prompt, run against a seeded org, produces a correct
 walkthrough using only registered tools; prompt text lives in `packages/mcp`
 with snapshot tests.
 
-## MCP5 — Write tools (gated) — 🗓️ Planned
+## MCP5 — Write tools (gated) — ✅ Shipped (see IMPLEMENTATION-STATUS.md)
 
 - The §4 write set: `project_create`, `environment_create`, `flag_set`,
   `webhook_create`, `webhook_delivery_replay`, `member_invite`.
