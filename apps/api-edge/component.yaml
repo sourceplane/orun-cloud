@@ -101,3 +101,4 @@ spec:
 # ci: trigger full-component verification (orun v2.12.0 upgrade — PR #183)
 # ci: trigger full-component verification (orun v2.15.0 upgrade)
 # ci: redeploy with live Hyperdrive wiring (BF6b convergence)
+# ci: redeploy — pick up the agents facade (deploys were blocked behind the agents-worker lane until #394)
