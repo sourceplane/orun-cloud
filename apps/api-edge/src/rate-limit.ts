@@ -60,7 +60,8 @@ export type RouteFamily =
   | "integrations"
   | "state"
   | "objects"
-  | "coordination";
+  | "coordination"
+  | "agents";
 
 interface BucketLimits {
   /** Bucket capacity (max tokens). */
@@ -115,6 +116,10 @@ const LIMITS: Record<RouteFamily, FamilyConfig> = {
     org: { limit: 300, windowSec: 60 },
   },
   config: {
+    identity: { limit: 60, windowSec: 60 },
+    org: { limit: 300, windowSec: 60 },
+  },
+  agents: {
     identity: { limit: 60, windowSec: 60 },
     org: { limit: 300, windowSec: 60 },
   },
