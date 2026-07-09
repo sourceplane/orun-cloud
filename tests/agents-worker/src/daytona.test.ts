@@ -75,23 +75,77 @@ describe("daytona sandbox adapter", () => {
     expect((calls[0]!.body as Record<string, unknown>).target).toBe("eu");
   });
 
-  it("execs through the toolbox with the secret env on the exec call only", async () => {
-    const { fetchImpl, calls } = fakeFetch(() => Response.json({}));
+  it("execs through a toolbox SESSION: wait-for-started → create session → runAsync exec", async () => {
+    // The regression this locks: the exec path is /toolbox/{id}/toolbox/…
+    // (doubled segment — the flat path 404s), and the long-running channel is
+    // the session api with runAsync (plain process/execute is sync, ~10s cap).
+    const { fetchImpl, calls } = fakeFetch();
     const p = createDaytonaProvider({ apiKey: "k", fetchImpl });
     await p.exec({ id: "sb_1", provider: "daytona" }, ["orun", "agent", "serve"], {
       env: { ANTHROPIC_API_KEY: "sk-ant-secret" },
     });
-    expect(calls[0]!.url).toBe(`${DEFAULT_DAYTONA_API}/toolbox/sb_1/process/execute`);
-    const body = calls[0]!.body as Record<string, unknown>;
-    expect(body.command).toBe("orun agent serve");
-    expect(body.env).toEqual({ ANTHROPIC_API_KEY: "sk-ant-secret" });
+    expect(calls.map((c) => `${c.method} ${c.url.slice(DEFAULT_DAYTONA_API.length)}`)).toEqual([
+      "GET /sandbox/sb_1",
+      "POST /toolbox/sb_1/toolbox/process/session",
+      "POST /toolbox/sb_1/toolbox/process/session/orun-agent/exec",
+    ]);
+    expect((calls[1]!.body as { sessionId: string }).sessionId).toBe("orun-agent");
+    const exec = calls[2]!.body as { command: string; runAsync: boolean };
+    expect(exec.runAsync).toBe(true);
+    // The api has no env field — secrets ride an export prefix on the command
+    // (the vendor SDK's own mechanism), never the create-time manifest.
+    expect(exec.command).toBe("export ANTHROPIC_API_KEY=sk-ant-secret; orun agent serve");
   });
 
-  it("quotes shell-unsafe exec arguments", async () => {
-    const { fetchImpl, calls } = fakeFetch(() => Response.json({}));
+  it("waits for the sandbox to start before any toolbox call", async () => {
+    let polls = 0;
+    const { fetchImpl, calls } = fakeFetch((_url, init) => {
+      if ((init.method ?? "GET") === "GET") {
+        polls++;
+        return Response.json({ id: "sb_1", state: polls < 3 ? "pulling_snapshot" : "started" });
+      }
+      return Response.json({});
+    });
+    const slept: number[] = [];
+    const p = createDaytonaProvider({
+      apiKey: "k",
+      fetchImpl,
+      sleepImpl: async (ms) => {
+        slept.push(ms);
+      },
+    });
+    await p.exec({ id: "sb_1", provider: "daytona" }, ["true"]);
+    expect(polls).toBe(3);
+    expect(slept.length).toBe(2);
+    expect(calls.filter((c) => c.method === "POST").length).toBe(2);
+  });
+
+  it("fails fast when the sandbox lands in a dead state instead of polling out the clock", async () => {
+    const { fetchImpl } = fakeFetch(() => Response.json({ id: "sb_1", state: "error" }));
+    const p = createDaytonaProvider({ apiKey: "k", fetchImpl, sleepImpl: async () => {} });
+    await expect(p.exec({ id: "sb_1", provider: "daytona" }, ["true"])).rejects.toThrow("box is error");
+  });
+
+  it("tolerates an already-created session (409) — a resume re-exec is idempotent", async () => {
+    const { fetchImpl, calls } = fakeFetch((url, init) =>
+      url.endsWith("/process/session") && init.method === "POST"
+        ? new Response("{}", { status: 409 })
+        : Response.json({ id: "sb_1", state: "started" }),
+    );
     const p = createDaytonaProvider({ apiKey: "k", fetchImpl });
-    await p.exec({ id: "sb_1", provider: "daytona" }, ["echo", "a b", "it's"]);
-    expect((calls[0]!.body as { command: string }).command).toBe("echo 'a b' 'it'\\''s'");
+    await p.exec({ id: "sb_1", provider: "daytona" }, ["true"]);
+    expect(calls.length).toBe(3); // 409 didn't abort; the exec still went out
+  });
+
+  it("quotes shell-unsafe exec arguments and env values", async () => {
+    const { fetchImpl, calls } = fakeFetch();
+    const p = createDaytonaProvider({ apiKey: "k", fetchImpl });
+    await p.exec({ id: "sb_1", provider: "daytona" }, ["echo", "a b", "it's"], {
+      env: { TOKEN: "v alue" },
+    });
+    expect((calls[2]!.body as { command: string }).command).toBe(
+      "export TOKEN='v alue'; echo 'a b' 'it'\\''s'",
+    );
   });
 
   it("maps snapshot/resume to provider stop/start and destroys with force", async () => {

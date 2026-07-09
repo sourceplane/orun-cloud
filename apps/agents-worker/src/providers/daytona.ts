@@ -24,7 +24,20 @@ export interface DaytonaConfig {
   target?: string;
   /** Injectable for tests; defaults to global fetch. */
   fetchImpl?: typeof fetch;
+  /** Injectable for tests; defaults to a real timer. */
+  sleepImpl?: (ms: number) => Promise<void>;
 }
+
+/** Session id for the supervisor process inside the sandbox (one per box). */
+const EXEC_SESSION = "orun-agent";
+
+/** Boot wait: sandboxes create asynchronously (creating/pulling_snapshot →
+ * started); toolbox calls 404 until the box is up. ~60s covers a cold pull. */
+const STARTED_POLL_MS = 2000;
+const STARTED_POLL_MAX = 30;
+
+/** States that will never reach `started` — fail fast instead of timing out. */
+const DEAD_STATES = new Set(["error", "build_failed", "destroyed", "destroying"]);
 
 interface DaytonaSandbox {
   id: string;
@@ -34,8 +47,9 @@ interface DaytonaSandbox {
 export function createDaytonaProvider(cfg: DaytonaConfig): SandboxProvider {
   const base = (cfg.apiUrl ?? DEFAULT_DAYTONA_API).replace(/\/$/, "");
   const fetchImpl = cfg.fetchImpl ?? fetch;
+  const sleep = cfg.sleepImpl ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
 
-  async function call(method: string, path: string, body?: unknown): Promise<Response> {
+  async function call(method: string, path: string, body?: unknown, allow?: number[]): Promise<Response> {
     let res: Response;
     try {
       res = await fetchImpl(`${base}${path}`, {
@@ -49,11 +63,23 @@ export function createDaytonaProvider(cfg: DaytonaConfig): SandboxProvider {
     } catch {
       throw new Error(`daytona ${method} ${path.split("/")[1] ?? ""}: provider unreachable`);
     }
-    if (!res.ok) {
+    if (!res.ok && !allow?.includes(res.status)) {
       // Redact: status only — never echo the provider body.
       throw new Error(`daytona ${method} ${path.split("/")[1] ?? ""}: ${res.status} from provider`);
     }
     return res;
+  }
+
+  /** Toolbox calls 404 until the sandbox is up — wait out the boot. */
+  async function waitForStarted(id: string): Promise<void> {
+    for (let i = 0; i < STARTED_POLL_MAX; i++) {
+      const res = await call("GET", `/sandbox/${encodeURIComponent(id)}`);
+      const state = ((await res.json()) as DaytonaSandbox).state ?? "unknown";
+      if (state === "started") return;
+      if (DEAD_STATES.has(state)) throw new Error(`daytona GET sandbox: box is ${state}`);
+      await sleep(STARTED_POLL_MS);
+    }
+    throw new Error("daytona GET sandbox: not started in time");
   }
 
   return {
@@ -78,13 +104,25 @@ export function createDaytonaProvider(cfg: DaytonaConfig): SandboxProvider {
     },
 
     async exec(ref: SandboxRef, cmd: string[], opts?: { env?: Record<string, string> }): Promise<void> {
-      // Secret material (the model key) rides ONLY here — process env on the
-      // exec, never the sandbox's create-time env, so it cannot survive a
-      // suspend snapshot (design §10.4: re-bootstrap re-resolves).
-      await call("POST", `/toolbox/${encodeURIComponent(ref.id)}/process/execute`, {
-        command: cmd.map(shellQuote).join(" "),
-        ...(opts?.env ? { env: opts.env } : {}),
-        async: true,
+      // The long-running path is the toolbox SESSION api (the plain
+      // process/execute endpoint is synchronous with a ~10s timeout and takes
+      // no env). Secret material (the model key) rides ONLY here — an export
+      // prefix on the session command, exactly how the vendor SDK injects
+      // env — never the sandbox's create-time manifest, so it cannot survive
+      // a suspend snapshot (design §10.4: re-bootstrap re-resolves). The
+      // session lives in the in-sandbox toolbox daemon and dies with the box.
+      const id = encodeURIComponent(ref.id);
+      await waitForStarted(ref.id);
+      // Idempotent: a resume re-exec finds the session already there (409).
+      await call("POST", `/toolbox/${id}/toolbox/process/session`, { sessionId: EXEC_SESSION }, [409]);
+      const exports = opts?.env
+        ? `export ${Object.entries(opts.env)
+            .map(([k, v]) => `${k}=${shellQuote(v)}`)
+            .join(" ")}; `
+        : "";
+      await call("POST", `/toolbox/${id}/toolbox/process/session/${EXEC_SESSION}/exec`, {
+        command: exports + cmd.map(shellQuote).join(" "),
+        runAsync: true,
       });
     },
 
