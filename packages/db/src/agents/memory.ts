@@ -6,11 +6,14 @@ import {
   AgentsError,
   canTransition,
   isTerminal,
+  validateConnectionInput,
   validateProfileInput,
   validateSessionEvent,
   type AgentProfile,
   type AgentSession,
   type AutonomyPolicy,
+  type Provider,
+  type ProviderConnection,
   type SessionEvent,
   type SessionState,
 } from "./model.js";
@@ -18,9 +21,11 @@ import type {
   AdvanceSessionInput,
   AgentsRepository,
   AppendSessionEventInput,
+  CreateConnectionInput,
   CreateProfileInput,
   CreateSessionInput,
   SetAutonomyInput,
+  SetConnectionStatusInput,
   WorkspaceScope,
 } from "./types.js";
 
@@ -30,6 +35,7 @@ interface Stored {
   events: Map<string, SessionEvent[]>; // session publicId → events
   eventSeqs: Map<string, Set<number>>;
   policies: AutonomyPolicy[];
+  connections: ProviderConnection[];
 }
 
 export class MemoryAgentsRepository implements AgentsRepository {
@@ -47,7 +53,7 @@ export class MemoryAgentsRepository implements AgentsRepository {
   private store(orgId: string): Stored {
     let s = this.byOrg.get(orgId);
     if (!s) {
-      s = { profiles: [], sessions: [], events: new Map(), eventSeqs: new Map(), policies: [] };
+      s = { profiles: [], sessions: [], events: new Map(), eventSeqs: new Map(), policies: [], connections: [] };
       this.byOrg.set(orgId, s);
     }
     return s;
@@ -190,5 +196,62 @@ export class MemoryAgentsRepository implements AgentsRepository {
   async getAutonomy(scope: WorkspaceScope, specKey?: string): Promise<AutonomyPolicy | null> {
     const key = specKey ?? null;
     return this.store(scope.orgId).policies.find((p) => (p.specKey ?? null) === key) ?? null;
+  }
+
+  // ── Provider connections (AG12) ───────────────────────────
+
+  async createConnection(scope: WorkspaceScope, input: CreateConnectionInput): Promise<ProviderConnection> {
+    validateConnectionInput(input);
+    const s = this.store(scope.orgId);
+    if (s.connections.some((c) => c.provider === input.provider && c.name === input.name)) {
+      throw new AgentsError("provider_connection_conflict", `${input.provider}/${input.name} already connected`);
+    }
+    const ts = this.now();
+    const conn: ProviderConnection = {
+      id: this.id("id_"),
+      publicId: this.id("apc_"),
+      orgId: scope.orgId,
+      provider: input.provider as Provider,
+      name: input.name,
+      config: input.config ?? {},
+      secretRef: input.secretRef,
+      status: "unverified",
+      createdBy: input.createdBy,
+      createdAt: ts,
+      updatedAt: ts,
+      ...(input.keyHint !== undefined ? { keyHint: input.keyHint } : {}),
+    };
+    s.connections.push(conn);
+    return conn;
+  }
+
+  async listConnections(scope: WorkspaceScope, provider?: Provider): Promise<ProviderConnection[]> {
+    let rows = this.store(scope.orgId).connections;
+    if (provider) rows = rows.filter((c) => c.provider === provider);
+    return [...rows].sort((a, b) => (a.provider + a.name).localeCompare(b.provider + b.name));
+  }
+
+  async getConnection(scope: WorkspaceScope, publicId: string): Promise<ProviderConnection | null> {
+    return this.store(scope.orgId).connections.find((c) => c.publicId === publicId) ?? null;
+  }
+
+  async setConnectionStatus(scope: WorkspaceScope, input: SetConnectionStatusInput): Promise<ProviderConnection> {
+    const conn = await this.getConnection(scope, input.publicId);
+    if (!conn) {
+      throw new AgentsError("provider_connection_not_found", `connection ${input.publicId} not found`);
+    }
+    conn.status = input.status;
+    if (input.statusReason !== undefined) conn.statusReason = input.statusReason;
+    else delete conn.statusReason;
+    if (input.status === "verified") conn.lastVerifiedAt = this.now();
+    conn.updatedAt = this.now();
+    return conn;
+  }
+
+  async deleteConnection(scope: WorkspaceScope, publicId: string): Promise<boolean> {
+    const s = this.store(scope.orgId);
+    const before = s.connections.length;
+    s.connections = s.connections.filter((c) => c.publicId !== publicId);
+    return s.connections.length < before;
   }
 }

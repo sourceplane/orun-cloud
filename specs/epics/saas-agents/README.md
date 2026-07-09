@@ -18,7 +18,7 @@ this epic never re-implements it. Pairs `orun/specs/orun-agents/` (cluster
 | Field | Value |
 |-------|-------|
 | Status | **Draft** — authored, not yet ready to build; open decisions in `risks-and-open-questions.md` |
-| Cluster | **AG** (agent framework — cross-repo, shared with `orun`; **orun owns the runtime + object kinds (AG0–AG4)**, this repo owns the **sandbox control plane + console (AG5–AG11)**) |
+| Cluster | **AG** (agent framework — cross-repo, shared with `orun`; **orun owns the runtime + object kinds (AG0–AG4)**, this repo owns the **sandbox control plane + console (AG5–AG12)**) |
 | Owner(s) | `apps/agents-worker` (new, primary — the control plane) · `packages/db/src/agents` (schema + repositories) · `apps/identity-worker` (session-token mint, AG6) · `apps/web-console-next` (Agents tab + Work-tab spawn points, AG7/AG8) · `apps/metering-worker`/`billing-worker` (AG10) · `packages/contracts`/`sdk` (session/profile types) |
 | Target branch | `claude/agents-epic-design-vnvyyq` (design PR), then `main` (PRs merged incrementally) |
 | Builds on | **`orun/specs/orun-agents/` (AG0–AG4 — the runtime; hard dependency)** · `orun-work` v2 (WP0 shipped; dispatch-is-assignment, the four agent tools) · `saas-mcp-server` (MCP0–MCP2 — the platform MCP the in-sandbox runtime calls) · `saas-secret-manager` (SM3 lease-bound resolve, `how: agent-session`) · `saas-integrations` IG4 (token broker — repo clone + PR) · `saas-orun-platform` OP1 (short-lived JWT + rotating refresh — the session-token pattern) · state-worker leases (`run-coordinator.ts` — the session-lease idiom) |
@@ -64,7 +64,7 @@ the same public surfaces a human uses.
    on it): README → design → data-model (the agent object kinds).
 3. [`design.md`](./design.md) — the control plane: provider seam, session
    identity, the DO relay, work-tab flows, autonomy, security posture.
-4. [`implementation-plan.md`](./implementation-plan.md) — AG5–AG11.
+4. [`implementation-plan.md`](./implementation-plan.md) — AG5–AG12.
 5. [`risks-and-open-questions.md`](./risks-and-open-questions.md).
 
 ## Milestones at a glance (cloud-owned; AG0–AG4 in `orun/specs/orun-agents/`)
@@ -78,6 +78,7 @@ the same public surfaces a human uses.
 | AG9 | Dispatch & autonomy: assignment-triggered implementation runs (spawn `orun agent serve`); the autonomy ladder (`manual → assist → auto-dispatch → full`); concurrency caps; fix runs on red gates | 2 | 🗓️ Planned |
 | AG10 | Metering, quotas, entitlement: `agents.session_minutes`/`agents.tokens` meters; `feature.agents` + U7 upgrade UX; per-org concurrent-session quota | 3 | 🗓️ Planned (decision: free-vs-paid line) |
 | AG11 | Hardening: `agent.*` audit, transcript redaction, orphan/eviction sweeps, injection posture tests, scripted agent evals, incident runbook | 3 | 🗓️ Planned |
+| AG12 | **Provider connections (BYO Daytona + Anthropic)**: workspace-connected provider accounts — `agents.provider_connections` + key custody in the secret manager (reserved `agents/providers/*` namespace, config-worker stays the only decrypt path) + verification pings + Integrations-hub cards / "Add your AI provider keys". Un-gates AG5-live + AG9: the sandbox and model credentials become tenant-connected instead of operator-escrowed | 0→1 | 🗓️ Planned (design landed; keys offered for verification) |
 
 ## Scope boundary
 

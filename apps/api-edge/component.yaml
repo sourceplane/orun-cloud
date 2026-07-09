@@ -40,6 +40,9 @@ spec:
     # 'state-worker-stage' which was not found [code: 10143]" whenever
     # state-worker hadn't deployed. Ordering it after state-worker fixes that.
     - component: state-worker
+    # saas-agents AG6 added api-edge's AGENTS_WORKER service binding; order
+    # api-edge after agents-worker for the same 10143 reason as above.
+    - component: agents-worker
   subscribe:
     environments:
       - name: dev

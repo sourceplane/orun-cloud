@@ -1,8 +1,11 @@
 import {
   MemoryAgentsRepository,
   canTransition,
+  isProvider,
   isSessionEventKind,
   isTerminal,
+  providerSecretRef,
+  validateConnectionInput,
   validateProfileInput,
   AgentsError,
   type WorkspaceScope,
@@ -124,5 +127,89 @@ describe("MemoryAgentsRepository", () => {
     // Re-set updates in place.
     await r.setAutonomy(scope, { specKey: "orun-agents", level: "auto-dispatch" });
     expect((await r.getAutonomy(scope, "orun-agents"))?.level).toBe("auto-dispatch");
+  });
+});
+
+describe("provider connections (AG12)", () => {
+  it("derives the reserved secret ref and validates inputs", () => {
+    expect(providerSecretRef("daytona", "default")).toBe("agents/providers/daytona/default/API_KEY");
+    expect(isProvider("daytona")).toBe(true);
+    expect(isProvider("openai")).toBe(false);
+    expect(() => validateConnectionInput({ provider: "openai", name: "default" })).toThrow(AgentsError);
+    expect(() => validateConnectionInput({ provider: "daytona", name: "Bad Name" })).toThrow(AgentsError);
+    expect(() => validateConnectionInput({ provider: "anthropic", name: "team-a" })).not.toThrow();
+  });
+
+  it("creates, lists (filtered), gets, and deletes connections per workspace", async () => {
+    const r = repo();
+    const c = await r.createConnection(scope, {
+      provider: "daytona",
+      name: "default",
+      config: { apiUrl: "https://eu.daytona.io/api" },
+      secretRef: providerSecretRef("daytona", "default"),
+      keyHint: "…wxyz",
+      createdBy: "usr_1",
+    });
+    expect(c.publicId).toMatch(/^apc_/);
+    expect(c.status).toBe("unverified");
+    await r.createConnection(scope, {
+      provider: "anthropic",
+      name: "default",
+      config: {},
+      secretRef: providerSecretRef("anthropic", "default"),
+      createdBy: "usr_1",
+    });
+
+    expect((await r.listConnections(scope)).length).toBe(2);
+    expect((await r.listConnections(scope, "daytona")).map((x) => x.provider)).toEqual(["daytona"]);
+    expect((await r.getConnection(scope, c.publicId))?.name).toBe("default");
+    // Another workspace sees nothing.
+    expect((await r.listConnections({ orgId: "org_other" })).length).toBe(0);
+
+    expect(await r.deleteConnection(scope, c.publicId)).toBe(true);
+    expect(await r.deleteConnection(scope, c.publicId)).toBe(false);
+    expect((await r.listConnections(scope)).length).toBe(1);
+  });
+
+  it("rejects a duplicate (provider, name) in a workspace", async () => {
+    const r = repo();
+    const input = {
+      provider: "daytona" as const,
+      name: "default",
+      config: {},
+      secretRef: providerSecretRef("daytona", "default"),
+      createdBy: "usr_1",
+    };
+    await r.createConnection(scope, input);
+    await expect(r.createConnection(scope, input)).rejects.toThrow(/already connected/);
+  });
+
+  it("tracks verification status; verified stamps lastVerifiedAt", async () => {
+    const r = repo();
+    const c = await r.createConnection(scope, {
+      provider: "anthropic",
+      name: "default",
+      config: {},
+      secretRef: providerSecretRef("anthropic", "default"),
+      createdBy: "usr_1",
+    });
+
+    const invalid = await r.setConnectionStatus(scope, {
+      publicId: c.publicId,
+      status: "invalid",
+      statusReason: "401 from provider",
+    });
+    expect(invalid.status).toBe("invalid");
+    expect(invalid.statusReason).toBe("401 from provider");
+    expect(invalid.lastVerifiedAt).toBeUndefined();
+
+    const verified = await r.setConnectionStatus(scope, { publicId: c.publicId, status: "verified" });
+    expect(verified.status).toBe("verified");
+    expect(verified.lastVerifiedAt).toBeDefined();
+    expect(verified.statusReason).toBeUndefined();
+
+    await expect(
+      r.setConnectionStatus(scope, { publicId: "apc_missing", status: "verified" }),
+    ).rejects.toThrow(/not found/);
   });
 });

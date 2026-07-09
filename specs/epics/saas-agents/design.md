@@ -322,7 +322,91 @@ harness-seam conformance test lives in orun (AG4).
 
 ---
 
-## 10. Sequencing
+## 10. Provider connections — BYO Daytona + Anthropic (AG12)
+
+The epic's two credential gates (A1 Daytona, A4 model keys) resolve into a
+product feature instead of an operator chore: a workspace **connects its own
+provider accounts**. Two providers at launch, one mechanism:
+
+- **Daytona** — the sandbox compute account the workspace's sessions run in.
+- **Anthropic** — the model credential ("add your AI provider keys") injected
+  into a session for the Claude Code driver. The seam is provider-shaped, so
+  a second model vendor later is a row + a verifier, not a remodel.
+
+### 10.1 Where a connection lives (and where the key does NOT)
+
+A **provider connection** is agent-plane configuration:
+`agents.provider_connections` — org-scoped rows carrying provider
+(`daytona | anthropic`), a workspace-unique name, **non-secret** config
+(Daytona: org/target/api URL; Anthropic: default model), a **secretRef**, a
+verification status, and the creator. Deliberately NOT an integrations-worker
+row: IG's keystone is the installation/webhook lifecycle (GitHub App), which
+API-key providers don't have. The **console Integrations hub stays the UI
+home** — Daytona/Anthropic render as cards beside GitHub — but the backing
+context is `agents` (the hub already fronts more than one worker).
+
+**The key itself never touches the agents schema.** It is written through the
+secret manager (config-worker, AES-256-GCM write-only storage) under the
+reserved namespace `agents/providers/<provider>/<name>/API_KEY`, and the
+connection row stores only the reference — the SD-1 carve-out, unchanged.
+
+### 10.2 Custody: two narrow internal routes on config-worker
+
+config-worker remains **the only decrypt path in the codebase**. AG12 adds two
+service-binding-only internal routes (api-edge never forwards `/v1/internal/*`):
+
+- `POST /v1/internal/config/provider-keys/store` — agents-worker forwards the
+  key at connect time (one-call UX: `POST …/agents/providers` carries
+  `{provider, name, apiKey, config}`; agents-worker splits custody from
+  config). Restricted to the reserved namespace; audited `secret.created`.
+- `POST /v1/internal/config/provider-keys/resolve` — decrypt for exactly two
+  callers/moments: a **verification ping** and a **session spawn**. Org-scoped,
+  namespace-restricted, platform fact `how: agent-session`, TTL'd plaintext,
+  audited `secret.accessed`. The run/lease-shaped SM3 resolve is not reused —
+  session spawn has a session lease, not a job lease; shoehorning would blur
+  both contracts.
+
+### 10.3 Verification (trust the connection before a session rides it)
+
+Connect → agents-worker verifies the key with a **cheap, read-only provider
+ping** (Daytona: list sandboxes/organization; Anthropic: `GET /v1/models`) and
+records `status: verified | invalid` + `lastVerifiedAt` + a redacted failure
+reason. Re-verify on demand (`POST …/providers/{id}/verify`) and before each
+spawn (cached, short TTL). A session against an `invalid` connection refuses at
+spawn with `provider_connection_invalid` — fail loud at the gate, not mid-run.
+
+### 10.4 Consumption
+
+- **AG5 Daytona adapter**: resolves the workspace's `daytona` connection at
+  provision time (key via 10.2 resolve, config from the row). The
+  operator-escrowed platform credential (`saas-secrets-sync`) demotes to an
+  optional fallback for instances that want platform-provided compute.
+- **Session spawn**: the `anthropic` connection's key is resolved and injected
+  as `ANTHROPIC_API_KEY` in the sandbox env — TTL'd, never in the session
+  manifest, never in transcripts (redaction at capture, SD-8), never surviving
+  suspend (re-bootstrap re-resolves). The orun runtime and driver are
+  untouched: they already read the model key from the environment.
+- **Selection**: a profile MAY pin a connection by name; default is the
+  workspace's sole (or `default`-named) connection per provider.
+
+### 10.5 Console
+
+Two doors, one surface: the **Integrations hub** gains Daytona + Anthropic
+cards (connect = paste key + config, shows verified state, disconnect
+revokes), and the **Agents tab** gains a "Providers" block — the "add your AI
+provider keys" affordance next to where sessions spawn. Both drive the same
+`/v1/organizations/{orgId}/agents/providers` API. Key display is
+write-only-with-hint (`sk-ant-…{last4}`) — the value is never readable back
+through any surface.
+
+### 10.6 What this changes in the risk register
+
+A1 (Daytona posture) and A4 (model-key ownership) move from open questions to
+decisions: **workspace-connected accounts are the primary posture**; operator
+escrow is the fallback for platform-provided compute; a platform model pool
+(A4's Copilot-style option) remains parked on the AG10 metering seam.
+
+## 11. Sequencing
 
 - **AG5–AG7 need the runtime (orun AG0–AG4) but no WP/MCP progress**: an
   interactive cloud session (spawn from the Agents tab, repo + prompt,

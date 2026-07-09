@@ -615,5 +615,14 @@ export const manifest: MigrationManifest = {
       description:
         "OAuth 2.1 authorization codes for MCP clients (saas-mcp-server MCP3) — extends identity.cli_login_grants with a third 'oauth' flow instead of a new table (risks R5: no second token plane). The authorization code hashes into the existing cli_code_hash column (same single-use redeem semantics as the loopback cli_code); new nullable columns oauth_client_id / oauth_redirect_uri / oauth_code_challenge bind the code to its vetted public client (D1 Option A allow-list in code), exact redirect_uri, and PKCE S256 challenge. Flow + flow-secrets CHECKs regenerated (DROP IF EXISTS + ADD) to admit the oauth branch. Redeeming a code mints an ordinary cli-kind session labeled mcp:<clientId> via client_host — rotation, reuse detection, and console revocation unchanged. Additive + idempotent.",
     },
+    {
+      id: "680_agents_provider_connections",
+      context: "agents",
+      path: "680_agents_provider_connections/up.sql",
+      checksum:
+        "e5bcfc06fa6df5fa2cdede2690d88c21b56e485402b84915ee99f73a13031f11",
+      description:
+        "BYO provider accounts (saas-agents AG12, design §10): agents.provider_connections — a workspace connects its own Daytona account (sandbox compute) and Anthropic key (model credential). The row carries provider (CHECK daytona|anthropic), workspace-unique name, NON-SECRET config JSONB, secret_ref (the key itself lives in the secret manager under the reserved agents/providers/* namespace — config-worker stays the only decrypt path), a last4 key_hint, and a CHECK'd verification status (unverified|verified|invalid) + last_verified_at + redacted status_reason maintained by cheap read-only provider pings. Workspace-scoped; UNIQUE(org_id,provider,name). Additive + idempotent.",
+    },
   ],
 };

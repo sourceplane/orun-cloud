@@ -224,3 +224,55 @@ export interface SandboxProvider {
   destroy(ref: SandboxRef): Promise<void>;
   health(ref: SandboxRef): Promise<SandboxHealth>;
 }
+
+// ── Provider connections (AG12) ─────────────────────────────
+// BYO provider accounts: a workspace connects its own Daytona account and
+// Anthropic key. The key is write-only (custody in the secret manager under
+// the reserved agents/providers/* namespace); these wire shapes never carry
+// key material beyond the one-shot create request.
+
+export const AGENT_PROVIDERS = ["daytona", "anthropic"] as const;
+export type AgentProvider = (typeof AGENT_PROVIDERS)[number];
+
+export const PROVIDER_CONNECTION_STATUSES = ["unverified", "verified", "invalid"] as const;
+export type ProviderConnectionStatus = (typeof PROVIDER_CONNECTION_STATUSES)[number];
+
+export const PROVIDER_ERROR_CODES = {
+  providerUnsupported: "provider_unsupported",
+  connectionNotFound: "provider_connection_not_found",
+  connectionConflict: "provider_connection_conflict",
+  connectionInvalid: "provider_connection_invalid",
+  /** The verification ping against the provider failed. */
+  verificationFailed: "provider_verification_failed",
+} as const;
+export type ProviderErrorCode =
+  (typeof PROVIDER_ERROR_CODES)[keyof typeof PROVIDER_ERROR_CODES];
+
+/** A connected provider account — safe projection (no key material). */
+export interface ProviderConnection {
+  /** Public id, `apc_…`. */
+  id: string;
+  provider: AgentProvider;
+  name: string;
+  /** Non-secret provider config (daytona: apiUrl/orgId/target; anthropic: defaultModel). */
+  config: Record<string, unknown>;
+  /** Write-only key display hint, e.g. `…abcd`. Never the key. */
+  keyHint?: string;
+  status: ProviderConnectionStatus;
+  lastVerifiedAt?: string;
+  /** Redacted verification failure ("401 from provider"); never key material. */
+  statusReason?: string;
+  createdBy: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** POST /v1/organizations/{orgId}/agents/providers — the one-shot create.
+ *  `apiKey` is consumed at the boundary (forwarded to secret custody) and is
+ *  never stored on, or readable from, the connection. */
+export interface CreateProviderConnectionRequest {
+  provider: AgentProvider;
+  name?: string;
+  apiKey: string;
+  config?: Record<string, unknown>;
+}

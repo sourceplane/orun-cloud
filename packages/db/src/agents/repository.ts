@@ -9,12 +9,16 @@ import {
   AgentsError,
   canTransition,
   isTerminal,
+  validateConnectionInput,
   validateProfileInput,
   validateSessionEvent,
   type AgentProfile,
   type AgentSession,
   type AutonomyLevel,
   type AutonomyPolicy,
+  type ConnectionStatus,
+  type Provider,
+  type ProviderConnection,
   type RunKind,
   type SessionEvent,
   type SessionState,
@@ -23,9 +27,11 @@ import type {
   AdvanceSessionInput,
   AgentsRepository,
   AppendSessionEventInput,
+  CreateConnectionInput,
   CreateProfileInput,
   CreateSessionInput,
   SetAutonomyInput,
+  SetConnectionStatusInput,
   WorkspaceScope,
 } from "./types.js";
 
@@ -100,6 +106,30 @@ function mapSession(row: Row): AgentSession {
   const ended = optIso(row.ended_at);
   if (ended !== undefined) s.endedAt = ended;
   return s;
+}
+
+
+function mapConnection(row: Row): ProviderConnection {
+  const c: ProviderConnection = {
+    id: String(row.id),
+    publicId: String(row.public_id),
+    orgId: String(row.org_id),
+    provider: String(row.provider) as Provider,
+    name: String(row.name),
+    config: parseJson<Record<string, unknown>>(row.config, {}),
+    secretRef: String(row.secret_ref),
+    status: String(row.status) as ConnectionStatus,
+    createdBy: String(row.created_by),
+    createdAt: toIso(row.created_at),
+    updatedAt: toIso(row.updated_at),
+  };
+  const hint = optStr(row.key_hint);
+  if (hint !== undefined) c.keyHint = hint;
+  const verified = optIso(row.last_verified_at);
+  if (verified !== undefined) c.lastVerifiedAt = verified;
+  const reason = optStr(row.status_reason);
+  if (reason !== undefined) c.statusReason = reason;
+  return c;
 }
 
 export function createAgentsRepository(sql: TransactionalSqlExecutor): AgentsRepository {
@@ -315,5 +345,82 @@ export function createAgentsRepository(sql: TransactionalSqlExecutor): AgentsRep
       if (sk !== undefined) policy.specKey = sk;
       return policy;
     },
+
+    // ── Provider connections (AG12) ───────────────────────────
+
+    async createConnection(scope: WorkspaceScope, input: CreateConnectionInput): Promise<ProviderConnection> {
+      validateConnectionInput(input);
+      const existing = await sql.execute(
+        `SELECT 1 FROM agents.provider_connections WHERE org_id = $1 AND provider = $2 AND name = $3`,
+        [scope.orgId, input.provider, input.name],
+      );
+      if (existing.rows[0]) {
+        throw new AgentsError("provider_connection_conflict", `${input.provider}/${input.name} already connected`);
+      }
+      const res = await sql.execute(
+        `INSERT INTO agents.provider_connections
+           (public_id, org_id, provider, name, config, secret_ref, key_hint, created_by)
+         VALUES ($1,$2,$3,$4,$5::jsonb,$6,$7,$8)
+         RETURNING *`,
+        [
+          newPublicId("apc_"),
+          scope.orgId,
+          input.provider,
+          input.name,
+          JSON.stringify(input.config ?? {}),
+          input.secretRef,
+          input.keyHint ?? null,
+          input.createdBy,
+        ],
+      );
+      return mapConnection(res.rows[0] as Row);
+    },
+
+    async listConnections(scope: WorkspaceScope, provider?: Provider): Promise<ProviderConnection[]> {
+      const res = provider
+        ? await sql.execute(
+            `SELECT * FROM agents.provider_connections WHERE org_id = $1 AND provider = $2 ORDER BY provider, name`,
+            [scope.orgId, provider],
+          )
+        : await sql.execute(
+            `SELECT * FROM agents.provider_connections WHERE org_id = $1 ORDER BY provider, name`,
+            [scope.orgId],
+          );
+      return res.rows.map((r) => mapConnection(r as Row));
+    },
+
+    async getConnection(scope: WorkspaceScope, publicId: string): Promise<ProviderConnection | null> {
+      const res = await sql.execute(
+        `SELECT * FROM agents.provider_connections WHERE org_id = $1 AND public_id = $2`,
+        [scope.orgId, publicId],
+      );
+      return res.rows[0] ? mapConnection(res.rows[0] as Row) : null;
+    },
+
+    async setConnectionStatus(scope: WorkspaceScope, input: SetConnectionStatusInput): Promise<ProviderConnection> {
+      const res = await sql.execute(
+        `UPDATE agents.provider_connections SET
+           status = $3,
+           status_reason = $4,
+           last_verified_at = CASE WHEN $3 = 'verified' THEN now() ELSE last_verified_at END,
+           updated_at = now()
+         WHERE org_id = $1 AND public_id = $2
+         RETURNING *`,
+        [scope.orgId, input.publicId, input.status, input.statusReason ?? null],
+      );
+      if (!res.rows[0]) {
+        throw new AgentsError("provider_connection_not_found", `connection ${input.publicId} not found`);
+      }
+      return mapConnection(res.rows[0] as Row);
+    },
+
+    async deleteConnection(scope: WorkspaceScope, publicId: string): Promise<boolean> {
+      const res = await sql.execute(
+        `DELETE FROM agents.provider_connections WHERE org_id = $1 AND public_id = $2 RETURNING id`,
+        [scope.orgId, publicId],
+      );
+      return !!res.rows[0];
+    },
+
   };
 }

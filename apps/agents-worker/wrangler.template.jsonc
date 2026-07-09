@@ -39,6 +39,10 @@
         {
           "binding": "POLICY_WORKER",
           "service": "policy-worker-stage"
+        },
+        {
+          "binding": "CONFIG_WORKER",
+          "service": "config-worker-stage"
         }
       ]
     },
@@ -61,6 +65,10 @@
         {
           "binding": "POLICY_WORKER",
           "service": "policy-worker-prod"
+        },
+        {
+          "binding": "CONFIG_WORKER",
+          "service": "config-worker-prod"
         }
       ]
     }

@@ -179,3 +179,55 @@ export function validateSessionEvent(e: { seq: number; kind: string }): void {
     throw new AgentsError("agent_session_event_invalid", `event kind ${JSON.stringify(e.kind)} not in the closed vocabulary`);
   }
 }
+
+// ── Provider connections (AG12) ─────────────────────────────
+
+/** Providers a workspace can connect (design §10). */
+export const PROVIDERS = ["daytona", "anthropic"] as const;
+export type Provider = (typeof PROVIDERS)[number];
+
+export function isProvider(p: string): p is Provider {
+  return (PROVIDERS as readonly string[]).includes(p);
+}
+
+/** Connection verification states — infrastructure facts from provider pings. */
+export const CONNECTION_STATUSES = ["unverified", "verified", "invalid"] as const;
+export type ConnectionStatus = (typeof CONNECTION_STATUSES)[number];
+
+/**
+ * A workspace's connected provider account. The API key is NOT here — it lives
+ * in the secret manager under secretRef (reserved agents/providers/*
+ * namespace); keyHint carries a last4 display hint only.
+ */
+export interface ProviderConnection {
+  id: string;
+  publicId: string;
+  orgId: string;
+  provider: Provider;
+  name: string;
+  config: Record<string, unknown>;
+  secretRef: string;
+  keyHint?: string;
+  status: ConnectionStatus;
+  lastVerifiedAt?: string;
+  statusReason?: string;
+  createdBy: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+const CONNECTION_NAME_RE = /^[a-z0-9][a-z0-9-]*$/;
+
+/** The reserved secret-manager key a connection's API key is stored under. */
+export function providerSecretRef(provider: Provider, name: string): string {
+  return `agents/providers/${provider}/${name}/API_KEY`;
+}
+
+export function validateConnectionInput(input: { provider: string; name: string }): void {
+  if (!isProvider(input.provider)) {
+    throw new AgentsError("provider_unsupported", `provider ${JSON.stringify(input.provider)} not supported`);
+  }
+  if (!CONNECTION_NAME_RE.test(input.name)) {
+    throw new AgentsError("provider_connection_invalid", `connection name ${JSON.stringify(input.name)} invalid`);
+  }
+}
