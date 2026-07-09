@@ -165,8 +165,11 @@ claude mcp add orun-cloud -- orun-cloud mcp serve
 **Generic stdio client**: launch `orun-cloud mcp serve` and speak MCP
 (spec revision 2025-06-18) over the process's stdin/stdout.
 
-A remote Streamable-HTTP server with API-key/OAuth auth is a later
-milestone (MCP2/MCP3) — today's transport is local stdio only.
+A remote Streamable-HTTP server with API-key/OAuth auth also exists
+(`apps/mcp-worker`, MCP2/MCP3, read-only) — the console's
+Settings › Developer › MCP server page and the web-docs
+`developers/mcp` page carry the connect instructions for both
+transports.
 
 ## Auth
 

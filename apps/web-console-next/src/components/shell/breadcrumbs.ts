@@ -30,6 +30,7 @@ const SEGMENT_LABELS: Record<string, string> = {
   members: "Members",
   invitations: "Invitations",
   "api-keys": "API keys",
+  mcp: "MCP server",
   webhooks: "Webhooks",
   billing: "Billing & plan",
   "change-plan": "Change plan",

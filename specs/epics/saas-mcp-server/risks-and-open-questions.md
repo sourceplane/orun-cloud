@@ -59,13 +59,25 @@ optionally a `mcp.tool_call` quota row); revisit the missing-row-and-
 check-failure fail-OPEN posture at the same time if the line makes MCP a paid
 capability (a paid gate should likely fail closed on `not_configured`).
 
-### D4 — Per-key tool scoping (MCP7)
+### D4 — Per-key tool scoping (MCP7) — ✅ Decided: role-based only, v1 (2026-07-09)
 
-Least-privilege agent keys ideally scope to a tool subset, not just a role.
-That needs key metadata the identity model may not carry yet. Options: ride
-role-based scoping only (v1), or extend `PublicApiKey` with a `toolScopes`
-claim (contracts + identity-worker change — its own PR). Defer until MCP7;
-role-based is acceptable v1.
+**Decided at MCP7 implementation: v1 ships role-based scoping only.** The
+key's role is the tool boundary — read tools succeed under `viewer`, write
+tools need `builder`+ — and the console Connect page teaches exactly that
+(suggested least-privilege role at minting, no per-key tool picker). Rationale:
+per-key tool subsets need a `toolScopes` claim on `PublicApiKey` that the
+identity model does not carry, and RBAC already gives a real, enforced
+least-privilege boundary at the only place enforcement is trusted (the owning
+workers) — a v1 tool-subset UI would be console-side theater until the claim
+exists end-to-end. **The `toolScopes` extension remains the documented later
+path**: extend `PublicApiKey` in contracts + identity-worker (its own PR),
+enforce at the MCP registry's execute seam (the transports already share it),
+then add the picker to the Connect page and to key minting. Nothing shipped in
+MCP7 blocks that — the page's role guidance simply becomes the fallback text.
+
+Original options, for the record: ride role-based scoping only (v1) — *taken*;
+or extend `PublicApiKey` with a `toolScopes` claim (contracts + identity-worker
+change — its own PR).
 
 ### D5 — Remote session state (MCP2)
 

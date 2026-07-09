@@ -52,6 +52,16 @@ describe("buildBaseCommands", () => {
     if (invite.kind === "navigate") expect(invite.to).toBe("/orgs/acme/settings/people?tab=pending");
   });
 
+  it("exposes the MCP Connect-an-agent surface as a settings navigation command (MCP7)", () => {
+    const cmds = buildBaseCommands({ ...baseCtx, orgSlug: "acme" });
+    const byId = new Map(cmds.map((c) => [c.id, c]));
+    const mcp = byId.get("nav.mcp")!;
+    expect(mcp).toBeDefined();
+    expect(mcp.kind).toBe("navigate");
+    if (mcp.kind === "navigate") expect(mcp.to).toBe("/orgs/acme/settings/mcp");
+    expect(mcp.keywords).toEqual(expect.arrayContaining(["mcp", "agent"]));
+  });
+
   it("exposes Secrets & Config as a top-level navigation command (not under settings)", () => {
     const cmds = buildBaseCommands({ ...baseCtx, orgSlug: "acme" });
     const byId = new Map(cmds.map((c) => [c.id, c]));

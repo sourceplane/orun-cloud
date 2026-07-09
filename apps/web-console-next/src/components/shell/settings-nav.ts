@@ -110,6 +110,15 @@ export function buildSettingsNav(orgSlug: string): SettingsNavGroup[] {
           icon: "KeyRound",
           description: "Programmatic access tokens",
         },
+        {
+          // Connect an agent (saas-mcp-server MCP7): install snippets for the
+          // platform MCP server, the remote URL, and grant/usage status. Sits
+          // next to API keys — the credential an agent key rides is minted there.
+          href: `${base}/mcp`,
+          label: "MCP server",
+          icon: "Bot",
+          description: "Connect AI agents — Claude Code, Cursor, VS Code",
+        },
         // Sessions & devices moved to the personal account area — CLI sessions
         // are per-user, not workspace-scoped (saas-settings-ia SI1).
         {

@@ -168,6 +168,14 @@ export function buildBaseCommands(ctx: CommandContext): CommandDescriptor[] {
         "api",
         "settings",
       ]),
+      navItem("nav.mcp", "MCP server", `${settingsBase}/mcp`, "Bot", [
+        "mcp",
+        "agent",
+        "connect",
+        "claude",
+        "cursor",
+        "settings",
+      ]),
       navItem("nav.webhooks", "Webhooks", `${settingsBase}/webhooks`, "Webhook", [
         "webhook",
         "endpoint",
