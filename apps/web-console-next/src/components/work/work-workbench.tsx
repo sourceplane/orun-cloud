@@ -28,6 +28,7 @@ import { rungLabel, groupTasksBySpec, type SpecGroup } from "@/lib/work/model";
 import { TaskActions } from "@/components/work/task-actions";
 import { EditWorkItemDialog, WorkCreateMenu } from "@/components/work/create-work-item-dialog";
 import { SpecDocSheet } from "@/components/work/spec-doc-sheet";
+import { TaskConversationSheet } from "@/components/work/task-conversation-sheet";
 import { SpawnAgentDialog } from "@/components/agents/spawn-agent-dialog";
 
 export function WorkWorkbench({ orgId }: { orgId: string }) {
@@ -426,6 +427,7 @@ function TaskRow({
 }) {
   const lc = task.lifecycle;
   const [renameOpen, setRenameOpen] = React.useState(false);
+  const [threadOpen, setThreadOpen] = React.useState(false);
   const [agentOpen, setAgentOpen] = React.useState(false);
   return (
     <li className="group border-t border-border/50 px-5 py-3 transition-colors duration-100 first:border-t-0 hover:bg-muted/60">
@@ -448,6 +450,20 @@ function TaskRow({
           open={renameOpen}
           onOpenChange={setRenameOpen}
           onSaved={onMutated}
+        />
+        <button
+          type="button"
+          onClick={() => setThreadOpen(true)}
+          className="shrink-0 rounded px-1.5 py-0.5 text-[11.5px] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+        >
+          Thread
+        </button>
+        <TaskConversationSheet
+          orgId={orgId}
+          taskKey={task.key}
+          open={threadOpen}
+          onOpenChange={setThreadOpen}
+          onMutated={onMutated}
         />
         <TaskActions orgId={orgId} task={task} onMutated={onMutated} />
         {/* AG8: spawn a hosted implementation run for this task. */}

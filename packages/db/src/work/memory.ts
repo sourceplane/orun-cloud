@@ -19,6 +19,7 @@ import type {
   AssignInput,
   CancelInput,
   CommentInput,
+  ReactionInput,
   CommitOutcome,
   CreateInitiativeInput,
   CreateSpecInput,
@@ -217,7 +218,38 @@ export class MemoryWorkRepository implements WorkRepository {
   }
 
   async comment(scope: WorkspaceScope, input: CommentInput): Promise<CommitOutcome> {
-    return this.simpleEvent(scope, input.key, "comment_added", input.actor, input.at, { body: input.body });
+    return this.simpleEvent(scope, input.key, "comment_added", input.actor, input.at, {
+      body: input.body,
+      parentEvent: input.parentEvent,
+      anchor: input.anchor,
+    });
+  }
+
+  private reaction(scope: WorkspaceScope, kind: "reaction_added" | "reaction_removed", input: ReactionInput): CommitOutcome {
+    validateActor(input.actor);
+    if (!input.emoji) {
+      throw new WorkError("invalid", "a reaction needs an emoji");
+    }
+    const target = this.logs(scope).events.find((e) => e.eventId === input.targetEvent);
+    if (!target || target.kind !== "comment_added") {
+      throw new WorkError("not_found", `unknown comment ${input.targetEvent}`);
+    }
+    const event = this.append(scope, {
+      subject: target.subject,
+      kind,
+      actor: input.actor,
+      at: input.at ?? this.now(),
+      payload: { targetEvent: input.targetEvent, emoji: input.emoji },
+    });
+    return { event, key: target.subject };
+  }
+
+  async addReaction(scope: WorkspaceScope, input: ReactionInput): Promise<CommitOutcome> {
+    return this.reaction(scope, "reaction_added", input);
+  }
+
+  async removeReaction(scope: WorkspaceScope, input: ReactionInput): Promise<CommitOutcome> {
+    return this.reaction(scope, "reaction_removed", input);
   }
 
   async order(scope: WorkspaceScope, input: OrderInput): Promise<CommitOutcome> {

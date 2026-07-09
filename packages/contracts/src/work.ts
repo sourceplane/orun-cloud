@@ -144,6 +144,37 @@ export interface CreateWorkTaskRequest {
 
 export interface WorkCommentRequest {
   body: string;
+  /** Reply threading (PM1): the parent comment's eventId. */
+  parentEvent?: string | undefined;
+  /** Doc range anchor (PM1): pins the comment to a revision's text range. */
+  anchor?: { revision: string; start: number; end: number } | undefined;
+}
+
+export interface WorkReactionRequest {
+  emoji: string;
+}
+
+// ── The timeline (PM1): both logs interleaved for one item ──────────────────
+
+export interface WorkObservationView {
+  obsId: string;
+  source: string;
+  kind: string;
+  at: string;
+  payload?: Record<string, unknown> | undefined;
+  seq: number;
+}
+
+export interface WorkTimelineEntry {
+  at: string;
+  type: "event" | "observation";
+  event?: WorkEventView | undefined;
+  observation?: WorkObservationView | undefined;
+}
+
+export interface WorkTimelineResponse {
+  key: string;
+  entries: WorkTimelineEntry[];
 }
 
 export interface WorkAssignRequest {

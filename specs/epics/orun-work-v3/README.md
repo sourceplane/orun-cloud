@@ -8,7 +8,7 @@
 
 | | |
 |---|---|
-| **Status** | In progress — PM0 shipped (cloud authoring core: migration 650, the 19-kind vocabulary, initiatives, content-addressed doc revisions, create/edit forms + the doc drawer); PM1 next |
+| **Status** | In progress — PM0 + PM1 shipped (cloud authoring core; conversation: threaded comments, reactions, @mentions onto the notification rail, the unified timeline); PM2 next |
 | **Cluster** | **PM** (`PM0 → PM5`, plan in `./implementation-plan.md`) |
 | **Builds on** | orun-work v2 (WP0–WP5, shipped): two-log substrate, fold, mutator/verdict seam, SSE tail, sealing, MCP |
 | **Pairs with** | `saas-agents` + `orun-agents` (**AG** — the agent runtime + cloud control plane; PM5 renders/reviews/governs the agent work AG dispatches, it does not build dispatch), `saas-event-streaming` (ES — notification rules for mentions/subscriptions), `saas-console-ux` (U — Cmd-K, the Northwind design system), `saas-mcp-server` (MCP — the platform MCP the in-sandbox agent calls; distinct from the work MCP), `teams-collaboration` (TC — @team mentions), `saas-resources-runtime` (P2 — `revision_live`, unchanged) |

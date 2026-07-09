@@ -284,6 +284,24 @@ export function isTaskKey(key: string): boolean {
   return TASK_KEY_RE.test(key);
 }
 
+const MENTION_RE = /(?<![a-z0-9.])@([a-z0-9][a-z0-9-]*(?:\/[a-z0-9][a-z0-9-]*)?)/g;
+
+/** Extracts distinct @handles (user or team/handle) from a comment body in
+ *  order of first appearance (PM1) — parsed at write time; the notification
+ *  rail consumes the published work.task.mentioned events. */
+export function extractMentions(body: string): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const m of body.matchAll(MENTION_RE)) {
+    const h = m[1]!;
+    if (!seen.has(h)) {
+      seen.add(h);
+      out.push(h);
+    }
+  }
+  return out;
+}
+
 /** Extracts distinct task keys from free text (branch names, PR titles) in
  *  order of first appearance — the auto-claim short-circuit. */
 export function taskKeysIn(text: string): string[] {
