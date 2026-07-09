@@ -27,7 +27,7 @@ export const usageSummaryTool = defineTool({
     startTime: z.string().min(1).describe("ISO-8601 start time (inclusive).").optional(),
     endTime: z.string().min(1).describe("ISO-8601 end time (exclusive).").optional(),
   }),
-  annotations: { readOnlyHint: true, idempotentHint: true },
+  annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true },
   handler: async (input, ctx) => {
     const res = await ctx.sdk.metering.getUsageSummary(
       input.workspace,
@@ -60,7 +60,7 @@ export const quotaCheckTool = defineTool({
     environment: z.string().min(1).describe("Environment public id scoping.").optional(),
     resourceId: z.string().min(1).describe("Resource scoping.").optional(),
   }),
-  annotations: { readOnlyHint: true, idempotentHint: true },
+  annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true },
   handler: async (input, ctx) => {
     const res = await ctx.sdk.metering.checkQuota(
       input.workspace,

@@ -43,7 +43,7 @@ export const runsListTool = defineTool({
     cursor: cursorArg.optional(),
     limit: limitArg.optional(),
   }),
-  annotations: { readOnlyHint: true, idempotentHint: true },
+  annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true },
   handler: async (input, ctx) => {
     const page =
       input.project !== undefined
@@ -86,7 +86,7 @@ export const runsGetTool = defineTool({
     project: projectArg,
     runId: z.string().min(1).describe("Run id (a ULID from `runs_list`)."),
   }),
-  annotations: { readOnlyHint: true, idempotentHint: true },
+  annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true },
   handler: async (input, ctx) => {
     const [runRes, jobsRes] = await Promise.all([
       ctx.sdk.state.getRun(input.workspace, input.project, input.runId),
@@ -120,7 +120,7 @@ export const runsReadLogsTool = defineTool({
       .describe("Resume cursor: the `nextSeq` returned by a previous call. Defaults to 0 (start).")
       .optional(),
   }),
-  annotations: { readOnlyHint: true, idempotentHint: true },
+  annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true },
   handler: async (input, ctx) => {
     const res = await ctx.sdk.state.readRunJobLogs(
       input.workspace,

@@ -8,7 +8,7 @@ import type { OrunCloud } from "@saas/sdk";
 
 import { toResourceReadError } from "./errors.js";
 import { allPrompts } from "./prompts.js";
-import { allTools } from "./registry.js";
+import { allTools, readOnlyTools } from "./registry.js";
 import { allResources } from "./resources.js";
 import { DEFAULT_LIMITS, executeTool, type McpTool, type ToolLimits } from "./tool.js";
 
@@ -17,12 +17,26 @@ export const SERVER_NAME = "orun-cloud";
 // revision (2025-06-18 via @modelcontextprotocol/sdk ^1.29 — risk D6).
 export const SERVER_VERSION = "0.1.0";
 
+/**
+ * Provenance marker (design §7): every SDK call made from the MCP plane —
+ * read AND write — carries `x-client-surface: mcp`, so audit queries can
+ * segment agent traffic. Authorization semantics are unchanged by it.
+ */
+export const CLIENT_SURFACE_HEADER = "x-client-surface";
+export const CLIENT_SURFACE_VALUE = "mcp";
+
 export interface CreateMcpServerOptions {
+  /**
+   * The platform client every tool call rides. `createMcpServer` stamps
+   * `x-client-surface: mcp` into this client's transport default headers
+   * (provenance, design §7) — pass a dedicated instance per server, as both
+   * shipped transports do.
+   */
   sdk: OrunCloud;
   /**
-   * Hard-exclude non-read-only tools from `tools/list`, not just execution
-   * (design §7). All MCP0 tools are read-only, so this is a no-op today; the
-   * flag plumbs through for the MCP5 write set.
+   * Hard-exclude the MCP5 write tools from `tools/list`, not just execution
+   * (design §7): a read-only connection advertises and serves exactly the
+   * 19 read tools.
    */
   readOnly?: boolean;
   /**
@@ -57,11 +71,19 @@ export function applyWorkspaceDefault(
 }
 
 export function createMcpServer(options: CreateMcpServerOptions): McpServer {
+  // Provenance (design §7): stamp the surface marker into the SDK transport's
+  // default headers so EVERY call this server makes — reads, writes, resource
+  // reads — carries it. The transport merges default headers first, so auth /
+  // per-request headers are unaffected. Guarded because tests may pass a bare
+  // stub in place of a full `OrunCloud`.
+  const defaultHeaders = options.sdk.transport?.defaultHeaders;
+  if (defaultHeaders !== undefined) {
+    defaultHeaders[CLIENT_SURFACE_HEADER] = CLIENT_SURFACE_VALUE;
+  }
+
   const limits: ToolLimits = { ...DEFAULT_LIMITS, ...(options.limits ?? {}) };
   const ctx = { sdk: options.sdk, limits };
-  const tools = options.readOnly
-    ? allTools.filter((tool) => tool.annotations.readOnlyHint === true)
-    : allTools;
+  const tools = options.readOnly ? readOnlyTools : allTools;
 
   const server = new McpServer({ name: SERVER_NAME, version: SERVER_VERSION });
   for (const tool of tools) {

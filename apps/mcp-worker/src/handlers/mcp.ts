@@ -53,10 +53,11 @@ export async function handleMcpPost(
     auth: { kind: "bearer", token },
     fetch: deps.fetch,
   });
-  // readOnly: true — the remote transport always serves the read-only toolset.
-  // All MCP0 tools are read-only, so this is a no-op today, but it keeps the
-  // MCP5 write set off the remote surface until deliberately enabled
-  // (design §7 "Read-only mode").
+  // readOnly: true — the remote transport serves ONLY the 19-tool read set,
+  // hard-excluding the MCP5 write tools from tools/list and execution
+  // (design §7 "Read-only mode"). Flipping remote writes on is a DELIBERATE
+  // later change (per-connection read-only + stage acceptance first) — do not
+  // toggle this casually.
   const server = createMcpServer({ sdk, readOnly: true });
   // No sessionIdGenerator = stateless mode (exactOptionalPropertyTypes forbids
   // the explicit `sessionIdGenerator: undefined` spelling).

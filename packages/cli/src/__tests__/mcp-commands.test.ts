@@ -9,7 +9,7 @@ import * as path from "node:path";
 
 import { describe, expect, it } from "vitest";
 
-import { allTools } from "@saas/mcp";
+import { allTools, readOnlyTools } from "@saas/mcp";
 
 import { runCli } from "../cli-runner.js";
 import { resolveWorkspaceDefault } from "../commands/mcp.js";
@@ -82,22 +82,25 @@ describe("mcp — command registration", () => {
 });
 
 describe("mcp tools", () => {
-  it("prints every registered tool as a human table", async () => {
+  it("prints every registered tool (25: 19 reads + 6 writes) as a human table with markers", async () => {
     await withHarness(async ({ cap, runArgv }) => {
       const r = await runArgv(["mcp", "tools"]);
       expect(r.exitCode).toBe(0);
       const text = cap.stdout.join("\n");
+      expect(allTools.length).toBe(25);
       expect(text).toContain(`MCP tools (${allTools.length})`);
       for (const tool of allTools) {
         expect(text).toContain(tool.name);
       }
-      // Every MCP0 tool is read-only; the marker column reflects it.
+      // The read-only column marks reads "yes" and the MCP5 writes "no".
       expect(text).toContain("read-only");
       expect(text).toContain("yes");
+      expect(text).toContain("no");
+      expect(text).toContain("project_create");
     });
   });
 
-  it("`--output=json` emits the full roster with read-only markers", async () => {
+  it("`--output=json` emits the full roster with read-only markers per tool", async () => {
     await withHarness(async ({ cap, runArgv }) => {
       const r = await runArgv(["mcp", "tools", "--output=json"]);
       expect(r.exitCode).toBe(0);
@@ -108,22 +111,36 @@ describe("mcp tools", () => {
         allTools.map((t) => t.name).sort(),
       );
       for (const tool of parsed.tools) {
-        expect(tool.readOnly).toBe(true);
+        const registered = allTools.find((t) => t.name === tool.name);
+        expect(tool.readOnly).toBe(registered?.annotations.readOnlyHint === true);
         expect(tool.title.length).toBeGreaterThan(0);
         expect(tool.description.length).toBeGreaterThan(0);
       }
+      expect(parsed.tools.filter((t) => !t.readOnly).map((t) => t.name).sort()).toEqual(
+        [
+          "environment_create",
+          "flag_set",
+          "member_invite",
+          "project_create",
+          "webhook_create",
+          "webhook_delivery_replay",
+        ],
+      );
     });
   });
 
-  it("`--read-only` filters to the read-only set (all MCP0 tools today)", async () => {
+  it("`--read-only` filters the MCP5 write tools out (19 reads remain)", async () => {
     await withHarness(async ({ cap, runArgv }) => {
       const r = await runArgv(["mcp", "tools", "--read-only", "--output=json"]);
       expect(r.exitCode).toBe(0);
-      const parsed = JSON.parse(cap.stdout.join("\n")) as { tools: unknown[] };
-      const readOnlyCount = allTools.filter(
-        (t) => t.annotations.readOnlyHint === true,
-      ).length;
-      expect(parsed.tools.length).toBe(readOnlyCount);
+      const parsed = JSON.parse(cap.stdout.join("\n")) as {
+        tools: { name: string; readOnly: boolean }[];
+      };
+      expect(parsed.tools.length).toBe(19);
+      expect(parsed.tools.length).toBe(readOnlyTools.length);
+      for (const tool of parsed.tools) {
+        expect(tool.readOnly, tool.name).toBe(true);
+      }
     });
   });
 });

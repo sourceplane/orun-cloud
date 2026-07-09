@@ -15,7 +15,7 @@ export const securityEventsListTool = defineTool({
     cursor: cursorArg.optional(),
     limit: limitArg.optional(),
   }),
-  annotations: { readOnlyHint: true, idempotentHint: true },
+  annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true },
   handler: async (input, ctx) => {
     const page = await ctx.sdk.securityEvents.listPage(
       compact<ListSecurityEventsQuery>({ cursor: input.cursor, limit: input.limit }),

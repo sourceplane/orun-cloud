@@ -13,7 +13,7 @@ export const billingSummaryTool = defineTool({
   description:
     "Read a workspace's billing posture: current plan, subscription, customer status, and the full entitlement set (plan + overrides). Read-only — plan changes happen in the console, not here.",
   inputSchema: z.object({ ...scopedShape }),
-  annotations: { readOnlyHint: true, idempotentHint: true },
+  annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true },
   handler: async (input, ctx) => {
     const [summary, entitlements] = await Promise.all([
       ctx.sdk.billing.getSummary(input.workspace),

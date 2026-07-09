@@ -22,7 +22,7 @@ export const auditSearchTool = defineTool({
     cursor: cursorArg.optional(),
     limit: limitArg.optional(),
   }),
-  annotations: { readOnlyHint: true, idempotentHint: true },
+  annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true },
   handler: async (input, ctx) => {
     const page = await ctx.sdk.events.listAuditEntriesPage(input.workspace, {
       by: "org",

@@ -114,9 +114,12 @@ orun-cloud mcp tools [--read-only] [--output=human|json]
 
 - Credential: the stored token from `orun-cloud login` (keychain/file).
   Without one, `mcp serve` exits non-zero with a pointer at `login`.
-- `--read-only` hard-excludes non-read-only tools from `tools/list`
-  (a no-op today — every MCP1 tool is read-only — but it plumbs through
-  for the future write set).
+- `--read-only` hard-excludes the write tools (MCP5: `project_create`,
+  `environment_create`, `flag_set`, `webhook_create`,
+  `webhook_delivery_replay`, `member_invite`) from `tools/list`, not just
+  execution — 19 read tools remain. Without the flag all 25 tools are
+  served; every write is policy-gated by your role, audited, and
+  idempotency-keyed.
 - `--workspace=REF` (a `ws_…` id, slug, or `org_…` id) sets the ambient
   `workspace` default for scoped tools; without the flag the active org
   from `orun-cloud org use` is used. Per-call `workspace` arguments

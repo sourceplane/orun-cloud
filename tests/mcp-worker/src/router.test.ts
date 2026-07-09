@@ -4,7 +4,7 @@
 // apps/mcp-worker/test/ (vitest); this component puts the protocol smoke in
 // the quick-check lane like tests/agents-worker does for its worker.
 
-import { allTools } from "@saas/mcp";
+import { readOnlyTools } from "@saas/mcp";
 import type { McpWorkerDeps } from "@mcp-worker/deps";
 import type { Env } from "@mcp-worker/env";
 import { route } from "@mcp-worker/router";
@@ -61,7 +61,7 @@ describe("mcp-worker route (smoke)", () => {
     expect((body.result?.["serverInfo"] as { name: string }).name).toBe("orun-cloud");
   });
 
-  it("lists the full 19-tool read-only roster", async () => {
+  it("lists the 19-tool read-only roster (never the MCP5 write set)", async () => {
     const res = await route(
       rpcRequest({ jsonrpc: "2.0", id: 2, method: "tools/list", params: {} }),
       env,
@@ -70,7 +70,7 @@ describe("mcp-worker route (smoke)", () => {
     const body = (await res.json()) as JsonRpcResponse;
     const tools = body.result?.["tools"] as Array<{ name: string }>;
     expect(tools.length).toBe(19);
-    expect(tools.length).toBe(allTools.length);
+    expect(tools.length).toBe(readOnlyTools.length);
   });
 
   it("401s without a bearer, challenging with resource metadata", async () => {
