@@ -7,6 +7,7 @@
 // lifecycle anywhere because no such column exists (WP-3).
 
 import type { SqlExecutor, TransactionalSqlExecutor } from "../hyperdrive/executor.js";
+import { canonicalDocBody, docDigest } from "./doc.js";
 import { buildEnvelopes, type ItemCreatedPayload } from "./envelopes.js";
 import {
   API_VERSION,
@@ -17,7 +18,9 @@ import {
   type Actor,
   type Contract,
   type CoordinationEvent,
+  type DocRevision,
   type EventKind,
+  type Initiative,
   type Observation,
   type Spec,
   type Task,
@@ -28,6 +31,7 @@ import type {
   CancelInput,
   CommentInput,
   CommitOutcome,
+  CreateInitiativeInput,
   CreateSpecInput,
   CreateTaskInput,
   EditContractInput,
@@ -36,6 +40,8 @@ import type {
   IngestOutcome,
   OrderInput,
   PinInput,
+  PutDocInput,
+  PutDocOutcome,
   WorkRepository,
   WorkspaceScope,
 } from "./types.js";
@@ -151,10 +157,37 @@ async function keyExists(tx: SqlExecutor, orgId: string, key: string): Promise<b
     `SELECT 1 FROM work.tasks WHERE org_id = $1 AND key = $2
      UNION ALL
      SELECT 1 FROM work.specs WHERE org_id = $1 AND key = $2
+     UNION ALL
+     SELECT 1 FROM work.initiatives WHERE org_id = $1 AND key = $2
      LIMIT 1`,
     [orgId, key],
   );
   return res.rowCount > 0;
+}
+
+function mapInitiative(orgId: string, row: Record<string, unknown>): Initiative {
+  return {
+    apiVersion: API_VERSION,
+    kind: "Initiative",
+    id: String(row.id),
+    key: String(row.key),
+    workspace: orgId,
+    title: String(row.title),
+    description: (row.description as string | null) ?? undefined,
+    createdBy: parseJson<Actor>(row.created_by, { type: "automation", id: "unknown" }),
+    createdAt: toIso(row.created_at),
+  };
+}
+
+function mapDocRevision(row: Record<string, unknown>): DocRevision {
+  return {
+    revision: String(row.revision),
+    parent: (row.parent as string | null) ?? undefined,
+    specKey: String(row.spec_key),
+    body: String(row.body),
+    createdBy: parseJson<Actor>(row.created_by, { type: "automation", id: "unknown" }),
+    createdAt: toIso(row.created_at),
+  };
 }
 
 /**
@@ -187,7 +220,7 @@ export async function insertWorkObservation(
 export function createWorkRepository(
   sql: TransactionalSqlExecutor,
   now: () => string = () => new Date().toISOString(),
-): WorkRepository & { rebuildCaches(scope: WorkspaceScope): Promise<{ specs: number; tasks: number }> } {
+): WorkRepository & { rebuildCaches(scope: WorkspaceScope): Promise<{ specs: number; tasks: number; initiatives: number }> } {
   const simpleMutation = async (
     scope: WorkspaceScope,
     key: string,
@@ -244,6 +277,39 @@ export function createWorkRepository(
           [scope.orgId, input.slug, input.title, input.docRef ?? null, JSON.stringify(input.labels ?? {}), JSON.stringify(input.actor), at],
         );
         return { event, key: input.slug, spec: mapSpec(scope.orgId, res.rows[0]!) };
+      });
+    },
+
+    async createInitiative(scope, input: CreateInitiativeInput) {
+      validateActor(input.actor);
+      if (!SLUG_RE.test(input.slug)) {
+        throw new WorkError("invalid", `initiative slug ${input.slug} must be lowercase kebab`);
+      }
+      return sql.transaction(async (tx) => {
+        if (await keyExists(tx, scope.orgId, input.slug)) {
+          throw new WorkError("conflict", `item ${input.slug} already exists`);
+        }
+        const at = input.at ?? now();
+        const payload: ItemCreatedPayload = {
+          kind: "Initiative",
+          key: input.slug,
+          title: input.title,
+          description: input.description,
+        };
+        const event = await appendEvent(tx, scope.orgId, {
+          subject: input.slug,
+          kind: "item_created",
+          actor: input.actor,
+          at,
+          payload: payload as unknown as Record<string, unknown>,
+        });
+        const res = await tx.execute(
+          `INSERT INTO work.initiatives (org_id, key, title, description, created_by, created_at)
+           VALUES ($1, $2, $3, $4, $5::jsonb, $6)
+           RETURNING *`,
+          [scope.orgId, input.slug, input.title, input.description ?? null, JSON.stringify(input.actor), at],
+        );
+        return { event, key: input.slug, initiative: mapInitiative(scope.orgId, res.rows[0]!) };
       });
     },
 
@@ -372,6 +438,94 @@ export function createWorkRepository(
       return simpleMutation(scope, input.key, "canceled", input.actor, input.at, {});
     },
 
+    async putDocRevision(scope, input: PutDocInput): Promise<PutDocOutcome> {
+      validateActor(input.actor);
+      const body = canonicalDocBody(input.body);
+      const revision = await docDigest(body);
+      return sql.transaction(async (tx) => {
+        const specRes = await tx.execute(`SELECT doc_ref FROM work.specs WHERE org_id = $1 AND key = $2`, [
+          scope.orgId,
+          input.specKey,
+        ]);
+        if (specRes.rowCount === 0) {
+          throw new WorkError("not_found", `unknown spec ${input.specKey}`);
+        }
+        const current = (specRes.rows[0]!.doc_ref as string | null) ?? undefined;
+        if (revision === current) {
+          // An identical save is a no-op: no revision row, no event.
+          return { revision, parent: current, created: false, event: null };
+        }
+        const parent = input.parent ?? current;
+        const at = input.at ?? now();
+        await tx.execute(
+          `INSERT INTO work.doc_revisions (org_id, revision, parent, spec_key, body, created_by, created_at)
+           VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7)
+           ON CONFLICT (org_id, revision) DO NOTHING`,
+          [scope.orgId, revision, parent ?? null, input.specKey, body, JSON.stringify(input.actor), at],
+        );
+        const event = await appendEvent(tx, scope.orgId, {
+          subject: input.specKey,
+          kind: "doc_edited",
+          actor: input.actor,
+          at,
+          payload: { revision, parent },
+        });
+        await tx.execute(`UPDATE work.specs SET doc_ref = $3 WHERE org_id = $1 AND key = $2`, [
+          scope.orgId,
+          input.specKey,
+          revision,
+        ]);
+        return { revision, parent, created: true, event };
+      });
+    },
+
+    async getDocRevision(scope, specKey, revision) {
+      let target = revision;
+      if (!target) {
+        const specRes = await sql.execute(`SELECT doc_ref FROM work.specs WHERE org_id = $1 AND key = $2`, [
+          scope.orgId,
+          specKey,
+        ]);
+        if (specRes.rowCount === 0) {
+          throw new WorkError("not_found", `unknown spec ${specKey}`);
+        }
+        target = (specRes.rows[0]!.doc_ref as string | null) ?? undefined;
+        if (!target) {
+          throw new WorkError("not_found", `spec ${specKey} has no document`);
+        }
+      }
+      const res = await sql.execute(
+        `SELECT * FROM work.doc_revisions WHERE org_id = $1 AND spec_key = $2 AND revision = $3`,
+        [scope.orgId, specKey, target],
+      );
+      if (res.rowCount === 0) {
+        // An imported doc_ref points at a repo body the cloud never stored —
+        // the caller renders "imported from repo @ digest" (design §6).
+        throw new WorkError("not_found", `no cloud revision ${target} for spec ${specKey}`);
+      }
+      return mapDocRevision(res.rows[0]!);
+    },
+
+    async listDocHistory(scope, specKey) {
+      const exists = await sql.execute(`SELECT 1 FROM work.specs WHERE org_id = $1 AND key = $2`, [
+        scope.orgId,
+        specKey,
+      ]);
+      if (exists.rowCount === 0) {
+        throw new WorkError("not_found", `unknown spec ${specKey}`);
+      }
+      const res = await sql.execute(
+        `SELECT org_id, revision, parent, spec_key, created_by, created_at
+         FROM work.doc_revisions WHERE org_id = $1 AND spec_key = $2
+         ORDER BY created_at, revision`,
+        [scope.orgId, specKey],
+      );
+      return res.rows.map((r) => {
+        const { body: _b, ...rest } = mapDocRevision({ ...r, body: "" });
+        return rest;
+      });
+    },
+
     async ingestObservation(scope, input: IngestObservationInput): Promise<IngestOutcome> {
       return sql.transaction(async (tx) => insertWorkObservation(tx, scope.orgId, input));
     },
@@ -410,9 +564,17 @@ export function createWorkRepository(
     async rebuildCaches(scope) {
       return sql.transaction(async (tx) => {
         const events = await tx.execute(`SELECT * FROM work.events WHERE org_id = $1 ORDER BY seq`, [scope.orgId]);
-        const { specs, tasks } = buildEnvelopes(scope.orgId, events.rows.map((r) => mapEvent(scope.orgId, r)));
+        const { specs, tasks, initiatives } = buildEnvelopes(scope.orgId, events.rows.map((r) => mapEvent(scope.orgId, r)));
         await tx.execute(`DELETE FROM work.specs WHERE org_id = $1`, [scope.orgId]);
         await tx.execute(`DELETE FROM work.tasks WHERE org_id = $1`, [scope.orgId]);
+        await tx.execute(`DELETE FROM work.initiatives WHERE org_id = $1`, [scope.orgId]);
+        for (const i of initiatives) {
+          await tx.execute(
+            `INSERT INTO work.initiatives (org_id, key, title, description, created_by, created_at)
+             VALUES ($1, $2, $3, $4, $5::jsonb, $6)`,
+            [scope.orgId, i.key, i.title, i.description ?? null, JSON.stringify(i.createdBy), i.createdAt],
+          );
+        }
         for (const s of specs) {
           await tx.execute(
             `INSERT INTO work.specs (org_id, key, title, doc_ref, labels, created_by, created_at)
@@ -427,7 +589,7 @@ export function createWorkRepository(
             [scope.orgId, t.key, t.spec ?? null, t.title, t.contract ? JSON.stringify(t.contract) : null, JSON.stringify(t.labels ?? {}), JSON.stringify(t.createdBy), t.createdAt],
           );
         }
-        return { specs: specs.length, tasks: tasks.length };
+        return { specs: specs.length, tasks: tasks.length, initiatives: initiatives.length };
       });
     },
   };

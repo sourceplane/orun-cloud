@@ -597,5 +597,14 @@ export const manifest: MigrationManifest = {
       description:
         "Agent-session control plane foundation (saas-agents AG5/AG6) — the DORMANT schema the control plane projects onto (no worker consumes it until AG6). Creates schema agents with: agent_profiles (a workspace's binding of an orun agent TYPE to a membership service principal with a MANDATORY responsible owner; capability overrides narrow-only; UNIQUE(org_id,name)); agent_sessions (one hosted run of the orun runtime — state is an INFRASTRUCTURE fact via a CHECK'd 10-value vocabulary, categorically distinct from the derived work rung; carries the sealed AgentSessionSnapshot id + lease_expires_at for the reclaim sweep; partial lease index over non-terminal states); session_events (the control-plane RELAY mirror of the runtime's append-only log for console snapshot/replay — closed 11-kind vocabulary with no status/lifecycle kind, dedupe UNIQUE(session_id,seq), bulk payloads by R2 ref); autonomy_policies (per-spec/workspace autonomy level + caps, agent-plane config not work truth). Workspace-scoped (org_id). Additive + idempotent (CREATE ... IF NOT EXISTS throughout); references only its own schema.",
     },
+    {
+      id: "660_work_v3_intent_plane",
+      context: "work",
+      path: "660_work_v3_intent_plane/up.sql",
+      checksum:
+        "4a5fe3e146eec3e4b28f1425f358278044ae9f9227c8c79c5e62ba14d68e9f23",
+      description:
+        "The project surface's intent plane (orun-work-v3 PM0) — work.doc_revisions (append-only content-addressed cloud document bodies; digest form equals the imported doc_ref so both sources share one column, V3-2), work.initiatives (the third item kind's droppable envelope cache, rebuilt from the coordination log alone), work.cycles + work.views (authored intent nouns; handlers arrive PM3/PM2), the coordination-log kind CHECK regenerated to the 19-kind closed vocabulary (every addition intent or conversation, V3-1 — STILL no lifecycle-write kind, WP-3; the observation CHECK is untouched), and nullable folded-intent cache columns on work.tasks (priority/estimate/cycle_key, folded by the PM2 mutators). Nothing stores a rung, progress, or burn-up — derived only (V3-3). Additive + idempotent (IF NOT EXISTS / ADD COLUMN IF NOT EXISTS; the CHECK swap is DROP IF EXISTS + ADD).",
+    },
   ],
 };

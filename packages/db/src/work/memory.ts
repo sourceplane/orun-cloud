@@ -3,6 +3,7 @@
 // buildEnvelopes. It is both the test double and the executable proof that
 // no read needs anything but the logs (invariant 1 by construction).
 
+import { canonicalDocBody, docDigest } from "./doc.js";
 import { buildEnvelopes, type ItemCreatedPayload } from "./envelopes.js";
 import {
   WorkError,
@@ -10,6 +11,7 @@ import {
   validateEvent,
   validateObservation,
   type CoordinationEvent,
+  type DocRevision,
   type Observation,
   type WorkSet,
 } from "./model.js";
@@ -18,6 +20,7 @@ import type {
   CancelInput,
   CommentInput,
   CommitOutcome,
+  CreateInitiativeInput,
   CreateSpecInput,
   CreateTaskInput,
   EditContractInput,
@@ -26,6 +29,8 @@ import type {
   IngestOutcome,
   OrderInput,
   PinInput,
+  PutDocInput,
+  PutDocOutcome,
   WorkRepository,
   WorkspaceScope,
 } from "./types.js";
@@ -38,6 +43,9 @@ interface LogPair {
   observations: Observation[];
   dedupe: Set<string>;
   sequences: Map<string, number>;
+  /** Document bodies by digest — content beside the logs, not envelope
+   *  state (the log carries only the doc_edited digest pointers). */
+  docRevisions: Map<string, DocRevision>;
 }
 
 export class MemoryWorkRepository implements WorkRepository {
@@ -49,7 +57,7 @@ export class MemoryWorkRepository implements WorkRepository {
   private logs(scope: WorkspaceScope): LogPair {
     let pair = this.workspaces.get(scope.orgId);
     if (!pair) {
-      pair = { events: [], observations: [], dedupe: new Set(), sequences: new Map() };
+      pair = { events: [], observations: [], dedupe: new Set(), sequences: new Map(), docRevisions: new Map() };
       this.workspaces.set(scope.orgId, pair);
     }
     return pair;
@@ -78,8 +86,8 @@ export class MemoryWorkRepository implements WorkRepository {
   }
 
   private exists(scope: WorkspaceScope, key: string): boolean {
-    const { specs, tasks } = buildEnvelopes(scope.orgId, this.logs(scope).events);
-    return specs.some((s) => s.key === key) || tasks.some((t) => t.key === key);
+    const { specs, tasks, initiatives } = buildEnvelopes(scope.orgId, this.logs(scope).events);
+    return specs.some((s) => s.key === key) || tasks.some((t) => t.key === key) || initiatives.some((i) => i.key === key);
   }
 
   async createSpec(scope: WorkspaceScope, input: CreateSpecInput) {
@@ -108,6 +116,33 @@ export class MemoryWorkRepository implements WorkRepository {
     const spec = specs.find((s) => s.key === input.slug);
     if (!spec) throw new WorkError("invalid", "spec did not materialize from its own event");
     return { event, key: input.slug, spec };
+  }
+
+  async createInitiative(scope: WorkspaceScope, input: CreateInitiativeInput) {
+    validateActor(input.actor);
+    if (!SLUG_RE.test(input.slug)) {
+      throw new WorkError("invalid", `initiative slug ${input.slug} must be lowercase kebab`);
+    }
+    if (this.exists(scope, input.slug)) {
+      throw new WorkError("conflict", `item ${input.slug} already exists`);
+    }
+    const payload: ItemCreatedPayload = {
+      kind: "Initiative",
+      key: input.slug,
+      title: input.title,
+      description: input.description,
+    };
+    const event = this.append(scope, {
+      subject: input.slug,
+      kind: "item_created",
+      actor: input.actor,
+      at: input.at ?? this.now(),
+      payload: payload as unknown as Record<string, unknown>,
+    });
+    const { initiatives } = buildEnvelopes(scope.orgId, this.logs(scope).events);
+    const initiative = initiatives.find((i) => i.key === input.slug);
+    if (!initiative) throw new WorkError("invalid", "initiative did not materialize from its own event");
+    return { event, key: input.slug, initiative };
   }
 
   async createTask(scope: WorkspaceScope, input: CreateTaskInput) {
@@ -212,6 +247,71 @@ export class MemoryWorkRepository implements WorkRepository {
     this.mustExist(scope, key);
     const event = this.append(scope, { subject: key, kind, actor, at: at ?? this.now(), payload });
     return { event, key };
+  }
+
+  async putDocRevision(scope: WorkspaceScope, input: PutDocInput): Promise<PutDocOutcome> {
+    validateActor(input.actor);
+    const pair = this.logs(scope);
+    const { specs } = buildEnvelopes(scope.orgId, pair.events);
+    const spec = specs.find((s) => s.key === input.specKey);
+    if (!spec) {
+      throw new WorkError("not_found", `unknown spec ${input.specKey}`);
+    }
+    const body = canonicalDocBody(input.body);
+    const revision = await docDigest(body);
+    if (revision === spec.docRef) {
+      return { revision, parent: spec.docRef, created: false, event: null };
+    }
+    const parent = input.parent ?? spec.docRef;
+    const at = input.at ?? this.now();
+    if (!pair.docRevisions.has(revision)) {
+      pair.docRevisions.set(revision, {
+        revision,
+        parent,
+        specKey: input.specKey,
+        body,
+        createdBy: input.actor,
+        createdAt: at,
+      });
+    }
+    const event = this.append(scope, {
+      subject: input.specKey,
+      kind: "doc_edited",
+      actor: input.actor,
+      at,
+      payload: { revision, parent },
+    });
+    return { revision, parent, created: true, event };
+  }
+
+  async getDocRevision(scope: WorkspaceScope, specKey: string, revision?: string): Promise<DocRevision> {
+    const pair = this.logs(scope);
+    let target = revision;
+    if (!target) {
+      const { specs } = buildEnvelopes(scope.orgId, pair.events);
+      const spec = specs.find((s) => s.key === specKey);
+      if (!spec) throw new WorkError("not_found", `unknown spec ${specKey}`);
+      if (!spec.docRef) throw new WorkError("not_found", `spec ${specKey} has no document`);
+      target = spec.docRef;
+    }
+    const rev = pair.docRevisions.get(target);
+    if (!rev || rev.specKey !== specKey) {
+      // An imported doc_ref points at a repo body the cloud never stored —
+      // the caller renders "imported from repo @ digest" (design §6).
+      throw new WorkError("not_found", `no cloud revision ${target} for spec ${specKey}`);
+    }
+    return rev;
+  }
+
+  async listDocHistory(scope: WorkspaceScope, specKey: string): Promise<Omit<DocRevision, "body">[]> {
+    const pair = this.logs(scope);
+    if (!this.exists(scope, specKey)) {
+      throw new WorkError("not_found", `unknown spec ${specKey}`);
+    }
+    return [...pair.docRevisions.values()]
+      .filter((r) => r.specKey === specKey)
+      .sort((a, b) => (a.createdAt < b.createdAt ? -1 : a.createdAt > b.createdAt ? 1 : a.revision < b.revision ? -1 : 1))
+      .map(({ body: _body, ...rest }) => rest);
   }
 
   async ingestObservation(scope: WorkspaceScope, input: IngestObservationInput): Promise<IngestOutcome> {

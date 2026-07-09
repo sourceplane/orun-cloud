@@ -50,8 +50,13 @@ import {
 import {
   handleCreateWorkSpec,
   handleCreateWorkTask,
+  handleCreateWorkInitiative,
+  handleEditWorkItem,
+  handleGetWorkDoc,
   handleListWorkEvents,
+  handlePutWorkDoc,
   handleStreamWorkEvents,
+  handleWorkDocHistory,
   handleIngestWorkObservation,
   handleWorkImport,
   handleWorkSummary,
@@ -185,6 +190,10 @@ const ORG_WORK_RE = /^\/v1\/organizations\/([^/]+)\/work$/;
 const ORG_WORK_EVENTS_RE = /^\/v1\/organizations\/([^/]+)\/work\/events$/;
 const ORG_WORK_EVENTS_STREAM_RE = /^\/v1\/organizations\/([^/]+)\/work\/events\/stream$/;
 const ORG_WORK_SPECS_RE = /^\/v1\/organizations\/([^/]+)\/work\/specs$/;
+const ORG_WORK_INITIATIVES_RE = /^\/v1\/organizations\/([^/]+)\/work\/initiatives$/;
+const ORG_WORK_ITEM_EDIT_RE = /^\/v1\/organizations\/([^/]+)\/work\/items\/([^/]+)\/edit$/;
+const ORG_WORK_SPEC_DOC_RE = /^\/v1\/organizations\/([^/]+)\/work\/specs\/([^/]+)\/doc$/;
+const ORG_WORK_SPEC_DOC_HISTORY_RE = /^\/v1\/organizations\/([^/]+)\/work\/specs\/([^/]+)\/doc\/history$/;
 const ORG_WORK_TASKS_RE = /^\/v1\/organizations\/([^/]+)\/work\/tasks$/;
 const ORG_WORK_TASK_ACTION_RE = /^\/v1\/organizations\/([^/]+)\/work\/tasks\/([^/]+)\/(comment|assign|pin|cancel|contract)$/;
 const ORG_WORK_IMPORT_RE = /^\/v1\/organizations\/([^/]+)\/work\/import$/;
@@ -363,6 +372,41 @@ export async function route(request: Request, env: Env, ctx?: ExecutionContext):
     if (!orgId) return notFound(requestId, pathname);
     if (request.method !== "POST") return methodNotAllowed(requestId);
     return handleCreateWorkSpec(request, env, requestId, actor, orgId);
+  }
+
+  m = pathname.match(ORG_WORK_INITIATIVES_RE);
+  if (m) {
+    const orgId = parseOrgPublicId(m[1]!);
+    if (!orgId) return notFound(requestId, pathname);
+    if (request.method !== "POST") return methodNotAllowed(requestId);
+    return handleCreateWorkInitiative(request, env, requestId, actor, orgId);
+  }
+
+  m = pathname.match(ORG_WORK_ITEM_EDIT_RE);
+  if (m) {
+    const orgId = parseOrgPublicId(m[1]!);
+    if (!orgId) return notFound(requestId, pathname);
+    if (request.method !== "POST") return methodNotAllowed(requestId);
+    return handleEditWorkItem(request, env, requestId, actor, orgId, decodeURIComponent(m[2]!));
+  }
+
+  // Match /doc/history before /doc (same prefix).
+  m = pathname.match(ORG_WORK_SPEC_DOC_HISTORY_RE);
+  if (m) {
+    const orgId = parseOrgPublicId(m[1]!);
+    if (!orgId) return notFound(requestId, pathname);
+    if (request.method !== "GET") return methodNotAllowed(requestId);
+    return handleWorkDocHistory(request, env, requestId, actor, orgId, decodeURIComponent(m[2]!));
+  }
+
+  m = pathname.match(ORG_WORK_SPEC_DOC_RE);
+  if (m) {
+    const orgId = parseOrgPublicId(m[1]!);
+    if (!orgId) return notFound(requestId, pathname);
+    const specKey = decodeURIComponent(m[2]!);
+    if (request.method === "PUT") return handlePutWorkDoc(request, env, requestId, actor, orgId, specKey);
+    if (request.method === "GET") return handleGetWorkDoc(request, env, requestId, actor, orgId, specKey);
+    return methodNotAllowed(requestId);
   }
 
   m = pathname.match(ORG_WORK_TASKS_RE);

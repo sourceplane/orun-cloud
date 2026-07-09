@@ -4,6 +4,7 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   EVENT_KINDS,
+  OBSERVATION_KINDS,
   WorkError,
   contractComplete,
   fold,
@@ -104,6 +105,28 @@ describe("write-time validation", () => {
   it("has no lifecycle write kind (WP-3: the lie is unrepresentable)", () => {
     expect(EVENT_KINDS).not.toContain("status_changed");
     expect(EVENT_KINDS).not.toContain("lifecycle_changed");
+    expect(EVENT_KINDS).not.toContain("rung_set");
+    expect(EVENT_KINDS).not.toContain("status_set");
+  });
+
+  it("v3 grows the vocabulary to 19 — every addition intent or conversation (V3-1)", () => {
+    expect(EVENT_KINDS).toHaveLength(19);
+    for (const k of [
+      "doc_edited",
+      "reaction_added",
+      "reaction_removed",
+      "labeled",
+      "unlabeled",
+      "prioritized",
+      "estimated",
+      "cycle_set",
+      "related",
+      "unrelated",
+    ]) {
+      expect(EVENT_KINDS).toContain(k);
+    }
+    // The observation vocabulary is frozen in this epic (V3-1).
+    expect(OBSERVATION_KINDS).toHaveLength(6);
   });
 
   it("rejects agent pins (WP-10) but allows human pins", () => {

@@ -16,17 +16,26 @@
 import type { Env } from "../env.js";
 import type { ActorContext } from "../router.js";
 import type {
+  CreateWorkInitiativeRequest,
+  CreateWorkInitiativeResponse,
   CreateWorkSpecRequest,
   CreateWorkSpecResponse,
   CreateWorkTaskRequest,
   CreateWorkTaskResponse,
+  EditWorkItemRequest,
+  GetWorkDocResponse,
   ListWorkEventsResponse,
+  PutWorkDocRequest,
+  PutWorkDocResponse,
+  WorkDocHistoryResponse,
+  WorkDocRevisionView,
   WorkActor,
   WorkAssignRequest,
   WorkCommentRequest,
   WorkContractRequest,
   WorkEventView,
   WorkImportRequest,
+  WorkInitiativeView,
   WorkImportResponse,
   WorkMutationResponse,
   WorkPinRequest,
@@ -122,7 +131,7 @@ function taskView(t: Task, foldResult: FoldResult): WorkTaskView {
 
 function summarize(orgId: string, ws: WorkSet): WorkSummaryResponse {
   const foldResult = fold(ws);
-  const { specs } = buildEnvelopes(orgId, ws.events);
+  const { specs, initiatives } = buildEnvelopes(orgId, ws.events);
   const specViews: WorkSpecView[] = specs.map((s) => ({
     key: s.key,
     title: s.title,
@@ -131,9 +140,17 @@ function summarize(orgId: string, ws: WorkSet): WorkSummaryResponse {
     createdAt: s.createdAt,
     progress: progress(ws, s.key, foldResult),
   }));
+  const initiativeViews: WorkInitiativeView[] = initiatives.map((i) => ({
+    key: i.key,
+    title: i.title,
+    description: i.description,
+    createdBy: i.createdBy,
+    createdAt: i.createdAt,
+  }));
   return {
     specs: specViews,
     tasks: ws.tasks.map((t) => taskView(t, foldResult)),
+    initiatives: initiativeViews,
     drift: foldResult.drift ?? [],
     suggestions: foldResult.suggestions ?? [],
     coordSeq: ws.events.length ? ws.events[ws.events.length - 1]!.seq : 0,
@@ -349,6 +366,186 @@ export async function handleCreateWorkSpec(
       },
     };
     return successResponse(payload, requestId, 201);
+  } catch (err) {
+    if (err instanceof WorkError) return workErrorResponse(err, requestId);
+    return errorResponse("internal_error", "Service unavailable", 503, requestId);
+  } finally {
+    await dispose(owned);
+  }
+}
+
+export async function handleCreateWorkInitiative(
+  request: Request,
+  env: Env,
+  requestId: string,
+  actor: ActorContext,
+  orgId: Uuid,
+  deps?: WorkHandlerDeps,
+): Promise<Response> {
+  const authz = await authorizeOrg(env, requestId, actor, orgId, WORK_POLICY_ACTIONS.WORK_WRITE);
+  if (!authz.ok) return authz.response;
+  const body = await parseBody<CreateWorkInitiativeRequest>(request);
+  if (!body?.slug || !body.title) {
+    return validationError(requestId, { slug: ["required"], title: ["required"] });
+  }
+  const { repo, owned } = repoOf(env, deps);
+  try {
+    const out = await repo.createInitiative(
+      { orgId },
+      { slug: body.slug, title: body.title, description: body.description, actor: workActorOf(actor) },
+    );
+    const payload: CreateWorkInitiativeResponse = {
+      key: out.key,
+      seq: out.event.seq,
+      initiative: {
+        key: out.initiative.key,
+        title: out.initiative.title,
+        description: out.initiative.description,
+        createdBy: out.initiative.createdBy,
+        createdAt: out.initiative.createdAt,
+      },
+    };
+    return successResponse(payload, requestId, 201);
+  } catch (err) {
+    if (err instanceof WorkError) return workErrorResponse(err, requestId);
+    return errorResponse("internal_error", "Service unavailable", 503, requestId);
+  } finally {
+    await dispose(owned);
+  }
+}
+
+export async function handleEditWorkItem(
+  request: Request,
+  env: Env,
+  requestId: string,
+  actor: ActorContext,
+  orgId: Uuid,
+  key: string,
+  deps?: WorkHandlerDeps,
+): Promise<Response> {
+  const authz = await authorizeOrg(env, requestId, actor, orgId, WORK_POLICY_ACTIONS.WORK_WRITE);
+  if (!authz.ok) return authz.response;
+  const body = await parseBody<EditWorkItemRequest>(request);
+  if (!body || (body.title === undefined && body.description === undefined && body.labels === undefined)) {
+    return validationError(requestId, { title: ["at least one field required"] });
+  }
+  const { repo, owned } = repoOf(env, deps);
+  try {
+    const out = await repo.editItem(
+      { orgId },
+      { key, title: body.title, labels: body.labels, actor: workActorOf(actor) },
+    );
+    const payload: WorkMutationResponse = { key: out.key, seq: out.event.seq };
+    return successResponse(payload, requestId);
+  } catch (err) {
+    if (err instanceof WorkError) return workErrorResponse(err, requestId);
+    return errorResponse("internal_error", "Service unavailable", 503, requestId);
+  } finally {
+    await dispose(owned);
+  }
+}
+
+// ── Cloud documents (orun-work-v3 PM0): content-addressed, fork-visible ─────
+//
+// The digest form equals the imported doc_ref (V3-2), so `orun spec pull`
+// seals a cloud-authored document through the unchanged summary path. An
+// identical save is a no-op (created:false, no event) — saving what already
+// exists is not coordination.
+
+export async function handlePutWorkDoc(
+  request: Request,
+  env: Env,
+  requestId: string,
+  actor: ActorContext,
+  orgId: Uuid,
+  specKey: string,
+  deps?: WorkHandlerDeps,
+): Promise<Response> {
+  const authz = await authorizeOrg(env, requestId, actor, orgId, WORK_POLICY_ACTIONS.WORK_WRITE);
+  if (!authz.ok) return authz.response;
+  const body = await parseBody<PutWorkDocRequest>(request);
+  if (!body || typeof body.body !== "string" || body.body.length === 0) {
+    return validationError(requestId, { body: ["required"] });
+  }
+  const { repo, owned } = repoOf(env, deps);
+  try {
+    const out = await repo.putDocRevision(
+      { orgId },
+      { specKey, body: body.body, parent: body.parent, actor: workActorOf(actor) },
+    );
+    const payload: PutWorkDocResponse = {
+      revision: out.revision,
+      parent: out.parent,
+      created: out.created,
+      seq: out.event?.seq ?? null,
+    };
+    return successResponse(payload, requestId, out.created ? 201 : 200);
+  } catch (err) {
+    if (err instanceof WorkError) return workErrorResponse(err, requestId);
+    return errorResponse("internal_error", "Service unavailable", 503, requestId);
+  } finally {
+    await dispose(owned);
+  }
+}
+
+export async function handleGetWorkDoc(
+  request: Request,
+  env: Env,
+  requestId: string,
+  actor: ActorContext,
+  orgId: Uuid,
+  specKey: string,
+  deps?: WorkHandlerDeps,
+): Promise<Response> {
+  const authz = await authorizeOrg(env, requestId, actor, orgId, WORK_POLICY_ACTIONS.WORK_READ);
+  if (!authz.ok) return authz.response;
+  const revision = new URL(request.url).searchParams.get("rev") ?? undefined;
+  const { repo, owned } = repoOf(env, deps);
+  try {
+    const rev = await repo.getDocRevision({ orgId }, specKey, revision);
+    const payload: GetWorkDocResponse = {
+      revision: rev.revision,
+      parent: rev.parent,
+      specKey: rev.specKey,
+      createdBy: rev.createdBy,
+      createdAt: rev.createdAt,
+      body: rev.body,
+    };
+    return successResponse(payload, requestId);
+  } catch (err) {
+    if (err instanceof WorkError) return workErrorResponse(err, requestId);
+    return errorResponse("internal_error", "Service unavailable", 503, requestId);
+  } finally {
+    await dispose(owned);
+  }
+}
+
+export async function handleWorkDocHistory(
+  request: Request,
+  env: Env,
+  requestId: string,
+  actor: ActorContext,
+  orgId: Uuid,
+  specKey: string,
+  deps?: WorkHandlerDeps,
+): Promise<Response> {
+  const authz = await authorizeOrg(env, requestId, actor, orgId, WORK_POLICY_ACTIONS.WORK_READ);
+  if (!authz.ok) return authz.response;
+  const { repo, owned } = repoOf(env, deps);
+  try {
+    const revisions = await repo.listDocHistory({ orgId }, specKey);
+    const payload: WorkDocHistoryResponse = {
+      revisions: revisions.map(
+        (r): WorkDocRevisionView => ({
+          revision: r.revision,
+          parent: r.parent,
+          specKey: r.specKey,
+          createdBy: r.createdBy,
+          createdAt: r.createdAt,
+        }),
+      ),
+    };
+    return successResponse(payload, requestId);
   } catch (err) {
     if (err instanceof WorkError) return workErrorResponse(err, requestId);
     return errorResponse("internal_error", "Service unavailable", 503, requestId);

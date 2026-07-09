@@ -9,11 +9,16 @@ import { asUuid } from "@saas/db";
 import type { Env } from "@state-worker/env";
 import type { ActorContext } from "@state-worker/router";
 import {
+  handleCreateWorkInitiative,
   handleCreateWorkSpec,
+  handleEditWorkItem,
+  handleGetWorkDoc,
   handleIngestWorkObservation,
   handleCreateWorkTask,
   handleListWorkEvents,
+  handlePutWorkDoc,
   handleStreamWorkEvents,
+  handleWorkDocHistory,
   handleWorkImport,
   handleWorkSummary,
   handleWorkTaskAction,
@@ -152,6 +157,155 @@ describe("work events stream (SSE — the same cursor, pushed)", () => {
       repo,
       stream: streamCfg,
     });
+    expect(res.status).toBe(404);
+  });
+});
+
+describe("PM0 authoring (initiatives + cloud documents)", () => {
+  const put = (path: string, body: unknown): Request =>
+    new Request(`https://state.internal${path}`, {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(body),
+    });
+
+  it("creates an initiative and the summary carries it (envelope-only, no rung)", async () => {
+    const repo = new MemoryWorkRepository(fixedClock);
+    const env = createEnv();
+    const res = await handleCreateWorkInitiative(
+      post("/x", { slug: "platform-q3", title: "Platform Q3", description: "spine" }),
+      env,
+      "r",
+      USER,
+      asUuid(ORG),
+      { repo },
+    );
+    expect(res.status).toBe(201);
+    const summary = await handleWorkSummary(get("/x"), env, "r", USER, asUuid(ORG), { repo });
+    const body = (await summary.json()) as {
+      data: { initiatives: Array<{ key: string; title: string; description?: string }> };
+    };
+    expect(body.data.initiatives).toEqual([
+      expect.objectContaining({ key: "platform-q3", title: "Platform Q3", description: "spine" }),
+    ]);
+    // No lifecycle anywhere on an initiative view.
+    expect(JSON.stringify(body.data.initiatives[0])).not.toContain("rung");
+  });
+
+  it("saves + reads + histories a cloud document; identical save is a 200 no-op", async () => {
+    const repo = new MemoryWorkRepository(fixedClock);
+    const env = createEnv();
+    await handleCreateWorkSpec(post("/x", { slug: "checkout", title: "Checkout" }), env, "r", USER, asUuid(ORG), {
+      repo,
+    });
+    const putRes = await handlePutWorkDoc(
+      put("/x", { body: "# Checkout\n\nIntent.\n" }),
+      env,
+      "r",
+      USER,
+      asUuid(ORG),
+      "checkout",
+      { repo },
+    );
+    expect(putRes.status).toBe(201);
+    const putBody = (await putRes.json()) as { data: { revision: string; created: boolean; seq: number } };
+    expect(putBody.data.created).toBe(true);
+    expect(putBody.data.revision).toMatch(/^sha256:/);
+
+    const again = await handlePutWorkDoc(
+      put("/x", { body: "# Checkout\n\nIntent.\n" }),
+      env,
+      "r",
+      USER,
+      asUuid(ORG),
+      "checkout",
+      { repo },
+    );
+    expect(again.status).toBe(200);
+    expect(((await again.json()) as { data: { created: boolean } }).data.created).toBe(false);
+
+    const getRes = await handleGetWorkDoc(get("/x"), env, "r", USER, asUuid(ORG), "checkout", { repo });
+    expect(getRes.status).toBe(200);
+    const doc = (await getRes.json()) as { data: { body: string; revision: string } };
+    expect(doc.data.body).toContain("# Checkout");
+    expect(doc.data.revision).toBe(putBody.data.revision);
+
+    const hist = await handleWorkDocHistory(get("/x"), env, "r", USER, asUuid(ORG), "checkout", { repo });
+    const histBody = (await hist.json()) as { data: { revisions: Array<{ revision: string }> } };
+    expect(histBody.data.revisions).toHaveLength(1);
+  });
+
+  it("edits an item envelope through the one mutator route", async () => {
+    const repo = new MemoryWorkRepository(fixedClock);
+    const env = createEnv();
+    const key = await seedTask(repo);
+    const res = await handleEditWorkItem(post("/x", { title: "renamed" }), env, "r", USER, asUuid(ORG), key, {
+      repo,
+    });
+    expect(res.status).toBe(200);
+    const summary = await handleWorkSummary(get("/x"), env, "r", USER, asUuid(ORG), { repo });
+    const body = (await summary.json()) as { data: { tasks: Array<{ key: string; title: string }> } };
+    expect(body.data.tasks.find((t) => t.key === key)!.title).toBe("renamed");
+  });
+
+  it("re-import never overwrites a cloud doc chain (V3-5: it skips, the chain survives)", async () => {
+    const repo = new MemoryWorkRepository(fixedClock);
+    const env = createEnv();
+    await handleWorkImport(
+      post("/x", {
+        workspace: ORG,
+        root: "specs",
+        specs: [{ slug: "checkout", title: "Checkout", docPath: "checkout/README.md", docSha256: "sha256:" + "ab".repeat(32) }],
+        tasks: [],
+      }),
+      env,
+      "r",
+      USER,
+      asUuid(ORG),
+      { repo },
+    );
+    // A cloud edit starts a chain on the imported spec.
+    const cloud = await handlePutWorkDoc(
+      put("/x", { body: "cloud-authored\n" }),
+      env,
+      "r",
+      USER,
+      asUuid(ORG),
+      "checkout",
+      { repo },
+    );
+    const cloudRev = ((await cloud.json()) as { data: { revision: string } }).data.revision;
+    // Re-import with a CHANGED repo digest: the slug exists → skipped.
+    const reimport = await handleWorkImport(
+      post("/x", {
+        workspace: ORG,
+        root: "specs",
+        specs: [{ slug: "checkout", title: "Checkout", docPath: "checkout/README.md", docSha256: "sha256:" + "cd".repeat(32) }],
+        tasks: [],
+      }),
+      env,
+      "r",
+      USER,
+      asUuid(ORG),
+      { repo },
+    );
+    const rb = (await reimport.json()) as { data: { specsSkipped: number } };
+    expect(rb.data.specsSkipped).toBe(1);
+    const doc = await handleGetWorkDoc(get("/x"), env, "r", USER, asUuid(ORG), "checkout", { repo });
+    expect(((await doc.json()) as { data: { revision: string } }).data.revision).toBe(cloudRev);
+  });
+
+  it("hides the workspace on policy deny before any doc write (404)", async () => {
+    const repo = new MemoryWorkRepository(fixedClock);
+    const res = await handlePutWorkDoc(
+      put("/x", { body: "x\n" }),
+      createEnv(false),
+      "r",
+      USER,
+      asUuid(ORG),
+      "checkout",
+      { repo },
+    );
     expect(res.status).toBe(404);
   });
 });
