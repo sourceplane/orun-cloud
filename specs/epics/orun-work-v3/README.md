@@ -8,7 +8,7 @@
 
 | | |
 |---|---|
-| **Status** | In progress — PM0–PM3 shipped (cloud authoring core; conversation; board & views; cycles & derived progress: authored time-boxes with CYC-n keys, cycle_set planning, the burn-up as the fold replayed day-by-day with carry-over as the end gap, spec/initiative rollups from parent relations); PM4 next |
+| **Status** | In progress — PM0–PM4 shipped (cloud authoring core; conversation; board & views; cycles & derived progress; flow: Work verbs in the Cmd-K palette, the optimistic apply store — intent renders instantly as an overlay, the SSE tail confirms by seq, a 422 verdict rolls it back to the fold's answer); PM5 next |
 | **Cluster** | **PM** (`PM0 → PM5`, plan in `./implementation-plan.md`) |
 | **Builds on** | orun-work v2 (WP0–WP5, shipped): two-log substrate, fold, mutator/verdict seam, SSE tail, sealing, MCP |
 | **Pairs with** | `saas-agents` + `orun-agents` (**AG** — the agent runtime + cloud control plane; PM5 renders/reviews/governs the agent work AG dispatches, it does not build dispatch), `saas-event-streaming` (ES — notification rules for mentions/subscriptions), `saas-console-ux` (U — Cmd-K, the Northwind design system), `saas-mcp-server` (MCP — the platform MCP the in-sandbox agent calls; distinct from the work MCP), `teams-collaboration` (TC — @team mentions), `saas-resources-runtime` (P2 — `revision_live`, unchanged) |

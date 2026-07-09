@@ -34,12 +34,23 @@ export function WorkCreateMenu({
   orgId,
   specs,
   onCreated,
+  requestedKind = null,
+  onRequestConsumed,
 }: {
   orgId: string;
   specs: WorkSpecView[];
   onCreated: () => void;
+  /** PM4: a Cmd-K verb (?new=…) asks for a dialog by kind. */
+  requestedKind?: WorkItemKind | null;
+  onRequestConsumed?: (() => void) | undefined;
 }) {
   const [open, setOpen] = React.useState<WorkItemKind | null>(null);
+  React.useEffect(() => {
+    if (requestedKind) {
+      setOpen(requestedKind);
+      onRequestConsumed?.();
+    }
+  }, [requestedKind, onRequestConsumed]);
   return (
     <>
       <DropdownMenu>

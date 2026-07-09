@@ -27,8 +27,9 @@ import { qk, useApiQuery } from "@/lib/query";
 import { useSession } from "@/lib/session";
 import { rungLabel, groupTasksBySpec, type SpecGroup } from "@/lib/work/model";
 import { applyFilters, type BoardFilters } from "@/lib/work/board";
+import { begin, confirm, overlay, prune, reject, type OptimisticEntry, type TaskPatch } from "@/lib/work/optimistic";
 import { TaskActions } from "@/components/work/task-actions";
-import { EditWorkItemDialog, WorkCreateMenu } from "@/components/work/create-work-item-dialog";
+import { EditWorkItemDialog, WorkCreateMenu, type WorkItemKind } from "@/components/work/create-work-item-dialog";
 import { SpecDocSheet } from "@/components/work/spec-doc-sheet";
 import { TaskConversationSheet } from "@/components/work/task-conversation-sheet";
 import { CyclesSection } from "@/components/work/cycles-section";
@@ -126,9 +127,53 @@ export function WorkWorkbench({ orgId }: { orgId: string }) {
     };
   }, [client, orgId, summaryData]);
 
+  // PM4 flow: the optimistic overlay — intent renders immediately, the SSE
+  // tail confirms it (prune when coordSeq catches the mutation's seq), and a
+  // 422 verdict rolls the overlay back so the fold's answer shows through.
+  const [optimistic, setOptimistic] = React.useState<OptimisticEntry[]>([]);
+  const coordSeq = summary.data?.coordSeq ?? 0;
+  React.useEffect(() => {
+    setOptimistic((entries) => prune(entries, coordSeq));
+  }, [coordSeq]);
+  const applyIntent = React.useCallback(
+    async (key: string, patch: TaskPatch, call: () => Promise<{ seq: number }>) => {
+      let id = 0;
+      setOptimistic((entries) => {
+        const res = begin(entries, key, patch);
+        id = res.id;
+        return res.entries;
+      });
+      try {
+        const out = await call();
+        setOptimistic((entries) => confirm(entries, id, out.seq));
+      } catch (err) {
+        setOptimistic((entries) => reject(entries, id)); // rollback; caller renders the verdict
+        throw err;
+      }
+    },
+    [],
+  );
+
+  // PM4: Cmd-K verbs land here as query params (?new=task|spec|initiative,
+  // ?layout=board|list) — consumed once, then stripped from the URL.
+  const [requestedKind, setRequestedKind] = React.useState<WorkItemKind | null>(null);
+  React.useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const created = params.get("new");
+    const layoutParam = params.get("layout");
+    if (created === "task" || created === "spec" || created === "initiative") setRequestedKind(created);
+    if (layoutParam === "board" || layoutParam === "list") setLayout(layoutParam);
+    if (created || layoutParam) {
+      params.delete("new");
+      params.delete("layout");
+      const qs = params.toString();
+      window.history.replaceState(null, "", `${window.location.pathname}${qs ? `?${qs}` : ""}`);
+    }
+  }, []);
+
   const data = summary.data;
   const empty = !data || (data.tasks.length === 0 && data.specs.length === 0);
-  const filteredTasks = data ? applyFilters(data.tasks, filters) : [];
+  const filteredTasks = data ? overlay(applyFilters(data.tasks, filters), optimistic) : [];
 
   let body: React.ReactNode;
   if (summary.loading) {
@@ -138,7 +183,15 @@ export function WorkWorkbench({ orgId }: { orgId: string }) {
   } else if (empty) {
     body = <EmptyWork />;
   } else if (layout === "board") {
-    body = <WorkBoard orgId={orgId} tasks={filteredTasks} cycles={cycles} onMutated={summary.reload} />;
+    body = (
+      <WorkBoard
+        orgId={orgId}
+        tasks={filteredTasks}
+        cycles={cycles}
+        applyIntent={applyIntent}
+        onMutated={summary.reload}
+      />
+    );
   } else {
     body = (
       <WorkSummary
@@ -159,7 +212,13 @@ export function WorkWorkbench({ orgId }: { orgId: string }) {
               actions: (
                 <div className="flex items-center gap-5">
                   {!empty ? <HeaderStats tasks={data.tasks} /> : null}
-                  <WorkCreateMenu orgId={orgId} specs={data.specs} onCreated={reload} />
+                  <WorkCreateMenu
+                    orgId={orgId}
+                    specs={data.specs}
+                    onCreated={reload}
+                    requestedKind={requestedKind}
+                    onRequestConsumed={() => setRequestedKind(null)}
+                  />
                 </div>
               ),
             }
