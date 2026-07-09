@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useParams, usePathname } from "next/navigation";
 import {
   BookOpen,
+  Bot,
   Building2,
   ChevronDown,
   ChevronRight,
@@ -43,6 +44,7 @@ import { SidebarFind } from "./sidebar-find";
 import { useEffectiveOrgSlug } from "./use-effective-org";
 
 const ICONS: Record<string, LucideIcon> = {
+  Bot,
   Building2,
   FolderKanban,
   Boxes,

@@ -52,6 +52,13 @@ export const qk = {
   orgCatalog: (orgId: string) => ["orgCatalog", orgId] as const,
   orgRuns: (orgId: string) => ["orgRuns", orgId] as const,
   orgWork: (orgId: string) => ["orgWork", orgId] as const,
+  /** Agents surface (saas-agents AG7): hosted sessions + profiles. */
+  orgAgents: (orgId: string) => ["orgAgents", orgId] as const,
+  orgAgentSession: (orgId: string, sessionId: string) => ["orgAgentSession", orgId, sessionId] as const,
+  orgAgentSessionEvents: (orgId: string, sessionId: string) =>
+    ["orgAgentSessionEvents", orgId, sessionId] as const,
+  /** BYO provider connections (AG12): Daytona + Anthropic cards. */
+  orgAgentProviders: (orgId: string) => ["orgAgentProviders", orgId] as const,
   accountRuns: (orgId: string) => ["accountRuns", orgId] as const,
   repoFacets: (orgId: string) => ["repoFacets", orgId] as const,
   docObject: (orgId: string, projectId: string, digest: string) =>

@@ -32,6 +32,7 @@ import { NotificationsClient } from "./notifications.js";
 import { OrganizationsClient } from "./organizations.js";
 import { WorkspacesClient } from "./workspaces.js";
 import { ProjectsClient } from "./projects.js";
+import { AgentsClient } from "./agents.js";
 import { SecurityEventsClient } from "./securityEvents.js";
 import { WebhooksClient } from "./webhooks.js";
 import { Transport, type ClientOptions } from "./transport.js";
@@ -85,6 +86,8 @@ export class OrunCloud {
   readonly integrations: IntegrationsClient;
   readonly state: StateClient;
   readonly work: WorkClient;
+  /** Agents resource — hosted sessions, profiles, provider connections (saas-agents). */
+  readonly agents: AgentsClient;
   /** Underlying HTTP transport. Exposed for advanced extension. */
   readonly transport: Transport;
 
@@ -116,6 +119,7 @@ export class OrunCloud {
     this.integrations = new IntegrationsClient(this.transport);
     this.state = new StateClient(this.transport);
     this.work = new WorkClient(this.transport);
+    this.agents = new AgentsClient(this.transport);
   }
 }
 

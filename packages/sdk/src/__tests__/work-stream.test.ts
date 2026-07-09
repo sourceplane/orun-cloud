@@ -73,6 +73,7 @@ describe("WorkClient.streamEvents", () => {
   it("sends the cursor and the SSE accept header", async () => {
     const fetchImpl = streamingFetch(sseBody(), 64);
     const client = new OrunCloud({ baseUrl: "https://api.test", fetch: fetchImpl });
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     for await (const _ of client.work.streamEvents("org_x", 42)) {
       // drain
     }
@@ -92,6 +93,7 @@ describe("WorkClient.streamEvents", () => {
     ) as unknown as typeof fetch;
     const client = new OrunCloud({ baseUrl: "https://api.test", fetch: fetchImpl });
     await expect(async () => {
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
       for await (const _ of client.work.streamEvents("org_x")) {
         // unreachable
       }
