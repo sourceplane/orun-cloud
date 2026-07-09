@@ -65,6 +65,9 @@ import {
   handleWorkTaskAction,
   handleSaveWorkView,
   handleListWorkViews,
+  handleCreateWorkCycle,
+  handleListWorkCycles,
+  handleWorkBurnup,
 } from "./handlers/work.js";
 import { handleGetOrgStateStorage } from "./handlers/state-usage.js";
 import { handleGetStateGcReport } from "./handlers/gc-report.js";
@@ -201,8 +204,10 @@ const ORG_WORK_ITEM_EDIT_RE = /^\/v1\/organizations\/([^/]+)\/work\/items\/([^/]
 const ORG_WORK_SPEC_DOC_RE = /^\/v1\/organizations\/([^/]+)\/work\/specs\/([^/]+)\/doc$/;
 const ORG_WORK_SPEC_DOC_HISTORY_RE = /^\/v1\/organizations\/([^/]+)\/work\/specs\/([^/]+)\/doc\/history$/;
 const ORG_WORK_TASKS_RE = /^\/v1\/organizations\/([^/]+)\/work\/tasks$/;
-const ORG_WORK_TASK_ACTION_RE = /^\/v1\/organizations\/([^/]+)\/work\/tasks\/([^/]+)\/(comment|assign|pin|cancel|contract|label|priority|estimate|relate|order)$/;
+const ORG_WORK_TASK_ACTION_RE = /^\/v1\/organizations\/([^/]+)\/work\/tasks\/([^/]+)\/(comment|assign|pin|cancel|contract|label|priority|estimate|relate|order|cycle)$/;
 const ORG_WORK_VIEWS_RE = /^\/v1\/organizations\/([^/]+)\/work\/views$/;
+const ORG_WORK_CYCLES_RE = /^\/v1\/organizations\/([^/]+)\/work\/cycles$/;
+const ORG_WORK_CYCLE_BURNUP_RE = /^\/v1\/organizations\/([^/]+)\/work\/cycles\/([^/]+)\/burnup$/;
 const ORG_WORK_IMPORT_RE = /^\/v1\/organizations\/([^/]+)\/work\/import$/;
 const ORG_WORK_OBSERVATIONS_RE = /^\/v1\/organizations\/([^/]+)\/work\/observations$/;
 
@@ -448,7 +453,7 @@ export async function route(request: Request, env: Env, ctx?: ExecutionContext):
     return handleWorkTaskAction(
       request, env, requestId, actor, orgId,
       decodeURIComponent(m[2]!),
-      m[3]! as "comment" | "assign" | "pin" | "cancel" | "contract" | "label" | "priority" | "estimate" | "relate" | "order",
+      m[3]! as "comment" | "assign" | "pin" | "cancel" | "contract" | "label" | "priority" | "estimate" | "relate" | "order" | "cycle",
     );
   }
 
@@ -458,6 +463,24 @@ export async function route(request: Request, env: Env, ctx?: ExecutionContext):
     if (!orgId) return notFound(requestId, pathname);
     if (request.method === "POST") return handleSaveWorkView(request, env, requestId, actor, orgId);
     if (request.method === "GET") return handleListWorkViews(request, env, requestId, actor, orgId);
+    return methodNotAllowed(requestId);
+  }
+
+  // Match /burnup before the plain cycles route (same prefix).
+  m = pathname.match(ORG_WORK_CYCLE_BURNUP_RE);
+  if (m) {
+    const orgId = parseOrgPublicId(m[1]!);
+    if (!orgId) return notFound(requestId, pathname);
+    if (request.method !== "GET") return methodNotAllowed(requestId);
+    return handleWorkBurnup(request, env, requestId, actor, orgId, decodeURIComponent(m[2]!));
+  }
+
+  m = pathname.match(ORG_WORK_CYCLES_RE);
+  if (m) {
+    const orgId = parseOrgPublicId(m[1]!);
+    if (!orgId) return notFound(requestId, pathname);
+    if (request.method === "POST") return handleCreateWorkCycle(request, env, requestId, actor, orgId);
+    if (request.method === "GET") return handleListWorkCycles(request, env, requestId, actor, orgId);
     return methodNotAllowed(requestId);
   }
 

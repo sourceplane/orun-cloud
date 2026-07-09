@@ -85,6 +85,8 @@ export interface WorkTaskView {
   priority?: WorkPriority | undefined;
   estimate?: number | undefined;
   relations?: WorkRelation[] | undefined;
+  /** v3 PM3: the authored time-box this task is planned into. */
+  cycleKey?: string | undefined;
 }
 
 export interface WorkSpecView {
@@ -114,6 +116,11 @@ export interface WorkInitiativeView {
   description?: string | undefined;
   createdBy: WorkActor;
   createdAt?: string | undefined;
+  /** v3 PM3: member specs (related {rel: parent} edges from the log). */
+  specs?: string[] | undefined;
+  /** v3 PM3: derived rollup over member specs' tasks — a projection of the
+   *  fold, never a number anyone types (V3-3). */
+  progress?: Partial<Record<WorkRung, number>> | undefined;
 }
 
 export interface WorkSummaryResponse {
@@ -199,6 +206,51 @@ export interface WorkRelateRequest {
 export interface WorkOrderRequest {
   view: string;
   order: number;
+}
+
+// ── Cycles (v3 PM3): authored time-boxes; progress inside is derived ────────
+
+/** Plan a task into (or out of, null) a cycle — the cycle_set event. */
+export interface WorkCycleRequest {
+  cycle: string | null;
+}
+
+export interface CreateWorkCycleRequest {
+  name: string;
+  startsAt: string; // ISO date, inclusive
+  endsAt: string; // ISO date, inclusive
+}
+
+export interface WorkCycleView {
+  key: string;
+  name: string;
+  startsAt: string;
+  endsAt: string;
+  createdBy: WorkActor;
+  createdAt: string;
+  /** Derived at read time from the fold — never stored (V3-3). */
+  scope: number;
+  done: number;
+}
+
+export interface WorkCyclesResponse {
+  cycles: WorkCycleView[];
+}
+
+/** One derived burn-up point: the workspace replayed as of `date`. There is
+ *  deliberately no request type that writes one of these (V3-3). */
+export interface WorkBurnupPoint {
+  date: string;
+  scope: number;
+  done: number;
+}
+
+export interface WorkBurnupResponse {
+  key: string;
+  name: string;
+  startsAt: string;
+  endsAt: string;
+  points: WorkBurnupPoint[];
 }
 
 // ── Saved views (v3 PM2): shareable UI intent — no event, no lifecycle ──────

@@ -26,6 +26,9 @@ import {
   handleWorkTaskAction,
   handleSaveWorkView,
   handleListWorkViews,
+  handleCreateWorkCycle,
+  handleListWorkCycles,
+  handleWorkBurnup,
 } from "@state-worker/handlers/work";
 
 const ORG = "11111111-1111-1111-1111-111111111111";
@@ -592,6 +595,76 @@ describe("PM2 board intent (labels, priority, estimates, relations, views)", () 
 
     const bad = await handleSaveWorkView(post("/x", { key: "x", name: "X", config: { layout: "gantt" } }), env, "r", USER, org, { repo });
     expect(bad.status).toBe(422);
+  });
+});
+
+describe("PM3 cycles (authored time-boxes; derived progress)", () => {
+  it("creates a cycle, plans a task in, and the summary + cycle list carry derived counts", async () => {
+    const repo = new MemoryWorkRepository(fixedClock);
+    const key = await seedTask(repo);
+    const env = createEnv();
+    const org = asUuid(ORG);
+
+    const created = await handleCreateWorkCycle(
+      post("/x", { name: "Cycle 1", startsAt: "2026-07-01", endsAt: "2026-07-14" }),
+      env, "r", USER, org, { repo },
+    );
+    expect(created.status).toBe(201);
+    const cycle = ((await created.json()) as { data: { key: string } }).data.key;
+
+    const planned = await handleWorkTaskAction(post("/x", { cycle }), env, "r", USER, org, key, "cycle", { repo });
+    expect(planned.status).toBe(200);
+
+    const summary = await handleWorkSummary(get("/x"), env, "r", USER, org, { repo });
+    const sBody = (await summary.json()) as { data: { tasks: Array<{ key: string; cycleKey?: string }> } };
+    expect(sBody.data.tasks.find((t) => t.key === key)!.cycleKey).toBe(cycle);
+
+    const list = await handleListWorkCycles(get("/x"), env, "r", USER, org, { repo });
+    const lBody = (await list.json()) as { data: { cycles: Array<{ key: string; scope: number; done: number }> } };
+    expect(lBody.data.cycles[0]).toMatchObject({ key: cycle, scope: 1, done: 0 });
+
+    const unknown = await handleWorkTaskAction(post("/x", { cycle: "CYC-99" }), env, "r", USER, org, key, "cycle", { repo });
+    expect(unknown.status).toBe(404);
+  });
+
+  it("serves the derived burn-up and 404s an unknown cycle; there is no write route for points", async () => {
+    const repo = new MemoryWorkRepository(fixedClock);
+    const key = await seedTask(repo);
+    const env = createEnv();
+    const org = asUuid(ORG);
+    // The fixed clock stamps events at 2026-07-04 — the window must cover it.
+    const created = await handleCreateWorkCycle(
+      post("/x", { name: "C", startsAt: "2026-07-02", endsAt: "2026-07-04" }),
+      env, "r", USER, org, { repo },
+    );
+    const cycle = ((await created.json()) as { data: { key: string } }).data.key;
+    await handleWorkTaskAction(post("/x", { cycle }), env, "r", USER, org, key, "cycle", { repo });
+
+    const res = await handleWorkBurnup(get("/x"), env, "r", USER, org, cycle, { repo, today: "2026-07-05" });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { data: { points: Array<{ date: string; scope: number; done: number }> } };
+    expect(body.data.points).toHaveLength(3);
+    expect(body.data.points.map((p) => p.scope)).toEqual([0, 0, 1]); // planned in on the 4th
+    expect(body.data.points[2]).toMatchObject({ scope: 1, done: 0 });
+
+    expect((await handleWorkBurnup(get("/x"), env, "r", USER, org, "CYC-9", { repo })).status).toBe(404);
+  });
+
+  it("initiative rollups derive from parent relations in the summary", async () => {
+    const repo = new MemoryWorkRepository(fixedClock);
+    await seedTask(repo); // spec "demo" + one ready task
+    const env = createEnv();
+    const org = asUuid(ORG);
+    await handleCreateWorkInitiative(post("/x", { slug: "q3", title: "Q3" }), env, "r", USER, org, { repo });
+    await repo.relate({ orgId: ORG }, { key: "q3", rel: "parent", target: "demo", actor: { type: "user", id: "usr_1" } });
+
+    const res = await handleWorkSummary(get("/x"), env, "r", USER, org, { repo });
+    const body = (await res.json()) as {
+      data: { initiatives: Array<{ key: string; specs?: string[]; progress?: Record<string, number> }> };
+    };
+    const q3 = body.data.initiatives.find((i) => i.key === "q3")!;
+    expect(q3.specs).toEqual(["demo"]);
+    expect(q3.progress).toEqual({ ready: 1 });
   });
 });
 

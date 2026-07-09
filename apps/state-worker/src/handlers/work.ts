@@ -16,6 +16,7 @@
 import type { Env } from "../env.js";
 import type { ActorContext } from "../router.js";
 import type {
+  CreateWorkCycleRequest,
   CreateWorkInitiativeRequest,
   CreateWorkInitiativeResponse,
   CreateWorkSpecRequest,
@@ -35,6 +36,10 @@ import type {
   WorkOrderRequest,
   WorkPriorityRequest,
   WorkRelateRequest,
+  WorkBurnupResponse,
+  WorkCycleRequest,
+  WorkCyclesResponse,
+  WorkCycleView,
   WorkTimelineEntry,
   WorkTimelineResponse,
   WorkActor,
@@ -58,7 +63,9 @@ import { WORK_POLICY_ACTIONS } from "@saas/contracts/work";
 import {
   WorkError,
   buildEnvelopes,
+  burnup,
   extractMentions,
+  foldRelations,
   insertWorkObservation,
   taskKeysIn,
   contractComplete,
@@ -67,6 +74,7 @@ import {
   progress,
   type Contract,
   type CoordinationEvent,
+  type Cycle,
   type FoldResult,
   type Priority,
   type RelationKind,
@@ -167,6 +175,7 @@ function taskView(t: Task, foldResult: FoldResult): WorkTaskView {
     priority: t.priority,
     estimate: t.estimate,
     relations: t.relations,
+    cycleKey: t.cycleKey,
     lifecycle: {
       rung: lc?.rung ?? (contractComplete(t.contract) ? "ready" : "draft"),
       ready: lc?.ready ?? contractComplete(t.contract),
@@ -188,13 +197,27 @@ function summarize(orgId: string, ws: WorkSet): WorkSummaryResponse {
     createdAt: s.createdAt,
     progress: progress(ws, s.key, foldResult),
   }));
-  const initiativeViews: WorkInitiativeView[] = initiatives.map((i) => ({
-    key: i.key,
-    title: i.title,
-    description: i.description,
-    createdBy: i.createdBy,
-    createdAt: i.createdAt,
-  }));
+  // v3 PM3: initiative rollups — member specs come from `related {rel:
+  // parent}` edges in the log; progress is the SUM of member specs' fold
+  // projections. Derived on every read, stored nowhere (V3-3).
+  const relations = foldRelations(ws.events);
+  const initiativeViews: WorkInitiativeView[] = initiatives.map((i) => {
+    const members = (relations.get(i.key) ?? []).filter((r) => r.rel === "parent").map((r) => r.target);
+    const rollup: Partial<Record<Rung, number>> = {};
+    for (const specKey of members) {
+      for (const [rung, count] of Object.entries(progress(ws, specKey, foldResult))) {
+        rollup[rung as Rung] = (rollup[rung as Rung] ?? 0) + (count ?? 0);
+      }
+    }
+    return {
+      key: i.key,
+      title: i.title,
+      description: i.description,
+      createdBy: i.createdBy,
+      createdAt: i.createdAt,
+      ...(members.length > 0 ? { specs: members, progress: rollup } : {}),
+    };
+  });
   return {
     specs: specViews,
     tasks: ws.tasks.map((t) => taskView(t, foldResult)),
@@ -655,7 +678,9 @@ type TaskAction =
   | "priority"
   | "estimate"
   | "relate"
-  | "order";
+  | "order"
+  // v3 PM3 — plan into a time-box; the burn-up inside stays derived:
+  | "cycle";
 
 // ── PM1: reactions + the timeline ────────────────────────────────────────────
 
@@ -853,6 +878,14 @@ export async function handleWorkTaskAction(
         out = await repo.order(scope, { key, view: body.view, order: body.order, actor: workActor });
         break;
       }
+      case "cycle": {
+        const body = await parseBody<WorkCycleRequest>(request);
+        if (body === null || body.cycle === undefined) {
+          return validationError(requestId, { cycle: ["required (null clears)"] });
+        }
+        out = await repo.setCycle(scope, { key, cycle: body.cycle, actor: workActor });
+        break;
+      }
     }
     const payload: WorkMutationResponse = { key: out.key, seq: out.event.seq };
     return successResponse(payload, requestId);
@@ -916,6 +949,120 @@ export async function handleListWorkViews(
   try {
     const views = await repo.listViews({ orgId });
     const payload: WorkViewsResponse = { views: views.map(viewView) };
+    return successResponse(payload, requestId);
+  } catch (err) {
+    if (err instanceof WorkError) return workErrorResponse(err, requestId);
+    return errorResponse("internal_error", "Service unavailable", 503, requestId);
+  } finally {
+    await dispose(owned);
+  }
+}
+
+// ── Cycles (v3 PM3): authored time-boxes; everything inside is derived ──────
+//
+// Creating a cycle is intent (a name and two dates; key CYC-<seq>). The
+// burn-up is a REPLAY — the workspace folded as of each day in the window —
+// so there is no series to edit and no route that could accept one (V3-3).
+
+function cycleView(c: Cycle, ws: WorkSet, foldResult: FoldResult): WorkCycleView {
+  const members = ws.tasks.filter((t) => t.cycleKey === c.key);
+  const done = members.filter((t) => {
+    const rung = foldResult.lifecycles[t.key]?.rung;
+    return rung === "done" || rung === "released";
+  }).length;
+  return {
+    key: c.key,
+    name: c.name,
+    startsAt: c.startsAt,
+    endsAt: c.endsAt,
+    createdBy: c.createdBy,
+    createdAt: c.createdAt,
+    scope: members.length,
+    done,
+  };
+}
+
+export async function handleCreateWorkCycle(
+  request: Request,
+  env: Env,
+  requestId: string,
+  actor: ActorContext,
+  orgId: Uuid,
+  deps?: WorkHandlerDeps,
+): Promise<Response> {
+  const authz = await authorizeOrg(env, requestId, actor, orgId, WORK_POLICY_ACTIONS.WORK_WRITE);
+  if (!authz.ok) return authz.response;
+  const body = await parseBody<CreateWorkCycleRequest>(request);
+  if (!body?.name || !body.startsAt || !body.endsAt) {
+    return validationError(requestId, { name: ["required"], startsAt: ["required"], endsAt: ["required"] });
+  }
+  const { repo, owned } = repoOf(env, deps);
+  try {
+    const cycle = await repo.createCycle(
+      { orgId },
+      { name: body.name, startsAt: body.startsAt, endsAt: body.endsAt, actor: workActorOf(actor) },
+    );
+    const view: WorkCycleView = { ...cycle, scope: 0, done: 0 };
+    return successResponse(view, requestId, 201);
+  } catch (err) {
+    if (err instanceof WorkError) return workErrorResponse(err, requestId);
+    return errorResponse("internal_error", "Service unavailable", 503, requestId);
+  } finally {
+    await dispose(owned);
+  }
+}
+
+export async function handleListWorkCycles(
+  request: Request,
+  env: Env,
+  requestId: string,
+  actor: ActorContext,
+  orgId: Uuid,
+  deps?: WorkHandlerDeps,
+): Promise<Response> {
+  const authz = await authorizeOrg(env, requestId, actor, orgId, WORK_POLICY_ACTIONS.WORK_READ);
+  if (!authz.ok) return authz.response;
+  const { repo, owned } = repoOf(env, deps);
+  try {
+    const [cycles, ws] = await Promise.all([repo.listCycles({ orgId }), repo.getWorkSet({ orgId })]);
+    const foldResult = fold(ws);
+    const payload: WorkCyclesResponse = { cycles: cycles.map((c) => cycleView(c, ws, foldResult)) };
+    return successResponse(payload, requestId);
+  } catch (err) {
+    if (err instanceof WorkError) return workErrorResponse(err, requestId);
+    return errorResponse("internal_error", "Service unavailable", 503, requestId);
+  } finally {
+    await dispose(owned);
+  }
+}
+
+export async function handleWorkBurnup(
+  request: Request,
+  env: Env,
+  requestId: string,
+  actor: ActorContext,
+  orgId: Uuid,
+  cycleKey: string,
+  deps?: WorkHandlerDeps & { today?: string },
+): Promise<Response> {
+  const authz = await authorizeOrg(env, requestId, actor, orgId, WORK_POLICY_ACTIONS.WORK_READ);
+  if (!authz.ok) return authz.response;
+  const { repo, owned } = repoOf(env, deps);
+  try {
+    const cycles = await repo.listCycles({ orgId });
+    const cycle = cycles.find((c) => c.key === cycleKey);
+    if (!cycle) {
+      return errorResponse("not_found", "Not found", 404, requestId);
+    }
+    const ws = await repo.getWorkSet({ orgId });
+    const today = deps?.today ?? new Date().toISOString().slice(0, 10);
+    const payload: WorkBurnupResponse = {
+      key: cycle.key,
+      name: cycle.name,
+      startsAt: cycle.startsAt,
+      endsAt: cycle.endsAt,
+      points: burnup(ws, cycle, today),
+    };
     return successResponse(payload, requestId);
   } catch (err) {
     if (err instanceof WorkError) return workErrorResponse(err, requestId);

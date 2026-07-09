@@ -6,6 +6,7 @@
 
 import * as React from "react";
 import type {
+  WorkCycleView,
   WorkRung,
   WorkSpecView,
   WorkSummaryResponse,
@@ -30,6 +31,7 @@ import { TaskActions } from "@/components/work/task-actions";
 import { EditWorkItemDialog, WorkCreateMenu } from "@/components/work/create-work-item-dialog";
 import { SpecDocSheet } from "@/components/work/spec-doc-sheet";
 import { TaskConversationSheet } from "@/components/work/task-conversation-sheet";
+import { CyclesSection } from "@/components/work/cycles-section";
 import { WorkBoard } from "@/components/work/work-board";
 import { WorkViewBar, type WorkLayout } from "@/components/work/work-view-bar";
 import { SpawnAgentDialog } from "@/components/agents/spawn-agent-dialog";
@@ -105,6 +107,25 @@ export function WorkWorkbench({ orgId }: { orgId: string }) {
   const [layout, setLayout] = React.useState<WorkLayout>("list");
   const [filters, setFilters] = React.useState<BoardFilters>({});
 
+  // PM3: authored time-boxes — loaded beside the summary; derived counts
+  // refresh whenever the summary does (same mutation signal).
+  const [cycles, setCycles] = React.useState<WorkCycleView[]>([]);
+  const summaryData = summary.data;
+  React.useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const res = await client.work.listCycles(orgId);
+        if (!cancelled) setCycles(res.cycles);
+      } catch {
+        // cycles are additive; the page renders without them
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [client, orgId, summaryData]);
+
   const data = summary.data;
   const empty = !data || (data.tasks.length === 0 && data.specs.length === 0);
   const filteredTasks = data ? applyFilters(data.tasks, filters) : [];
@@ -117,7 +138,7 @@ export function WorkWorkbench({ orgId }: { orgId: string }) {
   } else if (empty) {
     body = <EmptyWork />;
   } else if (layout === "board") {
-    body = <WorkBoard orgId={orgId} tasks={filteredTasks} onMutated={summary.reload} />;
+    body = <WorkBoard orgId={orgId} tasks={filteredTasks} cycles={cycles} onMutated={summary.reload} />;
   } else {
     body = (
       <WorkSummary
@@ -155,6 +176,11 @@ export function WorkWorkbench({ orgId }: { orgId: string }) {
         />
       ) : null}
       {body}
+      {data && !empty && (cycles.length > 0 || data.tasks.length > 0) ? (
+        <div className="mt-[26px]">
+          <CyclesSection orgId={orgId} cycles={cycles} onMutated={reload} />
+        </div>
+      ) : null}
     </Screen>
   );
 }
@@ -389,6 +415,8 @@ function Initiatives({
                 {i.description}
               </span>
             ) : null}
+            {/* PM3: the rollup — SUM of member specs' fold projections. */}
+            <InitiativeRollup progress={i.progress} />
             <button
               type="button"
               onClick={() => setEditing(i.key)}
@@ -417,6 +445,30 @@ function Initiatives({
         />
       ) : null}
     </section>
+  );
+}
+
+/** Derived initiative progress (v3 PM3) — the same bar idiom as spec groups;
+ *  no number here is typed by anyone (V3-3). */
+function InitiativeRollup({ progress }: { progress?: Partial<Record<WorkRung, number>> | undefined }) {
+  if (!progress) return null;
+  const total = Object.values(progress).reduce((a, b) => a + (b ?? 0), 0);
+  if (total === 0) return null;
+  const done = (progress.done ?? 0) + (progress.released ?? 0);
+  const active = (progress.in_review ?? 0) + (progress.in_progress ?? 0);
+  return (
+    <span className="flex shrink-0 items-center gap-2">
+      <span className="text-[11px] text-muted-foreground">
+        {done}/{total}
+      </span>
+      <span
+        aria-hidden
+        className="flex h-[5px] w-16 overflow-hidden rounded-[3px] bg-[#EDEDED] dark:bg-secondary sm:w-24"
+      >
+        {done > 0 ? <span className="bg-success" style={{ width: `${(done / total) * 100}%` }} /> : null}
+        {active > 0 ? <span className="bg-warning-accent" style={{ width: `${(active / total) * 100}%` }} /> : null}
+      </span>
+    </span>
   );
 }
 
@@ -515,6 +567,11 @@ function TaskRow({
         ) : null}
         {task.estimate !== undefined ? (
           <span className="shrink-0 text-[10.5px] text-muted-foreground">{task.estimate}pt</span>
+        ) : null}
+        {task.cycleKey ? (
+          <span className="shrink-0 rounded-full border border-border px-1.5 py-px font-mono text-[10px] text-muted-foreground">
+            {task.cycleKey}
+          </span>
         ) : null}
         {task.tags?.map((tag) => (
           <span
