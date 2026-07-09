@@ -1,0 +1,71 @@
+apiVersion: sourceplane.io/v1
+kind: Component
+metadata:
+  name: agents-worker
+  description: Cloudflare Worker for the agent-session control plane (saas-agents)
+spec:
+  type: cloudflare-worker-turbo
+  lifecycle: production
+  owner: platform
+  domain: starter-runtime
+  path: apps/agents-worker
+  dependsOn:
+    # Build inputs (dependsOn[].input): bundled into this component's artifact,
+    # so a change to any rescopes this component in --changed.
+    - component: contracts
+      input: true
+    - component: db
+      input: true
+    - component: membership-worker
+    - component: policy-worker
+  subscribe:
+    environments:
+      - name: dev
+        profile: verify
+      - name: stage
+        profile: verify
+        profileRules:
+          - profile: deploy
+            when:
+              triggerRef: github-push-main
+      - name: prod
+        profile: verify
+        profileRules:
+          - profile: deploy
+            when:
+              triggerRef: github-push-main
+  parameters:
+    nodeVersion: "22"
+    pnpmVersion: "10.12.1"
+    workspaceDir: ../..
+    appDir: .
+    # Deploy-time wiring — wrangler.jsonc is rendered, never committed. Verify
+    # lanes render from wiring.fixture.json (offline); deploy lanes resolve real
+    # IDs from the Secrets Manager wiring manifest.
+    awsAccountId: "306024784101"
+    awsRegion: us-east-1
+    orgName: sourceplane
+    owner: sourceplane
+    repo: orun-cloud
+
+    secretsWorker: agents-worker
+    turboFilter: "@saas/agents-worker"
+    wranglerConfig: wrangler.jsonc
+    wranglerTemplate: wrangler.template.jsonc
+    wiringComponents: "cloudflare-hyperdrive"
+    wiringEnvs: "stage,prod"
+    wiringFixture: wiring.fixture.json
+    installCommand: pnpm install --frozen-lockfile
+    buildCommand: pnpm exec turbo run build --filter=@saas/agents-worker
+    typecheckCommand: pnpm exec turbo run typecheck --filter=@saas/agents-worker
+    dryRunCommand: pnpm exec wrangler deploy --dry-run --config wrangler.jsonc --env prod
+    deployCommand: pnpm exec wrangler deploy --config wrangler.jsonc --env prod
+    # AG5 is dormant (no secrets, no migrations to run from the worker); the
+    # agents schema migrates through infra/db-migrate like every other context.
+    migrationCommand: "echo 'No migrations configured.'"
+    smokeCommand: "echo 'No smoke test configured.'"
+  labels:
+    team: platform
+    layer: runtime
+    surface: agents
+    runtime: cloudflare

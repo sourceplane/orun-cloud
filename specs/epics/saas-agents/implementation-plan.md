@@ -5,7 +5,7 @@ The cloud-owned milestones. The runtime (AG0–AG4) lives in
 Stages: **0** provider foundation, **1** hosted sessions, **2** work-driven
 autonomy, **3** scale + hardening. Design refs are to [`design.md`](./design.md).
 
-## AG5 — Sandbox provider plane — 🗓️ Planned (⛔ live paths need the Daytona credential)
+## AG5 — Sandbox provider plane — 🏗️ In progress (foundation shipped: `agents` schema + contracts + dormant `apps/agents-worker`; Daytona adapter + base snapshot ⛔ credential-gated)
 
 - `SandboxProvider` seam in `apps/agents-worker`; **Daytona adapter**
   (create/exec/snapshot/resume/destroy/health); a `local-docker` dev adapter +

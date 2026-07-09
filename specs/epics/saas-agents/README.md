@@ -71,7 +71,7 @@ the same public surfaces a human uses.
 
 | ID | Milestone | Stage | Status |
 |----|-----------|-------|--------|
-| AG5 | Sandbox provider plane: `SandboxProvider` + Daytona adapter + `local-docker` dev adapter; base snapshot (orun + drivers, zero creds); `apps/agents-worker` control plane; egress policy | 0 | 🗓️ Planned (⛔ Daytona cred to go live) |
+| AG5 | Sandbox provider plane: `SandboxProvider` + Daytona adapter + `local-docker` dev adapter; base snapshot (orun + drivers, zero creds); `apps/agents-worker` control plane; egress policy | 0 | 🏗️ Foundation shipped (`agents` schema `650_agents_foundation`, `@saas/db/agents` model+repo+memory, `@saas/contracts/agents` incl. `SandboxProvider` seam, dormant `apps/agents-worker` `/health`); Daytona/dev adapters + base snapshot ⛔ credential-gated |
 | AG6 | Session identity & attach: agent profiles as `sp_` principals w/ responsible owner; session-bound token mint/refresh; `agent.session.*` policy; the **`orun agent serve` ↔ per-session DO relay** (event ingest → R2 mirror + SSE); leases + sweep; IG4 repo tokens; SM3 `how: agent-session` | 1 | 🗓️ Planned |
 | AG7 | Console **Agents** tab: sessions list, live session detail (transcript from the DO relay, steer, approvals, artifacts, cost), profiles, informed-consent spawn dialog | 1 | 🗓️ Planned |
 | AG8 | Design runs from the Work tab: "Design with agent" on a Spec → the runtime's brief (`catalog affected`) → epic files PR + `contract_propose` → tasks derive Ready | 2 | 🗓️ Planned (needs WP1/WP2) |
