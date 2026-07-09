@@ -25,6 +25,15 @@ export function apiEdgeWorkersDevUrl(environment: string): string {
   return `https://api-edge-${environment}.${WORKERS_DEV_SUBDOMAIN}.workers.dev`;
 }
 
+/**
+ * mcp-worker workers.dev URL for a given environment name (saas-mcp-server
+ * MCP2/MCP7). Same per-env wrangler naming convention as api-edge; the
+ * `mcp.<domain>` custom hostname is an infra follow-up tracked with MCP3.
+ */
+export function mcpWorkersDevUrl(environment: string): string {
+  return `https://mcp-worker-${environment}.${WORKERS_DEV_SUBDOMAIN}.workers.dev`;
+}
+
 /** Sales contact surfaced by the billing upgrade UX. */
 export const SALES_EMAIL = "sales@sourceplane.ai";
 

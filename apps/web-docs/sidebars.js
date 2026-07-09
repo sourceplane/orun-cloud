@@ -111,7 +111,7 @@ const sidebars = {
     {
       type: 'category',
       label: 'Developers',
-      items: ['developers/sdk', 'developers/cli'],
+      items: ['developers/sdk', 'developers/cli', 'developers/mcp'],
     },
     'security/security-model',
     {

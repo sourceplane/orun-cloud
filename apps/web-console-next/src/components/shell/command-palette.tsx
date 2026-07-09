@@ -15,6 +15,7 @@ import { Dialog, DialogContent, DialogTitle, DialogDescription } from "@/compone
 import { useSession } from "@/lib/session";
 import { useToast } from "@/components/ui/toast";
 import {
+  Bot,
   Building2,
   FolderKanban,
   Boxes,
@@ -51,6 +52,7 @@ import {
 // Icon-name → component resolver. Keeps `command-registry.ts` pure (string
 // names only) while the renderer owns the concrete icon set.
 const ICONS: Record<string, LucideIcon> = {
+  Bot,
   Building2,
   FolderKanban,
   Boxes,

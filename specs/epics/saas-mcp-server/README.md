@@ -89,7 +89,7 @@ additive surface over shipped rails.
 | MCP4 | Resources & prompts: catalog entity overviews and run logs as MCP resources; packaged prompts (investigate-failed-run, access-review, usage-review) | ✅ Shipped (2 resource templates + 4 prompts, both transports via `createMcpServer`) |
 | MCP5 | Write tools (gated): task-shaped mutations with `Idempotency-Key`, tool annotations, `via: mcp` audit provenance, read-only mode enforcement | ✅ Shipped (6 write tools — budget now exactly 25/25; remote stays read-only pending a deliberate enable) |
 | MCP6 | Metering + entitlement: `mcp.tool_call` usage events, `feature.mcp_server` seam + U7 upgrade UX, quota checks | ✅ Shipped (D3 default posture: gate OPEN — granted on all plans; free-vs-paid product decision still open) |
-| MCP7 | Console "Connect an agent" surface: install snippets, key minting with per-key tool scope, connection status; docs | 🗓️ Planned |
+| MCP7 | Console "Connect an agent" surface: install snippets, key minting with per-key tool scope, connection status; docs | ✅ Shipped (Settings › Developer › MCP server + web-docs page; D4 → role-based scoping only in v1) |
 | MCP8 | Conformance + agent-eval harness: `tests/mcp` contract suite, MCP Inspector smoke in CI, scripted agent-task evals, tool-budget guard | 🗓️ Planned |
 
 ## Scope boundary

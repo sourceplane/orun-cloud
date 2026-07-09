@@ -75,6 +75,18 @@ describe("buildSettingsNav", () => {
     expect(hrefs).not.toContain("/orgs/acme/settings/access");
   });
 
+  it("lists the MCP server (Connect an agent, saas-mcp-server MCP7) under Developer, next to API keys", () => {
+    const developer = buildSettingsNav("acme").find((g) => g.id === "developer")!;
+    const hrefs = developer.links.map((l) => l.href);
+    expect(hrefs).toContain("/orgs/acme/settings/mcp");
+    // Adjacent to API keys — the credential an agent key rides is minted there.
+    expect(hrefs.indexOf("/orgs/acme/settings/mcp")).toBe(
+      hrefs.indexOf("/orgs/acme/settings/api-keys") + 1,
+    );
+    const mcp = developer.links.find((l) => l.href === "/orgs/acme/settings/mcp")!;
+    expect(mcp.label).toBe("MCP server");
+  });
+
   it("no longer lists Integrations — promoted to the top-level connections hub", () => {
     const hrefs = flattenSettingsNav(buildSettingsNav("acme")).map((l) => l.href);
     expect(hrefs).not.toContain("/orgs/acme/settings/integrations");

@@ -150,14 +150,15 @@ metering SLO; flipping the entitlement off yields the gated experience without
 redeploy; nothing in `packages/mcp` knows about billing (the gate lives at the
 transport/entitlement seam).
 
-## MCP7 — Console "Connect an agent" surface — 🗓️ Planned
+## MCP7 — Console "Connect an agent" surface — ✅ Shipped (see IMPLEMENTATION-STATUS.md)
 
 - Console page (org scope): per-client install snippets (Claude Code, Cursor,
   VS Code, generic), remote URL + OAuth hint, API-key minting shortcut with a
   suggested least-privilege role, connection/security status (active MCP grants,
   recent agent traffic from audit).
 - Per-key tool scoping if/when key metadata supports it (risks D4); otherwise
-  role-based guidance only.
+  role-based guidance only. *(D4 decided 2026-07-09: role-based only in v1 —
+  see risks doc.)*
 - Docs page mirroring the console content.
 
 **Done when:** a new user can go from console → configured local agent in

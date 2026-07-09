@@ -29,6 +29,15 @@ describe("buildBreadcrumbs", () => {
     ]);
   });
 
+  it("labels the MCP server (Connect an agent) settings page", () => {
+    const crumbs = buildBreadcrumbs({ ...org, pathname: "/orgs/acme/settings/mcp" });
+    expect(crumbs).toEqual([
+      { label: "Acme Inc", href: "/orgs/acme" },
+      { label: "Settings", href: "/orgs/acme/settings" },
+      { label: "MCP server" },
+    ]);
+  });
+
   it("labels the top-level Secrets & Config surface", () => {
     const crumbs = buildBreadcrumbs({ ...org, pathname: "/orgs/acme/secrets" });
     expect(crumbs).toEqual([
