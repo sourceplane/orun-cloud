@@ -21,7 +21,7 @@ autonomy, **3** scale + hardening. Design refs are to [`design.md`](./design.md)
   `orun agent serve` to "attached, awaiting brief" against a stub relay;
   over-destroy sweep covered by tests.
 
-## AG6 — Session identity & the DO relay — 🗓️ Planned
+## AG6 — Session identity & the DO relay — 🏗️ In progress (control-plane routes over the schema shipped; session tokens + DO relay + sandbox provisioning are the remaining slices)
 
 - Agent profiles bind to `sp_` principals with a **mandatory responsible
   owner**; capability narrowing over the orun agent type (never widening);
