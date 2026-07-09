@@ -3,8 +3,8 @@
 // resolved from AWS Secrets Manager at deploy time (wire-live) or from the
 // committed wiring.fixture.json for offline dry-runs (wire-fixture).
 //
-// AG5 is the dormant foundation: /health only, no cron, PLATFORM_DB + downstream
-// service bindings declared so AG6 can light them up without a wrangler change.
+// AG6 control plane: workspace routes + the lease-sweep cron; the scheduled
+// handler no-ops when PLATFORM_DB/downstream bindings are absent.
 {
   "name": "agents-worker",
   "compatibility_date": "2025-05-01",
@@ -24,6 +24,10 @@
       "workers_dev": false,
       "vars": {
         "ENVIRONMENT": "stage"
+      },
+      // Lease sweep (design §4.3): reclaim lapsed sessions + destroy sandboxes.
+      "triggers": {
+        "crons": ["*/5 * * * *"]
       },
       "hyperdrive": [
         {
@@ -54,6 +58,9 @@
       "workers_dev": false,
       "vars": {
         "ENVIRONMENT": "prod"
+      },
+      "triggers": {
+        "crons": ["*/5 * * * *"]
       },
       "hyperdrive": [
         {

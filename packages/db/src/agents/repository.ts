@@ -30,6 +30,7 @@ import type {
   CreateConnectionInput,
   CreateProfileInput,
   CreateSessionInput,
+  ListLapsedSessionsInput,
   SetAutonomyInput,
   SetConnectionStatusInput,
   WorkspaceScope,
@@ -248,6 +249,20 @@ export function createAgentsRepository(sql: TransactionalSqlExecutor): AgentsRep
         );
       }
       return mapSession(res.rows[0] as Row);
+    },
+
+    async listLapsedSessions(input: ListLapsedSessionsInput): Promise<AgentSession[]> {
+      // Deliberately CROSS-ORG: the sweep reclaims the whole fleet.
+      const res = await sql.execute(
+        `SELECT * FROM agents.agent_sessions
+         WHERE ((state IN ('running','awaiting_approval'))
+                AND lease_expires_at IS NOT NULL AND lease_expires_at < $1)
+            OR (state = 'provisioning' AND created_at < $2)
+         ORDER BY created_at
+         LIMIT $3`,
+        [input.leaseCutoff, input.provisioningCutoff, input.limit],
+      );
+      return res.rows.map((r) => mapSession(r as Row));
     },
 
     async listSessions(scope: WorkspaceScope, filter?: { state?: SessionState }): Promise<AgentSession[]> {
