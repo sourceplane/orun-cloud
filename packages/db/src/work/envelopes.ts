@@ -10,6 +10,9 @@ import {
   type Contract,
   type CoordinationEvent,
   type Initiative,
+  type Priority,
+  type Relation,
+  type RelationKind,
   type Spec,
   type Task,
 } from "./model.js";
@@ -47,9 +50,18 @@ export interface Envelopes {
   initiatives: Initiative[];
 }
 
-/** Replays item_created / item_edited / contract_edited into the current
- *  envelopes. Events must be seq-ordered; unknown subjects in edits are a
- *  replay integrity error (the mutator checked existence at write time). */
+function mustTask(tasks: Map<string, Task>, e: CoordinationEvent): Task {
+  const task = tasks.get(e.subject);
+  if (!task) {
+    throw new WorkError("not_found", `replay: ${e.kind} on unknown task ${e.subject} at seq ${e.seq}`);
+  }
+  return task;
+}
+
+/** Replays item_created / item_edited / contract_edited — plus the v3 PM2
+ *  board-intent kinds — into the current envelopes. Events must be
+ *  seq-ordered; unknown subjects in edits are a replay integrity error (the
+ *  mutator checked existence at write time). */
 export function buildEnvelopes(workspace: string, events: CoordinationEvent[]): Envelopes {
   const specs = new Map<string, Spec>();
   const tasks = new Map<string, Task>();
@@ -142,12 +154,50 @@ export function buildEnvelopes(workspace: string, events: CoordinationEvent[]): 
         spec.docRef = p.revision;
         break;
       }
+      // ── Board intent (v3 PM2): folded envelope fields on tasks ──────────
+      // These are task verbs at the mutator; an unknown task subject is a
+      // replay integrity error, same as item_edited.
+      case "labeled":
+      case "unlabeled": {
+        const p = e.payload as unknown as { label?: string };
+        const task = mustTask(tasks, e);
+        if (!p.label) break;
+        const tags = new Set(task.tags ?? []);
+        if (e.kind === "labeled") tags.add(p.label);
+        else tags.delete(p.label);
+        task.tags = tags.size > 0 ? [...tags].sort() : undefined;
+        break;
+      }
+      case "prioritized": {
+        const p = e.payload as unknown as { priority?: Priority };
+        const task = mustTask(tasks, e);
+        task.priority = p.priority && p.priority !== "none" ? p.priority : undefined;
+        break;
+      }
+      case "estimated": {
+        const p = e.payload as unknown as { points?: number | null };
+        const task = mustTask(tasks, e);
+        task.estimate = typeof p.points === "number" ? p.points : undefined;
+        break;
+      }
+      case "related":
+      case "unrelated": {
+        // Relations fold onto TASK envelopes only; spec/initiative subjects
+        // (initiative membership) stay log-derived until the PM3 rollups.
+        const p = e.payload as unknown as { rel?: RelationKind; target?: string };
+        const task = tasks.get(e.subject);
+        if (!task || !p.rel || !p.target) break;
+        const rels = (task.relations ?? []).filter((r) => !(r.rel === p.rel && r.target === p.target));
+        const rel: Relation = { rel: p.rel, target: p.target };
+        if (e.kind === "related") rels.push(rel);
+        task.relations = rels.length > 0 ? rels : undefined;
+        break;
+      }
       default:
         // assigned/unassigned/comment_added/ordered/pinned/canceled — and
-        // the v3 conversation/intent kinds (reactions, labels, priority,
-        // estimates, relations, cycles) — carry coordination state the fold
-        // (or a later milestone's envelope columns, PM2) reads from the log
-        // directly; none of them touch the v2 envelope fields.
+        // the v3 conversation kinds (reactions, doc anchors) plus cycle_set
+        // (PM3) — carry coordination state the fold reads from the log
+        // directly; none of them touch the envelope fields.
         break;
     }
   }

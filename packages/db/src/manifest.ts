@@ -624,5 +624,14 @@ export const manifest: MigrationManifest = {
       description:
         "BYO provider accounts (saas-agents AG12, design §10): agents.provider_connections — a workspace connects its own Daytona account (sandbox compute) and Anthropic key (model credential). The row carries provider (CHECK daytona|anthropic), workspace-unique name, NON-SECRET config JSONB, secret_ref (the key itself lives in the secret manager under the reserved agents/providers/* namespace — config-worker stays the only decrypt path), a last4 key_hint, and a CHECK'd verification status (unverified|verified|invalid) + last_verified_at + redacted status_reason maintained by cheap read-only provider pings. Workspace-scoped; UNIQUE(org_id,provider,name). Additive + idempotent.",
     },
+    {
+      id: "690_work_v3_board_intent",
+      context: "work",
+      path: "690_work_v3_board_intent/up.sql",
+      checksum:
+        "008a19a8b470fa6098b24f9523a443d6144c6c5e506815f1444fd845855d6916",
+      description:
+        "Folded board-intent cache columns (orun-work-v3 PM2): work.tasks gains tags JSONB (sorted free-form workspace labels, folded from labeled/unlabeled) and relations JSONB ([{rel: blocks|parent|relates, target}], folded from related/unrelated — the fold derives Blocked from open `blocks` relations exactly as from contract Deps, a flag never a rung). Both columns are droppable envelope caches rebuilt from the coordination log alone (invariant 1). 660 already carries priority/estimate/cycle_key and work.views. Additive + idempotent (ADD COLUMN IF NOT EXISTS).",
+    },
   ],
 };

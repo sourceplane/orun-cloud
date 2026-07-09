@@ -24,6 +24,19 @@ export type WorkRung =
 
 export type WorkActorType = "user" | "agent" | "automation";
 
+/** Authored priority (v3 PM2) — pure intent; "none" clears. Never consulted
+ *  by the fold. */
+export type WorkPriority = "none" | "low" | "medium" | "high" | "urgent";
+
+/** Typed relations (v3 PM2, closed). Only `blocks` has fold semantics: the
+ *  target derives blocked from it exactly as from contract deps. */
+export type WorkRelationKind = "blocks" | "parent" | "relates";
+
+export interface WorkRelation {
+  rel: WorkRelationKind;
+  target: string;
+}
+
 export interface WorkActor {
   type: WorkActorType;
   id: string;
@@ -66,6 +79,12 @@ export interface WorkTaskView {
   createdBy: WorkActor;
   createdAt?: string | undefined;
   lifecycle: WorkLifecycleView;
+  // Folded board intent (v3 PM2) — additive; v2 clients ignore them. Pure
+  // intent replayed from the coordination log; none of it moves a rung.
+  tags?: string[] | undefined;
+  priority?: WorkPriority | undefined;
+  estimate?: number | undefined;
+  relations?: WorkRelation[] | undefined;
 }
 
 export interface WorkSpecView {
@@ -152,6 +171,68 @@ export interface WorkCommentRequest {
 
 export interface WorkReactionRequest {
   emoji: string;
+}
+
+// ── Board intent (v3 PM2): task verbs — pure intent, one event each ─────────
+
+export interface WorkLabelRequest {
+  label: string;
+  remove?: boolean | undefined;
+}
+
+export interface WorkPriorityRequest {
+  priority: WorkPriority; // "none" clears
+}
+
+export interface WorkEstimateRequest {
+  points: number | null; // null clears
+}
+
+export interface WorkRelateRequest {
+  rel: WorkRelationKind;
+  target: string;
+  remove?: boolean | undefined;
+}
+
+/** Backlog ordering within a view (v3 PM2 drag-within-column) — the v2
+ *  `ordered` coordination event over HTTP. Pure intent, no ceremony. */
+export interface WorkOrderRequest {
+  view: string;
+  order: number;
+}
+
+// ── Saved views (v3 PM2): shareable UI intent — no event, no lifecycle ──────
+
+export interface WorkViewConfig {
+  layout: "board" | "list";
+  filters?:
+    | {
+        tags?: string[] | undefined;
+        priority?: WorkPriority[] | undefined;
+        rung?: WorkRung[] | undefined;
+        spec?: string[] | undefined;
+      }
+    | undefined;
+  groupBy?: string | undefined;
+  order?: string[] | undefined;
+}
+
+export interface WorkViewView {
+  key: string;
+  name: string;
+  config: WorkViewConfig;
+  createdBy: WorkActor;
+  createdAt: string;
+}
+
+export interface SaveWorkViewRequest {
+  key: string; // lowercase kebab; upsert key
+  name: string;
+  config: WorkViewConfig;
+}
+
+export interface WorkViewsResponse {
+  views: WorkViewView[];
 }
 
 // ── The timeline (PM1): both logs interleaved for one item ──────────────────

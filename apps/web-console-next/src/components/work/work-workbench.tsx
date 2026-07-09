@@ -25,10 +25,13 @@ import { wrap } from "@/lib/api";
 import { qk, useApiQuery } from "@/lib/query";
 import { useSession } from "@/lib/session";
 import { rungLabel, groupTasksBySpec, type SpecGroup } from "@/lib/work/model";
+import { applyFilters, type BoardFilters } from "@/lib/work/board";
 import { TaskActions } from "@/components/work/task-actions";
 import { EditWorkItemDialog, WorkCreateMenu } from "@/components/work/create-work-item-dialog";
 import { SpecDocSheet } from "@/components/work/spec-doc-sheet";
 import { TaskConversationSheet } from "@/components/work/task-conversation-sheet";
+import { WorkBoard } from "@/components/work/work-board";
+import { WorkViewBar, type WorkLayout } from "@/components/work/work-view-bar";
 import { SpawnAgentDialog } from "@/components/agents/spawn-agent-dialog";
 
 export function WorkWorkbench({ orgId }: { orgId: string }) {
@@ -97,8 +100,14 @@ export function WorkWorkbench({ orgId }: { orgId: string }) {
     };
   }, [client, orgId, reload]);
 
+  // PM2: layout (list | board) + the filter bar. Filters apply to BOTH
+  // layouts; the board additionally splits by rung columns.
+  const [layout, setLayout] = React.useState<WorkLayout>("list");
+  const [filters, setFilters] = React.useState<BoardFilters>({});
+
   const data = summary.data;
   const empty = !data || (data.tasks.length === 0 && data.specs.length === 0);
+  const filteredTasks = data ? applyFilters(data.tasks, filters) : [];
 
   let body: React.ReactNode;
   if (summary.loading) {
@@ -107,8 +116,16 @@ export function WorkWorkbench({ orgId }: { orgId: string }) {
     body = <ErrorCard code={summary.error.code} message={summary.error.message} />;
   } else if (empty) {
     body = <EmptyWork />;
+  } else if (layout === "board") {
+    body = <WorkBoard orgId={orgId} tasks={filteredTasks} onMutated={summary.reload} />;
   } else {
-    body = <WorkSummary data={data} orgId={orgId} onMutated={summary.reload} />;
+    body = (
+      <WorkSummary
+        data={{ ...data, tasks: filteredTasks }}
+        orgId={orgId}
+        onMutated={summary.reload}
+      />
+    );
   }
 
   return (
@@ -127,6 +144,16 @@ export function WorkWorkbench({ orgId }: { orgId: string }) {
             }
           : {})}
       />
+      {data && !empty ? (
+        <WorkViewBar
+          orgId={orgId}
+          tasks={data.tasks}
+          layout={layout}
+          filters={filters}
+          onLayoutChange={setLayout}
+          onFiltersChange={setFilters}
+        />
+      ) : null}
       {body}
     </Screen>
   );
@@ -481,6 +508,22 @@ function TaskRow({
           open={agentOpen}
           onOpenChange={setAgentOpen}
         />
+        {task.priority && task.priority !== "none" ? (
+          <span className="shrink-0 text-[10.5px] font-semibold uppercase text-muted-foreground">
+            {task.priority}
+          </span>
+        ) : null}
+        {task.estimate !== undefined ? (
+          <span className="shrink-0 text-[10.5px] text-muted-foreground">{task.estimate}pt</span>
+        ) : null}
+        {task.tags?.map((tag) => (
+          <span
+            key={tag}
+            className="shrink-0 rounded-full border border-border px-1.5 py-px text-[10.5px] text-muted-foreground"
+          >
+            {tag}
+          </span>
+        ))}
         {lc.pinned ? (
           <span
             className="shrink-0"

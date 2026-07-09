@@ -13,6 +13,8 @@ import type {
   DocRevision,
   Initiative,
   Observation,
+  Priority,
+  RelationKind,
   Rung,
   Spec,
   Task,
@@ -92,6 +94,55 @@ export interface ReactionInput {
   at?: string | undefined;
 }
 
+export interface LabelInput {
+  key: string;
+  label: string;
+  actor: Actor;
+  at?: string | undefined;
+}
+
+export interface PriorityInput {
+  key: string;
+  priority: Priority; // "none" clears
+  actor: Actor;
+  at?: string | undefined;
+}
+
+export interface EstimateInput {
+  key: string;
+  points: number | null; // null clears
+  actor: Actor;
+  at?: string | undefined;
+}
+
+export interface RelateInput {
+  key: string;
+  rel: RelationKind;
+  target: string;
+  actor: Actor;
+  at?: string | undefined;
+}
+
+/** A saved view (v3 PM2): pure UI intent, shareable by default. Views are
+ *  workspace configuration, not item coordination — they live beside the
+ *  logs (work.views) and append NO event; the closed event vocabulary has
+ *  no view kind. */
+export interface WorkView {
+  key: string;
+  name: string;
+  config: Record<string, unknown>; // {layout: board|list, filters, groupBy, order}
+  createdBy: Actor;
+  createdAt: string;
+}
+
+export interface SaveViewInput {
+  key: string; // lowercase kebab; upsert key
+  name: string;
+  config: Record<string, unknown>;
+  actor: Actor;
+  at?: string | undefined;
+}
+
 export interface OrderInput {
   key: string;
   view: string; // per-view ordering (priority is coordination, not a rung)
@@ -158,6 +209,16 @@ export interface WorkRepository {
   /** PM1: reactions target a comment event; one coordination event each. */
   addReaction(scope: WorkspaceScope, input: ReactionInput): Promise<CommitOutcome>;
   removeReaction(scope: WorkspaceScope, input: ReactionInput): Promise<CommitOutcome>;
+  /** PM2 board intent — task verbs, one coordination event each; the folded
+   *  envelope fields (tags/priority/estimate/relations) rebuild from the
+   *  log alone (invariant 1). Priority/estimate/labels were never the lie —
+   *  they are pure intent; nothing here can move a rung. */
+  label(scope: WorkspaceScope, input: LabelInput): Promise<CommitOutcome>;
+  unlabel(scope: WorkspaceScope, input: LabelInput): Promise<CommitOutcome>;
+  prioritize(scope: WorkspaceScope, input: PriorityInput): Promise<CommitOutcome>;
+  estimate(scope: WorkspaceScope, input: EstimateInput): Promise<CommitOutcome>;
+  relate(scope: WorkspaceScope, input: RelateInput): Promise<CommitOutcome>;
+  unrelate(scope: WorkspaceScope, input: RelateInput): Promise<CommitOutcome>;
   order(scope: WorkspaceScope, input: OrderInput): Promise<CommitOutcome>;
   pin(scope: WorkspaceScope, input: PinInput): Promise<CommitOutcome>;
   cancel(scope: WorkspaceScope, input: CancelInput): Promise<CommitOutcome>;
@@ -172,6 +233,11 @@ export interface WorkRepository {
   putDocRevision(scope: WorkspaceScope, input: PutDocInput): Promise<PutDocOutcome>;
   getDocRevision(scope: WorkspaceScope, specKey: string, revision?: string): Promise<DocRevision>;
   listDocHistory(scope: WorkspaceScope, specKey: string): Promise<Omit<DocRevision, "body">[]>;
+
+  /** Saved views (v3 PM2): workspace UI configuration beside the logs —
+   *  upsert by key, no coordination event (there is no view event kind). */
+  saveView(scope: WorkspaceScope, input: SaveViewInput): Promise<WorkView>;
+  listViews(scope: WorkspaceScope): Promise<WorkView[]>;
 
   /** Everything the fold needs: envelopes + both logs, seq-ordered. */
   getWorkSet(scope: WorkspaceScope): Promise<WorkSet>;
