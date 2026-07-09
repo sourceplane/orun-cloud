@@ -15,6 +15,7 @@ export {
   DEFAULT_LIMITS,
   type McpTool,
   type McpToolAnnotations,
+  type ToolCallGate,
   type ToolContext,
   type ToolLimits,
   type ToolResult,
@@ -39,9 +40,30 @@ export {
 export {
   toErrorResult,
   toResourceReadError,
+  EntitlementDeniedError,
   ResourceReadError,
   ToolInputError,
 } from "./errors.js";
+
+// MCP6 — metering + entitlement seam (design §8). Transport-facing: the CLI
+// and the worker wire these; the tool plane itself stays billing-blind.
+export {
+  MCP_TOOL_CALL_METRIC,
+  emitToolCallUsage,
+  workspaceOf,
+  type McpUsageOptions,
+} from "./usage.js";
+
+export {
+  MCP_SERVER_ENTITLEMENT_KEY,
+  ENTITLEMENT_CACHE_TTL_MS,
+  ENTITLEMENT_CACHE_MAX_ENTRIES,
+  checkMcpServerEntitlement,
+  createEntitlementGate,
+  type EntitlementGateCache,
+  type EntitlementGateOptions,
+  type McpEntitlementDecision,
+} from "./entitlement.js";
 
 export {
   allResources,

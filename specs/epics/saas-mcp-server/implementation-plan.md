@@ -132,7 +132,7 @@ and is `forbidden` under viewer; a duplicate call with the same idempotency key
 replays instead of double-creating; read-only connections cannot see write
 tools; every write lands in the audit log with mcp provenance visible.
 
-## MCP6 — Metering + entitlement — 🗓️ Planned (decision: free-vs-paid line)
+## MCP6 — Metering + entitlement — ✅ Shipped (see IMPLEMENTATION-STATUS.md; D3 default posture: gate OPEN)
 
 - `mcp.tool_call` usage events (org, tool, transport dimensions) through the
   standard metering ingestion; visible in usage summaries (dogfood:
@@ -141,6 +141,9 @@ tools; every write lands in the audit log with mcp provenance visible.
   receive an upgrade-shaped error consistent with U7 (product decision D3
   places the line; the seam ships regardless).
 - Optional quota (`mcp.tool_call` monthly) via the existing quota machinery.
+  *(As built: deliberately not configured — the metric meters from day one and
+  a quota row can be added through the existing quota machinery with zero MCP
+  changes once D3 lands.)*
 
 **Done when:** tool calls appear in the org's usage summary within the
 metering SLO; flipping the entitlement off yields the gated experience without

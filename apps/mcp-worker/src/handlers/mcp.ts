@@ -20,7 +20,7 @@
 // (design §2/§3, client-not-service).
 
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
-import { createMcpServer } from "@saas/mcp";
+import { createEntitlementGate, createMcpServer } from "@saas/mcp";
 import { OrunCloud } from "@saas/sdk";
 
 import type { McpWorkerDeps } from "../deps.js";
@@ -34,6 +34,7 @@ export async function handleMcpPost(
   env: Env,
   deps: McpWorkerDeps,
   requestId: string,
+  executionCtx?: ExecutionContext,
 ): Promise<Response> {
   const token = BEARER_RE.exec(request.headers.get("authorization") ?? "")?.[1];
   if (token === undefined) {
@@ -58,7 +59,29 @@ export async function handleMcpPost(
   // (design §7 "Read-only mode"). Flipping remote writes on is a DELIBERATE
   // later change (per-connection read-only + stage acceptance first) — do not
   // toggle this casually.
-  const server = createMcpServer({ sdk, readOnly: true });
+  //
+  // MCP6 (design §8):
+  // - gate: `feature.mcp_server` checked LAZILY on the first tool call that
+  //   carries a `workspace` (tenancy here is per tool call, so there is no
+  //   workspace to check at connect time). Decisions ride the per-isolate
+  //   TTL cache in deps; the check itself is a public billing entitlements
+  //   read on the caller's own credential — still client-not-service. The
+  //   D3 default is the OPEN gate: only an explicit disabled row denies.
+  // - usage: every successful tool call fire-and-forgets one `mcp.tool_call`
+  //   event through the public metering ingest, waitUntil-scheduled so it
+  //   outlives the response without ever blocking it.
+  const server = createMcpServer({
+    sdk,
+    readOnly: true,
+    gate: createEntitlementGate({ sdk, cache: deps.entitlementCache }),
+    usage: {
+      enabled: true,
+      transport: "http",
+      ...(executionCtx !== undefined
+        ? { schedule: (task: Promise<void>) => executionCtx.waitUntil(task) }
+        : {}),
+    },
+  });
   // No sessionIdGenerator = stateless mode (exactOptionalPropertyTypes forbids
   // the explicit `sessionIdGenerator: undefined` spelling).
   const transport = new WebStandardStreamableHTTPServerTransport({

@@ -6,11 +6,18 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { OrunCloud } from "@saas/sdk";
 
-import { toResourceReadError } from "./errors.js";
+import { toErrorResult, toResourceReadError } from "./errors.js";
 import { allPrompts } from "./prompts.js";
 import { allTools, readOnlyTools } from "./registry.js";
 import { allResources } from "./resources.js";
-import { DEFAULT_LIMITS, executeTool, type McpTool, type ToolLimits } from "./tool.js";
+import {
+  DEFAULT_LIMITS,
+  executeTool,
+  type McpTool,
+  type ToolCallGate,
+  type ToolLimits,
+} from "./tool.js";
+import type { McpUsageOptions } from "./usage.js";
 
 export const SERVER_NAME = "orun-cloud";
 // Bumped with the package; also the marker for the implemented MCP spec
@@ -48,6 +55,22 @@ export interface CreateMcpServerOptions {
    */
   defaultWorkspace?: string;
   limits?: Partial<ToolLimits>;
+  /**
+   * MCP6 metering (design §8): when set with `enabled: true`, every
+   * SUCCESSFUL tool call fire-and-forgets one `mcp.tool_call` usage event
+   * through the public metering ingest on the caller's credential. Default
+   * off — unit tests and roster listings stay silent. Transports opt in:
+   * CLI `mcp serve` with `transport: "stdio"`, the worker with `"http"`.
+   */
+  usage?: McpUsageOptions;
+  /**
+   * MCP6 entitlement gate (design §8): a transport-supplied pre-call check
+   * run before every tool call (see `createEntitlementGate`). A gate throw
+   * maps through the standard tool-error mapper, so a denied workspace gets
+   * the platform's `entitlement_required` upgrade-shaped error. The gate is
+   * a TRANSPORT concern by design — the tool plane knows nothing of billing.
+   */
+  gate?: ToolCallGate;
 }
 
 /**
@@ -103,12 +126,19 @@ export function createMcpServer(options: CreateMcpServerOptions): McpServer {
         inputSchema,
         annotations: tool.annotations,
       },
-      (args) =>
-        executeTool(
-          tool,
-          applyWorkspaceDefault(tool, args, options.defaultWorkspace),
-          ctx,
-        ),
+      async (args) => {
+        const input = applyWorkspaceDefault(tool, args, options.defaultWorkspace);
+        if (options.gate !== undefined) {
+          try {
+            await options.gate(tool, input);
+          } catch (err) {
+            // Gate denials ride the SAME error mapping as handler errors —
+            // agents see the platform code (e.g. `entitlement_required`).
+            return toErrorResult(err);
+          }
+        }
+        return executeTool(tool, input, ctx, options.usage);
+      },
     );
   }
 

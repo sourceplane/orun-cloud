@@ -12,7 +12,14 @@
 // stderr, and errors surface through the runner's stderr path.
 
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
-import { allTools, createMcpServer, SERVER_VERSION, type McpTool } from "@saas/mcp";
+import {
+  allTools,
+  checkMcpServerEntitlement,
+  createMcpServer,
+  MCP_SERVER_ENTITLEMENT_KEY,
+  SERVER_VERSION,
+  type McpTool,
+} from "@saas/mcp";
 import { OrunCloud } from "@saas/sdk";
 
 import type { CommandContext, CommandResult } from "../router.js";
@@ -47,6 +54,38 @@ function selectTools(readOnly: boolean): ReadonlyArray<McpTool> {
     : allTools;
 }
 
+/**
+ * MCP6 startup entitlement check (design §8, connect-time on this transport):
+ * when an ambient default workspace is resolvable, verify `feature.mcp_server`
+ * via the public billing entitlements read BEFORE starting the server.
+ * Returns `true` to proceed. Denied → clear stderr message, no server (hard
+ * fail, CLI convention: never start a half-working long-lived process). A
+ * failed check (billing outage, forbidden read) proceeds with a warning —
+ * the D3 default posture is the OPEN gate, so availability wins. Without a
+ * resolvable workspace there is nothing to check (per-call tenancy).
+ */
+export async function assertServeEntitlement(
+  sdk: OrunCloud,
+  workspace: string | undefined,
+  stderr: (line: string) => void,
+): Promise<boolean> {
+  if (workspace === undefined) return true;
+  const decision = await checkMcpServerEntitlement(sdk, workspace);
+  if (!decision.allowed) {
+    stderr(
+      `error: MCP server access is not available on the current plan for workspace ${workspace} ` +
+        `(${MCP_SERVER_ENTITLEMENT_KEY} is disabled). Upgrade the workspace's plan or contact an admin.`,
+    );
+    return false;
+  }
+  if (decision.reason === "check_failed") {
+    stderr(
+      `warning: could not verify ${MCP_SERVER_ENTITLEMENT_KEY} for ${workspace}; continuing (gate is fail-open)`,
+    );
+  }
+  return true;
+}
+
 // ---------------------------------------------------------------------------
 // mcp serve
 // ---------------------------------------------------------------------------
@@ -73,10 +112,27 @@ export async function mcpServeCommand(ctx: CommandContext): Promise<CommandResul
     baseUrl: apiUrl,
     auth: { kind: "bearer", token: cred.token },
   });
+
+  // MCP6 entitlement seam: connect-time check against the ambient default
+  // workspace, when one is set. Denied → exit 6 (server-side denial surfaced
+  // via the SDK read), message on stderr, no server started.
+  if (!(await assertServeEntitlement(sdk, defaultWorkspace, ctx.stderr))) {
+    return { exitCode: 6 };
+  }
+
   const server = createMcpServer({
     sdk,
     ...(readOnly ? { readOnly: true } : {}),
     ...(defaultWorkspace !== undefined ? { defaultWorkspace } : {}),
+    // MCP6 metering: this transport self-meters `mcp.tool_call` through the
+    // public ingest on the user's own credential; ingest failures surface as
+    // stderr diagnostics only (stdout stays pure protocol) and never block
+    // or fail a tool call.
+    usage: {
+      enabled: true,
+      transport: "stdio",
+      debug: (message) => ctx.stderr(`debug: ${message}`),
+    },
   });
 
   const transport = new StdioServerTransport();

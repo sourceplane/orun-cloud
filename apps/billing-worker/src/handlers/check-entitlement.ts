@@ -67,6 +67,11 @@ const DEFAULT_TIER_ENTITLEMENTS: Record<string, number> = {
   // saas-event-streaming ES3: Slack channels available on the default tier.
   "feature.notifications.slack": 1,
   "limit.notification_channels": 3,
+  // saas-mcp-server MCP6 (that epic's risks D3, default OPEN gate): MCP server
+  // access is granted on every tier until the free-vs-paid product decision
+  // lands, so orgs whose entitlement rows predate the key stay allowed through
+  // this seam too (matches the PLAN_CATALOG value on every plan).
+  "feature.mcp_server": 1,
 };
 
 

@@ -26,13 +26,18 @@ function resolveRequestId(request: Request): string {
 export const MAX_CONCURRENT_REQUESTS = 32;
 let inFlight = 0;
 
-export async function route(request: Request, env: Env, injectedDeps?: McpWorkerDeps): Promise<Response> {
+export async function route(
+  request: Request,
+  env: Env,
+  injectedDeps?: McpWorkerDeps,
+  executionCtx?: ExecutionContext,
+): Promise<Response> {
   const url = new URL(request.url);
   const requestId = resolveRequestId(request);
   const startedAt = Date.now();
   let response: Response;
   try {
-    response = await dispatch(request, url, env, requestId, injectedDeps);
+    response = await dispatch(request, url, env, requestId, injectedDeps, executionCtx);
   } catch {
     response = errorResponse("internal_error", "Internal error", 500, requestId);
   }
@@ -57,6 +62,7 @@ async function dispatch(
   env: Env,
   requestId: string,
   injectedDeps?: McpWorkerDeps,
+  executionCtx?: ExecutionContext,
 ): Promise<Response> {
   if (url.pathname === "/health" && request.method === "GET") {
     return handleHealth(env, requestId);
@@ -94,7 +100,7 @@ async function dispatch(
     }
     inFlight++;
     try {
-      return await handleMcpPost(request, env, injectedDeps ?? buildDeps(), requestId);
+      return await handleMcpPost(request, env, injectedDeps ?? buildDeps(), requestId, executionCtx);
     } finally {
       inFlight--;
     }

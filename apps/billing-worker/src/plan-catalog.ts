@@ -116,6 +116,14 @@ export const PLAN_CATALOG: PlanDefinition[] = [
       // category floor is kept regardless of plan (compliance is not a plan
       // feature). null = unlimited (Enterprise). Config edit, not a migration.
       { entitlementKey: "limit.event_retention_days", valueType: "quantity", enabled: true, limitValue: 30 },
+      // MCP server access (saas-mcp-server MCP6, design §8). The free-vs-paid
+      // line is an OPEN product decision (that epic's risks D3) — default
+      // posture until decided: granted on EVERY tier (seam live, gate open) so
+      // adoption isn't throttled. The MCP transports additionally treat a
+      // missing row as granted, so pre-existing orgs (whose rows predate this
+      // key) get the same open gate; an explicit enabled:false row (plan edit
+      // or override) closes it without a redeploy.
+      { entitlementKey: "feature.mcp_server", valueType: "boolean", enabled: true, limitValue: null },
     ],
   },
   {
@@ -142,6 +150,7 @@ export const PLAN_CATALOG: PlanDefinition[] = [
       { entitlementKey: "feature.events.custom_ingest", valueType: "boolean", enabled: true, limitValue: null },
       { entitlementKey: "limit.custom_events_per_day", valueType: "quantity", enabled: true, limitValue: 10000 },
       { entitlementKey: "limit.event_retention_days", valueType: "quantity", enabled: true, limitValue: 90 },
+      { entitlementKey: "feature.mcp_server", valueType: "boolean", enabled: true, limitValue: null },
     ],
   },
   {
@@ -168,6 +177,7 @@ export const PLAN_CATALOG: PlanDefinition[] = [
       { entitlementKey: "feature.events.custom_ingest", valueType: "boolean", enabled: true, limitValue: null },
       { entitlementKey: "limit.custom_events_per_day", valueType: "quantity", enabled: true, limitValue: 100000 },
       { entitlementKey: "limit.event_retention_days", valueType: "quantity", enabled: true, limitValue: 365 },
+      { entitlementKey: "feature.mcp_server", valueType: "boolean", enabled: true, limitValue: null },
     ],
   },
   {
@@ -194,6 +204,7 @@ export const PLAN_CATALOG: PlanDefinition[] = [
       { entitlementKey: "feature.events.custom_ingest", valueType: "boolean", enabled: true, limitValue: null },
       { entitlementKey: "limit.custom_events_per_day", valueType: "quantity", enabled: true, limitValue: null },
       { entitlementKey: "limit.event_retention_days", valueType: "quantity", enabled: true, limitValue: null },
+      { entitlementKey: "feature.mcp_server", valueType: "boolean", enabled: true, limitValue: null },
     ],
   },
 ];
