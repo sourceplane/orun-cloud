@@ -2,7 +2,13 @@
 // fleet view renders from — every state in the closed vocabulary maps, and
 // the provider meta carries the two AG12 providers.
 
-import { connectionTone, sessionLabel, sessionTone, PROVIDER_META } from "@web-console-next/lib/agents/model";
+import {
+  connectionTone,
+  sessionLabel,
+  sessionTone,
+  workRefForItem,
+  PROVIDER_META,
+} from "@web-console-next/lib/agents/model";
 import { AGENT_SESSION_STATES, AGENT_PROVIDERS, PROVIDER_CONNECTION_STATUSES } from "@saas/contracts/agents";
 
 describe("agents presentation model", () => {
@@ -35,5 +41,9 @@ describe("agents presentation model", () => {
 
   it("carries card meta for exactly the AG12 providers", () => {
     expect(Object.keys(PROVIDER_META).sort()).toEqual([...AGENT_PROVIDERS].sort());
+  });
+
+  it("builds the work:// provenance pointer for spawned sessions (AG8)", () => {
+    expect(workRefForItem("org_1", "ORN-142")).toBe("work://org_1/ORN-142");
   });
 });

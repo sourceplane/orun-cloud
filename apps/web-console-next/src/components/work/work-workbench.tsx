@@ -28,6 +28,7 @@ import { rungLabel, groupTasksBySpec, type SpecGroup } from "@/lib/work/model";
 import { TaskActions } from "@/components/work/task-actions";
 import { EditWorkItemDialog, WorkCreateMenu } from "@/components/work/create-work-item-dialog";
 import { SpecDocSheet } from "@/components/work/spec-doc-sheet";
+import { SpawnAgentDialog } from "@/components/agents/spawn-agent-dialog";
 
 export function WorkWorkbench({ orgId }: { orgId: string }) {
   const { client } = useSession();
@@ -213,6 +214,7 @@ function SpecGroupSection({
   const title = spec?.title;
   const [docOpen, setDocOpen] = React.useState(false);
   const [renameOpen, setRenameOpen] = React.useState(false);
+  const [agentOpen, setAgentOpen] = React.useState(false);
   const total = group.tasks.length;
   const done = group.tasks.filter(
     (t) => t.lifecycle.rung === "released" || t.lifecycle.rung === "done",
@@ -254,6 +256,15 @@ function SpecGroupSection({
             >
               Rename
             </button>
+            {/* AG8: spawn a hosted design run — the agent turns this spec
+                into epic files + proposed contracts, delivered as a PR. */}
+            <button
+              type="button"
+              onClick={() => setAgentOpen(true)}
+              className="rounded px-1.5 py-0.5 text-[11.5px] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+            >
+              Design with agent
+            </button>
           </span>
         ) : null}
         {group.spec && total > 0 ? (
@@ -285,6 +296,13 @@ function SpecGroupSection({
       )}
       {group.spec && spec ? (
         <>
+          <SpawnAgentDialog
+            orgId={orgId}
+            itemKey={group.spec}
+            runKind="design"
+            open={agentOpen}
+            onOpenChange={setAgentOpen}
+          />
           <SpecDocSheet
             orgId={orgId}
             specKey={group.spec}
@@ -408,6 +426,7 @@ function TaskRow({
 }) {
   const lc = task.lifecycle;
   const [renameOpen, setRenameOpen] = React.useState(false);
+  const [agentOpen, setAgentOpen] = React.useState(false);
   return (
     <li className="group border-t border-border/50 px-5 py-3 transition-colors duration-100 first:border-t-0 hover:bg-muted/60">
       <div className="flex min-h-[20px] flex-wrap items-center gap-x-3 gap-y-1.5">
@@ -431,6 +450,21 @@ function TaskRow({
           onSaved={onMutated}
         />
         <TaskActions orgId={orgId} task={task} onMutated={onMutated} />
+        {/* AG8: spawn a hosted implementation run for this task. */}
+        <button
+          type="button"
+          onClick={() => setAgentOpen(true)}
+          className="-my-1 shrink-0 cursor-pointer py-1 text-[11.5px] text-muted-foreground opacity-0 transition-all duration-100 hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100"
+        >
+          Agent
+        </button>
+        <SpawnAgentDialog
+          orgId={orgId}
+          itemKey={task.key}
+          runKind="implementation"
+          open={agentOpen}
+          onOpenChange={setAgentOpen}
+        />
         {lc.pinned ? (
           <span
             className="shrink-0"
