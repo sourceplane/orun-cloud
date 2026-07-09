@@ -83,7 +83,7 @@ additive surface over shipped rails.
 | ID | Milestone | Status |
 |----|-----------|--------|
 | MCP0 | Tool-plane foundation: `packages/mcp` registry + zod schema discipline + scope resolution + error mapping + the read-only core toolset over `@saas/sdk` | ✅ Shipped (19 tools, 65 tests) |
-| MCP1 | Local stdio server: `orun-cloud mcp` CLI command riding the existing token store; per-client config snippets | 🗓️ Planned (human-independent) |
+| MCP1 | Local stdio server: `orun-cloud mcp` CLI command riding the existing token store; per-client config snippets | ✅ Shipped (`mcp serve` + `mcp tools`) |
 | MCP2 | Remote server: `apps/mcp-worker` (Streamable HTTP, stateless-first) with `sk_` API-key bearer auth; own hostname; component intent | 🗓️ Planned (human-independent) |
 | MCP3 | OAuth 2.1 for remote clients: protected-resource metadata + authorization server endpoints on identity-worker (rides OP1), PKCE + dynamic client registration | 🗓️ Planned (decision: DCR posture) |
 | MCP4 | Resources & prompts: catalog entity overviews and run logs as MCP resources; packaged prompts (investigate-failed-run, access-review, usage-review) | 🗓️ Planned |

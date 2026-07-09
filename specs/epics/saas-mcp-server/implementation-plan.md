@@ -42,7 +42,7 @@ types; a fixture-driven test suite exercises each tool's happy path, a
 `forbidden` path, and a pagination path; no tool imports anything but the SDK;
 typecheck/lint/test green.
 
-## MCP1 — Local stdio server in the CLI — 🗓️ Planned (human-independent)
+## MCP1 — Local stdio server in the CLI — ✅ Shipped (see IMPLEMENTATION-STATUS.md)
 
 - `orun-cloud mcp` command group in `packages/cli` (router registration in
   `cli-runner.ts`): `mcp serve` (stdio, default), `mcp tools` (list for

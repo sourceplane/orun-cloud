@@ -6,7 +6,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { OrunCloud } from "@saas/sdk";
 
 import { allTools } from "./registry.js";
-import { DEFAULT_LIMITS, executeTool, type ToolLimits } from "./tool.js";
+import { DEFAULT_LIMITS, executeTool, type McpTool, type ToolLimits } from "./tool.js";
 
 export const SERVER_NAME = "orun-cloud";
 // Bumped with the package; also the marker for the implemented MCP spec
@@ -21,7 +21,35 @@ export interface CreateMcpServerOptions {
    * flag plumbs through for the MCP5 write set.
    */
   readOnly?: boolean;
+  /**
+   * Ambient `workspace` default for transports that carry CLI context
+   * (design §3: the stdio server may default `workspace` from the CLI's
+   * active context). Filled into a call's input only when the tool's schema
+   * declares a `workspace` field and the caller omitted it — explicit input
+   * always wins, and tools without a `workspace` argument are untouched.
+   */
+  defaultWorkspace?: string;
   limits?: Partial<ToolLimits>;
+}
+
+/**
+ * Apply the transport's ambient `workspace` default to a tool call's input.
+ * Pass-through when there is no default, the tool's schema has no `workspace`
+ * field, or the caller supplied an explicit value.
+ */
+export function applyWorkspaceDefault(
+  tool: McpTool,
+  input: unknown,
+  defaultWorkspace: string | undefined,
+): unknown {
+  if (defaultWorkspace === undefined) return input;
+  if (!("workspace" in tool.inputSchema.shape)) return input;
+  const record =
+    typeof input === "object" && input !== null && !Array.isArray(input)
+      ? (input as Record<string, unknown>)
+      : {};
+  if (record["workspace"] !== undefined) return input;
+  return { ...record, workspace: defaultWorkspace };
 }
 
 export function createMcpServer(options: CreateMcpServerOptions): McpServer {
@@ -33,15 +61,28 @@ export function createMcpServer(options: CreateMcpServerOptions): McpServer {
 
   const server = new McpServer({ name: SERVER_NAME, version: SERVER_VERSION });
   for (const tool of tools) {
+    // With an ambient default the advertised schema makes `workspace`
+    // optional on the wire (a server-side value fills the gap); `executeTool`
+    // still validates the filled input against the tool's own schema.
+    const workspaceField = tool.inputSchema.shape["workspace"];
+    const inputSchema =
+      options.defaultWorkspace !== undefined && workspaceField !== undefined
+        ? tool.inputSchema.extend({ workspace: workspaceField.optional() })
+        : tool.inputSchema;
     server.registerTool(
       tool.name,
       {
         title: tool.title,
         description: tool.description,
-        inputSchema: tool.inputSchema,
+        inputSchema,
         annotations: tool.annotations,
       },
-      (args) => executeTool(tool, args, ctx),
+      (args) =>
+        executeTool(
+          tool,
+          applyWorkspaceDefault(tool, args, options.defaultWorkspace),
+          ctx,
+        ),
     );
   }
   return server;

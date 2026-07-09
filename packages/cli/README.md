@@ -96,6 +96,75 @@ page until the server returns `cursor: null`. In `--all --output=json`
 mode the CLI emits one JSON document per page (JSON Lines) so a
 downstream pipeline can stream without buffering.
 
+## MCP server
+
+`orun-cloud mcp serve` runs the platform's MCP (Model Context Protocol)
+server over **stdio**, so any local MCP client — Claude Code, Cursor,
+VS Code, a custom agent — can query the service catalog, runs and logs,
+audit, usage/billing, config, and webhooks with your CLI credential
+(epic `specs/epics/saas-mcp-server/`, MCP1). The tool plane lives in
+`packages/mcp`; this command is a thin transport: every tool call rides
+your stored token through api-edge, so RBAC, rate limits, audit, and
+metering apply exactly as they do for any other API client.
+
+```
+orun-cloud mcp serve [--read-only] [--workspace=REF] [--api-url=URL]
+orun-cloud mcp tools [--read-only] [--output=human|json]
+```
+
+- Credential: the stored token from `orun-cloud login` (keychain/file).
+  Without one, `mcp serve` exits non-zero with a pointer at `login`.
+- `--read-only` hard-excludes non-read-only tools from `tools/list`
+  (a no-op today — every MCP1 tool is read-only — but it plumbs through
+  for the future write set).
+- `--workspace=REF` (a `ws_…` id, slug, or `org_…` id) sets the ambient
+  `workspace` default for scoped tools; without the flag the active org
+  from `orun-cloud org use` is used. Per-call `workspace` arguments
+  always override the default.
+- Stdout carries the protocol; the startup banner and all diagnostics go
+  to stderr.
+
+Client setup snippets:
+
+**Claude Code**
+
+```sh
+claude mcp add orun-cloud -- orun-cloud mcp serve
+```
+
+**Cursor** (`~/.cursor/mcp.json`):
+
+```json
+{
+  "mcpServers": {
+    "orun-cloud": {
+      "command": "orun-cloud",
+      "args": ["mcp", "serve"]
+    }
+  }
+}
+```
+
+**VS Code** (`.vscode/mcp.json`):
+
+```json
+{
+  "servers": {
+    "orun-cloud": {
+      "type": "stdio",
+      "command": "orun-cloud",
+      "args": ["mcp", "serve"]
+    }
+  }
+}
+```
+
+**Generic stdio client**: launch `orun-cloud mcp serve` and speak MCP
+(spec revision 2025-06-18) over the process's stdin/stdout.
+
+A remote Streamable-HTTP server with API-key/OAuth auth is a later
+milestone (MCP2/MCP3) — today's transport is local stdio only.
+
 ## Auth
 
 The shipped V1 is **token-paste**: `orun-cloud login` prompts for a
