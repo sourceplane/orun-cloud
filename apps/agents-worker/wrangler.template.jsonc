@@ -51,6 +51,14 @@
         {
           "binding": "IDENTITY_WORKER",
           "service": "identity-worker-stage"
+        },
+        {
+          "binding": "BILLING_WORKER",
+          "service": "billing-worker-stage"
+        },
+        {
+          "binding": "METERING_WORKER",
+          "service": "metering-worker-stage"
         }
       ]
     },
@@ -84,6 +92,14 @@
         {
           "binding": "IDENTITY_WORKER",
           "service": "identity-worker-prod"
+        },
+        {
+          "binding": "BILLING_WORKER",
+          "service": "billing-worker-prod"
+        },
+        {
+          "binding": "METERING_WORKER",
+          "service": "metering-worker-prod"
         }
       ]
     }

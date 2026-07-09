@@ -45,6 +45,8 @@ const ALLOWED_INTERNAL_CALLERS: ReadonlySet<string> = new Set([
   // api-edge forwards verified-at-source-of-truth inbound provider webhooks
   // (it streams the raw body here; this worker verifies the signature).
   "api-edge",
+  // agents-worker gates dispatch on feature.agents (saas-agents AG10).
+  "agents-worker",
 ]);
 
 function isAllowedInternalCaller(value: string | null): value is string {
