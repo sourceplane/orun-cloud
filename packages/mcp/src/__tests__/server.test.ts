@@ -1,21 +1,9 @@
-import { Client } from "@modelcontextprotocol/sdk/client/index.js";
-import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { describe, expect, it, vi } from "vitest";
 
 import { allTools } from "../registry.js";
 import { createMcpServer, SERVER_NAME } from "../server.js";
 
-import { stubSdk } from "./helpers.js";
-
-async function connectedClient(server: ReturnType<typeof createMcpServer>) {
-  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
-  const client = new Client({ name: "test-client", version: "0.0.0" });
-  await Promise.all([
-    server.connect(serverTransport),
-    client.connect(clientTransport),
-  ]);
-  return client;
-}
+import { connectedClient, stubSdk } from "./helpers.js";
 
 describe("createMcpServer", () => {
   it("exposes every registry tool over the protocol, annotations included", async () => {

@@ -1,11 +1,15 @@
-// Transport-agnostic MCP server assembly: every registry tool registered on a
-// configured `McpServer`. Transports (CLI stdio, apps/mcp-worker) connect
-// their own transport to the returned server.
+// Transport-agnostic MCP server assembly: every registry tool, resource
+// template, and prompt registered on a configured `McpServer`. Transports
+// (CLI stdio, apps/mcp-worker) connect their own transport to the returned
+// server.
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { OrunCloud } from "@saas/sdk";
 
+import { toResourceReadError } from "./errors.js";
+import { allPrompts } from "./prompts.js";
 import { allTools } from "./registry.js";
+import { allResources } from "./resources.js";
 import { DEFAULT_LIMITS, executeTool, type McpTool, type ToolLimits } from "./tool.js";
 
 export const SERVER_NAME = "orun-cloud";
@@ -83,6 +87,43 @@ export function createMcpServer(options: CreateMcpServerOptions): McpServer {
           applyWorkspaceDefault(tool, args, options.defaultWorkspace),
           ctx,
         ),
+    );
+  }
+
+  // MCP4 resources + prompts are read-only context/templates by construction,
+  // so `readOnly` never filters them. Prompts reference tool names in text
+  // only — a read-only connection with the full read toolset resolves every
+  // reference (drift-guarded in tests).
+  for (const resource of allResources) {
+    server.registerResource(
+      resource.name,
+      resource.template,
+      resource.metadata,
+      async (uri, variables) => {
+        try {
+          return await resource.read(uri, variables, ctx);
+        } catch (err) {
+          // Resource reads have no isError channel; surface the platform
+          // error code in the protocol error's message (design §4 semantics).
+          throw toResourceReadError(err);
+        }
+      },
+    );
+  }
+  for (const prompt of allPrompts) {
+    server.registerPrompt(
+      prompt.name,
+      {
+        title: prompt.title,
+        description: prompt.description,
+        argsSchema: prompt.argsSchema,
+      },
+      (args) => ({
+        description: prompt.description,
+        messages: [
+          { role: "user", content: { type: "text", text: prompt.build(args) } },
+        ],
+      }),
     );
   }
   return server;
