@@ -12,7 +12,7 @@
 // Nothing in this file writes a rung; the category is unrepresentable.
 
 import * as React from "react";
-import type { WorkPriority, WorkRung, WorkTaskView } from "@saas/contracts/work";
+import type { WorkCycleView, WorkPriority, WorkRung, WorkTaskView } from "@saas/contracts/work";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -42,10 +42,12 @@ const BOARD_VIEW = "board"; // the `ordered` event's view namespace
 export function WorkBoard({
   orgId,
   tasks,
+  cycles = [],
   onMutated,
 }: {
   orgId: string;
   tasks: WorkTaskView[];
+  cycles?: WorkCycleView[];
   onMutated: () => void;
 }) {
   const { client } = useSession();
@@ -125,6 +127,7 @@ export function WorkBoard({
                   key={task.key}
                   orgId={orgId}
                   task={task}
+                  cycles={cycles}
                   verdict={verdicts[task.key]}
                   onRun={run}
                 />
@@ -161,11 +164,13 @@ const ESTIMATE_OPTIONS = [1, 2, 3, 5, 8, 13];
 function BoardCard({
   orgId,
   task,
+  cycles,
   verdict,
   onRun,
 }: {
   orgId: string;
   task: WorkTaskView;
+  cycles: WorkCycleView[];
   verdict: string | undefined;
   onRun: (key: string, fn: () => Promise<unknown>) => Promise<void>;
 }) {
@@ -196,6 +201,8 @@ function BoardCard({
         <span className="ml-auto">
           <CardMenu
             task={task}
+            cycles={cycles}
+            onCycle={(cycle) => void onRun(task.key, () => client.work.setCycle(orgId, task.key, { cycle }))}
             onPriority={(p) => void onRun(task.key, () => client.work.setPriority(orgId, task.key, { priority: p }))}
             onEstimate={(points) =>
               void onRun(task.key, () => client.work.setEstimate(orgId, task.key, { points }))
@@ -263,12 +270,16 @@ function BoardCard({
 
 function CardMenu({
   task,
+  cycles,
+  onCycle,
   onPriority,
   onEstimate,
   onAddLabel,
   onRemoveLabel,
 }: {
   task: WorkTaskView;
+  cycles: WorkCycleView[];
+  onCycle: (cycle: string | null) => void;
   onPriority: (p: WorkPriority) => void;
   onEstimate: (points: number | null) => void;
   onAddLabel: () => void;
@@ -317,6 +328,23 @@ function CardMenu({
             clear
           </button>
         </div>
+        {cycles.length > 0 ? (
+          <>
+            <DropdownMenuSeparator />
+            <DropdownMenuLabel className="text-[11px]">Cycle</DropdownMenuLabel>
+            {cycles.map((c) => (
+              <DropdownMenuItem key={c.key} onSelect={() => onCycle(c.key)} className="text-[12px]">
+                {c.name}
+                {task.cycleKey === c.key ? " ✓" : ""}
+              </DropdownMenuItem>
+            ))}
+            {task.cycleKey ? (
+              <DropdownMenuItem onSelect={() => onCycle(null)} className="text-[12px] text-muted-foreground">
+                Remove from cycle
+              </DropdownMenuItem>
+            ) : null}
+          </>
+        ) : null}
         <DropdownMenuSeparator />
         <DropdownMenuItem onSelect={onAddLabel} className="text-[12px]">
           Add label…

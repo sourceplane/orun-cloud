@@ -6,8 +6,10 @@
 
 export * from "./model.js";
 export * from "./types.js";
-export { buildEnvelopes } from "./envelopes.js";
+export { buildEnvelopes, foldRelations } from "./envelopes.js";
 export type { Envelopes, ItemCreatedPayload, ItemEditedPayload, ContractEditedPayload, DocEditedPayload } from "./envelopes.js";
+export { burnup } from "./burnup.js";
+export type { BurnupPoint } from "./burnup.js";
 export { canonicalDocBody, docDigest } from "./doc.js";
 export { MemoryWorkRepository } from "./memory.js";
 export { createWorkRepository, insertWorkObservation } from "./repository.js";

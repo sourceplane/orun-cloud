@@ -20,6 +20,7 @@ import {
   type Actor,
   type Contract,
   type CoordinationEvent,
+  type Cycle,
   type DocRevision,
   type EventKind,
   type Initiative,
@@ -36,6 +37,7 @@ import type {
   CommentInput,
   ReactionInput,
   CommitOutcome,
+  CreateCycleInput,
   CreateInitiativeInput,
   CreateSpecInput,
   CreateTaskInput,
@@ -52,6 +54,7 @@ import type {
   PutDocOutcome,
   RelateInput,
   SaveViewInput,
+  SetCycleInput,
   WorkRepository,
   WorkspaceScope,
   WorkView,
@@ -121,6 +124,7 @@ function mapTask(orgId: string, row: Record<string, unknown>): Task {
     priority: ((row.priority as string | null) ?? undefined) as Priority | undefined,
     estimate: row.estimate == null ? undefined : Number(row.estimate),
     relations: relations.length > 0 ? relations : undefined,
+    cycleKey: (row.cycle_key as string | null) ?? undefined,
   };
 }
 
@@ -191,6 +195,17 @@ function mapInitiative(orgId: string, row: Record<string, unknown>): Initiative 
     workspace: orgId,
     title: String(row.title),
     description: (row.description as string | null) ?? undefined,
+    createdBy: parseJson<Actor>(row.created_by, { type: "automation", id: "unknown" }),
+    createdAt: toIso(row.created_at),
+  };
+}
+
+function mapCycle(row: Record<string, unknown>): Cycle {
+  return {
+    key: String(row.key),
+    name: String(row.name),
+    startsAt: toIso(row.starts_at).slice(0, 10),
+    endsAt: toIso(row.ends_at).slice(0, 10),
     createdBy: parseJson<Actor>(row.created_by, { type: "automation", id: "unknown" }),
     createdAt: toIso(row.created_at),
   };
@@ -651,6 +666,35 @@ export function createWorkRepository(
     async unrelate(scope, input: RelateInput) {
       return relateMutation(scope, "unrelated", input);
     },
+
+    async setCycle(scope, input: SetCycleInput) {
+      validateActor(input.actor);
+      return sql.transaction(async (tx) => {
+        await mustBeTask(tx, scope.orgId, input.key);
+        if (input.cycle !== null) {
+          const c = await tx.execute(`SELECT 1 FROM work.cycles WHERE org_id = $1 AND key = $2`, [
+            scope.orgId,
+            input.cycle,
+          ]);
+          if (c.rowCount === 0) {
+            throw new WorkError("not_found", `unknown cycle ${input.cycle}`);
+          }
+        }
+        const event = await appendEvent(tx, scope.orgId, {
+          subject: input.key,
+          kind: "cycle_set",
+          actor: input.actor,
+          at: input.at ?? now(),
+          payload: { cycle: input.cycle },
+        });
+        await tx.execute(`UPDATE work.tasks SET cycle_key = $3 WHERE org_id = $1 AND key = $2`, [
+          scope.orgId,
+          input.key,
+          input.cycle,
+        ]);
+        return { event, key: input.key };
+      });
+    },
     async order(scope, input: OrderInput) {
       return simpleMutation(scope, input.key, "ordered", input.actor, input.at, { view: input.view, order: input.order });
     },
@@ -779,6 +823,45 @@ export function createWorkRepository(
       return res.rows.map(mapView);
     },
 
+    // ── Authored time-boxes (v3 PM3): intent rows; progress derives ─────────
+
+    async createCycle(scope, input: CreateCycleInput): Promise<Cycle> {
+      validateActor(input.actor);
+      if (!input.name?.trim()) {
+        throw new WorkError("invalid", "a cycle needs a name");
+      }
+      const starts = Date.parse(input.startsAt);
+      const ends = Date.parse(input.endsAt);
+      if (!Number.isFinite(starts) || !Number.isFinite(ends) || ends < starts) {
+        throw new WorkError("invalid", "a cycle needs startsAt <= endsAt (ISO dates)");
+      }
+      return sql.transaction(async (tx) => {
+        const n = await nextSeq(tx, scope.orgId, "CYC");
+        const res = await tx.execute(
+          `INSERT INTO work.cycles (org_id, key, name, starts_at, ends_at, created_by, created_at)
+           VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7)
+           RETURNING *`,
+          [
+            scope.orgId,
+            `CYC-${n}`,
+            input.name.trim(),
+            input.startsAt.slice(0, 10),
+            input.endsAt.slice(0, 10),
+            JSON.stringify(input.actor),
+            input.at ?? now(),
+          ],
+        );
+        return mapCycle(res.rows[0]!);
+      });
+    },
+
+    async listCycles(scope): Promise<Cycle[]> {
+      const res = await sql.execute(`SELECT * FROM work.cycles WHERE org_id = $1 ORDER BY starts_at, key`, [
+        scope.orgId,
+      ]);
+      return res.rows.map(mapCycle);
+    },
+
     async ingestObservation(scope, input: IngestObservationInput): Promise<IngestOutcome> {
       return sql.transaction(async (tx) => insertWorkObservation(tx, scope.orgId, input));
     },
@@ -837,8 +920,8 @@ export function createWorkRepository(
         }
         for (const t of tasks) {
           await tx.execute(
-            `INSERT INTO work.tasks (org_id, key, spec_key, title, contract, labels, created_by, created_at, tags, priority, estimate, relations)
-             VALUES ($1, $2, $3, $4, $5::jsonb, $6::jsonb, $7::jsonb, $8, $9::jsonb, $10, $11, $12::jsonb)`,
+            `INSERT INTO work.tasks (org_id, key, spec_key, title, contract, labels, created_by, created_at, tags, priority, estimate, relations, cycle_key)
+             VALUES ($1, $2, $3, $4, $5::jsonb, $6::jsonb, $7::jsonb, $8, $9::jsonb, $10, $11, $12::jsonb, $13)`,
             [
               scope.orgId,
               t.key,
@@ -852,6 +935,7 @@ export function createWorkRepository(
               t.priority ?? null,
               t.estimate ?? null,
               t.relations && t.relations.length > 0 ? JSON.stringify(t.relations) : null,
+              t.cycleKey ?? null,
             ],
           );
         }

@@ -180,6 +180,14 @@ export function buildEnvelopes(workspace: string, events: CoordinationEvent[]): 
         task.estimate = typeof p.points === "number" ? p.points : undefined;
         break;
       }
+      case "cycle_set": {
+        // v3 PM3: plan a task into (or out of) a time-box. Assignment is
+        // intent; the burn-up inside the cycle stays derived (V3-3).
+        const p = e.payload as unknown as { cycle?: string | null };
+        const task = mustTask(tasks, e);
+        task.cycleKey = p.cycle ?? undefined;
+        break;
+      }
       case "related":
       case "unrelated": {
         // Relations fold onto TASK envelopes only; spec/initiative subjects
@@ -195,9 +203,9 @@ export function buildEnvelopes(workspace: string, events: CoordinationEvent[]): 
       }
       default:
         // assigned/unassigned/comment_added/ordered/pinned/canceled — and
-        // the v3 conversation kinds (reactions, doc anchors) plus cycle_set
-        // (PM3) — carry coordination state the fold reads from the log
-        // directly; none of them touch the envelope fields.
+        // the v3 conversation kinds (reactions, doc anchors) — carry
+        // coordination state the fold reads from the log directly; none of
+        // them touch the envelope fields.
         break;
     }
   }
@@ -207,4 +215,21 @@ export function buildEnvelopes(workspace: string, events: CoordinationEvent[]): 
     tasks: [...tasks.values()].sort((a, b) => (a.key < b.key ? -1 : 1)),
     initiatives: [...initiatives.values()].sort((a, b) => (a.key < b.key ? -1 : 1)),
   };
+}
+
+/** Replays related/unrelated into the current relation set per subject —
+ *  for ANY item kind (v3 PM3 uses it for initiative→spec `parent` edges;
+ *  task relations additionally fold onto the task envelope above). */
+export function foldRelations(events: CoordinationEvent[]): Map<string, Relation[]> {
+  const out = new Map<string, Relation[]>();
+  for (const e of events) {
+    if (e.kind !== "related" && e.kind !== "unrelated") continue;
+    const p = e.payload as unknown as { rel?: RelationKind; target?: string };
+    if (!p.rel || !p.target) continue;
+    const rels = (out.get(e.subject) ?? []).filter((r) => !(r.rel === p.rel && r.target === p.target));
+    if (e.kind === "related") rels.push({ rel: p.rel, target: p.target });
+    if (rels.length > 0) out.set(e.subject, rels);
+    else out.delete(e.subject);
+  }
+  return out;
 }

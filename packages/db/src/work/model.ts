@@ -153,6 +153,21 @@ export interface Task {
   priority?: Priority | undefined;
   estimate?: number | undefined;
   relations?: Relation[] | undefined;
+  /** v3 PM3: the cycle this task is planned into (cycle_set; null clears).
+   *  Assignment is intent; everything inside the cycle is derived. */
+  cycleKey?: string | undefined;
+}
+
+/** An authored time-box (v3 PM3). The row is pure intent — name and dates.
+ *  Progress inside is DERIVED from the fold over time (V3-3): there is no
+ *  stored series, no editable number, nothing to game on a Friday. */
+export interface Cycle {
+  key: string; // CYC-n via work.sequences
+  name: string;
+  startsAt: string; // ISO date (inclusive)
+  endsAt: string; // ISO date (inclusive)
+  createdBy: Actor;
+  createdAt: string;
 }
 
 /** An initiative is envelope-only strategic grouping (orun-work-v3 §1.1):

@@ -10,6 +10,7 @@ import type {
   Actor,
   Contract,
   CoordinationEvent,
+  Cycle,
   DocRevision,
   Initiative,
   Observation,
@@ -123,6 +124,23 @@ export interface RelateInput {
   at?: string | undefined;
 }
 
+/** An authored time-box (v3 PM3). Creating one is intent — a name and two
+ *  dates; the key allocates CYC-<seq>. Progress inside stays derived. */
+export interface CreateCycleInput {
+  name: string;
+  startsAt: string; // ISO date
+  endsAt: string; // ISO date
+  actor: Actor;
+  at?: string | undefined;
+}
+
+export interface SetCycleInput {
+  key: string;
+  cycle: string | null; // null clears
+  actor: Actor;
+  at?: string | undefined;
+}
+
 /** A saved view (v3 PM2): pure UI intent, shareable by default. Views are
  *  workspace configuration, not item coordination — they live beside the
  *  logs (work.views) and append NO event; the closed event vocabulary has
@@ -219,6 +237,9 @@ export interface WorkRepository {
   estimate(scope: WorkspaceScope, input: EstimateInput): Promise<CommitOutcome>;
   relate(scope: WorkspaceScope, input: RelateInput): Promise<CommitOutcome>;
   unrelate(scope: WorkspaceScope, input: RelateInput): Promise<CommitOutcome>;
+  /** PM3: plan a task into (or out of, null) an authored time-box — one
+   *  cycle_set event; the folded cycle_key column rebuilds from the log. */
+  setCycle(scope: WorkspaceScope, input: SetCycleInput): Promise<CommitOutcome>;
   order(scope: WorkspaceScope, input: OrderInput): Promise<CommitOutcome>;
   pin(scope: WorkspaceScope, input: PinInput): Promise<CommitOutcome>;
   cancel(scope: WorkspaceScope, input: CancelInput): Promise<CommitOutcome>;
@@ -238,6 +259,14 @@ export interface WorkRepository {
    *  upsert by key, no coordination event (there is no view event kind). */
   saveView(scope: WorkspaceScope, input: SaveViewInput): Promise<WorkView>;
   listViews(scope: WorkspaceScope): Promise<WorkView[]>;
+
+  /** Authored time-boxes (v3 PM3): a cycle row is intent (name + dates,
+   *  key CYC-<seq>); everything inside it is derived from the fold. Like
+   *  views, cycles are workspace nouns beside the logs — creating one
+   *  appends no coordination event; PLANNING a task into one (setCycle)
+   *  does. */
+  createCycle(scope: WorkspaceScope, input: CreateCycleInput): Promise<Cycle>;
+  listCycles(scope: WorkspaceScope): Promise<Cycle[]>;
 
   /** Everything the fold needs: envelopes + both logs, seq-ordered. */
   getWorkSet(scope: WorkspaceScope): Promise<WorkSet>;

@@ -13,6 +13,7 @@ import {
   validateEvent,
   validateObservation,
   type CoordinationEvent,
+  type Cycle,
   type DocRevision,
   type Observation,
   type WorkSet,
@@ -23,6 +24,7 @@ import type {
   CommentInput,
   ReactionInput,
   CommitOutcome,
+  CreateCycleInput,
   CreateInitiativeInput,
   CreateSpecInput,
   CreateTaskInput,
@@ -39,6 +41,7 @@ import type {
   PutDocOutcome,
   RelateInput,
   SaveViewInput,
+  SetCycleInput,
   WorkRepository,
   WorkspaceScope,
   WorkView,
@@ -58,6 +61,9 @@ interface LogPair {
   /** Saved views by key — workspace UI configuration beside the logs
    *  (v3 PM2); no coordination event exists for them. */
   views: Map<string, WorkView>;
+  /** Authored time-boxes by key (v3 PM3) — intent rows beside the logs;
+   *  planning a task INTO one is the cycle_set coordination event. */
+  cycles: Map<string, Cycle>;
 }
 
 export class MemoryWorkRepository implements WorkRepository {
@@ -69,7 +75,7 @@ export class MemoryWorkRepository implements WorkRepository {
   private logs(scope: WorkspaceScope): LogPair {
     let pair = this.workspaces.get(scope.orgId);
     if (!pair) {
-      pair = { events: [], observations: [], dedupe: new Set(), sequences: new Map(), docRevisions: new Map(), views: new Map() };
+      pair = { events: [], observations: [], dedupe: new Set(), sequences: new Map(), docRevisions: new Map(), views: new Map(), cycles: new Map() };
       this.workspaces.set(scope.orgId, pair);
     }
     return pair;
@@ -357,6 +363,22 @@ export class MemoryWorkRepository implements WorkRepository {
     return this.relateEvent(scope, "unrelated", input);
   }
 
+  async setCycle(scope: WorkspaceScope, input: SetCycleInput): Promise<CommitOutcome> {
+    validateActor(input.actor);
+    this.mustBeTask(scope, input.key);
+    if (input.cycle !== null && !this.logs(scope).cycles.has(input.cycle)) {
+      throw new WorkError("not_found", `unknown cycle ${input.cycle}`);
+    }
+    const event = this.append(scope, {
+      subject: input.key,
+      kind: "cycle_set",
+      actor: input.actor,
+      at: input.at ?? this.now(),
+      payload: { cycle: input.cycle },
+    });
+    return { event, key: input.key };
+  }
+
   async order(scope: WorkspaceScope, input: OrderInput): Promise<CommitOutcome> {
     return this.simpleEvent(scope, input.key, "ordered", input.actor, input.at, { view: input.view, order: input.order });
   }
@@ -474,6 +496,36 @@ export class MemoryWorkRepository implements WorkRepository {
 
   async listViews(scope: WorkspaceScope): Promise<WorkView[]> {
     return [...this.logs(scope).views.values()].sort((a, b) => (a.key < b.key ? -1 : 1));
+  }
+
+  async createCycle(scope: WorkspaceScope, input: CreateCycleInput): Promise<Cycle> {
+    validateActor(input.actor);
+    if (!input.name?.trim()) {
+      throw new WorkError("invalid", "a cycle needs a name");
+    }
+    const starts = Date.parse(input.startsAt);
+    const ends = Date.parse(input.endsAt);
+    if (!Number.isFinite(starts) || !Number.isFinite(ends) || ends < starts) {
+      throw new WorkError("invalid", "a cycle needs startsAt <= endsAt (ISO dates)");
+    }
+    const pair = this.logs(scope);
+    const key = `CYC-${this.nextSeq(pair, "CYC")}`;
+    const cycle: Cycle = {
+      key,
+      name: input.name.trim(),
+      startsAt: input.startsAt.slice(0, 10),
+      endsAt: input.endsAt.slice(0, 10),
+      createdBy: input.actor,
+      createdAt: input.at ?? this.now(),
+    };
+    pair.cycles.set(key, cycle);
+    return cycle;
+  }
+
+  async listCycles(scope: WorkspaceScope): Promise<Cycle[]> {
+    return [...this.logs(scope).cycles.values()].sort((a, b) =>
+      a.startsAt < b.startsAt ? -1 : a.startsAt > b.startsAt ? 1 : a.key < b.key ? -1 : 1,
+    );
   }
 
   async ingestObservation(scope: WorkspaceScope, input: IngestObservationInput): Promise<IngestOutcome> {

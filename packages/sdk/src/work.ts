@@ -6,9 +6,14 @@
 // mutation surfaces as a typed OrunCloudError carrying the mutator's verdict.
 
 import type {
+  CreateWorkCycleRequest,
   IngestWorkObservationRequest,
   IngestWorkObservationResponse,
   SaveWorkViewRequest,
+  WorkBurnupResponse,
+  WorkCycleRequest,
+  WorkCyclesResponse,
+  WorkCycleView,
   WorkEstimateRequest,
   WorkLabelRequest,
   WorkOrderRequest,
@@ -258,6 +263,36 @@ export class WorkClient {
   /** Backlog ordering within a view (drag-within-column) — pure intent. */
   order(orgId: string, key: string, body: WorkOrderRequest, opts: RequestOptions = {}): Promise<WorkMutationResponse> {
     return this.taskAction(orgId, key, "order", body, opts);
+  }
+
+  /** v3 PM3: plan a task into (or out of, null) an authored time-box. */
+  setCycle(orgId: string, key: string, body: WorkCycleRequest, opts: RequestOptions = {}): Promise<WorkMutationResponse> {
+    return this.taskAction(orgId, key, "cycle", body, opts);
+  }
+
+  /** v3 PM3: create an authored time-box — name + dates; progress derives. */
+  createCycle(orgId: string, body: CreateWorkCycleRequest, opts: RequestOptions = {}): Promise<WorkCycleView> {
+    return this.transport.request<WorkCycleView>(
+      { method: "POST", path: `${workBase(orgId)}/cycles`, body },
+      opts,
+    );
+  }
+
+  /** v3 PM3: the workspace's cycles with derived scope/done counts. */
+  listCycles(orgId: string, opts: RequestOptions = {}): Promise<WorkCyclesResponse> {
+    return this.transport.request<WorkCyclesResponse>(
+      { method: "GET", path: `${workBase(orgId)}/cycles` },
+      opts,
+    );
+  }
+
+  /** v3 PM3: the derived burn-up — the fold replayed day by day (V3-3:
+   *  there is no corresponding write anywhere). */
+  burnup(orgId: string, cycleKey: string, opts: RequestOptions = {}): Promise<WorkBurnupResponse> {
+    return this.transport.request<WorkBurnupResponse>(
+      { method: "GET", path: `${workBase(orgId)}/cycles/${encodeURIComponent(cycleKey)}/burnup` },
+      opts,
+    );
   }
 
   /** v3 PM2: upsert a saved view — shareable UI intent, no event. */
