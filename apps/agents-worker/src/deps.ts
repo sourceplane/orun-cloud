@@ -14,6 +14,16 @@ import { authorizeViaPolicy } from "./policy-client.js";
 import type { PolicyResource } from "@saas/contracts/policy";
 import { createProviderKeyClient, type ProviderKeyClient } from "./config-client.js";
 import { createProviderVerifier, type ProviderVerifier } from "./verifiers.js";
+import { createDaytonaProvider } from "./providers/daytona.js";
+import type { SandboxProvider } from "@saas/contracts/agents";
+
+/** Builds the sandbox adapter for a provider connection (AG5 seam); null when
+ * no adapter exists for the provider. */
+export type SandboxFactory = (
+  provider: string,
+  apiKey: string,
+  config: Record<string, unknown>,
+) => SandboxProvider | null;
 
 export interface AgentsDeps {
   repo: AgentsRepository;
@@ -24,6 +34,8 @@ export interface AgentsDeps {
   providerKeys?: ProviderKeyClient;
   /** Provider verification pings (AG12 §10.3); stubbed in tests. */
   verifier?: ProviderVerifier;
+  /** Sandbox adapters keyed by provider (AG5); stubbed in tests. */
+  sandboxes?: SandboxFactory;
   /** Release any resources (a real DB executor) after the request. */
   dispose(): Promise<void>;
 }
@@ -41,6 +53,14 @@ export function buildDeps(env: Env): AgentsDeps {
     repo,
     ...(env.CONFIG_WORKER ? { providerKeys: createProviderKeyClient(env.CONFIG_WORKER) } : {}),
     verifier: createProviderVerifier(),
+    sandboxes(provider, apiKey, config) {
+      if (provider !== "daytona") return null;
+      return createDaytonaProvider({
+        apiKey,
+        ...(typeof config.apiUrl === "string" && config.apiUrl ? { apiUrl: config.apiUrl } : {}),
+        ...(typeof config.target === "string" && config.target ? { target: config.target } : {}),
+      });
+    },
     async authorize(action, orgId, actor, requestId) {
       const ctx = await fetchAuthorizationContext(
         env.MEMBERSHIP_WORKER!,
