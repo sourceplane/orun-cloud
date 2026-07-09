@@ -6,7 +6,10 @@ import {
   connectionTone,
   sessionLabel,
   sessionTone,
+  servicePrincipalSubjectId,
   workRefForItem,
+  AGENT_TYPES,
+  AGENT_MODELS,
   PROVIDER_META,
 } from "@web-console-next/lib/agents/model";
 import { AGENT_SESSION_STATES, AGENT_PROVIDERS, PROVIDER_CONNECTION_STATUSES } from "@saas/contracts/agents";
@@ -45,5 +48,17 @@ describe("agents presentation model", () => {
 
   it("builds the work:// provenance pointer for spawned sessions (AG8)", () => {
     expect(workRefForItem("org_1", "ORN-142")).toBe("work://org_1/ORN-142");
+  });
+
+  it("derives the canonical sp_ subject id from a service principal UUID", () => {
+    expect(servicePrincipalSubjectId("3f9b537d-bf98-5f45-bb95-634323e593c7")).toBe(
+      "sp_3f9b537dbf985f45bb95634323e593c7",
+    );
+  });
+
+  it("offers the shipped agent types and at least one model for the profile form", () => {
+    expect(AGENT_TYPES.map((t) => t.value)).toEqual(["implementer", "orchestrator"]);
+    expect(AGENT_MODELS.length).toBeGreaterThan(0);
+    expect(AGENT_MODELS.map((m) => m.value)).toContain("claude-opus-4-8");
   });
 });

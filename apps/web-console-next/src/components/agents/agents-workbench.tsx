@@ -21,11 +21,13 @@ import {
   StatusText,
 } from "@/components/ui/northwind";
 import { EmptyState } from "@/components/ui/empty-state";
+import { Button } from "@/components/ui/button";
 import { wrap } from "@/lib/api";
 import { qk, useApiQuery } from "@/lib/query";
 import { useSession } from "@/lib/session";
 import { sessionLabel, sessionTone } from "@/lib/agents/model";
 import { ProviderConnections } from "@/components/agents/provider-connections";
+import { CreateProfileDialog } from "@/components/agents/create-profile-dialog";
 
 export function AgentsWorkbench({ orgId, orgSlug }: { orgId: string; orgSlug: string }) {
   const { client } = useSession();
@@ -39,6 +41,7 @@ export function AgentsWorkbench({ orgId, orgSlug }: { orgId: string; orgSlug: st
     }),
   );
 
+  const [profileOpen, setProfileOpen] = React.useState(false);
   const data = sessions.data;
   const running = data?.sessions.filter((s) => s.state === "running").length ?? 0;
   const active = data?.sessions.filter((s) =>
@@ -80,11 +83,19 @@ export function AgentsWorkbench({ orgId, orgSlug }: { orgId: string; orgSlug: st
         </ListCard>
       )}
 
-      <Kicker className="mb-2.5 mt-8">Profiles</Kicker>
+      <div className="mb-2.5 mt-8 flex items-center justify-between">
+        <Kicker className="mb-0">Profiles</Kicker>
+        {(data?.profiles.length ?? 0) > 0 ? (
+          <Button size="sm" variant="outline" onClick={() => setProfileOpen(true)}>
+            New profile
+          </Button>
+        ) : null}
+      </div>
       {(data?.profiles.length ?? 0) === 0 ? (
         <EmptyState
           title="No agent profiles"
-          description="A profile binds an orun agent type to a service principal with a responsible owner. Create them with the CLI: orun agent profile create."
+          description="A profile binds an orun agent type to a service principal with a responsible owner. It's the identity a session runs as."
+          primaryAction={{ label: "New profile", onClick: () => setProfileOpen(true) }}
         />
       ) : (
         <ListCard>
@@ -104,6 +115,13 @@ export function AgentsWorkbench({ orgId, orgSlug }: { orgId: string; orgSlug: st
           ))}
         </ListCard>
       )}
+
+      <CreateProfileDialog
+        orgId={orgId}
+        open={profileOpen}
+        onOpenChange={setProfileOpen}
+        onCreated={sessions.reload}
+      />
     </Screen>
   );
 }
