@@ -730,8 +730,9 @@ describe("listEffectivePermissions", () => {
     // + 2 ES1 dead_letter.* actions + 2 orun-work WP1 work.* actions
     // + 2 ES2 organization.notification_rule.* actions
     // + 2 ES3 organization.notification_channel.* actions
-    // + 2 ES4 organization.event.{read,ingest} actions.
-    expect(allowed.length).toBe(62);
+    // + 2 ES4 organization.event.{read,ingest} actions
+    // + 8 saas-agents organization.agent.* actions.
+    expect(allowed.length).toBe(70);
   });
 
   it("returns limited permissions for viewer", () => {
@@ -744,6 +745,10 @@ describe("listEffectivePermissions", () => {
     const allowed = result.permissions.filter((p) => p.allow);
     expect(allowed.map((p) => p.action).sort()).toEqual([
       "catalog.read",
+      "organization.agent.autonomy.read",
+      "organization.agent.profile.read",
+      "organization.agent.provider.read",
+      "organization.agent.session.read",
       "organization.config.read",
       "organization.event.read",
       "organization.integration.read",
@@ -1337,5 +1342,49 @@ describe("orun-work actions (WP1 — the unknown_action regression)", () => {
     expect(authorize(req("work.write", "builder"))).toMatchObject({ allow: true });
     expect(authorize(req("work.write", "admin"))).toMatchObject({ allow: true });
     expect(authorize(req("work.read", "owner"))).toMatchObject({ allow: true });
+  });
+});
+
+describe("saas-agents actions (the deny-by-default grant)", () => {
+  const req = (action: string, role: string): AuthorizationRequest => ({
+    subject,
+    action,
+    resource: { kind: "organization", orgId: "org_1" },
+    context: { memberships: [orgFact(role, "org_1")] },
+  });
+
+  it("owner and admin get the full agent surface", () => {
+    for (const role of ["owner", "admin"]) {
+      for (const action of [
+        "organization.agent.provider.read",
+        "organization.agent.provider.write",
+        "organization.agent.session.read",
+        "organization.agent.session.create",
+        "organization.agent.profile.read",
+        "organization.agent.profile.write",
+        "organization.agent.autonomy.read",
+        "organization.agent.autonomy.write",
+      ]) {
+        expect(authorize(req(action, role))).toMatchObject({ allow: true });
+      }
+    }
+  });
+
+  it("provider connect + autonomy write are known but denied for builder/viewer, never unknown_action", () => {
+    // Known-action: a denial carries a role reason, not unknown_action — so a
+    // future grant is a data change, not a regression.
+    const denied = authorize(req("organization.agent.provider.write", "builder"));
+    expect(denied.allow).toBe(false);
+    expect((denied as { reason?: string }).reason).not.toBe("unknown_action");
+
+    // Builders run the day-to-day surface but cannot connect accounts / set policy.
+    expect(authorize(req("organization.agent.provider.read", "builder"))).toMatchObject({ allow: true });
+    expect(authorize(req("organization.agent.session.create", "builder"))).toMatchObject({ allow: true });
+    expect(authorize(req("organization.agent.provider.write", "builder"))).toMatchObject({ allow: false });
+    expect(authorize(req("organization.agent.autonomy.write", "builder"))).toMatchObject({ allow: false });
+
+    // Viewers read only.
+    expect(authorize(req("organization.agent.session.read", "viewer"))).toMatchObject({ allow: true });
+    expect(authorize(req("organization.agent.session.create", "viewer"))).toMatchObject({ allow: false });
   });
 });
