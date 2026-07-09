@@ -60,7 +60,7 @@ Claude Code configured with the snippet can answer "who owns <entity>?" and
 no-op for now (no write tools exist) but plumbs through; CLI tests cover
 command registration + auth-missing behavior.
 
-## MCP2 — Remote server (`apps/mcp-worker`) — 🗓️ Planned (human-independent)
+## MCP2 — Remote server (`apps/mcp-worker`) — ✅ Shipped (see IMPLEMENTATION-STATUS.md)
 
 - New `apps/mcp-worker` (`cloudflare-worker-turbo` component; own hostname
   `mcp.<domain>`; stage + prod subscriptions; wrangler template per BF

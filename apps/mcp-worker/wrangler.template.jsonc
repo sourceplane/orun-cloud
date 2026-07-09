@@ -1,0 +1,39 @@
+// Rendered to wrangler.jsonc by tooling/wire/render.mjs (BF6 deploy-time wiring).
+// This template carries NO @@wiring@@ tokens — the worker binds no resources at
+// all (no DB, no KV, no DO, no service bindings; design §2 client-not-service).
+// Its only egress is the public api-edge URL below, reached via `@saas/sdk`
+// with the caller's forwarded bearer.
+//
+// Served on workers.dev for now; the `mcp.<domain>` custom hostname is an
+// infra follow-up (tracked alongside MCP3's protected-resource metadata).
+{
+  "name": "mcp-worker",
+  "compatibility_date": "2025-05-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "main": "src/index.ts",
+  "minify": false,
+  "vars": {
+    "ENVIRONMENT": "local",
+    "API_EDGE_URL": "http://127.0.0.1:8787"
+  },
+  "env": {
+    "dev": {
+      "vars": {
+        "ENVIRONMENT": "dev",
+        "API_EDGE_URL": "https://api-edge-dev.oruncloud.workers.dev"
+      }
+    },
+    "stage": {
+      "vars": {
+        "ENVIRONMENT": "stage",
+        "API_EDGE_URL": "https://api-edge-stage.oruncloud.workers.dev"
+      }
+    },
+    "prod": {
+      "vars": {
+        "ENVIRONMENT": "prod",
+        "API_EDGE_URL": "https://api-edge-prod.oruncloud.workers.dev"
+      }
+    }
+  }
+}

@@ -1,0 +1,71 @@
+apiVersion: sourceplane.io/v1
+kind: Component
+metadata:
+  name: mcp-worker
+  description: Cloudflare Worker serving the remote MCP transport (saas-mcp-server MCP2)
+spec:
+  type: cloudflare-worker-turbo
+  lifecycle: production
+  owner: platform
+  domain: starter-runtime
+  path: apps/mcp-worker
+  dependsOn:
+    # Build inputs (dependsOn[].input): bundled into this component's artifact,
+    # so a change to any rescopes this component in --changed. NO runtime
+    # dependsOn edges: the worker is a CLIENT of the public API (design §2) —
+    # its only egress is the per-env API_EDGE_URL, never a service binding.
+    - component: contracts
+      input: true
+    - component: sdk
+      input: true
+    - component: mcp
+      input: true
+  subscribe:
+    environments:
+      - name: dev
+        profile: verify
+      - name: stage
+        profile: verify
+        profileRules:
+          - profile: deploy
+            when:
+              triggerRef: github-push-main
+      - name: prod
+        profile: verify
+        profileRules:
+          - profile: deploy
+            when:
+              triggerRef: github-push-main
+  parameters:
+    nodeVersion: "22"
+    pnpmVersion: "10.12.1"
+    workspaceDir: ../..
+    appDir: .
+    # Deploy-time wiring — wrangler.jsonc is rendered, never committed. The
+    # template carries no @@wiring@@ tokens (vars only, no resource IDs), so the
+    # fixture is empty; the render step still enforces the no-committed-IDs
+    # guard. Served on workers.dev for now — the `mcp.<domain>` custom hostname
+    # is an infra follow-up (tracked with MCP3).
+    awsAccountId: "306024784101"
+    awsRegion: us-east-1
+    orgName: sourceplane
+    owner: sourceplane
+    repo: orun-cloud
+
+    turboFilter: "@saas/mcp-worker"
+    wranglerConfig: wrangler.jsonc
+    wranglerTemplate: wrangler.template.jsonc
+    wiringFixture: wiring.fixture.json
+    installCommand: pnpm install --frozen-lockfile
+    buildCommand: pnpm exec turbo run build --filter=@saas/mcp-worker
+    typecheckCommand: pnpm exec turbo run typecheck --filter=@saas/mcp-worker
+    dryRunCommand: pnpm exec wrangler deploy --dry-run --config wrangler.jsonc --env prod
+    deployCommand: pnpm exec wrangler deploy --config wrangler.jsonc --env prod
+    preDeployCommand: "echo 'No pre-deploy step configured.'"
+    migrationCommand: "echo 'No migrations configured.'"
+    smokeCommand: "echo 'No smoke test configured.'"
+  labels:
+    team: platform
+    layer: runtime
+    surface: mcp
+    runtime: cloudflare
