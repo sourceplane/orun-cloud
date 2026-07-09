@@ -1,0 +1,200 @@
+"use client";
+
+// Create an agent profile (saas-agents AG7 follow-up, design §5): bind an orun
+// agent type to a membership service principal with a responsible owner. The
+// service principal is the agent's platform identity — a session token is
+// minted for it (AG6 §3.2) — so it must be a REAL bound principal. API keys
+// mint exactly such principals (with a role), so the picker offers the
+// workspace's keys; the owner defaults to the signed-in user.
+
+import * as React from "react";
+import Link from "next/link";
+import { useParams } from "next/navigation";
+import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { StatusText } from "@/components/ui/northwind";
+import { useToast } from "@/components/ui/toast";
+import { wrap } from "@/lib/api";
+import { qk, useApiQuery } from "@/lib/query";
+import { useSession } from "@/lib/session";
+import {
+  AGENT_MODELS,
+  AGENT_TYPES,
+  DEFAULT_HARNESS,
+  servicePrincipalSubjectId,
+} from "@/lib/agents/model";
+
+export function CreateProfileDialog({
+  orgId,
+  open,
+  onOpenChange,
+  onCreated,
+}: {
+  orgId: string;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  onCreated: () => void;
+}) {
+  const { client } = useSession();
+  const { toast } = useToast();
+  const params = useParams<{ orgSlug: string }>();
+  const orgSlug = params?.orgSlug ?? "";
+
+  const apiKeys = useApiQuery(qk.apiKeys(orgId), () => wrap(async () => client.apiKeys.list(orgId)), {
+    enabled: open,
+  });
+  const profile = useApiQuery(qk.profile(), () => wrap(async () => (await client.auth.getProfile()).user), {
+    enabled: open,
+  });
+
+  // Active (non-revoked) keys back a usable service principal.
+  const keys = (apiKeys.data?.apiKeys ?? []).filter((k) => !k.revokedAt);
+
+  const [name, setName] = React.useState("");
+  const [principalUuid, setPrincipalUuid] = React.useState<string | null>(null);
+  const [agentType, setAgentType] = React.useState<string>(AGENT_TYPES[0].value);
+  const [model, setModel] = React.useState<string>(AGENT_MODELS[0].value);
+  const [busy, setBusy] = React.useState(false);
+
+  const chosenUuid = principalUuid ?? keys[0]?.servicePrincipal.id ?? null;
+  const ownerId = profile.data?.id ?? "";
+
+  async function create() {
+    if (!name || !chosenUuid || !ownerId) return;
+    setBusy(true);
+    const res = await wrap(async () =>
+      client.agents.createProfile(orgId, {
+        name,
+        principalId: servicePrincipalSubjectId(chosenUuid),
+        owner: ownerId,
+        agentType,
+        harness: DEFAULT_HARNESS,
+        model,
+      }),
+    );
+    setBusy(false);
+    if (res.ok) {
+      toast({ kind: "success", title: `Profile ${res.data.name} created` });
+      setName("");
+      onOpenChange(false);
+      onCreated();
+    } else {
+      toast({ kind: "error", title: "Could not create the profile", description: res.error.message });
+    }
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>New agent profile</DialogTitle>
+          <DialogDescription>
+            A profile binds an orun agent type to a service principal — the agent&apos;s platform identity —
+            with you as the responsible owner.
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="grid gap-3">
+          <div className="grid gap-1.5">
+            <Label htmlFor="profile-name">Name</Label>
+            <Input
+              id="profile-name"
+              placeholder="impl-default"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+            />
+          </div>
+
+          <div className="grid gap-1.5">
+            <Label>Service principal</Label>
+            {apiKeys.loading && !apiKeys.data ? (
+              <StatusText tone="neutral">Loading…</StatusText>
+            ) : keys.length === 0 ? (
+              <StatusText tone="warning">
+                No API keys yet. An agent runs as a service principal — create an API key first on{" "}
+                <Link href={`/orgs/${orgSlug}/settings/api-keys`} className="underline underline-offset-2">
+                  Settings › API keys
+                </Link>
+                , then come back.
+              </StatusText>
+            ) : (
+              <Select {...(chosenUuid ? { value: chosenUuid } : {})} onValueChange={setPrincipalUuid}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Pick a service principal" />
+                </SelectTrigger>
+                <SelectContent>
+                  {keys.map((k) => (
+                    <SelectItem key={k.id} value={k.servicePrincipal.id}>
+                      {k.label} · {k.servicePrincipal.role}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
+          </div>
+
+          <div className="grid gap-1.5">
+            <Label>Agent type</Label>
+            <Select value={agentType} onValueChange={setAgentType}>
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {AGENT_TYPES.map((t) => (
+                  <SelectItem key={t.value} value={t.value}>
+                    {t.label} — {t.blurb}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="grid gap-1.5">
+            <Label>Model</Label>
+            <Select value={model} onValueChange={setModel}>
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {AGENT_MODELS.map((m) => (
+                  <SelectItem key={m.value} value={m.value}>
+                    {m.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <StatusText tone="neutral" className="text-[11.5px]">
+            Harness {DEFAULT_HARNESS} · owner {profile.data?.displayName ?? (ownerId || "you")}
+          </StatusText>
+        </div>
+
+        <DialogFooter>
+          <Button variant="ghost" onClick={() => onOpenChange(false)} disabled={busy}>
+            Cancel
+          </Button>
+          <Button onClick={() => void create()} disabled={busy || !name || !chosenUuid || !ownerId}>
+            {busy ? "Creating…" : "Create profile"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}

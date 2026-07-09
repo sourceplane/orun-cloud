@@ -52,6 +52,31 @@ export function workRefForItem(orgId: string, itemKey: string): string {
   return `work://${orgId}/${itemKey}`;
 }
 
+/** The orun agent types shipped in the base image (agents/*.md). A profile
+ * binds one of these to a service principal (saas-agents §5). */
+export const AGENT_TYPES = [
+  { value: "implementer", label: "Implementer", blurb: "Works a task on a branch and opens a PR." },
+  { value: "orchestrator", label: "Orchestrator", blurb: "Turns an epic into design + proposed contracts." },
+] as const;
+
+/** Models a profile can pin. The sandbox injects the workspace's Anthropic key
+ * as ANTHROPIC_API_KEY; the runtime reads the model from the profile. */
+export const AGENT_MODELS = [
+  { value: "claude-opus-4-8", label: "Claude Opus 4.8" },
+  { value: "claude-fable-5", label: "Claude Fable 5" },
+  { value: "claude-sonnet-5", label: "Claude Sonnet 5" },
+  { value: "claude-haiku-4-5-20251001", label: "Claude Haiku 4.5" },
+] as const;
+
+/** The only harness the base image ships today. */
+export const DEFAULT_HARNESS = "claude-code";
+
+/** Build the canonical sp_ subject id from a service principal's raw UUID
+ * (the shape api-keys list returns) — the profile's principalId. */
+export function servicePrincipalSubjectId(uuid: string): string {
+  return `sp_${uuid.replace(/-/g, "")}`;
+}
+
 export const PROVIDER_META = {
   daytona: {
     name: "Daytona",
