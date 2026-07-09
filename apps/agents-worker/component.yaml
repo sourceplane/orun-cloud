@@ -65,8 +65,14 @@ spec:
     typecheckCommand: pnpm exec turbo run typecheck --filter=@saas/agents-worker
     dryRunCommand: pnpm exec wrangler deploy --dry-run --config wrangler.jsonc --env prod
     deployCommand: pnpm exec wrangler deploy --config wrangler.jsonc --env prod
-    # AG5 is dormant (no secrets, no migrations to run from the worker); the
-    # agents schema migrates through infra/db-migrate like every other context.
+    # Every deploy-lane step must be an explicit command: an unset
+    # preDeployCommand renders an empty script that fails the lane with a
+    # bash syntax error — which is why agents-worker never deployed to
+    # stage/prod from the AG12/AG6 merges (and, via the dependsOn edge,
+    # blocked api-edge deploys).
+    preDeployCommand: "echo 'No pre-deploy step configured.'"
+    # The agents schema migrates through infra/db-migrate like every other
+    # context; nothing to run from the worker.
     migrationCommand: "echo 'No migrations configured.'"
     smokeCommand: "echo 'No smoke test configured.'"
   labels:
