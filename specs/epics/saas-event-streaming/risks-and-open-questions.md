@@ -21,6 +21,11 @@ as IG's GitHub App registration.
 channel kind, not a migration. Group-story *message updating* (ES4's nicest
 rendering) degrades gracefully to append-posts under incoming webhooks.
 
+**⬆ Promoted:** the `slack_app` follow-up is now owned by
+[`saas-integration-hub`](../saas-integration-hub/) (IH1–IH3), exactly in the
+shape recommended here — an additive channel kind behind this seam, with
+credential custody in integrations-worker.
+
 ### D2 — Streaming substrate: stay on cron + Postgres lanes, or adopt Cloudflare Queues
 
 The house pattern (webhooks, integrations drains) is cron + Postgres cursors;
