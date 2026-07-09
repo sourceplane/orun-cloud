@@ -188,11 +188,18 @@ describe("POST /v1/auth/oidc/exchange (OV3)", () => {
   });
 
   it("resolve-bearer accepts the minted workflow token as a workflow actor", async () => {
-    const { token, jwks } = await forgeOidc();
+    // resolve-bearer has no clock injection point — it verifies with the REAL
+    // `new Date()`. So this test (alone in the suite) must mint against the
+    // real clock too: exchanging under the fixed past NOW would hand
+    // resolve-bearer a workflow token whose 15-minute expiry lapsed the moment
+    // the suite ran after 2026-06-17 (a latent wall-clock bug, invisible while
+    // this suite failed collection).
+    const realNowSec = Math.floor(Date.now() / 1000);
+    const { token, jwks } = await forgeOidc({ exp: realNowSec + 600 });
     const exchange = await handleOidcExchange(exchangeReq(token), env(), "req_1", {
       executor: stateExecutor([linkRow()]),
       fetchJwks: () => Promise.resolve(jwks),
-      now: () => NOW,
+      now: () => new Date(),
     });
     const { data } = (await exchange.json()) as { data: { accessToken: string } };
 
