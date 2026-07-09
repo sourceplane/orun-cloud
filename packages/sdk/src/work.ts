@@ -8,6 +8,14 @@
 import type {
   IngestWorkObservationRequest,
   IngestWorkObservationResponse,
+  SaveWorkViewRequest,
+  WorkEstimateRequest,
+  WorkLabelRequest,
+  WorkOrderRequest,
+  WorkPriorityRequest,
+  WorkRelateRequest,
+  WorkViewsResponse,
+  WorkViewView,
   CreateWorkInitiativeRequest,
   CreateWorkInitiativeResponse,
   CreateWorkSpecRequest,
@@ -222,6 +230,50 @@ export class WorkClient {
 
   cancel(orgId: string, key: string, opts: RequestOptions = {}): Promise<WorkMutationResponse> {
     return this.taskAction(orgId, key, "cancel", {}, opts);
+  }
+
+  // ── Board intent (v3 PM2): pure intent verbs — none can move a rung ───────
+
+  /** Add ({label}) or remove ({label, remove:true}) a free-form label. */
+  label(orgId: string, key: string, body: WorkLabelRequest, opts: RequestOptions = {}): Promise<WorkMutationResponse> {
+    return this.taskAction(orgId, key, "label", body, opts);
+  }
+
+  /** Set the authored priority; "none" clears. */
+  setPriority(orgId: string, key: string, body: WorkPriorityRequest, opts: RequestOptions = {}): Promise<WorkMutationResponse> {
+    return this.taskAction(orgId, key, "priority", body, opts);
+  }
+
+  /** Set the estimate in points; null clears. */
+  setEstimate(orgId: string, key: string, body: WorkEstimateRequest, opts: RequestOptions = {}): Promise<WorkMutationResponse> {
+    return this.taskAction(orgId, key, "estimate", body, opts);
+  }
+
+  /** Declare ({rel, target}) or retract ({…, remove:true}) a typed relation.
+   *  `blocks` derives the target's blocked flag in the fold. */
+  relate(orgId: string, key: string, body: WorkRelateRequest, opts: RequestOptions = {}): Promise<WorkMutationResponse> {
+    return this.taskAction(orgId, key, "relate", body, opts);
+  }
+
+  /** Backlog ordering within a view (drag-within-column) — pure intent. */
+  order(orgId: string, key: string, body: WorkOrderRequest, opts: RequestOptions = {}): Promise<WorkMutationResponse> {
+    return this.taskAction(orgId, key, "order", body, opts);
+  }
+
+  /** v3 PM2: upsert a saved view — shareable UI intent, no event. */
+  saveView(orgId: string, body: SaveWorkViewRequest, opts: RequestOptions = {}): Promise<WorkViewView> {
+    return this.transport.request<WorkViewView>(
+      { method: "POST", path: `${workBase(orgId)}/views`, body },
+      opts,
+    );
+  }
+
+  /** v3 PM2: the workspace's saved views. */
+  listViews(orgId: string, opts: RequestOptions = {}): Promise<WorkViewsResponse> {
+    return this.transport.request<WorkViewsResponse>(
+      { method: "GET", path: `${workBase(orgId)}/views` },
+      opts,
+    );
   }
 
   editContract(orgId: string, key: string, body: WorkContractRequest, opts: RequestOptions = {}): Promise<WorkMutationResponse> {

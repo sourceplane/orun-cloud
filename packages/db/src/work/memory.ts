@@ -6,6 +6,8 @@
 import { canonicalDocBody, docDigest } from "./doc.js";
 import { buildEnvelopes, type ItemCreatedPayload } from "./envelopes.js";
 import {
+  PRIORITIES,
+  RELATION_KINDS,
   WorkError,
   validateActor,
   validateEvent,
@@ -26,14 +28,20 @@ import type {
   CreateTaskInput,
   EditContractInput,
   EditItemInput,
+  EstimateInput,
   IngestObservationInput,
   IngestOutcome,
+  LabelInput,
   OrderInput,
   PinInput,
+  PriorityInput,
   PutDocInput,
   PutDocOutcome,
+  RelateInput,
+  SaveViewInput,
   WorkRepository,
   WorkspaceScope,
+  WorkView,
 } from "./types.js";
 
 const PREFIX_RE = /^[A-Z]{2,5}$/;
@@ -47,6 +55,9 @@ interface LogPair {
   /** Document bodies by digest — content beside the logs, not envelope
    *  state (the log carries only the doc_edited digest pointers). */
   docRevisions: Map<string, DocRevision>;
+  /** Saved views by key — workspace UI configuration beside the logs
+   *  (v3 PM2); no coordination event exists for them. */
+  views: Map<string, WorkView>;
 }
 
 export class MemoryWorkRepository implements WorkRepository {
@@ -58,7 +69,7 @@ export class MemoryWorkRepository implements WorkRepository {
   private logs(scope: WorkspaceScope): LogPair {
     let pair = this.workspaces.get(scope.orgId);
     if (!pair) {
-      pair = { events: [], observations: [], dedupe: new Set(), sequences: new Map(), docRevisions: new Map() };
+      pair = { events: [], observations: [], dedupe: new Set(), sequences: new Map(), docRevisions: new Map(), views: new Map() };
       this.workspaces.set(scope.orgId, pair);
     }
     return pair;
@@ -252,6 +263,100 @@ export class MemoryWorkRepository implements WorkRepository {
     return this.reaction(scope, "reaction_removed", input);
   }
 
+  // ── PM2 board intent: task verbs, one event each ──────────────────────────
+
+  private mustBeTask(scope: WorkspaceScope, key: string): void {
+    const { tasks } = buildEnvelopes(scope.orgId, this.logs(scope).events);
+    if (!tasks.some((t) => t.key === key)) {
+      throw new WorkError("not_found", `unknown task ${key}`);
+    }
+  }
+
+  private labelEvent(scope: WorkspaceScope, kind: "labeled" | "unlabeled", input: LabelInput): CommitOutcome {
+    validateActor(input.actor);
+    if (!input.label?.trim()) {
+      throw new WorkError("invalid", "a label needs a non-empty name");
+    }
+    this.mustBeTask(scope, input.key);
+    const event = this.append(scope, {
+      subject: input.key,
+      kind,
+      actor: input.actor,
+      at: input.at ?? this.now(),
+      payload: { label: input.label.trim() },
+    });
+    return { event, key: input.key };
+  }
+
+  async label(scope: WorkspaceScope, input: LabelInput): Promise<CommitOutcome> {
+    return this.labelEvent(scope, "labeled", input);
+  }
+
+  async unlabel(scope: WorkspaceScope, input: LabelInput): Promise<CommitOutcome> {
+    return this.labelEvent(scope, "unlabeled", input);
+  }
+
+  async prioritize(scope: WorkspaceScope, input: PriorityInput): Promise<CommitOutcome> {
+    validateActor(input.actor);
+    if (!PRIORITIES.includes(input.priority)) {
+      throw new WorkError("invalid", `priority must be one of ${PRIORITIES.join("|")}`);
+    }
+    this.mustBeTask(scope, input.key);
+    const event = this.append(scope, {
+      subject: input.key,
+      kind: "prioritized",
+      actor: input.actor,
+      at: input.at ?? this.now(),
+      payload: { priority: input.priority },
+    });
+    return { event, key: input.key };
+  }
+
+  async estimate(scope: WorkspaceScope, input: EstimateInput): Promise<CommitOutcome> {
+    validateActor(input.actor);
+    if (input.points !== null && (typeof input.points !== "number" || !Number.isFinite(input.points) || input.points < 0)) {
+      throw new WorkError("invalid", "estimate points must be a non-negative number (null clears)");
+    }
+    this.mustBeTask(scope, input.key);
+    const event = this.append(scope, {
+      subject: input.key,
+      kind: "estimated",
+      actor: input.actor,
+      at: input.at ?? this.now(),
+      payload: { points: input.points },
+    });
+    return { event, key: input.key };
+  }
+
+  private relateEvent(scope: WorkspaceScope, kind: "related" | "unrelated", input: RelateInput): CommitOutcome {
+    validateActor(input.actor);
+    if (!RELATION_KINDS.includes(input.rel)) {
+      throw new WorkError("invalid", `rel must be one of ${RELATION_KINDS.join("|")}`);
+    }
+    if (input.target === input.key) {
+      throw new WorkError("invalid", `an item cannot relate to itself (${input.key})`);
+    }
+    // Relations may join any two items (task↔task, initiative→spec, …).
+    this.mustExist(scope, input.key);
+    this.mustExist(scope, input.target);
+    const event = this.append(scope, {
+      subject: input.key,
+      kind,
+      actor: input.actor,
+      at: input.at ?? this.now(),
+      payload: { rel: input.rel, target: input.target },
+    });
+    return { event, key: input.key };
+  }
+
+  async relate(scope: WorkspaceScope, input: RelateInput): Promise<CommitOutcome> {
+    return this.relateEvent(scope, "related", input);
+  }
+
+  async unrelate(scope: WorkspaceScope, input: RelateInput): Promise<CommitOutcome> {
+    return this.relateEvent(scope, "unrelated", input);
+  }
+
   async order(scope: WorkspaceScope, input: OrderInput): Promise<CommitOutcome> {
     return this.simpleEvent(scope, input.key, "ordered", input.actor, input.at, { view: input.view, order: input.order });
   }
@@ -344,6 +449,31 @@ export class MemoryWorkRepository implements WorkRepository {
       .filter((r) => r.specKey === specKey)
       .sort((a, b) => (a.createdAt < b.createdAt ? -1 : a.createdAt > b.createdAt ? 1 : a.revision < b.revision ? -1 : 1))
       .map(({ body: _body, ...rest }) => rest);
+  }
+
+  async saveView(scope: WorkspaceScope, input: SaveViewInput): Promise<WorkView> {
+    validateActor(input.actor);
+    if (!/^[a-z0-9-]+$/.test(input.key)) {
+      throw new WorkError("invalid", `view key ${input.key} must be lowercase kebab`);
+    }
+    if (!input.name?.trim()) {
+      throw new WorkError("invalid", "a view needs a name");
+    }
+    const pair = this.logs(scope);
+    const existing = pair.views.get(input.key);
+    const view: WorkView = {
+      key: input.key,
+      name: input.name.trim(),
+      config: input.config,
+      createdBy: existing?.createdBy ?? input.actor,
+      createdAt: existing?.createdAt ?? input.at ?? this.now(),
+    };
+    pair.views.set(input.key, view);
+    return view;
+  }
+
+  async listViews(scope: WorkspaceScope): Promise<WorkView[]> {
+    return [...this.logs(scope).views.values()].sort((a, b) => (a.key < b.key ? -1 : 1));
   }
 
   async ingestObservation(scope: WorkspaceScope, input: IngestObservationInput): Promise<IngestOutcome> {

@@ -11,6 +11,8 @@ import { canonicalDocBody, docDigest } from "./doc.js";
 import { buildEnvelopes, type ItemCreatedPayload } from "./envelopes.js";
 import {
   API_VERSION,
+  PRIORITIES,
+  RELATION_KINDS,
   WorkError,
   validateActor,
   validateEvent,
@@ -22,6 +24,8 @@ import {
   type EventKind,
   type Initiative,
   type Observation,
+  type Priority,
+  type Relation,
   type Spec,
   type Task,
   type WorkSet,
@@ -37,14 +41,20 @@ import type {
   CreateTaskInput,
   EditContractInput,
   EditItemInput,
+  EstimateInput,
   IngestObservationInput,
   IngestOutcome,
+  LabelInput,
   OrderInput,
   PinInput,
+  PriorityInput,
   PutDocInput,
   PutDocOutcome,
+  RelateInput,
+  SaveViewInput,
   WorkRepository,
   WorkspaceScope,
+  WorkView,
 } from "./types.js";
 
 const PREFIX_RE = /^[A-Z]{2,5}$/;
@@ -93,6 +103,8 @@ function mapObservation(orgId: string, row: Record<string, unknown>): Observatio
 }
 
 function mapTask(orgId: string, row: Record<string, unknown>): Task {
+  const tags = parseJson<string[]>(row.tags, []);
+  const relations = parseJson<Relation[]>(row.relations, []);
   return {
     apiVersion: API_VERSION,
     kind: "Task",
@@ -105,6 +117,10 @@ function mapTask(orgId: string, row: Record<string, unknown>): Task {
     contract: parseJson<Contract | null>(row.contract, null) ?? undefined,
     createdBy: parseJson<Actor>(row.created_by, { type: "automation", id: "unknown" }),
     createdAt: toIso(row.created_at),
+    tags: tags.length > 0 ? tags : undefined,
+    priority: ((row.priority as string | null) ?? undefined) as Priority | undefined,
+    estimate: row.estimate == null ? undefined : Number(row.estimate),
+    relations: relations.length > 0 ? relations : undefined,
   };
 }
 
@@ -180,6 +196,16 @@ function mapInitiative(orgId: string, row: Record<string, unknown>): Initiative 
   };
 }
 
+function mapView(row: Record<string, unknown>): WorkView {
+  return {
+    key: String(row.key),
+    name: String(row.name),
+    config: parseJson<Record<string, unknown>>(row.config, {}),
+    createdBy: parseJson<Actor>(row.created_by, { type: "automation", id: "unknown" }),
+    createdAt: toIso(row.created_at),
+  };
+}
+
 function mapDocRevision(row: Record<string, unknown>): DocRevision {
   return {
     revision: String(row.revision),
@@ -243,6 +269,103 @@ export function createWorkRepository(
         payload,
       });
       return { event, key };
+    });
+  };
+
+  // Locks the task row for a PM2 board-intent mutation and returns its
+  // current folded state; 404s when the key is not a task.
+  const mustBeTask = async (
+    tx: SqlExecutor,
+    orgId: string,
+    key: string,
+  ): Promise<{ tags: string[]; relations: Relation[] }> => {
+    const res = await tx.execute(
+      `SELECT tags, relations FROM work.tasks WHERE org_id = $1 AND key = $2 FOR UPDATE`,
+      [orgId, key],
+    );
+    if (res.rowCount === 0) {
+      throw new WorkError("not_found", `unknown task ${key}`);
+    }
+    return {
+      tags: parseJson<string[]>(res.rows[0]!.tags, []),
+      relations: parseJson<Relation[]>(res.rows[0]!.relations, []),
+    };
+  };
+
+  const labelMutation = async (
+    scope: WorkspaceScope,
+    kind: "labeled" | "unlabeled",
+    input: LabelInput,
+  ): Promise<CommitOutcome> => {
+    validateActor(input.actor);
+    const label = input.label?.trim();
+    if (!label) {
+      throw new WorkError("invalid", "a label needs a non-empty name");
+    }
+    return sql.transaction(async (tx) => {
+      const { tags } = await mustBeTask(tx, scope.orgId, input.key);
+      const event = await appendEvent(tx, scope.orgId, {
+        subject: input.key,
+        kind,
+        actor: input.actor,
+        at: input.at ?? now(),
+        payload: { label },
+      });
+      const next = new Set(tags);
+      if (kind === "labeled") next.add(label);
+      else next.delete(label);
+      await tx.execute(`UPDATE work.tasks SET tags = $3::jsonb WHERE org_id = $1 AND key = $2`, [
+        scope.orgId,
+        input.key,
+        JSON.stringify([...next].sort()),
+      ]);
+      return { event, key: input.key };
+    });
+  };
+
+  const relateMutation = async (
+    scope: WorkspaceScope,
+    kind: "related" | "unrelated",
+    input: RelateInput,
+  ): Promise<CommitOutcome> => {
+    validateActor(input.actor);
+    if (!RELATION_KINDS.includes(input.rel)) {
+      throw new WorkError("invalid", `rel must be one of ${RELATION_KINDS.join("|")}`);
+    }
+    if (input.target === input.key) {
+      throw new WorkError("invalid", `an item cannot relate to itself (${input.key})`);
+    }
+    return sql.transaction(async (tx) => {
+      // Relations may join any two items (task↔task, initiative→spec, …);
+      // only a TASK subject folds them into its cache row.
+      if (!(await keyExists(tx, scope.orgId, input.key))) {
+        throw new WorkError("not_found", `unknown item ${input.key}`);
+      }
+      if (!(await keyExists(tx, scope.orgId, input.target))) {
+        throw new WorkError("not_found", `unknown item ${input.target}`);
+      }
+      const event = await appendEvent(tx, scope.orgId, {
+        subject: input.key,
+        kind,
+        actor: input.actor,
+        at: input.at ?? now(),
+        payload: { rel: input.rel, target: input.target },
+      });
+      const taskRes = await tx.execute(
+        `SELECT relations FROM work.tasks WHERE org_id = $1 AND key = $2 FOR UPDATE`,
+        [scope.orgId, input.key],
+      );
+      if (taskRes.rowCount > 0) {
+        const current = parseJson<Relation[]>(taskRes.rows[0]!.relations, []);
+        const next = current.filter((r) => !(r.rel === input.rel && r.target === input.target));
+        if (kind === "related") next.push({ rel: input.rel, target: input.target });
+        await tx.execute(`UPDATE work.tasks SET relations = $3::jsonb WHERE org_id = $1 AND key = $2`, [
+          scope.orgId,
+          input.key,
+          JSON.stringify(next),
+        ]);
+      }
+      return { event, key: input.key };
     });
   };
 
@@ -466,6 +589,68 @@ export function createWorkRepository(
     async removeReaction(scope, input: ReactionInput) {
       return reactionMutation(scope, "reaction_removed", input);
     },
+
+    // ── PM2 board intent: one event + the folded cache column, same tx ──────
+
+    async label(scope, input: LabelInput) {
+      return labelMutation(scope, "labeled", input);
+    },
+    async unlabel(scope, input: LabelInput) {
+      return labelMutation(scope, "unlabeled", input);
+    },
+
+    async prioritize(scope, input: PriorityInput) {
+      validateActor(input.actor);
+      if (!PRIORITIES.includes(input.priority)) {
+        throw new WorkError("invalid", `priority must be one of ${PRIORITIES.join("|")}`);
+      }
+      return sql.transaction(async (tx) => {
+        await mustBeTask(tx, scope.orgId, input.key);
+        const event = await appendEvent(tx, scope.orgId, {
+          subject: input.key,
+          kind: "prioritized",
+          actor: input.actor,
+          at: input.at ?? now(),
+          payload: { priority: input.priority },
+        });
+        await tx.execute(`UPDATE work.tasks SET priority = $3 WHERE org_id = $1 AND key = $2`, [
+          scope.orgId,
+          input.key,
+          input.priority === "none" ? null : input.priority,
+        ]);
+        return { event, key: input.key };
+      });
+    },
+
+    async estimate(scope, input: EstimateInput) {
+      validateActor(input.actor);
+      if (input.points !== null && (typeof input.points !== "number" || !Number.isFinite(input.points) || input.points < 0)) {
+        throw new WorkError("invalid", "estimate points must be a non-negative number (null clears)");
+      }
+      return sql.transaction(async (tx) => {
+        await mustBeTask(tx, scope.orgId, input.key);
+        const event = await appendEvent(tx, scope.orgId, {
+          subject: input.key,
+          kind: "estimated",
+          actor: input.actor,
+          at: input.at ?? now(),
+          payload: { points: input.points },
+        });
+        await tx.execute(`UPDATE work.tasks SET estimate = $3 WHERE org_id = $1 AND key = $2`, [
+          scope.orgId,
+          input.key,
+          input.points,
+        ]);
+        return { event, key: input.key };
+      });
+    },
+
+    async relate(scope, input: RelateInput) {
+      return relateMutation(scope, "related", input);
+    },
+    async unrelate(scope, input: RelateInput) {
+      return relateMutation(scope, "unrelated", input);
+    },
     async order(scope, input: OrderInput) {
       return simpleMutation(scope, input.key, "ordered", input.actor, input.at, { view: input.view, order: input.order });
     },
@@ -569,6 +754,31 @@ export function createWorkRepository(
       });
     },
 
+    // ── Saved views (v3 PM2): workspace UI config beside the logs ───────────
+
+    async saveView(scope, input: SaveViewInput): Promise<WorkView> {
+      validateActor(input.actor);
+      if (!SLUG_RE.test(input.key)) {
+        throw new WorkError("invalid", `view key ${input.key} must be lowercase kebab`);
+      }
+      if (!input.name?.trim()) {
+        throw new WorkError("invalid", "a view needs a name");
+      }
+      const res = await sql.execute(
+        `INSERT INTO work.views (org_id, key, name, config, created_by, created_at)
+         VALUES ($1, $2, $3, $4::jsonb, $5::jsonb, $6)
+         ON CONFLICT (org_id, key) DO UPDATE SET name = EXCLUDED.name, config = EXCLUDED.config
+         RETURNING *`,
+        [scope.orgId, input.key, input.name.trim(), JSON.stringify(input.config), JSON.stringify(input.actor), input.at ?? now()],
+      );
+      return mapView(res.rows[0]!);
+    },
+
+    async listViews(scope): Promise<WorkView[]> {
+      const res = await sql.execute(`SELECT * FROM work.views WHERE org_id = $1 ORDER BY key`, [scope.orgId]);
+      return res.rows.map(mapView);
+    },
+
     async ingestObservation(scope, input: IngestObservationInput): Promise<IngestOutcome> {
       return sql.transaction(async (tx) => insertWorkObservation(tx, scope.orgId, input));
     },
@@ -627,9 +837,22 @@ export function createWorkRepository(
         }
         for (const t of tasks) {
           await tx.execute(
-            `INSERT INTO work.tasks (org_id, key, spec_key, title, contract, labels, created_by, created_at)
-             VALUES ($1, $2, $3, $4, $5::jsonb, $6::jsonb, $7::jsonb, $8)`,
-            [scope.orgId, t.key, t.spec ?? null, t.title, t.contract ? JSON.stringify(t.contract) : null, JSON.stringify(t.labels ?? {}), JSON.stringify(t.createdBy), t.createdAt],
+            `INSERT INTO work.tasks (org_id, key, spec_key, title, contract, labels, created_by, created_at, tags, priority, estimate, relations)
+             VALUES ($1, $2, $3, $4, $5::jsonb, $6::jsonb, $7::jsonb, $8, $9::jsonb, $10, $11, $12::jsonb)`,
+            [
+              scope.orgId,
+              t.key,
+              t.spec ?? null,
+              t.title,
+              t.contract ? JSON.stringify(t.contract) : null,
+              JSON.stringify(t.labels ?? {}),
+              JSON.stringify(t.createdBy),
+              t.createdAt,
+              t.tags && t.tags.length > 0 ? JSON.stringify(t.tags) : null,
+              t.priority ?? null,
+              t.estimate ?? null,
+              t.relations && t.relations.length > 0 ? JSON.stringify(t.relations) : null,
+            ],
           );
         }
         return { specs: specs.length, tasks: tasks.length, initiatives: initiatives.length };

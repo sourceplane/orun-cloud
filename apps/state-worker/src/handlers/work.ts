@@ -27,8 +27,14 @@ import type {
   ListWorkEventsResponse,
   PutWorkDocRequest,
   PutWorkDocResponse,
+  SaveWorkViewRequest,
   WorkDocHistoryResponse,
   WorkDocRevisionView,
+  WorkEstimateRequest,
+  WorkLabelRequest,
+  WorkOrderRequest,
+  WorkPriorityRequest,
+  WorkRelateRequest,
   WorkTimelineEntry,
   WorkTimelineResponse,
   WorkActor,
@@ -44,6 +50,9 @@ import type {
   WorkSpecView,
   WorkSummaryResponse,
   WorkTaskView,
+  WorkViewConfig,
+  WorkViewsResponse,
+  WorkViewView,
 } from "@saas/contracts/work";
 import { WORK_POLICY_ACTIONS } from "@saas/contracts/work";
 import {
@@ -59,6 +68,8 @@ import {
   type Contract,
   type CoordinationEvent,
   type FoldResult,
+  type Priority,
+  type RelationKind,
   type Rung,
   type Task,
   type WorkRepository,
@@ -152,6 +163,10 @@ function taskView(t: Task, foldResult: FoldResult): WorkTaskView {
     contract: t.contract,
     createdBy: t.createdBy,
     createdAt: t.createdAt,
+    tags: t.tags,
+    priority: t.priority,
+    estimate: t.estimate,
+    relations: t.relations,
     lifecycle: {
       rung: lc?.rung ?? (contractComplete(t.contract) ? "ready" : "draft"),
       ready: lc?.ready ?? contractComplete(t.contract),
@@ -629,7 +644,18 @@ export async function handleCreateWorkTask(
   }
 }
 
-type TaskAction = "comment" | "assign" | "pin" | "cancel" | "contract";
+type TaskAction =
+  | "comment"
+  | "assign"
+  | "pin"
+  | "cancel"
+  | "contract"
+  // v3 PM2 board intent — pure intent verbs; none of them can move a rung:
+  | "label"
+  | "priority"
+  | "estimate"
+  | "relate"
+  | "order";
 
 // ── PM1: reactions + the timeline ────────────────────────────────────────────
 
@@ -789,8 +815,107 @@ export async function handleWorkTaskAction(
         out = await repo.editContract(scope, { key, contract: body.contract as Contract, actor: workActor });
         break;
       }
+      case "label": {
+        const body = await parseBody<WorkLabelRequest>(request);
+        if (!body?.label) return validationError(requestId, { label: ["required"] });
+        const input = { key, label: body.label, actor: workActor };
+        out = body.remove ? await repo.unlabel(scope, input) : await repo.label(scope, input);
+        break;
+      }
+      case "priority": {
+        const body = await parseBody<WorkPriorityRequest>(request);
+        if (!body?.priority) return validationError(requestId, { priority: ["required (none clears)"] });
+        out = await repo.prioritize(scope, { key, priority: body.priority as Priority, actor: workActor });
+        break;
+      }
+      case "estimate": {
+        const body = await parseBody<WorkEstimateRequest>(request);
+        if (body === null || body.points === undefined) {
+          return validationError(requestId, { points: ["required (null clears)"] });
+        }
+        out = await repo.estimate(scope, { key, points: body.points, actor: workActor });
+        break;
+      }
+      case "relate": {
+        const body = await parseBody<WorkRelateRequest>(request);
+        if (!body?.rel || !body.target) {
+          return validationError(requestId, { rel: ["required"], target: ["required"] });
+        }
+        const input = { key, rel: body.rel as RelationKind, target: body.target, actor: workActor };
+        out = body.remove ? await repo.unrelate(scope, input) : await repo.relate(scope, input);
+        break;
+      }
+      case "order": {
+        const body = await parseBody<WorkOrderRequest>(request);
+        if (!body?.view || typeof body.order !== "number" || !Number.isFinite(body.order)) {
+          return validationError(requestId, { view: ["required"], order: ["required number"] });
+        }
+        out = await repo.order(scope, { key, view: body.view, order: body.order, actor: workActor });
+        break;
+      }
     }
     const payload: WorkMutationResponse = { key: out.key, seq: out.event.seq };
+    return successResponse(payload, requestId);
+  } catch (err) {
+    if (err instanceof WorkError) return workErrorResponse(err, requestId);
+    return errorResponse("internal_error", "Service unavailable", 503, requestId);
+  } finally {
+    await dispose(owned);
+  }
+}
+
+// ── Saved views (v3 PM2): shareable UI intent beside the logs ────────────────
+//
+// Views are workspace configuration, not item coordination — they append NO
+// event (the closed vocabulary has no view kind) and carry no lifecycle.
+
+function viewView(v: { key: string; name: string; config: Record<string, unknown>; createdBy: WorkActor; createdAt: string }): WorkViewView {
+  return { key: v.key, name: v.name, config: v.config as unknown as WorkViewConfig, createdBy: v.createdBy, createdAt: v.createdAt };
+}
+
+export async function handleSaveWorkView(
+  request: Request,
+  env: Env,
+  requestId: string,
+  actor: ActorContext,
+  orgId: Uuid,
+  deps?: WorkHandlerDeps,
+): Promise<Response> {
+  const authz = await authorizeOrg(env, requestId, actor, orgId, WORK_POLICY_ACTIONS.WORK_WRITE);
+  if (!authz.ok) return authz.response;
+  const body = await parseBody<SaveWorkViewRequest>(request);
+  if (!body?.key || !body.name || !body.config || (body.config.layout !== "board" && body.config.layout !== "list")) {
+    return validationError(requestId, { key: ["required"], name: ["required"], config: ["required with layout board|list"] });
+  }
+  const { repo, owned } = repoOf(env, deps);
+  try {
+    const view = await repo.saveView(
+      { orgId },
+      { key: body.key, name: body.name, config: body.config as unknown as Record<string, unknown>, actor: workActorOf(actor) },
+    );
+    return successResponse(viewView(view), requestId, 201);
+  } catch (err) {
+    if (err instanceof WorkError) return workErrorResponse(err, requestId);
+    return errorResponse("internal_error", "Service unavailable", 503, requestId);
+  } finally {
+    await dispose(owned);
+  }
+}
+
+export async function handleListWorkViews(
+  request: Request,
+  env: Env,
+  requestId: string,
+  actor: ActorContext,
+  orgId: Uuid,
+  deps?: WorkHandlerDeps,
+): Promise<Response> {
+  const authz = await authorizeOrg(env, requestId, actor, orgId, WORK_POLICY_ACTIONS.WORK_READ);
+  if (!authz.ok) return authz.response;
+  const { repo, owned } = repoOf(env, deps);
+  try {
+    const views = await repo.listViews({ orgId });
+    const payload: WorkViewsResponse = { views: views.map(viewView) };
     return successResponse(payload, requestId);
   } catch (err) {
     if (err instanceof WorkError) return workErrorResponse(err, requestId);

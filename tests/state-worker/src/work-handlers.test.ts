@@ -24,6 +24,8 @@ import {
   handleWorkImport,
   handleWorkSummary,
   handleWorkTaskAction,
+  handleSaveWorkView,
+  handleListWorkViews,
 } from "@state-worker/handlers/work";
 
 const ORG = "11111111-1111-1111-1111-111111111111";
@@ -512,6 +514,84 @@ describe("coordination mutators (verdicts, provenance, guardrails)", () => {
     expect(notFound.status).toBe(404);
     const dup = await handleCreateWorkSpec(post("/x", { slug: "demo", title: "Again" }), createEnv(), "r", USER, asUuid(ORG), { repo });
     expect(dup.status).toBe(409);
+  });
+});
+
+describe("PM2 board intent (labels, priority, estimates, relations, views)", () => {
+  it("label/priority/estimate fold into the summary's task views", async () => {
+    const repo = new MemoryWorkRepository(fixedClock);
+    const key = await seedTask(repo);
+    const env = createEnv();
+    const org = asUuid(ORG);
+
+    expect((await handleWorkTaskAction(post("/x", { label: "infra" }), env, "r", USER, org, key, "label", { repo })).status).toBe(200);
+    expect((await handleWorkTaskAction(post("/x", { priority: "high" }), env, "r", USER, org, key, "priority", { repo })).status).toBe(200);
+    expect((await handleWorkTaskAction(post("/x", { points: 8 }), env, "r", USER, org, key, "estimate", { repo })).status).toBe(200);
+
+    const res = await handleWorkSummary(get("/x"), env, "r", USER, org, { repo });
+    const body = (await res.json()) as {
+      data: { tasks: Array<{ key: string; tags?: string[]; priority?: string; estimate?: number }> };
+    };
+    const task = body.data.tasks.find((t) => t.key === key)!;
+    expect(task.tags).toEqual(["infra"]);
+    expect(task.priority).toBe("high");
+    expect(task.estimate).toBe(8);
+
+    const removed = await handleWorkTaskAction(post("/x", { label: "infra", remove: true }), env, "r", USER, org, key, "label", { repo });
+    expect(removed.status).toBe(200);
+  });
+
+  it("a blocks relation derives the target's blocked flag; the relation is intent, not a rung", async () => {
+    const repo = new MemoryWorkRepository(fixedClock);
+    const blocker = await seedTask(repo);
+    const env = createEnv();
+    const org = asUuid(ORG);
+    const created = await handleCreateWorkTask(post("/x", { prefix: "ORN", title: "downstream" }), env, "r", USER, org, { repo });
+    const target = ((await created.json()) as { data: { key: string } }).data.key;
+
+    const rel = await handleWorkTaskAction(post("/x", { rel: "blocks", target }), env, "r", USER, org, blocker, "relate", { repo });
+    expect(rel.status).toBe(200);
+
+    const res = await handleWorkSummary(get("/x"), env, "r", USER, org, { repo });
+    const body = (await res.json()) as {
+      data: { tasks: Array<{ key: string; relations?: Array<{ rel: string; target: string }>; lifecycle: { rung: string; blocked: boolean } }> };
+    };
+    const blockedTask = body.data.tasks.find((t) => t.key === target)!;
+    expect(blockedTask.lifecycle.blocked).toBe(true);
+    expect(blockedTask.lifecycle.rung).toBe("draft"); // a flag, never a rung
+    expect(body.data.tasks.find((t) => t.key === blocker)!.relations).toEqual([{ rel: "blocks", target }]);
+  });
+
+  it("rejects an unknown priority with a structured verdict", async () => {
+    const repo = new MemoryWorkRepository(fixedClock);
+    const key = await seedTask(repo);
+    const res = await handleWorkTaskAction(post("/x", { priority: "asap" }), createEnv(), "r", USER, asUuid(ORG), key, "priority", { repo });
+    expect(res.status).toBe(422);
+    const body = (await res.json()) as { error: { code: string } };
+    expect(body.error.code).toBe("verdict_rejected");
+  });
+
+  it("saves and lists views without appending a coordination event", async () => {
+    const repo = new MemoryWorkRepository(fixedClock);
+    await seedTask(repo);
+    const env = createEnv();
+    const org = asUuid(ORG);
+    const before = (await repo.listEvents({ orgId: ORG })).length;
+
+    const saved = await handleSaveWorkView(
+      post("/x", { key: "infra-board", name: "Infra board", config: { layout: "board", filters: { tags: ["infra"] } } }),
+      env, "r", USER, org, { repo },
+    );
+    expect(saved.status).toBe(201);
+
+    const list = await handleListWorkViews(get("/x"), env, "r", USER, org, { repo });
+    const body = (await list.json()) as { data: { views: Array<{ key: string; config: { layout: string } }> } };
+    expect(body.data.views).toHaveLength(1);
+    expect(body.data.views[0]!.config.layout).toBe("board");
+    expect((await repo.listEvents({ orgId: ORG })).length).toBe(before); // no event kind exists for views
+
+    const bad = await handleSaveWorkView(post("/x", { key: "x", name: "X", config: { layout: "gantt" } }), env, "r", USER, org, { repo });
+    expect(bad.status).toBe(422);
   });
 });
 

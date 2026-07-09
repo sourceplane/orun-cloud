@@ -83,6 +83,21 @@ export type ObservationKind = (typeof OBSERVATION_KINDS)[number];
 export const ACTOR_TYPES = ["user", "agent", "automation"] as const;
 export type ActorType = (typeof ACTOR_TYPES)[number];
 
+/** Authored priority (v3 PM2) — pure intent; "none" clears. Never consulted
+ *  by the fold: priority orders the backlog, it does not move rungs. */
+export const PRIORITIES = ["none", "low", "medium", "high", "urgent"] as const;
+export type Priority = (typeof PRIORITIES)[number];
+
+/** Typed relations (v3 PM2, closed vocabulary). Only `blocks` has fold
+ *  semantics: the target derives Blocked exactly as from contract Deps. */
+export const RELATION_KINDS = ["blocks", "parent", "relates"] as const;
+export type RelationKind = (typeof RELATION_KINDS)[number];
+
+export interface Relation {
+  rel: RelationKind;
+  target: string;
+}
+
 export const GATE_STATUSES = ["green", "red", "pending"] as const;
 export type GateStatus = (typeof GATE_STATUSES)[number];
 
@@ -131,6 +146,13 @@ export interface Task {
   contract?: Contract | undefined;
   createdBy: Actor;
   createdAt?: string | undefined;
+  // Folded board intent (v3 PM2) — pure envelope state replayed from
+  // labeled/unlabeled/prioritized/estimated/related/unrelated events.
+  // None of it is a rung and none of it is consulted for one.
+  tags?: string[] | undefined;
+  priority?: Priority | undefined;
+  estimate?: number | undefined;
+  relations?: Relation[] | undefined;
 }
 
 /** An initiative is envelope-only strategic grouping (orun-work-v3 §1.1):
@@ -366,9 +388,12 @@ export function fold(ws: WorkSet): FoldResult {
   const tasks = new Map<string, Task>(ws.tasks.map((t) => [t.key, t]));
   const sortedTasks = [...ws.tasks].sort((a, b) => (a.key < b.key ? -1 : a.key > b.key ? 1 : 0));
 
-  // Pass 1 — coordination: cancellation and active pins, in log order.
+  // Pass 1 — coordination: cancellation, active pins, and blocks relations
+  // (v3 PM2: `related {rel: blocks, target}` makes target blocked by the
+  // subject exactly as a contract dep would), in log order.
   const canceled = new Map<string, Actor>();
   const pins = new Map<string, Pin>();
+  const blockers = new Map<string, Set<string>>(); // target key -> open set of blocker keys
   for (const e of ws.events) {
     if (e.kind === "canceled") {
       canceled.set(e.subject, e.actor);
@@ -378,6 +403,16 @@ export function fold(ws: WorkSet): FoldResult {
         pins.delete(e.subject); // explicit unpin
       } else {
         pins.set(e.subject, { rung: p.rung, by: e.actor, note: p.note, at: e.at });
+      }
+    } else if (e.kind === "related" || e.kind === "unrelated") {
+      const p = (e.payload ?? {}) as { rel?: string; target?: string };
+      if (p.rel !== "blocks" || !p.target) continue;
+      if (e.kind === "related") {
+        const set = blockers.get(p.target) ?? new Set<string>();
+        set.add(e.subject);
+        blockers.set(p.target, set);
+      } else {
+        blockers.get(p.target)?.delete(e.subject);
       }
     }
   }
@@ -538,14 +573,21 @@ export function fold(ws: WorkSet): FoldResult {
     return { rung: "draft" };
   };
 
+  // Blocked derives from open contract deps AND open `blocks` relations
+  // (v3 PM2) — a flag, never a rung, so it can never go stale.
+  const openBlocker = (key: string): boolean => {
+    const blocker = tasks.get(key);
+    if (!blocker) return false; // unresolved blocker renders elsewhere, never blocks
+    if (canceled.has(key)) return false;
+    const { rung } = observedRung(blocker);
+    return rung !== "done" && rung !== "released";
+  };
   const isBlocked = (t: Task): boolean => {
-    if (!t.contract?.deps) return false;
-    for (const dep of t.contract.deps) {
-      const depTask = tasks.get(dep);
-      if (!depTask) continue; // unresolved dep renders elsewhere, never blocks
-      if (canceled.has(dep)) continue;
-      const { rung } = observedRung(depTask);
-      if (rung !== "done" && rung !== "released") return true;
+    for (const dep of t.contract?.deps ?? []) {
+      if (openBlocker(dep)) return true;
+    }
+    for (const key of blockers.get(t.key) ?? []) {
+      if (openBlocker(key)) return true;
     }
     return false;
   };
