@@ -36,18 +36,26 @@ import { cn } from "@/lib/cn";
 import { useSession } from "@/lib/session";
 import { rungLabel } from "@/lib/work/model";
 import { boardColumns, dropIntent, PRIORITY_OPTIONS } from "@/lib/work/board";
+import type { TaskPatch } from "@/lib/work/optimistic";
 
 const BOARD_VIEW = "board"; // the `ordered` event's view namespace
+
+/** PM4: the optimistic runner — apply the patch locally, confirm on the
+ *  mutation's seq, roll back on a verdict. Optional so the board still
+ *  works standalone (mutations just wait for the SSE refetch). */
+export type ApplyIntent = (key: string, patch: TaskPatch, call: () => Promise<{ seq: number }>) => Promise<void>;
 
 export function WorkBoard({
   orgId,
   tasks,
   cycles = [],
+  applyIntent,
   onMutated,
 }: {
   orgId: string;
   tasks: WorkTaskView[];
   cycles?: WorkCycleView[];
+  applyIntent?: ApplyIntent | undefined;
   onMutated: () => void;
 }) {
   const { client } = useSession();
@@ -130,6 +138,7 @@ export function WorkBoard({
                   cycles={cycles}
                   verdict={verdicts[task.key]}
                   onRun={run}
+                  applyIntent={applyIntent}
                 />
               ))}
             </ul>
@@ -167,17 +176,25 @@ function BoardCard({
   cycles,
   verdict,
   onRun,
+  applyIntent,
 }: {
   orgId: string;
   task: WorkTaskView;
   cycles: WorkCycleView[];
   verdict: string | undefined;
   onRun: (key: string, fn: () => Promise<unknown>) => Promise<void>;
+  applyIntent?: ApplyIntent | undefined;
 }) {
   const { client } = useSession();
   const lc = task.lifecycle;
   const [labelOpen, setLabelOpen] = React.useState(false);
   const [labelDraft, setLabelDraft] = React.useState("");
+
+  // With the optimistic store the patch renders before the wire answers;
+  // without it the call just waits for the SSE refetch. Verdict handling is
+  // onRun's either way.
+  const intent = (patch: TaskPatch, call: () => Promise<{ seq: number }>) => () =>
+    applyIntent ? applyIntent(task.key, patch, call) : call();
 
   return (
     <li
@@ -202,17 +219,21 @@ function BoardCard({
           <CardMenu
             task={task}
             cycles={cycles}
-            onCycle={(cycle) => void onRun(task.key, () => client.work.setCycle(orgId, task.key, { cycle }))}
-            onPriority={(p) => void onRun(task.key, () => client.work.setPriority(orgId, task.key, { priority: p }))}
+            onCycle={(cycle) =>
+              void onRun(task.key, intent({ cycleKey: cycle }, () => client.work.setCycle(orgId, task.key, { cycle })))
+            }
+            onPriority={(p) =>
+              void onRun(task.key, intent({ priority: p }, () => client.work.setPriority(orgId, task.key, { priority: p })))
+            }
             onEstimate={(points) =>
-              void onRun(task.key, () => client.work.setEstimate(orgId, task.key, { points }))
+              void onRun(task.key, intent({ estimate: points }, () => client.work.setEstimate(orgId, task.key, { points })))
             }
             onAddLabel={() => {
               setLabelDraft("");
               setLabelOpen(true);
             }}
             onRemoveLabel={(label) =>
-              void onRun(task.key, () => client.work.label(orgId, task.key, { label, remove: true }))
+              void onRun(task.key, intent({ removeTag: label }, () => client.work.label(orgId, task.key, { label, remove: true })))
             }
           />
         </span>
@@ -254,7 +275,7 @@ function BoardCard({
               const label = labelDraft.trim();
               if (!label) return;
               setLabelOpen(false);
-              void onRun(task.key, () => client.work.label(orgId, task.key, { label }));
+              void onRun(task.key, intent({ addTag: label }, () => client.work.label(orgId, task.key, { label })));
             }}
           >
             <Input value={labelDraft} onChange={(e) => setLabelDraft(e.target.value)} placeholder="infra" autoFocus />

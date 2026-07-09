@@ -39,6 +39,7 @@ route, and tool); every mutation appends exactly one coordination event
 **Goal:** The Linear feel: keyboard-first, optimistic, realtime.
 **Done when:** work verbs register in the console Cmd-K palette (create task, comment, pin, label, jump); the optimistic store applies intent locally, confirms via the SSE tail, and rolls back rendering the 422 verdict; every list/board/timeline updates live from the existing stream without route-specific transport code; p95 create-to-render is measured in dogfood and recorded in this file.
 **Deps:** PM2
+**p95 create-to-render:** pending — dogfooding orun-cloud on itself is deferred by standing directive until the OIDC v2 CI cutover; measure and record here when the workspace goes live. Mechanically the number is bounded below by the optimistic path (local overlay, ~0 ms perceived) and above by one SSE leg poll interval (~2.5 s worst case to confirmed).
 
 ## PM5 — The agent project surface
 

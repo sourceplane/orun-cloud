@@ -123,6 +123,29 @@ export function buildBaseCommands(ctx: CommandContext): CommandDescriptor[] {
       ]),
       navItem("nav.teams", "Teams", `${orgBase}/teams`, "UsersRound", ["team", "people", "group", "ownership", "members"]),
       navItem("nav.projects", "Git Repos", `${orgBase}/projects`, "FolderKanban", ["repo", "project", "git"]),
+      // The work lens (orun-work-v3 PM4): jump + layout verbs. Layouts ride
+      // query params the Work page consumes — scope stays in the URL.
+      navItem("nav.work", "Work", `${orgBase}/work`, "ListTodo", [
+        "work",
+        "task",
+        "spec",
+        "epic",
+        "initiative",
+        "backlog",
+        "board",
+        "kanban",
+      ]),
+      navItem("nav.work-board", "Work: board layout", `${orgBase}/work?layout=board`, "ListTodo", [
+        "board",
+        "kanban",
+        "columns",
+        "work",
+      ]),
+      navItem("nav.work-list", "Work: list layout", `${orgBase}/work?layout=list`, "ListTodo", [
+        "list",
+        "work",
+        "specs",
+      ]),
       navItem("nav.integrations", "Integrations", `${orgBase}/integrations`, "Plug", [
         "integration",
         "connection",
@@ -260,6 +283,12 @@ export function buildBaseCommands(ctx: CommandContext): CommandDescriptor[] {
       navItem("create.project", "Create repo", `${orgBase}/projects?new=1`, "PlusCircle", ["new", "repo", "project"], "Create"),
       navItem("create.invitation", "Create invitation", `${orgBase}/settings/people?tab=pending`, "UserPlus", ["invite", "new"], "Create"),
       navItem("create.api-key", "Create API key", `${orgBase}/settings/api-keys?new=1`, "KeyRound", ["key", "new"], "Create"),
+      // orun-work-v3 PM4: authoring verbs — the ?new= param opens the
+      // matching dialog on the Work page. Intent only; no verb can write a
+      // rung (the category is unrepresentable — WP-3).
+      navItem("create.work-task", "New work task", `${orgBase}/work?new=task`, "PlusCircle", ["task", "work", "new"], "Create"),
+      navItem("create.work-spec", "New work spec", `${orgBase}/work?new=spec`, "PlusCircle", ["spec", "work", "epic", "new"], "Create"),
+      navItem("create.work-initiative", "New work initiative", `${orgBase}/work?new=initiative`, "PlusCircle", ["initiative", "work", "new"], "Create"),
     );
   }
   if (projectBase) {

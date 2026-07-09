@@ -62,6 +62,37 @@ describe("buildBaseCommands", () => {
     expect(mcp.keywords).toEqual(expect.arrayContaining(["mcp", "agent"]));
   });
 
+  it("exposes the Work verbs: jump, layouts, and create-by-kind (orun-work-v3 PM4)", () => {
+    const cmds = buildBaseCommands({ ...baseCtx, orgSlug: "acme" });
+    const byId = new Map(cmds.map((c) => [c.id, c]));
+    const work = byId.get("nav.work")!;
+    expect(work.kind).toBe("navigate");
+    if (work.kind === "navigate") expect(work.to).toBe("/orgs/acme/work");
+    expect(work.keywords).toEqual(expect.arrayContaining(["kanban", "board", "task"]));
+    const board = byId.get("nav.work-board")!;
+    if (board.kind === "navigate") expect(board.to).toBe("/orgs/acme/work?layout=board");
+    for (const [id, kind] of [
+      ["create.work-task", "task"],
+      ["create.work-spec", "spec"],
+      ["create.work-initiative", "initiative"],
+    ] as const) {
+      const cmd = byId.get(id)!;
+      expect(cmd.group).toBe("Create");
+      if (cmd.kind === "navigate") expect(cmd.to).toBe(`/orgs/acme/work?new=${kind}`);
+    }
+    // No verb can write a rung: the registry has no descriptor whose target
+    // carries a status/rung param (the category is unrepresentable).
+    for (const c of cmds) {
+      if (c.kind === "navigate") expect(c.to).not.toMatch(/rung|status/);
+    }
+  });
+
+  it("omits Work verbs outside an org scope", () => {
+    const ids = buildBaseCommands(baseCtx).map((c) => c.id);
+    expect(ids).not.toContain("nav.work");
+    expect(ids).not.toContain("create.work-task");
+  });
+
   it("exposes Secrets & Config as a top-level navigation command (not under settings)", () => {
     const cmds = buildBaseCommands({ ...baseCtx, orgSlug: "acme" });
     const byId = new Map(cmds.map((c) => [c.id, c]));
