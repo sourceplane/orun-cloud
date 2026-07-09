@@ -48,6 +48,15 @@ export async function handleDispatch(
   const taskKey = b.taskKey;
   const specKey = typeof b.specKey === "string" && b.specKey ? b.specKey : undefined;
 
+  // Gate 0 — the feature.agents entitlement (AG10 §8, D3-open: only an
+  // explicit plan disable refuses; the deny carries the upgrade path).
+  if (deps.entitlement) {
+    const gate = await deps.entitlement(orgId, requestId);
+    if (gate.kind === "deny") {
+      return errorResponse("forbidden", gate.message, 403, requestId);
+    }
+  }
+
   // Gate 1 — the autonomy ladder: the spec override wins over the workspace
   // default; anything below auto-dispatch refuses (a human spawns manually).
   const policy = (specKey ? await deps.repo.getAutonomy({ orgId }, specKey) : null) ??

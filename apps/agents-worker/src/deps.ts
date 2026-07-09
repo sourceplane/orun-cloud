@@ -16,6 +16,8 @@ import { createProviderKeyClient, type ProviderKeyClient } from "./config-client
 import { createProviderVerifier, type ProviderVerifier } from "./verifiers.js";
 import { createDaytonaProvider } from "./providers/daytona.js";
 import { createSessionTokenMinter, type SessionTokenMinter } from "./identity-client.js";
+import { checkBillingEntitlement, decideAgentsFeature, type AgentsEntitlementGate } from "./billing-client.js";
+import { createUsageRecorder, type UsageRecorder } from "./metering-client.js";
 import type { SandboxProvider } from "@saas/contracts/agents";
 
 /** Builds the sandbox adapter for a provider connection (AG5 seam); null when
@@ -39,6 +41,10 @@ export interface AgentsDeps {
   sandboxes?: SandboxFactory;
   /** Agent-session token mint over the identity binding (AG6 §3.2). */
   sessionTokens?: SessionTokenMinter;
+  /** feature.agents entitlement gate (AG10 §8); absent = open (D3). */
+  entitlement?: (orgId: string, requestId: string) => Promise<AgentsEntitlementGate>;
+  /** Usage emission (AG10 §8); absent = no metering. Fire-and-forget. */
+  usage?: UsageRecorder;
   /** Release any resources (a real DB executor) after the request. */
   dispose(): Promise<void>;
 }
@@ -57,6 +63,13 @@ export function buildDeps(env: Env): AgentsDeps {
     ...(env.CONFIG_WORKER ? { providerKeys: createProviderKeyClient(env.CONFIG_WORKER) } : {}),
     verifier: createProviderVerifier(),
     ...(env.IDENTITY_WORKER ? { sessionTokens: createSessionTokenMinter(env.IDENTITY_WORKER) } : {}),
+    ...(env.BILLING_WORKER
+      ? {
+          entitlement: async (orgId: string, requestId: string) =>
+            decideAgentsFeature(await checkBillingEntitlement(env.BILLING_WORKER!, orgId, "feature.agents", requestId)),
+        }
+      : {}),
+    ...(env.METERING_WORKER ? { usage: createUsageRecorder(env.METERING_WORKER) } : {}),
     sandboxes(provider, apiKey, config) {
       if (provider !== "daytona") return null;
       return createDaytonaProvider({

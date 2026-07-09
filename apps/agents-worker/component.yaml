@@ -23,6 +23,9 @@ spec:
     - component: config-worker
     # AG6: agent-session token mint rides the IDENTITY_WORKER service binding.
     - component: identity-worker
+    # AG10: feature.agents entitlement gate + usage emission.
+    - component: billing-worker
+    - component: metering-worker
   subscribe:
     environments:
       - name: dev

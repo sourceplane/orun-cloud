@@ -14,6 +14,10 @@ export interface Env {
   CONFIG_WORKER?: Fetcher;
   /** Identity worker — agent-session token mint (AG6 §3.2). */
   IDENTITY_WORKER?: Fetcher;
+  /** Billing worker — the feature.agents entitlement gate (AG10). */
+  BILLING_WORKER?: Fetcher;
+  /** Metering worker — usage emission (AG10). */
+  METERING_WORKER?: Fetcher;
   /** Deploy environment name ("dev" | "stage" | "prod" | "local"). */
   ENVIRONMENT: string;
 }

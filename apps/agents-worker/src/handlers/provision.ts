@@ -143,6 +143,16 @@ export async function handleProvisionSession(
         sandbox: { provider: "daytona", id: ref.id, connection: daytona.publicId },
       },
     );
+    // AG10 §8: one agents.sessions_started per boot. Fire-and-forget — a
+    // lost sample is a reconciliation problem, never a failed spawn.
+    void deps.usage?.record(
+      orgId,
+      "agents.sessions_started",
+      1,
+      { runKind: session.runKind, profile: profile.publicId },
+      actor,
+      requestId,
+    );
     return successResponse(toPublicSession(updated), requestId);
   } catch (e) {
     const reason = e instanceof Error ? e.message : "provider failure";
