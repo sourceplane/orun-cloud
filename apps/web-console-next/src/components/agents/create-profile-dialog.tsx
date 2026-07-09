@@ -122,16 +122,17 @@ export function CreateProfileDialog({
           </div>
 
           <div className="grid gap-1.5">
-            <Label>Service principal</Label>
+            <Label>Service principal (an API key)</Label>
             {apiKeys.loading && !apiKeys.data ? (
               <StatusText tone="neutral">Loading…</StatusText>
             ) : keys.length === 0 ? (
               <StatusText tone="warning">
-                No API keys yet. An agent runs as a service principal — create an API key first on{" "}
+                An agent runs as a service principal — and every API key is backed by one. You have no keys
+                yet: create one on{" "}
                 <Link href={`/orgs/${orgSlug}/settings/api-keys`} className="underline underline-offset-2">
                   Settings › API keys
-                </Link>
-                , then come back.
+                </Link>{" "}
+                (label + role — the role becomes the agent&apos;s permissions), then come back.
               </StatusText>
             ) : (
               <Select {...(chosenUuid ? { value: chosenUuid } : {})} onValueChange={setPrincipalUuid}>

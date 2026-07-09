@@ -12,7 +12,8 @@ import type { SandboxProvider, SandboxSpec, SandboxRef } from "@saas/contracts/a
 import { MemoryAgentsRepository, providerSecretRef } from "@saas/db/agents";
 import type { Env } from "@agents-worker/env";
 
-const ORG = "org_test";
+const ORG = "org_b281a9a0f43d463e9c83d6b6597ab2d2"; // public org id carried in the URL
+const ORG_UUID = "b281a9a0-f43d-463e-9c83-d6b6597ab2d2"; // what the router decodes to (repo scope)
 const env: Env = { ENVIRONMENT: "test" };
 
 function req(method: string, path: string, body?: unknown): Request {
@@ -93,7 +94,7 @@ async function fixture(overrides?: {
 }): Promise<Fixture> {
   const repo = new MemoryAgentsRepository();
   const log: ProviderLog = { created: [], execs: [], destroyed: [] };
-  const scope = { orgId: ORG };
+  const scope = { orgId: ORG_UUID };
 
   const profile = await repo.createProfile(scope, {
     name: "impl",
@@ -181,7 +182,7 @@ describe("agents-worker session provisioning (AG5)", () => {
     });
 
     // The recorded sandbox carries the provider ref, never key material.
-    const stored = await f.repo.getSession({ orgId: ORG }, f.sessionId);
+    const stored = await f.repo.getSession({ orgId: ORG_UUID }, f.sessionId);
     expect(stored?.sandbox).toEqual({ provider: "daytona", id: "sb_1", connection: expect.stringMatching(/^apc_/) });
   });
 
@@ -204,7 +205,7 @@ describe("agents-worker session provisioning (AG5)", () => {
     expect((await json(res)).error?.code).toBe("provider_connection_invalid");
     expect(f.log.created.length).toBe(0);
     // The session is untouched — still requested, retryable after connecting.
-    expect((await f.repo.getSession({ orgId: ORG }, f.sessionId))?.state).toBe("requested");
+    expect((await f.repo.getSession({ orgId: ORG_UUID }, f.sessionId))?.state).toBe("requested");
   });
 
   it("refuses an unverified/invalid connection at the gate", async () => {
@@ -246,7 +247,7 @@ describe("agents-worker session provisioning (AG5)", () => {
     const body = await json(res);
     expect(body.error?.code).toBe("provider_verification_failed");
     expect(JSON.stringify(body)).not.toContain("key-for");
-    expect((await f.repo.getSession({ orgId: ORG }, f.sessionId))?.state).toBe("failed");
+    expect((await f.repo.getSession({ orgId: ORG_UUID }, f.sessionId))?.state).toBe("failed");
   });
 
   it("destroys the half-booted sandbox when exec fails", async () => {
@@ -254,12 +255,12 @@ describe("agents-worker session provisioning (AG5)", () => {
     const res = await route(req("POST", provisionPath(f.sessionId)), env, f.deps);
     expect(res.status).toBe(502);
     expect(f.log.destroyed).toEqual(["sb_1"]);
-    expect((await f.repo.getSession({ orgId: ORG }, f.sessionId))?.state).toBe("failed");
+    expect((await f.repo.getSession({ orgId: ORG_UUID }, f.sessionId))?.state).toBe("failed");
   });
 
   it("409s a session that is not in requested state", async () => {
     const f = await fixture();
-    await f.repo.advanceSession({ orgId: ORG }, { publicId: f.sessionId, to: "provisioning" });
+    await f.repo.advanceSession({ orgId: ORG_UUID }, { publicId: f.sessionId, to: "provisioning" });
     const res = await route(req("POST", provisionPath(f.sessionId)), env, f.deps);
     expect(res.status).toBe(409);
     expect((await json(res)).error?.code).toBe("conflict");
@@ -286,7 +287,7 @@ describe("agents-worker session provisioning (AG5)", () => {
     const res = await route(req("POST", provisionPath(f.sessionId)), env, f.deps);
     expect(res.status).toBe(502);
     expect(f.log.created.length).toBe(0);
-    expect((await f.repo.getSession({ orgId: ORG }, f.sessionId))?.state).toBe("requested");
+    expect((await f.repo.getSession({ orgId: ORG_UUID }, f.sessionId))?.state).toBe("requested");
   });
 
   it("503s when no sandbox factory is bound", async () => {

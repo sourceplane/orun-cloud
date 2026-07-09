@@ -10,7 +10,8 @@ import type { ProviderVerifier, VerifyResult } from "@agents-worker/verifiers";
 import { MemoryAgentsRepository } from "@saas/db/agents";
 import type { Env } from "@agents-worker/env";
 
-const ORG = "org_test";
+const ORG = "org_b281a9a0f43d463e9c83d6b6597ab2d2"; // public org id carried in the URL
+const ORG_UUID = "b281a9a0-f43d-463e-9c83-d6b6597ab2d2"; // what the router decodes to (repo scope)
 const env: Env = { ENVIRONMENT: "test" };
 
 function actorHeaders(): Record<string, string> {
@@ -123,7 +124,7 @@ describe("agents-worker provider connections (AG12)", () => {
 
     // Custody happened first, under the reserved namespace.
     expect(keys.storeCalls).toEqual([
-      { orgId: ORG, key: "agents/providers/daytona/default/API_KEY", value: "dtn_abcd1234wxyz" },
+      { orgId: ORG_UUID, key: "agents/providers/daytona/default/API_KEY", value: "dtn_abcd1234wxyz" },
     ]);
     expect(verifier.calls).toEqual(["daytona"]);
   });

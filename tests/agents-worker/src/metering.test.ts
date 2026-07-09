@@ -13,7 +13,8 @@ import type { CheckBillingEntitlementResponse } from "@saas/contracts/billing";
 import { MemoryAgentsRepository, providerSecretRef } from "@saas/db/agents";
 import type { Env } from "@agents-worker/env";
 
-const ORG = "org_test";
+const ORG = "org_b281a9a0f43d463e9c83d6b6597ab2d2"; // public org id carried in the URL
+const ORG_UUID = "b281a9a0-f43d-463e-9c83-d6b6597ab2d2"; // what the router decodes to (repo scope)
 const env: Env = { ENVIRONMENT: "test" };
 
 function req(method: string, path: string, body?: unknown): Request {
@@ -101,7 +102,7 @@ describe("dispatch entitlement gate + provision usage emission (AG10)", () => {
     usage: Array<{ metric: string; quantity: number; dims: Record<string, string> }>;
   }> {
     const repo = new MemoryAgentsRepository();
-    const scope = { orgId: ORG };
+    const scope = { orgId: ORG_UUID };
     await repo.createProfile(scope, {
       name: "impl-default",
       principalId: "sp_1",
@@ -170,8 +171,8 @@ describe("dispatch entitlement gate + provision usage emission (AG10)", () => {
   it("emits nothing when provisioning fails at the gate", async () => {
     const f = await fixture("allow");
     // Remove the connections so the spawn gate refuses.
-    for (const c of await f.deps.repo.listConnections({ orgId: ORG })) {
-      await f.deps.repo.deleteConnection({ orgId: ORG }, c.publicId);
+    for (const c of await f.deps.repo.listConnections({ orgId: ORG_UUID })) {
+      await f.deps.repo.deleteConnection({ orgId: ORG_UUID }, c.publicId);
     }
     const res = await route(req("POST", `/v1/organizations/${ORG}/agents/dispatch`, { taskKey: "ORN-2" }), env, f.deps);
     expect(res.status).toBe(201); // dispatched-but-parked

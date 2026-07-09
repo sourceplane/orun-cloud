@@ -17,6 +17,13 @@ import type { AgentSession } from "@saas/db/agents";
 import { errorResponse, successResponse, validationError } from "../http.js";
 import { toPublicSession } from "../mappers.js";
 import { handleProvisionSession } from "./provision.js";
+import { uuidToHex } from "@saas/db/ids";
+
+/** Public `org_<hex>` id for the work:// provenance ref (the scope orgId is
+ * the UUID; the ref points at the console's public-id-keyed work item). */
+function orgPublicId(orgUuid: string): string {
+  return `org_${uuidToHex(orgUuid)}`;
+}
 
 const ACTIVE_STATES = ["requested", "provisioning", "running", "awaiting_approval"] as const;
 const DEFAULT_MAX_CONCURRENT = 3;
@@ -118,7 +125,7 @@ export async function handleDispatch(
       runKind: "implementation",
       spawnedBy: actor.subjectId,
       taskKey,
-      ...(specKey ? { workRef: `work://${orgId}/${specKey}` } : {}),
+      ...(specKey ? { workRef: `work://${orgPublicId(orgId)}/${specKey}` } : {}),
     },
   );
 

@@ -30,6 +30,15 @@ import {
   handleVerifyConnection,
 } from "./handlers/providers.js";
 import { errorResponse, methodNotAllowed, notFound } from "./http.js";
+import { uuidFromPublicId } from "@saas/db/ids";
+
+// Every agents route is workspace-scoped: the URL carries the PUBLIC org id
+// (`org_<hex>`), but membership/policy and the `org_id UUID` columns require
+// the decoded UUID. Decode once at the boundary (the universal worker
+// convention); a malformed id is a 404, never a leak.
+function parseOrgPublicId(publicId: string): string | null {
+  return uuidFromPublicId(publicId, "org");
+}
 
 export interface ActorContext {
   subjectId: string;
@@ -130,7 +139,8 @@ async function dispatch(
 ): Promise<Response> {
   let m = PROFILES_RE.exec(url.pathname);
   if (m) {
-    const orgId = m[1]!;
+    const orgId = parseOrgPublicId(m[1]!);
+    if (!orgId) return notFound(requestId, url.pathname);
     if (request.method === "GET") return handleListProfiles(deps, orgId, actor, requestId);
     if (request.method === "POST") return handleCreateProfile(request, deps, orgId, actor, requestId);
     return methodNotAllowed(requestId);
@@ -138,7 +148,8 @@ async function dispatch(
 
   m = AUTONOMY_RE.exec(url.pathname);
   if (m) {
-    const orgId = m[1]!;
+    const orgId = parseOrgPublicId(m[1]!);
+    if (!orgId) return notFound(requestId, url.pathname);
     if (request.method === "GET") return handleGetAutonomy(request, deps, orgId, actor, requestId);
     if (request.method === "PUT") return handleSetAutonomy(request, deps, orgId, actor, requestId);
     return methodNotAllowed(requestId);
@@ -146,14 +157,16 @@ async function dispatch(
 
   m = DISPATCH_RE.exec(url.pathname);
   if (m) {
-    const orgId = m[1]!;
+    const orgId = parseOrgPublicId(m[1]!);
+    if (!orgId) return notFound(requestId, url.pathname);
     if (request.method === "POST") return handleDispatch(request, deps, orgId, actor, requestId);
     return methodNotAllowed(requestId);
   }
 
   m = PROVIDER_VERIFY_RE.exec(url.pathname);
   if (m) {
-    const orgId = m[1]!;
+    const orgId = parseOrgPublicId(m[1]!);
+    if (!orgId) return notFound(requestId, url.pathname);
     const connectionId = m[2]!;
     if (request.method === "POST") return handleVerifyConnection(deps, orgId, connectionId, actor, requestId);
     return methodNotAllowed(requestId);
@@ -161,7 +174,8 @@ async function dispatch(
 
   m = PROVIDER_RE.exec(url.pathname);
   if (m) {
-    const orgId = m[1]!;
+    const orgId = parseOrgPublicId(m[1]!);
+    if (!orgId) return notFound(requestId, url.pathname);
     const connectionId = m[2]!;
     if (request.method === "DELETE") return handleDeleteConnection(deps, orgId, connectionId, actor, requestId);
     return methodNotAllowed(requestId);
@@ -169,7 +183,8 @@ async function dispatch(
 
   m = PROVIDERS_RE.exec(url.pathname);
   if (m) {
-    const orgId = m[1]!;
+    const orgId = parseOrgPublicId(m[1]!);
+    if (!orgId) return notFound(requestId, url.pathname);
     if (request.method === "GET") return handleListConnections(request, deps, orgId, actor, requestId);
     if (request.method === "POST") return handleCreateConnection(request, deps, orgId, actor, requestId);
     return methodNotAllowed(requestId);
@@ -177,7 +192,8 @@ async function dispatch(
 
   m = SESSION_PROVISION_RE.exec(url.pathname);
   if (m) {
-    const orgId = m[1]!;
+    const orgId = parseOrgPublicId(m[1]!);
+    if (!orgId) return notFound(requestId, url.pathname);
     const sessionId = m[2]!;
     if (request.method === "POST") return handleProvisionSession(deps, orgId, sessionId, actor, requestId);
     return methodNotAllowed(requestId);
@@ -185,7 +201,8 @@ async function dispatch(
 
   m = SESSION_HEARTBEAT_RE.exec(url.pathname);
   if (m) {
-    const orgId = m[1]!;
+    const orgId = parseOrgPublicId(m[1]!);
+    if (!orgId) return notFound(requestId, url.pathname);
     const sessionId = m[2]!;
     if (request.method === "POST") return handleSessionHeartbeat(deps, orgId, sessionId, actor, requestId);
     return methodNotAllowed(requestId);
@@ -193,7 +210,8 @@ async function dispatch(
 
   m = SESSION_TOKEN_RE.exec(url.pathname);
   if (m) {
-    const orgId = m[1]!;
+    const orgId = parseOrgPublicId(m[1]!);
+    if (!orgId) return notFound(requestId, url.pathname);
     const sessionId = m[2]!;
     if (request.method === "POST") return handleRefreshSessionToken(deps, orgId, sessionId, actor, requestId);
     return methodNotAllowed(requestId);
@@ -201,7 +219,8 @@ async function dispatch(
 
   m = SESSION_EVENTS_RE.exec(url.pathname);
   if (m) {
-    const orgId = m[1]!;
+    const orgId = parseOrgPublicId(m[1]!);
+    if (!orgId) return notFound(requestId, url.pathname);
     const sessionId = m[2]!;
     if (request.method === "GET") return handleListSessionEvents(deps, orgId, sessionId, actor, requestId);
     if (request.method === "POST") return handleIngestSessionEvent(request, deps, orgId, sessionId, actor, requestId);
@@ -210,7 +229,8 @@ async function dispatch(
 
   m = SESSION_RE.exec(url.pathname);
   if (m) {
-    const orgId = m[1]!;
+    const orgId = parseOrgPublicId(m[1]!);
+    if (!orgId) return notFound(requestId, url.pathname);
     const sessionId = m[2]!;
     if (request.method === "GET") return handleGetSession(deps, orgId, sessionId, actor, requestId);
     return methodNotAllowed(requestId);
@@ -218,7 +238,8 @@ async function dispatch(
 
   m = SESSIONS_RE.exec(url.pathname);
   if (m) {
-    const orgId = m[1]!;
+    const orgId = parseOrgPublicId(m[1]!);
+    if (!orgId) return notFound(requestId, url.pathname);
     if (request.method === "GET") return handleListSessions(request, deps, orgId, actor, requestId);
     if (request.method === "POST") return handleCreateSession(request, deps, orgId, actor, requestId);
     return methodNotAllowed(requestId);
