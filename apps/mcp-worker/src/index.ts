@@ -11,7 +11,9 @@ import type { Env } from "./env.js";
 import { route } from "./router.js";
 
 export default {
-  async fetch(request: Request, env: Env): Promise<Response> {
-    return route(request, env);
+  async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
+    // ctx rides along so the MCP6 usage ingest can be waitUntil-scheduled —
+    // fire-and-forget metering must outlive the response without blocking it.
+    return route(request, env, undefined, ctx);
   },
 } satisfies ExportedHandler<Env>;

@@ -41,6 +41,7 @@ export {
   DEFAULT_LIMITS,
   type McpTool,
   type McpToolAnnotations,
+  type ToolCallGate,
   type ToolContext,
   type ToolLimits,
   type ToolResult,

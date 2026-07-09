@@ -38,13 +38,26 @@ way). Coordinate in whichever PR lands second — do **not** add a parallel
 endpoint from this epic. *(Rechecked 2026-07-09: SC0 has not landed —
 `StateClient` still exposes only `listOrgCatalogEntities`; MCP0 emulates.)*
 
-### D3 — The free-vs-paid line (MCP6)
+### D3 — The free-vs-paid line (MCP6) — ⏳ Still open (MCP6 shipped under the default posture, 2026-07-09)
 
 Is MCP access a paid capability (`feature.mcp_server`, like scorecards), free
 with metered quota, or free-read/paid-write? Product call with pricing
 implications; the entitlement seam and metering ship identically under all
 three. Default posture until decided: **entitlement granted to all plans**
 (seam live, gate open) so adoption isn't throttled during the epic.
+
+*MCP6 status (2026-07-09): shipped under exactly this default — the product
+decision remains open.* As built: `feature.mcp_server` is declared
+enabled on every `PLAN_CATALOG` tier (billing-worker) and in the
+check-entitlement safety net; the transport gate additionally treats a
+MISSING row as granted (orgs whose materialized rows predate the key are not
+locked out) and a failed entitlements read as fail-open. Closing the gate for
+an org therefore requires an explicit `enabled: false` row (plan edit or
+override) — which takes effect within the gate's ~60s cache TTL, no redeploy.
+When D3 lands, the only changes needed are the `PLAN_CATALOG` values (and
+optionally a `mcp.tool_call` quota row); revisit the missing-row-and-
+check-failure fail-OPEN posture at the same time if the line makes MCP a paid
+capability (a paid gate should likely fail closed on `not_configured`).
 
 ### D4 — Per-key tool scoping (MCP7)
 

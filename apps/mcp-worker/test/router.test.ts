@@ -1,4 +1,5 @@
 import { allTools, readOnlyTools } from "@saas/mcp";
+import type { EntitlementGateCache } from "@saas/mcp";
 import { describe, expect, it } from "vitest";
 
 import type { McpWorkerDeps } from "../src/deps.js";
@@ -70,7 +71,7 @@ function apiEdgeStub(
       { status: 404 },
     );
   };
-  return { fetch: stub };
+  return { fetch: stub, entitlementCache: new Map() };
 }
 
 async function rpc(body: unknown, deps?: McpWorkerDeps): Promise<JsonRpcResponse> {
@@ -254,6 +255,7 @@ describe("mcp-worker route", () => {
         await gate;
         return apiEdgeStub([]).fetch(input, init);
       }) as typeof fetch,
+      entitlementCache: new Map(),
     };
     const call = () =>
       route(
@@ -275,5 +277,176 @@ describe("mcp-worker route", () => {
     // Cap releases: a follow-up request is served again.
     const after = await route(rpcRequest(initializeMessage()), env, apiEdgeStub([]));
     expect(after.status).toBe(200);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// MCP6 — entitlement gate + mcp.tool_call metering (design §8)
+// ---------------------------------------------------------------------------
+
+describe("mcp-worker MCP6 (entitlement gate + usage metering)", () => {
+  const WS = "org_a1b2";
+
+  interface Mcp6Recorder {
+    entitlementReads: number;
+    usagePosts: Array<{ org: string; body: Record<string, unknown> }>;
+  }
+
+  /**
+   * api-edge stub for the MCP6 seams: the public billing entitlements read,
+   * the public usage ingest, and one workspace-scoped read tool (quota_check).
+   */
+  function mcp6Stub(
+    rec: Mcp6Recorder,
+    opts: {
+      mcpServerRow?: "enabled" | "disabled" | "missing";
+      failIngest?: boolean;
+      cache?: EntitlementGateCache;
+    } = {},
+  ): McpWorkerDeps {
+    const row = opts.mcpServerRow ?? "enabled";
+    const stub: typeof fetch = async (input, init) => {
+      const request = new Request(input, init);
+      const { pathname } = new URL(request.url);
+      const envelope = (data: unknown) =>
+        Response.json({ data, meta: { requestId: "req_stub", cursor: null } });
+      if (pathname === `/v1/organizations/${WS}/billing/entitlements`) {
+        rec.entitlementReads++;
+        const entitlements =
+          row === "missing"
+            ? []
+            : [
+                {
+                  id: "ent_1",
+                  orgId: WS,
+                  subscriptionId: null,
+                  entitlementKey: "feature.mcp_server",
+                  valueType: "boolean",
+                  enabled: row === "enabled",
+                  limitValue: null,
+                  source: "plan",
+                  metadata: null,
+                  createdAt: "2026-01-01T00:00:00Z",
+                  updatedAt: "2026-01-01T00:00:00Z",
+                },
+              ];
+        return envelope({ entitlements });
+      }
+      if (pathname === `/v1/organizations/${WS}/usage` && request.method === "POST") {
+        rec.usagePosts.push({ org: WS, body: (await request.json()) as Record<string, unknown> });
+        if (opts.failIngest === true) {
+          return Response.json(
+            { error: { code: "internal_error", message: "down", details: {}, requestId: "req_stub" } },
+            { status: 500 },
+          );
+        }
+        return envelope({ usageRecord: {} });
+      }
+      if (pathname === `/v1/organizations/${WS}/quotas/check`) {
+        return envelope({
+          metric: "state.runs",
+          allowed: true,
+          limit: 100,
+          used: 5,
+          remaining: 95,
+          period: "month",
+          enforcement: "soft",
+        });
+      }
+      return Response.json(
+        { error: { code: "not_found", message: "nope", details: {}, requestId: "req_stub" } },
+        { status: 404 },
+      );
+    };
+    return { fetch: stub, entitlementCache: opts.cache ?? new Map() };
+  }
+
+  function quotaCheckCall(id: number): Record<string, unknown> {
+    return {
+      jsonrpc: "2.0",
+      id,
+      method: "tools/call",
+      params: { name: "quota_check", arguments: { workspace: WS, metric: "state.runs" } },
+    };
+  }
+
+  const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
+
+  it("first workspace-carrying tool call checks the entitlement once; the second is served from the shared cache", async () => {
+    const rec: Mcp6Recorder = { entitlementReads: 0, usagePosts: [] };
+    const cache: EntitlementGateCache = new Map();
+    const first = await rpc(quotaCheckCall(11), mcp6Stub(rec, { cache }));
+    expect(first.result?.["isError"]).toBeFalsy();
+    expect(rec.entitlementReads).toBe(1);
+    // Fresh POST/server (stateless worker) but the SAME per-isolate cache:
+    // no second entitlements read inside the TTL.
+    const second = await rpc(quotaCheckCall(12), mcp6Stub(rec, { cache }));
+    expect(second.result?.["isError"]).toBeFalsy();
+    expect(rec.entitlementReads).toBe(1);
+  });
+
+  it("a workspace with no feature.mcp_server row is GRANTED — the D3 open-gate default", async () => {
+    const rec: Mcp6Recorder = { entitlementReads: 0, usagePosts: [] };
+    const body = await rpc(quotaCheckCall(13), mcp6Stub(rec, { mcpServerRow: "missing" }));
+    expect(body.result?.["isError"]).toBeFalsy();
+    expect(rec.entitlementReads).toBe(1);
+  });
+
+  it("a disabled entitlement surfaces the platform's upgrade-shaped entitlement_required tool error", async () => {
+    const rec: Mcp6Recorder = { entitlementReads: 0, usagePosts: [] };
+    const body = await rpc(quotaCheckCall(14), mcp6Stub(rec, { mcpServerRow: "disabled" }));
+    expect(body.result?.["isError"]).toBe(true);
+    const content = body.result?.["content"] as Array<{ type: string; text: string }>;
+    expect(content[0]!.text).toContain("entitlement_required");
+    expect(content[0]!.text).toContain("feature.mcp_server");
+    // Gated calls never reach the wrapped route and never meter.
+    await flush();
+    expect(rec.usagePosts).toHaveLength(0);
+  });
+
+  it("whoami (no workspace in scope) is neither gated nor metered", async () => {
+    const rec: Mcp6Recorder = { entitlementReads: 0, usagePosts: [] };
+    const body = await rpc(
+      { jsonrpc: "2.0", id: 15, method: "tools/call", params: { name: "whoami", arguments: {} } },
+      (() => {
+        // Reuse the orientation stub for whoami's routes but count MCP6 traffic.
+        const base = mcp6Stub(rec);
+        const orientation = apiEdgeStub([]);
+        const fetchImpl: typeof fetch = async (input, init) => {
+          const { pathname } = new URL(new Request(input, init).url);
+          if (pathname.startsWith("/v1/auth/") || pathname === "/v1/workspaces") {
+            return orientation.fetch(input, init);
+          }
+          return base.fetch(input, init);
+        };
+        return { fetch: fetchImpl, entitlementCache: base.entitlementCache };
+      })(),
+    );
+    expect(body.result?.["isError"]).toBeFalsy();
+    await flush();
+    expect(rec.entitlementReads).toBe(0);
+    expect(rec.usagePosts).toHaveLength(0);
+  });
+
+  it("a successful tool call emits exactly one mcp.tool_call usage event through the public ingest (transport http)", async () => {
+    const rec: Mcp6Recorder = { entitlementReads: 0, usagePosts: [] };
+    const body = await rpc(quotaCheckCall(16), mcp6Stub(rec));
+    expect(body.result?.["isError"]).toBeFalsy();
+    await flush();
+    expect(rec.usagePosts).toHaveLength(1);
+    const event = rec.usagePosts[0]!;
+    expect(event.org).toBe(WS);
+    expect(event.body["metric"]).toBe("mcp.tool_call");
+    expect(event.body["quantity"]).toBe(1);
+    expect(event.body["metadata"]).toEqual({ tool: "quota_check", transport: "http" });
+    expect(String(event.body["idempotencyKey"])).toMatch(/^mcp_call_/);
+  });
+
+  it("an ingest failure never fails the tool call", async () => {
+    const rec: Mcp6Recorder = { entitlementReads: 0, usagePosts: [] };
+    const body = await rpc(quotaCheckCall(17), mcp6Stub(rec, { failIngest: true }));
+    expect(body.result?.["isError"]).toBeFalsy();
+    await flush();
+    expect(rec.usagePosts).toHaveLength(1);
   });
 });

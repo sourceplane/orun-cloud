@@ -69,6 +69,15 @@ describe("plan catalog", () => {
     }
   });
 
+  it("every tier grants MCP server access (saas-mcp-server MCP6 — D3 open-gate default until the product decision lands)", () => {
+    for (const plan of PLAN_CATALOG) {
+      const mcp = plan.entitlements.find((e) => e.entitlementKey === "feature.mcp_server");
+      expect(mcp).toBeDefined();
+      expect(mcp?.enabled).toBe(true);
+      expect(mcp?.valueType).toBe("boolean");
+    }
+  });
+
   it("adds business + enterprise tiers and the multi-org entitlement keys (D5)", () => {
     expect(PLAN_CATALOG.map((p) => p.code)).toEqual(["free", "pro", "business", "enterprise"]);
     expect(isKnownPlanCode("business")).toBe(true);

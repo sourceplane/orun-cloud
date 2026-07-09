@@ -23,6 +23,25 @@ export class ToolInputError extends Error {
 }
 
 /**
+ * MCP6 entitlement gate denial (design §8, transport seam): the platform's
+ * upgrade-shaped `entitlement_required` error, mirroring what gated features
+ * return elsewhere (e.g. events-worker custom ingest: code
+ * `entitlement_required`, HTTP 402, `details.entitlementKey`). Thrown by the
+ * transport-supplied gate — never by tool handlers — and mapped below so
+ * agents see the platform code through the standard tool-error framing.
+ */
+export class EntitlementDeniedError extends Error {
+  readonly code = "entitlement_required";
+  readonly entitlementKey: string;
+
+  constructor(entitlementKey: string) {
+    super("MCP server access is not available on the current plan");
+    this.name = "EntitlementDeniedError";
+    this.entitlementKey = entitlementKey;
+  }
+}
+
+/**
  * Resource reads have no `isError` result channel (unlike tool calls): a
  * failed read surfaces as a protocol-level error. This class frames the
  * message as `<code>: <detail>` so agents see the same semantic error set on
@@ -82,6 +101,13 @@ export function toErrorResult(err: unknown): CallToolResult {
     return errorResult(`${ERROR_CODES.VALIDATION_FAILED}: ${err.message}`, {
       code: ERROR_CODES.VALIDATION_FAILED,
       message: err.message,
+    });
+  }
+  if (err instanceof EntitlementDeniedError) {
+    return errorResult(`${err.code}: ${err.message}`, {
+      code: err.code,
+      message: err.message,
+      entitlementKey: err.entitlementKey,
     });
   }
   const message = err instanceof Error ? err.message : String(err);

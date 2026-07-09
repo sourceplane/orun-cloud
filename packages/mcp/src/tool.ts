@@ -10,6 +10,7 @@ import type { z } from "zod";
 
 import { toErrorResult } from "./errors.js";
 import { DEFAULT_MAX_TEXT_BYTES } from "./truncate.js";
+import { emitToolCallUsage, type McpUsageOptions } from "./usage.js";
 
 /** Output-size caps applied by handlers that return logs/doc bodies. */
 export interface ToolLimits {
@@ -77,19 +78,33 @@ export function defineTool<Shape extends z.ZodRawShape>(def: {
 }
 
 /**
+ * A transport-supplied pre-call check (MCP6: the entitlement gate). Runs
+ * before the handler; throwing (e.g. `EntitlementDeniedError`) short-circuits
+ * the call into the standard tool-error mapping. The gate lives at the
+ * transport seam by design — nothing in the tool plane knows about billing.
+ */
+export type ToolCallGate = (tool: McpTool, input: unknown) => Promise<void>;
+
+/**
  * Run a tool and adapt its `ToolResult` into MCP content: a text block of
  * `summary + "\n" + JSON.stringify(data)`, with `structuredContent` set when
  * `data` is an object. SDK/unexpected errors become `isError` results carrying
  * the platform error code — this function never throws (design §4 "Error
  * mapping").
+ *
+ * When a transport opted into usage emission (MCP6), each SUCCESSFUL call
+ * fire-and-forgets one `mcp.tool_call` usage event — never awaited, never
+ * fails the call (see `usage.ts`). Failed calls emit nothing.
  */
 export async function executeTool(
   tool: McpTool,
   input: unknown,
   ctx: ToolContext,
+  usage?: McpUsageOptions,
 ): Promise<CallToolResult> {
   try {
     const { summary, data } = await tool.handler(input, ctx);
+    if (usage !== undefined) emitToolCallUsage(ctx.sdk, tool, input, usage);
     const result: CallToolResult = {
       content: [{ type: "text", text: `${summary}\n${JSON.stringify(data)}` }],
     };

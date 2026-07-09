@@ -12,7 +12,7 @@ import { describe, expect, it } from "vitest";
 import { allTools, readOnlyTools } from "@saas/mcp";
 
 import { runCli } from "../cli-runner.js";
-import { resolveWorkspaceDefault } from "../commands/mcp.js";
+import { assertServeEntitlement, resolveWorkspaceDefault } from "../commands/mcp.js";
 import { ContextStore } from "../context/store.js";
 import type { CommandContext } from "../router.js";
 import { MemoryTokenStore } from "./helpers.js";
@@ -203,5 +203,79 @@ describe("mcp serve — workspace default precedence", () => {
     } finally {
       await fs.rm(dir, { recursive: true, force: true });
     }
+  });
+});
+
+describe("mcp serve — startup entitlement check (MCP6, design §8)", () => {
+  function billingSdk(rows: unknown[] | Error) {
+    const calls: string[] = [];
+    const sdk = {
+      billing: {
+        getEntitlements: (org: string) => {
+          calls.push(org);
+          return rows instanceof Error
+            ? Promise.reject(rows)
+            : Promise.resolve({ entitlements: rows });
+        },
+      },
+    } as unknown as import("@saas/sdk").OrunCloud;
+    return { sdk, calls };
+  }
+
+  const mcpRow = (enabled: boolean) => ({
+    entitlementKey: "feature.mcp_server",
+    enabled,
+  });
+
+  it("no resolvable workspace: proceeds without any billing read (per-call tenancy)", async () => {
+    const { sdk, calls } = billingSdk([mcpRow(false)]);
+    const stderr: string[] = [];
+    await expect(
+      assertServeEntitlement(sdk, undefined, (l) => stderr.push(l)),
+    ).resolves.toBe(true);
+    expect(calls).toEqual([]);
+    expect(stderr).toEqual([]);
+  });
+
+  it("granted: proceeds silently", async () => {
+    const { sdk, calls } = billingSdk([mcpRow(true)]);
+    const stderr: string[] = [];
+    await expect(
+      assertServeEntitlement(sdk, "org_1", (l) => stderr.push(l)),
+    ).resolves.toBe(true);
+    expect(calls).toEqual(["org_1"]);
+    expect(stderr).toEqual([]);
+  });
+
+  it("no feature.mcp_server row: proceeds (D3 open-gate default)", async () => {
+    const { sdk } = billingSdk([]);
+    const stderr: string[] = [];
+    await expect(
+      assertServeEntitlement(sdk, "org_1", (l) => stderr.push(l)),
+    ).resolves.toBe(true);
+    expect(stderr).toEqual([]);
+  });
+
+  it("denied: hard fail with a clear upgrade-shaped stderr message, no server", async () => {
+    const { sdk } = billingSdk([mcpRow(false)]);
+    const stderr: string[] = [];
+    await expect(
+      assertServeEntitlement(sdk, "org_1", (l) => stderr.push(l)),
+    ).resolves.toBe(false);
+    const text = stderr.join("\n");
+    expect(text).toContain("error:");
+    expect(text).toContain("not available on the current plan");
+    expect(text).toContain("feature.mcp_server");
+    expect(text).toContain("org_1");
+  });
+
+  it("a failed entitlements read fails OPEN with a warning (a billing outage must not break agents)", async () => {
+    const { sdk } = billingSdk(new Error("billing unreachable"));
+    const stderr: string[] = [];
+    await expect(
+      assertServeEntitlement(sdk, "org_1", (l) => stderr.push(l)),
+    ).resolves.toBe(true);
+    expect(stderr.join("\n")).toContain("warning:");
+    expect(stderr.join("\n")).toContain("feature.mcp_server");
   });
 });

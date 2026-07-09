@@ -50,6 +50,8 @@ const initialize = {
 const stubDeps: McpWorkerDeps = {
   fetch: (async () =>
     Response.json({ data: {}, meta: { requestId: "req_stub", cursor: null } })) as typeof fetch,
+  // MCP6: fresh per-run entitlement decision cache (per-isolate Map in prod).
+  entitlementCache: new Map(),
 };
 
 describe("mcp-worker route (smoke)", () => {

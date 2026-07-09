@@ -705,6 +705,20 @@ describe("decideEntitlement", () => {
     }
   });
 
+  it("grants a missing feature.mcp_server via the safety net (saas-mcp-server MCP6, D3 open-gate default)", async () => {
+    // Orgs whose entitlement rows predate the key stay allowed through this
+    // seam too — matches the PLAN_CATALOG value on every plan.
+    const repo = fakeRepo({ ok: false, error: { kind: "not_found" } });
+    const outcome = await decideEntitlement(repo, {
+      publicOrgId: TEST_ORG_PUBLIC,
+      orgId: TEST_ORG_HEX,
+      entitlementKey: "feature.mcp_server",
+    });
+    expect(outcome.kind).toBe("decision");
+    if (outcome.kind !== "decision") return;
+    expect(outcome.body.allowed).toBe(true);
+  });
+
   it("still denies (not_configured) for a missing NON-default key", async () => {
     const repo = fakeRepo({ ok: false, error: { kind: "not_found" } });
     const outcome = await decideEntitlement(repo, {
