@@ -9,7 +9,8 @@ import type { SessionTokenMinter } from "@agents-worker/identity-client";
 import { MemoryAgentsRepository } from "@saas/db/agents";
 import type { Env } from "@agents-worker/env";
 
-const ORG = "org_test";
+const ORG = "org_b281a9a0f43d463e9c83d6b6597ab2d2"; // public org id carried in the URL
+const ORG_UUID = "b281a9a0-f43d-463e-9c83-d6b6597ab2d2"; // what the router decodes to (repo scope)
 const env: Env = { ENVIRONMENT: "test" };
 
 function runtimeReq(
@@ -50,7 +51,7 @@ interface Fixture {
 
 async function fixture(opts?: { state?: "requested" | "provisioning" | "running"; lease?: string }): Promise<Fixture> {
   const repo = new MemoryAgentsRepository();
-  const scope = { orgId: ORG };
+  const scope = { orgId: ORG_UUID };
   const minted: string[] = [];
 
   const profile = await repo.createProfile(scope, {
@@ -120,14 +121,14 @@ describe("agents-worker runtime routes (AG6)", () => {
     const s = (await json(res)).data as { state: string; startedAt?: string };
     expect(s.state).toBe("running");
     expect(s.startedAt).toBeTruthy();
-    expect((await f.repo.getSession({ orgId: ORG }, f.sessionId))?.leaseExpiresAt).toBeTruthy();
+    expect((await f.repo.getSession({ orgId: ORG_UUID }, f.sessionId))?.leaseExpiresAt).toBeTruthy();
   });
 
   it("subsequent heartbeats extend the lease without a transition", async () => {
     const f = await fixture({ state: "running", lease: "2000-01-01T00:00:00Z" });
     const res = await route(reqFor(f, "POST", "heartbeat"), env, f.deps);
     expect(res.status).toBe(200);
-    const stored = await f.repo.getSession({ orgId: ORG }, f.sessionId);
+    const stored = await f.repo.getSession({ orgId: ORG_UUID }, f.sessionId);
     expect(stored?.state).toBe("running");
     expect(new Date(stored!.leaseExpiresAt!).getTime()).toBeGreaterThan(Date.now());
   });
@@ -182,7 +183,7 @@ describe("agents-worker runtime routes (AG6)", () => {
 
     // Redelivery of the same seq is a no-op.
     await route(reqFor(f, "POST", "events", { body: [batch[1]] }), env, f.deps);
-    expect((await f.repo.listSessionEvents({ orgId: ORG }, f.sessionId)).length).toBe(2);
+    expect((await f.repo.listSessionEvents({ orgId: ORG_UUID }, f.sessionId)).length).toBe(2);
 
     const bad = await route(
       reqFor(f, "POST", "events", { body: [{ seq: 2, kind: "status_asserted" }] }),
@@ -210,7 +211,7 @@ describe("agents-worker runtime routes (AG6)", () => {
 
   it("refuses a refresh on a terminal session", async () => {
     const f = await fixture({ state: "running", lease: "2099-01-01T00:00:00Z" });
-    await f.repo.advanceSession({ orgId: ORG }, { publicId: f.sessionId, to: "canceled" });
+    await f.repo.advanceSession({ orgId: ORG_UUID }, { publicId: f.sessionId, to: "canceled" });
     const res = await route(reqFor(f, "POST", "token"), env, f.deps);
     expect(res.status).toBe(409);
   });

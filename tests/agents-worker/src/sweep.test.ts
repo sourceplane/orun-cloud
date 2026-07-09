@@ -9,7 +9,8 @@ import type { ProviderKeyClient } from "@agents-worker/config-client";
 import type { SandboxProvider } from "@saas/contracts/agents";
 import { MemoryAgentsRepository, providerSecretRef } from "@saas/db/agents";
 
-const ORG = "org_test";
+const ORG = "org_b281a9a0f43d463e9c83d6b6597ab2d2"; // public org id carried in the URL
+const ORG_UUID = "b281a9a0-f43d-463e-9c83-d6b6597ab2d2"; // what the router decodes to (repo scope)
 const NOW = new Date("2026-07-09T12:00:00Z");
 
 function stubProvider(destroyed: string[], failDestroy = false): SandboxProvider {
@@ -65,7 +66,7 @@ function fixture(opts?: { connection?: boolean; failDestroy?: boolean }): Fixtur
     now: () => new Date(Date.parse("2026-07-09T10:00:00Z") + tick++ * 1000).toISOString(),
   });
   const destroyed: string[] = [];
-  const scope = { orgId: ORG };
+  const scope = { orgId: ORG_UUID };
 
   const deps: AgentsDeps = {
     repo,
@@ -139,7 +140,7 @@ describe("lease sweep (AG6 §4.3)", () => {
 
     expect(summary).toEqual({ examined: 1, reclaimed: 1, destroyed: 1, destroyErrors: 0 });
     expect(f.destroyed).toEqual(["sb_lapsed"]);
-    const s = await f.repo.getSession({ orgId: ORG }, id);
+    const s = await f.repo.getSession({ orgId: ORG_UUID }, id);
     expect(s?.state).toBe("failed");
     expect(s?.sandbox.error).toBe("lease_lost");
     expect(s?.sandbox.id).toBe("sb_lapsed"); // the ref survives for audit
@@ -151,7 +152,7 @@ describe("lease sweep (AG6 §4.3)", () => {
     const summary = await sweepLapsedSessions(f.deps, "req_t", () => NOW);
     expect(summary.reclaimed).toBe(1);
     expect(f.destroyed).toEqual(["sb_stalled"]);
-    expect((await f.repo.getSession({ orgId: ORG }, id))?.state).toBe("failed");
+    expect((await f.repo.getSession({ orgId: ORG_UUID }, id))?.state).toBe("failed");
   });
 
   it("leaves healthy sessions alone", async () => {
@@ -160,7 +161,7 @@ describe("lease sweep (AG6 §4.3)", () => {
     const summary = await sweepLapsedSessions(f.deps, "req_t", () => NOW);
     expect(summary.examined).toBe(0);
     expect(f.destroyed).toEqual([]);
-    expect((await f.repo.getSession({ orgId: ORG }, live))?.state).toBe("running");
+    expect((await f.repo.getSession({ orgId: ORG_UUID }, live))?.state).toBe("running");
   });
 
   it("respects the grace window — a just-lapsed lease is not yet reclaimed", async () => {
@@ -176,7 +177,7 @@ describe("lease sweep (AG6 §4.3)", () => {
     const id = await f.make({ state: "running", lease: "2026-07-09T11:00:00Z", sandboxId: "sb_gone" });
     const summary = await sweepLapsedSessions(f.deps, "req_t", () => NOW);
     expect(summary).toEqual({ examined: 1, reclaimed: 1, destroyed: 0, destroyErrors: 1 });
-    expect((await f.repo.getSession({ orgId: ORG }, id))?.state).toBe("failed");
+    expect((await f.repo.getSession({ orgId: ORG_UUID }, id))?.state).toBe("failed");
   });
 
   it("reclaims even when the workspace has no daytona connection anymore", async () => {
@@ -185,6 +186,6 @@ describe("lease sweep (AG6 §4.3)", () => {
     const summary = await sweepLapsedSessions(f.deps, "req_t", () => NOW);
     expect(summary.reclaimed).toBe(1);
     expect(summary.destroyed).toBe(0);
-    expect((await f.repo.getSession({ orgId: ORG }, id))?.state).toBe("failed");
+    expect((await f.repo.getSession({ orgId: ORG_UUID }, id))?.state).toBe("failed");
   });
 });

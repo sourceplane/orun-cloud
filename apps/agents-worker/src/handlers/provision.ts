@@ -14,6 +14,13 @@ import type { ProviderConnection, Provider } from "@saas/db/agents";
 import type { SandboxSpec } from "@saas/contracts/agents";
 import { errorResponse, notFound, successResponse } from "../http.js";
 import { toPublicSession } from "../mappers.js";
+import { uuidToHex } from "@saas/db/ids";
+
+/** The scope orgId is the UUID (authz + DB); the runtime dials the public API,
+ * so its env + credential carry the public `org_<hex>` id. */
+function orgPublicId(orgUuid: string): string {
+  return `org_${uuidToHex(orgUuid)}`;
+}
 
 /** Egress the sandbox may reach by default (design §2): the platform, the
  * model provider, the git host, package registries. Extensions are
@@ -95,15 +102,17 @@ export async function handleProvisionSession(
     return errorResponse("provider_unsupported", "No sandbox adapter for daytona", 503, requestId);
   }
 
+  const orgPublic = orgPublicId(orgId);
   const cfg = daytona.config;
   const spec: SandboxSpec = {
     baseSnapshot: typeof cfg.snapshot === "string" && cfg.snapshot ? cfg.snapshot : "agents-base",
     ttlSeconds: typeof cfg.ttlSeconds === "number" && cfg.ttlSeconds > 0 ? cfg.ttlSeconds : 3600,
     egressAllow: DEFAULT_EGRESS,
-    // Non-secret only — create-time env can outlive a suspend snapshot.
+    // Non-secret only — create-time env can outlive a suspend snapshot. The
+    // runtime calls the public API, so ORUN_ORG_ID is the public org id.
     env: {
       ORUN_SESSION_ID: session.publicId,
-      ORUN_ORG_ID: orgId,
+      ORUN_ORG_ID: orgPublic,
       ORUN_RUN_KIND: session.runKind,
       ...(session.taskKey ? { ORUN_TASK_KEY: session.taskKey } : {}),
     },
@@ -116,7 +125,7 @@ export async function handleProvisionSession(
   const profile = await deps.repo.getSessionProfile({ orgId }, sessionId);
   if (!profile) return notFound(requestId, sessionId);
   const sessionToken = deps.sessionTokens
-    ? await deps.sessionTokens.mint(profile.principalId, orgId, session.publicId, requestId)
+    ? await deps.sessionTokens.mint(profile.principalId, orgPublic, session.publicId, requestId)
     : null;
   if (!sessionToken) {
     return errorResponse("internal_error", "Session credential mint failed", 502, requestId);

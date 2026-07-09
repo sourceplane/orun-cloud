@@ -3,7 +3,8 @@ import type { AgentsDeps } from "@agents-worker/deps";
 import { MemoryAgentsRepository } from "@saas/db/agents";
 import type { Env } from "@agents-worker/env";
 
-const ORG = "org_test";
+const ORG = "org_b281a9a0f43d463e9c83d6b6597ab2d2"; // public org id carried in the URL
+const ORG_UUID = "b281a9a0-f43d-463e-9c83-d6b6597ab2d2"; // what the router decodes to (repo scope)
 const env: Env = { ENVIRONMENT: "test" };
 
 function actorHeaders(extra: Record<string, string> = {}): Record<string, string> {
@@ -56,6 +57,36 @@ describe("agents-worker route", () => {
   it("401s an agents route with no actor headers", async () => {
     const res = await route(new Request(`https://agents-worker/v1/organizations/${ORG}/agents/profiles`), env, makeDeps());
     expect(res.status).toBe(401);
+  });
+
+  it("404s a malformed org id — the public org_<hex> id must decode to a UUID", async () => {
+    // The regression this locks: a non-decodable org segment (e.g. a slug or a
+    // truncated id) must never reach a handler, where it would 403 at membership
+    // (asUuid throws) or corrupt an org_id UUID query. It fails closed at the router.
+    for (const bad of ["org_test", "not-an-org", "org_deadbeef"]) {
+      const res = await route(req("GET", `/v1/organizations/${bad}/agents/profiles`), env, makeDeps());
+      expect(res.status).toBe(404);
+    }
+  });
+
+  it("decodes the public org id to a UUID before it reaches the repo", async () => {
+    // ORG is org_<hex>; the profile is created under, and read back from, the
+    // DECODED uuid scope — proving the handler never sees the public id.
+    const deps = makeDeps();
+    await route(
+      req("POST", `/v1/organizations/${ORG}/agents/profiles`, {
+        name: "impl",
+        principalId: "sp_1",
+        owner: "team/platform",
+        agentType: "implementer",
+        harness: "claude-code",
+        model: "claude-opus-4-8",
+      }),
+      env,
+      deps,
+    );
+    expect((await deps.repo.listProfiles({ orgId: ORG_UUID })).length).toBe(1);
+    expect((await deps.repo.listProfiles({ orgId: ORG })).length).toBe(0);
   });
 
   it("503s when unbound and no deps injected", async () => {
@@ -144,8 +175,8 @@ describe("agents-worker route", () => {
 
     // Advance through the repo directly (the runtime/DO relay drives transitions
     // in production); then read the event relay.
-    await deps.repo.advanceSession({ orgId: ORG }, { publicId: session.id, to: "provisioning" });
-    await deps.repo.appendSessionEvent({ orgId: ORG }, { sessionPublicId: session.id, seq: 0, kind: "state_changed", payload: { state: "provisioning" } });
+    await deps.repo.advanceSession({ orgId: ORG_UUID }, { publicId: session.id, to: "provisioning" });
+    await deps.repo.appendSessionEvent({ orgId: ORG_UUID }, { sessionPublicId: session.id, seq: 0, kind: "state_changed", payload: { state: "provisioning" } });
 
     const events = await route(req("GET", `/v1/organizations/${ORG}/agents/sessions/${session.id}/events`), env, deps);
     expect(events.status).toBe(200);

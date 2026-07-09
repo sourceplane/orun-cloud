@@ -20,6 +20,13 @@ import type { AgentSession } from "@saas/db/agents";
 import { AgentsError, isTerminal } from "@saas/db/agents";
 import { errorResponse, notFound, successResponse, validationError } from "../http.js";
 import { toPublicSession } from "../mappers.js";
+import { uuidToHex } from "@saas/db/ids";
+
+/** The token's orgId claim is the public `org_<hex>` id (matching provision),
+ * so a refreshed credential is indistinguishable from the first mint. */
+function orgPublicId(orgUuid: string): string {
+  return `org_${uuidToHex(orgUuid)}`;
+}
 
 /** Lease horizon per heartbeat/refresh (design §3.2: ~15 min TTL chain). */
 export const LEASE_TTL_MS = 15 * 60 * 1000;
@@ -154,7 +161,7 @@ export async function handleRefreshSessionToken(
   if (!deps.sessionTokens) {
     return errorResponse("internal_error", "Token service unavailable", 503, requestId);
   }
-  const minted = await deps.sessionTokens.mint(actor.subjectId, orgId, session.publicId, requestId);
+  const minted = await deps.sessionTokens.mint(actor.subjectId, orgPublicId(orgId), session.publicId, requestId);
   if (!minted) {
     return errorResponse("internal_error", "Token mint failed", 502, requestId);
   }

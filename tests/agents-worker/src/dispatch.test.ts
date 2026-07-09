@@ -12,7 +12,8 @@ import type { SandboxProvider } from "@saas/contracts/agents";
 import { MemoryAgentsRepository, providerSecretRef } from "@saas/db/agents";
 import type { Env } from "@agents-worker/env";
 
-const ORG = "org_test";
+const ORG = "org_b281a9a0f43d463e9c83d6b6597ab2d2"; // public org id carried in the URL
+const ORG_UUID = "b281a9a0-f43d-463e-9c83-d6b6597ab2d2"; // what the router decodes to (repo scope)
 const env: Env = { ENVIRONMENT: "test" };
 
 function req(method: string, path: string, body?: unknown): Request {
@@ -77,7 +78,7 @@ async function fixture(opts?: { connections?: boolean; profiles?: number }): Pro
   repo: MemoryAgentsRepository;
 }> {
   const repo = new MemoryAgentsRepository();
-  const scope = { orgId: ORG };
+  const scope = { orgId: ORG_UUID };
   const n = opts?.profiles ?? 1;
   for (let i = 0; i < n; i++) {
     await repo.createProfile(scope, {
