@@ -89,6 +89,14 @@ const ORG_ROLE_PERMISSIONS: Record<OrganizationRole, readonly string[]> = {
     "team.owner_handle.remove",
     "work.read",
     "work.write",
+    "organization.agent.provider.read",
+    "organization.agent.provider.write",
+    "organization.agent.session.read",
+    "organization.agent.session.create",
+    "organization.agent.profile.read",
+    "organization.agent.profile.write",
+    "organization.agent.autonomy.read",
+    "organization.agent.autonomy.write",
   ],
   admin: [
     "organization.read",
@@ -161,6 +169,14 @@ const ORG_ROLE_PERMISSIONS: Record<OrganizationRole, readonly string[]> = {
     "team.owner_handle.remove",
     "work.read",
     "work.write",
+    "organization.agent.provider.read",
+    "organization.agent.provider.write",
+    "organization.agent.session.read",
+    "organization.agent.session.create",
+    "organization.agent.profile.read",
+    "organization.agent.profile.write",
+    "organization.agent.autonomy.read",
+    "organization.agent.autonomy.write",
   ],
   builder: [
     "organization.read",
@@ -191,6 +207,15 @@ const ORG_ROLE_PERMISSIONS: Record<OrganizationRole, readonly string[]> = {
     "org.cli.link",
     "work.read",
     "work.write",
+    // Builders run the day-to-day agent surface: read providers/autonomy,
+    // spawn + manage sessions and profiles. Connecting provider accounts and
+    // setting workspace autonomy stay owner/admin (billing/policy shaped).
+    "organization.agent.provider.read",
+    "organization.agent.session.read",
+    "organization.agent.session.create",
+    "organization.agent.profile.read",
+    "organization.agent.profile.write",
+    "organization.agent.autonomy.read",
   ],
   viewer: [
     "organization.read",
@@ -211,6 +236,10 @@ const ORG_ROLE_PERMISSIONS: Record<OrganizationRole, readonly string[]> = {
     "catalog.read",
     "secret.read",
     "work.read",
+    "organization.agent.provider.read",
+    "organization.agent.session.read",
+    "organization.agent.profile.read",
+    "organization.agent.autonomy.read",
   ],
   billing_admin: [
     "organization.read",
@@ -401,6 +430,15 @@ const ALL_KNOWN_ACTIONS: ReadonlySet<string> = new Set([
   // derived query, so there is exactly one read and one write action).
   "work.read",
   "work.write",
+  // saas-agents — the hosted-agent control plane (workspace-scoped).
+  "organization.agent.provider.read",
+  "organization.agent.provider.write",
+  "organization.agent.session.read",
+  "organization.agent.session.create",
+  "organization.agent.profile.read",
+  "organization.agent.profile.write",
+  "organization.agent.autonomy.read",
+  "organization.agent.autonomy.write",
 ]);
 
 function isOrgRole(role: string): role is OrganizationRole {

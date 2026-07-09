@@ -154,6 +154,17 @@ export const ORGANIZATION_ACTIONS = [
   "project.config.write",
   "project.webhook.read",
   "project.webhook.write",
+  // saas-agents — the hosted-agent control plane (workspace-scoped). Providers
+  // and autonomy are admin-shaped (billing-impacting compute accounts / the
+  // dispatch policy dial); sessions and profiles are day-to-day work.
+  "organization.agent.provider.read",
+  "organization.agent.provider.write",
+  "organization.agent.session.read",
+  "organization.agent.session.create",
+  "organization.agent.profile.read",
+  "organization.agent.profile.write",
+  "organization.agent.autonomy.read",
+  "organization.agent.autonomy.write",
 ] as const;
 
 export type OrganizationAction = (typeof ORGANIZATION_ACTIONS)[number];
