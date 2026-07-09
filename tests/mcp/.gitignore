@@ -1,0 +1,3 @@
+# Recorded eval traces are run artifacts (regenerate with `pnpm --filter
+# @saas/mcp-tests evals`); the repo keeps no committed test artifacts.
+evals/traces/

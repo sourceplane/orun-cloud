@@ -16,7 +16,7 @@ apply unchanged.
 
 | Field | Value |
 |-------|-------|
-| Status | **Ready** — MCP0–MCP2 are human-independent, ride entirely on shipped surfaces (SDK, state plane, OP1 auth, ES events, CD catalog docs), and are now a named dependency of `saas-agents` (AG — the in-sandbox runtime calls this MCP); MCP3 (OAuth) shipped under the D1 decision (Option A allow-list, no open DCR — see `risks-and-open-questions.md`); MCP6 (entitlement) still carries its decision there |
+| Status | **✅ Shipped (all MCP0–MCP8)** — the full epic is live: tool plane (25/25 budget, CI-guarded), both transports (stdio CLI + remote worker), OAuth 2.1 (D1 → Option A allow-list), resources/prompts, gated writes, metering/entitlement, console Connect page, and the MCP8 conformance + eval harness (`tests/mcp`). Two live-stage follow-ups remain (deploy-lane, not epic scope): the **`mcp.<domain>` custom hostname infra** (workers.dev today) and the **live-stage E2E smokes** (real MCP client against a seeded stage org — the MCP1/MCP2/MCP3/MCP5 stage acceptances). The only open thread is product decision **D3** (free-vs-paid line; shipped under the default open-gate posture — see `risks-and-open-questions.md`) |
 | Cluster | **MCP** (agent client surface — promotes the agent-surface half of `saas-product-areas` **P7**; the **platform MCP**, distinct from orun's **work MCP** — see vocabulary note below) |
 | Owner(s) | `packages/mcp` (new, primary) + `packages/cli` (stdio transport) + `apps/mcp-worker` (new, remote transport) + `apps/identity-worker` (OAuth 2.1 authorization, MCP3) + `packages/contracts`/`sdk` (schema seam) + `apps/web-console-next` (Connect page, MCP7) + `apps/billing-worker`/`metering-worker` (entitlement + metering, MCP6) |
 | Target branch | `claude/orun-cloud-mcp-server-h95b57` (PRs merged incrementally) |
@@ -90,7 +90,7 @@ additive surface over shipped rails.
 | MCP5 | Write tools (gated): task-shaped mutations with `Idempotency-Key`, tool annotations, `via: mcp` audit provenance, read-only mode enforcement | ✅ Shipped (6 write tools — budget now exactly 25/25; remote stays read-only pending a deliberate enable) |
 | MCP6 | Metering + entitlement: `mcp.tool_call` usage events, `feature.mcp_server` seam + U7 upgrade UX, quota checks | ✅ Shipped (D3 default posture: gate OPEN — granted on all plans; free-vs-paid product decision still open) |
 | MCP7 | Console "Connect an agent" surface: install snippets, key minting with per-key tool scope, connection status; docs | ✅ Shipped (Settings › Developer › MCP server + web-docs page; D4 → role-based scoping only in v1) |
-| MCP8 | Conformance + agent-eval harness: `tests/mcp` contract suite, MCP Inspector smoke in CI, scripted agent-task evals, tool-budget guard | 🗓️ Planned |
+| MCP8 | Conformance + agent-eval harness: `tests/mcp` contract suite, MCP Inspector smoke in CI, scripted agent-task evals, tool-budget guard | ✅ Shipped (`tests/mcp`: budget guard 25/25 + schema-size ceiling, contract pins, both-transport conformance in verify lanes; on-demand scored eval traces) |
 
 ## Scope boundary
 
