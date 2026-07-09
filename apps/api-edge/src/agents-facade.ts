@@ -22,6 +22,10 @@ const ORG_AGENTS_SESSION_TOKEN_RE = /^\/v1\/organizations\/[^/]+\/agents\/sessio
 // Provider connections (AG12 §10): BYO Daytona / Anthropic keys. The apiKey in
 // the create body transits this facade exactly once, straight to the worker —
 // never logged, never cached (idempotency stores replay by key, not body).
+// Autonomy policy + the dispatch door (AG9 §7): the ladder is read/written
+// here; every autonomous spawn re-enters through /agents/dispatch.
+const ORG_AGENTS_AUTONOMY_RE = /^\/v1\/organizations\/[^/]+\/agents\/autonomy$/;
+const ORG_AGENTS_DISPATCH_RE = /^\/v1\/organizations\/[^/]+\/agents\/dispatch$/;
 const ORG_AGENTS_PROVIDERS_RE = /^\/v1\/organizations\/[^/]+\/agents\/providers$/;
 const ORG_AGENTS_PROVIDER_RE = /^\/v1\/organizations\/[^/]+\/agents\/providers\/[^/]+$/;
 const ORG_AGENTS_PROVIDER_VERIFY_RE = /^\/v1\/organizations\/[^/]+\/agents\/providers\/[^/]+\/verify$/;
@@ -39,7 +43,9 @@ export function isAgentsRoute(pathname: string): boolean {
     ORG_AGENTS_SESSION_TOKEN_RE.test(pathname) ||
     ORG_AGENTS_PROVIDERS_RE.test(pathname) ||
     ORG_AGENTS_PROVIDER_RE.test(pathname) ||
-    ORG_AGENTS_PROVIDER_VERIFY_RE.test(pathname)
+    ORG_AGENTS_PROVIDER_VERIFY_RE.test(pathname) ||
+    ORG_AGENTS_AUTONOMY_RE.test(pathname) ||
+    ORG_AGENTS_DISPATCH_RE.test(pathname)
   );
 }
 
@@ -49,7 +55,7 @@ export async function handleAgentsRoute(
   requestId: string,
   pathname: string,
 ): Promise<Response> {
-  const allowedMethods = ["GET", "POST", "DELETE"];
+  const allowedMethods = ["GET", "POST", "PUT", "DELETE"];
   if (!allowedMethods.includes(request.method)) {
     return errorResponse("unsupported", "Method not allowed", 405, requestId);
   }
@@ -89,7 +95,7 @@ export async function handleAgentsRoute(
 
     try {
       const fetchInit: RequestInit = { method: request.method, headers };
-      if (request.method === "POST") {
+      if (request.method === "POST" || request.method === "PUT") {
         fetchInit.body = request.body;
       }
       const downstream = await env.AGENTS_WORKER.fetch(target.toString(), fetchInit);
