@@ -21,6 +21,8 @@ import {
   handleRefreshSessionToken,
   handleSessionHeartbeat,
 } from "./handlers/runtime.js";
+import { handleGetAutonomy, handleSetAutonomy } from "./handlers/autonomy.js";
+import { handleDispatch } from "./handlers/dispatch.js";
 import {
   handleCreateConnection,
   handleDeleteConnection,
@@ -65,6 +67,8 @@ const SESSION_EVENTS_RE = /^\/v1\/organizations\/([^/]+)\/agents\/sessions\/([^/
 const SESSION_PROVISION_RE = /^\/v1\/organizations\/([^/]+)\/agents\/sessions\/([^/]+)\/provision$/;
 const SESSION_HEARTBEAT_RE = /^\/v1\/organizations\/([^/]+)\/agents\/sessions\/([^/]+)\/heartbeat$/;
 const SESSION_TOKEN_RE = /^\/v1\/organizations\/([^/]+)\/agents\/sessions\/([^/]+)\/token$/;
+const AUTONOMY_RE = /^\/v1\/organizations\/([^/]+)\/agents\/autonomy$/;
+const DISPATCH_RE = /^\/v1\/organizations\/([^/]+)\/agents\/dispatch$/;
 const PROVIDERS_RE = /^\/v1\/organizations\/([^/]+)\/agents\/providers$/;
 const PROVIDER_RE = /^\/v1\/organizations\/([^/]+)\/agents\/providers\/([^/]+)$/;
 const PROVIDER_VERIFY_RE = /^\/v1\/organizations\/([^/]+)\/agents\/providers\/([^/]+)\/verify$/;
@@ -92,7 +96,9 @@ export async function route(request: Request, env: Env, injectedDeps?: AgentsDep
       SESSION_TOKEN_RE.test(url.pathname) ||
       PROVIDERS_RE.test(url.pathname) ||
       PROVIDER_RE.test(url.pathname) ||
-      PROVIDER_VERIFY_RE.test(url.pathname);
+      PROVIDER_VERIFY_RE.test(url.pathname) ||
+      AUTONOMY_RE.test(url.pathname) ||
+      DISPATCH_RE.test(url.pathname);
     if (!isAgentsRoute) {
       return notFound(requestId, url.pathname);
     }
@@ -127,6 +133,21 @@ async function dispatch(
     const orgId = m[1]!;
     if (request.method === "GET") return handleListProfiles(deps, orgId, actor, requestId);
     if (request.method === "POST") return handleCreateProfile(request, deps, orgId, actor, requestId);
+    return methodNotAllowed(requestId);
+  }
+
+  m = AUTONOMY_RE.exec(url.pathname);
+  if (m) {
+    const orgId = m[1]!;
+    if (request.method === "GET") return handleGetAutonomy(request, deps, orgId, actor, requestId);
+    if (request.method === "PUT") return handleSetAutonomy(request, deps, orgId, actor, requestId);
+    return methodNotAllowed(requestId);
+  }
+
+  m = DISPATCH_RE.exec(url.pathname);
+  if (m) {
+    const orgId = m[1]!;
+    if (request.method === "POST") return handleDispatch(request, deps, orgId, actor, requestId);
     return methodNotAllowed(requestId);
   }
 

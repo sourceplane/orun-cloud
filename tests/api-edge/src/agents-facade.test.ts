@@ -78,6 +78,10 @@ describe("api-edge agents facade", () => {
       expect(isAgentsRoute("/v1/organizations/org_abc/agents/providers/apc_1")).toBe(true);
       expect(isAgentsRoute("/v1/organizations/org_abc/agents/providers/apc_1/verify")).toBe(true);
     });
+    it("matches autonomy + dispatch (AG9)", () => {
+      expect(isAgentsRoute("/v1/organizations/org_abc/agents/autonomy")).toBe(true);
+      expect(isAgentsRoute("/v1/organizations/org_abc/agents/dispatch")).toBe(true);
+    });
     it("does not match unrelated or internal routes", () => {
       expect(isAgentsRoute("/v1/organizations/org_abc/config/settings")).toBe(false);
       expect(isAgentsRoute("/v1/internal/agents/sessions/as_1/events")).toBe(false);
@@ -186,6 +190,24 @@ describe("api-edge agents facade", () => {
       expect(res.status).toBe(200);
       expect(calls[0]!.init.method).toBe("DELETE");
       expect(calls[0]!.init.body).toBeUndefined();
+    });
+
+    it("forwards a PUT body (autonomy policy)", async () => {
+      const { fetcher: identityFetcher } = createSessionFetcher("usr_test");
+      const { fetcher: agentsFetcher, calls } = createFakeFetcher(
+        Response.json({ data: { level: "full" }, meta: { requestId: "r", cursor: null } }),
+      );
+      const env = createEnv({ IDENTITY_WORKER: identityFetcher, AGENTS_WORKER: agentsFetcher });
+      const path = "/v1/organizations/org_abc/agents/autonomy";
+      const req = new Request(`https://api-edge${path}`, {
+        method: "PUT",
+        headers: { "content-type": "application/json", authorization: "Bearer tok_test" },
+        body: JSON.stringify({ level: "full" }),
+      });
+      const res = await handleAgentsRoute(req, env as never, "req_test", path);
+      expect(res.status).toBe(200);
+      expect(calls[0]!.init.method).toBe("PUT");
+      expect(calls[0]!.init.body).toBeDefined();
     });
 
     it("405s an unsupported method", async () => {
