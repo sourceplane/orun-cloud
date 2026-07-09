@@ -19,6 +19,8 @@ import {
   handlePutWorkDoc,
   handleStreamWorkEvents,
   handleWorkDocHistory,
+  handleWorkReaction,
+  handleWorkTimeline,
   handleWorkImport,
   handleWorkSummary,
   handleWorkTaskAction,
@@ -307,6 +309,95 @@ describe("PM0 authoring (initiatives + cloud documents)", () => {
       { repo },
     );
     expect(res.status).toBe(404);
+  });
+});
+
+describe("PM1 conversation (threads, reactions, mentions, timeline)", () => {
+  it("threads a reply, reacts, and interleaves the timeline", async () => {
+    const repo = new MemoryWorkRepository(fixedClock);
+    const env = createEnv();
+    const key = await seedTask(repo);
+    const mentions: Array<{ handle: string; taskKey: string }> = [];
+    const deps = {
+      repo,
+      publishMention: async (m: { handle: string; taskKey: string }) => {
+        mentions.push({ handle: m.handle, taskKey: m.taskKey });
+      },
+    };
+    const root = await handleWorkTaskAction(
+      post("/x", { body: "root — cc @rahul" }),
+      env,
+      "r",
+      USER,
+      asUuid(ORG),
+      key,
+      "comment",
+      deps,
+    );
+    expect(root.status).toBe(200);
+    expect(mentions).toEqual([{ handle: "rahul", taskKey: key }]);
+    const rootEvents = await repo.listEvents({ orgId: asUuid(ORG) } as never);
+    const rootComment = rootEvents.find((e) => e.kind === "comment_added")!;
+
+    const reply = await handleWorkTaskAction(
+      post("/x", { body: "reply", parentEvent: rootComment.eventId }),
+      env,
+      "r",
+      USER,
+      asUuid(ORG),
+      key,
+      "comment",
+      deps,
+    );
+    expect(reply.status).toBe(200);
+
+    const react = await handleWorkReaction(
+      post("/x", { emoji: "👍" }),
+      env,
+      "r",
+      USER,
+      asUuid(ORG),
+      rootComment.eventId!,
+      "add",
+      { repo },
+    );
+    expect(react.status).toBe(200);
+
+    // A fact lands too — the timeline interleaves both logs.
+    await repo.ingestObservation(
+      { orgId: asUuid(ORG) } as never,
+      {
+        workspace: ORG,
+        source: "ci",
+        sourceVersion: 1,
+        kind: "pr_opened",
+        at: "2026-07-05T00:00:00Z",
+        dedupeKey: "pr:1",
+        payload: { pr: `${key} fix`, taskKeys: [key] },
+      } as never,
+    );
+
+    const tl = await handleWorkTimeline(get("/x"), env, "r", USER, asUuid(ORG), key, { repo });
+    expect(tl.status).toBe(200);
+    const body = (await tl.json()) as {
+      data: { entries: Array<{ type: string; event?: { kind: string; payload?: { parentEvent?: string } } }> };
+    };
+    const kinds = body.data.entries.map((e) => (e.type === "event" ? e.event!.kind : "observation"));
+    expect(kinds).toContain("comment_added");
+    expect(kinds).toContain("reaction_added");
+    expect(kinds).toContain("observation");
+    const replyEntry = body.data.entries.find(
+      (e) => e.type === "event" && e.event!.kind === "comment_added" && e.event!.payload?.parentEvent,
+    );
+    expect(replyEntry).toBeDefined();
+  });
+
+  it("hides the workspace on policy deny for timeline and reactions (404)", async () => {
+    const repo = new MemoryWorkRepository(fixedClock);
+    const tl = await handleWorkTimeline(get("/x"), createEnv(false), "r", USER, asUuid(ORG), "ORN-1", { repo });
+    expect(tl.status).toBe(404);
+    const rx = await handleWorkReaction(post("/x", { emoji: "x" }), createEnv(false), "r", USER, asUuid(ORG), "ev", "add", { repo });
+    expect(rx.status).toBe(404);
   });
 });
 

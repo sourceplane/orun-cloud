@@ -29,6 +29,8 @@ import type {
   PutWorkDocResponse,
   WorkDocHistoryResponse,
   WorkDocRevisionView,
+  WorkTimelineEntry,
+  WorkTimelineResponse,
   WorkActor,
   WorkAssignRequest,
   WorkCommentRequest,
@@ -47,7 +49,9 @@ import { WORK_POLICY_ACTIONS } from "@saas/contracts/work";
 import {
   WorkError,
   buildEnvelopes,
+  extractMentions,
   insertWorkObservation,
+  taskKeysIn,
   contractComplete,
   createWorkRepository,
   fold,
@@ -69,6 +73,35 @@ import { authorizeOrg } from "../authz.js";
 export interface WorkHandlerDeps {
   repo?: WorkRepository;
   executor?: SqlExecutor;
+  /** PM1: mention fan-out seam — publishes work.task.mentioned onto the
+   *  platform event_log (ES2 rules deliver). Injectable for tests; the
+   *  default writes through the events repository. Best-effort: a publish
+   *  failure never fails the comment. */
+  publishMention?: (m: { orgId: string; taskKey: string; handle: string; by: WorkActor; requestId: string }) => Promise<void>;
+}
+
+async function defaultPublishMention(
+  env: Env,
+  executor: SqlExecutor,
+  m: { orgId: string; taskKey: string; handle: string; by: WorkActor; requestId: string },
+): Promise<void> {
+  const { createEventsRepository } = await import("@saas/db/events");
+  const events = createEventsRepository(executor);
+  await events.appendEvent({
+    id: crypto.randomUUID(),
+    type: "work.task.mentioned",
+    version: 1,
+    source: "state-worker",
+    occurredAt: new Date(),
+    actorType: m.by.type === "user" ? "user" : "service_principal",
+    actorId: m.by.id,
+    orgId: m.orgId,
+    subjectKind: "work_task",
+    subjectId: m.taskKey,
+    subjectName: m.taskKey,
+    requestId: m.requestId,
+    payload: { taskKey: m.taskKey, handle: m.handle, title: `@${m.handle} mentioned on ${m.taskKey}`, severity: "info" },
+  });
 }
 
 async function dispose(executor: SqlExecutor | undefined): Promise<void> {
@@ -598,6 +631,95 @@ export async function handleCreateWorkTask(
 
 type TaskAction = "comment" | "assign" | "pin" | "cancel" | "contract";
 
+// ── PM1: reactions + the timeline ────────────────────────────────────────────
+
+export async function handleWorkReaction(
+  request: Request,
+  env: Env,
+  requestId: string,
+  actor: ActorContext,
+  orgId: Uuid,
+  targetEvent: string,
+  mode: "add" | "remove",
+  deps?: WorkHandlerDeps,
+): Promise<Response> {
+  const authz = await authorizeOrg(env, requestId, actor, orgId, WORK_POLICY_ACTIONS.WORK_WRITE);
+  if (!authz.ok) return authz.response;
+  const body = await parseBody<{ emoji?: string }>(request);
+  if (!body?.emoji) return validationError(requestId, { emoji: ["required"] });
+  const { repo, owned } = repoOf(env, deps);
+  try {
+    const input = { targetEvent, emoji: body.emoji, actor: workActorOf(actor) };
+    const out = mode === "add" ? await repo.addReaction({ orgId }, input) : await repo.removeReaction({ orgId }, input);
+    const payload: WorkMutationResponse = { key: out.key, seq: out.event.seq };
+    return successResponse(payload, requestId);
+  } catch (err) {
+    if (err instanceof WorkError) return workErrorResponse(err, requestId);
+    return errorResponse("internal_error", "Service unavailable", 503, requestId);
+  } finally {
+    await dispose(owned);
+  }
+}
+
+/** The unified timeline (PM1): both logs interleaved by time for one item —
+ *  GitHub's issue thread on native data, zero new storage. Coordination
+ *  events match by subject; observations match when their payload claims the
+ *  key (taskKeys, or a branch/pr string carrying it). */
+export async function handleWorkTimeline(
+  request: Request,
+  env: Env,
+  requestId: string,
+  actor: ActorContext,
+  orgId: Uuid,
+  key: string,
+  deps?: WorkHandlerDeps,
+): Promise<Response> {
+  const authz = await authorizeOrg(env, requestId, actor, orgId, WORK_POLICY_ACTIONS.WORK_READ);
+  if (!authz.ok) return authz.response;
+  const { repo, owned } = repoOf(env, deps);
+  try {
+    const ws = await repo.getWorkSet({ orgId });
+    const observationMatches = (payload: Record<string, unknown> | undefined): boolean => {
+      if (!payload) return false;
+      const keys = payload.taskKeys;
+      if (Array.isArray(keys) && keys.includes(key)) return true;
+      for (const field of ["branch", "pr", "title"]) {
+        const v = payload[field];
+        if (typeof v === "string" && taskKeysIn(v).includes(key)) return true;
+      }
+      return false;
+    };
+    const entries: WorkTimelineEntry[] = [
+      ...ws.events
+        .filter((e) => e.subject === key)
+        .map((e): WorkTimelineEntry => ({ at: e.at, type: "event", event: eventView(e) })),
+      ...ws.observations
+        .filter((o) => observationMatches(o.payload))
+        .map(
+          (o): WorkTimelineEntry => ({
+            at: o.at,
+            type: "observation",
+            observation: {
+              obsId: o.obsId ?? "",
+              source: o.source,
+              kind: o.kind,
+              at: o.at,
+              payload: o.payload,
+              seq: o.seq,
+            },
+          }),
+        ),
+    ].sort((a, b) => (a.at < b.at ? -1 : a.at > b.at ? 1 : 0));
+    const payload: WorkTimelineResponse = { key, entries };
+    return successResponse(payload, requestId);
+  } catch (err) {
+    if (err instanceof WorkError) return workErrorResponse(err, requestId);
+    return errorResponse("internal_error", "Service unavailable", 503, requestId);
+  } finally {
+    await dispose(owned);
+  }
+}
+
 export async function handleWorkTaskAction(
   request: Request,
   env: Env,
@@ -619,7 +741,26 @@ export async function handleWorkTaskAction(
       case "comment": {
         const body = await parseBody<WorkCommentRequest>(request);
         if (!body?.body) return validationError(requestId, { body: ["required"] });
-        out = await repo.comment(scope, { key, body: body.body, actor: workActor });
+        out = await repo.comment(scope, {
+          key,
+          body: body.body,
+          parentEvent: body.parentEvent,
+          anchor: body.anchor,
+          actor: workActor,
+        });
+        // PM1: mentions parse at write time; delivery rides ES2 rules. A
+        // publish failure never fails the comment (best-effort fan-out).
+        const publish =
+          deps?.publishMention ??
+          ((m: { orgId: string; taskKey: string; handle: string; by: WorkActor; requestId: string }) =>
+            defaultPublishMention(env, owned ?? createSqlExecutor(env.PLATFORM_DB!), m));
+        for (const handle of extractMentions(body.body)) {
+          try {
+            await publish({ orgId, taskKey: key, handle, by: workActor, requestId });
+          } catch {
+            // best-effort — the comment already committed
+          }
+        }
         break;
       }
       case "assign": {

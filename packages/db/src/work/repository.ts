@@ -30,6 +30,7 @@ import type {
   AssignInput,
   CancelInput,
   CommentInput,
+  ReactionInput,
   CommitOutcome,
   CreateInitiativeInput,
   CreateSpecInput,
@@ -245,6 +246,35 @@ export function createWorkRepository(
     });
   };
 
+  const reactionMutation = async (
+    scope: WorkspaceScope,
+    kind: "reaction_added" | "reaction_removed",
+    input: ReactionInput,
+  ): Promise<CommitOutcome> => {
+    validateActor(input.actor);
+    if (!input.emoji) {
+      throw new WorkError("invalid", "a reaction needs an emoji");
+    }
+    return sql.transaction(async (tx) => {
+      const res = await tx.execute(
+        `SELECT subject, kind FROM work.events WHERE org_id = $1 AND event_id = $2`,
+        [scope.orgId, input.targetEvent],
+      );
+      if (res.rowCount === 0 || String(res.rows[0]!.kind) !== "comment_added") {
+        throw new WorkError("not_found", `unknown comment ${input.targetEvent}`);
+      }
+      const subject = String(res.rows[0]!.subject);
+      const event = await appendEvent(tx, scope.orgId, {
+        subject,
+        kind,
+        actor: input.actor,
+        at: input.at ?? now(),
+        payload: { targetEvent: input.targetEvent, emoji: input.emoji },
+      });
+      return { event, key: subject };
+    });
+  };
+
   return {
     async createSpec(scope, input: CreateSpecInput) {
       validateActor(input.actor);
@@ -423,7 +453,18 @@ export function createWorkRepository(
       return simpleMutation(scope, input.key, "unassigned", input.actor, input.at, { subjectId: input.subject });
     },
     async comment(scope, input: CommentInput) {
-      return simpleMutation(scope, input.key, "comment_added", input.actor, input.at, { body: input.body });
+      return simpleMutation(scope, input.key, "comment_added", input.actor, input.at, {
+        body: input.body,
+        parentEvent: input.parentEvent,
+        anchor: input.anchor,
+      });
+    },
+
+    async addReaction(scope, input: ReactionInput) {
+      return reactionMutation(scope, "reaction_added", input);
+    },
+    async removeReaction(scope, input: ReactionInput) {
+      return reactionMutation(scope, "reaction_removed", input);
     },
     async order(scope, input: OrderInput) {
       return simpleMutation(scope, input.key, "ordered", input.actor, input.at, { view: input.view, order: input.order });

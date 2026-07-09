@@ -20,6 +20,8 @@ import type {
   PutWorkDocRequest,
   PutWorkDocResponse,
   WorkDocHistoryResponse,
+  WorkReactionRequest,
+  WorkTimelineResponse,
   WorkAssignRequest,
   WorkCommentRequest,
   WorkContractRequest,
@@ -182,6 +184,30 @@ export class WorkClient {
 
   comment(orgId: string, key: string, body: WorkCommentRequest, opts: RequestOptions = {}): Promise<WorkMutationResponse> {
     return this.taskAction(orgId, key, "comment", body, opts);
+  }
+
+  /** v3 PM1: the unified timeline — both logs interleaved for one item. */
+  timeline(orgId: string, key: string, opts: RequestOptions = {}): Promise<WorkTimelineResponse> {
+    return this.transport.request<WorkTimelineResponse>(
+      { method: "GET", path: `${workBase(orgId)}/timeline/${encodeURIComponent(key)}` },
+      opts,
+    );
+  }
+
+  /** v3 PM1: react to a comment event. */
+  react(orgId: string, targetEvent: string, body: WorkReactionRequest, opts: RequestOptions = {}): Promise<WorkMutationResponse> {
+    return this.transport.request<WorkMutationResponse>(
+      { method: "POST", path: `${workBase(orgId)}/comments/${encodeURIComponent(targetEvent)}/reactions`, body },
+      opts,
+    );
+  }
+
+  /** v3 PM1: retract a reaction. */
+  unreact(orgId: string, targetEvent: string, body: WorkReactionRequest, opts: RequestOptions = {}): Promise<WorkMutationResponse> {
+    return this.transport.request<WorkMutationResponse>(
+      { method: "POST", path: `${workBase(orgId)}/comments/${encodeURIComponent(targetEvent)}/reactions/remove`, body },
+      opts,
+    );
   }
 
   assign(orgId: string, key: string, body: WorkAssignRequest, opts: RequestOptions = {}): Promise<WorkMutationResponse> {

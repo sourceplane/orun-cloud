@@ -52,6 +52,8 @@ import {
   handleCreateWorkTask,
   handleCreateWorkInitiative,
   handleEditWorkItem,
+  handleWorkReaction,
+  handleWorkTimeline,
   handleGetWorkDoc,
   handleListWorkEvents,
   handlePutWorkDoc,
@@ -191,6 +193,8 @@ const ORG_WORK_EVENTS_RE = /^\/v1\/organizations\/([^/]+)\/work\/events$/;
 const ORG_WORK_EVENTS_STREAM_RE = /^\/v1\/organizations\/([^/]+)\/work\/events\/stream$/;
 const ORG_WORK_SPECS_RE = /^\/v1\/organizations\/([^/]+)\/work\/specs$/;
 const ORG_WORK_INITIATIVES_RE = /^\/v1\/organizations\/([^/]+)\/work\/initiatives$/;
+const ORG_WORK_TIMELINE_RE = /^\/v1\/organizations\/([^/]+)\/work\/timeline\/([^/]+)$/;
+const ORG_WORK_REACTION_RE = /^\/v1\/organizations\/([^/]+)\/work\/comments\/([^/]+)\/reactions(\/remove)?$/;
 const ORG_WORK_ITEM_EDIT_RE = /^\/v1\/organizations\/([^/]+)\/work\/items\/([^/]+)\/edit$/;
 const ORG_WORK_SPEC_DOC_RE = /^\/v1\/organizations\/([^/]+)\/work\/specs\/([^/]+)\/doc$/;
 const ORG_WORK_SPEC_DOC_HISTORY_RE = /^\/v1\/organizations\/([^/]+)\/work\/specs\/([^/]+)\/doc\/history$/;
@@ -380,6 +384,22 @@ export async function route(request: Request, env: Env, ctx?: ExecutionContext):
     if (!orgId) return notFound(requestId, pathname);
     if (request.method !== "POST") return methodNotAllowed(requestId);
     return handleCreateWorkInitiative(request, env, requestId, actor, orgId);
+  }
+
+  m = pathname.match(ORG_WORK_TIMELINE_RE);
+  if (m) {
+    const orgId = parseOrgPublicId(m[1]!);
+    if (!orgId) return notFound(requestId, pathname);
+    if (request.method !== "GET") return methodNotAllowed(requestId);
+    return handleWorkTimeline(request, env, requestId, actor, orgId, decodeURIComponent(m[2]!));
+  }
+
+  m = pathname.match(ORG_WORK_REACTION_RE);
+  if (m) {
+    const orgId = parseOrgPublicId(m[1]!);
+    if (!orgId) return notFound(requestId, pathname);
+    if (request.method !== "POST") return methodNotAllowed(requestId);
+    return handleWorkReaction(request, env, requestId, actor, orgId, decodeURIComponent(m[2]!), m[3] ? "remove" : "add");
   }
 
   m = pathname.match(ORG_WORK_ITEM_EDIT_RE);

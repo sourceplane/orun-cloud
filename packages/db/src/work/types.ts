@@ -76,6 +76,18 @@ export interface AssignInput {
 export interface CommentInput {
   key: string;
   body: string;
+  /** Reply threading (PM1): the parent comment's eventId. */
+  parentEvent?: string | undefined;
+  /** Doc range anchor (PM1): pins the comment to a revision's text range. */
+  anchor?: { revision: string; start: number; end: number } | undefined;
+  actor: Actor;
+  at?: string | undefined;
+}
+
+export interface ReactionInput {
+  /** The comment event being reacted to. */
+  targetEvent: string;
+  emoji: string;
   actor: Actor;
   at?: string | undefined;
 }
@@ -143,6 +155,9 @@ export interface WorkRepository {
   assign(scope: WorkspaceScope, input: AssignInput): Promise<CommitOutcome>;
   unassign(scope: WorkspaceScope, input: AssignInput): Promise<CommitOutcome>;
   comment(scope: WorkspaceScope, input: CommentInput): Promise<CommitOutcome>;
+  /** PM1: reactions target a comment event; one coordination event each. */
+  addReaction(scope: WorkspaceScope, input: ReactionInput): Promise<CommitOutcome>;
+  removeReaction(scope: WorkspaceScope, input: ReactionInput): Promise<CommitOutcome>;
   order(scope: WorkspaceScope, input: OrderInput): Promise<CommitOutcome>;
   pin(scope: WorkspaceScope, input: PinInput): Promise<CommitOutcome>;
   cancel(scope: WorkspaceScope, input: CancelInput): Promise<CommitOutcome>;
