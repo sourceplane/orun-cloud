@@ -9,7 +9,7 @@ runtime calls this server), so they lead the queue**. The spine is
 else attaches. Highest-leverage first slice: **MCP0 + MCP1** (a local agent can
 query the catalog and debug a failed run the day it merges).
 
-## MCP0 — Tool-plane foundation (`packages/mcp`) — 🗓️ Planned (human-independent)
+## MCP0 — Tool-plane foundation (`packages/mcp`) — ✅ Shipped (see IMPLEMENTATION-STATUS.md)
 
 The registry and the read-only core toolset, transport-agnostic.
 

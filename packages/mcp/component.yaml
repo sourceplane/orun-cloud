@@ -1,0 +1,36 @@
+apiVersion: sourceplane.io/v1
+kind: Component
+metadata:
+  name: mcp
+  description: MCP tool plane over the Orun Cloud SDK — registry, schemas, read-tool handlers
+spec:
+  type: turbo-package
+  lifecycle: production
+  owner: platform
+  domain: starter-shared
+  dependsOn:
+    # Build inputs (dependsOn[].input, orun v2.22.0): these workspace packages
+    # are bundled into this component's artifact, so a change to any of them
+    # rescopes this component in --changed (no more stale-bundle deploy gaps).
+    # Inert under the pinned orun v2.15.0; activates on the v2.22 CI cutover.
+    - component: contracts
+      input: true
+    - component: sdk
+      input: true
+  subscribe:
+    environments:
+      - name: dev
+        profile: quick-check
+      - name: stage
+        profile: quick-check
+      - name: prod
+        profile: quick-check
+  parameters:
+    nodeVersion: "20"
+    pnpmVersion: "10.12.1"
+    buildCommand: pnpm exec turbo run build --filter=./
+    typecheckCommand: pnpm exec turbo run typecheck --filter=./
+  labels:
+    team: platform
+    layer: shared
+    surface: shared
