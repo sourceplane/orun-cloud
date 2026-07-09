@@ -11,6 +11,10 @@ export interface ActorInfo {
   projectId?: string;
   /** Org ids carried by a CLI access JWT (OP1). Present only for CLI sessions. */
   orgIds?: string[];
+  /** The bound agent session (`as_…`) — present only for agent-session
+   * bearers (saas-agents AG6); the agents facade forwards it for the
+   * session-bound runtime gates. */
+  agentSessionId?: string;
 }
 
 export interface ActorFailure {
@@ -84,6 +88,8 @@ export async function resolveActor(
         user?: { id?: string; email?: string };
         // CLI access JWT (OP1): the org ids the token was minted with.
         cliOrgIds?: string[];
+        // Agent-session bearer (saas-agents AG6): the bound session id.
+        agentSession?: { id?: string };
       };
     };
 
@@ -105,6 +111,9 @@ export async function resolveActor(
       ...(actor.orgId && { orgId: actor.orgId }),
       ...(actor.projectId && { projectId: actor.projectId }),
       ...(Array.isArray(cliOrgIds) && cliOrgIds.length > 0 && { orgIds: cliOrgIds }),
+      ...(typeof json?.data?.agentSession?.id === "string" && {
+        agentSessionId: json.data.agentSession.id,
+      }),
     };
     // Cache only successful resolutions (best-effort; never cache a denial).
     await cache.set(token, info);

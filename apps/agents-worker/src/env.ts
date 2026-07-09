@@ -12,6 +12,8 @@ export interface Env {
   POLICY_WORKER?: Fetcher;
   /** Config worker — provider-key custody (store/resolve, AG12). */
   CONFIG_WORKER?: Fetcher;
+  /** Identity worker — agent-session token mint (AG6 §3.2). */
+  IDENTITY_WORKER?: Fetcher;
   /** Deploy environment name ("dev" | "stage" | "prod" | "local"). */
   ENVIRONMENT: string;
 }

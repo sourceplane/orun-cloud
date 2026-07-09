@@ -81,6 +81,12 @@ export interface AgentsRepository extends ProviderConnectionsRepository {
   getSession(scope: WorkspaceScope, publicId: string): Promise<AgentSession | null>;
   listSessions(scope: WorkspaceScope, filter?: { state?: SessionState }): Promise<AgentSession[]>;
   advanceSession(scope: WorkspaceScope, input: AdvanceSessionInput): Promise<AgentSession>;
+  /** The profile a session runs as — the runtime credential gate joins the
+   * session's service principal through this (AG6 §3). */
+  getSessionProfile(scope: WorkspaceScope, sessionPublicId: string): Promise<AgentProfile | null>;
+  /** Extend the session lease (heartbeat) without a state transition. Refuses
+   * on terminal states — a dead session's lease never revives. */
+  touchSessionLease(scope: WorkspaceScope, sessionPublicId: string, leaseExpiresAt: string): Promise<AgentSession>;
 
   appendSessionEvent(scope: WorkspaceScope, input: AppendSessionEventInput): Promise<void>;
   listSessionEvents(scope: WorkspaceScope, sessionPublicId: string): Promise<SessionEvent[]>;

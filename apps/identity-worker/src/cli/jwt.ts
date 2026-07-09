@@ -221,6 +221,98 @@ export async function verifyWorkflowAccessToken(
   return claims;
 }
 
+// ── Agent-session access token (saas-agents AG6 §3.2) ──────────
+// A hosted agent session's short-lived credential: the SAME HS256 envelope as
+// the CLI/workflow tokens (one bearer path, one signing key), carrying
+// actorKind "agent_session" with the profile's service principal as subject
+// and the session id for audit. resolve-bearer resolves it to a plain
+// service_principal ActorContext — no new identity plane; policy is unchanged.
+// The short TTL is the kill switch: a lapsed lease stops the refresh chain and
+// a runaway sandbox's credential dies within one TTL.
+
+export const AGENT_SESSION_TOKEN_TTL_MS = 15 * 60 * 1000;
+
+export interface AgentSessionClaims {
+  /** Subject: the profile's service principal (`sp_…`). */
+  sub: string;
+  actorKind: "agent_session";
+  /** Public org id (workspace) the session belongs to. */
+  orgId: string;
+  /** The agent session (`as_…`) this credential is bound to — the audit fact. */
+  sessionId: string;
+  iat: number;
+  exp: number;
+}
+
+/**
+ * Mint an agent-session access JWT (AG6). Throws when the signing key is
+ * unavailable — the caller surfaces a 503, never a silent grant.
+ */
+export async function mintAgentSessionToken(
+  env: Env,
+  input: { principalId: string; orgId: string; sessionId: string; now: Date },
+): Promise<{ token: string; expiresAt: Date }> {
+  const secret = getCliSigningKey(env);
+  if (!secret) {
+    throw new Error("CLI_JWT_SIGNING_KEY is not configured");
+  }
+  const iat = Math.floor(input.now.getTime() / 1000);
+  const exp = Math.floor((input.now.getTime() + AGENT_SESSION_TOKEN_TTL_MS) / 1000);
+  const claims: AgentSessionClaims = {
+    sub: input.principalId,
+    actorKind: "agent_session",
+    orgId: input.orgId,
+    sessionId: input.sessionId,
+    iat,
+    exp,
+  };
+  const payloadB64 = stringToBase64url(JSON.stringify(claims));
+  const signingInput = `${HEADER_B64}.${payloadB64}`;
+  const sig = await hmacSign(signingInput, secret);
+  return { token: `${signingInput}.${sig}`, expiresAt: new Date(exp * 1000) };
+}
+
+/**
+ * Verify an agent-session access JWT and return its claims, or null when
+ * malformed, mis-signed, expired, the wrong actor kind, or the key is unset.
+ */
+export async function verifyAgentSessionToken(
+  env: Env,
+  token: string,
+  now: Date,
+): Promise<AgentSessionClaims | null> {
+  const secret = getCliSigningKey(env);
+  if (!secret) return null;
+
+  const parts = token.split(".");
+  if (parts.length !== 3) return null;
+  const [headerB64, payloadB64, sig] = parts as [string, string, string];
+  if (headerB64 !== HEADER_B64) return null;
+
+  const expected = await hmacSign(`${headerB64}.${payloadB64}`, secret);
+  if (!timingSafeEqual(sig, expected)) return null;
+
+  let claims: AgentSessionClaims;
+  try {
+    claims = JSON.parse(base64urlToString(payloadB64)) as AgentSessionClaims;
+  } catch {
+    return null;
+  }
+
+  if (
+    typeof claims.sub !== "string" ||
+    claims.actorKind !== "agent_session" ||
+    typeof claims.orgId !== "string" ||
+    typeof claims.sessionId !== "string" ||
+    typeof claims.exp !== "number"
+  ) {
+    return null;
+  }
+  if (claims.exp * 1000 <= now.getTime()) return null;
+
+  return claims;
+}
+
 /**
  * Verify a CLI access JWT and return its claims, or null when the token is
  * malformed, mis-signed, expired, or the signing key is unavailable.

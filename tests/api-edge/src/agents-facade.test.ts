@@ -65,11 +65,13 @@ describe("api-edge agents facade", () => {
     it("matches the profiles collection", () => {
       expect(isAgentsRoute("/v1/organizations/org_abc/agents/profiles")).toBe(true);
     });
-    it("matches the sessions collection + item + events + provision", () => {
+    it("matches the sessions collection + item + events + provision + runtime routes", () => {
       expect(isAgentsRoute("/v1/organizations/org_abc/agents/sessions")).toBe(true);
       expect(isAgentsRoute("/v1/organizations/org_abc/agents/sessions/as_1")).toBe(true);
       expect(isAgentsRoute("/v1/organizations/org_abc/agents/sessions/as_1/events")).toBe(true);
       expect(isAgentsRoute("/v1/organizations/org_abc/agents/sessions/as_1/provision")).toBe(true);
+      expect(isAgentsRoute("/v1/organizations/org_abc/agents/sessions/as_1/heartbeat")).toBe(true);
+      expect(isAgentsRoute("/v1/organizations/org_abc/agents/sessions/as_1/token")).toBe(true);
     });
     it("matches the provider connections collection + item + verify (AG12)", () => {
       expect(isAgentsRoute("/v1/organizations/org_abc/agents/providers")).toBe(true);
@@ -128,6 +130,45 @@ describe("api-edge agents facade", () => {
       });
       const res = await handleAgentsRoute(req, env as never, "req_test", path);
       expect(res.status).toBe(503);
+    });
+
+    it("forwards the session binding for an agent-session bearer — and never a spoofed inbound header", async () => {
+      const calls: FetchCall[] = [];
+      const identityFetcher = {
+        fetch(input: string | Request | URL, init?: RequestInit): Promise<Response> {
+          const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
+          calls.push({ url, init: init ?? {} });
+          return Promise.resolve(
+            Response.json({
+              data: {
+                actor: { actorType: "service_principal", actorId: "sp_agent1", orgId: "org_abc" },
+                agentSession: { id: "as_42" },
+              },
+              meta: { requestId: "req_inner", cursor: null },
+            }),
+          );
+        },
+        connect() {
+          throw new Error("not implemented");
+        },
+      } as unknown as Fetcher;
+      const { fetcher: agentsFetcher, calls: agentsCalls } = createFakeFetcher();
+      const env = createEnv({ IDENTITY_WORKER: identityFetcher, AGENTS_WORKER: agentsFetcher });
+      const path = "/v1/organizations/org_abc/agents/sessions/as_42/heartbeat";
+      const req = new Request(`https://api-edge${path}`, {
+        method: "POST",
+        headers: {
+          authorization: "Bearer ast_token",
+          // A spoof attempt: must never pass through as-is.
+          "x-actor-agent-session-id": "as_someone_elses",
+          "x-actor-subject-id": "sp_spoof",
+        },
+      });
+      const res = await handleAgentsRoute(req, env as never, "req_test", path);
+      expect(res.status).toBe(200);
+      const headers = new Headers(agentsCalls[0]!.init.headers);
+      expect(headers.get("x-actor-agent-session-id")).toBe("as_42");
+      expect(headers.get("x-actor-subject-id")).toBe("sp_agent1");
     });
 
     it("forwards a DELETE (provider connection) without a body", async () => {

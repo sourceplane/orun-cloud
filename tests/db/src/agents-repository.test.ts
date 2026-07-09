@@ -114,6 +114,26 @@ describe("MemoryAgentsRepository", () => {
     ).rejects.toThrow(/closed vocabulary/);
   });
 
+  it("joins a session to its profile and touches the lease without a transition (AG6)", async () => {
+    const r = repo();
+    const p = await seedProfile(r);
+    const s = await r.createSession(scope, { profileId: p.publicId, runKind: "design", spawnedBy: "usr_1" });
+
+    const joined = await r.getSessionProfile(scope, s.publicId);
+    expect(joined?.publicId).toBe(p.publicId);
+    expect(joined?.principalId).toBe("sp_agent1");
+    expect(await r.getSessionProfile(scope, "as_missing")).toBeNull();
+
+    const touched = await r.touchSessionLease(scope, s.publicId, "2099-01-01T00:00:00Z");
+    expect(touched.leaseExpiresAt).toBe("2099-01-01T00:00:00Z");
+    expect(touched.state).toBe("requested"); // no transition happened
+
+    // A terminal session's lease never revives.
+    await r.advanceSession(scope, { publicId: s.publicId, to: "canceled" });
+    await expect(r.touchSessionLease(scope, s.publicId, "2099-01-01T00:00:00Z")).rejects.toThrow(/revive/);
+    await expect(r.touchSessionLease(scope, "as_missing", "2099-01-01T00:00:00Z")).rejects.toThrow(/not found/);
+  });
+
   it("upserts autonomy policy per (org, spec)", async () => {
     const r = repo();
     await r.setAutonomy(scope, { level: "assist" }); // workspace default

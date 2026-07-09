@@ -7,6 +7,7 @@
 import { route } from "@agents-worker/router";
 import type { AgentsDeps, SandboxFactory } from "@agents-worker/deps";
 import type { ProviderKeyClient } from "@agents-worker/config-client";
+import type { SessionTokenMinter } from "@agents-worker/identity-client";
 import type { SandboxProvider, SandboxSpec, SandboxRef } from "@saas/contracts/agents";
 import { MemoryAgentsRepository, providerSecretRef } from "@saas/db/agents";
 import type { Env } from "@agents-worker/env";
@@ -86,6 +87,7 @@ async function fixture(overrides?: {
   allow?: boolean;
   keys?: ProviderKeyClient;
   factory?: SandboxFactory;
+  minter?: SessionTokenMinter;
   connections?: Array<{ provider: "daytona" | "anthropic"; name?: string; verified?: boolean; config?: Record<string, unknown> }>;
   providerOverrides?: { failCreate?: boolean; failExec?: boolean };
 }): Promise<Fixture> {
@@ -132,6 +134,13 @@ async function fixture(overrides?: {
       return overrides?.allow ?? true;
     },
     providerKeys: overrides?.keys ?? makeKeys(),
+    sessionTokens:
+      overrides?.minter ??
+      ({
+        async mint(principalId, orgId, sid) {
+          return { token: `ast(${principalId},${orgId},${sid})`, expiresAt: "2099-01-01T00:00:00Z" };
+        },
+      } satisfies SessionTokenMinter),
     sandboxes:
       overrides?.factory ??
       ((provider) => (provider === "daytona" ? stubProvider(log, overrides?.providerOverrides) : null)),
@@ -168,6 +177,7 @@ describe("agents-worker session provisioning (AG5)", () => {
     expect(f.log.execs[0]!.cmd).toEqual(["orun", "agent", "serve"]);
     expect(f.log.execs[0]!.env).toEqual({
       ANTHROPIC_API_KEY: "key-for(agents/providers/anthropic/default/API_KEY)",
+      ORUN_SESSION_TOKEN: `ast(sp_1,${ORG},${f.sessionId})`,
     });
 
     // The recorded sandbox carries the provider ref, never key material.
@@ -263,6 +273,20 @@ describe("agents-worker session provisioning (AG5)", () => {
     expect((await route(req("POST", provisionPath(denied.sessionId)), env, denied.deps)).status).toBe(403);
 
     expect((await route(req("GET", provisionPath(f.sessionId)), env, f.deps)).status).toBe(405);
+  });
+
+  it("502s with no provider call when the session credential mint fails", async () => {
+    const f = await fixture({
+      minter: {
+        async mint() {
+          return null;
+        },
+      },
+    });
+    const res = await route(req("POST", provisionPath(f.sessionId)), env, f.deps);
+    expect(res.status).toBe(502);
+    expect(f.log.created.length).toBe(0);
+    expect((await f.repo.getSession({ orgId: ORG }, f.sessionId))?.state).toBe("requested");
   });
 
   it("503s when no sandbox factory is bound", async () => {

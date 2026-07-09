@@ -43,6 +43,10 @@
         {
           "binding": "CONFIG_WORKER",
           "service": "config-worker-stage"
+        },
+        {
+          "binding": "IDENTITY_WORKER",
+          "service": "identity-worker-stage"
         }
       ]
     },
@@ -69,6 +73,10 @@
         {
           "binding": "CONFIG_WORKER",
           "service": "config-worker-prod"
+        },
+        {
+          "binding": "IDENTITY_WORKER",
+          "service": "identity-worker-prod"
         }
       ]
     }

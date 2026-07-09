@@ -17,6 +17,11 @@ import { handleCreateSession, handleGetSession, handleListSessions } from "./han
 import { handleListSessionEvents } from "./handlers/events.js";
 import { handleProvisionSession } from "./handlers/provision.js";
 import {
+  handleIngestSessionEvent,
+  handleRefreshSessionToken,
+  handleSessionHeartbeat,
+} from "./handlers/runtime.js";
+import {
   handleCreateConnection,
   handleDeleteConnection,
   handleListConnections,
@@ -27,6 +32,9 @@ import { errorResponse, methodNotAllowed, notFound } from "./http.js";
 export interface ActorContext {
   subjectId: string;
   subjectType: string;
+  /** The agent session an agent-session token is bound to (AG6 §3.2), from
+   * x-actor-agent-session-id — set by api-edge only for agent-session bearers. */
+  agentSessionId?: string;
 }
 
 const REQUEST_ID_RE = /^[A-Za-z0-9._-]{1,128}$/;
@@ -45,7 +53,8 @@ function resolveActor(request: Request): ActorContext | null {
   const subjectId = request.headers.get("x-actor-subject-id");
   const subjectType = request.headers.get("x-actor-subject-type");
   if (!subjectId || !subjectType) return null;
-  return { subjectId, subjectType };
+  const agentSessionId = request.headers.get("x-actor-agent-session-id");
+  return { subjectId, subjectType, ...(agentSessionId ? { agentSessionId } : {}) };
 }
 
 // Workspace(org)-scoped routes.
@@ -54,6 +63,8 @@ const SESSIONS_RE = /^\/v1\/organizations\/([^/]+)\/agents\/sessions$/;
 const SESSION_RE = /^\/v1\/organizations\/([^/]+)\/agents\/sessions\/([^/]+)$/;
 const SESSION_EVENTS_RE = /^\/v1\/organizations\/([^/]+)\/agents\/sessions\/([^/]+)\/events$/;
 const SESSION_PROVISION_RE = /^\/v1\/organizations\/([^/]+)\/agents\/sessions\/([^/]+)\/provision$/;
+const SESSION_HEARTBEAT_RE = /^\/v1\/organizations\/([^/]+)\/agents\/sessions\/([^/]+)\/heartbeat$/;
+const SESSION_TOKEN_RE = /^\/v1\/organizations\/([^/]+)\/agents\/sessions\/([^/]+)\/token$/;
 const PROVIDERS_RE = /^\/v1\/organizations\/([^/]+)\/agents\/providers$/;
 const PROVIDER_RE = /^\/v1\/organizations\/([^/]+)\/agents\/providers\/([^/]+)$/;
 const PROVIDER_VERIFY_RE = /^\/v1\/organizations\/([^/]+)\/agents\/providers\/([^/]+)\/verify$/;
@@ -77,6 +88,8 @@ export async function route(request: Request, env: Env, injectedDeps?: AgentsDep
       SESSION_RE.test(url.pathname) ||
       SESSION_EVENTS_RE.test(url.pathname) ||
       SESSION_PROVISION_RE.test(url.pathname) ||
+      SESSION_HEARTBEAT_RE.test(url.pathname) ||
+      SESSION_TOKEN_RE.test(url.pathname) ||
       PROVIDERS_RE.test(url.pathname) ||
       PROVIDER_RE.test(url.pathname) ||
       PROVIDER_VERIFY_RE.test(url.pathname);
@@ -149,11 +162,28 @@ async function dispatch(
     return methodNotAllowed(requestId);
   }
 
+  m = SESSION_HEARTBEAT_RE.exec(url.pathname);
+  if (m) {
+    const orgId = m[1]!;
+    const sessionId = m[2]!;
+    if (request.method === "POST") return handleSessionHeartbeat(deps, orgId, sessionId, actor, requestId);
+    return methodNotAllowed(requestId);
+  }
+
+  m = SESSION_TOKEN_RE.exec(url.pathname);
+  if (m) {
+    const orgId = m[1]!;
+    const sessionId = m[2]!;
+    if (request.method === "POST") return handleRefreshSessionToken(deps, orgId, sessionId, actor, requestId);
+    return methodNotAllowed(requestId);
+  }
+
   m = SESSION_EVENTS_RE.exec(url.pathname);
   if (m) {
     const orgId = m[1]!;
     const sessionId = m[2]!;
     if (request.method === "GET") return handleListSessionEvents(deps, orgId, sessionId, actor, requestId);
+    if (request.method === "POST") return handleIngestSessionEvent(request, deps, orgId, sessionId, actor, requestId);
     return methodNotAllowed(requestId);
   }
 

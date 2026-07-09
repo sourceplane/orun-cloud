@@ -109,13 +109,26 @@ export async function handleProvisionSession(
     },
   };
 
+  // The session credential the runtime dials home with (AG6 §3.2): minted for
+  // the profile's service principal, bound to this session. Its TTL chain is
+  // refreshed over the lease; a lapsed lease kills a runaway sandbox's
+  // credential within one TTL.
+  const profile = await deps.repo.getSessionProfile({ orgId }, sessionId);
+  if (!profile) return notFound(requestId, sessionId);
+  const sessionToken = deps.sessionTokens
+    ? await deps.sessionTokens.mint(profile.principalId, orgId, session.publicId, requestId)
+    : null;
+  if (!sessionToken) {
+    return errorResponse("internal_error", "Session credential mint failed", 502, requestId);
+  }
+
   try {
     const ref = await provider.create(spec);
     try {
-      // The model key rides the exec env only (design §10.4): TTL'd with the
+      // Secrets ride the exec env only (design §10.4): TTL'd with the
       // process, never in the manifest, never surviving suspend.
       await provider.exec(ref, ["orun", "agent", "serve"], {
-        env: { ANTHROPIC_API_KEY: anthropicKey },
+        env: { ANTHROPIC_API_KEY: anthropicKey, ORUN_SESSION_TOKEN: sessionToken.token },
       });
     } catch (e) {
       // Over-destroy on ambiguity (design §2): a half-booted box is reclaimed.
