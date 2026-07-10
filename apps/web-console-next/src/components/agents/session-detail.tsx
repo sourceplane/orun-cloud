@@ -96,6 +96,12 @@ export function SessionDetail({
         description={`${s.runKind} run · spawned by ${s.spawnedBy}`}
       />
 
+      {s.failureReason ? (
+        <StatusText tone="error" className="mb-4">
+          Failure reason: {s.failureReason}
+        </StatusText>
+      ) : null}
+
       <div className="grid gap-4 sm:grid-cols-3">
         <StatCard label="Created" value={new Date(s.createdAt).toLocaleString()} />
         <StatCard label="Started" value={s.startedAt ? new Date(s.startedAt).toLocaleString() : "—"} />
