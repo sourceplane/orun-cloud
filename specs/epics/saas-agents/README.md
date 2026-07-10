@@ -108,3 +108,9 @@ the same public surfaces a human uses.
 - **`saas-secret-manager` / `saas-integrations` / `saas-orun-platform`** — the
   credential, repo-token, and session-token rails (SM3, IG4, OP1).
 - **`agents/` + `ai/` (repo root)** — the dogfood loop; AG8/AG9 productize it.
+- **[`saas-agents-live/`](../saas-agents-live/) (AL6–AL9)** — the successor
+  epic for the live/interactive plane: the per-session DO relay done as an
+  **attach-protocol server** (shared with orun's TUI head), the console
+  session page as a full head (steer/approve/stream), and terminal↔console
+  handoff. It absorbs the "remaining AG6 slice" (DO relay + SSE) and AG10's
+  cost-sample meters; pairs `orun/specs/orun-agents-live/` (AL0–AL5).
