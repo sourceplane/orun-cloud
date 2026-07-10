@@ -187,6 +187,8 @@ describe("agents-worker session provisioning (AG5)", () => {
     expect(script).toContain("$ORUN_CLOUD_API/v1/organizations/$ORUN_ORG_ID/agents/sessions/$ORUN_SESSION_ID");
     expect(script).toContain("/heartbeat");
     expect(script).toContain("/token");
+    expect(script).toContain("/events"); // the boot announces itself in the session log
+    expect(script).toContain('"kind":"harness_event"');
     // The script itself carries no secret — the token arrives via exec env.
     expect(script).not.toContain("ast(");
     expect(f.log.execs[0]!.env).toEqual({
@@ -261,6 +263,10 @@ describe("agents-worker session provisioning (AG5)", () => {
     expect(body.error?.code).toBe("provider_verification_failed");
     expect(JSON.stringify(body)).not.toContain("key-for");
     expect((await f.repo.getSession({ orgId: ORG_UUID }, f.sessionId))?.state).toBe("failed");
+
+    // The redacted reason surfaces on the wire session (console shows it).
+    const got = await route(req("GET", `/v1/organizations/${ORG}/agents/sessions/${f.sessionId}`), env, f.deps);
+    expect(((await json(got)).data as { failureReason?: string }).failureReason).toBe("503 from provider");
   });
 
   it("destroys the half-booted sandbox when exec fails", async () => {

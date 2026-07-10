@@ -38,6 +38,9 @@ export function toPublicSession(s: DbSession): AgentSession {
   };
   if (s.workRef !== undefined) out.workRef = s.workRef;
   if (s.taskKey !== undefined) out.taskKey = s.taskKey;
+  // The one sandbox field that surfaces: the (already-redacted) failure
+  // reason — lease_lost, "503 from provider" — never ids or key material.
+  if (typeof s.sandbox.error === "string" && s.sandbox.error) out.failureReason = s.sandbox.error;
   if (s.prUrl !== undefined) out.prUrl = s.prUrl;
   if (s.snapshotId !== undefined) out.snapshotId = s.snapshotId;
   if (s.startedAt !== undefined) out.startedAt = s.startedAt;

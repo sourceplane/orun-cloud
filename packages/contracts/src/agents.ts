@@ -162,6 +162,8 @@ export interface AgentSession {
   snapshotId?: string;
   /** Who spawned it (a membership subject). */
   spawnedBy: string;
+  /** Why a failed session failed (redacted: never a provider body). */
+  failureReason?: string;
   startedAt?: string;
   endedAt?: string;
   createdAt: string;

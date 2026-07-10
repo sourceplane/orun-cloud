@@ -53,6 +53,10 @@ function bootstrapScript(): string {
     // The binary rides the image OR gets installed here — never assumed.
     "command -v orun >/dev/null 2>&1 || curl -fsSL https://raw.githubusercontent.com/sourceplane/orun/main/install.sh | sh || echo 'orun install failed' >&2",
     'export PATH="$HOME/.local/bin:$PATH"',
+    // Announce in the session log (idempotent on seq — a resume re-posts
+    // harmlessly). harness_event is the closed-vocabulary kind for this.
+    "command -v orun >/dev/null 2>&1 && orun_state=installed || orun_state=missing",
+    `curl -fsS -X POST ${auth} -H 'content-type: application/json' -d '[{"seq":0,"kind":"harness_event","payload":{"phase":"sandbox_bootstrap","orun":"'"$orun_state"'"}}]' ${session}/events >/dev/null || true`,
     "while :; do",
     `  curl -fsS -X POST ${auth} ${session}/heartbeat >/dev/null || exit 0`,
     // Rotate the bearer inside its TTL; on a failed refresh keep the old one
