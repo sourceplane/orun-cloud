@@ -28,6 +28,35 @@ import type { ConversationEvent, PendingApproval } from "@/lib/agents/conversati
 
 const LIVE_POLL_MS = 5_000;
 
+/** ContinueInTerminal renders the copy-the-attach-command handoff — the same
+ * session, driven from a terminal head (interchangeable with this console
+ * head). */
+function ContinueInTerminal({ sessionId }: { sessionId: string }) {
+  const [copied, setCopied] = React.useState(false);
+  const cmd = `orun agent attach ${sessionId}`;
+  return (
+    <div className="mt-4 flex flex-wrap items-center gap-2 rounded-lg border border-border/60 px-3 py-2">
+      <span className="text-[12px] text-muted-foreground">Continue in terminal:</span>
+      <code className="font-mono text-[12px]">{cmd}</code>
+      <button
+        type="button"
+        onClick={() => {
+          void navigator.clipboard?.writeText(cmd).then(
+            () => {
+              setCopied(true);
+              setTimeout(() => setCopied(false), 1500);
+            },
+            () => {},
+          );
+        }}
+        className="ml-auto rounded-md border border-border px-2 py-0.5 text-[11.5px] hover:bg-muted"
+      >
+        {copied ? "Copied" : "Copy"}
+      </button>
+    </div>
+  );
+}
+
 export function SessionDetail({
   orgId,
   orgSlug,
@@ -164,6 +193,11 @@ export function SessionDetail({
           {s.snapshotId ? <Pill tone="neutral">sealed {s.snapshotId.slice(0, 18)}…</Pill> : null}
         </div>
       )}
+
+      {/* Handoff (AL8): continue this session in the terminal. Session ids are
+          cheap and pasteable — `orun agent attach` works from anywhere your
+          identity works, the desktop-app "continue in terminal" move. */}
+      {live ? <ContinueInTerminal sessionId={s.id} /> : null}
 
       <Kicker className="mb-2.5 mt-8">Conversation{live ? " · live" : ""}</Kicker>
       {events.loading && !events.data ? (

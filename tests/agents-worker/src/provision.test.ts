@@ -177,18 +177,14 @@ describe("agents-worker session provisioning (AG5)", () => {
     });
     expect(JSON.stringify(spec.env)).not.toContain("key-for");
 
-    // The bootstrap is a self-contained supervisor: installs orun, then
-    // heartbeats home (first beat flips provisioning → running) and rotates
-    // the session token over the lease.
+    // The bootstrap installs orun if needed, then hands off to the runtime
+    // (`orun agent serve` — orun IS the supervisor now, AL8). serve owns the
+    // heartbeat, token rotation, event ingest, and the relay return-queue.
     expect(f.log.execs.length).toBe(1);
     const [shell, dashC, script] = f.log.execs[0]!.cmd;
     expect([shell, dashC]).toEqual(["sh", "-lc"]);
     expect(script).toContain("install.sh");
-    expect(script).toContain("$ORUN_CLOUD_API/v1/organizations/$ORUN_ORG_ID/agents/sessions/$ORUN_SESSION_ID");
-    expect(script).toContain("/heartbeat");
-    expect(script).toContain("/token");
-    expect(script).toContain("/events"); // the boot announces itself in the session log
-    expect(script).toContain('"kind":"harness_event"');
+    expect(script).toContain("exec orun agent serve");
     // The script itself carries no secret — the token arrives via exec env.
     expect(script).not.toContain("ast(");
     expect(f.log.execs[0]!.env).toEqual({
