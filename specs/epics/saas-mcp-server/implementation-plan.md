@@ -188,7 +188,7 @@ bloats schemas fails loudly.
 Paired with `orun/specs/orun-mcp/` (UM0–UM3): the local distribution moves to
 the orun Go binary; this repo's half is the contract export and the docs flip.
 
-## MCP9 — Tool-manifest export — 🗓️ Planned
+## MCP9 — Tool-manifest export — ✅ Shipped (see IMPLEMENTATION-STATUS.md)
 
 - `packages/mcp` gains a manifest emitter: `tool-manifest.json` — for every
   registry tool: name, title, description, JSON-Schema input (the wire shape

@@ -84,6 +84,22 @@ export {
   type McpPrompt,
 } from "./prompts.js";
 
+// MCP9 — tool-manifest export (unification phase D7): the machine-readable
+// contract orun vendors and parity-tests (UM1). `tool-manifest.json` at the
+// package root is `serializeToolManifest()` verbatim (freshness-tested).
+export {
+  buildToolManifest,
+  serializeToolManifest,
+  toWireInputSchema,
+  MANIFEST_VERSION,
+  PROTOCOL_REVISION,
+  type ManifestPrompt,
+  type ManifestResource,
+  type ManifestTool,
+  type ManifestToolAnnotations,
+  type ToolManifest,
+} from "./manifest.js";
+
 export {
   workspaceArg,
   projectArg,
