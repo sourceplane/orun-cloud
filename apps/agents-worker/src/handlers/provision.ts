@@ -35,36 +35,29 @@ const DEFAULT_EGRESS = [
 ];
 
 /**
- * The in-sandbox bootstrap (design §2 + AG6 §3): runs as the exec command with
- * the secrets in its process env, so it works on ANY image — the account's
- * default when the connection pins no snapshot. It installs the orun binary
- * (best-effort), then supervises the session by heartbeating home over the
- * lease: the FIRST beat flips provisioning → running (AG6 §4), each loop
- * refreshes the short-TTL session token, and a refused heartbeat (kill,
- * lapsed lease, terminal state) exits the loop — the credential chain dies
- * with it. Stands in as the supervisor until the runtime ships
- * `orun agent serve`.
+ * The in-sandbox bootstrap (saas-agents-live AL8, retiring the bash stand-in):
+ * install orun if the image lacks it, then hand off to **`orun agent serve`** —
+ * the real runtime entrypoint (orun-agents-live AL4). serve IS the supervisor:
+ * it hosts the attach plane, dials the per-session relay (heartbeat, token
+ * rotation, event ingest, the steer/verdict return-queue all live in the
+ * binary now), and seals on terminal state. The control plane stops
+ * supervising the agent — it provisions the box, injects the credential, and
+ * starts serve, exactly the "orun is the supervisor" split (saas-agents §0).
+ *
+ * serve reads its identity from the create-time env (ORUN_SESSION_ID/ORG_ID/
+ * CLOUD_API/RUN_KIND/TASK_KEY) and the session bearer from ORUN_SESSION_TOKEN
+ * on the exec env.
  */
 function bootstrapScript(): string {
-  const session = '"$ORUN_CLOUD_API/v1/organizations/$ORUN_ORG_ID/agents/sessions/$ORUN_SESSION_ID"';
-  const auth = '-H "authorization: Bearer $ORUN_SESSION_TOKEN"';
   return [
     "set -u",
     // The binary rides the image OR gets installed here — never assumed.
-    "command -v orun >/dev/null 2>&1 || curl -fsSL https://raw.githubusercontent.com/sourceplane/orun/main/install.sh | sh || echo 'orun install failed' >&2",
+    "command -v orun >/dev/null 2>&1 || curl -fsSL https://raw.githubusercontent.com/sourceplane/orun/main/install.sh | sh || { echo 'orun install failed' >&2; exit 1; }",
     'export PATH="$HOME/.local/bin:$PATH"',
-    // Announce in the session log (idempotent on seq — a resume re-posts
-    // harmlessly). harness_event is the closed-vocabulary kind for this.
-    "command -v orun >/dev/null 2>&1 && orun_state=installed || orun_state=missing",
-    `curl -fsS -X POST ${auth} -H 'content-type: application/json' -d '[{"seq":0,"kind":"harness_event","payload":{"phase":"sandbox_bootstrap","orun":"'"$orun_state"'"}}]' ${session}/events >/dev/null || true`,
-    "while :; do",
-    `  curl -fsS -X POST ${auth} ${session}/heartbeat >/dev/null || exit 0`,
-    // Rotate the bearer inside its TTL; on a failed refresh keep the old one
-    // and let the next heartbeat decide (the lease, not the loop, is the gate).
-    `  next=$(curl -fsS -X POST ${auth} ${session}/token | sed -n 's/.*"token":"\\([^"]*\\)".*/\\1/p')`,
-    '  [ -n "$next" ] && ORUN_SESSION_TOKEN="$next"',
-    "  sleep 300",
-    "done",
+    // Hand off to the runtime. serve reads ORUN_SESSION_ID/ORG_ID/CLOUD_API/
+    // TASK_KEY from the env and the bearer from ORUN_SESSION_TOKEN; it
+    // heartbeats, rotates the token, streams events, and serves the relay.
+    "exec orun agent serve",
   ].join("\n");
 }
 
