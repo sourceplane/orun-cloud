@@ -24,6 +24,11 @@ const ORG_AGENTS_SESSION_TOKEN_RE = /^\/v1\/organizations\/[^/]+\/agents\/sessio
 // never logged, never cached (idempotency stores replay by key, not body).
 // Autonomy policy + the dispatch door (AG9 §7): the ladder is read/written
 // here; every autonomous spawn re-enters through /agents/dispatch.
+// Head-facing relay routes (saas-agents-live AL7): the SSE attach feed and the
+// steer/verdict/interrupt/end input. The actor is stamped from the resolved
+// bearer, so the DO/body attribute inputs to the authenticated console user.
+const ORG_AGENTS_SESSION_ATTACH_RE = /^\/v1\/organizations\/[^/]+\/agents\/sessions\/[^/]+\/attach$/;
+const ORG_AGENTS_SESSION_INPUT_RE = /^\/v1\/organizations\/[^/]+\/agents\/sessions\/[^/]+\/input$/;
 const ORG_AGENTS_AUTONOMY_RE = /^\/v1\/organizations\/[^/]+\/agents\/autonomy$/;
 const ORG_AGENTS_DISPATCH_RE = /^\/v1\/organizations\/[^/]+\/agents\/dispatch$/;
 const ORG_AGENTS_PROVIDERS_RE = /^\/v1\/organizations\/[^/]+\/agents\/providers$/;
@@ -41,6 +46,8 @@ export function isAgentsRoute(pathname: string): boolean {
     ORG_AGENTS_SESSION_PROVISION_RE.test(pathname) ||
     ORG_AGENTS_SESSION_HEARTBEAT_RE.test(pathname) ||
     ORG_AGENTS_SESSION_TOKEN_RE.test(pathname) ||
+    ORG_AGENTS_SESSION_ATTACH_RE.test(pathname) ||
+    ORG_AGENTS_SESSION_INPUT_RE.test(pathname) ||
     ORG_AGENTS_PROVIDERS_RE.test(pathname) ||
     ORG_AGENTS_PROVIDER_RE.test(pathname) ||
     ORG_AGENTS_PROVIDER_VERIFY_RE.test(pathname) ||

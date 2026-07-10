@@ -13,20 +13,18 @@ import { Skeleton } from "@/components/ui/skeleton";
 import {
   Breadcrumbs,
   Kicker,
-  ListCard,
-  ListCardHeader,
-  ListRow,
   PageHeader,
   Pill,
   Screen,
   StatCard,
   StatusText,
 } from "@/components/ui/northwind";
-import { EmptyState } from "@/components/ui/empty-state";
 import { wrap } from "@/lib/api";
 import { qk, useApiQuery } from "@/lib/query";
 import { useSession } from "@/lib/session";
 import { sessionLabel, sessionTone } from "@/lib/agents/model";
+import { ConversationView } from "@/components/agents/conversation-view";
+import type { ConversationEvent, PendingApproval } from "@/lib/agents/conversation";
 
 const LIVE_POLL_MS = 5_000;
 
@@ -47,7 +45,8 @@ export function SessionDetail({
     wrap(async () => client.agents.listSessionEvents(orgId, sessionId)),
   );
 
-  // Poll while live; stop on terminal states.
+  // Poll while live; stop on terminal states. (The SSE live tail over the DO
+  // relay replaces the poll when the api-edge attach stream lands — AL8.)
   const live = session.data ? !isTerminalSessionState(session.data.state) : false;
   const reloadSession = session.reload;
   const reloadEvents = events.reload;
@@ -59,6 +58,48 @@ export function SessionDetail({
     }, LIVE_POLL_MS);
     return () => clearInterval(t);
   }, [live, reloadSession, reloadEvents]);
+
+  // ── Interactivity (AL7): steer + answer approvals over the relay input
+  // route. A fresh ref per send correlates the ack; on success we reload the
+  // event feed so the attributed message_user / approval_resolved appears.
+  const [composer, setComposer] = React.useState("");
+  const [interacting, setInteracting] = React.useState(false);
+  const [inputError, setInputError] = React.useState<string | null>(null);
+  const refSeq = React.useRef(0);
+
+  const sendFrame = React.useCallback(
+    async (frame: Record<string, unknown>) => {
+      setInteracting(true);
+      setInputError(null);
+      try {
+        refSeq.current += 1;
+        const ack = await client.agents.sendInput(orgId, sessionId, { v: 1, ref: `c-${refSeq.current}`, ...frame });
+        if (ack.ok === false) setInputError(`Input rejected: ${ack.reason ?? "unknown"}`);
+        reloadEvents();
+      } catch (err) {
+        setInputError(err instanceof Error ? err.message : "Failed to send");
+      } finally {
+        setInteracting(false);
+      }
+    },
+    [client, orgId, sessionId, reloadEvents],
+  );
+
+  const onSteer = React.useCallback(() => {
+    const text = composer.trim();
+    if (!text) return;
+    setComposer("");
+    void sendFrame({ t: "steer", text });
+  }, [composer, sendFrame]);
+
+  const onApprove = React.useCallback(
+    (a: PendingApproval) => void sendFrame({ t: "verdict", requestId: a.requestId, approved: true }),
+    [sendFrame],
+  );
+  const onDeny = React.useCallback(
+    (a: PendingApproval) => void sendFrame({ t: "verdict", requestId: a.requestId, approved: false }),
+    [sendFrame],
+  );
 
   if (session.loading && !session.data) {
     return (
@@ -124,33 +165,54 @@ export function SessionDetail({
         </div>
       )}
 
-      <Kicker className="mb-2.5 mt-8">Session log{live ? " · live" : ""}</Kicker>
+      <Kicker className="mb-2.5 mt-8">Conversation{live ? " · live" : ""}</Kicker>
       {events.loading && !events.data ? (
         <Skeleton className="h-48 w-full rounded-xl" />
-      ) : (events.data?.length ?? 0) === 0 ? (
-        <EmptyState
-          title="No events yet"
-          description="The runtime relays its session log here once the sandbox dials home."
-        />
       ) : (
-        <ListCard>
-          <ListCardHeader title={`${events.data!.length} events`} />
-          {events.data!.map((e) => (
-            <ListRow key={e.seq}>
-              <span className="w-10 shrink-0 font-mono text-[11.5px] text-muted-foreground">{e.seq}</span>
-              <Pill tone={e.kind === "error" ? "error" : "neutral"} className="shrink-0">
-                {e.kind}
-              </Pill>
-              <span className="min-w-0 flex-1 truncate font-mono text-[12px] text-muted-foreground">
-                {e.payload ? JSON.stringify(e.payload) : ""}
-              </span>
-              <span className="shrink-0 text-[11.5px] text-muted-foreground">
-                {new Date(e.at).toLocaleTimeString()}
-              </span>
-            </ListRow>
-          ))}
-        </ListCard>
+        <div className="rounded-xl border border-border/60 p-4">
+          <ConversationView
+            events={(events.data ?? []) as ConversationEvent[]}
+            onApprove={onApprove}
+            onDeny={onDeny}
+            interacting={interacting}
+          />
+        </div>
       )}
+
+      {/* Composer — always-on while the session is live. Steering never
+          blocks; the turn is attributed to you and sealed into the log. */}
+      {live ? (
+        <div className="mt-3">
+          <div className="flex gap-2">
+            <input
+              value={composer}
+              onChange={(e) => setComposer(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && !e.shiftKey) {
+                  e.preventDefault();
+                  onSteer();
+                }
+              }}
+              disabled={interacting}
+              placeholder="Message the agent…  (Enter to send)"
+              className="min-w-0 flex-1 rounded-lg border border-border bg-background px-3 py-2 text-[13px] outline-none focus:border-primary disabled:opacity-50"
+            />
+            <button
+              type="button"
+              onClick={onSteer}
+              disabled={interacting || !composer.trim()}
+              className="rounded-lg border border-primary/50 px-3 py-2 text-[13px] text-primary hover:bg-primary/10 disabled:opacity-50"
+            >
+              Send
+            </button>
+          </div>
+          {inputError ? (
+            <StatusText tone="error" className="mt-1.5">
+              {inputError}
+            </StatusText>
+          ) : null}
+        </div>
+      ) : null}
     </Screen>
   );
 }

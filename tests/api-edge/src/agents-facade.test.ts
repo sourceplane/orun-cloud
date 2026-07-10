@@ -82,6 +82,10 @@ describe("api-edge agents facade", () => {
       expect(isAgentsRoute("/v1/organizations/org_abc/agents/autonomy")).toBe(true);
       expect(isAgentsRoute("/v1/organizations/org_abc/agents/dispatch")).toBe(true);
     });
+    it("matches the head-facing relay attach + input routes (AL7)", () => {
+      expect(isAgentsRoute("/v1/organizations/org_abc/agents/sessions/as_1/attach")).toBe(true);
+      expect(isAgentsRoute("/v1/organizations/org_abc/agents/sessions/as_1/input")).toBe(true);
+    });
     it("does not match unrelated or internal routes", () => {
       expect(isAgentsRoute("/v1/organizations/org_abc/config/settings")).toBe(false);
       expect(isAgentsRoute("/v1/internal/agents/sessions/as_1/events")).toBe(false);

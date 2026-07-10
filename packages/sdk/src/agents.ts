@@ -108,6 +108,24 @@ export class AgentsClient {
     );
   }
 
+  /**
+   * POST /agents/sessions/:id/input — a head input (steer/verdict/interrupt/
+   * end) on a live session (saas-agents-live AL7). The frame is an attach-v1
+   * head frame; the principal is stamped from the caller's bearer at the edge.
+   * Returns the ack ({ ok, reason? }).
+   */
+  sendInput(
+    orgId: string,
+    sessionId: string,
+    frame: Record<string, unknown>,
+    opts: RequestOptions = {},
+  ): Promise<{ v: number; t: string; ok?: boolean; reason?: string; ref?: string }> {
+    return this.transport.request(
+      { method: "POST", path: `${agentsBase(orgId)}/sessions/${encodeURIComponent(sessionId)}/input`, body: frame },
+      opts,
+    );
+  }
+
   // ── Provider connections (AG12) ─────────────────────────────
 
   /** GET /agents/providers?provider= */
