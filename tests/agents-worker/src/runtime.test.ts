@@ -193,6 +193,54 @@ describe("agents-worker runtime routes (AG6)", () => {
     expect(bad.status).toBe(422);
   });
 
+  it("meters tokens from cost samples and minutes on the terminal transition (AL9)", async () => {
+    const f = await fixture({ state: "running", lease: "2099-01-01T00:00:00Z" });
+    const usage: Array<{ metric: string; quantity: number; dims: Record<string, string> }> = [];
+    f.deps.usage = {
+      async record(_orgId, metric, quantity, dims) {
+        usage.push({ metric, quantity, dims });
+      },
+    };
+    // Cost samples across two ingests sum into agents.tokens.
+    await route(
+      reqFor(f, "POST", "events", {
+        body: [
+          { seq: 0, kind: "cost_sample", payload: { tokens: 1200 } },
+          { seq: 1, kind: "message_agent", payload: { text: "working" } },
+        ],
+      }),
+      env,
+      f.deps,
+    );
+    await route(
+      reqFor(f, "POST", "events", { body: [{ seq: 2, kind: "cost_sample", payload: { tokens: 800 } }] }),
+      env,
+      f.deps,
+    );
+    const tokenSamples = usage.filter((u) => u.metric === "agents.tokens");
+    expect(tokenSamples.map((u) => u.quantity)).toEqual([1200, 800]);
+    expect(tokenSamples[0]!.dims).toEqual({ runKind: "implementation" });
+
+    // A terminal state_changed emits session_minutes once (>= 1).
+    await route(
+      reqFor(f, "POST", "events", { body: [{ seq: 3, kind: "state_changed", payload: { state: "completed" } }] }),
+      env,
+      f.deps,
+    );
+    const minuteSamples = usage.filter((u) => u.metric === "agents.session_minutes");
+    expect(minuteSamples.length).toBe(1);
+    expect(minuteSamples[0]!.quantity).toBeGreaterThanOrEqual(1);
+
+    // A non-terminal state change emits no minutes.
+    const before = usage.length;
+    await route(
+      reqFor(f, "POST", "events", { body: [{ seq: 4, kind: "state_changed", payload: { state: "running" } }] }),
+      env,
+      f.deps,
+    );
+    expect(usage.length).toBe(before);
+  });
+
   it("refreshes the token while the lease is live", async () => {
     const f = await fixture({ state: "running", lease: "2099-01-01T00:00:00Z" });
     const res = await route(reqFor(f, "POST", "token"), env, f.deps);
