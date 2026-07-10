@@ -132,3 +132,19 @@ track upgrades as ordinary PRs with conformance runs (MCP8), not silent bumps.
   risk is tool-name overlap when one agent connects to both servers — keep this
   server's tool names free of work-plane vocabulary (`work_*`, `task_*`,
   `spec_*`) and coordinate any future shared nouns in the paired specs.
+
+### D7 — Local distribution unification (phase 2) — ✅ Decided (2026-07-09, user-directed)
+
+**The orun Go binary is the official client; the platform MCP's local
+transport belongs there.** The node `orun-cloud` CLI exists as a reference
+implementation and is not the product's install path. Decided: reimplement
+the platform tool plane natively in Go inside orun and mount it into the one
+`orun mcp serve` next to the work tools (paired spec `orun/specs/orun-mcp/`,
+UM0–UM3); `packages/mcp` remains the contract source of truth via an exported
+tool manifest (MCP9) that orun vendors and parity-tests, and remains the
+implementation behind the remote worker (decision 7 unchanged); all docs point
+at `orun mcp serve` (MCP10) with the node CLI labeled reference implementation.
+New risk carried: **dual-implementation drift**, mitigated structurally by the
+manifest parity test (orun U-R1) and this repo's conformance suite pinning the
+TS side. Tool-domain boundaries (decision 8) are unaffected — only the local
+distribution unifies.

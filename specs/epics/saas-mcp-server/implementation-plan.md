@@ -180,3 +180,41 @@ state; copy passes the buyer-credibility bar (U-track conventions).
 **Done when:** conformance runs green in CI for stdio + remote; the eval suite
 runs on demand with recorded traces; a PR that adds a 26th default tool or
 bloats schemas fails loudly.
+
+---
+
+# Unification phase (D7) — MCP9–MCP10
+
+Paired with `orun/specs/orun-mcp/` (UM0–UM3): the local distribution moves to
+the orun Go binary; this repo's half is the contract export and the docs flip.
+
+## MCP9 — Tool-manifest export — 🗓️ Planned
+
+- `packages/mcp` gains a manifest emitter: `tool-manifest.json` — for every
+  registry tool: name, title, description, JSON-Schema input (the wire shape
+  clients see), annotations (readOnly/destructive/idempotent). Deterministic
+  serialization (sorted keys) so diffs are meaningful.
+- The manifest is a committed artifact (`packages/mcp/tool-manifest.json`)
+  with a freshness test (regenerating must produce a byte-identical file) —
+  the `tests/mcp` budget guard now also validates the manifest against the
+  live registry.
+- Reserved top-level fields for resources/prompts (orun U-D2 consumes later).
+
+**Done when:** the manifest regenerates deterministically, CI fails on
+staleness, and `orun` can vendor the file as-is (UM1's parity test consumes
+it without transformation).
+
+## MCP10 — Docs flip to the orun binary — 🗓️ Planned (after orun UM2)
+
+- Console Connect page: snippets become `claude mcp add orun -- orun mcp serve`
+  (+ Cursor/VS Code equivalents); install prerequisite becomes the orun
+  binary + `orun auth login`; node-CLI snippets move to a collapsed
+  "reference implementation" note.
+- `apps/web-docs` MCP page and `packages/cli/README.md` updated the same way
+  (the CLI README's MCP section is explicitly labeled the node reference
+  implementation).
+- Epic register rows note the unified distribution.
+
+**Done when:** no doc points a user at `orun-cloud mcp serve` as the primary
+path; the Connect page's copy-paste flow works end-to-end against a released
+orun binary (UM3).

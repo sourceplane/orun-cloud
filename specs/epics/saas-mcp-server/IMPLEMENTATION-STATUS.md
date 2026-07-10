@@ -27,3 +27,10 @@ What actually shipped, kept distinct from the design/plan docs per
 - `webhook_deliveries_list` with no `endpoint` argument lists the workspace's
   endpoints (delivery attempts are per-endpoint; no separate endpoints tool —
   budget).
+
+## Unification phase (D7) — paired with `orun/specs/orun-mcp/`
+
+| ID | Milestone | Status | As-built |
+|----|-----------|--------|----------|
+| MCP9 | Tool-manifest export (`packages/mcp/tool-manifest.json`) | 🗓️ Planned | — |
+| MCP10 | Docs flip to `orun mcp serve` (console/web-docs/CLI README) | 🗓️ Planned | — |
