@@ -11,6 +11,11 @@ import { route } from "./router.js";
 import { buildDeps, ready } from "./deps.js";
 import { sweepLapsedSessions } from "./sweep.js";
 
+// The per-session attach relay DO (saas-agents-live AL6). Exported so the
+// Workers runtime can instantiate the class named in wrangler's
+// durable_objects binding.
+export { SessionRelay } from "./relay-do.js";
+
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     return route(request, env);

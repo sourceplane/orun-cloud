@@ -15,6 +15,7 @@ import { handleHealth } from "./handlers/health.js";
 import { handleCreateProfile, handleListProfiles } from "./handlers/profiles.js";
 import { handleCreateSession, handleGetSession, handleListSessions } from "./handlers/sessions.js";
 import { handleListSessionEvents } from "./handlers/events.js";
+import { handleAttach, handleHeadInput } from "./handlers/relay.js";
 import { handleProvisionSession } from "./handlers/provision.js";
 import {
   handleIngestSessionEvent,
@@ -76,6 +77,9 @@ const SESSION_EVENTS_RE = /^\/v1\/organizations\/([^/]+)\/agents\/sessions\/([^/
 const SESSION_PROVISION_RE = /^\/v1\/organizations\/([^/]+)\/agents\/sessions\/([^/]+)\/provision$/;
 const SESSION_HEARTBEAT_RE = /^\/v1\/organizations\/([^/]+)\/agents\/sessions\/([^/]+)\/heartbeat$/;
 const SESSION_TOKEN_RE = /^\/v1\/organizations\/([^/]+)\/agents\/sessions\/([^/]+)\/token$/;
+// Head-facing relay routes (saas-agents-live AL6): SSE feed + input.
+const SESSION_ATTACH_RE = /^\/v1\/organizations\/([^/]+)\/agents\/sessions\/([^/]+)\/attach$/;
+const SESSION_INPUT_RE = /^\/v1\/organizations\/([^/]+)\/agents\/sessions\/([^/]+)\/input$/;
 const AUTONOMY_RE = /^\/v1\/organizations\/([^/]+)\/agents\/autonomy$/;
 const DISPATCH_RE = /^\/v1\/organizations\/([^/]+)\/agents\/dispatch$/;
 const PROVIDERS_RE = /^\/v1\/organizations\/([^/]+)\/agents\/providers$/;
@@ -103,6 +107,8 @@ export async function route(request: Request, env: Env, injectedDeps?: AgentsDep
       SESSION_PROVISION_RE.test(url.pathname) ||
       SESSION_HEARTBEAT_RE.test(url.pathname) ||
       SESSION_TOKEN_RE.test(url.pathname) ||
+      SESSION_ATTACH_RE.test(url.pathname) ||
+      SESSION_INPUT_RE.test(url.pathname) ||
       PROVIDERS_RE.test(url.pathname) ||
       PROVIDER_RE.test(url.pathname) ||
       PROVIDER_VERIFY_RE.test(url.pathname) ||
@@ -121,7 +127,7 @@ export async function route(request: Request, env: Env, injectedDeps?: AgentsDep
     }
     const deps = injectedDeps ?? buildDeps(env);
     try {
-      return await dispatch(request, url, deps, actor, requestId);
+      return await dispatch(request, url, env, deps, actor, requestId);
     } finally {
       if (!injectedDeps) await deps.dispose();
     }
@@ -133,6 +139,7 @@ export async function route(request: Request, env: Env, injectedDeps?: AgentsDep
 async function dispatch(
   request: Request,
   url: URL,
+  env: Env,
   deps: AgentsDeps,
   actor: ActorContext,
   requestId: string,
@@ -224,6 +231,28 @@ async function dispatch(
     const sessionId = m[2]!;
     if (request.method === "GET") return handleListSessionEvents(deps, orgId, sessionId, actor, requestId);
     if (request.method === "POST") return handleIngestSessionEvent(request, deps, orgId, sessionId, actor, requestId);
+    return methodNotAllowed(requestId);
+  }
+
+  m = SESSION_ATTACH_RE.exec(url.pathname);
+  if (m) {
+    const orgId = parseOrgPublicId(m[1]!);
+    if (!orgId) return notFound(requestId, url.pathname);
+    const sessionId = m[2]!;
+    if (request.method === "GET") {
+      const from = Number(url.searchParams.get("from") ?? "-1");
+      const surface = url.searchParams.get("surface") || "console";
+      return handleAttach(env, deps, orgId, sessionId, actor, requestId, from, surface);
+    }
+    return methodNotAllowed(requestId);
+  }
+
+  m = SESSION_INPUT_RE.exec(url.pathname);
+  if (m) {
+    const orgId = parseOrgPublicId(m[1]!);
+    if (!orgId) return notFound(requestId, url.pathname);
+    const sessionId = m[2]!;
+    if (request.method === "POST") return handleHeadInput(request, env, deps, orgId, sessionId, actor, requestId);
     return methodNotAllowed(requestId);
   }
 

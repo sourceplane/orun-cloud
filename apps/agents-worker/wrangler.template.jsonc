@@ -14,16 +14,29 @@
   "vars": {
     "ENVIRONMENT": "local"
   },
+  // The per-session attach relay (saas-agents-live AL6): one SQLite-backed DO
+  // per session. DO bindings are NOT inherited by named environments, so the
+  // block is repeated per env; the migration is top-level.
+  "durable_objects": {
+    "bindings": [{ "name": "SESSION_RELAY", "class_name": "SessionRelay" }]
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["SessionRelay"] }],
   "env": {
     "dev": {
       "vars": {
         "ENVIRONMENT": "dev"
+      },
+      "durable_objects": {
+        "bindings": [{ "name": "SESSION_RELAY", "class_name": "SessionRelay" }]
       }
     },
     "stage": {
       "workers_dev": false,
       "vars": {
         "ENVIRONMENT": "stage"
+      },
+      "durable_objects": {
+        "bindings": [{ "name": "SESSION_RELAY", "class_name": "SessionRelay" }]
       },
       // Lease sweep (design §4.3): reclaim lapsed sessions + destroy sandboxes.
       "triggers": {
@@ -66,6 +79,9 @@
       "workers_dev": false,
       "vars": {
         "ENVIRONMENT": "prod"
+      },
+      "durable_objects": {
+        "bindings": [{ "name": "SESSION_RELAY", "class_name": "SessionRelay" }]
       },
       "triggers": {
         "crons": ["*/5 * * * *"]

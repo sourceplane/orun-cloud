@@ -18,6 +18,10 @@ export interface Env {
   BILLING_WORKER?: Fetcher;
   /** Metering worker — usage emission (AG10). */
   METERING_WORKER?: Fetcher;
+  /** Per-session attach relay Durable Object (saas-agents-live AL6): one DO
+   * per session, the SSE fan-out + input return-queue. Absent in the dormant
+   * posture; attach/input routes 503 until wired. */
+  SESSION_RELAY?: DurableObjectNamespace;
   /** Deploy environment name ("dev" | "stage" | "prod" | "local"). */
   ENVIRONMENT: string;
 }

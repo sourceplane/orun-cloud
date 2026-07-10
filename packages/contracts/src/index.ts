@@ -9,6 +9,7 @@ export * from "./membership.js";
 export * from "./policy.js";
 export * from "./events.js";
 export * from "./agents.js";
+export * from "./agents-attach.js";
 export * from "./event-catalog.js";
 export * from "./projects.js";
 export * from "./config.js";

@@ -15,6 +15,7 @@
     "./projects": "./src/projects.ts",
     "./events": "./src/events.ts",
     "./agents": "./src/agents.ts",
+    "./agents-attach": "./src/agents-attach.ts",
     "./event-catalog": "./src/event-catalog.ts",
     "./security-events": "./src/security-events.ts",
     "./api-keys": "./src/api-keys.ts",
