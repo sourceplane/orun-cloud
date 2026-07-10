@@ -14,6 +14,9 @@ import { ListCard, Pill } from "@/components/ui/northwind";
 import {
   LOCAL_MCP_SNIPPETS,
   MCP_LOGIN_COMMAND,
+  NODE_CLI_MCP_LOGIN_COMMAND,
+  NODE_CLI_MCP_SNIPPETS,
+  ORUN_INSTALL_COMMAND,
   activeMcpGrants,
   connectAgentLinks,
   mcpRemoteUrl,
@@ -25,12 +28,14 @@ import { wrap } from "@/lib/api";
 
 /**
  * Settings › Developer › MCP server — the "Connect an agent" surface
- * (saas-mcp-server MCP7).
+ * (saas-mcp-server MCP7; local path flipped to the orun binary in MCP10).
  *
- * Everything here rides shipped rails: install snippets mirror the CLI README,
- * the remote URL is derived the same way the console derives api-edge URLs,
- * key minting stays on the API-keys page, grants stay on Sessions & devices,
- * and MCP usage shows up in the existing Usage explorer. No new read models.
+ * Everything here rides shipped rails: the primary local snippets target the
+ * orun binary (D7 unification), the node-CLI reference snippets mirror the CLI
+ * README, the remote URL is derived the same way the console derives api-edge
+ * URLs, key minting stays on the API-keys page, grants stay on Sessions &
+ * devices, and MCP usage shows up in the existing Usage explorer. No new read
+ * models.
  */
 export default function ConnectAgentPage() {
   const params = useParams<{ orgSlug: string }>();
@@ -88,10 +93,17 @@ function Inner({ orgSlug }: { orgSlug: string }) {
           <Pill tone="success">recommended</Pill>
         </div>
         <p className="mt-1.5 max-w-[560px] text-[12.5px] leading-relaxed text-muted-foreground">
-          The Orun Cloud CLI ships an MCP server over stdio. Sign in once with{" "}
-          <InlineCode>{MCP_LOGIN_COMMAND}</InlineCode>, then register the server with your client —
-          it runs with your credential and your role.
+          The <InlineCode>orun</InlineCode> binary serves the full tool plane over stdio — this
+          platform&rsquo;s tools alongside orun&rsquo;s work tools, one server. Install it and sign
+          in once, then register the server with your client — it runs with your credential and
+          your role.
         </p>
+        <div className="mt-4">
+          <div className="mb-2 text-xs text-muted-foreground">
+            Install the orun binary, then sign in
+          </div>
+          <CodeBlock code={`${ORUN_INSTALL_COMMAND}\n${MCP_LOGIN_COMMAND}`} />
+        </div>
         <Tabs defaultValue={LOCAL_MCP_SNIPPETS[0]!.id} className="mt-4">
           <TabsList>
             {LOCAL_MCP_SNIPPETS.map((s) => (
@@ -109,9 +121,30 @@ function Inner({ orgSlug }: { orgSlug: string }) {
         </Tabs>
         <p className="mt-3 text-xs leading-relaxed text-muted-foreground">
           Useful flags: <InlineCode>--read-only</InlineCode> removes the write tools from the
-          roster entirely; <InlineCode>--workspace=REF</InlineCode> pins the default workspace for
-          scoped tools (your active org otherwise).
+          roster entirely; <InlineCode>--workspace &lt;ref&gt;</InlineCode> pins the default
+          workspace for scoped tools (the workspace linked to your current repo otherwise).
         </p>
+        <details className="mt-4 border-t border-border/50 pt-3">
+          <summary className="cursor-pointer text-xs font-medium text-muted-foreground">
+            Reference implementation (node CLI)
+          </summary>
+          <p className="mt-2 max-w-[560px] text-xs leading-relaxed text-muted-foreground">
+            The <InlineCode>orun-cloud</InlineCode> CLI still ships the platform-only MCP server —
+            the same tool plane the remote server runs — and remains fully supported as the
+            reference implementation. Sign in with{" "}
+            <InlineCode>{NODE_CLI_MCP_LOGIN_COMMAND}</InlineCode>, then:
+          </p>
+          <div className="mt-3 space-y-3">
+            {NODE_CLI_MCP_SNIPPETS.map((s) => (
+              <div key={s.id}>
+                <div className="mb-1.5 text-xs text-muted-foreground">
+                  <span className="font-medium text-foreground/80">{s.label}</span> — {s.hint}
+                </div>
+                <CodeBlock code={s.code} />
+              </div>
+            ))}
+          </div>
+        </details>
       </SettingsPanel>
 
       {/* Remote */}
