@@ -135,7 +135,52 @@ export async function handleIngestSessionEvent(
     }
     throw e;
   }
+
+  // Metering (saas-agents-live AL9, closing AG10's remainder): tokens from
+  // cost samples, minutes on the terminal transition. Fire-and-forget — a
+  // lost sample is a reconciliation problem, never a failed ingest.
+  emitMetering(deps, orgId, gate.session, events, actor, requestId);
+
   return successResponse({ accepted: events.length }, requestId);
+}
+
+/**
+ * emitMetering derives the runtime usage meters from a relayed event batch:
+ * `agents.tokens` (summed over cost_sample events with a numeric `tokens`
+ * payload) and `agents.session_minutes` (the lease bracket startedAt→now, on
+ * the terminal state_changed). Never throws; never blocks the ingest.
+ */
+function emitMetering(
+  deps: AgentsDeps,
+  orgId: string,
+  session: AgentSession,
+  events: unknown[],
+  actor: ActorContext,
+  requestId: string,
+): void {
+  if (!deps.usage) return;
+  const dims = { runKind: session.runKind };
+
+  let tokens = 0;
+  let terminal = false;
+  for (const raw of events) {
+    const e = raw as Record<string, unknown>;
+    const payload = (e.payload ?? {}) as Record<string, unknown>;
+    if (e.kind === "cost_sample" && typeof payload.tokens === "number") {
+      tokens += payload.tokens;
+    }
+    if (e.kind === "state_changed" && typeof payload.state === "string" && isTerminal(payload.state as never)) {
+      terminal = true;
+    }
+  }
+
+  if (tokens > 0) {
+    void deps.usage.record(orgId, "agents.tokens", tokens, dims, actor, requestId);
+  }
+  if (terminal && session.startedAt) {
+    const minutes = Math.max(1, Math.ceil((Date.now() - new Date(session.startedAt).getTime()) / 60_000));
+    void deps.usage.record(orgId, "agents.session_minutes", minutes, dims, actor, requestId);
+  }
 }
 
 export async function handleRefreshSessionToken(
