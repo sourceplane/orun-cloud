@@ -161,6 +161,10 @@ export const ORGANIZATION_ACTIONS = [
   "organization.agent.provider.write",
   "organization.agent.session.read",
   "organization.agent.session.create",
+  // Steer / answer approvals on a live session (saas-agents-live AL6). Distinct
+  // from read: watching a session and driving it are different grants, and
+  // approval authority is the sharpest permission in the agents plane.
+  "organization.agent.session.interact",
   "organization.agent.profile.read",
   "organization.agent.profile.write",
   "organization.agent.autonomy.read",
