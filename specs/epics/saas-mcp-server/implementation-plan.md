@@ -1,7 +1,8 @@
-# saas-mcp-server — Implementation Plan (MCP0–MCP8)
+# saas-mcp-server — Implementation Plan (MCP0–MCP10)
 
-Status: ✅ Complete — all milestones MCP0–MCP8 shipped (as-built record in
-`IMPLEMENTATION-STATUS.md`). Original sequencing rationale, for the record:
+Status: ✅ Complete — all milestones MCP0–MCP8 shipped, plus the unification
+phase MCP9–MCP10 (as-built record in `IMPLEMENTATION-STATUS.md`; orun-side
+UM3 release in flight). Original sequencing rationale, for the record:
 milestones are PR-sized coherent units; MCP0–MCP2 are human-independent and
 ride entirely on shipped surfaces (SDK, state plane, OP1 auth, `sk_` API keys,
 ES events, CD catalog docs) — **and are a named dependency of `saas-agents`
@@ -204,7 +205,7 @@ the orun Go binary; this repo's half is the contract export and the docs flip.
 staleness, and `orun` can vendor the file as-is (UM1's parity test consumes
 it without transformation).
 
-## MCP10 — Docs flip to the orun binary — 🗓️ Planned (after orun UM2)
+## MCP10 — Docs flip to the orun binary — ✅ Shipped (see IMPLEMENTATION-STATUS.md)
 
 - Console Connect page: snippets become `claude mcp add orun -- orun mcp serve`
   (+ Cursor/VS Code equivalents); install prerequisite becomes the orun

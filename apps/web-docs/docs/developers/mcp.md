@@ -15,23 +15,37 @@ any other client.
 
 There are two transports over one tool registry:
 
-- **Local (recommended)** — `orun-cloud mcp serve`, a stdio server inside the
-  [`orun-cloud` CLI](/developers/cli), riding your CLI login.
+- **Local (recommended)** — `orun mcp serve`, a stdio server inside the
+  **orun binary**, riding your `orun auth login`. One server, 34 tools: the
+  25 platform tools this page describes plus orun's 9 work tools.
 - **Remote** — a Streamable-HTTP endpoint for hosted agents, CI, and clients
-  that can't run the CLI. Read-only today.
+  that can't run a local binary. Read-only today.
 
 The console's workspace **Settings → MCP server** page carries the same
 snippets with copy buttons, plus your live grant and usage status.
 
 ## Local server (recommended)
 
-Sign in once with `orun-cloud login`, then register the server with your
-client:
+The orun binary serves the full tool plane natively — the platform tools
+(catalog, runs, audit, usage, config, webhooks) and orun's work tools in one
+MCP server, so an agent needs a single connection. See the
+[orun docs](https://orun-docs.pages.dev) and the
+[orun release notes](https://github.com/sourceplane/orun/releases) for the
+unified server.
+
+Install the binary and sign in once:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/sourceplane/orun/main/install.sh | sh
+orun auth login
+```
+
+Then register the server with your client:
 
 **Claude Code**
 
 ```sh
-claude mcp add orun-cloud -- orun-cloud mcp serve
+claude mcp add orun -- orun mcp serve
 ```
 
 **Cursor** (`~/.cursor/mcp.json`):
@@ -39,8 +53,8 @@ claude mcp add orun-cloud -- orun-cloud mcp serve
 ```json
 {
   "mcpServers": {
-    "orun-cloud": {
-      "command": "orun-cloud",
+    "orun": {
+      "command": "orun",
       "args": ["mcp", "serve"]
     }
   }
@@ -52,26 +66,45 @@ claude mcp add orun-cloud -- orun-cloud mcp serve
 ```json
 {
   "servers": {
-    "orun-cloud": {
+    "orun": {
       "type": "stdio",
-      "command": "orun-cloud",
+      "command": "orun",
       "args": ["mcp", "serve"]
     }
   }
 }
 ```
 
-**Any other stdio client** — launch `orun-cloud mcp serve` and speak MCP
-(spec revision 2025-06-18) over the process's stdin/stdout.
+**Any other stdio client** — launch `orun mcp serve` and speak MCP over the
+process's stdin/stdout.
 
 Useful flags:
 
 - `--read-only` hard-excludes the write tools from `tools/list` (not just
-  execution) — 19 read tools remain of the 25-tool roster.
-- `--workspace=REF` (a `ws_…` id, slug, or `org_…` id) pins the ambient
-  `workspace` default for scoped tools; per-call arguments always override.
+  execution).
+- `--workspace <ref>` (a `ws_…` id, slug, or `org_…` id) pins the ambient
+  `workspace` default for scoped tools; without it the workspace linked to
+  your current repo is used. Per-call arguments always override.
 
-`orun-cloud mcp tools` prints the tool roster for humans.
+### Reference implementation (node CLI)
+
+The [`orun-cloud` CLI](/developers/cli) still ships the platform-only MCP
+server — the same tool plane (`packages/mcp`) the remote server runs — and
+remains fully supported as the **reference implementation**. Sign in once
+with `orun-cloud login`, then register `orun-cloud mcp serve` the same way:
+
+```sh
+claude mcp add orun-cloud -- orun-cloud mcp serve
+```
+
+For Cursor/VS Code, use the JSON snippets above with `"command": "orun-cloud"`
+and server name `orun-cloud`; any other stdio client launches
+`orun-cloud mcp serve` and speaks MCP (spec revision 2025-06-18) over the
+process's stdin/stdout.
+
+Node-CLI flags: `--read-only` leaves the 19 read tools of the 25-tool roster;
+`--workspace=REF` pins the ambient `workspace` default (your active org
+otherwise). `orun-cloud mcp tools` prints the tool roster for humans.
 
 ## Remote server
 

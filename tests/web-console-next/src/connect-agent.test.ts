@@ -3,6 +3,11 @@ import {
   LOCAL_MCP_SNIPPETS,
   MCP_LOGIN_COMMAND,
   MCP_SERVE_COMMAND,
+  NODE_CLI_CLAUDE_CODE_MCP_COMMAND,
+  NODE_CLI_MCP_LOGIN_COMMAND,
+  NODE_CLI_MCP_SERVE_COMMAND,
+  NODE_CLI_MCP_SNIPPETS,
+  ORUN_INSTALL_COMMAND,
   activeMcpGrants,
   connectAgentLinks,
   mcpRemoteUrl,
@@ -11,8 +16,8 @@ import {
 import { OAUTH_PUBLIC_CLIENTS } from "@saas/contracts/auth";
 import type { CliSessionSummary } from "@saas/contracts/auth";
 
-describe("LOCAL_MCP_SNIPPETS", () => {
-  it("covers the four clients from the CLI README, Claude Code first", () => {
+describe("LOCAL_MCP_SNIPPETS (orun binary — the primary local path, MCP10)", () => {
+  it("covers the four clients, Claude Code first", () => {
     expect(LOCAL_MCP_SNIPPETS.map((s) => s.id)).toEqual([
       "claude-code",
       "cursor",
@@ -21,47 +26,110 @@ describe("LOCAL_MCP_SNIPPETS", () => {
     ]);
   });
 
-  it("pins the Claude Code one-liner verbatim", () => {
-    expect(CLAUDE_CODE_MCP_COMMAND).toBe("claude mcp add orun-cloud -- orun-cloud mcp serve");
+  it("pins the orun install one-liner and login prerequisite verbatim", () => {
+    expect(ORUN_INSTALL_COMMAND).toBe(
+      "curl -fsSL https://raw.githubusercontent.com/sourceplane/orun/main/install.sh | sh",
+    );
+    expect(MCP_LOGIN_COMMAND).toBe("orun auth login");
+  });
+
+  it("pins the Claude Code one-liner verbatim — the orun binary, not the node CLI", () => {
+    expect(CLAUDE_CODE_MCP_COMMAND).toBe("claude mcp add orun -- orun mcp serve");
     const claude = LOCAL_MCP_SNIPPETS.find((s) => s.id === "claude-code")!;
     expect(claude.code).toBe(CLAUDE_CODE_MCP_COMMAND);
     expect(claude.language).toBe("shell");
   });
 
-  it("carries valid Cursor JSON matching the CLI README (~/.cursor/mcp.json)", () => {
+  it("carries valid Cursor JSON launching the orun binary (~/.cursor/mcp.json)", () => {
     const cursor = LOCAL_MCP_SNIPPETS.find((s) => s.id === "cursor")!;
     expect(cursor.hint).toBe("~/.cursor/mcp.json");
     const parsed = JSON.parse(cursor.code) as {
       mcpServers: Record<string, { command: string; args: string[] }>;
     };
-    expect(parsed.mcpServers["orun-cloud"]).toEqual({
-      command: "orun-cloud",
+    expect(parsed.mcpServers["orun"]).toEqual({
+      command: "orun",
       args: ["mcp", "serve"],
     });
   });
 
-  it("carries valid VS Code JSON matching the CLI README (.vscode/mcp.json)", () => {
+  it("carries valid VS Code JSON launching the orun binary (.vscode/mcp.json)", () => {
     const vscode = LOCAL_MCP_SNIPPETS.find((s) => s.id === "vscode")!;
     expect(vscode.hint).toBe(".vscode/mcp.json");
     const parsed = JSON.parse(vscode.code) as {
       servers: Record<string, { type: string; command: string; args: string[] }>;
     };
-    expect(parsed.servers["orun-cloud"]).toEqual({
+    expect(parsed.servers["orun"]).toEqual({
+      type: "stdio",
+      command: "orun",
+      args: ["mcp", "serve"],
+    });
+  });
+
+  it("gives generic clients the bare serve command", () => {
+    const generic = LOCAL_MCP_SNIPPETS.find((s) => s.id === "generic")!;
+    expect(generic.code).toBe(MCP_SERVE_COMMAND);
+    expect(MCP_SERVE_COMMAND).toBe("orun mcp serve");
+  });
+
+  it("never points a primary snippet at the node CLI", () => {
+    for (const s of LOCAL_MCP_SNIPPETS) {
+      expect(s.code).not.toContain("orun-cloud");
+    }
+  });
+
+  it("contains no secret material anywhere", () => {
+    for (const s of LOCAL_MCP_SNIPPETS) {
+      expect(s.code).not.toMatch(/sk_[A-Za-z0-9]/);
+      expect(s.code.toLowerCase()).not.toContain("bearer");
+      expect(s.code.toLowerCase()).not.toContain("secret");
+    }
+  });
+});
+
+describe("NODE_CLI_MCP_SNIPPETS (reference implementation — demoted, still accurate)", () => {
+  it("covers the same four clients as the CLI README", () => {
+    expect(NODE_CLI_MCP_SNIPPETS.map((s) => s.id)).toEqual([
+      "claude-code",
+      "cursor",
+      "vscode",
+      "generic",
+    ]);
+  });
+
+  it("pins the node commands verbatim (mirrors packages/cli/README.md)", () => {
+    expect(NODE_CLI_CLAUDE_CODE_MCP_COMMAND).toBe(
+      "claude mcp add orun-cloud -- orun-cloud mcp serve",
+    );
+    expect(NODE_CLI_MCP_SERVE_COMMAND).toBe("orun-cloud mcp serve");
+    expect(NODE_CLI_MCP_LOGIN_COMMAND).toBe("orun-cloud login");
+    const claude = NODE_CLI_MCP_SNIPPETS.find((s) => s.id === "claude-code")!;
+    expect(claude.code).toBe(NODE_CLI_CLAUDE_CODE_MCP_COMMAND);
+    const generic = NODE_CLI_MCP_SNIPPETS.find((s) => s.id === "generic")!;
+    expect(generic.code).toBe(NODE_CLI_MCP_SERVE_COMMAND);
+  });
+
+  it("carries valid Cursor and VS Code JSON launching orun-cloud", () => {
+    const cursor = NODE_CLI_MCP_SNIPPETS.find((s) => s.id === "cursor")!;
+    const cursorParsed = JSON.parse(cursor.code) as {
+      mcpServers: Record<string, { command: string; args: string[] }>;
+    };
+    expect(cursorParsed.mcpServers["orun-cloud"]).toEqual({
+      command: "orun-cloud",
+      args: ["mcp", "serve"],
+    });
+    const vscode = NODE_CLI_MCP_SNIPPETS.find((s) => s.id === "vscode")!;
+    const vscodeParsed = JSON.parse(vscode.code) as {
+      servers: Record<string, { type: string; command: string; args: string[] }>;
+    };
+    expect(vscodeParsed.servers["orun-cloud"]).toEqual({
       type: "stdio",
       command: "orun-cloud",
       args: ["mcp", "serve"],
     });
   });
 
-  it("gives generic clients the bare serve command and names the login prerequisite", () => {
-    const generic = LOCAL_MCP_SNIPPETS.find((s) => s.id === "generic")!;
-    expect(generic.code).toBe(MCP_SERVE_COMMAND);
-    expect(MCP_SERVE_COMMAND).toBe("orun-cloud mcp serve");
-    expect(MCP_LOGIN_COMMAND).toBe("orun-cloud login");
-  });
-
   it("contains no secret material anywhere", () => {
-    for (const s of LOCAL_MCP_SNIPPETS) {
+    for (const s of NODE_CLI_MCP_SNIPPETS) {
       expect(s.code).not.toMatch(/sk_[A-Za-z0-9]/);
       expect(s.code.toLowerCase()).not.toContain("bearer");
       expect(s.code.toLowerCase()).not.toContain("secret");

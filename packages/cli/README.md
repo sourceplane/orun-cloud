@@ -96,7 +96,16 @@ page until the server returns `cursor: null`. In `--all --output=json`
 mode the CLI emits one JSON document per page (JSON Lines) so a
 downstream pipeline can stream without buffering.
 
-## MCP server
+## MCP server (node reference implementation)
+
+> **The canonical local MCP is the orun binary: `orun mcp serve`** — it
+> serves this platform tool plane natively alongside orun's work tools
+> in one server (D7 unification, `specs/epics/saas-mcp-server/` MCP10 +
+> `orun/specs/orun-mcp/`). Point users at the console's
+> Settings › Developer › MCP server page or the orun docs. The command
+> below remains fully functional as the **node reference
+> implementation** over `packages/mcp` (the contract source of truth,
+> and the implementation behind the remote worker).
 
 `orun-cloud mcp serve` runs the platform's MCP (Model Context Protocol)
 server over **stdio**, so any local MCP client — Claude Code, Cursor,
