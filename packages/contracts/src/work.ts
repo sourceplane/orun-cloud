@@ -380,6 +380,8 @@ export interface CreateWorkSpecRequest {
   slug: string;
   title: string;
   docRef?: string | undefined;
+  /** v4: the initiative this epic files under (partOf). */
+  initiative?: string | undefined;
   labels?: Record<string, string> | undefined;
 }
 
@@ -648,11 +650,32 @@ export interface WorkImportSpec {
   docPath: string;
   docSha256: string;
   planPath?: string | undefined;
+  /** v4 WH6: the roadmap cluster this epic files under (partOf). */
+  initiative?: string | undefined;
+}
+
+/** v4 WH6: one roadmap cluster mapped to an Initiative envelope. */
+export interface WorkImportInitiative {
+  slug: string;
+  title: string;
+}
+
+/** v4 WH6: one implementation-plan heading mapped to a ladder milestone. */
+export interface WorkImportMilestone {
+  specSlug: string;
+  key: string;
+  title: string;
+  goal?: string | undefined;
+  doneWhen?: string[] | undefined;
+  ordinal: number;
 }
 
 export interface WorkImportTask {
   specSlug: string;
   milestoneId: string;
+  /** v4 WH6: the ladder milestone this task lands in (when the id fits the
+   *  milestone-key grammar; dotted sub-milestones stay task-only). */
+  milestone?: string | undefined;
   title: string;
   contract?: WorkContract | undefined;
 }
@@ -664,7 +687,9 @@ export interface WorkImportRequest {
   workspace: string;
   root: string;
   prefix?: string | undefined; // task-key prefix; defaults to "WRK"
+  initiatives?: WorkImportInitiative[] | undefined; // v4 WH6
   specs: WorkImportSpec[];
+  milestones?: WorkImportMilestone[] | undefined; // v4 WH6
   tasks: WorkImportTask[];
 }
 
@@ -673,6 +698,14 @@ export interface WorkImportResponse {
   specsSkipped: number; // already-existing slugs (re-import is idempotent)
   tasksCreated: number;
   tasksSkipped: number;
+  // v4 WH6 — additive; absent on pre-v4 responses.
+  initiativesCreated?: number | undefined;
+  initiativesSkipped?: number | undefined;
+  milestonesCreated?: number | undefined;
+  milestonesSkipped?: number | undefined;
+  /** Pre-v4 imported tasks (labels import.milestone) moved into the newly
+   *  created ladder milestones — the key-preserving migration. */
+  tasksMigrated?: number | undefined;
 }
 
 // ── CI observation producer (the affected-set feed) ─────────────────────────

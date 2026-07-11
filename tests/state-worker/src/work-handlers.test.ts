@@ -675,7 +675,15 @@ describe("PM5 triage (the agent project surface)", () => {
     const key = await seedTask(repo);
     const env = createEnv();
     const org = asUuid(ORG);
-    await handleWorkTaskAction(post("/x", { subject: "sp_agent_1" }), env, "r", USER, org, key, "assign", { repo });
+    // WH5: an agent seat cannot be dispatched into an UNAPPROVED epic
+    // without an attributed human override — the plain assign is a verdict.
+    const blocked = await handleWorkTaskAction(post("/x", { subject: "sp_agent_1" }), env, "r", USER, org, key, "assign", { repo });
+    expect(blocked.status).toBe(422);
+    const overridden = await handleWorkTaskAction(
+      post("/x", { subject: "sp_agent_1", override: "prototype spike" }),
+      env, "r", USER, org, key, "assign", { repo },
+    );
+    expect(overridden.status).toBe(200);
     const res = await handleWorkSummary(get("/x"), env, "r", USER, org, { repo });
     const body = (await res.json()) as { data: { tasks: Array<{ key: string; assignees?: string[] }> } };
     expect(body.data.tasks.find((t) => t.key === key)!.assignees).toEqual(["sp_agent_1"]);
@@ -800,9 +808,70 @@ describe("import (the dogfood path)", () => {
     await handleWorkImport(post("/x", plan), createEnv(), "r", USER, asUuid(ORG), { repo });
     const res = await handleWorkImport(post("/x", plan), createEnv(), "r", USER, asUuid(ORG), { repo });
     const body = (await res.json()) as { data: { specsCreated: number; specsSkipped: number; tasksCreated: number; tasksSkipped: number } };
-    expect(body.data).toEqual({ specsCreated: 0, specsSkipped: 1, tasksCreated: 0, tasksSkipped: 2 });
+    expect(body.data).toMatchObject({ specsCreated: 0, specsSkipped: 1, tasksCreated: 0, tasksSkipped: 2 });
     const ws = await repo.getWorkSet({ orgId: ORG });
     expect(ws.tasks.length).toBe(2);
+  });
+
+  // v4 (WH6): the hierarchy import — initiatives from the roadmap register,
+  // implementation-plan headings as ladder milestones, tasks filed under
+  // them, and the key-preserving migration for pre-v4 corpora.
+  const v4Plan = {
+    ...plan,
+    initiatives: [{ slug: "dm", title: "Cluster DM" }],
+    specs: [{ ...plan.specs[0]!, initiative: "dm" }],
+    milestones: [
+      { specSlug: "demo-epic", key: "D0", title: "Lay the substrate", goal: "g", doneWhen: ["d"], ordinal: 0 },
+      { specSlug: "demo-epic", key: "D1", title: "Wire the surface", goal: "g2", ordinal: 1 },
+    ],
+    tasks: plan.tasks.map((t) => ({ ...t, milestone: t.milestoneId })),
+  };
+
+  it("v4: imports initiatives, ladder milestones, and files tasks under them — intent only", async () => {
+    const repo = new MemoryWorkRepository(fixedClock);
+    const res = await handleWorkImport(post("/x", v4Plan), createEnv(), "r", USER, asUuid(ORG), { repo });
+    expect(res.status).toBe(201);
+    const body = (await res.json()) as { data: Record<string, number> };
+    expect(body.data).toMatchObject({
+      initiativesCreated: 1,
+      specsCreated: 1,
+      milestonesCreated: 2,
+      tasksCreated: 2,
+      tasksMigrated: 0,
+    });
+    const { specs, tasks, milestones, initiatives } = repo.envelopes({ orgId: ORG });
+    expect(initiatives.map((i) => i.key)).toEqual(["dm"]);
+    expect(specs[0]?.initiative).toBe("dm");
+    expect(milestones.get("demo-epic")?.map((m) => m.key)).toEqual(["D0", "D1"]);
+    expect(tasks.every((t) => t.milestone === "D0" || t.milestone === "D1")).toBe(true);
+    // Import writes intent, never decisions: no review/approval/adoption
+    // event may ever carry via=import.
+    const ws = await repo.getWorkSet({ orgId: ORG });
+    for (const e of ws.events) {
+      expect(["review_requested", "review_submitted", "approved", "approval_revoked", "design_adopted", "superseded"]).not.toContain(e.kind);
+    }
+  });
+
+  it("v4: migrates a pre-v4 corpus into the ladder by key (no re-creation)", async () => {
+    const repo = new MemoryWorkRepository(fixedClock);
+    // A v2-era import: tasks labeled with milestone ids, no ladder.
+    await handleWorkImport(post("/x", plan), createEnv(), "r", USER, asUuid(ORG), { repo });
+    const before = await repo.getWorkSet({ orgId: ORG });
+    const keysBefore = before.tasks.map((t) => t.key).sort();
+
+    // The v4 re-import of the same tree.
+    const res = await handleWorkImport(post("/x", v4Plan), createEnv(), "r", USER, asUuid(ORG), { repo });
+    const body = (await res.json()) as { data: Record<string, number> };
+    expect(body.data).toMatchObject({
+      milestonesCreated: 2,
+      tasksCreated: 0,
+      tasksSkipped: 2,
+      tasksMigrated: 2, // same task keys, moved into the ladder
+    });
+    const { tasks, milestones } = repo.envelopes({ orgId: ORG });
+    expect(tasks.map((t) => t.key).sort()).toEqual(keysBefore); // keys preserved
+    expect(milestones.get("demo-epic")?.map((m) => m.key)).toEqual(["D0", "D1"]);
+    expect(tasks.find((t) => t.title.startsWith("D0"))?.milestone).toBe("D0");
   });
 });
 

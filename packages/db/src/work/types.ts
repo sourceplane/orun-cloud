@@ -34,6 +34,8 @@ export interface CreateSpecInput {
   slug: string;
   title: string;
   docRef?: string | undefined;
+  /** v4: file the epic under an initiative at creation (partOf). */
+  initiative?: string | undefined;
   labels?: Record<string, string> | undefined;
   actor: Actor;
   at?: string | undefined;

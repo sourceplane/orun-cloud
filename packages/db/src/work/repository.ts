@@ -514,12 +514,22 @@ export function createWorkRepository(
         if (await keyExists(tx, scope.orgId, input.slug)) {
           throw new WorkError("conflict", `spec ${input.slug} already exists`);
         }
+        if (input.initiative) {
+          const target = await tx.execute(`SELECT 1 FROM work.initiatives WHERE org_id = $1 AND key = $2`, [
+            scope.orgId,
+            input.initiative,
+          ]);
+          if (target.rowCount === 0) {
+            throw new WorkError("not_found", `unknown initiative ${input.initiative}`);
+          }
+        }
         const at = input.at ?? now();
         const payload: ItemCreatedPayload = {
           kind: "Spec",
           key: input.slug,
           title: input.title,
           docRef: input.docRef,
+          initiative: input.initiative,
           labels: input.labels,
         };
         const event = await appendEvent(tx, scope.orgId, {
@@ -530,10 +540,10 @@ export function createWorkRepository(
           payload: payload as unknown as Record<string, unknown>,
         });
         const res = await tx.execute(
-          `INSERT INTO work.specs (org_id, key, title, doc_ref, labels, created_by, created_at)
-           VALUES ($1, $2, $3, $4, $5::jsonb, $6::jsonb, $7)
+          `INSERT INTO work.specs (org_id, key, title, doc_ref, initiative_key, labels, created_by, created_at)
+           VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7::jsonb, $8)
            RETURNING *`,
-          [scope.orgId, input.slug, input.title, input.docRef ?? null, JSON.stringify(input.labels ?? {}), JSON.stringify(input.actor), at],
+          [scope.orgId, input.slug, input.title, input.docRef ?? null, input.initiative ?? null, JSON.stringify(input.labels ?? {}), JSON.stringify(input.actor), at],
         );
         return { event, key: input.slug, spec: mapSpec(scope.orgId, res.rows[0]!) };
       });

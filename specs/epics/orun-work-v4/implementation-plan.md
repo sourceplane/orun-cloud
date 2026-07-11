@@ -55,7 +55,7 @@ commit with the regression test.
 **Goal:** The derived top of the pyramid — initiative health and portfolio — proven on this repo's own specs tree imported through the v4 mapping.
 **Done when:** health(initiative) folds with named evidence and supports pin-beside-health with auto-expiry; the portfolio page ships (nothing enterable); import v4 maps epic folders → epics, implementation-plan headings → milestones, checklists → tasks, roadmap clusters → initiatives, with key-preserving migration of task-per-milestone corpora, --dry-run plans, and golden fixtures over this repo's real specs/ tree (P-4 round-trip extended); both repos' spec trees import into the dogfood workspace and the WH ladder itself renders as an epic with milestones; fold p95 on the imported corpus is measured and the budget recorded in this file.
 **Deps:** WH2, WH4
-**Fold p95 / budget:** pending — measure on the dogfood corpus when WH6 lands and record here.
+**Fold p95 / budget:** recorded 2026-07-11 (WH6): the full workspace fold plus every rollup (delivery fold + per-epic intent fold + milestone/execution rollups over all 18 specs) over the orun repo's real specs tree (18 epics, 73 milestones, 73 tasks) runs in **~1.4 ms/round** in the Go oracle (`TestFoldBudgetOnDogfoodCorpus`, budget-gated at 250 ms). Lifecycle-at-read stays cheap; no materialization needed at this scale.
 
 ## Ordering
 

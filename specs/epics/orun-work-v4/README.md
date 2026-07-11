@@ -12,7 +12,7 @@
 
 | | |
 |---|---|
-| **Status** | **Draft — design locked, ready for review** |
+| **Status** | **In progress — WH0–WH6 shipped** (orun-cloud #418 #419 #420 #421 #422 + WH6; orun #489 #490 #491 + WH6); the live dogfood import of both repos' spec trees remains (see [`IMPLEMENTATION-STATUS.md`](./IMPLEMENTATION-STATUS.md)) |
 | **Cluster** | **WH** (`WH0 → WH6`, plan in [`implementation-plan.md`](./implementation-plan.md)) |
 | **Repos** | `sourceplane/orun-cloud` (schema, mutators, query API, console drill-down) · `sourceplane/orun` (worklens oracle, hierarchy fold, import, `orun epic pull`, MCP tools) |
 | **Builds on** | orun-work v2 (WP0–WP5, shipped): two-log substrate, derived delivery ladder, mutator/verdict seam, sealing, MCP · orun-work v3 (PM0–PM5, shipped): initiatives, versioned spec documents, conversation, board/views, cycles, the agent project surface |
