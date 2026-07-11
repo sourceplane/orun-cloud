@@ -110,7 +110,16 @@ export function InitiativeDetail({ orgId, initiativeKey }: { orgId: string; init
       ) : null}
 
       <section className="mt-[30px]">
-        <Kicker>Designs</Kicker>
+        <div className="flex items-center gap-3">
+          <Kicker>Designs</Kicker>
+          <NewDesignButton
+            orgId={orgId}
+            initiativeKey={initiativeKey}
+            onCreated={() => {
+              designs.reload();
+            }}
+          />
+        </div>
         <p className="mb-2.5 mt-1 text-[12px] text-muted-foreground">
           Alternatives are artifacts, not chat scrollback — run several, compare, adopt one. Adoption mints
           the proposed epics; the design forever shows what was adopted.
@@ -137,6 +146,68 @@ export function InitiativeDetail({ orgId, initiativeKey }: { orgId: string; init
         )}
       </section>
     </Screen>
+  );
+}
+
+function NewDesignButton({
+  orgId,
+  initiativeKey,
+  onCreated,
+}: {
+  orgId: string;
+  initiativeKey: string;
+  onCreated: () => void;
+}) {
+  const { client } = useSession();
+  const [open, setOpen] = React.useState(false);
+  const [title, setTitle] = React.useState("");
+  const [busy, setBusy] = React.useState(false);
+  const [error, setError] = React.useState<string | null>(null);
+  if (!open) {
+    return (
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        className="rounded px-1.5 py-0.5 text-[11.5px] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+      >
+        + New design
+      </button>
+    );
+  }
+  return (
+    <form
+      className="flex items-center gap-2"
+      onSubmit={(e) => {
+        e.preventDefault();
+        if (!title.trim()) return;
+        setBusy(true);
+        setError(null);
+        void client.work
+          .createDesign(orgId, initiativeKey, { title: title.trim() })
+          .then(() => {
+            setOpen(false);
+            setTitle("");
+            onCreated();
+          })
+          .catch((err: { message?: string }) => setError(err.message ?? "rejected"))
+          .finally(() => setBusy(false));
+      }}
+    >
+      <input
+        autoFocus
+        value={title}
+        onChange={(e) => setTitle(e.target.value)}
+        placeholder="Design title"
+        className="rounded border border-border bg-background px-2 py-1 text-[12.5px] text-foreground"
+      />
+      <button type="submit" disabled={busy || !title.trim()} className="rounded bg-primary px-2.5 py-1 text-[12px] text-primary-foreground disabled:opacity-40">
+        Create
+      </button>
+      <button type="button" onClick={() => setOpen(false)} className="rounded px-2 py-1 text-[12px] text-muted-foreground hover:bg-muted">
+        Cancel
+      </button>
+      {error ? <span className="text-[11.5px] text-warning-accent">{error}</span> : null}
+    </form>
   );
 }
 
