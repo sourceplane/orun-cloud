@@ -8,6 +8,7 @@
 
 import type { SqlExecutor, TransactionalSqlExecutor } from "../hyperdrive/executor.js";
 import { canonicalDocBody, docDigest } from "./doc.js";
+import { sealEpicSnapshot } from "./hierarchy.js";
 import { buildEnvelopes, type ItemCreatedPayload } from "./envelopes.js";
 import {
   API_VERSION,
@@ -42,6 +43,7 @@ import type {
   AdoptDesignInput,
   AdoptOutcome,
   ApproveInput,
+  SealedBrief,
   AssignInput,
   CancelInput,
   CommentInput,
@@ -960,15 +962,69 @@ export function createWorkRepository(
             );
           }
         }
+        // Seal the frozen brief IN THIS TRANSACTION (design §3): envelope +
+        // ladder + ladderHash + informative task envelopes + log cursors.
+        // The approval covers doc + ladder; tasks are context (V4-5).
+        const at = input.at ?? now();
+        const tasksRes = await tx.execute(`SELECT * FROM work.tasks WHERE org_id = $1 AND spec_key = $2 ORDER BY key`, [
+          scope.orgId,
+          input.key,
+        ]);
+        const cursors = await tx.execute(
+          `SELECT
+             COALESCE((SELECT MAX(seq) FROM work.events WHERE org_id = $1), 0)::bigint AS coord,
+             COALESCE((SELECT MAX(seq) FROM work.observations WHERE org_id = $1), 0)::bigint AS obs`,
+          [scope.orgId],
+        );
+        const sealed = await sealEpicSnapshot({
+          spec: mapSpec(scope.orgId, epicRow),
+          milestones: ladder,
+          tasks: tasksRes.rows.map((r) => mapTask(scope.orgId, r)),
+          approval: { revision: revision || undefined, by: input.actor, at },
+          catalog: input.catalog,
+          // +1: the approved event this transaction appends is part of the
+          // sealed state's position.
+          coordSeq: Number(cursors.rows[0]?.coord ?? 0) + 1,
+          obsSeq: Number(cursors.rows[0]?.obs ?? 0),
+        });
+        await tx.execute(
+          `INSERT INTO work.snapshots (org_id, id, kind, subject, body, created_at)
+           VALUES ($1, $2, 'EpicSnapshot', $3, $4, $5)
+           ON CONFLICT (org_id, id) DO NOTHING`,
+          [scope.orgId, sealed.id, input.key, sealed.canonical, at],
+        );
         const event = await appendEvent(tx, scope.orgId, {
           subject: input.key,
           kind: "approved",
           actor: input.actor,
-          at: input.at ?? now(),
-          payload: { revision: revision || undefined, snapshot: input.snapshot },
+          at,
+          payload: { revision: revision || undefined, snapshot: sealed.id },
         });
-        return { event, key: input.key };
+        return { event, key: input.key, snapshot: sealed.id };
       });
+    },
+
+    async getEpicBrief(scope, epicKey, id): Promise<SealedBrief> {
+      const res = id
+        ? await sql.execute(`SELECT * FROM work.snapshots WHERE org_id = $1 AND id = $2 AND subject = $3`, [
+            scope.orgId,
+            id,
+            epicKey,
+          ])
+        : await sql.execute(
+            `SELECT * FROM work.snapshots WHERE org_id = $1 AND subject = $2 ORDER BY created_at DESC, id LIMIT 1`,
+            [scope.orgId, epicKey],
+          );
+      if (res.rowCount === 0) {
+        throw new WorkError("not_found", `no sealed brief for ${epicKey} — approval seals one (design §3)`);
+      }
+      const row = res.rows[0]!;
+      return {
+        id: String(row.id),
+        subject: String(row.subject),
+        canonical: String(row.body),
+        createdAt: toIso(row.created_at),
+      };
     },
 
     async revokeApproval(scope, input: RevokeApprovalInput) {

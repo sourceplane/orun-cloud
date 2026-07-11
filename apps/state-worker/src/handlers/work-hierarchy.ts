@@ -17,6 +17,8 @@ import type {
   AdoptWorkDesignRequest,
   AdoptWorkDesignResponse,
   ApproveWorkEpicRequest,
+  ApproveWorkEpicResponse,
+  WorkEpicBriefResponse,
   CreateWorkDesignRequest,
   CreateWorkDesignResponse,
   RevokeWorkApprovalRequest,
@@ -168,6 +170,12 @@ export async function handleWorkReview(
         { orgId },
         { key, revision: body.revision, reviewers: body.reviewers, note: body.note, actor: workActorOf(actor) },
       );
+      await publishWorkEvent(env, requestId, orgId, actor, "work.review.requested", key, {
+        itemKey: key,
+        reviewers: body.reviewers,
+        title: `Review requested on ${key}`,
+        severity: "info",
+      });
       const payload: WorkMutationResponse = { key: out.key, seq: out.event.seq };
       return successResponse(payload, requestId);
     }
@@ -212,7 +220,15 @@ export async function handleWorkApprove(
         { orgId },
         { key, revision: body.revision, minApprovals: body.minApprovals, actor: workActorOf(actor) },
       );
-      const payload: WorkMutationResponse = { key: out.key, seq: out.event.seq };
+      // ES2 rail: work.epic.approved onto the platform event_log —
+      // best-effort; a notification must never fail an approval.
+      await publishWorkEvent(env, requestId, orgId, actor, "work.epic.approved", key, {
+        epicKey: key,
+        snapshot: out.snapshot,
+        title: `Epic ${key} approved`,
+        severity: "info",
+      });
+      const payload: ApproveWorkEpicResponse = { key: out.key, seq: out.event.seq, snapshot: out.snapshot };
       return successResponse(payload, requestId);
     }
     const body = (await parseBody<RevokeWorkApprovalRequest>(request)) ?? {};
@@ -418,6 +434,79 @@ export async function handleWorkRollups(
       total: status.total,
       complete: status.complete,
       epics: epicViews,
+    };
+    return successResponse(payload, requestId);
+  } catch (err) {
+    if (err instanceof WorkError) return workErrorResponse(err, requestId);
+    return errorResponse("internal_error", "Service unavailable", 503, requestId);
+  } finally {
+    await dispose(owned);
+  }
+}
+
+/** Best-effort platform-event publish for the ES2 notification rail —
+ *  mirrors the mention fan-out seam: a publish failure never fails the
+ *  mutation it narrates. */
+async function publishWorkEvent(
+  env: Env,
+  requestId: string,
+  orgId: Uuid,
+  actor: ActorContext,
+  type: string,
+  subjectId: string,
+  payload: Record<string, unknown>,
+): Promise<void> {
+  try {
+    const { createSqlExecutor } = await import("@saas/db/hyperdrive");
+    const { createEventsRepository } = await import("@saas/db/events");
+    const executor = createSqlExecutor(env.PLATFORM_DB!);
+    try {
+      const events = createEventsRepository(executor);
+      await events.appendEvent({
+        id: crypto.randomUUID(),
+        type,
+        version: 1,
+        source: "state-worker",
+        occurredAt: new Date(),
+        actorType: actor.subjectType === "service_principal" ? "service_principal" : "user",
+        actorId: actor.subjectId,
+        orgId,
+        subjectKind: "work_item",
+        subjectId,
+        subjectName: subjectId,
+        requestId,
+        payload,
+      });
+    } finally {
+      await dispose(executor as unknown as Parameters<typeof dispose>[0]);
+    }
+  } catch {
+    // best-effort by design
+  }
+}
+
+// ── The sealed brief (GET /work/epics/{key}/brief[?id=]) ────────────────────
+
+export async function handleWorkEpicBrief(
+  request: Request,
+  env: Env,
+  requestId: string,
+  actor: ActorContext,
+  orgId: Uuid,
+  epicKey: string,
+  deps?: WorkHandlerDeps,
+): Promise<Response> {
+  const authz = await authorizeOrg(env, requestId, actor, orgId, WORK_POLICY_ACTIONS.WORK_READ);
+  if (!authz.ok) return authz.response;
+  const id = new URL(request.url).searchParams.get("id") ?? undefined;
+  const { repo, owned } = repoOf(env, deps);
+  try {
+    const brief = await repo.getEpicBrief({ orgId }, epicKey, id);
+    const payload: WorkEpicBriefResponse = {
+      id: brief.id,
+      subject: brief.subject,
+      canonical: brief.canonical,
+      createdAt: brief.createdAt,
     };
     return successResponse(payload, requestId);
   } catch (err) {

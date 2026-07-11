@@ -642,5 +642,14 @@ export const manifest: MigrationManifest = {
       description:
         "The planning hierarchy's intent plane (orun-work-v4 WH1): work.designs (the Design noun \u2014 doc chain + sealed context {catalog, coordSeq, obsSeq} + structured proposal; droppable envelope cache) and work.milestones (the epic-scoped checkpoint ladder, V4-D; droppable fold cache of milestone_edited). The events kind CHECK regenerates to the 27-kind closed vocabulary \u2014 the four decision kinds (approved/approval_revoked/design_adopted/superseded) are human-only at the model layer (V4-2); still no delivery-lifecycle-write kind (WP-3) and the observation CHECK is untouched (V4-1). Envelope property columns land as pure intent: work.tasks.milestone_key, work.specs.initiative_key + target_date, work.initiatives.owner + target_date + success_criteria. NO STORED FACT: no intent-state, approval, progress, or health column exists \u2014 all fold at read (V4-3/V4-4). work.doc_revisions.spec_key now carries any documented subject key (designs share the digest form \u2014 V4-6). Additive + idempotent.",
     },
+    {
+      id: "710_work_v4_snapshots",
+      context: "work",
+      path: "710_work_v4_snapshots/up.sql",
+      checksum:
+        "e86e279f0fdf3a8f06162c853c3af35b538db71dd1619593f09b4dba3f6ced7d",
+      description:
+        "Sealed epic briefs (orun-work-v4 WH4): work.snapshots — the content-addressed store for the canonical EpicSnapshot bytes the approve mutator seals in the same transaction as the approved event (id = sha256 of body, exactly the doc_revisions pattern for document bodies). Append-only intent-plane content, keyed by digest; orun epic pull fetches the bytes and verifies sha256(body) == id, so the approval IS the dispatch artifact. No stored fact: a snapshot structurally cannot carry a rung, assignee, or pin (asserted at seal time). Additive + idempotent.",
+    },
   ],
 };

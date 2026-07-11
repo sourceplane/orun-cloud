@@ -110,6 +110,14 @@ export function EpicDetail({ orgId, epicKey }: { orgId: string; epicKey: string 
         </button>
       </div>
 
+      <ApprovalPanel
+        orgId={orgId}
+        epic={epic}
+        ladderCount={ladder.length}
+        onMutated={summary.reload}
+        onVerdict={setVerdict}
+      />
+
       {verdict ? (
         <div className="mt-3 rounded-md border border-warning-accent/40 bg-warning/10 px-3 py-2 text-[12.5px]">
           {verdict}
@@ -137,6 +145,114 @@ export function EpicDetail({ orgId, epicKey }: { orgId: string; epicKey: string 
         onMutated={summary.reload}
       />
     </Screen>
+  );
+}
+
+/* ── The approval panel (WH4): review → verdicts → the human decision ── */
+//
+// Approve is disabled-with-reason BEFORE the click (the verdict text the
+// mutator would return); a stale revision still 409s server-side. Approval
+// seals the EpicSnapshot in the same transaction — the sealed id renders
+// here because the approval IS the dispatch artifact.
+
+function ApprovalPanel({
+  orgId,
+  epic,
+  ladderCount,
+  onMutated,
+  onVerdict,
+}: {
+  orgId: string;
+  epic: WorkSpecView;
+  ladderCount: number;
+  onMutated: () => void;
+  onVerdict: (v: string | null) => void;
+}) {
+  const { client } = useSession();
+  const [busy, setBusy] = React.useState(false);
+  const [sealedId, setSealedId] = React.useState<string | null>(null);
+  const state = epic.intent?.state ?? "draft";
+  const approvable = state !== "canceled";
+  const blockReason =
+    ladderCount === 0
+      ? "An epic cannot be approved without a milestone ladder — you approve the doc AND the plan (V4-2)."
+      : null;
+
+  const act = async (fn: () => Promise<unknown>) => {
+    setBusy(true);
+    onVerdict(null);
+    try {
+      await fn();
+      onMutated();
+    } catch (err) {
+      const e = err as { message?: string };
+      onVerdict(e.message ?? "The mutator rejected that.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  if (!approvable) return null;
+  return (
+    <div className="mt-4 flex flex-wrap items-center gap-2 rounded-lg border border-border bg-card px-4 py-3">
+      <span className="text-[11px] uppercase tracking-wide text-muted-foreground">Review</span>
+      <button
+        type="button"
+        disabled={busy}
+        onClick={() => void act(() => client.work.requestReview(orgId, epic.key, { revision: epic.docRef }))}
+        className="rounded border border-border px-2.5 py-1 text-[12px] text-secondary-foreground hover:bg-muted disabled:opacity-40"
+      >
+        Request review
+      </button>
+      <button
+        type="button"
+        disabled={busy}
+        onClick={() => void act(() => client.work.submitVerdict(orgId, epic.key, { verdict: "approve", revision: epic.docRef }))}
+        className="rounded border border-border px-2.5 py-1 text-[12px] text-secondary-foreground hover:bg-muted disabled:opacity-40"
+      >
+        Looks right
+      </button>
+      <button
+        type="button"
+        disabled={busy}
+        onClick={() => void act(() => client.work.submitVerdict(orgId, epic.key, { verdict: "request_changes", revision: epic.docRef }))}
+        className="rounded border border-border px-2.5 py-1 text-[12px] text-secondary-foreground hover:bg-muted disabled:opacity-40"
+      >
+        Request changes
+      </button>
+      <span className="mx-1 text-foreground/20">·</span>
+      {state === "approved" ? (
+        <button
+          type="button"
+          disabled={busy}
+          onClick={() => void act(() => client.work.revokeApproval(orgId, epic.key, {}))}
+          className="rounded border border-border px-2.5 py-1 text-[12px] text-secondary-foreground hover:bg-muted disabled:opacity-40"
+        >
+          Revoke approval
+        </button>
+      ) : (
+        <button
+          type="button"
+          disabled={busy || blockReason !== null}
+          title={blockReason ?? "Human-only: seals the frozen brief (epic@hash) an agent implements against"}
+          onClick={() =>
+            void act(async () => {
+              const out = await client.work.approve(orgId, epic.key, { revision: epic.docRef });
+              setSealedId(out.snapshot);
+            })
+          }
+          className="rounded bg-primary px-3 py-1 text-[12px] text-primary-foreground disabled:opacity-40"
+        >
+          {state === "approved_drifted" ? "Re-approve" : "Approve"}
+        </button>
+      )}
+      {blockReason ? <span className="text-[11.5px] text-muted-foreground">{blockReason}</span> : null}
+      {sealedId ? (
+        <span className="text-[11.5px] text-muted-foreground">
+          sealed <span className="font-mono">{sealedId.slice(0, 14)}…</span> — the frozen brief
+        </span>
+      ) : null}
+    </div>
   );
 }
 

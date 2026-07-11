@@ -4,7 +4,7 @@
 
 import { beforeEach, describe, expect, it } from "vitest";
 import { MemoryWorkRepository } from "./memory.js";
-import { foldDesignIntent, foldEpicIntent, foldMilestones } from "./hierarchy.js";
+import { foldDesignIntent, foldEpicIntent, foldMilestones, sealEpicSnapshot } from "./hierarchy.js";
 import { WorkError, type Actor, type Proposal } from "./model.js";
 
 const scope = { orgId: "org-1" };
@@ -259,5 +259,85 @@ describe("designs", () => {
     expect(design.docRef).toBe(put.revision);
     const doc = await repo.getDocRevision(scope, key);
     expect(doc.body).toBe("# The design\n");
+  });
+});
+
+describe("approval seals the frozen brief (WH4)", () => {
+  it("approve mints a content-addressed EpicSnapshot in the same mutation and stamps it", async () => {
+    const epic = await epicWithMilestone("sealed-epic");
+    await repo.putDocRevision(scope, { specKey: epic, body: "# The doc\n", actor: human });
+    const t = await repo.createTask(scope, {
+      prefix: "WKS",
+      specKey: epic,
+      milestone: "M1",
+      title: "sealed task",
+      contract: { goal: "g", affects: ["a/b/c"], doneWhen: ["d"], gates: ["tests"] },
+      actor: human,
+    });
+    const out = await repo.approve(scope, { key: epic, actor: human });
+    expect(out.snapshot).toMatch(/^sha256:[0-9a-f]{64}$/);
+    expect((out.event.payload as { snapshot?: string }).snapshot).toBe(out.snapshot);
+
+    const brief = await repo.getEpicBrief(scope, epic);
+    expect(brief.id).toBe(out.snapshot);
+    // Content addressing: the id IS the hash of the bytes.
+    const bytes = new TextEncoder().encode(brief.canonical);
+    const hash = await crypto.subtle.digest("SHA-256", bytes);
+    let hex = "";
+    for (const b of new Uint8Array(hash)) hex += b.toString(16).padStart(2, "0");
+    expect(`sha256:${hex}`).toBe(brief.id);
+
+    const parsed = JSON.parse(brief.canonical) as {
+      kind: string;
+      spec: { key: string; docRef?: string };
+      milestones: { key: string }[];
+      tasks: { key: string; contract?: unknown }[];
+      ladderHash: string;
+      approval: { by: { id: string }; revision?: string };
+      coordSeq: number;
+    };
+    expect(parsed.kind).toBe("EpicSnapshot");
+    expect(parsed.spec.key).toBe(epic);
+    expect(parsed.milestones.map((m) => m.key)).toEqual(["M1"]);
+    expect(parsed.tasks.map((x) => x.key)).toEqual([t.key]);
+    expect(parsed.approval.by.id).toBe(human.id);
+    expect(parsed.ladderHash).toMatch(/^sha256:/);
+    // The intent plane cannot carry fold output (invariant 1).
+    for (const token of ['"rung"', '"lifecycle"', '"assignees"', '"pinned"']) {
+      expect(brief.canonical.includes(token)).toBe(false);
+    }
+    // The approved event folds with the snapshot id attached.
+    const intent = await foldEpicIntent(epic, await repo.listEvents(scope));
+    expect(intent.approval?.snapshot).toBe(out.snapshot);
+  });
+
+  it("sealing is deterministic: identical inputs seal to identical ids", async () => {
+    const input = {
+      spec: {
+        apiVersion: "orun.io/v1",
+        kind: "Spec" as const,
+        key: "det-epic",
+        workspace: "org-1",
+        title: "Det",
+        createdBy: human,
+        createdAt: "2026-07-11T10:00:00Z",
+      },
+      milestones: [{ key: "M1", title: "One", ordinal: 0 }],
+      tasks: [],
+      approval: { revision: "sha256:abc", by: human, at: "2026-07-11T10:00:01Z" },
+      coordSeq: 5,
+      obsSeq: 2,
+    };
+    const a = await sealEpicSnapshot(input);
+    const b = await sealEpicSnapshot(input);
+    expect(a.id).toBe(b.id);
+    expect(a.canonical).toBe(b.canonical);
+    const c = await sealEpicSnapshot({ ...input, milestones: [{ key: "M1", title: "One (renamed)", ordinal: 0 }] });
+    expect(c.id).not.toBe(a.id);
+  });
+
+  it("the brief 404s before any approval", async () => {
+    const epic = await epicWithMilestone("unapproved-epic");
+    await expect(repo.getEpicBrief(scope, epic)).rejects.toMatchObject({ code: "not_found" });
   });
 });

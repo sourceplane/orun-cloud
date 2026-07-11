@@ -48,6 +48,8 @@ import type {
   AdoptWorkDesignRequest,
   AdoptWorkDesignResponse,
   ApproveWorkEpicRequest,
+  ApproveWorkEpicResponse,
+  WorkEpicBriefResponse,
   CreateWorkDesignRequest,
   CreateWorkDesignResponse,
   RevokeWorkApprovalRequest,
@@ -404,9 +406,18 @@ export class WorkClient {
   /** Approve an epic — human-only + `work.approve`; names the exact doc
    *  revision (stale = 409). There is deliberately no way to approve
    *  through the task-action surface. */
-  approve(orgId: string, epicKey: string, body: ApproveWorkEpicRequest = {}, opts: RequestOptions = {}): Promise<WorkMutationResponse> {
-    return this.transport.request<WorkMutationResponse>(
+  approve(orgId: string, epicKey: string, body: ApproveWorkEpicRequest = {}, opts: RequestOptions = {}): Promise<ApproveWorkEpicResponse> {
+    return this.transport.request<ApproveWorkEpicResponse>(
       { method: "POST", path: `${workBase(orgId)}/epics/${encodeURIComponent(epicKey)}/approve`, body },
+      opts,
+    );
+  }
+
+  /** The sealed brief approval minted: canonical bytes + content id. Verify
+   *  by hashing — sha256(canonical) MUST equal id. */
+  epicBrief(orgId: string, epicKey: string, id?: string, opts: RequestOptions = {}): Promise<WorkEpicBriefResponse> {
+    return this.transport.request<WorkEpicBriefResponse>(
+      { method: "GET", path: `${workBase(orgId)}/epics/${encodeURIComponent(epicKey)}/brief`, query: { id } },
       opts,
     );
   }
