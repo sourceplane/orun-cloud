@@ -39,6 +39,8 @@ import { CyclesSection } from "@/components/work/cycles-section";
 import { AssigneeChip, SessionChip, WorkBoard } from "@/components/work/work-board";
 import { WorkViewBar, type WorkLayout } from "@/components/work/work-view-bar";
 import { SpawnAgentDialog } from "@/components/agents/spawn-agent-dialog";
+import { TasksLens } from "@/components/work/work-tasks-lens";
+import { DisplayMenu, FilterMenu } from "@/components/work/work-lens-controls";
 
 export function WorkWorkbench({
   orgId,
@@ -265,14 +267,48 @@ export function WorkWorkbench({
   }
 
   if (embedded) {
+    // orun-work-v5 WV2: the Tasks lens proper — Filter/Display pills, the
+    // cycle bar, rung-grouped rows; the board is a Display layout now.
+    let lensBody: React.ReactNode;
+    if (summary.loading) {
+      lensBody = <WorkSkeleton />;
+    } else if (summary.error) {
+      lensBody = <ErrorCard code={summary.error.code} message={summary.error.message} />;
+    } else if (!data || empty) {
+      lensBody = <EmptyWork />;
+    } else if (layout === "board") {
+      lensBody = (
+        <WorkBoard
+          orgId={orgId}
+          tasks={filteredTasks}
+          cycles={cycles}
+          agentProfiles={agentProfiles}
+          sessionsByTask={sessionsByTask}
+          sessionHref={sessionHref}
+          applyIntent={applyIntent}
+          onMutated={summary.reload}
+        />
+      );
+    } else {
+      lensBody = (
+        <TasksLens
+          data={{ ...data, tasks: filteredTasks }}
+          orgId={orgId}
+          cycles={cycles}
+          sessionsByTask={sessionsByTask}
+          sessionHref={sessionHref}
+          onMutated={summary.reload}
+        />
+      );
+    }
     return (
       <>
         {data && !empty ? (
-          <div className="mt-4 flex flex-wrap items-start justify-between gap-3">
-            <div className="min-w-0 flex-1">
-              <WorkViewBar
+          <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
+            <div className="flex items-center gap-2">
+              <FilterMenu tasks={data.tasks} filters={filters} onFiltersChange={setFilters} />
+              <DisplayMenu
                 orgId={orgId}
-                tasks={data.tasks}
                 layout={layout}
                 filters={filters}
                 onLayoutChange={setLayout}
@@ -288,9 +324,9 @@ export function WorkWorkbench({
             />
           </div>
         ) : null}
-        {body}
+        {lensBody}
         {data && !empty && (cycles.length > 0 || data.tasks.length > 0) ? (
-          <div className="mt-[26px]">
+          <div className="mt-[26px]" id="cycles">
             <CyclesSection orgId={orgId} cycles={cycles} onMutated={reload} />
           </div>
         ) : null}
