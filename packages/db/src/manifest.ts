@@ -651,5 +651,14 @@ export const manifest: MigrationManifest = {
       description:
         "Sealed epic briefs (orun-work-v4 WH4): work.snapshots — the content-addressed store for the canonical EpicSnapshot bytes the approve mutator seals in the same transaction as the approved event (id = sha256 of body, exactly the doc_revisions pattern for document bodies). Append-only intent-plane content, keyed by digest; orun epic pull fetches the bytes and verifies sha256(body) == id, so the approval IS the dispatch artifact. No stored fact: a snapshot structurally cannot carry a rung, assignee, or pin (asserted at seal time). Additive + idempotent.",
     },
+    {
+      id: "720_work_events_kind_check_repair",
+      context: "work",
+      path: "720_work_events_kind_check_repair/up.sql",
+      checksum:
+        "188a849936526852b9e643dc3a580166851c293be1df0a8864cd4e274da042e9",
+      description:
+        "Repair: the coordination-log kind CHECK becomes ONE constraint again. 560 created work.events with an inline unnamed CHECK (auto-named events_kind_check); the 660 and 700 vocabulary regenerations dropped the WRONG name (work_events_kind_check, a silent no-op) before adding it, so production enforced BOTH the original 9-kind v2 CHECK and the 27-kind v4 CHECK — every kind added since v2 (doc_edited, prioritized, …, milestone_edited, approved, …) was rejected at insert. Found by the WH6 dogfood import's milestone phase (the first real v3+/v4 write through the Postgres path). Drops both names, re-adds the canonical 27-kind work_events_kind_check — enforcement plumbing only, the vocabulary is exactly 700's: still no delivery-lifecycle-write kind (WP-3), observation CHECK untouched (V4-1). Idempotent as a unit.",
+    },
   ],
 };
