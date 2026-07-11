@@ -42,6 +42,7 @@ import {
   targetLabel,
   type WorkLens,
 } from "@/lib/work/home";
+import { createKindForLens, nextNavIndex, workKeyAction } from "@/lib/work/keys";
 import { meterSegments } from "@/lib/work/rungs";
 import { HealthChip, IntentChip } from "@/components/work/hierarchy-chips";
 import { WorkWorkbench } from "@/components/work/work-workbench";
@@ -123,6 +124,53 @@ export function WorkHome({ orgId }: { orgId: string }) {
     }
   }, []);
 
+  // WV5: the keyboard grammar (design.md §4). 1/2/3 switch lens; j/k rove
+  // row focus; c creates for the current lens; f/d open Filter/Display.
+  // There is no key that changes status — the vocabulary of the keyboard
+  // is the vocabulary of the model.
+  const [externalKind, setExternalKind] = React.useState<WorkItemKind | null>(null);
+  const lensRef = React.useRef(lens);
+  lensRef.current = lens;
+  React.useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const action = workKeyAction(e, e.target as HTMLElement | null);
+      if (!action) return;
+      const current = lensRef.current;
+      switch (action.type) {
+        case "lens":
+          e.preventDefault();
+          setLens(action.lens);
+          break;
+        case "focus-next":
+        case "focus-prev": {
+          const rows = Array.from(document.querySelectorAll<HTMLElement>("[data-navrow]"));
+          if (rows.length === 0) return;
+          e.preventDefault();
+          const active = document.activeElement as HTMLElement | null;
+          const idx = active ? rows.indexOf(active) : -1;
+          rows[nextNavIndex(idx, action.type === "focus-next" ? 1 : -1, rows.length)]?.focus();
+          break;
+        }
+        case "create": {
+          e.preventDefault();
+          const kind = createKindForLens(current);
+          if (current === "tasks") setExternalKind(kind);
+          else setRequestedKind(kind);
+          break;
+        }
+        case "filter":
+        case "display": {
+          if (current !== "tasks") return;
+          e.preventDefault();
+          document.getElementById(action.type === "filter" ? "work-filter-trigger" : "work-display-trigger")?.click();
+          break;
+        }
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [setLens]);
+
   const data = summary.data;
   const openTasks = data ? openTaskCount(data.tasks) : 0;
   const attention = data ? attentionCount(data) : 0;
@@ -180,7 +228,12 @@ export function WorkHome({ orgId }: { orgId: string }) {
       </LensBar>
 
       {lens === "tasks" ? (
-        <WorkWorkbench orgId={orgId} embedded />
+        <WorkWorkbench
+          orgId={orgId}
+          embedded
+          requestKind={externalKind}
+          onRequestKindConsumed={() => setExternalKind(null)}
+        />
       ) : summary.loading ? (
         <div className="mt-5 flex flex-col gap-3">
           <Skeleton className="h-14 w-full" />
@@ -228,8 +281,9 @@ function InitiativesLens({
           return (
             <Link
               key={initiative.key}
+              data-navrow
               href={`/orgs/${orgSlug}/work/initiatives/${encodeURIComponent(initiative.key)}`}
-              className="group flex items-center gap-3.5 border-t border-border/50 px-[18px] py-3 transition-colors duration-100 first:border-t-0 hover:bg-muted"
+              className="group flex items-center gap-3.5 border-t border-border/50 px-[18px] py-3 transition-colors duration-100 first:border-t-0 hover:bg-muted focus-visible:bg-muted focus-visible:outline-none"
             >
               <StatusDot tone={initiative.health ? HEALTH_TONE[initiative.health] : "neutral"} />
               <span className="min-w-0 flex-1">
@@ -298,8 +352,9 @@ function EpicsLens({ specs, orgSlug }: { specs: WorkSpecView[]; orgSlug: string 
                 return (
                   <Link
                     key={spec.key}
+                    data-navrow
                     href={`/orgs/${orgSlug}/work/epics/${encodeURIComponent(spec.key)}`}
-                    className="group flex items-center gap-3.5 border-t border-border/50 px-[18px] py-2.5 transition-colors duration-100 hover:bg-muted"
+                    className="group flex items-center gap-3.5 border-t border-border/50 px-[18px] py-2.5 transition-colors duration-100 hover:bg-muted focus-visible:bg-muted focus-visible:outline-none"
                   >
                     <span className="w-44 shrink-0 truncate font-mono text-[11.5px] text-muted-foreground/85">
                       {spec.key}

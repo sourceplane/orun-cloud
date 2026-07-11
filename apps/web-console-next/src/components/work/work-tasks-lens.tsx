@@ -176,7 +176,8 @@ function TaskLensRow({
   const [agentOpen, setAgentOpen] = React.useState(false);
   return (
     <li
-      className="group cursor-pointer border-t border-border/50 px-[18px] py-2.5 transition-colors duration-100 first:border-t-0 hover:bg-muted/60"
+      data-navrow
+      className="group cursor-pointer border-t border-border/50 px-[18px] py-2.5 transition-colors duration-100 first:border-t-0 hover:bg-muted/60 focus-visible:bg-muted/60 focus-visible:outline-none"
       onClick={onOpen}
       onKeyDown={(e) => {
         if ((e.key === "Enter" || e.key === " ") && e.target === e.currentTarget) {

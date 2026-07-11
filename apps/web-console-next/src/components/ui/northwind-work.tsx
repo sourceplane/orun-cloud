@@ -254,8 +254,8 @@ export function WorkMeter({
         className="flex h-1 overflow-hidden rounded-sm bg-[hsl(var(--work-track))]"
         style={{ width: fraction ? width - 42 : width }}
       >
-        {done > 0 ? <span className="bg-success" style={{ width: `${done}%` }} /> : null}
-        {active > 0 ? <span className="bg-warning-accent" style={{ width: `${active}%` }} /> : null}
+        {done > 0 ? <span className="bg-success transition-[width] duration-300" style={{ width: `${done}%` }} /> : null}
+        {active > 0 ? <span className="bg-warning-accent transition-[width] duration-300" style={{ width: `${active}%` }} /> : null}
       </span>
       {fraction != null ? (
         <span className="w-[34px] shrink-0 text-right text-[11.5px] tabular-nums text-muted-foreground">{fraction}</span>

@@ -145,6 +145,12 @@ export default {
           from: { opacity: "0", transform: "translateY(6px)" },
           to: { opacity: "1", transform: "translateY(0)" },
         },
+        // orun-work-v5 WV5: the task peek slides in from the right edge —
+        // 150ms ease-out, per design.md §4 (reduced-motion collapses it).
+        "peek-in": {
+          from: { opacity: "0", transform: "translateX(12px)" },
+          to: { opacity: "1", transform: "translateX(0)" },
+        },
         livepulse: {
           "0%, 100%": { opacity: "1" },
           "50%": { opacity: "0.3" },
@@ -180,6 +186,7 @@ export default {
         "sidebar-in-left": "sidebar-in-left 220ms cubic-bezier(0.32, 0.72, 0, 1)",
         shimmer: "shimmer 1.6s linear infinite",
         "fade-up": "fade-up 280ms ease both",
+        "peek-in": "peek-in 150ms ease-out both",
         livepulse: "livepulse 1.6s ease-in-out infinite",
         runflow: "runflow 1s linear infinite",
         "drawer-in": "drawer-in 240ms cubic-bezier(0.2, 0.8, 0.25, 1) both",
