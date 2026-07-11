@@ -5,7 +5,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { MemoryWorkRepository } from "./memory.js";
 import { foldDesignIntent, foldEpicIntent, foldMilestones, sealEpicSnapshot } from "./hierarchy.js";
-import { WorkError, type Actor, type Proposal } from "./model.js";
+import { type Actor, type Proposal } from "./model.js";
 
 const scope = { orgId: "org-1" };
 const human: Actor = { type: "user", id: "usr_rahul", via: "console" };

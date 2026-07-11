@@ -72,7 +72,6 @@ import {
   openContractProposals,
   recentMentions,
   reviewParkedKeys,
-  insertWorkObservation,
   foldEpicExecution,
   foldEpicIntent,
   foldInitiativeStatus,
@@ -1399,6 +1398,16 @@ export async function handleWorkImport(
     return successResponse(result, requestId, 201);
   } catch (err) {
     if (err instanceof WorkError) return workErrorResponse(err, requestId);
+    console.error(
+      JSON.stringify({
+        level: "error",
+        scope: "work.import",
+        reason: "unexpected_error",
+        requestId,
+        orgId,
+        message: err instanceof Error ? err.message : String(err),
+      }),
+    );
     return errorResponse("internal_error", "Service unavailable", 503, requestId);
   } finally {
     await dispose(owned);
