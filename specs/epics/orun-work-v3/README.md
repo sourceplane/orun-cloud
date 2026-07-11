@@ -5,6 +5,12 @@
 > logs, or the derived ladder. v3 is the intent plane growing a world-class
 > authoring surface. The CLI/MCP legs live in `sourceplane/orun`
 > (`specs/orun-work/`), which v3 extends but does not fork.
+>
+> **Evolved by [`orun-work-v4/`](../orun-work-v4/)** (cluster **WH**) — the
+> planning hierarchy: Initiative → Design → Epic → Milestone → Task, with an
+> authored review/approval ladder on intent that seals agent briefs. v4 is
+> purely additive: the logs, the fold, the derived delivery ladder, and every
+> v3 surface are unchanged and remain what v4 authors against.
 
 | | |
 |---|---|
