@@ -18,6 +18,8 @@ import type {
   AdoptWorkDesignResponse,
   ApproveWorkEpicRequest,
   ApproveWorkEpicResponse,
+  RegenerateWorkTasksRequest,
+  RegenerateWorkTasksResponse,
   WorkEpicBriefResponse,
   CreateWorkDesignRequest,
   CreateWorkDesignResponse,
@@ -42,6 +44,7 @@ import {
   foldEpicIntent,
   foldInitiativeStatus,
   foldMilestones,
+  type Contract,
   type Design,
   type EpicRollup,
   type Proposal,
@@ -509,6 +512,46 @@ export async function handleWorkEpicBrief(
       createdAt: brief.createdAt,
     };
     return successResponse(payload, requestId);
+  } catch (err) {
+    if (err instanceof WorkError) return workErrorResponse(err, requestId);
+    return errorResponse("internal_error", "Service unavailable", 503, requestId);
+  } finally {
+    await dispose(owned);
+  }
+}
+
+// ── Governed re-planning (POST /work/epics/{key}/milestones/{m}/regenerate) ─
+
+export async function handleWorkRegenerate(
+  request: Request,
+  env: Env,
+  requestId: string,
+  actor: ActorContext,
+  orgId: Uuid,
+  epicKey: string,
+  milestoneKey: string,
+  deps?: WorkHandlerDeps,
+): Promise<Response> {
+  const authz = await authorizeOrg(env, requestId, actor, orgId, WORK_POLICY_ACTIONS.WORK_WRITE);
+  if (!authz.ok) return authz.response;
+  const body = await parseBody<RegenerateWorkTasksRequest>(request);
+  if (!body?.tasks || !Array.isArray(body.tasks) || body.tasks.length === 0) {
+    return validationError(requestId, { tasks: ["required (the replacement plan)"] });
+  }
+  const { repo, owned } = repoOf(env, deps);
+  try {
+    const out = await repo.regenerateTasks(
+      { orgId },
+      {
+        epicKey,
+        milestone: milestoneKey,
+        tasks: body.tasks.map((t) => ({ title: t.title, contract: t.contract as Contract | undefined })),
+        prefix: body.prefix,
+        actor: workActorOf(actor),
+      },
+    );
+    const payload: RegenerateWorkTasksResponse = out;
+    return successResponse(payload, requestId, 201);
   } catch (err) {
     if (err instanceof WorkError) return workErrorResponse(err, requestId);
     return errorResponse("internal_error", "Service unavailable", 503, requestId);

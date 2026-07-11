@@ -541,6 +541,24 @@ export interface WorkTimelineResponse {
 export interface WorkAssignRequest {
   subject: string; // membership subject id (usr_/sp_/team_)
   unassign?: boolean | undefined;
+  /** v4 WH5: a human's attributed reason for dispatching an agent into an
+   *  epic that is not Approved. Without it, that assign is a 422 verdict;
+   *  agents can never override (design §3). */
+  override?: string | undefined;
+}
+
+/** v4 WH5: governed re-planning of one milestone. Planned (draft/ready)
+ *  tasks cancel; in-flight tasks survive (Q-6); contract-bearing creations
+ *  by agents flag into the triage review lane. */
+export interface RegenerateWorkTasksRequest {
+  tasks: { title: string; contract?: WorkContract | undefined }[];
+  prefix?: string | undefined;
+}
+
+export interface RegenerateWorkTasksResponse {
+  canceled: string[];
+  kept: string[];
+  created: string[];
 }
 
 export interface WorkPinRequest {

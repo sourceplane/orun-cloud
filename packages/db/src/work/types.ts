@@ -175,6 +175,29 @@ export interface AdoptOutcome {
   tasks: string[]; // task keys created from skeletons
 }
 
+/** v4 WH5: governed task regeneration — tasks are implementation detail
+ *  (V4-5); an agent re-plans a milestone by replacing its PLANNED tasks in
+ *  one verdict batch. Tasks with observed delivery activity are never
+ *  canceled by regeneration (Q-6) — in-flight work survives re-planning. */
+export interface RegenerateTasksInput {
+  epicKey: string;
+  milestone: string;
+  tasks: { title: string; contract?: Contract | undefined }[];
+  prefix?: string | undefined; // default "WK"
+  actor: Actor;
+  at?: string | undefined;
+}
+
+export interface RegenerateOutcome {
+  /** Planned (draft/ready) tasks canceled by the batch. */
+  canceled: string[];
+  /** Tasks with observed activity that regeneration left alone (Q-6). */
+  kept: string[];
+  /** New task keys, in input order. Contract-bearing creations also emit a
+   *  contract_edited event so the triage review lane flags them. */
+  created: string[];
+}
+
 export interface SupersedeDesignInput {
   key: string;
   by?: string | undefined;
@@ -193,6 +216,10 @@ export interface EditContractInput {
 export interface AssignInput {
   key: string;
   subject: string; // membership subject id (usr_/sp_/team_)
+  /** v4 WH5: a human's attributed reason for dispatching an agent into an
+   *  epic that is not Approved (or has drifted). Without it the assign is a
+   *  422 verdict; agents/automation can never override (design §3). */
+  override?: string | undefined;
   actor: Actor;
   at?: string | undefined;
 }
@@ -388,6 +415,7 @@ export interface WorkRepository {
   getDesign(scope: WorkspaceScope, key: string): Promise<Design>;
   listDesigns(scope: WorkspaceScope, initiativeKey?: string): Promise<Design[]>;
   adoptDesign(scope: WorkspaceScope, input: AdoptDesignInput): Promise<AdoptOutcome>;
+  regenerateTasks(scope: WorkspaceScope, input: RegenerateTasksInput): Promise<RegenerateOutcome>;
   supersedeDesign(scope: WorkspaceScope, input: SupersedeDesignInput): Promise<CommitOutcome>;
 
   /** The only fact writer — named ingesters call this; mutators cannot. */

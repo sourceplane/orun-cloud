@@ -8,11 +8,12 @@
 
 import type { SqlExecutor, TransactionalSqlExecutor } from "../hyperdrive/executor.js";
 import { canonicalDocBody, docDigest } from "./doc.js";
-import { sealEpicSnapshot } from "./hierarchy.js";
+import { foldEpicIntent, sealEpicSnapshot } from "./hierarchy.js";
 import { buildEnvelopes, type ItemCreatedPayload } from "./envelopes.js";
 import {
   API_VERSION,
   PRIORITIES,
+  fold,
   RELATION_KINDS,
   REVIEW_VERDICTS,
   WorkError,
@@ -43,6 +44,8 @@ import type {
   AdoptDesignInput,
   AdoptOutcome,
   ApproveInput,
+  RegenerateOutcome,
+  RegenerateTasksInput,
   SealedBrief,
   AssignInput,
   CancelInput,
@@ -1268,6 +1271,97 @@ export function createWorkRepository(
       });
     },
 
+    async regenerateTasks(scope, input: RegenerateTasksInput): Promise<RegenerateOutcome> {
+      validateActor(input.actor);
+      for (const t of input.tasks) {
+        if (!t.title?.trim()) throw new WorkError("invalid", "every regenerated task needs a title");
+      }
+      return sql.transaction(async (tx) => {
+        const ladder = await ladderOf(tx, scope.orgId, input.epicKey);
+        if (!ladder.some((m) => m.key === input.milestone)) {
+          throw new WorkError("not_found", `milestone ${input.milestone} is not in ${input.epicKey}'s ladder`);
+        }
+        const at = input.at ?? now();
+
+        // Planned vs in-flight (Q-6): a task claimed by any observation
+        // (branch/PR) survives re-planning; only draft/ready plans cancel.
+        // The claim join needs the full fold — run it over the workspace.
+        const [tasksRes, eventsRes, obsRes] = await Promise.all([
+          tx.execute(`SELECT * FROM work.tasks WHERE org_id = $1 ORDER BY key`, [scope.orgId]),
+          tx.execute(`SELECT * FROM work.events WHERE org_id = $1 ORDER BY seq`, [scope.orgId]),
+          tx.execute(`SELECT * FROM work.observations WHERE org_id = $1 ORDER BY seq`, [scope.orgId]),
+        ]);
+        const ws = {
+          tasks: tasksRes.rows.map((r) => mapTask(scope.orgId, r)),
+          events: eventsRes.rows.map((r) => mapEvent(scope.orgId, r)),
+          observations: obsRes.rows.map((r) => mapObservation(scope.orgId, r)),
+        };
+        const fr = fold(ws);
+
+        const canceled: string[] = [];
+        const kept: string[] = [];
+        for (const t of ws.tasks) {
+          if (t.spec !== input.epicKey || t.milestone !== input.milestone) continue;
+          const rung = fr.lifecycles[t.key]?.rung ?? "draft";
+          if (rung === "canceled") continue;
+          if (rung === "draft" || rung === "ready") {
+            await appendEvent(tx, scope.orgId, { subject: t.key, kind: "canceled", actor: input.actor, at, payload: {} });
+            canceled.push(t.key);
+          } else {
+            kept.push(t.key);
+          }
+        }
+
+        const created: string[] = [];
+        const prefix = input.prefix ?? "WK";
+        for (const t of input.tasks) {
+          const n = await nextSeq(tx, scope.orgId, prefix);
+          const key = `${prefix}-${n}`;
+          const payload: ItemCreatedPayload = {
+            kind: "Task",
+            key,
+            title: t.title.trim(),
+            specKey: input.epicKey,
+            milestone: input.milestone,
+            contract: t.contract,
+          };
+          await appendEvent(tx, scope.orgId, {
+            subject: key,
+            kind: "item_created",
+            actor: input.actor,
+            at,
+            payload: payload as unknown as Record<string, unknown>,
+          });
+          await tx.execute(
+            `INSERT INTO work.tasks (org_id, key, spec_key, milestone_key, title, contract, labels, created_by, created_at)
+             VALUES ($1, $2, $3, $4, $5, $6::jsonb, '{}'::jsonb, $7::jsonb, $8)`,
+            [
+              scope.orgId,
+              key,
+              input.epicKey,
+              input.milestone,
+              t.title.trim(),
+              t.contract ? JSON.stringify(t.contract) : null,
+              JSON.stringify(input.actor),
+              at,
+            ],
+          );
+          if (t.contract && input.actor.type !== "user") {
+            // Applied AND flagged — the triage review lane's discipline.
+            await appendEvent(tx, scope.orgId, {
+              subject: key,
+              kind: "contract_edited",
+              actor: input.actor,
+              at,
+              payload: { contract: t.contract },
+            });
+          }
+          created.push(key);
+        }
+        return { canceled, kept, created };
+      });
+    },
+
     async supersedeDesign(scope, input: SupersedeDesignInput) {
       validateActor(input.actor);
       return sql.transaction(async (tx) => {
@@ -1313,7 +1407,37 @@ export function createWorkRepository(
     },
 
     async assign(scope, input: AssignInput) {
-      return simpleMutation(scope, input.key, "assigned", input.actor, input.at, { subjectId: input.subject });
+      // The dispatch precondition (v4 WH5, design §3): an agent seat (sp_)
+      // cannot be assigned into an epic whose intent is not Approved. A
+      // human may override WITH a note (attributed); agents and automation
+      // can never override — server-side, not client trust.
+      if (input.subject.startsWith("sp_")) {
+        const taskRes = await sql.execute(`SELECT spec_key FROM work.tasks WHERE org_id = $1 AND key = $2`, [
+          scope.orgId,
+          input.key,
+        ]);
+        const specKey = (taskRes.rows[0]?.spec_key as string | null) ?? undefined;
+        if (specKey) {
+          const eventsRes = await sql.execute(
+            `SELECT * FROM work.events WHERE org_id = $1 AND subject = $2 ORDER BY seq`,
+            [scope.orgId, specKey],
+          );
+          const intent = await foldEpicIntent(specKey, eventsRes.rows.map((r) => mapEvent(scope.orgId, r)));
+          if (intent.state !== "approved" && !(input.actor.type === "user" && input.override?.trim())) {
+            throw new WorkError(
+              "invalid",
+              `dispatch blocked: epic ${specKey} is ${intent.state.replace("_", " ")} — agents implement approved briefs. ` +
+                (input.actor.type === "user"
+                  ? "Override with a note to dispatch anyway (attributed), or approve the epic first."
+                  : "A human can approve the epic or override with a note; agents cannot (V4-2)."),
+            );
+          }
+        }
+      }
+      return simpleMutation(scope, input.key, "assigned", input.actor, input.at, {
+        subjectId: input.subject,
+        ...(input.override ? { override: input.override } : {}),
+      });
     },
     async unassign(scope, input: AssignInput) {
       return simpleMutation(scope, input.key, "unassigned", input.actor, input.at, { subjectId: input.subject });
