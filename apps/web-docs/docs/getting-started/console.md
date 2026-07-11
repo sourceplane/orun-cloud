@@ -32,6 +32,10 @@ The **console** at [`https://app.orun.dev`](https://app.orun.dev) is the human s
 
 `/orgs/{slug}/activities` is the workspace-wide run feed, spanning every project and filterable by repo, environment, source, and status. Click a run to open its detail page. See the [state plane overview](/platform/state-plane/overview).
 
+## Work
+
+`/orgs/{slug}/work` is the work tracker: initiatives, epics with their milestone ladders, designs, boards, and a triage lane for agent-proposed changes. Every level drills down — portfolio → initiative → epic → milestone → task — and every lifecycle value you see is **derived** from the coordination and observation logs with its evidence attached; there is no status dropdown anywhere. See [Work](/platform/work/overview) and [the planning hierarchy](/platform/work/planning-hierarchy).
+
 ## Audit
 
 `/orgs/{slug}/audit` shows the workspace's immutable audit log — who did what, when, to which subject — with the same filters the API exposes. Requires the `audit.read` permission. See [Audit log](/platform/audit/audit-log).
