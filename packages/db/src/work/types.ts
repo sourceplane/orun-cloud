@@ -123,12 +123,21 @@ export interface ApproveInput {
    *  current doc_ref (a stale approval is a conflict verdict — you approve
    *  bytes, not vibes). Defaults to the current doc_ref. */
   revision?: string | undefined;
-  /** Sealed EpicSnapshot id, stamped by the WH4 sealing leg. */
-  snapshot?: string | undefined;
   /** Workspace policy knob (default 1). Counting includes the approver. */
   minApprovals?: number | undefined;
+  /** Catalog snapshot id sealed into the brief, when the caller has one. */
+  catalog?: string | undefined;
   actor: Actor;
   at?: string | undefined;
+}
+
+/** The sealed brief: canonical bytes + their content id. `orun epic pull`
+ *  verifies sha256(canonical) == id — the approval IS the dispatch artifact. */
+export interface SealedBrief {
+  id: string;
+  subject: string; // the epic key
+  canonical: string;
+  createdAt?: string | undefined;
 }
 
 export interface RevokeApprovalInput {
@@ -369,7 +378,11 @@ export interface WorkRepository {
   listMilestones(scope: WorkspaceScope, epicKey: string): Promise<Milestone[]>;
   requestReview(scope: WorkspaceScope, input: RequestReviewInput): Promise<CommitOutcome>;
   submitVerdict(scope: WorkspaceScope, input: SubmitVerdictInput): Promise<CommitOutcome>;
-  approve(scope: WorkspaceScope, input: ApproveInput): Promise<CommitOutcome>;
+  /** Seals the EpicSnapshot in the same transaction as the approved event
+   *  (WH4, design §3) and stamps the snapshot id into the payload. */
+  approve(scope: WorkspaceScope, input: ApproveInput): Promise<CommitOutcome & { snapshot: string }>;
+  /** The sealed brief — latest for the epic, or an exact id. */
+  getEpicBrief(scope: WorkspaceScope, epicKey: string, id?: string): Promise<SealedBrief>;
   revokeApproval(scope: WorkspaceScope, input: RevokeApprovalInput): Promise<CommitOutcome>;
   createDesign(scope: WorkspaceScope, input: CreateDesignInput): Promise<CommitOutcome & { design: Design }>;
   getDesign(scope: WorkspaceScope, key: string): Promise<Design>;

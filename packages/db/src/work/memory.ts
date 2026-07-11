@@ -5,7 +5,7 @@
 
 import { canonicalDocBody, docDigest } from "./doc.js";
 import { buildEnvelopes, type ItemCreatedPayload } from "./envelopes.js";
-import { foldMilestones } from "./hierarchy.js";
+import { foldMilestones, sealEpicSnapshot } from "./hierarchy.js";
 import {
   PRIORITIES,
   RELATION_KINDS,
@@ -28,6 +28,7 @@ import type {
   AdoptDesignInput,
   AdoptOutcome,
   ApproveInput,
+  SealedBrief,
   AssignInput,
   CancelInput,
   CommentInput,
@@ -80,6 +81,9 @@ interface LogPair {
   /** Authored time-boxes by key (v3 PM3) — intent rows beside the logs;
    *  planning a task INTO one is the cycle_set coordination event. */
   cycles: Map<string, Cycle>;
+  /** Sealed epic briefs by content id (v4 WH4) — canonical bytes, exactly
+   *  the doc_revisions pattern for snapshot content. */
+  snapshots: Map<string, SealedBrief>;
 }
 
 export class MemoryWorkRepository implements WorkRepository {
@@ -91,7 +95,7 @@ export class MemoryWorkRepository implements WorkRepository {
   private logs(scope: WorkspaceScope): LogPair {
     let pair = this.workspaces.get(scope.orgId);
     if (!pair) {
-      pair = { events: [], observations: [], dedupe: new Set(), sequences: new Map(), docRevisions: new Map(), views: new Map(), cycles: new Map() };
+      pair = { events: [], observations: [], dedupe: new Set(), sequences: new Map(), docRevisions: new Map(), views: new Map(), cycles: new Map(), snapshots: new Map() };
       this.workspaces.set(scope.orgId, pair);
     }
     return pair;
@@ -384,7 +388,7 @@ export class MemoryWorkRepository implements WorkRepository {
     return { event, key: input.key };
   }
 
-  async approve(scope: WorkspaceScope, input: ApproveInput): Promise<CommitOutcome> {
+  async approve(scope: WorkspaceScope, input: ApproveInput): Promise<CommitOutcome & { snapshot: string }> {
     validateActor(input.actor);
     const { specs } = buildEnvelopes(scope.orgId, this.logs(scope).events);
     const epic = specs.find((s) => s.key === input.key);
@@ -418,14 +422,44 @@ export class MemoryWorkRepository implements WorkRepository {
         );
       }
     }
+    const at = input.at ?? this.now();
+    const pair = this.logs(scope);
+    const { tasks } = buildEnvelopes(scope.orgId, pair.events);
+    const sealed = await sealEpicSnapshot({
+      spec: epic,
+      milestones: ladder,
+      tasks: tasks.filter((t) => t.spec === input.key),
+      approval: { revision: revision || undefined, by: input.actor, at },
+      catalog: input.catalog,
+      coordSeq: (pair.sequences.get("#events") ?? 0) + 1, // incl. the approved event below
+      obsSeq: pair.sequences.get("#observations") ?? 0,
+    });
+    pair.snapshots.set(sealed.id, { id: sealed.id, subject: input.key, canonical: sealed.canonical, createdAt: at });
     const event = this.append(scope, {
       subject: input.key,
       kind: "approved",
       actor: input.actor,
-      at: input.at ?? this.now(),
-      payload: { revision: revision || undefined, snapshot: input.snapshot },
+      at,
+      payload: { revision: revision || undefined, snapshot: sealed.id },
     });
-    return { event, key: input.key };
+    return { event, key: input.key, snapshot: sealed.id };
+  }
+
+  async getEpicBrief(scope: WorkspaceScope, epicKey: string, id?: string): Promise<SealedBrief> {
+    const pair = this.logs(scope);
+    if (id) {
+      const brief = pair.snapshots.get(id);
+      if (!brief || brief.subject !== epicKey) {
+        throw new WorkError("not_found", `no sealed brief ${id} for ${epicKey}`);
+      }
+      return brief;
+    }
+    const all = [...pair.snapshots.values()].filter((b) => b.subject === epicKey);
+    const latest = all[all.length - 1];
+    if (!latest) {
+      throw new WorkError("not_found", `no sealed brief for ${epicKey} — approval seals one (design §3)`);
+    }
+    return latest;
   }
 
   async revokeApproval(scope: WorkspaceScope, input: RevokeApprovalInput): Promise<CommitOutcome> {

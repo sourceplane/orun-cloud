@@ -19,6 +19,7 @@ import {
   type Milestone,
   type Rung,
   type Spec,
+  type Task,
   type WorkSet,
 } from "./model.js";
 
@@ -448,4 +449,106 @@ export function foldInitiativeStatus(
     if (di < pi) out.pinned = pin;
   }
   return out;
+}
+
+// ── Sealing: the frozen brief approval mints (WH4, design §3) ───────────────
+//
+// EpicSnapshot ⊇ SpecSnapshot: the epic envelope + the milestone ladder +
+// ladderHash + task envelopes with contracts (informative context — task
+// churn never drifts approval, V4-5) + the approval record + log cursors.
+// Canonical JSON, content-addressed; the approve mutator seals it IN THE
+// SAME TRANSACTION as the approved event and stamps the id into the payload.
+// `orun epic pull` verifies sha256(bytes) == id — one artifact, no second
+// canonicalizer to drift (V4-6).
+
+export interface EpicSnapshotApproval {
+  revision?: string | undefined; // the doc revision approved
+  by: Actor;
+  at?: string | undefined;
+  ladderHash?: string | undefined;
+}
+
+export interface EpicSnapshot {
+  kind: "EpicSnapshot";
+  apiVersion: string;
+  spec: Spec;
+  milestones: Milestone[];
+  tasks: Task[];
+  ladderHash: string;
+  design?: string | undefined; // adopted design revision, when minted from one
+  approval: EpicSnapshotApproval;
+  catalog?: string | undefined;
+  coordSeq: number;
+  obsSeq: number;
+}
+
+/** Tokens that must never appear in sealed bytes: the intent plane cannot
+ *  carry fold output (v2 invariant 1, extended to v4 seals). */
+const HOT_STATE_TOKENS = ['"rung"', '"lifecycle"', '"assignees"', '"pinned"'];
+
+export interface SealedEpicSnapshot {
+  id: string; // 'sha256:<hex>' over the canonical bytes
+  canonical: string; // the exact bytes the id hashes
+  snapshot: EpicSnapshot;
+}
+
+function intentOnlyTask(t: Task): Task {
+  // The envelope is intent by construction; rebuild it field-by-field so a
+  // future envelope addition cannot silently smuggle state into the seal.
+  const out: Task = {
+    apiVersion: t.apiVersion,
+    kind: t.kind,
+    key: t.key,
+    workspace: t.workspace,
+    title: t.title,
+    createdBy: t.createdBy,
+  };
+  if (t.spec) out.spec = t.spec;
+  if (t.milestone) out.milestone = t.milestone;
+  if (t.labels) out.labels = t.labels;
+  if (t.contract) out.contract = t.contract;
+  if (t.createdAt) out.createdAt = t.createdAt;
+  return out;
+}
+
+/** Builds and seals the frozen brief. Tasks are ordered by key so identical
+ *  inputs seal byte-identically regardless of input order. */
+export async function sealEpicSnapshot(input: {
+  spec: Spec;
+  milestones: Milestone[];
+  tasks: Task[];
+  approval: EpicSnapshotApproval;
+  design?: string | undefined;
+  catalog?: string | undefined;
+  coordSeq: number;
+  obsSeq: number;
+}): Promise<SealedEpicSnapshot> {
+  const spec: Spec = { ...input.spec };
+  delete (spec as { id?: string }).id; // row ids are environment-local, not content
+  const tasks = [...input.tasks].map(intentOnlyTask).sort((a, b) => (a.key < b.key ? -1 : 1));
+  for (const t of tasks) delete (t as { id?: string }).id;
+  const snapshot: EpicSnapshot = {
+    kind: "EpicSnapshot",
+    apiVersion: spec.apiVersion,
+    spec,
+    milestones: input.milestones,
+    tasks,
+    ladderHash: await ladderHash(input.milestones),
+    design: input.design,
+    approval: input.approval,
+    catalog: input.catalog,
+    coordSeq: input.coordSeq,
+    obsSeq: input.obsSeq,
+  };
+  const canonical = canonicalJson(snapshot);
+  for (const token of HOT_STATE_TOKENS) {
+    if (canonical.includes(token)) {
+      throw new Error(`worklens: snapshot carries hot state (${token}) — invariant 1`);
+    }
+  }
+  const bytes = new TextEncoder().encode(canonical);
+  const hash = await crypto.subtle.digest("SHA-256", bytes);
+  let hex = "";
+  for (const b of new Uint8Array(hash)) hex += b.toString(16).padStart(2, "0");
+  return { id: `sha256:${hex}`, canonical, snapshot };
 }

@@ -282,6 +282,21 @@ export interface RevokeWorkApprovalRequest {
   note?: string | undefined;
 }
 
+export interface ApproveWorkEpicResponse extends WorkMutationResponse {
+  /** The sealed EpicSnapshot's content id — the frozen brief the agent
+   *  implements against. The approval IS the dispatch artifact. */
+  snapshot: string;
+}
+
+/** The sealed brief: canonical bytes + content id. Verify by hashing —
+ *  sha256(canonical) MUST equal id; there is no second canonicalizer. */
+export interface WorkEpicBriefResponse {
+  id: string;
+  subject: string;
+  canonical: string;
+  createdAt?: string | undefined;
+}
+
 export interface WorkRollupsResponse {
   initiative: string;
   health: WorkHealth;
