@@ -54,6 +54,8 @@ export const qk = {
   orgWork: (orgId: string) => ["orgWork", orgId] as const,
   orgWorkRollups: (orgId: string, initiative: string) => ["orgWorkRollups", orgId, initiative] as const,
   orgWorkDesigns: (orgId: string, initiative: string) => ["orgWorkDesigns", orgId, initiative] as const,
+  orgWorkDesign: (orgId: string, key: string) => ["orgWorkDesign", orgId, key] as const,
+  orgWorkTimeline: (orgId: string, key: string) => ["orgWorkTimeline", orgId, key] as const,
   /** Agents surface (saas-agents AG7): hosted sessions + profiles. */
   orgAgents: (orgId: string) => ["orgAgents", orgId] as const,
   orgAgentSession: (orgId: string, sessionId: string) => ["orgAgentSession", orgId, sessionId] as const,
