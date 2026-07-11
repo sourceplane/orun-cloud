@@ -480,7 +480,7 @@ export async function handleCreateWorkSpec(
   try {
     const out = await repo.createSpec(
       { orgId },
-      { slug: body.slug, title: body.title, docRef: body.docRef, labels: body.labels, actor: workActorOf(actor) },
+      { slug: body.slug, title: body.title, docRef: body.docRef, initiative: body.initiative, labels: body.labels, actor: workActorOf(actor) },
     );
     const ws = await repo.getWorkSet({ orgId });
     const payload: CreateWorkSpecResponse = {
@@ -1278,7 +1278,36 @@ export async function handleWorkImport(
   const scope: WorkspaceScope = { orgId };
   const { repo, owned } = repoOf(env, deps);
   try {
-    const result: WorkImportResponse = { specsCreated: 0, specsSkipped: 0, tasksCreated: 0, tasksSkipped: 0 };
+    const result: WorkImportResponse = {
+      specsCreated: 0,
+      specsSkipped: 0,
+      tasksCreated: 0,
+      tasksSkipped: 0,
+      initiativesCreated: 0,
+      initiativesSkipped: 0,
+      milestonesCreated: 0,
+      milestonesSkipped: 0,
+      tasksMigrated: 0,
+    };
+
+    // v4 (WH6): roadmap clusters land first so epics can file under them.
+    // Import writes intent, never decisions (no reviews, no approvals).
+    for (const initiative of body.initiatives ?? []) {
+      try {
+        await repo.createInitiative(scope, {
+          slug: initiative.slug,
+          title: initiative.title,
+          actor: workActor,
+        });
+        result.initiativesCreated!++;
+      } catch (err) {
+        if (err instanceof WorkError && err.code === "conflict") {
+          result.initiativesSkipped!++;
+        } else {
+          throw err;
+        }
+      }
+    }
 
     for (const spec of body.specs) {
       try {
@@ -1286,12 +1315,37 @@ export async function handleWorkImport(
           slug: spec.slug,
           title: spec.title,
           docRef: spec.docSha256,
+          initiative: spec.initiative,
           actor: workActor,
         });
         result.specsCreated++;
       } catch (err) {
         if (err instanceof WorkError && err.code === "conflict") {
           result.specsSkipped++; // re-import is idempotent on slugs
+        } else {
+          throw err;
+        }
+      }
+    }
+
+    // v4 (WH6): implementation-plan headings land as ladder milestones —
+    // idempotent on (epic, key); the ladder is what approval will cover.
+    for (const m of body.milestones ?? []) {
+      try {
+        await repo.editMilestone(scope, {
+          epicKey: m.specSlug,
+          op: "create",
+          key: m.key,
+          title: m.title,
+          goal: m.goal,
+          doneWhen: m.doneWhen,
+          ordinal: m.ordinal,
+          actor: workActor,
+        });
+        result.milestonesCreated!++;
+      } catch (err) {
+        if (err instanceof WorkError && err.code === "conflict") {
+          result.milestonesSkipped!++;
         } else {
           throw err;
         }
@@ -1306,7 +1360,17 @@ export async function handleWorkImport(
     for (const t of ws.tasks) {
       const m = t.labels?.[IMPORT_MILESTONE_LABEL];
       const s = t.labels?.[IMPORT_SPEC_LABEL];
-      if (m && s) milestoneKey.set(`${s}:${m}`, t.key);
+      if (m && s) {
+        milestoneKey.set(`${s}:${m}`, t.key);
+        // The key-preserving migration: a pre-v4 imported task whose
+        // milestoneId now exists in the ladder moves into it — same task
+        // key, one milestone_set event, nothing re-created.
+        const ladderKey = (body.milestones ?? []).find((lm) => lm.specSlug === s && lm.key === m);
+        if (ladderKey && !t.milestone) {
+          await repo.setMilestone(scope, { key: t.key, milestone: m, actor: workActor });
+          result.tasksMigrated!++;
+        }
+      }
     }
 
     for (const task of body.tasks) {
@@ -1323,6 +1387,7 @@ export async function handleWorkImport(
         prefix,
         title: `${task.milestoneId} — ${task.title}`,
         specKey: task.specSlug,
+        milestone: task.milestone || undefined,
         contract,
         labels: { [IMPORT_MILESTONE_LABEL]: task.milestoneId, [IMPORT_SPEC_LABEL]: task.specSlug },
         actor: workActor,

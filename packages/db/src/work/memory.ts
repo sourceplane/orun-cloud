@@ -144,11 +144,15 @@ export class MemoryWorkRepository implements WorkRepository {
     if (this.exists(scope, input.slug)) {
       throw new WorkError("conflict", `spec ${input.slug} already exists`);
     }
+    if (input.initiative && !this.exists(scope, input.initiative)) {
+      throw new WorkError("not_found", `unknown initiative ${input.initiative}`);
+    }
     const payload: ItemCreatedPayload = {
       kind: "Spec",
       key: input.slug,
       title: input.title,
       docRef: input.docRef,
+      initiative: input.initiative,
       labels: input.labels,
     };
     const event = this.append(scope, {
