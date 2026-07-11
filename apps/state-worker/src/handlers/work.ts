@@ -34,6 +34,7 @@ import type {
   WorkEstimateRequest,
   WorkLabelRequest,
   WorkOrderRequest,
+  WorkTaskMilestoneRequest,
   WorkPriorityRequest,
   WorkRelateRequest,
   WorkBurnupResponse,
@@ -72,6 +73,9 @@ import {
   recentMentions,
   reviewParkedKeys,
   insertWorkObservation,
+  foldEpicExecution,
+  foldEpicIntent,
+  foldInitiativeStatus,
   taskKeysIn,
   contractComplete,
   createWorkRepository,
@@ -83,6 +87,7 @@ import {
   type FoldResult,
   type Priority,
   type RelationKind,
+  type EpicRollup,
   type Rung,
   type Task,
   type WorkRepository,
@@ -128,13 +133,13 @@ async function defaultPublishMention(
   });
 }
 
-async function dispose(executor: SqlExecutor | undefined): Promise<void> {
+export async function dispose(executor: SqlExecutor | undefined): Promise<void> {
   if (executor && "dispose" in executor && typeof (executor as { dispose?: unknown }).dispose === "function") {
     await (executor as unknown as { dispose: () => Promise<void> }).dispose();
   }
 }
 
-function repoOf(env: Env, deps?: WorkHandlerDeps): { repo: WorkRepository; owned: SqlExecutor | undefined } {
+export function repoOf(env: Env, deps?: WorkHandlerDeps): { repo: WorkRepository; owned: SqlExecutor | undefined } {
   if (deps?.repo) return { repo: deps.repo, owned: undefined };
   const executor = deps?.executor ?? createSqlExecutor(env.PLATFORM_DB!);
   return { repo: createWorkRepository(executor as TransactionalSqlExecutor), owned: deps?.executor ? undefined : executor };
@@ -153,7 +158,7 @@ export function workActorOf(actor: ActorContext): WorkActor {
   }
 }
 
-function workErrorResponse(err: WorkError, requestId: string): Response {
+export function workErrorResponse(err: WorkError, requestId: string): Response {
   switch (err.code) {
     case "not_found":
       return errorResponse("not_found", "Not found", 404, requestId);
@@ -166,7 +171,7 @@ function workErrorResponse(err: WorkError, requestId: string): Response {
   }
 }
 
-function taskView(t: Task, foldResult: FoldResult, assignees?: Map<string, string[]>): WorkTaskView {
+export function taskView(t: Task, foldResult: FoldResult, assignees?: Map<string, string[]>): WorkTaskView {
   const lc = foldResult.lifecycles[t.key];
   return {
     key: t.key,
@@ -181,6 +186,7 @@ function taskView(t: Task, foldResult: FoldResult, assignees?: Map<string, strin
     estimate: t.estimate,
     relations: t.relations,
     cycleKey: t.cycleKey,
+    milestone: t.milestone,
     assignees: assignees?.get(t.key),
     lifecycle: {
       rung: lc?.rung ?? (contractComplete(t.contract) ? "ready" : "draft"),
@@ -192,17 +198,43 @@ function taskView(t: Task, foldResult: FoldResult, assignees?: Map<string, strin
   };
 }
 
-function summarize(orgId: string, ws: WorkSet): WorkSummaryResponse {
+async function summarize(orgId: string, ws: WorkSet): Promise<WorkSummaryResponse> {
   const foldResult = fold(ws);
-  const { specs, initiatives } = buildEnvelopes(orgId, ws.events);
-  const specViews: WorkSpecView[] = specs.map((s) => ({
-    key: s.key,
-    title: s.title,
-    docRef: s.docRef,
-    createdBy: s.createdBy,
-    createdAt: s.createdAt,
-    progress: progress(ws, s.key, foldResult),
-  }));
+  const { specs, initiatives, milestones } = buildEnvelopes(orgId, ws.events);
+  const specViews: WorkSpecView[] = [];
+  for (const s of specs) {
+    // v4 (WH1): the authored intent ladder + the milestone ladder with
+    // derived progress — additive fields; v2/v3 clients ignore them.
+    const intent = await foldEpicIntent(s.key, ws.events);
+    const ladder = milestones.get(s.key) ?? [];
+    const execution = foldEpicExecution(ws, s.key, ladder, foldResult);
+    const view: WorkSpecView = {
+      key: s.key,
+      title: s.title,
+      docRef: s.docRef,
+      createdBy: s.createdBy,
+      createdAt: s.createdAt,
+      progress: progress(ws, s.key, foldResult),
+      initiative: s.initiative,
+      targetDate: s.targetDate,
+      intent: {
+        state: intent.state,
+        approval: intent.approval,
+        currentRevision: intent.currentRevision,
+        docDrifted: intent.docDrifted,
+        ladderDrifted: intent.ladderDrifted,
+      },
+    };
+    if (ladder.length > 0) {
+      view.milestones = ladder.map((m, i) => ({
+        ...m,
+        progress: execution.milestones?.[i]?.counts,
+        total: execution.milestones?.[i]?.total,
+        complete: execution.milestones?.[i]?.complete,
+      }));
+    }
+    specViews.push(view);
+  }
   // v3 PM3: initiative rollups — member specs come from `related {rel:
   // parent}` edges in the log; progress is the SUM of member specs' fold
   // projections. Derived on every read, stored nowhere (V3-3).
@@ -215,10 +247,28 @@ function summarize(orgId: string, ws: WorkSet): WorkSummaryResponse {
         rollup[rung as Rung] = (rollup[rung as Rung] ?? 0) + (count ?? 0);
       }
     }
+    // v4: health folds from member epics (spec.initiative — the partOf
+    // envelope edge) with named evidence; the v3 `related {rel: parent}`
+    // membership keeps working for progress rollups.
+    const memberEpics: EpicRollup[] = [];
+    for (const s of specs) {
+      if (s.initiative !== i.key) continue;
+      const ladder = milestones.get(s.key) ?? [];
+      memberEpics.push({
+        epic: s,
+        intent: { state: specViews.find((v) => v.key === s.key)?.intent?.state ?? "draft" },
+        execution: foldEpicExecution(ws, s.key, ladder, foldResult),
+      });
+    }
+    const status = foldInitiativeStatus(i.key, memberEpics, ws.events, new Date().toISOString().slice(0, 10));
     return {
       key: i.key,
       title: i.title,
       description: i.description,
+      owner: i.owner,
+      targetDate: i.targetDate,
+      successCriteria: i.successCriteria,
+      ...(memberEpics.length > 0 ? { health: status.health, healthEvidence: status.evidence } : {}),
       createdBy: i.createdBy,
       createdAt: i.createdAt,
       ...(members.length > 0 ? { specs: members, progress: rollup } : {}),
@@ -260,7 +310,7 @@ export async function handleWorkSummary(
   const { repo, owned } = repoOf(env, deps);
   try {
     const ws = await repo.getWorkSet({ orgId });
-    return successResponse(summarize(orgId, ws), requestId);
+    return successResponse(await summarize(orgId, ws), requestId);
   } catch (err) {
     if (err instanceof WorkError) return workErrorResponse(err, requestId);
     return errorResponse("internal_error", "Service unavailable", 503, requestId);
@@ -404,7 +454,7 @@ export async function handleStreamWorkEvents(
 
 // ── Mutations (verdicts ride the error envelope) ────────────────────────────
 
-async function parseBody<T>(request: Request): Promise<T | null> {
+export async function parseBody<T>(request: Request): Promise<T | null> {
   try {
     return (await request.json()) as T;
   } catch {
@@ -656,6 +706,7 @@ export async function handleCreateWorkTask(
         prefix: body.prefix,
         title: body.title,
         specKey: body.specKey,
+        milestone: body.milestone,
         contract: body.contract as Contract | undefined,
         labels: body.labels,
         actor: workActorOf(actor),
@@ -689,7 +740,9 @@ type TaskAction =
   | "relate"
   | "order"
   // v3 PM3 — plan into a time-box; the burn-up inside stays derived:
-  | "cycle";
+  | "cycle"
+  // v4 WH1 — move into a milestone; progress inside stays derived:
+  | "milestone";
 
 // ── PM1: reactions + the timeline ────────────────────────────────────────────
 
@@ -886,6 +939,16 @@ export async function handleWorkTaskAction(
           return validationError(requestId, { view: ["required"], order: ["required number"] });
         }
         out = await repo.order(scope, { key, view: body.view, order: body.order, actor: workActor });
+        break;
+      }
+      case "milestone": {
+        // v4 (WH1): move a task into (or out of) a milestone within its
+        // epic — pure intent; the ladder is validated in the repository.
+        const body = await parseBody<WorkTaskMilestoneRequest>(request);
+        if (!body || body.milestone === undefined) {
+          return validationError(requestId, { milestone: ["required (null clears)"] });
+        }
+        out = await repo.setMilestone({ orgId }, { key, milestone: body.milestone, actor: workActor });
         break;
       }
       case "cycle": {

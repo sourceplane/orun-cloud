@@ -45,6 +45,21 @@ import type {
   WorkMutationResponse,
   WorkPinRequest,
   WorkSummaryResponse,
+  AdoptWorkDesignRequest,
+  AdoptWorkDesignResponse,
+  ApproveWorkEpicRequest,
+  CreateWorkDesignRequest,
+  CreateWorkDesignResponse,
+  RevokeWorkApprovalRequest,
+  SupersedeWorkDesignRequest,
+  WorkDesignView,
+  WorkDesignsResponse,
+  WorkMilestoneRequest,
+  WorkMilestonesResponse,
+  WorkReviewRequest,
+  WorkRollupsResponse,
+  WorkTaskMilestoneRequest,
+  WorkVerdictRequest,
 } from "@saas/contracts/work";
 
 import type { Transport, RequestOptions } from "./transport.js";
@@ -341,6 +356,112 @@ export class WorkClient {
   import(orgId: string, plan: WorkImportRequest, opts: RequestOptions = {}): Promise<WorkImportResponse> {
     return this.transport.request<WorkImportResponse>(
       { method: "POST", path: `${workBase(orgId)}/import`, body: plan },
+      opts,
+    );
+  }
+
+  // ── v4 (WH1): the planning hierarchy ──────────────────────────────────────
+
+  /** Edit an epic's milestone ladder (create/edit/reorder/remove) — the
+   *  milestone_edited event. Removing a milestone with open tasks is a 409. */
+  editMilestone(orgId: string, epicKey: string, body: WorkMilestoneRequest, opts: RequestOptions = {}): Promise<WorkMutationResponse> {
+    return this.transport.request<WorkMutationResponse>(
+      { method: "POST", path: `${workBase(orgId)}/epics/${encodeURIComponent(epicKey)}/milestones`, body },
+      opts,
+    );
+  }
+
+  /** The ladder with derived per-milestone progress (V4-4: never entered). */
+  listMilestones(orgId: string, epicKey: string, opts: RequestOptions = {}): Promise<WorkMilestonesResponse> {
+    return this.transport.request<WorkMilestonesResponse>(
+      { method: "GET", path: `${workBase(orgId)}/epics/${encodeURIComponent(epicKey)}/milestones` },
+      opts,
+    );
+  }
+
+  /** Move a task into (or out of, null) a milestone within its epic. */
+  setMilestone(orgId: string, key: string, body: WorkTaskMilestoneRequest, opts: RequestOptions = {}): Promise<WorkMutationResponse> {
+    return this.taskAction(orgId, key, "milestone", body, opts);
+  }
+
+  /** Enter an epic or design into review at a revision. */
+  requestReview(orgId: string, key: string, body: WorkReviewRequest = {}, opts: RequestOptions = {}): Promise<WorkMutationResponse> {
+    return this.transport.request<WorkMutationResponse>(
+      { method: "POST", path: `${workBase(orgId)}/epics/${encodeURIComponent(key)}/review`, body },
+      opts,
+    );
+  }
+
+  /** Submit a review verdict. Agents may — their verdict is advice, and
+   *  can never become an approval (V4-2). */
+  submitVerdict(orgId: string, key: string, body: WorkVerdictRequest, opts: RequestOptions = {}): Promise<WorkMutationResponse> {
+    return this.transport.request<WorkMutationResponse>(
+      { method: "POST", path: `${workBase(orgId)}/epics/${encodeURIComponent(key)}/verdict`, body },
+      opts,
+    );
+  }
+
+  /** Approve an epic — human-only + `work.approve`; names the exact doc
+   *  revision (stale = 409). There is deliberately no way to approve
+   *  through the task-action surface. */
+  approve(orgId: string, epicKey: string, body: ApproveWorkEpicRequest = {}, opts: RequestOptions = {}): Promise<WorkMutationResponse> {
+    return this.transport.request<WorkMutationResponse>(
+      { method: "POST", path: `${workBase(orgId)}/epics/${encodeURIComponent(epicKey)}/approve`, body },
+      opts,
+    );
+  }
+
+  revokeApproval(orgId: string, epicKey: string, body: RevokeWorkApprovalRequest = {}, opts: RequestOptions = {}): Promise<WorkMutationResponse> {
+    return this.transport.request<WorkMutationResponse>(
+      { method: "POST", path: `${workBase(orgId)}/epics/${encodeURIComponent(epicKey)}/revoke-approval`, body },
+      opts,
+    );
+  }
+
+  /** Create a design under an initiative (humans or agents — a design is a
+   *  proposal, not a decision). Context seals server-side. */
+  createDesign(orgId: string, initiativeKey: string, body: CreateWorkDesignRequest, opts: RequestOptions = {}): Promise<CreateWorkDesignResponse> {
+    return this.transport.request<CreateWorkDesignResponse>(
+      { method: "POST", path: `${workBase(orgId)}/initiatives/${encodeURIComponent(initiativeKey)}/designs`, body },
+      opts,
+    );
+  }
+
+  listDesigns(orgId: string, initiativeKey: string, opts: RequestOptions = {}): Promise<WorkDesignsResponse> {
+    return this.transport.request<WorkDesignsResponse>(
+      { method: "GET", path: `${workBase(orgId)}/initiatives/${encodeURIComponent(initiativeKey)}/designs` },
+      opts,
+    );
+  }
+
+  getDesign(orgId: string, key: string, opts: RequestOptions = {}): Promise<WorkDesignView> {
+    return this.transport.request<WorkDesignView>(
+      { method: "GET", path: `${workBase(orgId)}/designs/${encodeURIComponent(key)}` },
+      opts,
+    );
+  }
+
+  /** Adopt a design — human-only + `work.approve`; mints the proposal's
+   *  epics/milestones/task-skeletons in one attributed transaction (V4-4). */
+  adoptDesign(orgId: string, key: string, body: AdoptWorkDesignRequest = {}, opts: RequestOptions = {}): Promise<AdoptWorkDesignResponse> {
+    return this.transport.request<AdoptWorkDesignResponse>(
+      { method: "POST", path: `${workBase(orgId)}/designs/${encodeURIComponent(key)}/adopt`, body },
+      opts,
+    );
+  }
+
+  supersedeDesign(orgId: string, key: string, body: SupersedeWorkDesignRequest = {}, opts: RequestOptions = {}): Promise<WorkMutationResponse> {
+    return this.transport.request<WorkMutationResponse>(
+      { method: "POST", path: `${workBase(orgId)}/designs/${encodeURIComponent(key)}/supersede`, body },
+      opts,
+    );
+  }
+
+  /** The initiative rollup: derived health with named evidence, progress,
+   *  and per-epic intent + execution. Nothing here is enterable (V4-4). */
+  rollups(orgId: string, initiativeKey: string, opts: RequestOptions = {}): Promise<WorkRollupsResponse> {
+    return this.transport.request<WorkRollupsResponse>(
+      { method: "GET", path: `${workBase(orgId)}/rollups`, query: { initiative: initiativeKey } },
       opts,
     );
   }

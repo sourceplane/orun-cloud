@@ -67,8 +67,32 @@ export const EVENT_KINDS = [
   "cycle_set", // {cycle} — null clears
   "related", // {rel: blocks|parent|relates, target}
   "unrelated", // {rel, target}
+  // v4 (orun-work-v4 WH1 — design §1.3). Every addition is a decision or
+  // intent: the INTENT ladder is authored (review/approve/adopt are things
+  // the world cannot observe, exactly like canceled) while the DELIVERY fold
+  // reads none of these (V4-1). Still no lifecycle-write kind. The four
+  // decision kinds are HUMAN-ONLY (V4-2) — enforced in validateEvent.
+  "milestone_edited", // {op: create|edit|reorder|remove, key, …fields}
+  "milestone_set", // {milestone} — null clears (task → milestone)
+  "review_requested", // {revision?, reviewers?, note?}
+  "review_submitted", // {revision?, verdict: approve|request_changes, note?}
+  "approved", // {revision?, snapshot?} — HUMAN-ONLY
+  "approval_revoked", // {note?} — HUMAN-ONLY
+  "design_adopted", // {revision?, minted[]} — HUMAN-ONLY
+  "superseded", // {by?, note?} — HUMAN-ONLY
 ] as const;
 export type EventKind = (typeof EVENT_KINDS)[number];
+
+/** The decisions only a person may author (V4-2): approval, its revocation,
+ *  adopting a design, superseding one. Neither agents nor automation may
+ *  wear these — the world cannot know a human decided, so only a human
+ *  actor may say so. */
+export const HUMAN_ONLY_EVENT_KINDS: readonly EventKind[] = [
+  "approved",
+  "approval_revoked",
+  "design_adopted",
+  "superseded",
+] as const;
 
 export const OBSERVATION_KINDS = [
   "branch_seen",
@@ -101,6 +125,60 @@ export interface Relation {
 export const GATE_STATUSES = ["green", "red", "pending"] as const;
 export type GateStatus = (typeof GATE_STATUSES)[number];
 
+/** The AUTHORED intent ladder (v4, design §1.4) — a fold over coordination
+ *  events only, entirely separate from the derived delivery Rung. Approved
+ *  never renders without its revision (V4-2); post-approval edits fold to
+ *  approved_drifted (V4-3), cleared only by a fresh approval. */
+export const INTENT_STATES = [
+  "draft",
+  "in_review",
+  "approved",
+  "approved_drifted",
+  "adopted", // designs only
+  "superseded", // designs only
+  "canceled",
+] as const;
+export type IntentState = (typeof INTENT_STATES)[number];
+
+/** Review verdict vocabulary. Agents may submit verdicts (advice, rendered
+ *  with an agent chip); only humans approve. */
+export const REVIEW_VERDICTS = ["approve", "request_changes"] as const;
+export type ReviewVerdict = (typeof REVIEW_VERDICTS)[number];
+
+/** Derived initiative health (v4, design §1.5) — computed with named
+ *  evidence, never a dropdown. Pinnable beside truth like any rung. */
+export const HEALTHS = ["on_track", "at_risk", "off_track"] as const;
+export type Health = (typeof HEALTHS)[number];
+
+const HEALTH_ORDER: Record<Health, number> = { off_track: 0, at_risk: 1, on_track: 2 };
+
+export function healthIndex(h: Health): number | undefined {
+  return HEALTH_ORDER[h];
+}
+
+/** Milestone keys mirror the repo's ladder convention: WH2, PM0, M1. */
+const MILESTONE_KEY_RE = /^[A-Z]{1,6}[0-9]{1,3}[a-z]?$/;
+
+export function isMilestoneKey(key: string): boolean {
+  return MILESTONE_KEY_RE.test(key);
+}
+
+/** Milestones are addressable sub-items of an epic: "<epic-key>#<key>"
+ *  (design §1.1). The logs treat subjects as opaque keys, so milestones get
+ *  timelines and comments with zero log changes. */
+export function milestoneSubject(epicKey: string, milestoneKey: string): string {
+  return `${epicKey}#${milestoneKey}`;
+}
+
+export function parseMilestoneSubject(subject: string): { epicKey: string; milestoneKey: string } | undefined {
+  const i = subject.lastIndexOf("#");
+  if (i <= 0 || i === subject.length - 1) return undefined;
+  const epicKey = subject.slice(0, i);
+  const milestoneKey = subject.slice(i + 1);
+  if (!isMilestoneKey(milestoneKey)) return undefined;
+  return { epicKey, milestoneKey };
+}
+
 // ── Shapes ──────────────────────────────────────────────────────────────────
 
 export interface Actor {
@@ -129,6 +207,10 @@ export interface Spec {
   workspace: string;
   title: string;
   docRef?: string | undefined;
+  /** partOf target (v4) — the initiative this epic serves; empty = unfiled. */
+  initiative?: string | undefined;
+  /** Intent target date, YYYY-MM-DD (v4). Health folds read it; nothing else. */
+  targetDate?: string | undefined;
   labels?: Record<string, string> | undefined;
   createdBy: Actor;
   createdAt?: string | undefined;
@@ -156,6 +238,9 @@ export interface Task {
   /** v3 PM3: the cycle this task is planned into (cycle_set; null clears).
    *  Assignment is intent; everything inside the cycle is derived. */
   cycleKey?: string | undefined;
+  /** v4: the milestone (within `spec`) this task belongs to (milestone_set;
+   *  null clears). A milestone without a spec is invalid (design §1.2). */
+  milestone?: string | undefined;
 }
 
 /** An authored time-box (v3 PM3). The row is pure intent — name and dates.
@@ -180,6 +265,74 @@ export interface Initiative {
   workspace: string;
   title: string;
   description?: string | undefined;
+  /** v4 properties — pure intent (design §1.7). Health/progress are folds. */
+  owner?: string | undefined; // membership subject id
+  targetDate?: string | undefined; // YYYY-MM-DD
+  successCriteria?: string[] | undefined;
+  createdBy: Actor;
+  createdAt?: string | undefined;
+}
+
+/** An epic-scoped checkpoint (v4, V4-D): the repo's implementation-plan
+ *  ladder convention (WP0 → WH6) as schema. Lives inside exactly one epic;
+ *  addressed as "<epic-key>#<key>"; approval covers the ladder via its
+ *  canonical hash. Progress inside is DERIVED (V4-4). */
+export interface Milestone {
+  key: string;
+  title: string;
+  goal?: string | undefined;
+  doneWhen?: string[] | undefined;
+  targetDate?: string | undefined;
+  ordinal: number;
+}
+
+/** What a design assumed: the catalog snapshot and the two log cursors at
+ *  creation time. A design is honest about its world. */
+export interface DesignContext {
+  catalog?: string | undefined; // CatalogSnapshot content id
+  coordSeq: number;
+  obsSeq: number;
+}
+
+/** A task a design proposes under a milestone; lands as a Draft task at
+ *  adoption. */
+export interface ProposalTaskSkeleton {
+  milestone?: string | undefined;
+  title: string;
+  contract?: Contract | undefined;
+}
+
+/** One epic a design proposes, with its milestone ladder and optional task
+ *  skeletons. */
+export interface ProposalEpic {
+  slug: string;
+  title: string;
+  docSeed?: string | undefined; // initial epic doc revision
+  milestones?: Milestone[] | undefined;
+  taskSkeletons?: ProposalTaskSkeleton[] | undefined;
+}
+
+/** The structured half of a design — the exact input adoption mints from. */
+export interface Proposal {
+  epics: ProposalEpic[];
+}
+
+/** The v4 noun for "the what" (V4-B): a doc revision chain plus a structured
+ *  Proposal, produced by a design run (AG8), a human session, or import.
+ *  Many designs per initiative; adoption mints epics and freezes the record
+ *  (V4-4). */
+export interface Design {
+  apiVersion: string;
+  kind: "Design";
+  id?: string | undefined;
+  key: string; // DSG-n, workspace-scoped
+  workspace: string;
+  initiative: string; // hasDesign edge; exactly one
+  title: string;
+  docRef?: string | undefined;
+  context: DesignContext;
+  proposal?: Proposal | undefined;
+  labels?: Record<string, string> | undefined;
   createdBy: Actor;
   createdAt?: string | undefined;
 }
@@ -266,6 +419,7 @@ export class WorkError extends Error {
       | "missing_actor"
       | "missing_subject"
       | "agent_pin"
+      | "human_only"
       | "bad_observation"
       | "not_found"
       | "conflict"
@@ -294,6 +448,12 @@ export function validateEvent(e: CoordinationEvent): void {
   if (e.kind === "pinned" && e.actor.type === "agent") {
     throw new WorkError("agent_pin", `agents may not pin (${e.subject}) — WP-10`);
   }
+  if (HUMAN_ONLY_EVENT_KINDS.includes(e.kind) && e.actor.type !== "user") {
+    throw new WorkError(
+      "human_only",
+      `${e.kind} is a human-only decision — actor type ${e.actor.type} may not author it (V4-2)`,
+    );
+  }
 }
 
 export function validateObservation(o: Observation): void {
@@ -305,6 +465,40 @@ export function validateObservation(o: Observation): void {
   }
   if (!o.dedupeKey) {
     throw new WorkError("bad_observation", `observation ${o.kind} from ${o.source} has no dedupeKey (invariant 4)`);
+  }
+}
+
+const SLUG_RE_MODEL = /^[a-z0-9-]+$/;
+
+/** Write-time proposal hygiene (mirrors the Go ValidateDesign): a malformed
+ *  proposal fails at write time, not at adoption. */
+export function validateProposal(p: Proposal | undefined | null): void {
+  if (!p) return;
+  for (const pe of p.epics ?? []) {
+    if (!pe.slug || !pe.title) {
+      throw new WorkError("invalid", "a proposal epic needs a slug and a title");
+    }
+    if (!SLUG_RE_MODEL.test(pe.slug)) {
+      throw new WorkError("invalid", `proposal epic slug ${pe.slug} must be lowercase kebab`);
+    }
+    const ladder = new Set<string>();
+    for (const m of pe.milestones ?? []) {
+      if (!isMilestoneKey(m.key) || !m.title) {
+        throw new WorkError("invalid", `proposal epic ${pe.slug} milestone ${m.key} needs a valid key and title`);
+      }
+      ladder.add(m.key);
+    }
+    for (const ts of pe.taskSkeletons ?? []) {
+      if (!ts.title) {
+        throw new WorkError("invalid", `proposal epic ${pe.slug} has a titleless task skeleton`);
+      }
+      if (ts.milestone && !ladder.has(ts.milestone)) {
+        throw new WorkError(
+          "invalid",
+          `proposal epic ${pe.slug} task "${ts.title}" names milestone ${ts.milestone} not in the ladder`,
+        );
+      }
+    }
   }
 }
 

@@ -70,6 +70,15 @@ import {
   handleWorkBurnup,
   handleWorkTriage,
 } from "./handlers/work.js";
+import {
+  handleGetWorkDesign,
+  handleWorkApprove,
+  handleWorkDesignDecision,
+  handleWorkDesigns,
+  handleWorkMilestones,
+  handleWorkReview,
+  handleWorkRollups,
+} from "./handlers/work-hierarchy.js";
 import { handleGetOrgStateStorage } from "./handlers/state-usage.js";
 import { handleGetStateGcReport } from "./handlers/gc-report.js";
 import { handleCollectStateGc } from "./handlers/gc-collect.js";
@@ -205,13 +214,25 @@ const ORG_WORK_ITEM_EDIT_RE = /^\/v1\/organizations\/([^/]+)\/work\/items\/([^/]
 const ORG_WORK_SPEC_DOC_RE = /^\/v1\/organizations\/([^/]+)\/work\/specs\/([^/]+)\/doc$/;
 const ORG_WORK_SPEC_DOC_HISTORY_RE = /^\/v1\/organizations\/([^/]+)\/work\/specs\/([^/]+)\/doc\/history$/;
 const ORG_WORK_TASKS_RE = /^\/v1\/organizations\/([^/]+)\/work\/tasks$/;
-const ORG_WORK_TASK_ACTION_RE = /^\/v1\/organizations\/([^/]+)\/work\/tasks\/([^/]+)\/(comment|assign|pin|cancel|contract|label|priority|estimate|relate|order|cycle)$/;
+const ORG_WORK_TASK_ACTION_RE = /^\/v1\/organizations\/([^/]+)\/work\/tasks\/([^/]+)\/(comment|assign|pin|cancel|contract|label|priority|estimate|relate|order|cycle|milestone)$/;
 const ORG_WORK_VIEWS_RE = /^\/v1\/organizations\/([^/]+)\/work\/views$/;
 const ORG_WORK_TRIAGE_RE = /^\/v1\/organizations\/([^/]+)\/work\/triage$/;
 const ORG_WORK_CYCLES_RE = /^\/v1\/organizations\/([^/]+)\/work\/cycles$/;
 const ORG_WORK_CYCLE_BURNUP_RE = /^\/v1\/organizations\/([^/]+)\/work\/cycles\/([^/]+)\/burnup$/;
 const ORG_WORK_IMPORT_RE = /^\/v1\/organizations\/([^/]+)\/work\/import$/;
 const ORG_WORK_OBSERVATIONS_RE = /^\/v1\/organizations\/([^/]+)\/work\/observations$/;
+// ── orun-work v4 (WH1) — the planning hierarchy. `epics` aliases `specs`
+// 1:1 (V4-C: the surface name changes, the wire kind does not).
+const ORG_WORK_EPICS_RE = /^\/v1\/organizations\/([^/]+)\/work\/epics$/;
+const ORG_WORK_EPIC_DOC_RE = /^\/v1\/organizations\/([^/]+)\/work\/(?:epics|designs)\/([^/]+)\/doc$/;
+const ORG_WORK_EPIC_DOC_HISTORY_RE = /^\/v1\/organizations\/([^/]+)\/work\/(?:epics|designs)\/([^/]+)\/doc\/history$/;
+const ORG_WORK_MILESTONES_RE = /^\/v1\/organizations\/([^/]+)\/work\/(?:epics|specs)\/([^/]+)\/milestones$/;
+const ORG_WORK_REVIEW_RE = /^\/v1\/organizations\/([^/]+)\/work\/(?:epics|specs|designs)\/([^/]+)\/(review|verdict)$/;
+const ORG_WORK_APPROVE_RE = /^\/v1\/organizations\/([^/]+)\/work\/(?:epics|specs)\/([^/]+)\/(approve|revoke-approval)$/;
+const ORG_WORK_INITIATIVE_DESIGNS_RE = /^\/v1\/organizations\/([^/]+)\/work\/initiatives\/([^/]+)\/designs$/;
+const ORG_WORK_DESIGN_RE = /^\/v1\/organizations\/([^/]+)\/work\/designs\/([^/]+)$/;
+const ORG_WORK_DESIGN_DECISION_RE = /^\/v1\/organizations\/([^/]+)\/work\/designs\/([^/]+)\/(adopt|supersede)$/;
+const ORG_WORK_ROLLUPS_RE = /^\/v1\/organizations\/([^/]+)\/work\/rollups$/;
 
 // OV1 — hosted RefStore (design-v2 §2). Ref names carry slashes
 // (catalogs/current, executions/by-id/<id>), so the name is a greedy tail.
@@ -396,6 +417,102 @@ export async function route(request: Request, env: Env, ctx?: ExecutionContext):
     return handleCreateWorkInitiative(request, env, requestId, actor, orgId);
   }
 
+  // ── orun-work v4 (WH1) — the planning hierarchy. ──
+  m = pathname.match(ORG_WORK_EPICS_RE);
+  if (m) {
+    const orgId = parseOrgPublicId(m[1]!);
+    if (!orgId) return notFound(requestId, pathname);
+    if (request.method !== "POST") return methodNotAllowed(requestId);
+    return handleCreateWorkSpec(request, env, requestId, actor, orgId);
+  }
+
+  // Match /doc/history before /doc (same prefix) — the epics/designs alias.
+  m = pathname.match(ORG_WORK_EPIC_DOC_HISTORY_RE);
+  if (m) {
+    const orgId = parseOrgPublicId(m[1]!);
+    if (!orgId) return notFound(requestId, pathname);
+    if (request.method !== "GET") return methodNotAllowed(requestId);
+    return handleWorkDocHistory(request, env, requestId, actor, orgId, decodeURIComponent(m[2]!));
+  }
+
+  m = pathname.match(ORG_WORK_EPIC_DOC_RE);
+  if (m) {
+    const orgId = parseOrgPublicId(m[1]!);
+    if (!orgId) return notFound(requestId, pathname);
+    const docKey = decodeURIComponent(m[2]!);
+    if (request.method === "PUT") return handlePutWorkDoc(request, env, requestId, actor, orgId, docKey);
+    if (request.method === "GET") return handleGetWorkDoc(request, env, requestId, actor, orgId, docKey);
+    return methodNotAllowed(requestId);
+  }
+
+  m = pathname.match(ORG_WORK_MILESTONES_RE);
+  if (m) {
+    const orgId = parseOrgPublicId(m[1]!);
+    if (!orgId) return notFound(requestId, pathname);
+    if (request.method !== "GET" && request.method !== "POST") return methodNotAllowed(requestId);
+    return handleWorkMilestones(request, env, requestId, actor, orgId, decodeURIComponent(m[2]!));
+  }
+
+  m = pathname.match(ORG_WORK_REVIEW_RE);
+  if (m) {
+    const orgId = parseOrgPublicId(m[1]!);
+    if (!orgId) return notFound(requestId, pathname);
+    if (request.method !== "POST") return methodNotAllowed(requestId);
+    return handleWorkReview(
+      request, env, requestId, actor, orgId,
+      decodeURIComponent(m[2]!),
+      m[3] === "review" ? "review" : "verdict",
+    );
+  }
+
+  m = pathname.match(ORG_WORK_APPROVE_RE);
+  if (m) {
+    const orgId = parseOrgPublicId(m[1]!);
+    if (!orgId) return notFound(requestId, pathname);
+    if (request.method !== "POST") return methodNotAllowed(requestId);
+    return handleWorkApprove(
+      request, env, requestId, actor, orgId,
+      decodeURIComponent(m[2]!),
+      m[3] === "approve" ? "approve" : "revoke",
+    );
+  }
+
+  m = pathname.match(ORG_WORK_INITIATIVE_DESIGNS_RE);
+  if (m) {
+    const orgId = parseOrgPublicId(m[1]!);
+    if (!orgId) return notFound(requestId, pathname);
+    if (request.method !== "GET" && request.method !== "POST") return methodNotAllowed(requestId);
+    return handleWorkDesigns(request, env, requestId, actor, orgId, decodeURIComponent(m[2]!));
+  }
+
+  m = pathname.match(ORG_WORK_DESIGN_DECISION_RE);
+  if (m) {
+    const orgId = parseOrgPublicId(m[1]!);
+    if (!orgId) return notFound(requestId, pathname);
+    if (request.method !== "POST") return methodNotAllowed(requestId);
+    return handleWorkDesignDecision(
+      request, env, requestId, actor, orgId,
+      decodeURIComponent(m[2]!),
+      m[3] === "adopt" ? "adopt" : "supersede",
+    );
+  }
+
+  m = pathname.match(ORG_WORK_DESIGN_RE);
+  if (m) {
+    const orgId = parseOrgPublicId(m[1]!);
+    if (!orgId) return notFound(requestId, pathname);
+    if (request.method !== "GET") return methodNotAllowed(requestId);
+    return handleGetWorkDesign(request, env, requestId, actor, orgId, decodeURIComponent(m[2]!));
+  }
+
+  m = pathname.match(ORG_WORK_ROLLUPS_RE);
+  if (m) {
+    const orgId = parseOrgPublicId(m[1]!);
+    if (!orgId) return notFound(requestId, pathname);
+    if (request.method !== "GET") return methodNotAllowed(requestId);
+    return handleWorkRollups(request, env, requestId, actor, orgId);
+  }
+
   m = pathname.match(ORG_WORK_TIMELINE_RE);
   if (m) {
     const orgId = parseOrgPublicId(m[1]!);
@@ -455,7 +572,7 @@ export async function route(request: Request, env: Env, ctx?: ExecutionContext):
     return handleWorkTaskAction(
       request, env, requestId, actor, orgId,
       decodeURIComponent(m[2]!),
-      m[3]! as "comment" | "assign" | "pin" | "cancel" | "contract" | "label" | "priority" | "estimate" | "relate" | "order" | "cycle",
+      m[3]! as "comment" | "assign" | "pin" | "cancel" | "contract" | "label" | "priority" | "estimate" | "relate" | "order" | "cycle" | "milestone",
     );
   }
 

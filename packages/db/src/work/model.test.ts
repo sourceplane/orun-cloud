@@ -110,7 +110,8 @@ describe("write-time validation", () => {
   });
 
   it("v3 grows the vocabulary to 19 — every addition intent or conversation (V3-1)", () => {
-    expect(EVENT_KINDS).toHaveLength(19);
+    // The total count is asserted by the v4 suite (hierarchy.test.ts).
+    expect(EVENT_KINDS.length).toBeGreaterThanOrEqual(19);
     for (const k of [
       "doc_edited",
       "reaction_added",

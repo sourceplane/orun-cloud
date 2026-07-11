@@ -87,6 +87,8 @@ export interface WorkTaskView {
   relations?: WorkRelation[] | undefined;
   /** v3 PM3: the authored time-box this task is planned into. */
   cycleKey?: string | undefined;
+  /** v4: the milestone (within `spec`) this task belongs to. */
+  milestone?: string | undefined;
   /** v3 PM5: current assignees (membership subjects — usr_/sp_/team_),
    *  folded from assigned/unassigned events. An sp_ subject IS an agent
    *  seat; assigning to one is the ordinary assign mutator. */
@@ -102,6 +104,201 @@ export interface WorkSpecView {
   /** Per-rung counts over the spec's tasks — the projection that replaces
    *  hand-edited status tables. */
   progress: Partial<Record<WorkRung, number>>;
+  /** v4: the initiative this epic serves (partOf); empty = unfiled. */
+  initiative?: string | undefined;
+  /** v4: intent target date (YYYY-MM-DD) — health folds read it. */
+  targetDate?: string | undefined;
+  /** v4: the authored intent ladder, folded from coordination events only.
+   *  Approved never renders without its revision (V4-2); drift renders both
+   *  digests (V4-3). Additive — v2/v3 clients ignore it. */
+  intent?: WorkEpicIntentView | undefined;
+  /** v4: the milestone ladder with derived per-milestone progress. */
+  milestones?: WorkMilestoneView[] | undefined;
+}
+
+// ── v4: the planning hierarchy (orun-work-v4 WH1) ───────────────────────────
+
+export type WorkIntentState =
+  | "draft"
+  | "in_review"
+  | "approved"
+  | "approved_drifted"
+  | "adopted"
+  | "superseded"
+  | "canceled";
+
+export type WorkReviewVerdict = "approve" | "request_changes";
+
+export type WorkHealth = "on_track" | "at_risk" | "off_track";
+
+export interface WorkApprovalView {
+  revision?: string | undefined;
+  snapshot?: string | undefined;
+  by: WorkActor;
+  at?: string | undefined;
+  ladderHash?: string | undefined;
+}
+
+export interface WorkEpicIntentView {
+  state: WorkIntentState;
+  approval?: WorkApprovalView | undefined;
+  currentRevision?: string | undefined;
+  docDrifted?: boolean | undefined;
+  ladderDrifted?: boolean | undefined;
+}
+
+export interface WorkMilestoneView {
+  key: string;
+  title: string;
+  goal?: string | undefined;
+  doneWhen?: string[] | undefined;
+  targetDate?: string | undefined;
+  ordinal: number;
+  /** Derived per-rung counts over member tasks — never entered (V4-4). */
+  progress?: Partial<Record<WorkRung, number>> | undefined;
+  total?: number | undefined;
+  complete?: number | undefined;
+}
+
+export interface WorkDesignContextView {
+  catalog?: string | undefined;
+  coordSeq: number;
+  obsSeq: number;
+}
+
+export interface WorkProposalTaskSkeleton {
+  milestone?: string | undefined;
+  title: string;
+  contract?: WorkContract | undefined;
+}
+
+export interface WorkProposalEpic {
+  slug: string;
+  title: string;
+  docSeed?: string | undefined;
+  milestones?: Omit<WorkMilestoneView, "progress" | "total" | "complete">[] | undefined;
+  taskSkeletons?: WorkProposalTaskSkeleton[] | undefined;
+}
+
+export interface WorkProposal {
+  epics: WorkProposalEpic[];
+}
+
+export interface WorkDesignView {
+  key: string;
+  initiative: string;
+  title: string;
+  docRef?: string | undefined;
+  context: WorkDesignContextView;
+  proposal?: WorkProposal | undefined;
+  labels?: Record<string, string> | undefined;
+  createdBy: WorkActor;
+  createdAt?: string | undefined;
+  /** Draft → In Review → Adopted | Superseded — folded, never stored. */
+  intent: {
+    state: WorkIntentState;
+    adoptedRevision?: string | undefined;
+    minted?: string[] | undefined;
+    adoptedBy?: WorkActor | undefined;
+    supersededBy?: string | undefined;
+  };
+}
+
+export interface CreateWorkDesignRequest {
+  title: string;
+  docRef?: string | undefined;
+  proposal?: WorkProposal | undefined;
+  catalog?: string | undefined; // sealed into the context server-side
+  labels?: Record<string, string> | undefined;
+}
+
+export interface CreateWorkDesignResponse extends WorkMutationResponse {
+  design: WorkDesignView;
+}
+
+export interface WorkDesignsResponse {
+  designs: WorkDesignView[];
+}
+
+export interface AdoptWorkDesignRequest {
+  /** Subset of proposal epic slugs to mint; defaults to all. */
+  epics?: string[] | undefined;
+  /** Task-key prefix for minted skeletons (default "WK"). */
+  taskPrefix?: string | undefined;
+}
+
+export interface AdoptWorkDesignResponse extends WorkMutationResponse {
+  minted: string[];
+  tasks: string[];
+}
+
+export interface SupersedeWorkDesignRequest {
+  by?: string | undefined;
+  note?: string | undefined;
+}
+
+export interface WorkMilestoneRequest {
+  op: "create" | "edit" | "reorder" | "remove";
+  key: string;
+  title?: string | undefined;
+  goal?: string | undefined;
+  doneWhen?: string[] | undefined;
+  targetDate?: string | undefined;
+  ordinal?: number | undefined;
+}
+
+export interface WorkMilestonesResponse {
+  epic: string;
+  milestones: WorkMilestoneView[];
+  unscheduled?: { total: number; complete: number } | undefined;
+}
+
+/** Move a task into (or out of, null) a milestone — the milestone_set event. */
+export interface WorkTaskMilestoneRequest {
+  milestone: string | null;
+}
+
+export interface WorkReviewRequest {
+  revision?: string | undefined;
+  reviewers?: string[] | undefined;
+  note?: string | undefined;
+}
+
+export interface WorkVerdictRequest {
+  revision?: string | undefined;
+  verdict: WorkReviewVerdict;
+  note?: string | undefined;
+}
+
+/** Approve an epic (human-only — agents/automation get the 422 verdict).
+ *  revision defaults to the epic's current doc_ref; a stale revision is a
+ *  409 conflict (you approve bytes, not vibes — V4-2). */
+export interface ApproveWorkEpicRequest {
+  revision?: string | undefined;
+  minApprovals?: number | undefined;
+}
+
+export interface RevokeWorkApprovalRequest {
+  note?: string | undefined;
+}
+
+export interface WorkRollupsResponse {
+  initiative: string;
+  health: WorkHealth;
+  evidence?: string[] | undefined;
+  pinnedHealth?: { health: WorkHealth; by: WorkActor; note?: string | undefined; at?: string | undefined } | undefined;
+  progress: Partial<Record<WorkRung, number>>;
+  total: number;
+  complete: number;
+  epics: {
+    key: string;
+    title: string;
+    targetDate?: string | undefined;
+    intent: WorkEpicIntentView;
+    total: number;
+    complete: number;
+    blocked: number;
+  }[];
 }
 
 export interface WorkDriftView {
@@ -118,6 +315,13 @@ export interface WorkInitiativeView {
   key: string;
   title: string;
   description?: string | undefined;
+  /** v4 properties — pure intent (design §1.7). */
+  owner?: string | undefined;
+  targetDate?: string | undefined;
+  successCriteria?: string[] | undefined;
+  /** v4: derived health with named evidence — never a dropdown (V4-4). */
+  health?: WorkHealth | undefined;
+  healthEvidence?: string[] | undefined;
   createdBy: WorkActor;
   createdAt?: string | undefined;
   /** v3 PM3: member specs (related {rel: parent} edges from the log). */
@@ -168,6 +372,8 @@ export interface CreateWorkTaskRequest {
   prefix: string;
   title: string;
   specKey?: string | undefined;
+  /** v4: the milestone (within specKey) this task lands in. */
+  milestone?: string | undefined;
   contract?: WorkContract | undefined;
   labels?: Record<string, string> | undefined;
 }
@@ -335,12 +541,20 @@ export interface CreateWorkInitiativeRequest {
   slug: string;
   title: string;
   description?: string | undefined;
+  owner?: string | undefined;
+  targetDate?: string | undefined;
+  successCriteria?: string[] | undefined;
 }
 
 export interface EditWorkItemRequest {
   title?: string | undefined;
   description?: string | undefined; // initiatives only
   labels?: Record<string, string> | undefined;
+  /** v4 properties — pure intent. null unfiles/clears. */
+  initiative?: string | null | undefined;
+  targetDate?: string | null | undefined;
+  owner?: string | null | undefined;
+  successCriteria?: string[] | undefined;
 }
 
 // ── Cloud documents (orun-work-v3 PM0; content-addressed, fork-visible) ─────
@@ -490,6 +704,9 @@ export interface WorkTriageResponse {
 export const WORK_POLICY_ACTIONS = {
   WORK_READ: "work.read",
   WORK_WRITE: "work.write",
+  /** v4: approval is a real privilege boundary (reviewer ≠ approver). Lands
+   *  in the role maps AND ALL_KNOWN_ACTIONS in the same commit (V3-4). */
+  WORK_APPROVE: "work.approve",
 } as const;
 
 export type WorkPolicyAction = (typeof WORK_POLICY_ACTIONS)[keyof typeof WORK_POLICY_ACTIONS];

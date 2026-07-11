@@ -5,31 +5,42 @@
 
 import { canonicalDocBody, docDigest } from "./doc.js";
 import { buildEnvelopes, type ItemCreatedPayload } from "./envelopes.js";
+import { foldMilestones } from "./hierarchy.js";
 import {
   PRIORITIES,
   RELATION_KINDS,
+  REVIEW_VERDICTS,
   WorkError,
+  isMilestoneKey,
   validateActor,
   validateEvent,
   validateObservation,
+  validateProposal,
   type CoordinationEvent,
   type Cycle,
+  type Design,
   type DocRevision,
+  type Milestone,
   type Observation,
   type WorkSet,
 } from "./model.js";
 import type {
+  AdoptDesignInput,
+  AdoptOutcome,
+  ApproveInput,
   AssignInput,
   CancelInput,
   CommentInput,
   ReactionInput,
   CommitOutcome,
   CreateCycleInput,
+  CreateDesignInput,
   CreateInitiativeInput,
   CreateSpecInput,
   CreateTaskInput,
   EditContractInput,
   EditItemInput,
+  EditMilestoneInput,
   EstimateInput,
   IngestObservationInput,
   IngestOutcome,
@@ -40,8 +51,13 @@ import type {
   PutDocInput,
   PutDocOutcome,
   RelateInput,
+  RequestReviewInput,
+  RevokeApprovalInput,
   SaveViewInput,
   SetCycleInput,
+  SetMilestoneInput,
+  SubmitVerdictInput,
+  SupersedeDesignInput,
   WorkRepository,
   WorkspaceScope,
   WorkView,
@@ -104,8 +120,13 @@ export class MemoryWorkRepository implements WorkRepository {
   }
 
   private exists(scope: WorkspaceScope, key: string): boolean {
-    const { specs, tasks, initiatives } = buildEnvelopes(scope.orgId, this.logs(scope).events);
-    return specs.some((s) => s.key === key) || tasks.some((t) => t.key === key) || initiatives.some((i) => i.key === key);
+    const { specs, tasks, initiatives, designs } = buildEnvelopes(scope.orgId, this.logs(scope).events);
+    return (
+      specs.some((s) => s.key === key) ||
+      tasks.some((t) => t.key === key) ||
+      initiatives.some((i) => i.key === key) ||
+      designs.some((d) => d.key === key)
+    );
   }
 
   async createSpec(scope: WorkspaceScope, input: CreateSpecInput) {
@@ -171,6 +192,9 @@ export class MemoryWorkRepository implements WorkRepository {
     if (input.specKey && !this.exists(scope, input.specKey)) {
       throw new WorkError("not_found", `spec ${input.specKey} does not exist`);
     }
+    if (input.milestone) {
+      this.mustBeLadderMilestone(scope, input.specKey, input.milestone);
+    }
     const pair = this.logs(scope);
     const key = `${input.prefix}-${this.nextSeq(pair, input.prefix)}`;
     const payload: ItemCreatedPayload = {
@@ -178,6 +202,7 @@ export class MemoryWorkRepository implements WorkRepository {
       key,
       title: input.title,
       specKey: input.specKey,
+      milestone: input.milestone,
       labels: input.labels,
       contract: input.contract,
     };
@@ -208,7 +233,372 @@ export class MemoryWorkRepository implements WorkRepository {
       kind: "item_edited",
       actor: input.actor,
       at: input.at ?? this.now(),
-      payload: { title: input.title, labels: input.labels, docRef: input.docRef },
+      payload: {
+        title: input.title,
+        labels: input.labels,
+        docRef: input.docRef,
+        initiative: input.initiative,
+        targetDate: input.targetDate,
+        owner: input.owner,
+        successCriteria: input.successCriteria,
+      },
+    });
+    return { event, key: input.key };
+  }
+
+  // ── v4 hierarchy mutators (WH1) ────────────────────────────────────────────
+
+  private ladderOf(scope: WorkspaceScope, epicKey: string): Milestone[] {
+    return foldMilestones(epicKey, this.logs(scope).events);
+  }
+
+  private mustBeEpic(scope: WorkspaceScope, key: string): void {
+    const { specs } = buildEnvelopes(scope.orgId, this.logs(scope).events);
+    if (!specs.some((s) => s.key === key)) {
+      throw new WorkError("not_found", `unknown epic ${key}`);
+    }
+  }
+
+  private mustBeReviewable(scope: WorkspaceScope, key: string): "epic" | "design" {
+    const { specs, designs } = buildEnvelopes(scope.orgId, this.logs(scope).events);
+    if (specs.some((s) => s.key === key)) return "epic";
+    if (designs.some((d) => d.key === key)) return "design";
+    throw new WorkError("not_found", `unknown epic or design ${key}`);
+  }
+
+  private mustBeLadderMilestone(scope: WorkspaceScope, epicKey: string | undefined, milestone: string): void {
+    if (!epicKey) {
+      throw new WorkError("invalid", "a milestone lives inside exactly one epic — the task needs a spec (design §1.2)");
+    }
+    if (!this.ladderOf(scope, epicKey).some((m) => m.key === milestone)) {
+      throw new WorkError("not_found", `milestone ${milestone} is not in ${epicKey}'s ladder`);
+    }
+  }
+
+  async editMilestone(scope: WorkspaceScope, input: EditMilestoneInput): Promise<CommitOutcome> {
+    validateActor(input.actor);
+    this.mustBeEpic(scope, input.epicKey);
+    if (!isMilestoneKey(input.key)) {
+      throw new WorkError("invalid", `milestone key ${input.key} must match the ladder convention (WH2, M1)`);
+    }
+    const ladder = this.ladderOf(scope, input.epicKey);
+    const existing = ladder.find((m) => m.key === input.key);
+    switch (input.op) {
+      case "create": {
+        if (existing) throw new WorkError("conflict", `milestone ${input.key} already exists — keys are immutable`);
+        if (!input.title?.trim()) throw new WorkError("invalid", "a milestone needs a title");
+        break;
+      }
+      case "edit":
+      case "reorder": {
+        if (!existing) throw new WorkError("not_found", `milestone ${input.key} is not in ${input.epicKey}'s ladder`);
+        break;
+      }
+      case "remove": {
+        if (!existing) throw new WorkError("not_found", `milestone ${input.key} is not in ${input.epicKey}'s ladder`);
+        const { tasks } = buildEnvelopes(scope.orgId, this.logs(scope).events);
+        const canceled = new Set(
+          this.logs(scope)
+            .events.filter((e) => e.kind === "canceled")
+            .map((e) => e.subject),
+        );
+        const open = tasks.filter((t) => t.spec === input.epicKey && t.milestone === input.key && !canceled.has(t.key));
+        if (open.length > 0) {
+          throw new WorkError(
+            "conflict",
+            `milestone ${input.key} has ${open.length} open task(s) — move or cancel them first`,
+          );
+        }
+        break;
+      }
+      default:
+        throw new WorkError("invalid", `unknown milestone op ${String(input.op)}`);
+    }
+    const event = this.append(scope, {
+      subject: input.epicKey,
+      kind: "milestone_edited",
+      actor: input.actor,
+      at: input.at ?? this.now(),
+      payload: {
+        op: input.op,
+        key: input.key,
+        title: input.title,
+        goal: input.goal,
+        doneWhen: input.doneWhen,
+        targetDate: input.targetDate,
+        ordinal: input.ordinal,
+      },
+    });
+    return { event, key: input.epicKey };
+  }
+
+  async setMilestone(scope: WorkspaceScope, input: SetMilestoneInput): Promise<CommitOutcome> {
+    validateActor(input.actor);
+    const { tasks } = buildEnvelopes(scope.orgId, this.logs(scope).events);
+    const task = tasks.find((t) => t.key === input.key);
+    if (!task) throw new WorkError("not_found", `unknown task ${input.key}`);
+    if (input.milestone !== null) {
+      this.mustBeLadderMilestone(scope, task.spec, input.milestone);
+    }
+    const event = this.append(scope, {
+      subject: input.key,
+      kind: "milestone_set",
+      actor: input.actor,
+      at: input.at ?? this.now(),
+      payload: { milestone: input.milestone },
+    });
+    return { event, key: input.key };
+  }
+
+  async listMilestones(scope: WorkspaceScope, epicKey: string): Promise<Milestone[]> {
+    this.mustBeEpic(scope, epicKey);
+    return this.ladderOf(scope, epicKey);
+  }
+
+  async requestReview(scope: WorkspaceScope, input: RequestReviewInput): Promise<CommitOutcome> {
+    validateActor(input.actor);
+    this.mustBeReviewable(scope, input.key);
+    const event = this.append(scope, {
+      subject: input.key,
+      kind: "review_requested",
+      actor: input.actor,
+      at: input.at ?? this.now(),
+      payload: { revision: input.revision, reviewers: input.reviewers, note: input.note },
+    });
+    return { event, key: input.key };
+  }
+
+  async submitVerdict(scope: WorkspaceScope, input: SubmitVerdictInput): Promise<CommitOutcome> {
+    validateActor(input.actor);
+    if (!REVIEW_VERDICTS.includes(input.verdict)) {
+      throw new WorkError("invalid", `verdict must be one of ${REVIEW_VERDICTS.join("|")}`);
+    }
+    this.mustBeReviewable(scope, input.key);
+    const event = this.append(scope, {
+      subject: input.key,
+      kind: "review_submitted",
+      actor: input.actor,
+      at: input.at ?? this.now(),
+      payload: { revision: input.revision, verdict: input.verdict, note: input.note },
+    });
+    return { event, key: input.key };
+  }
+
+  async approve(scope: WorkspaceScope, input: ApproveInput): Promise<CommitOutcome> {
+    validateActor(input.actor);
+    const { specs } = buildEnvelopes(scope.orgId, this.logs(scope).events);
+    const epic = specs.find((s) => s.key === input.key);
+    if (!epic) throw new WorkError("not_found", `unknown epic ${input.key}`);
+    const ladder = this.ladderOf(scope, input.key);
+    if (ladder.length === 0) {
+      throw new WorkError("invalid", `epic ${input.key} has no milestones — approval covers the doc AND the ladder (V4-2)`);
+    }
+    const current = epic.docRef ?? "";
+    const revision = input.revision ?? current;
+    if (revision !== current) {
+      throw new WorkError(
+        "conflict",
+        `approval of stale revision ${revision || "(none)"} — the epic's document is now ${current || "(none)"}; re-read and re-approve`,
+      );
+    }
+    const min = input.minApprovals ?? 1;
+    if (min > 1) {
+      const approvers = new Set<string>([input.actor.id]);
+      for (const e of this.logs(scope).events) {
+        if (e.subject !== input.key || e.kind !== "review_submitted") continue;
+        const p = (e.payload ?? {}) as { verdict?: string; revision?: string };
+        if (p.verdict === "approve" && e.actor.type === "user" && (p.revision ?? current) === current) {
+          approvers.add(e.actor.id);
+        }
+      }
+      if (approvers.size < min) {
+        throw new WorkError(
+          "invalid",
+          `approval needs ${min} distinct human approvals at this revision; have ${approvers.size}`,
+        );
+      }
+    }
+    const event = this.append(scope, {
+      subject: input.key,
+      kind: "approved",
+      actor: input.actor,
+      at: input.at ?? this.now(),
+      payload: { revision: revision || undefined, snapshot: input.snapshot },
+    });
+    return { event, key: input.key };
+  }
+
+  async revokeApproval(scope: WorkspaceScope, input: RevokeApprovalInput): Promise<CommitOutcome> {
+    validateActor(input.actor);
+    this.mustBeEpic(scope, input.key);
+    const events = this.logs(scope).events.filter((e) => e.subject === input.key);
+    let approved = false;
+    for (const e of events) {
+      if (e.kind === "approved") approved = true;
+      if (e.kind === "approval_revoked") approved = false;
+    }
+    if (!approved) {
+      throw new WorkError("invalid", `epic ${input.key} has no active approval to revoke`);
+    }
+    const event = this.append(scope, {
+      subject: input.key,
+      kind: "approval_revoked",
+      actor: input.actor,
+      at: input.at ?? this.now(),
+      payload: { note: input.note },
+    });
+    return { event, key: input.key };
+  }
+
+  async createDesign(scope: WorkspaceScope, input: CreateDesignInput) {
+    validateActor(input.actor);
+    const { initiatives } = buildEnvelopes(scope.orgId, this.logs(scope).events);
+    if (!initiatives.some((i) => i.key === input.initiativeKey)) {
+      throw new WorkError("not_found", `unknown initiative ${input.initiativeKey}`);
+    }
+    if (!input.title?.trim()) {
+      throw new WorkError("invalid", "a design needs a title");
+    }
+    validateProposal(input.proposal);
+    const pair = this.logs(scope);
+    const key = `DSG-${this.nextSeq(pair, "DSG")}`;
+    const payload: ItemCreatedPayload = {
+      kind: "Design",
+      key,
+      title: input.title.trim(),
+      initiative: input.initiativeKey,
+      docRef: input.docRef,
+      labels: input.labels,
+      context: {
+        catalog: input.context?.catalog,
+        coordSeq: pair.sequences.get("#events") ?? 0,
+        obsSeq: pair.sequences.get("#observations") ?? 0,
+      },
+      proposal: input.proposal,
+    };
+    const event = this.append(scope, {
+      subject: key,
+      kind: "item_created",
+      actor: input.actor,
+      at: input.at ?? this.now(),
+      payload: payload as unknown as Record<string, unknown>,
+    });
+    const { designs } = buildEnvelopes(scope.orgId, pair.events);
+    const design = designs.find((d) => d.key === key);
+    if (!design) throw new WorkError("invalid", "design did not materialize from its own event");
+    return { event, key, design };
+  }
+
+  async getDesign(scope: WorkspaceScope, key: string): Promise<Design> {
+    const { designs } = buildEnvelopes(scope.orgId, this.logs(scope).events);
+    const design = designs.find((d) => d.key === key);
+    if (!design) throw new WorkError("not_found", `unknown design ${key}`);
+    return design;
+  }
+
+  async listDesigns(scope: WorkspaceScope, initiativeKey?: string): Promise<Design[]> {
+    const { designs } = buildEnvelopes(scope.orgId, this.logs(scope).events);
+    return initiativeKey ? designs.filter((d) => d.initiative === initiativeKey) : designs;
+  }
+
+  async adoptDesign(scope: WorkspaceScope, input: AdoptDesignInput): Promise<AdoptOutcome> {
+    validateActor(input.actor);
+    const design = await this.getDesign(scope, input.key);
+    const proposal = design.proposal;
+    if (!proposal || proposal.epics.length === 0) {
+      throw new WorkError("invalid", `design ${input.key} has no proposal to adopt`);
+    }
+    const chosen = input.epics
+      ? proposal.epics.filter((pe) => input.epics!.includes(pe.slug))
+      : proposal.epics;
+    if (chosen.length === 0) {
+      throw new WorkError("invalid", "adoption selected no proposal epics");
+    }
+    for (const pe of chosen) {
+      if (this.exists(scope, pe.slug)) {
+        throw new WorkError("conflict", `proposal epic ${pe.slug} collides with an existing item`);
+      }
+    }
+    const at = input.at ?? this.now();
+    const actor = { ...input.actor, via: "adoption" };
+    // The decision first — human-only, enforced by validateEvent (V4-2) —
+    // then the mint batch in the same "transaction" (design §2).
+    const event = this.append(scope, {
+      subject: input.key,
+      kind: "design_adopted",
+      actor,
+      at,
+      payload: { revision: design.docRef, minted: chosen.map((pe) => pe.slug) },
+    });
+    const minted: string[] = [];
+    const taskKeys: string[] = [];
+    const prefix = input.taskPrefix ?? "WK";
+    for (const pe of chosen) {
+      const specPayload: ItemCreatedPayload = {
+        kind: "Spec",
+        key: pe.slug,
+        title: pe.title,
+        docRef: pe.docSeed,
+        initiative: design.initiative,
+      };
+      this.append(scope, {
+        subject: pe.slug,
+        kind: "item_created",
+        actor,
+        at,
+        payload: specPayload as unknown as Record<string, unknown>,
+      });
+      minted.push(pe.slug);
+      for (const [i, m] of (pe.milestones ?? []).entries()) {
+        this.append(scope, {
+          subject: pe.slug,
+          kind: "milestone_edited",
+          actor,
+          at,
+          payload: {
+            op: "create",
+            key: m.key,
+            title: m.title,
+            goal: m.goal,
+            doneWhen: m.doneWhen,
+            targetDate: m.targetDate,
+            ordinal: m.ordinal ?? i,
+          },
+        });
+      }
+      for (const ts of pe.taskSkeletons ?? []) {
+        const pair = this.logs(scope);
+        const key = `${prefix}-${this.nextSeq(pair, prefix)}`;
+        const taskPayload: ItemCreatedPayload = {
+          kind: "Task",
+          key,
+          title: ts.title,
+          specKey: pe.slug,
+          milestone: ts.milestone,
+          contract: ts.contract,
+        };
+        this.append(scope, {
+          subject: key,
+          kind: "item_created",
+          actor,
+          at,
+          payload: taskPayload as unknown as Record<string, unknown>,
+        });
+        taskKeys.push(key);
+      }
+    }
+    return { event, minted, tasks: taskKeys };
+  }
+
+  async supersedeDesign(scope: WorkspaceScope, input: SupersedeDesignInput): Promise<CommitOutcome> {
+    validateActor(input.actor);
+    await this.getDesign(scope, input.key);
+    const event = this.append(scope, {
+      subject: input.key,
+      kind: "superseded",
+      actor: input.actor,
+      at: input.at ?? this.now(),
+      payload: { by: input.by, note: input.note },
     });
     return { event, key: input.key };
   }
@@ -412,17 +802,18 @@ export class MemoryWorkRepository implements WorkRepository {
   async putDocRevision(scope: WorkspaceScope, input: PutDocInput): Promise<PutDocOutcome> {
     validateActor(input.actor);
     const pair = this.logs(scope);
-    const { specs } = buildEnvelopes(scope.orgId, pair.events);
-    const spec = specs.find((s) => s.key === input.specKey);
-    if (!spec) {
+    const { specs, designs } = buildEnvelopes(scope.orgId, pair.events);
+    // Designs carry doc chains exactly like epics (v4, V4-6).
+    const documented = specs.find((s) => s.key === input.specKey) ?? designs.find((d) => d.key === input.specKey);
+    if (!documented) {
       throw new WorkError("not_found", `unknown spec ${input.specKey}`);
     }
     const body = canonicalDocBody(input.body);
     const revision = await docDigest(body);
-    if (revision === spec.docRef) {
-      return { revision, parent: spec.docRef, created: false, event: null };
+    if (revision === documented.docRef) {
+      return { revision, parent: documented.docRef, created: false, event: null };
     }
-    const parent = input.parent ?? spec.docRef;
+    const parent = input.parent ?? documented.docRef;
     const at = input.at ?? this.now();
     if (!pair.docRevisions.has(revision)) {
       pair.docRevisions.set(revision, {
@@ -448,11 +839,11 @@ export class MemoryWorkRepository implements WorkRepository {
     const pair = this.logs(scope);
     let target = revision;
     if (!target) {
-      const { specs } = buildEnvelopes(scope.orgId, pair.events);
-      const spec = specs.find((s) => s.key === specKey);
-      if (!spec) throw new WorkError("not_found", `unknown spec ${specKey}`);
-      if (!spec.docRef) throw new WorkError("not_found", `spec ${specKey} has no document`);
-      target = spec.docRef;
+      const { specs, designs } = buildEnvelopes(scope.orgId, pair.events);
+      const documented = specs.find((s) => s.key === specKey) ?? designs.find((d) => d.key === specKey);
+      if (!documented) throw new WorkError("not_found", `unknown spec ${specKey}`);
+      if (!documented.docRef) throw new WorkError("not_found", `spec ${specKey} has no document`);
+      target = documented.docRef;
     }
     const rev = pair.docRevisions.get(target);
     if (!rev || rev.specKey !== specKey) {
