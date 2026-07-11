@@ -37,11 +37,26 @@ const INTENT_TONE: Record<string, Tone> = {
 
 /** The intent chip pair: `Approved @3f2a by usr_…` beside `drifted (doc now
  *  @9c41)` when stale. The tracker never lies for you — it renders both. */
-export function IntentChip({ intent }: { intent: WorkEpicIntentView | undefined }) {
+export function IntentChip({
+  intent,
+  compact = false,
+}: {
+  intent: WorkEpicIntentView | undefined;
+  /** Pill only (rails, dense rows) — the revision stays, the prose goes. */
+  compact?: boolean;
+}) {
   if (!intent) return null;
   const label = INTENT_LABEL[intent.state] ?? intent.state;
   const tone = INTENT_TONE[intent.state] ?? "neutral";
   const approval = intent.approval;
+  if (compact) {
+    return (
+      <Pill tone={tone}>
+        {label}
+        {approval?.revision ? <span className="ml-1 font-mono opacity-80">@{shortDigest(approval.revision)}</span> : null}
+      </Pill>
+    );
+  }
   return (
     <span className="inline-flex flex-wrap items-center gap-1.5">
       <Pill tone={tone}>

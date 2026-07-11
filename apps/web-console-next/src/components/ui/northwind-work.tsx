@@ -274,7 +274,7 @@ export function AgentAvatar({
   className,
 }: {
   size?: number;
-  title?: string;
+  title?: string | undefined;
   className?: string;
 }) {
   return (
