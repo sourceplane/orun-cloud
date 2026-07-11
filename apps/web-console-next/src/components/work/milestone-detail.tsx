@@ -11,7 +11,8 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { wrap } from "@/lib/api";
 import { qk, useApiQuery } from "@/lib/query";
 import { useSession } from "@/lib/session";
-import { ProgressBar } from "@/components/work/hierarchy-chips";
+import { WorkMeter } from "@/components/ui/northwind-work";
+import { meterSegments } from "@/lib/work/rungs";
 import { HierarchyTaskList } from "@/components/work/epic-detail";
 
 export function MilestoneDetail({
@@ -79,12 +80,7 @@ export function MilestoneDetail({
         title={`${milestone.key} — ${milestone.title}`}
         description={milestone.goal ?? "A meaningful checkpoint: independently shippable, with its own goal and done-when."}
         actions={
-          <div className="flex items-center gap-3">
-            <span className="text-[12.5px] text-muted-foreground">
-              {complete}/{total} complete
-            </span>
-            <ProgressBar counts={milestone.progress} total={total} className="w-32" />
-          </div>
+          <MilestoneMeter counts={milestone.progress} total={total} complete={complete} />
         }
       />
       {milestone.targetDate ? (
@@ -115,5 +111,20 @@ export function MilestoneDetail({
         </div>
       </section>
     </Screen>
+  );
+}
+
+function MilestoneMeter({
+  counts,
+  total,
+  complete,
+}: {
+  counts: Parameters<typeof meterSegments>[0];
+  total: number;
+  complete: number;
+}) {
+  const seg = meterSegments(counts, total);
+  return (
+    <WorkMeter donePct={seg.donePct} activePct={seg.activePct} fraction={`${complete}/${total}`} width={150} />
   );
 }

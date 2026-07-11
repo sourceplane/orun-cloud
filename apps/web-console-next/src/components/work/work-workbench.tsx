@@ -1,58 +1,37 @@
 "use client";
 
-// The work lens, read-only (orun-work v2 WP1). Every rung on this page is the
-// fold's output rendered WITH its evidence — nothing here is a stored status,
-// and a pin always renders beside observed truth, never instead of it.
+// The Tasks-lens container (orun-work v2 WP1 lineage, reshaped by
+// orun-work-v5 WV2/WV6). Owns the data plumbing the lens renders: the
+// summary fold, the SSE live-tail, cycles, the agents plane, and the
+// optimistic overlay — every rung on this surface is the fold's output
+// rendered WITH its evidence, and a pin always renders beside observed
+// truth, never instead of it. The old spec-grouped workbench and its view
+// bar were retired in WV6; the Work home (work-home.tsx) is the only
+// mount point.
 
 import * as React from "react";
-import Link from "next/link";
-import { useParams } from "next/navigation";
 import type { AgentProfile, AgentSession } from "@saas/contracts/agents";
-import type {
-  WorkCycleView,
-  WorkRung,
-  WorkSpecView,
-  WorkSummaryResponse,
-  WorkTaskView,
-} from "@saas/contracts/work";
+import type { WorkCycleView } from "@saas/contracts/work";
 import { Skeleton } from "@/components/ui/skeleton";
-import {
-  HeaderStat,
-  ListCard,
-  PageHeader,
-  Pill,
-  Screen,
-  StatusText,
-  type Tone,
-} from "@/components/ui/northwind";
+import { StatusText } from "@/components/ui/northwind";
 import { wrap } from "@/lib/api";
 import { qk, useApiQuery } from "@/lib/query";
 import { useSession } from "@/lib/session";
-import { rungLabel, groupTasksBySpec, type SpecGroup } from "@/lib/work/model";
-import { applyFilters, type BoardFilters } from "@/lib/work/board";
+import { applyFilters, type BoardFilters, type WorkLayout } from "@/lib/work/board";
 import { begin, confirm, overlay, prune, reject, type OptimisticEntry, type TaskPatch } from "@/lib/work/optimistic";
-import { TaskActions } from "@/components/work/task-actions";
-import { EditWorkItemDialog, WorkCreateMenu, type WorkItemKind } from "@/components/work/create-work-item-dialog";
-import { SpecDocSheet } from "@/components/work/spec-doc-sheet";
-import { TaskConversationSheet } from "@/components/work/task-conversation-sheet";
+import { WorkCreateMenu, type WorkItemKind } from "@/components/work/create-work-item-dialog";
 import { CyclesSection } from "@/components/work/cycles-section";
-import { AssigneeChip, SessionChip, WorkBoard } from "@/components/work/work-board";
-import { WorkViewBar, type WorkLayout } from "@/components/work/work-view-bar";
-import { SpawnAgentDialog } from "@/components/agents/spawn-agent-dialog";
+import { WorkBoard } from "@/components/work/work-board";
 import { TasksLens } from "@/components/work/work-tasks-lens";
 import { DisplayMenu, FilterMenu } from "@/components/work/work-lens-controls";
+import { useParams } from "next/navigation";
 
 export function WorkWorkbench({
   orgId,
-  embedded = false,
   requestKind = null,
   onRequestKindConsumed,
 }: {
   orgId: string;
-  /** orun-work-v5 WV1: render as the Work home's Tasks lens — no Screen
-   *  wrapper, no page header (the home owns both). Interim until WV2
-   *  rebuilds this surface as the lens proper. */
-  embedded?: boolean;
   /** WV5: the home's keyboard grammar (`c`) asks for a create dialog. */
   requestKind?: WorkItemKind | null;
   onRequestKindConsumed?: (() => void) | undefined;
@@ -122,8 +101,8 @@ export function WorkWorkbench({
     };
   }, [client, orgId, reload]);
 
-  // PM2: layout (list | board) + the filter bar. Filters apply to BOTH
-  // layouts; the board additionally splits by rung columns.
+  // PM2: layout (list | board) + filters. Both live in Display/Filter now;
+  // filters apply to BOTH layouts (the board additionally splits by rung).
   const [layout, setLayout] = React.useState<WorkLayout>("list");
   const [filters, setFilters] = React.useState<BoardFilters>({});
 
@@ -219,7 +198,8 @@ export function WorkWorkbench({
   );
 
   // PM4: Cmd-K verbs land here as query params (?new=task|spec|initiative,
-  // ?layout=board|list) — consumed once, then stripped from the URL.
+  // ?layout=board|list) — consumed once, then stripped from the URL. WV5
+  // adds the keyboard path via the requestKind prop.
   const [requestedKind, setRequestedKind] = React.useState<WorkItemKind | null>(null);
   React.useEffect(() => {
     if (requestKind) {
@@ -250,7 +230,7 @@ export function WorkWorkbench({
     body = <WorkSkeleton />;
   } else if (summary.error) {
     body = <ErrorCard code={summary.error.code} message={summary.error.message} />;
-  } else if (empty) {
+  } else if (!data || empty) {
     body = <EmptyWork />;
   } else if (layout === "board") {
     body = (
@@ -267,9 +247,10 @@ export function WorkWorkbench({
     );
   } else {
     body = (
-      <WorkSummary
+      <TasksLens
         data={{ ...data, tasks: filteredTasks }}
         orgId={orgId}
+        cycles={cycles}
         sessionsByTask={sessionsByTask}
         sessionHref={sessionHref}
         onMutated={summary.reload}
@@ -277,629 +258,36 @@ export function WorkWorkbench({
     );
   }
 
-  if (embedded) {
-    // orun-work-v5 WV2: the Tasks lens proper — Filter/Display pills, the
-    // cycle bar, rung-grouped rows; the board is a Display layout now.
-    let lensBody: React.ReactNode;
-    if (summary.loading) {
-      lensBody = <WorkSkeleton />;
-    } else if (summary.error) {
-      lensBody = <ErrorCard code={summary.error.code} message={summary.error.message} />;
-    } else if (!data || empty) {
-      lensBody = <EmptyWork />;
-    } else if (layout === "board") {
-      lensBody = (
-        <WorkBoard
-          orgId={orgId}
-          tasks={filteredTasks}
-          cycles={cycles}
-          agentProfiles={agentProfiles}
-          sessionsByTask={sessionsByTask}
-          sessionHref={sessionHref}
-          applyIntent={applyIntent}
-          onMutated={summary.reload}
-        />
-      );
-    } else {
-      lensBody = (
-        <TasksLens
-          data={{ ...data, tasks: filteredTasks }}
-          orgId={orgId}
-          cycles={cycles}
-          sessionsByTask={sessionsByTask}
-          sessionHref={sessionHref}
-          onMutated={summary.reload}
-        />
-      );
-    }
-    return (
-      <>
-        {data && !empty ? (
-          <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
-            <div className="flex items-center gap-2">
-              <FilterMenu tasks={data.tasks} filters={filters} onFiltersChange={setFilters} />
-              <DisplayMenu
-                orgId={orgId}
-                layout={layout}
-                filters={filters}
-                onLayoutChange={setLayout}
-                onFiltersChange={setFilters}
-              />
-            </div>
-            <WorkCreateMenu
+  return (
+    <>
+      {data && !empty ? (
+        <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-2">
+            <FilterMenu tasks={data.tasks} filters={filters} onFiltersChange={setFilters} />
+            <DisplayMenu
               orgId={orgId}
-              specs={data.specs}
-              onCreated={reload}
-              requestedKind={requestedKind}
-              onRequestConsumed={() => setRequestedKind(null)}
+              layout={layout}
+              filters={filters}
+              onLayoutChange={setLayout}
+              onFiltersChange={setFilters}
             />
           </div>
-        ) : null}
-        {lensBody}
-        {data && !empty && (cycles.length > 0 || data.tasks.length > 0) ? (
-          <div className="mt-[26px]" id="cycles">
-            <CyclesSection orgId={orgId} cycles={cycles} onMutated={reload} />
-          </div>
-        ) : null}
-      </>
-    );
-  }
-
-  return (
-    <Screen>
-      <PageHeader
-        title="Work"
-        description="Tasks grouped by spec, ordered by how close they are to shipped. Author here or import from git — lifecycle derives from delivery either way."
-        {...(data
-          ? {
-              actions: (
-                <div className="flex items-center gap-5">
-                  {!empty ? <HeaderStats tasks={data.tasks} /> : null}
-                  <Link
-                    href={`/orgs/${orgSlug}/work?lens=initiatives`}
-                    className="text-[12.5px] text-muted-foreground underline-offset-2 hover:underline"
-                  >
-                    Initiatives
-                  </Link>
-                  <Link
-                    href={`/orgs/${orgSlug}/work/triage`}
-                    className="text-[12.5px] text-muted-foreground underline-offset-2 hover:underline"
-                  >
-                    Triage
-                  </Link>
-                  <WorkCreateMenu
-                    orgId={orgId}
-                    specs={data.specs}
-                    onCreated={reload}
-                    requestedKind={requestedKind}
-                    onRequestConsumed={() => setRequestedKind(null)}
-                  />
-                </div>
-              ),
-            }
-          : {})}
-      />
-      {data && !empty ? (
-        <WorkViewBar
-          orgId={orgId}
-          tasks={data.tasks}
-          layout={layout}
-          filters={filters}
-          onLayoutChange={setLayout}
-          onFiltersChange={setFilters}
-        />
+          <WorkCreateMenu
+            orgId={orgId}
+            specs={data.specs}
+            onCreated={reload}
+            requestedKind={requestedKind}
+            onRequestConsumed={() => setRequestedKind(null)}
+          />
+        </div>
       ) : null}
       {body}
       {data && !empty && (cycles.length > 0 || data.tasks.length > 0) ? (
-        <div className="mt-[26px]">
+        <div className="mt-[26px]" id="cycles">
           <CyclesSection orgId={orgId} cycles={cycles} onMutated={reload} />
         </div>
       ) : null}
-    </Screen>
-  );
-}
-
-/* ── Header stats ─────────────────────────────────────────────── */
-
-function HeaderStats({ tasks }: { tasks: WorkTaskView[] }) {
-  const open = tasks.filter(
-    (t) => t.lifecycle.rung !== "released" && t.lifecycle.rung !== "canceled",
-  ).length;
-  const released = tasks.filter((t) => t.lifecycle.rung === "released").length;
-  return (
-    <div className="flex gap-6">
-      <HeaderStat
-        value={open}
-        caption={open === 1 ? "open task" : "open tasks"}
-        className="text-left sm:text-right"
-      />
-      <HeaderStat
-        value={released}
-        caption="released"
-        tone="success"
-        className="text-left sm:text-right"
-      />
-    </div>
-  );
-}
-
-/* ── Summary (spec groups) ────────────────────────────────────── */
-
-function WorkSummary({
-  data,
-  orgId,
-  sessionsByTask,
-  sessionHref,
-  onMutated,
-}: {
-  data: WorkSummaryResponse;
-  orgId: string;
-  sessionsByTask?: Map<string, AgentSession> | undefined;
-  sessionHref?: ((sessionId: string) => string) | undefined;
-  onMutated: () => void;
-}) {
-  const groups = groupTasksBySpec(data.tasks);
-  const specsByKey = new Map(data.specs.map((s) => [s.key, s]));
-  // A spec with no tasks yet still renders (you can now create one in the
-  // console and write its doc before any task exists).
-  const grouped = new Set(groups.map((g) => g.spec));
-  const emptySpecs = data.specs.filter((s) => !grouped.has(s.key));
-
-  return (
-    <div className="mt-[30px] flex flex-col gap-[26px]">
-      {data.initiatives.length > 0 ? <Initiatives initiatives={data.initiatives} orgId={orgId} onMutated={onMutated} /> : null}
-      {data.drift.length > 0 ? <DriftInbox drift={data.drift} /> : null}
-      {data.suggestions.length > 0 ? <Suggestions suggestions={data.suggestions} /> : null}
-      {groups.map((group) => (
-        <SpecGroupSection
-          key={group.spec ?? "__inbox__"}
-          group={group}
-          {...(group.spec ? { spec: specsByKey.get(group.spec) } : {})}
-          orgId={orgId}
-          sessionsByTask={sessionsByTask}
-          sessionHref={sessionHref}
-          onMutated={onMutated}
-        />
-      ))}
-      {emptySpecs.map((s) => (
-        <SpecGroupSection
-          key={s.key}
-          group={{ spec: s.key, tasks: [] }}
-          spec={s}
-          orgId={orgId}
-          sessionsByTask={sessionsByTask}
-          sessionHref={sessionHref}
-          onMutated={onMutated}
-        />
-      ))}
-    </div>
-  );
-}
-
-function SpecGroupSection({
-  group,
-  spec,
-  orgId,
-  sessionsByTask,
-  sessionHref,
-  onMutated,
-}: {
-  group: SpecGroup;
-  spec?: WorkSpecView | undefined;
-  orgId: string;
-  sessionsByTask?: Map<string, AgentSession> | undefined;
-  sessionHref?: ((sessionId: string) => string) | undefined;
-  onMutated: () => void;
-}) {
-  const title = spec?.title;
-  const groupParams = useParams<{ orgSlug?: string }>();
-  const groupOrgSlug = groupParams?.orgSlug ?? "";
-  const [docOpen, setDocOpen] = React.useState(false);
-  const [renameOpen, setRenameOpen] = React.useState(false);
-  const [agentOpen, setAgentOpen] = React.useState(false);
-  const total = group.tasks.length;
-  const done = group.tasks.filter(
-    (t) => t.lifecycle.rung === "released" || t.lifecycle.rung === "done",
-  ).length;
-  const active = group.tasks.filter(
-    (t) => t.lifecycle.rung === "in_review" || t.lifecycle.rung === "in_progress",
-  ).length;
-
-  return (
-    <section>
-      <div className="mb-2.5 flex items-center gap-2.5">
-        {group.spec ? (
-          <Link
-            href={`/orgs/${groupOrgSlug}/work/epics/${encodeURIComponent(group.spec)}`}
-            className="truncate font-mono text-[12.5px] font-semibold text-secondary-foreground underline-offset-2 hover:underline"
-            {...(title && title !== group.spec ? { title } : {})}
-          >
-            {group.spec}
-          </Link>
-        ) : (
-          <span className="text-[12.5px] font-semibold text-muted-foreground">Inbox</span>
-        )}
-        <span className="shrink-0 text-[11.5px] text-muted-foreground/85">
-          {total} {total === 1 ? "task" : "tasks"}
-          {group.spec ? "" : " · no spec yet"}
-        </span>
-        {group.spec && spec ? (
-          <span className="flex shrink-0 items-center gap-1.5">
-            <button
-              type="button"
-              onClick={() => setDocOpen(true)}
-              className="rounded px-1.5 py-0.5 text-[11.5px] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-            >
-              Doc{spec.docRef ? "" : " +"}
-            </button>
-            <button
-              type="button"
-              onClick={() => setRenameOpen(true)}
-              className="rounded px-1.5 py-0.5 text-[11.5px] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-            >
-              Rename
-            </button>
-            {/* AG8: spawn a hosted design run — the agent turns this spec
-                into epic files + proposed contracts, delivered as a PR. */}
-            <button
-              type="button"
-              onClick={() => setAgentOpen(true)}
-              className="rounded px-1.5 py-0.5 text-[11.5px] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-            >
-              Design with agent
-            </button>
-          </span>
-        ) : null}
-        {group.spec && total > 0 ? (
-          <span
-            aria-hidden
-            className="ml-auto flex h-[5px] w-20 shrink-0 overflow-hidden rounded-[3px] bg-[#EDEDED] dark:bg-secondary sm:w-40"
-          >
-            {done > 0 ? <span className="bg-success" style={{ width: `${(done / total) * 100}%` }} /> : null}
-            {active > 0 ? (
-              <span className="bg-warning-accent" style={{ width: `${(active / total) * 100}%` }} />
-            ) : null}
-          </span>
-        ) : null}
-      </div>
-      {total > 0 ? (
-        <ListCard>
-          <ul>
-            {group.tasks.map((task) => (
-              <TaskRow
-                key={task.key}
-                task={task}
-                orgId={orgId}
-                session={sessionsByTask?.get(task.key)}
-                sessionHref={sessionHref}
-                onMutated={onMutated}
-              />
-            ))}
-          </ul>
-        </ListCard>
-      ) : (
-        <ListCard>
-          <div className="px-5 py-4 text-[12.5px] text-muted-foreground">
-            No tasks yet — create one from the New menu, or write the doc first.
-          </div>
-        </ListCard>
-      )}
-      {group.spec && spec ? (
-        <>
-          <SpawnAgentDialog
-            orgId={orgId}
-            itemKey={group.spec}
-            runKind="design"
-            open={agentOpen}
-            onOpenChange={setAgentOpen}
-          />
-          <SpecDocSheet
-            orgId={orgId}
-            specKey={group.spec}
-            docRef={spec.docRef}
-            open={docOpen}
-            onOpenChange={setDocOpen}
-            onMutated={onMutated}
-          />
-          <EditWorkItemDialog
-            orgId={orgId}
-            itemKey={group.spec}
-            currentTitle={title ?? group.spec}
-            open={renameOpen}
-            onOpenChange={setRenameOpen}
-            onSaved={onMutated}
-          />
-        </>
-      ) : null}
-    </section>
-  );
-}
-
-/* ── Initiatives (v3 PM0: envelope-only groupings; no rung, no contract) ── */
-
-function Initiatives({
-  initiatives,
-  orgId,
-  onMutated,
-}: {
-  initiatives: WorkSummaryResponse["initiatives"];
-  orgId: string;
-  onMutated: () => void;
-}) {
-  const [editing, setEditing] = React.useState<string | null>(null);
-  const current = initiatives.find((i) => i.key === editing);
-  return (
-    <section>
-      <div className="mb-2.5 flex flex-wrap items-baseline gap-x-2.5 gap-y-0.5">
-        <span className="text-[12.5px] font-semibold text-muted-foreground">Initiatives</span>
-        <span className="text-[11.5px] text-muted-foreground/85">
-          strategic groupings — progress is a rollup, never a number anyone types
-        </span>
-      </div>
-      <ListCard>
-        {initiatives.map((i) => (
-          <div
-            key={i.key}
-            className="flex items-baseline gap-3 border-t border-border/50 px-5 py-2.5 first:border-t-0"
-          >
-            <span className="min-w-[56px] shrink-0 font-mono text-[11.5px] text-secondary-foreground">
-              {i.key}
-            </span>
-            <span className="min-w-0 flex-1 truncate text-[13px]">{i.title}</span>
-            {i.description ? (
-              <span className="hidden min-w-0 flex-1 truncate text-[12px] text-muted-foreground sm:block">
-                {i.description}
-              </span>
-            ) : null}
-            {/* PM3: the rollup — SUM of member specs' fold projections. */}
-            <InitiativeRollup progress={i.progress} />
-            <button
-              type="button"
-              onClick={() => setEditing(i.key)}
-              className="shrink-0 rounded px-1.5 py-0.5 text-[11.5px] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-            >
-              Edit
-            </button>
-          </div>
-        ))}
-      </ListCard>
-      {current ? (
-        <EditWorkItemDialog
-          orgId={orgId}
-          itemKey={current.key}
-          currentTitle={current.title}
-          currentDescription={current.description}
-          withDescription
-          open
-          onOpenChange={(o) => {
-            if (!o) setEditing(null);
-          }}
-          onSaved={() => {
-            setEditing(null);
-            onMutated();
-          }}
-        />
-      ) : null}
-    </section>
-  );
-}
-
-/** Derived initiative progress (v3 PM3) — the same bar idiom as spec groups;
- *  no number here is typed by anyone (V3-3). */
-function InitiativeRollup({ progress }: { progress?: Partial<Record<WorkRung, number>> | undefined }) {
-  if (!progress) return null;
-  const total = Object.values(progress).reduce((a, b) => a + (b ?? 0), 0);
-  if (total === 0) return null;
-  const done = (progress.done ?? 0) + (progress.released ?? 0);
-  const active = (progress.in_review ?? 0) + (progress.in_progress ?? 0);
-  return (
-    <span className="flex shrink-0 items-center gap-2">
-      <span className="text-[11px] text-muted-foreground">
-        {done}/{total}
-      </span>
-      <span
-        aria-hidden
-        className="flex h-[5px] w-16 overflow-hidden rounded-[3px] bg-[#EDEDED] dark:bg-secondary sm:w-24"
-      >
-        {done > 0 ? <span className="bg-success" style={{ width: `${(done / total) * 100}%` }} /> : null}
-        {active > 0 ? <span className="bg-warning-accent" style={{ width: `${(active / total) * 100}%` }} /> : null}
-      </span>
-    </span>
-  );
-}
-
-/* ── Task rows ────────────────────────────────────────────────── */
-
-const RUNG_PILL_TONE: Partial<Record<WorkRung, Tone>> = {
-  released: "success",
-  in_review: "warning",
-  in_progress: "warning",
-  ready: "neutral",
-};
-
-const RUNG_PILL_CLASS: Partial<Record<WorkRung, string>> = {
-  done: "bg-[#EDEDED] text-foreground dark:bg-secondary dark:text-foreground",
-  draft: "border border-border bg-background text-muted-foreground",
-  canceled: "border border-border bg-background text-muted-foreground/70",
-};
-
-function RungPill({ rung }: { rung: WorkRung }) {
-  return (
-    <Pill tone={RUNG_PILL_TONE[rung] ?? "neutral"} className={RUNG_PILL_CLASS[rung] ?? ""}>
-      {rungLabel(rung)}
-    </Pill>
-  );
-}
-
-function TaskRow({
-  task,
-  orgId,
-  session,
-  sessionHref,
-  onMutated,
-}: {
-  task: WorkTaskView;
-  orgId: string;
-  session?: AgentSession | undefined;
-  sessionHref?: ((sessionId: string) => string) | undefined;
-  onMutated: () => void;
-}) {
-  const lc = task.lifecycle;
-  const [renameOpen, setRenameOpen] = React.useState(false);
-  const [threadOpen, setThreadOpen] = React.useState(false);
-  const [agentOpen, setAgentOpen] = React.useState(false);
-  return (
-    <li className="group border-t border-border/50 px-5 py-3 transition-colors duration-100 first:border-t-0 hover:bg-muted/60">
-      <div className="flex min-h-[20px] flex-wrap items-center gap-x-3 gap-y-1.5">
-        <span className="min-w-[56px] shrink-0 font-mono text-[11.5px] text-muted-foreground/85">
-          {task.key}
-        </span>
-        <button
-          type="button"
-          onClick={() => setRenameOpen(true)}
-          className="min-w-0 flex-1 truncate text-left text-[13.5px] hover:underline decoration-border underline-offset-2"
-          title="Edit title"
-        >
-          {task.title}
-        </button>
-        <EditWorkItemDialog
-          orgId={orgId}
-          itemKey={task.key}
-          currentTitle={task.title}
-          open={renameOpen}
-          onOpenChange={setRenameOpen}
-          onSaved={onMutated}
-        />
-        <button
-          type="button"
-          onClick={() => setThreadOpen(true)}
-          className="shrink-0 rounded px-1.5 py-0.5 text-[11.5px] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-        >
-          Thread
-        </button>
-        <TaskConversationSheet
-          orgId={orgId}
-          taskKey={task.key}
-          open={threadOpen}
-          onOpenChange={setThreadOpen}
-          onMutated={onMutated}
-        />
-        <TaskActions orgId={orgId} task={task} onMutated={onMutated} />
-        {/* AG8: spawn a hosted implementation run for this task. */}
-        <button
-          type="button"
-          onClick={() => setAgentOpen(true)}
-          className="-my-1 shrink-0 cursor-pointer py-1 text-[11.5px] text-muted-foreground opacity-0 transition-all duration-100 hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100"
-        >
-          Agent
-        </button>
-        <SpawnAgentDialog
-          orgId={orgId}
-          itemKey={task.key}
-          runKind="implementation"
-          open={agentOpen}
-          onOpenChange={setAgentOpen}
-        />
-        {task.priority && task.priority !== "none" ? (
-          <span className="shrink-0 text-[10.5px] font-semibold uppercase text-muted-foreground">
-            {task.priority}
-          </span>
-        ) : null}
-        {task.estimate !== undefined ? (
-          <span className="shrink-0 text-[10.5px] text-muted-foreground">{task.estimate}pt</span>
-        ) : null}
-        {task.cycleKey ? (
-          <span className="shrink-0 rounded-full border border-border px-1.5 py-px font-mono text-[10px] text-muted-foreground">
-            {task.cycleKey}
-          </span>
-        ) : null}
-        {task.tags?.map((tag) => (
-          <span
-            key={tag}
-            className="shrink-0 rounded-full border border-border px-1.5 py-px text-[10.5px] text-muted-foreground"
-          >
-            {tag}
-          </span>
-        ))}
-        {task.assignees?.map((a) => (
-          <AssigneeChip key={a} subject={a} />
-        ))}
-        {session ? <SessionChip session={session} href={sessionHref?.(session.id)} /> : null}
-        {lc.pinned ? (
-          <span
-            className="shrink-0"
-            title={`pinned by ${lc.pinned.by.id}${lc.pinned.note ? ` — ${lc.pinned.note}` : ""}`}
-          >
-            <Pill tone="warning">pinned {rungLabel(lc.pinned.rung)}</Pill>
-          </span>
-        ) : null}
-        {lc.blocked ? <Pill tone="error">blocked</Pill> : null}
-        <RungPill rung={lc.rung} />
-      </div>
-      {lc.evidence?.length ? (
-        <div className="mt-1 truncate text-[11.5px] text-muted-foreground/85 sm:pl-[68px]">
-          {lc.evidence[0]}
-        </div>
-      ) : null}
-    </li>
-  );
-}
-
-/* ── Drift & suggestions ──────────────────────────────────────── */
-
-function DriftInbox({ drift }: { drift: WorkSummaryResponse["drift"] }) {
-  return (
-    <section>
-      <div className="mb-2.5 flex flex-wrap items-baseline gap-x-2.5 gap-y-0.5">
-        <span className="text-[12.5px] font-semibold text-muted-foreground">Drift inbox</span>
-        <span className="text-[11.5px] text-muted-foreground/85">
-          merged PRs no open task claims — unplanned changes
-        </span>
-      </div>
-      <ListCard>
-        {drift.map((d) => (
-          <div
-            key={d.pr}
-            className="flex items-baseline gap-3 border-t border-border/50 bg-warning-wash px-5 py-2.5 first:border-t-0"
-          >
-            <span className="min-w-[56px] shrink-0 font-mono text-[11.5px] text-secondary-foreground">
-              {d.pr}
-            </span>
-            <span className="min-w-0 flex-1 truncate text-[12.5px] text-muted-foreground">
-              → {d.affected.join(", ")}
-            </span>
-          </div>
-        ))}
-      </ListCard>
-    </section>
-  );
-}
-
-function Suggestions({ suggestions }: { suggestions: WorkSummaryResponse["suggestions"] }) {
-  return (
-    <section>
-      <div className="mb-2.5 flex flex-wrap items-baseline gap-x-2.5 gap-y-0.5">
-        <span className="text-[12.5px] font-semibold text-muted-foreground">Claim suggestions</span>
-        <span className="text-[11.5px] text-muted-foreground/85">
-          PRs whose components match more than one open task — ambiguity suggests, never links
-        </span>
-      </div>
-      <ListCard>
-        {suggestions.map((s) => (
-          <div
-            key={s.pr}
-            className="flex items-baseline gap-3 border-t border-border/50 px-5 py-2.5 first:border-t-0"
-          >
-            <span className="min-w-[56px] shrink-0 font-mono text-[11.5px] text-secondary-foreground">
-              {s.pr}
-            </span>
-            <span className="min-w-0 flex-1 truncate text-[12.5px] text-muted-foreground">
-              could claim {s.taskKeys.join(" or ")}
-            </span>
-          </div>
-        ))}
-      </ListCard>
-    </section>
+    </>
   );
 }
 
@@ -907,10 +295,10 @@ function Suggestions({ suggestions }: { suggestions: WorkSummaryResponse["sugges
 
 function EmptyWork() {
   return (
-    <div className="mt-[30px] rounded-xl border bg-card px-6 py-14 text-center">
+    <div className="mt-5 rounded-xl border bg-card px-6 py-14 text-center">
       <div className="text-[13.5px] font-medium">Nothing here yet</div>
       <p className="mx-auto mt-1.5 max-w-[460px] text-[12.5px] leading-relaxed text-muted-foreground">
-        Create a spec or task from the New menu above, or import a specs tree with{" "}
+        Create an epic or task from the New menu above, or import a specs tree with{" "}
         <code className="rounded bg-muted px-1 py-0.5 font-mono text-[11px] text-foreground">
           orun work import specs/ --workspace …
         </code>{" "}
@@ -922,7 +310,7 @@ function EmptyWork() {
 
 function ErrorCard({ code, message }: { code: string; message: string }) {
   return (
-    <div className="mt-[30px] rounded-xl border bg-card px-6 py-8">
+    <div className="mt-5 rounded-xl border bg-card px-6 py-8">
       <StatusText tone="error" className="font-medium">
         {code}
       </StatusText>
@@ -933,16 +321,9 @@ function ErrorCard({ code, message }: { code: string; message: string }) {
 
 function WorkSkeleton() {
   return (
-    <div aria-hidden className="mt-[30px] space-y-[26px]">
-      {Array.from({ length: 2 }).map((_, i) => (
-        <div key={i}>
-          <Skeleton className="mb-2.5 h-4 w-44" />
-          <Skeleton className="h-36 w-full rounded-xl" />
-        </div>
-      ))}
+    <div aria-hidden className="mt-5 space-y-3">
+      <Skeleton className="h-11 w-full rounded-[10px]" />
+      <Skeleton className="h-64 w-full rounded-xl" />
     </div>
   );
 }
-
-const RUNG_ORDER: WorkRung[] = ["released", "done", "in_review", "in_progress", "ready", "draft", "canceled"];
-export { RUNG_ORDER };

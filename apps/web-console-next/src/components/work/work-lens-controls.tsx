@@ -38,8 +38,8 @@ import {
   BOARD_RUNGS,
   PRIORITY_OPTIONS,
   type BoardFilters,
+  type WorkLayout,
 } from "@/lib/work/board";
-import type { WorkLayout } from "@/components/work/work-view-bar";
 
 function ControlPill({
   active = false,

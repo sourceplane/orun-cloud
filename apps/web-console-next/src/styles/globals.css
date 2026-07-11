@@ -67,6 +67,8 @@
     --work-outline: 0 0% 75%; /* #C0C0C0 upcoming diamond, unassigned ring */
     --agent: 271 18% 48%; /* #7A648F agent star */
     --agent-soft: 270 32% 93%; /* #ECE6F2 agent avatar fill */
+    --warning-border: 44 58% 85%; /* #EFE3C2 drift banner border */
+    --warning-ink: 44 53% 28%; /* #6E5A22 drift banner ink */
   }
 
   .dark {
@@ -117,6 +119,8 @@
     --work-outline: 0 0% 32%;
     --agent: 266 26% 70%;
     --agent-soft: 266 20% 18%;
+    --warning-border: 43 30% 26%;
+    --warning-ink: 43 50% 62%;
   }
 
   * {

@@ -1,8 +1,7 @@
 # orun-work v5 — implementation status
 
 > **As-built ≠ intent.** This file records what actually shipped, kept
-> distinct from the design/plan docs. The epic is Draft; nothing has
-> shipped yet.
+> distinct from the design/plan docs.
 
 ## Milestones
 
@@ -13,8 +12,8 @@
 | WV2 | Epics & Tasks lenses | ✅ Shipped — orun-cloud #429: cycle bar from derived scope/done, rung groups in active-first order (pin-position grouping, badge beside truth), Filter/Display pills (board demoted to a Display layout), saved views unchanged |
 | WV3 | The task peek | ✅ Shipped — orun-cloud #430: non-modal right-docked peek, RUNG · FOLD WITH PIN ladder over the v2 pin mutator, truth-source tag, evidence timeline, live session banner, pure pinIntent/truthSourceTag with tests |
 | WV4 | Initiative & epic pages | ✅ Shipped — orun-cloud #431: drift banner with content-addressed Re-approve, milestone diamond ladder (complete folds shut), dense rows opening the peek, sticky Properties/Intent/Working-on-it rails, initiative evidence callout + Designs cards + DERIVED · NOT ENTERED rail |
-| WV5 | Keyboard, motion, command | In progress |
-| WV6 | The sweep and the proof | Not started |
+| WV5 | Keyboard, motion, command | ✅ Shipped — orun-cloud #432: 1/2/3 lens keys, j/k roving focus, lens-aware c, f/d menus, p-to-pin in the peek, ⌘K lens verbs + the no-"Mark as…" wording gate, peek-in motion, data-change-only meter animation |
+| WV6 | The sweep and the proof | In progress |
 
 ## Design rules to hold throughout
 

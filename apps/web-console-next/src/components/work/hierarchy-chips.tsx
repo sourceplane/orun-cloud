@@ -6,7 +6,7 @@
 // named evidence — nothing here accepts input (V4-4).
 
 import * as React from "react";
-import type { WorkEpicIntentView, WorkHealth, WorkRung } from "@saas/contracts/work";
+import type { WorkEpicIntentView, WorkHealth } from "@saas/contracts/work";
 import { Pill, type Tone } from "@/components/ui/northwind";
 
 export function shortDigest(rev?: string): string {
@@ -119,31 +119,6 @@ export function HealthChip({
           pinned {HEALTH_LABEL[pinned.health].toLowerCase()} by {pinned.by.id}
         </span>
       ) : null}
-    </span>
-  );
-}
-
-/** The two-band derived progress bar (done+released / active) used at every
- *  level of the drill-down. */
-export function ProgressBar({
-  counts,
-  total,
-  className,
-}: {
-  counts: Partial<Record<WorkRung, number>> | undefined;
-  total: number;
-  className?: string;
-}) {
-  if (!total) return null;
-  const done = (counts?.done ?? 0) + (counts?.released ?? 0);
-  const active = (counts?.in_progress ?? 0) + (counts?.in_review ?? 0);
-  return (
-    <span
-      aria-hidden
-      className={`flex h-[5px] w-24 shrink-0 overflow-hidden rounded-[3px] bg-[#EDEDED] dark:bg-secondary ${className ?? ""}`}
-    >
-      {done > 0 ? <span className="bg-success" style={{ width: `${(done / total) * 100}%` }} /> : null}
-      {active > 0 ? <span className="bg-warning-accent" style={{ width: `${(active / total) * 100}%` }} /> : null}
     </span>
   );
 }
