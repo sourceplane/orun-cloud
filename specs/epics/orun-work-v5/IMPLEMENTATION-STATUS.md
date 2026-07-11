@@ -11,8 +11,8 @@
 | WV0 | The design language | ✅ Shipped — orun-cloud #427: `--work-*` tokens (light + dark), the `northwind-work.tsx` primitive set (RungIcon/TaskRungMark/PinBadge, MilestoneDiamond/Rail, WorkMeter, AgentAvatar, SessionChip, LensBar, GroupBand, TruthCaption), the pure glyph model with 16 conformance tests, demo-gallery Work tab, northwind-design.md inventory |
 | WV1 | The Work home | ✅ Shipped — orun-cloud #428: one surface, three lenses (?lens= in the URL, last choice remembered), Initiatives lens at mock fidelity, early Epics lens, embedded-workbench Tasks bridge, /work/initiatives redirect, portfolio workbench deleted |
 | WV2 | Epics & Tasks lenses | ✅ Shipped — orun-cloud #429: cycle bar from derived scope/done, rung groups in active-first order (pin-position grouping, badge beside truth), Filter/Display pills (board demoted to a Display layout), saved views unchanged |
-| WV3 | The task peek | In progress |
-| WV4 | Initiative & epic pages | Not started |
+| WV3 | The task peek | ✅ Shipped — orun-cloud #430: non-modal right-docked peek, RUNG · FOLD WITH PIN ladder over the v2 pin mutator, truth-source tag, evidence timeline, live session banner, pure pinIntent/truthSourceTag with tests |
+| WV4 | Initiative & epic pages | In progress |
 | WV5 | Keyboard, motion, command | Not started |
 | WV6 | The sweep and the proof | Not started |
 
