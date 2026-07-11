@@ -1,11 +1,9 @@
-"use client";
+import { redirect } from "next/navigation";
 
-import { useParams } from "next/navigation";
-import { OrgScope } from "@/components/shell/org-scope";
-import { InitiativesWorkbench } from "@/components/work/initiatives-workbench";
-
-export default function InitiativesPage() {
-  const params = useParams<{ orgSlug: string }>();
-  const slug = params?.orgSlug ?? "";
-  return <OrgScope slug={slug}>{(org) => <InitiativesWorkbench orgId={org.id} />}</OrgScope>;
+/**
+ * Compatibility redirect (orun-work-v5 WV1). The initiative portfolio is
+ * now the Work home's Initiatives lens; deep links keep working.
+ */
+export default function LegacyInitiativesRedirect({ params }: { params: { orgSlug: string } }) {
+  redirect(`/orgs/${params.orgSlug}/work?lens=initiatives`);
 }

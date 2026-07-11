@@ -8,8 +8,8 @@
 
 | ID | Milestone | Status |
 |----|-----------|--------|
-| WV0 | The design language | Not started |
-| WV1 | The Work home | Not started |
+| WV0 | The design language | ✅ Shipped — orun-cloud #427: `--work-*` tokens (light + dark), the `northwind-work.tsx` primitive set (RungIcon/TaskRungMark/PinBadge, MilestoneDiamond/Rail, WorkMeter, AgentAvatar, SessionChip, LensBar, GroupBand, TruthCaption), the pure glyph model with 16 conformance tests, demo-gallery Work tab, northwind-design.md inventory |
+| WV1 | The Work home | In progress |
 | WV2 | Epics & Tasks lenses | Not started |
 | WV3 | The task peek | Not started |
 | WV4 | Initiative & epic pages | Not started |
