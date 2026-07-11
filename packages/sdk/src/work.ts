@@ -52,6 +52,8 @@ import type {
   WorkEpicBriefResponse,
   CreateWorkDesignRequest,
   CreateWorkDesignResponse,
+  RegenerateWorkTasksRequest,
+  RegenerateWorkTasksResponse,
   RevokeWorkApprovalRequest,
   SupersedeWorkDesignRequest,
   WorkDesignView,
@@ -464,6 +466,26 @@ export class WorkClient {
   supersedeDesign(orgId: string, key: string, body: SupersedeWorkDesignRequest = {}, opts: RequestOptions = {}): Promise<WorkMutationResponse> {
     return this.transport.request<WorkMutationResponse>(
       { method: "POST", path: `${workBase(orgId)}/designs/${encodeURIComponent(key)}/supersede`, body },
+      opts,
+    );
+  }
+
+  /** v4 WH5: governed re-planning of one milestone — planned tasks cancel,
+   *  in-flight tasks survive (Q-6), agent-proposed contracts flag into the
+   *  triage review lane. One verdict for the whole batch. */
+  regenerateTasks(
+    orgId: string,
+    epicKey: string,
+    milestoneKey: string,
+    body: RegenerateWorkTasksRequest,
+    opts: RequestOptions = {},
+  ): Promise<RegenerateWorkTasksResponse> {
+    return this.transport.request<RegenerateWorkTasksResponse>(
+      {
+        method: "POST",
+        path: `${workBase(orgId)}/epics/${encodeURIComponent(epicKey)}/milestones/${encodeURIComponent(milestoneKey)}/regenerate`,
+        body,
+      },
       opts,
     );
   }

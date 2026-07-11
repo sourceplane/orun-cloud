@@ -77,6 +77,7 @@ import {
   handleWorkDesigns,
   handleWorkMilestones,
   handleWorkEpicBrief,
+  handleWorkRegenerate,
   handleWorkReview,
   handleWorkRollups,
 } from "./handlers/work-hierarchy.js";
@@ -235,6 +236,7 @@ const ORG_WORK_DESIGN_RE = /^\/v1\/organizations\/([^/]+)\/work\/designs\/([^/]+
 const ORG_WORK_DESIGN_DECISION_RE = /^\/v1\/organizations\/([^/]+)\/work\/designs\/([^/]+)\/(adopt|supersede)$/;
 const ORG_WORK_ROLLUPS_RE = /^\/v1\/organizations\/([^/]+)\/work\/rollups$/;
 const ORG_WORK_EPIC_BRIEF_RE = /^\/v1\/organizations\/([^/]+)\/work\/(?:epics|specs)\/([^/]+)\/brief$/;
+const ORG_WORK_REGENERATE_RE = /^\/v1\/organizations\/([^/]+)\/work\/(?:epics|specs)\/([^/]+)\/milestones\/([^/]+)\/regenerate$/;
 
 // OV1 — hosted RefStore (design-v2 §2). Ref names carry slashes
 // (catalogs/current, executions/by-id/<id>), so the name is a greedy tail.
@@ -445,6 +447,18 @@ export async function route(request: Request, env: Env, ctx?: ExecutionContext):
     if (request.method === "PUT") return handlePutWorkDoc(request, env, requestId, actor, orgId, docKey);
     if (request.method === "GET") return handleGetWorkDoc(request, env, requestId, actor, orgId, docKey);
     return methodNotAllowed(requestId);
+  }
+
+  // Match /regenerate before the plain milestones route (same prefix).
+  m = pathname.match(ORG_WORK_REGENERATE_RE);
+  if (m) {
+    const orgId = parseOrgPublicId(m[1]!);
+    if (!orgId) return notFound(requestId, pathname);
+    if (request.method !== "POST") return methodNotAllowed(requestId);
+    return handleWorkRegenerate(
+      request, env, requestId, actor, orgId,
+      decodeURIComponent(m[2]!), decodeURIComponent(m[3]!),
+    );
   }
 
   m = pathname.match(ORG_WORK_MILESTONES_RE);

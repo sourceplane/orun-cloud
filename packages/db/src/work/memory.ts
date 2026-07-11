@@ -5,12 +5,13 @@
 
 import { canonicalDocBody, docDigest } from "./doc.js";
 import { buildEnvelopes, type ItemCreatedPayload } from "./envelopes.js";
-import { foldMilestones, sealEpicSnapshot } from "./hierarchy.js";
+import { foldEpicIntent, foldMilestones, sealEpicSnapshot } from "./hierarchy.js";
 import {
   PRIORITIES,
   RELATION_KINDS,
   REVIEW_VERDICTS,
   WorkError,
+  fold,
   isMilestoneKey,
   validateActor,
   validateEvent,
@@ -28,6 +29,8 @@ import type {
   AdoptDesignInput,
   AdoptOutcome,
   ApproveInput,
+  RegenerateOutcome,
+  RegenerateTasksInput,
   SealedBrief,
   AssignInput,
   CancelInput,
@@ -624,6 +627,67 @@ export class MemoryWorkRepository implements WorkRepository {
     return { event, minted, tasks: taskKeys };
   }
 
+  async regenerateTasks(scope: WorkspaceScope, input: RegenerateTasksInput): Promise<RegenerateOutcome> {
+    validateActor(input.actor);
+    this.mustBeLadderMilestone(scope, input.epicKey, input.milestone);
+    for (const t of input.tasks) {
+      if (!t.title?.trim()) throw new WorkError("invalid", "every regenerated task needs a title");
+    }
+    const pair = this.logs(scope);
+    const { tasks } = buildEnvelopes(scope.orgId, pair.events);
+    const ws = { tasks, events: pair.events, observations: pair.observations };
+    const fr = fold(ws);
+    const at = input.at ?? this.now();
+
+    const canceled: string[] = [];
+    const kept: string[] = [];
+    for (const t of tasks) {
+      if (t.spec !== input.epicKey || t.milestone !== input.milestone) continue;
+      const rung = fr.lifecycles[t.key]?.rung ?? "draft";
+      if (rung === "canceled") continue;
+      if (rung === "draft" || rung === "ready") {
+        this.append(scope, { subject: t.key, kind: "canceled", actor: input.actor, at, payload: {} });
+        canceled.push(t.key);
+      } else {
+        kept.push(t.key); // observed activity survives re-planning (Q-6)
+      }
+    }
+
+    const created: string[] = [];
+    const prefix = input.prefix ?? "WK";
+    for (const t of input.tasks) {
+      const key = `${prefix}-${this.nextSeq(pair, prefix)}`;
+      const payload: ItemCreatedPayload = {
+        kind: "Task",
+        key,
+        title: t.title.trim(),
+        specKey: input.epicKey,
+        milestone: input.milestone,
+        contract: t.contract,
+      };
+      this.append(scope, {
+        subject: key,
+        kind: "item_created",
+        actor: input.actor,
+        at,
+        payload: payload as unknown as Record<string, unknown>,
+      });
+      if (t.contract && input.actor.type !== "user") {
+        // Flag agent-proposed contracts into the triage review lane — the
+        // same discipline as contract_propose (applied AND flagged).
+        this.append(scope, {
+          subject: key,
+          kind: "contract_edited",
+          actor: input.actor,
+          at,
+          payload: { contract: t.contract },
+        });
+      }
+      created.push(key);
+    }
+    return { canceled, kept, created };
+  }
+
   async supersedeDesign(scope: WorkspaceScope, input: SupersedeDesignInput): Promise<CommitOutcome> {
     validateActor(input.actor);
     await this.getDesign(scope, input.key);
@@ -651,7 +715,32 @@ export class MemoryWorkRepository implements WorkRepository {
   }
 
   async assign(scope: WorkspaceScope, input: AssignInput): Promise<CommitOutcome> {
-    return this.simpleEvent(scope, input.key, "assigned", input.actor, input.at, { subjectId: input.subject });
+    await this.guardDispatch(scope, input);
+    return this.simpleEvent(scope, input.key, "assigned", input.actor, input.at, {
+      subjectId: input.subject,
+      ...(input.override ? { override: input.override } : {}),
+    });
+  }
+
+  /** The dispatch precondition (v4 WH5, design §3): an agent seat (sp_)
+   *  cannot be assigned into an epic whose intent is not Approved. A human
+   *  may override WITH a note (the event stays attributed); agents and
+   *  automation can never override — server-side, not client trust. */
+  private async guardDispatch(scope: WorkspaceScope, input: AssignInput): Promise<void> {
+    if (!input.subject.startsWith("sp_")) return;
+    const { tasks } = buildEnvelopes(scope.orgId, this.logs(scope).events);
+    const task = tasks.find((t) => t.key === input.key);
+    if (!task?.spec) return; // inbox tasks have no epic to be approved
+    const intent = await foldEpicIntent(task.spec, this.logs(scope).events);
+    if (intent.state === "approved") return;
+    if (input.actor.type === "user" && input.override?.trim()) return;
+    throw new WorkError(
+      "invalid",
+      `dispatch blocked: epic ${task.spec} is ${intent.state.replace("_", " ")} — agents implement approved briefs. ` +
+        (input.actor.type === "user"
+          ? "Override with a note to dispatch anyway (attributed), or approve the epic first."
+          : "A human can approve the epic or override with a note; agents cannot (V4-2)."),
+    );
   }
 
   async unassign(scope: WorkspaceScope, input: AssignInput): Promise<CommitOutcome> {

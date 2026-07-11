@@ -882,7 +882,7 @@ export async function handleWorkTaskAction(
         if (!body?.subject) return validationError(requestId, { subject: ["required"] });
         out = body.unassign
           ? await repo.unassign(scope, { key, subject: body.subject, actor: workActor })
-          : await repo.assign(scope, { key, subject: body.subject, actor: workActor });
+          : await repo.assign(scope, { key, subject: body.subject, override: body.override, actor: workActor });
         break;
       }
       case "pin": {
