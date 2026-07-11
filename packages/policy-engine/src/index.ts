@@ -89,6 +89,7 @@ const ORG_ROLE_PERMISSIONS: Record<OrganizationRole, readonly string[]> = {
     "team.owner_handle.remove",
     "work.read",
     "work.write",
+    "work.approve",
     "organization.agent.provider.read",
     "organization.agent.provider.write",
     "organization.agent.session.read",
@@ -169,6 +170,7 @@ const ORG_ROLE_PERMISSIONS: Record<OrganizationRole, readonly string[]> = {
     "team.owner_handle.remove",
     "work.read",
     "work.write",
+    "work.approve",
     "organization.agent.provider.read",
     "organization.agent.provider.write",
     "organization.agent.session.read",
@@ -430,6 +432,10 @@ const ALL_KNOWN_ACTIONS: ReadonlySet<string> = new Set([
   // derived query, so there is exactly one read and one write action).
   "work.read",
   "work.write",
+  // orun-work v4 WH1 — approval is a real privilege boundary (reviewer ≠
+  // approver); owner/admin only. Registered here in the same commit as the
+  // role maps + routes (V3-4 — the Work-page-404 lesson does not repeat).
+  "work.approve",
   // saas-agents — the hosted-agent control plane (workspace-scoped).
   "organization.agent.provider.read",
   "organization.agent.provider.write",

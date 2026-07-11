@@ -13,6 +13,27 @@ export type { BurnupPoint } from "./burnup.js";
 export { foldAssignees, openContractProposals, recentMentions, reviewParkedKeys } from "./triage.js";
 export type { ContractProposal, Mention } from "./triage.js";
 export { canonicalDocBody, docDigest } from "./doc.js";
+export {
+  canonicalJson,
+  contentId,
+  foldDesignIntent,
+  foldEpicExecution,
+  foldEpicIntent,
+  foldInitiativeStatus,
+  foldMilestones,
+  ladderHash,
+} from "./hierarchy.js";
+export type {
+  Approval,
+  DesignIntent,
+  EpicExecution,
+  EpicIntent,
+  EpicRollup,
+  HealthPin,
+  InitiativeStatus,
+  MilestonePayload,
+  MilestoneProgress,
+} from "./hierarchy.js";
 export { MemoryWorkRepository } from "./memory.js";
 export { createWorkRepository, insertWorkObservation } from "./repository.js";
 export { workObservationsFromScm, WORK_SCM_SOURCE, WORK_SCM_SOURCE_VERSION } from "./scm.js";

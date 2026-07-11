@@ -633,5 +633,14 @@ export const manifest: MigrationManifest = {
       description:
         "Folded board-intent cache columns (orun-work-v3 PM2): work.tasks gains tags JSONB (sorted free-form workspace labels, folded from labeled/unlabeled) and relations JSONB ([{rel: blocks|parent|relates, target}], folded from related/unrelated — the fold derives Blocked from open `blocks` relations exactly as from contract Deps, a flag never a rung). Both columns are droppable envelope caches rebuilt from the coordination log alone (invariant 1). 660 already carries priority/estimate/cycle_key and work.views. Additive + idempotent (ADD COLUMN IF NOT EXISTS).",
     },
+    {
+      id: "700_work_v4_hierarchy",
+      context: "work",
+      path: "700_work_v4_hierarchy/up.sql",
+      checksum:
+        "139d4698f8ba6694c5fd34d63c475696418b353e0b3e6ac71a2a6e6583be1da8",
+      description:
+        "The planning hierarchy's intent plane (orun-work-v4 WH1): work.designs (the Design noun \u2014 doc chain + sealed context {catalog, coordSeq, obsSeq} + structured proposal; droppable envelope cache) and work.milestones (the epic-scoped checkpoint ladder, V4-D; droppable fold cache of milestone_edited). The events kind CHECK regenerates to the 27-kind closed vocabulary \u2014 the four decision kinds (approved/approval_revoked/design_adopted/superseded) are human-only at the model layer (V4-2); still no delivery-lifecycle-write kind (WP-3) and the observation CHECK is untouched (V4-1). Envelope property columns land as pure intent: work.tasks.milestone_key, work.specs.initiative_key + target_date, work.initiatives.owner + target_date + success_criteria. NO STORED FACT: no intent-state, approval, progress, or health column exists \u2014 all fold at read (V4-3/V4-4). work.doc_revisions.spec_key now carries any documented subject key (designs share the digest form \u2014 V4-6). Additive + idempotent.",
+    },
   ],
 };

@@ -11,11 +11,15 @@ import type {
   Contract,
   CoordinationEvent,
   Cycle,
+  Design,
   DocRevision,
   Initiative,
+  Milestone,
   Observation,
   Priority,
+  Proposal,
   RelationKind,
+  ReviewVerdict,
   Rung,
   Spec,
   Task,
@@ -39,6 +43,9 @@ export interface CreateInitiativeInput {
   slug: string;
   title: string;
   description?: string | undefined;
+  owner?: string | undefined;
+  targetDate?: string | undefined;
+  successCriteria?: string[] | undefined;
   actor: Actor;
   at?: string | undefined;
 }
@@ -46,6 +53,9 @@ export interface CreateInitiativeInput {
 export interface CreateTaskInput {
   prefix: string; // 2–5 uppercase; key allocates PREFIX-<seq>
   specKey?: string | undefined;
+  /** v4: the milestone (within specKey) this task lands in. Requires
+   *  specKey; the milestone must exist in the epic's ladder. */
+  milestone?: string | undefined;
   title: string;
   contract?: Contract | undefined;
   labels?: Record<string, string> | undefined;
@@ -58,6 +68,108 @@ export interface EditItemInput {
   title?: string | undefined;
   labels?: Record<string, string> | undefined;
   docRef?: string | undefined;
+  // v4 properties (design §1.7) — pure intent, edited via item_edited.
+  initiative?: string | null | undefined; // null unfiles an epic
+  targetDate?: string | null | undefined;
+  owner?: string | null | undefined;
+  successCriteria?: string[] | undefined;
+  actor: Actor;
+  at?: string | undefined;
+}
+
+// ── v4 hierarchy inputs (orun-work-v4 WH1) ──────────────────────────────────
+
+export interface EditMilestoneInput {
+  epicKey: string;
+  op: "create" | "edit" | "reorder" | "remove";
+  key: string;
+  title?: string | undefined;
+  goal?: string | undefined;
+  doneWhen?: string[] | undefined;
+  targetDate?: string | undefined;
+  ordinal?: number | undefined;
+  actor: Actor;
+  at?: string | undefined;
+}
+
+export interface SetMilestoneInput {
+  key: string; // task key
+  milestone: string | null; // null clears (back to the unscheduled bucket)
+  actor: Actor;
+  at?: string | undefined;
+}
+
+export interface RequestReviewInput {
+  key: string; // epic or design key
+  revision?: string | undefined;
+  reviewers?: string[] | undefined;
+  note?: string | undefined;
+  actor: Actor;
+  at?: string | undefined;
+}
+
+export interface SubmitVerdictInput {
+  key: string; // epic or design key
+  revision?: string | undefined;
+  verdict: ReviewVerdict;
+  note?: string | undefined;
+  actor: Actor;
+  at?: string | undefined;
+}
+
+export interface ApproveInput {
+  key: string; // epic key
+  /** The doc revision being approved. When set it MUST equal the epic's
+   *  current doc_ref (a stale approval is a conflict verdict — you approve
+   *  bytes, not vibes). Defaults to the current doc_ref. */
+  revision?: string | undefined;
+  /** Sealed EpicSnapshot id, stamped by the WH4 sealing leg. */
+  snapshot?: string | undefined;
+  /** Workspace policy knob (default 1). Counting includes the approver. */
+  minApprovals?: number | undefined;
+  actor: Actor;
+  at?: string | undefined;
+}
+
+export interface RevokeApprovalInput {
+  key: string;
+  note?: string | undefined;
+  actor: Actor;
+  at?: string | undefined;
+}
+
+export interface CreateDesignInput {
+  initiativeKey: string;
+  title: string;
+  docRef?: string | undefined;
+  proposal?: Proposal | undefined;
+  /** Sealed context; the handler stamps catalog + current log cursors. */
+  context?: { catalog?: string | undefined } | undefined;
+  labels?: Record<string, string> | undefined;
+  actor: Actor;
+  at?: string | undefined;
+}
+
+export interface AdoptDesignInput {
+  key: string; // design key
+  /** Subset of proposal epic slugs to mint; defaults to all. */
+  epics?: string[] | undefined;
+  /** Task-key prefix for minted task skeletons (default "WK"). */
+  taskPrefix?: string | undefined;
+  actor: Actor;
+  at?: string | undefined;
+}
+
+export interface AdoptOutcome {
+  event: CoordinationEvent; // the design_adopted decision
+  minted: string[]; // epic keys created
+  tasks: string[]; // task keys created from skeletons
+}
+
+export interface SupersedeDesignInput {
+  key: string;
+  by?: string | undefined;
+  note?: string | undefined;
   actor: Actor;
   at?: string | undefined;
 }
@@ -246,6 +358,24 @@ export interface WorkRepository {
   order(scope: WorkspaceScope, input: OrderInput): Promise<CommitOutcome>;
   pin(scope: WorkspaceScope, input: PinInput): Promise<CommitOutcome>;
   cancel(scope: WorkspaceScope, input: CancelInput): Promise<CommitOutcome>;
+
+  /** v4 hierarchy mutators (WH1). One coordination event each, except
+   *  adoptDesign — the documented transactional mint batch (design §2).
+   *  approved / approval_revoked / design_adopted / superseded are
+   *  human-only (V4-2): the model rejects agents AND automation at write
+   *  time; the routes return the verdict as a 422. */
+  editMilestone(scope: WorkspaceScope, input: EditMilestoneInput): Promise<CommitOutcome>;
+  setMilestone(scope: WorkspaceScope, input: SetMilestoneInput): Promise<CommitOutcome>;
+  listMilestones(scope: WorkspaceScope, epicKey: string): Promise<Milestone[]>;
+  requestReview(scope: WorkspaceScope, input: RequestReviewInput): Promise<CommitOutcome>;
+  submitVerdict(scope: WorkspaceScope, input: SubmitVerdictInput): Promise<CommitOutcome>;
+  approve(scope: WorkspaceScope, input: ApproveInput): Promise<CommitOutcome>;
+  revokeApproval(scope: WorkspaceScope, input: RevokeApprovalInput): Promise<CommitOutcome>;
+  createDesign(scope: WorkspaceScope, input: CreateDesignInput): Promise<CommitOutcome & { design: Design }>;
+  getDesign(scope: WorkspaceScope, key: string): Promise<Design>;
+  listDesigns(scope: WorkspaceScope, initiativeKey?: string): Promise<Design[]>;
+  adoptDesign(scope: WorkspaceScope, input: AdoptDesignInput): Promise<AdoptOutcome>;
+  supersedeDesign(scope: WorkspaceScope, input: SupersedeDesignInput): Promise<CommitOutcome>;
 
   /** The only fact writer — named ingesters call this; mutators cannot. */
   ingestObservation(scope: WorkspaceScope, input: IngestObservationInput): Promise<IngestOutcome>;

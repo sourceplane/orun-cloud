@@ -9,23 +9,36 @@ import {
   WorkError,
   type Contract,
   type CoordinationEvent,
+  type Design,
+  type DesignContext,
   type Initiative,
+  type Milestone,
   type Priority,
+  type Proposal,
   type Relation,
   type RelationKind,
   type Spec,
   type Task,
 } from "./model.js";
+import { foldMilestones, type MilestonePayload } from "./hierarchy.js";
 
 export interface ItemCreatedPayload {
-  kind: "Spec" | "Task" | "Initiative";
+  kind: "Spec" | "Task" | "Initiative" | "Design";
   key: string;
   title: string;
   description?: string | undefined; // initiatives only
   specKey?: string | undefined;
+  milestone?: string | undefined; // tasks (v4)
   docRef?: string | undefined;
   labels?: Record<string, string> | undefined;
   contract?: Contract | undefined;
+  // v4 properties (design §1.7)
+  initiative?: string | undefined; // specs (partOf) and designs (hasDesign)
+  targetDate?: string | undefined; // specs + initiatives
+  owner?: string | undefined; // initiatives
+  successCriteria?: string[] | undefined; // initiatives
+  context?: DesignContext | undefined; // designs
+  proposal?: Proposal | undefined; // designs
 }
 
 export interface ItemEditedPayload {
@@ -33,6 +46,12 @@ export interface ItemEditedPayload {
   description?: string | undefined;
   labels?: Record<string, string> | undefined;
   docRef?: string | undefined;
+  // v4 properties — pure intent; the fold reads only targetDate (health).
+  initiative?: string | null | undefined; // null unfiles
+  targetDate?: string | null | undefined;
+  owner?: string | null | undefined;
+  successCriteria?: string[] | undefined;
+  proposal?: Proposal | undefined; // designs
 }
 
 export interface DocEditedPayload {
@@ -48,6 +67,10 @@ export interface Envelopes {
   specs: Spec[];
   tasks: Task[];
   initiatives: Initiative[];
+  designs: Design[];
+  /** Current milestone ladders by epic key (v4) — the fold-cache source for
+   *  work.milestones, rebuilt from milestone_edited events alone. */
+  milestones: Map<string, Milestone[]>;
 }
 
 function mustTask(tasks: Map<string, Task>, e: CoordinationEvent): Task {
@@ -66,6 +89,7 @@ export function buildEnvelopes(workspace: string, events: CoordinationEvent[]): 
   const specs = new Map<string, Spec>();
   const tasks = new Map<string, Task>();
   const initiatives = new Map<string, Initiative>();
+  const designs = new Map<string, Design>();
 
   for (const e of events) {
     switch (e.kind) {
@@ -79,6 +103,24 @@ export function buildEnvelopes(workspace: string, events: CoordinationEvent[]): 
             workspace,
             title: p.title,
             description: p.description,
+            owner: p.owner,
+            targetDate: p.targetDate,
+            successCriteria: p.successCriteria,
+            createdBy: e.actor,
+            createdAt: e.at,
+          });
+        } else if (p.kind === "Design") {
+          designs.set(p.key, {
+            apiVersion: API_VERSION,
+            kind: "Design",
+            key: p.key,
+            workspace,
+            initiative: p.initiative ?? "",
+            title: p.title,
+            docRef: p.docRef,
+            context: p.context ?? { coordSeq: 0, obsSeq: 0 },
+            proposal: p.proposal,
+            labels: p.labels,
             createdBy: e.actor,
             createdAt: e.at,
           });
@@ -90,6 +132,8 @@ export function buildEnvelopes(workspace: string, events: CoordinationEvent[]): 
             workspace,
             title: p.title,
             docRef: p.docRef,
+            initiative: p.initiative,
+            targetDate: p.targetDate,
             labels: p.labels,
             createdBy: e.actor,
             createdAt: e.at,
@@ -101,6 +145,7 @@ export function buildEnvelopes(workspace: string, events: CoordinationEvent[]): 
             key: p.key,
             workspace,
             spec: p.specKey,
+            milestone: p.milestone,
             title: p.title,
             labels: p.labels,
             contract: p.contract,
@@ -115,22 +160,40 @@ export function buildEnvelopes(workspace: string, events: CoordinationEvent[]): 
         const spec = specs.get(e.subject);
         const task = tasks.get(e.subject);
         const initiative = initiatives.get(e.subject);
-        if (!spec && !task && !initiative) {
+        const design = designs.get(e.subject);
+        if (!spec && !task && !initiative && !design) {
           throw new WorkError("not_found", `replay: edit of unknown item ${e.subject} at seq ${e.seq}`);
         }
         if (initiative) {
           if (p.title !== undefined) initiative.title = p.title;
           if (p.description !== undefined) initiative.description = p.description;
+          if (p.owner !== undefined) initiative.owner = p.owner ?? undefined;
+          if (p.targetDate !== undefined) initiative.targetDate = p.targetDate ?? undefined;
+          if (p.successCriteria !== undefined) initiative.successCriteria = p.successCriteria;
+        }
+        if (design) {
+          if (p.title !== undefined) design.title = p.title;
+          if (p.labels !== undefined) design.labels = p.labels;
+          if (p.proposal !== undefined) design.proposal = p.proposal;
         }
         if (spec) {
           if (p.title !== undefined) spec.title = p.title;
           if (p.labels !== undefined) spec.labels = p.labels;
           if (p.docRef !== undefined) spec.docRef = p.docRef;
+          if (p.initiative !== undefined) spec.initiative = p.initiative ?? undefined;
+          if (p.targetDate !== undefined) spec.targetDate = p.targetDate ?? undefined;
         }
         if (task) {
           if (p.title !== undefined) task.title = p.title;
           if (p.labels !== undefined) task.labels = p.labels;
         }
+        break;
+      }
+      case "milestone_set": {
+        // v4: a task moves into (or out of) a milestone within its epic.
+        const p = e.payload as unknown as { milestone?: string | null };
+        const task = mustTask(tasks, e);
+        task.milestone = p.milestone ?? undefined;
         break;
       }
       case "contract_edited": {
@@ -144,14 +207,17 @@ export function buildEnvelopes(workspace: string, events: CoordinationEvent[]): 
       }
       case "doc_edited": {
         // The cloud document pointer IS envelope state: replaying the log
-        // must reproduce work.specs.doc_ref (invariant 1). Bodies live in
-        // work.doc_revisions — content, not envelope.
+        // must reproduce doc_ref (invariant 1). Bodies live in
+        // work.doc_revisions — content, not envelope. Designs carry doc
+        // chains exactly like epics (v4, V4-6: one digest form).
         const p = e.payload as unknown as DocEditedPayload;
         const spec = specs.get(e.subject);
-        if (!spec) {
-          throw new WorkError("not_found", `replay: doc edit of unknown spec ${e.subject} at seq ${e.seq}`);
+        const design = designs.get(e.subject);
+        if (!spec && !design) {
+          throw new WorkError("not_found", `replay: doc edit of unknown item ${e.subject} at seq ${e.seq}`);
         }
-        spec.docRef = p.revision;
+        if (spec) spec.docRef = p.revision;
+        if (design) design.docRef = p.revision;
         break;
       }
       // ── Board intent (v3 PM2): folded envelope fields on tasks ──────────
@@ -210,10 +276,26 @@ export function buildEnvelopes(workspace: string, events: CoordinationEvent[]): 
     }
   }
 
+  // Milestone ladders replay per epic from milestone_edited events alone —
+  // the fold-cache source for work.milestones (invariant 1 extends to it).
+  const milestoneSubjects = new Set<string>();
+  for (const e of events) {
+    if (e.kind === "milestone_edited") {
+      const p = e.payload as unknown as MilestonePayload;
+      if (p?.key) milestoneSubjects.add(e.subject);
+    }
+  }
+  const milestones = new Map<string, Milestone[]>();
+  for (const epicKey of milestoneSubjects) {
+    milestones.set(epicKey, foldMilestones(epicKey, events));
+  }
+
   return {
     specs: [...specs.values()].sort((a, b) => (a.key < b.key ? -1 : 1)),
     tasks: [...tasks.values()].sort((a, b) => (a.key < b.key ? -1 : 1)),
     initiatives: [...initiatives.values()].sort((a, b) => (a.key < b.key ? -1 : 1)),
+    designs: [...designs.values()].sort((a, b) => (a.key < b.key ? -1 : 1)),
+    milestones,
   };
 }
 

@@ -13,36 +13,48 @@ import {
   API_VERSION,
   PRIORITIES,
   RELATION_KINDS,
+  REVIEW_VERDICTS,
   WorkError,
+  isMilestoneKey,
   validateActor,
   validateEvent,
   validateObservation,
+  validateProposal,
   type Actor,
   type Contract,
   type CoordinationEvent,
   type Cycle,
+  type Design,
+  type DesignContext,
   type DocRevision,
   type EventKind,
   type Initiative,
+  type Milestone,
   type Observation,
   type Priority,
+  type Proposal,
   type Relation,
   type Spec,
   type Task,
   type WorkSet,
 } from "./model.js";
 import type {
+  AdoptDesignInput,
+  AdoptOutcome,
+  ApproveInput,
   AssignInput,
   CancelInput,
   CommentInput,
   ReactionInput,
   CommitOutcome,
   CreateCycleInput,
+  CreateDesignInput,
   CreateInitiativeInput,
   CreateSpecInput,
   CreateTaskInput,
   EditContractInput,
   EditItemInput,
+  EditMilestoneInput,
   EstimateInput,
   IngestObservationInput,
   IngestOutcome,
@@ -53,8 +65,13 @@ import type {
   PutDocInput,
   PutDocOutcome,
   RelateInput,
+  RequestReviewInput,
+  RevokeApprovalInput,
   SaveViewInput,
   SetCycleInput,
+  SetMilestoneInput,
+  SubmitVerdictInput,
+  SupersedeDesignInput,
   WorkRepository,
   WorkspaceScope,
   WorkView,
@@ -125,6 +142,7 @@ function mapTask(orgId: string, row: Record<string, unknown>): Task {
     estimate: row.estimate == null ? undefined : Number(row.estimate),
     relations: relations.length > 0 ? relations : undefined,
     cycleKey: (row.cycle_key as string | null) ?? undefined,
+    milestone: (row.milestone_key as string | null) ?? undefined,
   };
 }
 
@@ -137,9 +155,42 @@ function mapSpec(orgId: string, row: Record<string, unknown>): Spec {
     workspace: orgId,
     title: String(row.title),
     docRef: (row.doc_ref as string | null) ?? undefined,
+    initiative: (row.initiative_key as string | null) ?? undefined,
+    targetDate: row.target_date == null ? undefined : toIso(row.target_date).slice(0, 10),
     labels: emptyToUndefined(parseJson<Record<string, string>>(row.labels, {})),
     createdBy: parseJson<Actor>(row.created_by, { type: "automation", id: "unknown" }),
     createdAt: toIso(row.created_at),
+  };
+}
+
+function mapDesign(orgId: string, row: Record<string, unknown>): Design {
+  const labels = parseJson<Record<string, string>>(row.labels, {});
+  return {
+    apiVersion: API_VERSION,
+    kind: "Design",
+    id: String(row.id),
+    key: String(row.key),
+    workspace: orgId,
+    initiative: String(row.initiative),
+    title: String(row.title),
+    docRef: (row.doc_ref as string | null) ?? undefined,
+    context: parseJson<DesignContext>(row.context, { coordSeq: 0, obsSeq: 0 }),
+    proposal: parseJson<Proposal | null>(row.proposal, null) ?? undefined,
+    labels: emptyToUndefined(labels),
+    createdBy: parseJson<Actor>(row.created_by, { type: "automation", id: "unknown" }),
+    createdAt: toIso(row.created_at),
+  };
+}
+
+function mapMilestone(row: Record<string, unknown>): Milestone {
+  const doneWhen = parseJson<string[]>(row.done_when, []);
+  return {
+    key: String(row.key),
+    title: String(row.title),
+    goal: (row.goal as string | null) ?? undefined,
+    doneWhen: doneWhen.length > 0 ? doneWhen : undefined,
+    targetDate: row.target_date == null ? undefined : toIso(row.target_date).slice(0, 10),
+    ordinal: Number(row.ordinal),
   };
 }
 
@@ -180,13 +231,43 @@ async function keyExists(tx: SqlExecutor, orgId: string, key: string): Promise<b
      SELECT 1 FROM work.specs WHERE org_id = $1 AND key = $2
      UNION ALL
      SELECT 1 FROM work.initiatives WHERE org_id = $1 AND key = $2
+     UNION ALL
+     SELECT 1 FROM work.designs WHERE org_id = $1 AND key = $2
      LIMIT 1`,
     [orgId, key],
   );
   return res.rowCount > 0;
 }
 
+/** The live milestone ladder from the fold cache (ladder order). */
+async function ladderOf(tx: SqlExecutor, orgId: string, epicKey: string): Promise<Milestone[]> {
+  const res = await tx.execute(
+    `SELECT * FROM work.milestones
+     WHERE org_id = $1 AND spec_key = $2 AND removed = false
+     ORDER BY ordinal, key`,
+    [orgId, epicKey],
+  );
+  return res.rows.map(mapMilestone);
+}
+
+async function mustBeEpic(tx: SqlExecutor, orgId: string, key: string): Promise<Record<string, unknown>> {
+  const res = await tx.execute(`SELECT * FROM work.specs WHERE org_id = $1 AND key = $2`, [orgId, key]);
+  if (res.rowCount === 0) {
+    throw new WorkError("not_found", `unknown epic ${key}`);
+  }
+  return res.rows[0]!;
+}
+
+async function mustBeReviewable(tx: SqlExecutor, orgId: string, key: string): Promise<"epic" | "design"> {
+  const spec = await tx.execute(`SELECT 1 FROM work.specs WHERE org_id = $1 AND key = $2`, [orgId, key]);
+  if (spec.rowCount > 0) return "epic";
+  const design = await tx.execute(`SELECT 1 FROM work.designs WHERE org_id = $1 AND key = $2`, [orgId, key]);
+  if (design.rowCount > 0) return "design";
+  throw new WorkError("not_found", `unknown epic or design ${key}`);
+}
+
 function mapInitiative(orgId: string, row: Record<string, unknown>): Initiative {
+  const successCriteria = parseJson<string[]>(row.success_criteria, []);
   return {
     apiVersion: API_VERSION,
     kind: "Initiative",
@@ -195,6 +276,9 @@ function mapInitiative(orgId: string, row: Record<string, unknown>): Initiative 
     workspace: orgId,
     title: String(row.title),
     description: (row.description as string | null) ?? undefined,
+    owner: (row.owner as string | null) ?? undefined,
+    targetDate: row.target_date == null ? undefined : toIso(row.target_date).slice(0, 10),
+    successCriteria: successCriteria.length > 0 ? successCriteria : undefined,
     createdBy: parseJson<Actor>(row.created_by, { type: "automation", id: "unknown" }),
     createdAt: toIso(row.created_at),
   };
@@ -262,7 +346,9 @@ export async function insertWorkObservation(
 export function createWorkRepository(
   sql: TransactionalSqlExecutor,
   now: () => string = () => new Date().toISOString(),
-): WorkRepository & { rebuildCaches(scope: WorkspaceScope): Promise<{ specs: number; tasks: number; initiatives: number }> } {
+): WorkRepository & {
+  rebuildCaches(scope: WorkspaceScope): Promise<{ specs: number; tasks: number; initiatives: number; designs: number }>;
+} {
   const simpleMutation = async (
     scope: WorkspaceScope,
     key: string,
@@ -463,6 +549,9 @@ export function createWorkRepository(
           key: input.slug,
           title: input.title,
           description: input.description,
+          owner: input.owner,
+          targetDate: input.targetDate,
+          successCriteria: input.successCriteria,
         };
         const event = await appendEvent(tx, scope.orgId, {
           subject: input.slug,
@@ -472,10 +561,20 @@ export function createWorkRepository(
           payload: payload as unknown as Record<string, unknown>,
         });
         const res = await tx.execute(
-          `INSERT INTO work.initiatives (org_id, key, title, description, created_by, created_at)
-           VALUES ($1, $2, $3, $4, $5::jsonb, $6)
+          `INSERT INTO work.initiatives (org_id, key, title, description, owner, target_date, success_criteria, created_by, created_at)
+           VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8::jsonb, $9)
            RETURNING *`,
-          [scope.orgId, input.slug, input.title, input.description ?? null, JSON.stringify(input.actor), at],
+          [
+            scope.orgId,
+            input.slug,
+            input.title,
+            input.description ?? null,
+            input.owner ?? null,
+            input.targetDate ?? null,
+            input.successCriteria ? JSON.stringify(input.successCriteria) : null,
+            JSON.stringify(input.actor),
+            at,
+          ],
         );
         return { event, key: input.slug, initiative: mapInitiative(scope.orgId, res.rows[0]!) };
       });
@@ -490,6 +589,15 @@ export function createWorkRepository(
         if (input.specKey && !(await keyExists(tx, scope.orgId, input.specKey))) {
           throw new WorkError("not_found", `spec ${input.specKey} does not exist`);
         }
+        if (input.milestone) {
+          if (!input.specKey) {
+            throw new WorkError("invalid", "a milestone lives inside exactly one epic — the task needs a spec (design §1.2)");
+          }
+          const ladder = await ladderOf(tx, scope.orgId, input.specKey);
+          if (!ladder.some((m) => m.key === input.milestone)) {
+            throw new WorkError("not_found", `milestone ${input.milestone} is not in ${input.specKey}'s ladder`);
+          }
+        }
         const n = await nextSeq(tx, scope.orgId, input.prefix);
         const key = `${input.prefix}-${n}`;
         const at = input.at ?? now();
@@ -498,6 +606,7 @@ export function createWorkRepository(
           key,
           title: input.title,
           specKey: input.specKey,
+          milestone: input.milestone,
           labels: input.labels,
           contract: input.contract,
         };
@@ -509,13 +618,14 @@ export function createWorkRepository(
           payload: payload as unknown as Record<string, unknown>,
         });
         const res = await tx.execute(
-          `INSERT INTO work.tasks (org_id, key, spec_key, title, contract, labels, created_by, created_at)
-           VALUES ($1, $2, $3, $4, $5::jsonb, $6::jsonb, $7::jsonb, $8)
+          `INSERT INTO work.tasks (org_id, key, spec_key, milestone_key, title, contract, labels, created_by, created_at)
+           VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7::jsonb, $8::jsonb, $9)
            RETURNING *`,
           [
             scope.orgId,
             key,
             input.specKey ?? null,
+            input.milestone ?? null,
             input.title,
             input.contract ? JSON.stringify(input.contract) : null,
             JSON.stringify(input.labels ?? {}),
@@ -533,12 +643,29 @@ export function createWorkRepository(
         if (!(await keyExists(tx, scope.orgId, input.key))) {
           throw new WorkError("not_found", `unknown item ${input.key}`);
         }
+        if (input.initiative !== undefined && input.initiative !== null) {
+          const target = await tx.execute(`SELECT 1 FROM work.initiatives WHERE org_id = $1 AND key = $2`, [
+            scope.orgId,
+            input.initiative,
+          ]);
+          if (target.rowCount === 0) {
+            throw new WorkError("not_found", `unknown initiative ${input.initiative}`);
+          }
+        }
         const event = await appendEvent(tx, scope.orgId, {
           subject: input.key,
           kind: "item_edited",
           actor: input.actor,
           at: input.at ?? now(),
-          payload: { title: input.title, labels: input.labels, docRef: input.docRef },
+          payload: {
+            title: input.title,
+            labels: input.labels,
+            docRef: input.docRef,
+            initiative: input.initiative,
+            targetDate: input.targetDate,
+            owner: input.owner,
+            successCriteria: input.successCriteria,
+          },
         });
         if (input.title !== undefined || input.labels !== undefined) {
           await tx.execute(
@@ -553,10 +680,555 @@ export function createWorkRepository(
           `UPDATE work.specs SET
              title = COALESCE($3, title),
              labels = COALESCE($4::jsonb, labels),
-             doc_ref = COALESCE($5, doc_ref)
+             doc_ref = COALESCE($5, doc_ref),
+             initiative_key = CASE WHEN $6 THEN $7 ELSE initiative_key END,
+             target_date = CASE WHEN $8 THEN $9::date ELSE target_date END
            WHERE org_id = $1 AND key = $2`,
-          [scope.orgId, input.key, input.title ?? null, input.labels ? JSON.stringify(input.labels) : null, input.docRef ?? null],
+          [
+            scope.orgId,
+            input.key,
+            input.title ?? null,
+            input.labels ? JSON.stringify(input.labels) : null,
+            input.docRef ?? null,
+            input.initiative !== undefined,
+            input.initiative ?? null,
+            input.targetDate !== undefined,
+            input.targetDate ?? null,
+          ],
         );
+        await tx.execute(
+          `UPDATE work.initiatives SET
+             title = COALESCE($3, title),
+             owner = CASE WHEN $4 THEN $5 ELSE owner END,
+             target_date = CASE WHEN $6 THEN $7::date ELSE target_date END,
+             success_criteria = COALESCE($8::jsonb, success_criteria)
+           WHERE org_id = $1 AND key = $2`,
+          [
+            scope.orgId,
+            input.key,
+            input.title ?? null,
+            input.owner !== undefined,
+            input.owner ?? null,
+            input.targetDate !== undefined,
+            input.targetDate ?? null,
+            input.successCriteria ? JSON.stringify(input.successCriteria) : null,
+          ],
+        );
+        return { event, key: input.key };
+      });
+    },
+
+    // ── v4 hierarchy mutators (WH1) — one event each; adopt is the one
+    //    documented transactional batch (design §2) ─────────────────────────
+
+    async editMilestone(scope, input: EditMilestoneInput) {
+      validateActor(input.actor);
+      if (!isMilestoneKey(input.key)) {
+        throw new WorkError("invalid", `milestone key ${input.key} must match the ladder convention (WH2, M1)`);
+      }
+      return sql.transaction(async (tx) => {
+        await mustBeEpic(tx, scope.orgId, input.epicKey);
+        const existingRes = await tx.execute(
+          `SELECT removed FROM work.milestones WHERE org_id = $1 AND spec_key = $2 AND key = $3 FOR UPDATE`,
+          [scope.orgId, input.epicKey, input.key],
+        );
+        const live = existingRes.rowCount > 0 && existingRes.rows[0]!.removed === false;
+        switch (input.op) {
+          case "create": {
+            if (live) throw new WorkError("conflict", `milestone ${input.key} already exists — keys are immutable`);
+            if (!input.title?.trim()) throw new WorkError("invalid", "a milestone needs a title");
+            break;
+          }
+          case "edit":
+          case "reorder": {
+            if (!live) throw new WorkError("not_found", `milestone ${input.key} is not in ${input.epicKey}'s ladder`);
+            break;
+          }
+          case "remove": {
+            if (!live) throw new WorkError("not_found", `milestone ${input.key} is not in ${input.epicKey}'s ladder`);
+            const open = await tx.execute(
+              `SELECT count(*)::int AS n FROM work.tasks t
+               WHERE t.org_id = $1 AND t.spec_key = $2 AND t.milestone_key = $3
+                 AND NOT EXISTS (
+                   SELECT 1 FROM work.events e
+                   WHERE e.org_id = $1 AND e.subject = t.key AND e.kind = 'canceled')`,
+              [scope.orgId, input.epicKey, input.key],
+            );
+            const n = Number(open.rows[0]?.n ?? 0);
+            if (n > 0) {
+              throw new WorkError("conflict", `milestone ${input.key} has ${n} open task(s) — move or cancel them first`);
+            }
+            break;
+          }
+          default:
+            throw new WorkError("invalid", `unknown milestone op ${String(input.op)}`);
+        }
+        const event = await appendEvent(tx, scope.orgId, {
+          subject: input.epicKey,
+          kind: "milestone_edited",
+          actor: input.actor,
+          at: input.at ?? now(),
+          payload: {
+            op: input.op,
+            key: input.key,
+            title: input.title,
+            goal: input.goal,
+            doneWhen: input.doneWhen,
+            targetDate: input.targetDate,
+            ordinal: input.ordinal,
+          },
+        });
+        // The fold-cache row, in the same transaction (droppable — rebuilt
+        // from milestone_edited events alone; invariant 1).
+        if (input.op === "create") {
+          const ord =
+            input.ordinal ??
+            Number(
+              (
+                await tx.execute(
+                  `SELECT COALESCE(MAX(ordinal) + 1, 0)::int AS ord FROM work.milestones WHERE org_id = $1 AND spec_key = $2`,
+                  [scope.orgId, input.epicKey],
+                )
+              ).rows[0]?.ord ?? 0,
+            );
+          await tx.execute(
+            `INSERT INTO work.milestones (org_id, spec_key, key, ordinal, title, goal, done_when, target_date, removed)
+             VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8, false)
+             ON CONFLICT (org_id, spec_key, key) DO UPDATE SET
+               ordinal = EXCLUDED.ordinal, title = EXCLUDED.title, goal = EXCLUDED.goal,
+               done_when = EXCLUDED.done_when, target_date = EXCLUDED.target_date, removed = false`,
+            [
+              scope.orgId,
+              input.epicKey,
+              input.key,
+              ord,
+              input.title!.trim(),
+              input.goal ?? null,
+              input.doneWhen ? JSON.stringify(input.doneWhen) : null,
+              input.targetDate ?? null,
+            ],
+          );
+        } else if (input.op === "remove") {
+          await tx.execute(
+            `UPDATE work.milestones SET removed = true WHERE org_id = $1 AND spec_key = $2 AND key = $3`,
+            [scope.orgId, input.epicKey, input.key],
+          );
+        } else {
+          await tx.execute(
+            `UPDATE work.milestones SET
+               title = COALESCE($4, title),
+               goal = COALESCE($5, goal),
+               done_when = COALESCE($6::jsonb, done_when),
+               target_date = COALESCE($7::date, target_date),
+               ordinal = COALESCE($8, ordinal)
+             WHERE org_id = $1 AND spec_key = $2 AND key = $3`,
+            [
+              scope.orgId,
+              input.epicKey,
+              input.key,
+              input.title ?? null,
+              input.goal ?? null,
+              input.doneWhen ? JSON.stringify(input.doneWhen) : null,
+              input.targetDate ?? null,
+              input.ordinal ?? null,
+            ],
+          );
+        }
+        return { event, key: input.epicKey };
+      });
+    },
+
+    async setMilestone(scope, input: SetMilestoneInput) {
+      validateActor(input.actor);
+      return sql.transaction(async (tx) => {
+        const taskRes = await tx.execute(
+          `SELECT spec_key FROM work.tasks WHERE org_id = $1 AND key = $2 FOR UPDATE`,
+          [scope.orgId, input.key],
+        );
+        if (taskRes.rowCount === 0) {
+          throw new WorkError("not_found", `unknown task ${input.key}`);
+        }
+        const specKey = (taskRes.rows[0]!.spec_key as string | null) ?? undefined;
+        if (input.milestone !== null) {
+          if (!specKey) {
+            throw new WorkError("invalid", "a milestone lives inside exactly one epic — the task needs a spec (design §1.2)");
+          }
+          const ladder = await ladderOf(tx, scope.orgId, specKey);
+          if (!ladder.some((m) => m.key === input.milestone)) {
+            throw new WorkError("not_found", `milestone ${input.milestone} is not in ${specKey}'s ladder`);
+          }
+        }
+        const event = await appendEvent(tx, scope.orgId, {
+          subject: input.key,
+          kind: "milestone_set",
+          actor: input.actor,
+          at: input.at ?? now(),
+          payload: { milestone: input.milestone },
+        });
+        await tx.execute(`UPDATE work.tasks SET milestone_key = $3 WHERE org_id = $1 AND key = $2`, [
+          scope.orgId,
+          input.key,
+          input.milestone,
+        ]);
+        return { event, key: input.key };
+      });
+    },
+
+    async listMilestones(scope, epicKey) {
+      const exists = await sql.execute(`SELECT 1 FROM work.specs WHERE org_id = $1 AND key = $2`, [
+        scope.orgId,
+        epicKey,
+      ]);
+      if (exists.rowCount === 0) {
+        throw new WorkError("not_found", `unknown epic ${epicKey}`);
+      }
+      return ladderOf(sql, scope.orgId, epicKey);
+    },
+
+    async requestReview(scope, input: RequestReviewInput) {
+      validateActor(input.actor);
+      return sql.transaction(async (tx) => {
+        await mustBeReviewable(tx, scope.orgId, input.key);
+        const event = await appendEvent(tx, scope.orgId, {
+          subject: input.key,
+          kind: "review_requested",
+          actor: input.actor,
+          at: input.at ?? now(),
+          payload: { revision: input.revision, reviewers: input.reviewers, note: input.note },
+        });
+        return { event, key: input.key };
+      });
+    },
+
+    async submitVerdict(scope, input: SubmitVerdictInput) {
+      validateActor(input.actor);
+      if (!REVIEW_VERDICTS.includes(input.verdict)) {
+        throw new WorkError("invalid", `verdict must be one of ${REVIEW_VERDICTS.join("|")}`);
+      }
+      return sql.transaction(async (tx) => {
+        await mustBeReviewable(tx, scope.orgId, input.key);
+        const event = await appendEvent(tx, scope.orgId, {
+          subject: input.key,
+          kind: "review_submitted",
+          actor: input.actor,
+          at: input.at ?? now(),
+          payload: { revision: input.revision, verdict: input.verdict, note: input.note },
+        });
+        return { event, key: input.key };
+      });
+    },
+
+    async approve(scope, input: ApproveInput) {
+      validateActor(input.actor);
+      return sql.transaction(async (tx) => {
+        const epicRow = await mustBeEpic(tx, scope.orgId, input.key);
+        const ladder = await ladderOf(tx, scope.orgId, input.key);
+        if (ladder.length === 0) {
+          throw new WorkError(
+            "invalid",
+            `epic ${input.key} has no milestones — approval covers the doc AND the ladder (V4-2)`,
+          );
+        }
+        const current = (epicRow.doc_ref as string | null) ?? "";
+        const revision = input.revision ?? current;
+        if (revision !== current) {
+          throw new WorkError(
+            "conflict",
+            `approval of stale revision ${revision || "(none)"} — the epic's document is now ${current || "(none)"}; re-read and re-approve`,
+          );
+        }
+        const min = input.minApprovals ?? 1;
+        if (min > 1) {
+          const verdicts = await tx.execute(
+            `SELECT actor, payload FROM work.events
+             WHERE org_id = $1 AND subject = $2 AND kind = 'review_submitted'
+             ORDER BY seq`,
+            [scope.orgId, input.key],
+          );
+          const approvers = new Set<string>([input.actor.id]);
+          for (const row of verdicts.rows) {
+            const actor = parseJson<Actor>(row.actor, { type: "automation", id: "unknown" });
+            const p = parseJson<{ verdict?: string; revision?: string }>(row.payload, {});
+            if (p.verdict === "approve" && actor.type === "user" && (p.revision ?? current) === current) {
+              approvers.add(actor.id);
+            }
+          }
+          if (approvers.size < min) {
+            throw new WorkError(
+              "invalid",
+              `approval needs ${min} distinct human approvals at this revision; have ${approvers.size}`,
+            );
+          }
+        }
+        const event = await appendEvent(tx, scope.orgId, {
+          subject: input.key,
+          kind: "approved",
+          actor: input.actor,
+          at: input.at ?? now(),
+          payload: { revision: revision || undefined, snapshot: input.snapshot },
+        });
+        return { event, key: input.key };
+      });
+    },
+
+    async revokeApproval(scope, input: RevokeApprovalInput) {
+      validateActor(input.actor);
+      return sql.transaction(async (tx) => {
+        await mustBeEpic(tx, scope.orgId, input.key);
+        const res = await tx.execute(
+          `SELECT kind FROM work.events
+           WHERE org_id = $1 AND subject = $2 AND kind IN ('approved', 'approval_revoked')
+           ORDER BY seq DESC LIMIT 1`,
+          [scope.orgId, input.key],
+        );
+        if (res.rowCount === 0 || String(res.rows[0]!.kind) !== "approved") {
+          throw new WorkError("invalid", `epic ${input.key} has no active approval to revoke`);
+        }
+        const event = await appendEvent(tx, scope.orgId, {
+          subject: input.key,
+          kind: "approval_revoked",
+          actor: input.actor,
+          at: input.at ?? now(),
+          payload: { note: input.note },
+        });
+        return { event, key: input.key };
+      });
+    },
+
+    async createDesign(scope, input: CreateDesignInput) {
+      validateActor(input.actor);
+      if (!input.title?.trim()) {
+        throw new WorkError("invalid", "a design needs a title");
+      }
+      validateProposal(input.proposal);
+      return sql.transaction(async (tx) => {
+        const initiative = await tx.execute(`SELECT 1 FROM work.initiatives WHERE org_id = $1 AND key = $2`, [
+          scope.orgId,
+          input.initiativeKey,
+        ]);
+        if (initiative.rowCount === 0) {
+          throw new WorkError("not_found", `unknown initiative ${input.initiativeKey}`);
+        }
+        const cursors = await tx.execute(
+          `SELECT
+             COALESCE((SELECT MAX(seq) FROM work.events WHERE org_id = $1), 0)::bigint AS coord,
+             COALESCE((SELECT MAX(seq) FROM work.observations WHERE org_id = $1), 0)::bigint AS obs`,
+          [scope.orgId],
+        );
+        const context: DesignContext = {
+          catalog: input.context?.catalog,
+          coordSeq: Number(cursors.rows[0]?.coord ?? 0),
+          obsSeq: Number(cursors.rows[0]?.obs ?? 0),
+        };
+        const n = await nextSeq(tx, scope.orgId, "DSG");
+        const key = `DSG-${n}`;
+        const at = input.at ?? now();
+        const payload: ItemCreatedPayload = {
+          kind: "Design",
+          key,
+          title: input.title.trim(),
+          initiative: input.initiativeKey,
+          docRef: input.docRef,
+          labels: input.labels,
+          context,
+          proposal: input.proposal,
+        };
+        const event = await appendEvent(tx, scope.orgId, {
+          subject: key,
+          kind: "item_created",
+          actor: input.actor,
+          at,
+          payload: payload as unknown as Record<string, unknown>,
+        });
+        const res = await tx.execute(
+          `INSERT INTO work.designs (org_id, key, initiative, title, doc_ref, context, proposal, labels, created_by, created_at)
+           VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7::jsonb, $8::jsonb, $9::jsonb, $10)
+           RETURNING *`,
+          [
+            scope.orgId,
+            key,
+            input.initiativeKey,
+            input.title.trim(),
+            input.docRef ?? null,
+            JSON.stringify(context),
+            input.proposal ? JSON.stringify(input.proposal) : null,
+            JSON.stringify(input.labels ?? {}),
+            JSON.stringify(input.actor),
+            at,
+          ],
+        );
+        return { event, key, design: mapDesign(scope.orgId, res.rows[0]!) };
+      });
+    },
+
+    async getDesign(scope, key) {
+      const res = await sql.execute(`SELECT * FROM work.designs WHERE org_id = $1 AND key = $2`, [
+        scope.orgId,
+        key,
+      ]);
+      if (res.rowCount === 0) {
+        throw new WorkError("not_found", `unknown design ${key}`);
+      }
+      return mapDesign(scope.orgId, res.rows[0]!);
+    },
+
+    async listDesigns(scope, initiativeKey) {
+      const res = initiativeKey
+        ? await sql.execute(
+            `SELECT * FROM work.designs WHERE org_id = $1 AND initiative = $2 ORDER BY created_at, key`,
+            [scope.orgId, initiativeKey],
+          )
+        : await sql.execute(`SELECT * FROM work.designs WHERE org_id = $1 ORDER BY created_at, key`, [scope.orgId]);
+      return res.rows.map((r) => mapDesign(scope.orgId, r));
+    },
+
+    async adoptDesign(scope, input: AdoptDesignInput): Promise<AdoptOutcome> {
+      validateActor(input.actor);
+      return sql.transaction(async (tx) => {
+        const designRes = await tx.execute(`SELECT * FROM work.designs WHERE org_id = $1 AND key = $2 FOR UPDATE`, [
+          scope.orgId,
+          input.key,
+        ]);
+        if (designRes.rowCount === 0) {
+          throw new WorkError("not_found", `unknown design ${input.key}`);
+        }
+        const design = mapDesign(scope.orgId, designRes.rows[0]!);
+        const proposal = design.proposal;
+        if (!proposal || proposal.epics.length === 0) {
+          throw new WorkError("invalid", `design ${input.key} has no proposal to adopt`);
+        }
+        const chosen = input.epics ? proposal.epics.filter((pe) => input.epics!.includes(pe.slug)) : proposal.epics;
+        if (chosen.length === 0) {
+          throw new WorkError("invalid", "adoption selected no proposal epics");
+        }
+        for (const pe of chosen) {
+          if (await keyExists(tx, scope.orgId, pe.slug)) {
+            throw new WorkError("conflict", `proposal epic ${pe.slug} collides with an existing item`);
+          }
+        }
+        const at = input.at ?? now();
+        const actor: Actor = { ...input.actor, via: "adoption" };
+        // The decision first — human-only, enforced by validateEvent (V4-2) —
+        // then the mint batch in the same transaction (design §2).
+        const event = await appendEvent(tx, scope.orgId, {
+          subject: input.key,
+          kind: "design_adopted",
+          actor,
+          at,
+          payload: { revision: design.docRef, minted: chosen.map((pe) => pe.slug) },
+        });
+        const minted: string[] = [];
+        const taskKeys: string[] = [];
+        const prefix = input.taskPrefix ?? "WK";
+        for (const pe of chosen) {
+          const specPayload: ItemCreatedPayload = {
+            kind: "Spec",
+            key: pe.slug,
+            title: pe.title,
+            docRef: pe.docSeed,
+            initiative: design.initiative,
+          };
+          await appendEvent(tx, scope.orgId, {
+            subject: pe.slug,
+            kind: "item_created",
+            actor,
+            at,
+            payload: specPayload as unknown as Record<string, unknown>,
+          });
+          await tx.execute(
+            `INSERT INTO work.specs (org_id, key, title, doc_ref, initiative_key, labels, created_by, created_at)
+             VALUES ($1, $2, $3, $4, $5, '{}'::jsonb, $6::jsonb, $7)`,
+            [scope.orgId, pe.slug, pe.title, pe.docSeed ?? null, design.initiative, JSON.stringify(actor), at],
+          );
+          minted.push(pe.slug);
+          for (const [i, m] of (pe.milestones ?? []).entries()) {
+            const ord = m.ordinal ?? i;
+            await appendEvent(tx, scope.orgId, {
+              subject: pe.slug,
+              kind: "milestone_edited",
+              actor,
+              at,
+              payload: {
+                op: "create",
+                key: m.key,
+                title: m.title,
+                goal: m.goal,
+                doneWhen: m.doneWhen,
+                targetDate: m.targetDate,
+                ordinal: ord,
+              },
+            });
+            await tx.execute(
+              `INSERT INTO work.milestones (org_id, spec_key, key, ordinal, title, goal, done_when, target_date, removed)
+               VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8, false)`,
+              [
+                scope.orgId,
+                pe.slug,
+                m.key,
+                ord,
+                m.title,
+                m.goal ?? null,
+                m.doneWhen ? JSON.stringify(m.doneWhen) : null,
+                m.targetDate ?? null,
+              ],
+            );
+          }
+          for (const ts of pe.taskSkeletons ?? []) {
+            const tn = await nextSeq(tx, scope.orgId, prefix);
+            const taskKey = `${prefix}-${tn}`;
+            const taskPayload: ItemCreatedPayload = {
+              kind: "Task",
+              key: taskKey,
+              title: ts.title,
+              specKey: pe.slug,
+              milestone: ts.milestone,
+              contract: ts.contract,
+            };
+            await appendEvent(tx, scope.orgId, {
+              subject: taskKey,
+              kind: "item_created",
+              actor,
+              at,
+              payload: taskPayload as unknown as Record<string, unknown>,
+            });
+            await tx.execute(
+              `INSERT INTO work.tasks (org_id, key, spec_key, milestone_key, title, contract, labels, created_by, created_at)
+               VALUES ($1, $2, $3, $4, $5, $6::jsonb, '{}'::jsonb, $7::jsonb, $8)`,
+              [
+                scope.orgId,
+                taskKey,
+                pe.slug,
+                ts.milestone ?? null,
+                ts.title,
+                ts.contract ? JSON.stringify(ts.contract) : null,
+                JSON.stringify(actor),
+                at,
+              ],
+            );
+            taskKeys.push(taskKey);
+          }
+        }
+        return { event, minted, tasks: taskKeys };
+      });
+    },
+
+    async supersedeDesign(scope, input: SupersedeDesignInput) {
+      validateActor(input.actor);
+      return sql.transaction(async (tx) => {
+        const design = await tx.execute(`SELECT 1 FROM work.designs WHERE org_id = $1 AND key = $2`, [
+          scope.orgId,
+          input.key,
+        ]);
+        if (design.rowCount === 0) {
+          throw new WorkError("not_found", `unknown design ${input.key}`);
+        }
+        const event = await appendEvent(tx, scope.orgId, {
+          subject: input.key,
+          kind: "superseded",
+          actor: input.actor,
+          at: input.at ?? now(),
+          payload: { by: input.by, note: input.note },
+        });
         return { event, key: input.key };
       });
     },
@@ -714,14 +1386,24 @@ export function createWorkRepository(
       const body = canonicalDocBody(input.body);
       const revision = await docDigest(body);
       return sql.transaction(async (tx) => {
-        const specRes = await tx.execute(`SELECT doc_ref FROM work.specs WHERE org_id = $1 AND key = $2`, [
+        // Designs carry doc chains exactly like epics (v4, V4-6: one digest
+        // form, one canonicalizer, one fork-visible-LWW policy).
+        let table: "specs" | "designs" = "specs";
+        let docRes = await tx.execute(`SELECT doc_ref FROM work.specs WHERE org_id = $1 AND key = $2`, [
           scope.orgId,
           input.specKey,
         ]);
-        if (specRes.rowCount === 0) {
+        if (docRes.rowCount === 0) {
+          docRes = await tx.execute(`SELECT doc_ref FROM work.designs WHERE org_id = $1 AND key = $2`, [
+            scope.orgId,
+            input.specKey,
+          ]);
+          table = "designs";
+        }
+        if (docRes.rowCount === 0) {
           throw new WorkError("not_found", `unknown spec ${input.specKey}`);
         }
-        const current = (specRes.rows[0]!.doc_ref as string | null) ?? undefined;
+        const current = (docRes.rows[0]!.doc_ref as string | null) ?? undefined;
         if (revision === current) {
           // An identical save is a no-op: no revision row, no event.
           return { revision, parent: current, created: false, event: null };
@@ -741,7 +1423,7 @@ export function createWorkRepository(
           at,
           payload: { revision, parent },
         });
-        await tx.execute(`UPDATE work.specs SET doc_ref = $3 WHERE org_id = $1 AND key = $2`, [
+        await tx.execute(`UPDATE work.${table} SET doc_ref = $3 WHERE org_id = $1 AND key = $2`, [
           scope.orgId,
           input.specKey,
           revision,
@@ -753,14 +1435,20 @@ export function createWorkRepository(
     async getDocRevision(scope, specKey, revision) {
       let target = revision;
       if (!target) {
-        const specRes = await sql.execute(`SELECT doc_ref FROM work.specs WHERE org_id = $1 AND key = $2`, [
+        let docRes = await sql.execute(`SELECT doc_ref FROM work.specs WHERE org_id = $1 AND key = $2`, [
           scope.orgId,
           specKey,
         ]);
-        if (specRes.rowCount === 0) {
+        if (docRes.rowCount === 0) {
+          docRes = await sql.execute(`SELECT doc_ref FROM work.designs WHERE org_id = $1 AND key = $2`, [
+            scope.orgId,
+            specKey,
+          ]);
+        }
+        if (docRes.rowCount === 0) {
           throw new WorkError("not_found", `unknown spec ${specKey}`);
         }
-        target = (specRes.rows[0]!.doc_ref as string | null) ?? undefined;
+        target = (docRes.rows[0]!.doc_ref as string | null) ?? undefined;
         if (!target) {
           throw new WorkError("not_found", `spec ${specKey} has no document`);
         }
@@ -901,32 +1589,94 @@ export function createWorkRepository(
     async rebuildCaches(scope) {
       return sql.transaction(async (tx) => {
         const events = await tx.execute(`SELECT * FROM work.events WHERE org_id = $1 ORDER BY seq`, [scope.orgId]);
-        const { specs, tasks, initiatives } = buildEnvelopes(scope.orgId, events.rows.map((r) => mapEvent(scope.orgId, r)));
+        const { specs, tasks, initiatives, designs, milestones } = buildEnvelopes(
+          scope.orgId,
+          events.rows.map((r) => mapEvent(scope.orgId, r)),
+        );
         await tx.execute(`DELETE FROM work.specs WHERE org_id = $1`, [scope.orgId]);
         await tx.execute(`DELETE FROM work.tasks WHERE org_id = $1`, [scope.orgId]);
         await tx.execute(`DELETE FROM work.initiatives WHERE org_id = $1`, [scope.orgId]);
+        await tx.execute(`DELETE FROM work.designs WHERE org_id = $1`, [scope.orgId]);
+        await tx.execute(`DELETE FROM work.milestones WHERE org_id = $1`, [scope.orgId]);
         for (const i of initiatives) {
           await tx.execute(
-            `INSERT INTO work.initiatives (org_id, key, title, description, created_by, created_at)
-             VALUES ($1, $2, $3, $4, $5::jsonb, $6)`,
-            [scope.orgId, i.key, i.title, i.description ?? null, JSON.stringify(i.createdBy), i.createdAt],
+            `INSERT INTO work.initiatives (org_id, key, title, description, owner, target_date, success_criteria, created_by, created_at)
+             VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8::jsonb, $9)`,
+            [
+              scope.orgId,
+              i.key,
+              i.title,
+              i.description ?? null,
+              i.owner ?? null,
+              i.targetDate ?? null,
+              i.successCriteria ? JSON.stringify(i.successCriteria) : null,
+              JSON.stringify(i.createdBy),
+              i.createdAt,
+            ],
+          );
+        }
+        for (const d of designs) {
+          await tx.execute(
+            `INSERT INTO work.designs (org_id, key, initiative, title, doc_ref, context, proposal, labels, created_by, created_at)
+             VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7::jsonb, $8::jsonb, $9::jsonb, $10)`,
+            [
+              scope.orgId,
+              d.key,
+              d.initiative,
+              d.title,
+              d.docRef ?? null,
+              JSON.stringify(d.context),
+              d.proposal ? JSON.stringify(d.proposal) : null,
+              JSON.stringify(d.labels ?? {}),
+              JSON.stringify(d.createdBy),
+              d.createdAt,
+            ],
           );
         }
         for (const s of specs) {
           await tx.execute(
-            `INSERT INTO work.specs (org_id, key, title, doc_ref, labels, created_by, created_at)
-             VALUES ($1, $2, $3, $4, $5::jsonb, $6::jsonb, $7)`,
-            [scope.orgId, s.key, s.title, s.docRef ?? null, JSON.stringify(s.labels ?? {}), JSON.stringify(s.createdBy), s.createdAt],
+            `INSERT INTO work.specs (org_id, key, title, doc_ref, initiative_key, target_date, labels, created_by, created_at)
+             VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8::jsonb, $9)`,
+            [
+              scope.orgId,
+              s.key,
+              s.title,
+              s.docRef ?? null,
+              s.initiative ?? null,
+              s.targetDate ?? null,
+              JSON.stringify(s.labels ?? {}),
+              JSON.stringify(s.createdBy),
+              s.createdAt,
+            ],
           );
+        }
+        for (const [specKey, ladder] of milestones) {
+          for (const m of ladder) {
+            await tx.execute(
+              `INSERT INTO work.milestones (org_id, spec_key, key, ordinal, title, goal, done_when, target_date, removed)
+               VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8, false)`,
+              [
+                scope.orgId,
+                specKey,
+                m.key,
+                m.ordinal,
+                m.title,
+                m.goal ?? null,
+                m.doneWhen ? JSON.stringify(m.doneWhen) : null,
+                m.targetDate ?? null,
+              ],
+            );
+          }
         }
         for (const t of tasks) {
           await tx.execute(
-            `INSERT INTO work.tasks (org_id, key, spec_key, title, contract, labels, created_by, created_at, tags, priority, estimate, relations, cycle_key)
-             VALUES ($1, $2, $3, $4, $5::jsonb, $6::jsonb, $7::jsonb, $8, $9::jsonb, $10, $11, $12::jsonb, $13)`,
+            `INSERT INTO work.tasks (org_id, key, spec_key, milestone_key, title, contract, labels, created_by, created_at, tags, priority, estimate, relations, cycle_key)
+             VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7::jsonb, $8::jsonb, $9, $10::jsonb, $11, $12, $13::jsonb, $14)`,
             [
               scope.orgId,
               t.key,
               t.spec ?? null,
+              t.milestone ?? null,
               t.title,
               t.contract ? JSON.stringify(t.contract) : null,
               JSON.stringify(t.labels ?? {}),
@@ -940,7 +1690,7 @@ export function createWorkRepository(
             ],
           );
         }
-        return { specs: specs.length, tasks: tasks.length, initiatives: initiatives.length };
+        return { specs: specs.length, tasks: tasks.length, initiatives: initiatives.length, designs: designs.length };
       });
     },
   };
