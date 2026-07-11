@@ -56,6 +56,17 @@
     --destructive-soft: 4 74% 95%; /* #FBEBEA */
     --destructive-wash: 7 67% 96%; /* #FCF0EF row tint */
     --info-soft: 216 69% 95%; /* #E9F0FB */
+
+    /* Work plane (orun-work-v5 WV0) — rung glyphs, meters, agent actors.
+       See specs/epics/orun-work-v5/design.md §1. */
+    --work-track: 0 0% 93%; /* #EDEDED meter + ring track */
+    --work-track-warning: 44 51% 86%; /* #EDE3C8 in-progress ring track */
+    --work-track-info: 216 55% 90%; /* #D9E4F4 in-review ring track */
+    --work-idle: 0 0% 60%; /* #999999 ready ring */
+    --work-idle-faint: 0 0% 66%; /* #A8A8A8 draft dashed ring */
+    --work-outline: 0 0% 75%; /* #C0C0C0 upcoming diamond, unassigned ring */
+    --agent: 271 18% 48%; /* #7A648F agent star */
+    --agent-soft: 270 32% 93%; /* #ECE6F2 agent avatar fill */
   }
 
   .dark {
@@ -96,6 +107,16 @@
     --destructive-soft: 3 35% 15%;
     --destructive-wash: 3 30% 11%;
     --info-soft: 215 40% 15%;
+
+    /* Work plane (orun-work-v5 WV0) — same roles, lifted for dark ink. */
+    --work-track: 0 0% 16%;
+    --work-track-warning: 43 25% 20%;
+    --work-track-info: 215 30% 20%;
+    --work-idle: 0 0% 45%;
+    --work-idle-faint: 0 0% 36%;
+    --work-outline: 0 0% 32%;
+    --agent: 266 26% 70%;
+    --agent-soft: 266 20% 18%;
   }
 
   * {

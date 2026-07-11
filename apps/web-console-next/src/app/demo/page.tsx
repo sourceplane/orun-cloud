@@ -12,6 +12,22 @@ import { ZodForm } from "@/components/ui/zod-form";
 import { z } from "zod";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { OrunMark } from "@/components/brand/logo";
+import {
+  AgentAvatar,
+  GroupBand,
+  LensBar,
+  LensTab,
+  MilestoneRail,
+  PinBadge,
+  RungIcon,
+  SessionChip,
+  TaskRungMark,
+  TruthCaption,
+  WorkMeter,
+} from "@/components/ui/northwind-work";
+import { OwnerAvatar } from "@/components/ui/northwind";
+import { rungLabel, RUNGS_PINNABLE } from "@/lib/work/model";
+import { meterSegments } from "@/lib/work/rungs";
 
 /**
  * /demo — a token-free showcase route. Renders all major UI states
@@ -40,6 +56,7 @@ export default function DemoPage() {
             <TabsTrigger value="lists">Lists & tables</TabsTrigger>
             <TabsTrigger value="forms">Forms</TabsTrigger>
             <TabsTrigger value="states">States</TabsTrigger>
+            <TabsTrigger value="work">Work language</TabsTrigger>
           </TabsList>
 
           <TabsContent value="precondition" className="space-y-6 mt-6">
@@ -239,6 +256,128 @@ export default function DemoPage() {
                     <PaletteRow icon={ScrollText} label="Audit log" />
                     <PaletteRow icon={Receipt} label="Billing" />
                   </ul>
+                </CardContent>
+              </Card>
+            </Section>
+          </TabsContent>
+
+          <TabsContent value="work" className="space-y-6 mt-6">
+            <Section title="Rung glyphs — derived, ordinal (WV0)">
+              <Card>
+                <CardContent className="pt-6">
+                  <div className="flex flex-wrap items-center gap-6">
+                    {RUNGS_PINNABLE.map((rung) => (
+                      <span key={rung} className="inline-flex items-center gap-2 text-[12.5px]">
+                        <RungIcon rung={rung} />
+                        {rungLabel(rung)}
+                      </span>
+                    ))}
+                    <span className="inline-flex items-center gap-2 text-[12.5px]">
+                      <RungIcon rung="canceled" />
+                      Canceled
+                    </span>
+                  </div>
+                  <div className="mt-4 flex items-center gap-2 text-[12.5px]">
+                    <TaskRungMark
+                      lifecycle={{
+                        rung: "in_progress",
+                        ready: true,
+                        blocked: false,
+                        pinned: { rung: "done", by: { type: "user", id: "elena" } },
+                      }}
+                    />
+                    <span className="text-muted-foreground">
+                      pin renders beside observed truth, never instead of it
+                    </span>
+                  </div>
+                </CardContent>
+              </Card>
+            </Section>
+
+            <Section title="Milestone ladder + meters">
+              <Card>
+                <CardContent className="pt-6">
+                  {(
+                    [
+                      { key: "M1", name: "Settlement core", state: "complete" as const, counts: { released: 3 }, total: 3 },
+                      { key: "M2", name: "Tender providers", state: "active" as const, counts: { done: 1, in_progress: 1, in_review: 1 }, total: 3 },
+                      { key: "M3", name: "Partner surface", state: "upcoming" as const, counts: {}, total: 2 },
+                    ]
+                  ).map((m, i, all) => {
+                    const seg = meterSegments(m.counts, m.total);
+                    return (
+                      <MilestoneRail key={m.key} state={m.state} last={i === all.length - 1}>
+                        <div className="flex items-center gap-2.5">
+                          <span className="font-mono text-[11px] text-muted-foreground/85">{m.key}</span>
+                          <span className="text-[13.5px] font-semibold">{m.name}</span>
+                          <WorkMeter
+                            className="ml-auto"
+                            donePct={seg.donePct}
+                            activePct={seg.activePct}
+                            fraction={`${seg.doneCount}/${m.total}`}
+                            width={112}
+                          />
+                        </div>
+                      </MilestoneRail>
+                    );
+                  })}
+                </CardContent>
+              </Card>
+            </Section>
+
+            <Section title="Actors — humans, agents, unassigned at equal rank">
+              <Card>
+                <CardContent className="pt-6 flex flex-wrap items-center gap-5 text-[12.5px]">
+                  <span className="inline-flex items-center gap-2">
+                    <OwnerAvatar name="Elena Brandt" size={20} /> human
+                  </span>
+                  <span className="inline-flex items-center gap-2">
+                    <AgentAvatar title="coder-01" /> agent
+                  </span>
+                  <span className="inline-flex items-center gap-2">
+                    <OwnerAvatar name="?" unowned size={18} /> unassigned
+                  </span>
+                  <SessionChip agent="coder-01" session="s_4f21" />
+                  <PinBadge pin={{ rung: "done", by: { type: "user", id: "elena" } }} />
+                </CardContent>
+              </Card>
+            </Section>
+
+            <Section title="Lens bar, group bands, truth caption">
+              <Card>
+                <CardContent className="pt-2">
+                  <LensBar
+                    actions={
+                      <button
+                        type="button"
+                        className="rounded-lg bg-primary px-3 py-1.5 text-[12.5px] font-semibold text-primary-foreground"
+                      >
+                        New
+                      </button>
+                    }
+                  >
+                    <LensTab active>Initiatives</LensTab>
+                    <LensTab>Epics</LensTab>
+                    <LensTab>Tasks</LensTab>
+                  </LensBar>
+                  <div className="mt-4 overflow-hidden rounded-xl border">
+                    <GroupBand
+                      icon={<RungIcon rung="in_progress" size={12} />}
+                      label="In Progress"
+                      count={2}
+                      labelClassName="text-warning"
+                    />
+                    <div className="flex items-center gap-3 px-[18px] py-2.5 text-[13px]">
+                      <RungIcon rung="in_progress" />
+                      <span className="font-mono text-[11.5px] text-muted-foreground/85">0146</span>
+                      Provider sandbox conformance suite
+                      <SessionChip agent="coder-01" session="s_4f21" className="ml-auto" />
+                      <AgentAvatar title="coder-01" />
+                    </div>
+                  </div>
+                  <TruthCaption>
+                    Every status above is folded from delivery truth — never typed in.
+                  </TruthCaption>
                 </CardContent>
               </Card>
             </Section>

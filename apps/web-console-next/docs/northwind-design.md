@@ -109,3 +109,34 @@ Selection rgba(37,99,201,.14). Scrollbar thumb #DBDBDB (hover #C6C6C6), 10px, 6p
   horizontally (no wrap, -webkit-overflow-scrolling, hidden scrollbar); stat grids 1-col;
   settings sub-nav becomes horizontal scrollable chip row above content; 2-col settings → stacked.
 - Touch targets ≥40px on mobile rows/nav.
+
+## Work plane (orun-work v5 — WV0 vocabulary)
+
+Normative spec + exact microcopy: `specs/epics/orun-work-v5/design.md`
+(extracted from the `Northwind_Work.html` mock). Deltas over the base spec:
+Work screens use a 1140px column (home 44px/40px padding, detail 36px top)
+and a 250px sticky right rail (grid `minmax(0,1fr) 250px`, gap 40px).
+
+Tokens (CSS vars in `globals.css`, light + dark): `--work-track` #EDEDED,
+`--work-track-warning` #EDE3C8, `--work-track-info` #D9E4F4, `--work-idle`
+#999999, `--work-idle-faint` #A8A8A8, `--work-outline` #C0C0C0, `--agent`
+#7A648F, `--agent-soft` #ECE6F2.
+
+Primitives (`src/components/ui/northwind-work.tsx`; the only building
+blocks Work screens may use — WV-5):
+- RungIcon — derived Linear-style glyph, 14×14: dashed ring (Draft), empty
+  ring (Ready), ½ amber arc (In Progress), ¾ blue arc (In Review), filled
+  check (Done), green check (Released). Ordinal, a pure function of the fold.
+- TaskRungMark / PinBadge — observed glyph always; pin renders beside it,
+  attributed (`pinned done · elena`).
+- MilestoneDiamond + MilestoneRail — rotated square (filled green /
+  amber outline / gray outline) on a 1.5px rail.
+- WorkMeter — 4px two-segment meter (landed green + in-flight amber) with
+  its `n/m` arithmetic always beside it.
+- AgentAvatar / SessionChip — square star avatar; pulsing live dot +
+  mono `agent · session`.
+- LensBar + LensTab — sticky home tabs (blur, hairline bottom).
+- GroupBand / TruthCaption — grouped-list header bands; the one-sentence
+  truth-source caption under each lens.
+The v4 intent/health chips (`components/work/hierarchy-chips.tsx`) remain
+canonical for approval/health until the detail pages migrate (WV4/WV6).
