@@ -16,8 +16,10 @@ any other client.
 There are two transports over one tool registry:
 
 - **Local (recommended)** — `orun mcp serve`, a stdio server inside the
-  **orun binary**, riding your `orun auth login`. One server, 34 tools: the
-  25 platform tools this page describes plus orun's 9 work tools.
+  **orun binary**, riding your `orun auth login`. One server, 40 tools: the
+  25 platform tools this page describes plus orun's 15
+  [work-plane tools](/platform/work/overview) (tasks, sealed spec/epic
+  briefs, initiatives, designs, milestones — as of orun v2.25.0).
 - **Remote** — a Streamable-HTTP endpoint for hosted agents, CI, and clients
   that can't run a local binary. Read-only today.
 

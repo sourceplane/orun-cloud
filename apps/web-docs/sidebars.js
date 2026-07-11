@@ -75,6 +75,14 @@ const sidebars = {
         'platform/notifications/email',
         'platform/integrations/github',
         'platform/state-plane/overview',
+        {
+          type: 'category',
+          label: 'Work',
+          items: [
+            'platform/work/overview',
+            'platform/work/planning-hierarchy',
+          ],
+        },
       ],
     },
     {
