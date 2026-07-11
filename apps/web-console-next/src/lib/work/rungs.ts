@@ -79,6 +79,34 @@ export function meterSegments(
   return { donePct, activePct, doneCount };
 }
 
+/* ── The peek's rung ladder (orun-work-v5 WV3) ──────────────────────── */
+
+export interface LadderLifecycle {
+  rung: WorkRung;
+  pinned?: { rung: WorkRung; by: { id: string } } | undefined;
+}
+
+/**
+ * What clicking a ladder rung means (§3.6): clicking the pinned rung (or
+ * the observed rung, which a pin can only restate) clears the pin;
+ * clicking anything else mints one. The fold keeps rendering what it
+ * observes either way — a pin is an opinion filed as an opinion.
+ */
+export function pinIntent(clicked: WorkRung, lifecycle: LadderLifecycle): { rung: WorkRung | null } | null {
+  if (lifecycle.pinned) {
+    if (clicked === lifecycle.pinned.rung || clicked === lifecycle.rung) return { rung: null };
+    return { rung: clicked };
+  }
+  if (clicked === lifecycle.rung) return null; // nothing to assert
+  return { rung: clicked };
+}
+
+/** The truth-source tag every peek renders beside the rung chip — never
+ *  absent (WV-2): `observed` or `pinned by <actor>`. */
+export function truthSourceTag(lifecycle: LadderLifecycle): string {
+  return lifecycle.pinned ? `pinned by ${lifecycle.pinned.by.id}` : "observed";
+}
+
 export type MilestoneDiamondState = "complete" | "active" | "upcoming";
 
 /** Milestone diamond state from its folded task counts (design.md §2). */

@@ -18,10 +18,11 @@ import { GroupBand, RungIcon, TaskRungMark, TruthCaption } from "@/components/ui
 import { rungLabel } from "@/lib/work/model";
 import { activeCycle, cycleBarModel, taskGroups } from "@/lib/work/home";
 import { TaskActions } from "@/components/work/task-actions";
-import { EditWorkItemDialog } from "@/components/work/create-work-item-dialog";
 import { TaskConversationSheet } from "@/components/work/task-conversation-sheet";
 import { AssigneeChip, SessionChip } from "@/components/work/work-board";
 import { SpawnAgentDialog } from "@/components/agents/spawn-agent-dialog";
+import { TaskPeek } from "@/components/work/work-task-peek";
+import { useParams } from "next/navigation";
 
 const GROUP_LABEL_TONE: Partial<Record<WorkRung, string>> = {
   in_progress: "text-warning",
@@ -49,10 +50,12 @@ export function TasksLens({
   onMutated: () => void;
 }) {
   const groups = taskGroups(data.tasks);
-  const specTitles = React.useMemo(
-    () => new Map(data.specs.map((s) => [s.key, s.title])),
-    [data.specs],
-  );
+  const specsByKey = React.useMemo(() => new Map(data.specs.map((s) => [s.key, s])), [data.specs]);
+  const params = useParams<{ orgSlug?: string }>();
+  const orgSlug = params?.orgSlug ?? "";
+  // WV3: the peek — a routed-feeling, non-modal read; the row keeps focus.
+  const [peekKey, setPeekKey] = React.useState<string | null>(null);
+  const peekTask = peekKey ? data.tasks.find((t) => t.key === peekKey) : undefined;
   return (
     <div className="mt-4">
       <CycleBar cycles={cycles} />
@@ -79,9 +82,10 @@ export function TasksLens({
                     key={task.key}
                     task={task}
                     orgId={orgId}
-                    specTitle={task.spec ? specTitles.get(task.spec) : undefined}
+                    specTitle={task.spec ? specsByKey.get(task.spec)?.title : undefined}
                     session={sessionsByTask?.get(task.key)}
                     sessionHref={sessionHref}
+                    onOpen={() => setPeekKey(task.key)}
                     onMutated={onMutated}
                   />
                 ))}
@@ -94,6 +98,18 @@ export function TasksLens({
         Every status above is folded from delivery truth — never typed in. Pins render beside what the
         fold observes, attributed.
       </TruthCaption>
+      {peekTask ? (
+        <TaskPeek
+          orgId={orgId}
+          orgSlug={orgSlug}
+          task={peekTask}
+          spec={peekTask.spec ? specsByKey.get(peekTask.spec) : undefined}
+          session={sessionsByTask?.get(peekTask.key)}
+          sessionHref={sessionHref}
+          onClose={() => setPeekKey(null)}
+          onMutated={onMutated}
+        />
+      ) : null}
     </div>
   );
 }
@@ -144,6 +160,7 @@ function TaskLensRow({
   specTitle,
   session,
   sessionHref,
+  onOpen,
   onMutated,
 }: {
   task: WorkTaskView;
@@ -151,27 +168,32 @@ function TaskLensRow({
   specTitle?: string | undefined;
   session?: AgentSession | undefined;
   sessionHref?: ((sessionId: string) => string) | undefined;
+  onOpen: () => void;
   onMutated: () => void;
 }) {
   const lc = task.lifecycle;
-  const [renameOpen, setRenameOpen] = React.useState(false);
   const [threadOpen, setThreadOpen] = React.useState(false);
   const [agentOpen, setAgentOpen] = React.useState(false);
   return (
-    <li className="group border-t border-border/50 px-[18px] py-2.5 transition-colors duration-100 first:border-t-0 hover:bg-muted/60">
+    <li
+      className="group cursor-pointer border-t border-border/50 px-[18px] py-2.5 transition-colors duration-100 first:border-t-0 hover:bg-muted/60"
+      onClick={onOpen}
+      onKeyDown={(e) => {
+        if ((e.key === "Enter" || e.key === " ") && e.target === e.currentTarget) {
+          e.preventDefault();
+          onOpen();
+        }
+      }}
+      tabIndex={0}
+      role="button"
+      aria-label={`Open ${task.key}`}
+    >
       <div className="flex min-h-[20px] flex-wrap items-center gap-x-3 gap-y-1.5">
         <TaskRungMark lifecycle={lc} />
         <span className="min-w-[48px] shrink-0 font-mono text-[11.5px] text-muted-foreground/85">
           {task.key}
         </span>
-        <button
-          type="button"
-          onClick={() => setRenameOpen(true)}
-          className="min-w-0 flex-1 truncate text-left text-[13px] decoration-border underline-offset-2 hover:underline"
-          title="Edit title"
-        >
-          {task.title}
-        </button>
+        <span className="min-w-0 flex-1 truncate text-left text-[13px]">{task.title}</span>
         {session ? <SessionChip session={session} href={sessionHref?.(session.id)} /> : null}
         {task.priority && task.priority !== "none" ? (
           <span className="hidden shrink-0 text-[10.5px] font-semibold uppercase text-muted-foreground lg:inline">
@@ -193,35 +215,30 @@ function TaskLensRow({
         </span>
         {lc.blocked ? <Pill tone="error">blocked</Pill> : null}
         {task.assignees?.map((a) => <AssigneeChip key={a} subject={a} />)}
-        <button
-          type="button"
-          onClick={() => setThreadOpen(true)}
-          className="shrink-0 rounded px-1.5 py-0.5 text-[11.5px] text-muted-foreground opacity-0 transition-all duration-100 hover:bg-muted hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100"
-        >
-          Thread
-        </button>
-        <button
-          type="button"
-          onClick={() => setAgentOpen(true)}
-          className="shrink-0 rounded px-1.5 py-0.5 text-[11.5px] text-muted-foreground opacity-0 transition-all duration-100 hover:bg-muted hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100"
-        >
-          Agent
-        </button>
-        <TaskActions orgId={orgId} task={task} onMutated={onMutated} />
+        {/* the write seam stays on the row; clicks here never open the peek */}
+        <span className="contents" onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
+          <button
+            type="button"
+            onClick={() => setThreadOpen(true)}
+            className="shrink-0 rounded px-1.5 py-0.5 text-[11.5px] text-muted-foreground opacity-0 transition-all duration-100 hover:bg-muted hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100"
+          >
+            Thread
+          </button>
+          <button
+            type="button"
+            onClick={() => setAgentOpen(true)}
+            className="shrink-0 rounded px-1.5 py-0.5 text-[11.5px] text-muted-foreground opacity-0 transition-all duration-100 hover:bg-muted hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100"
+          >
+            Agent
+          </button>
+          <TaskActions orgId={orgId} task={task} onMutated={onMutated} />
+        </span>
       </div>
       {lc.evidence?.length ? (
         <div className="mt-1 truncate text-[11.5px] text-muted-foreground/85 sm:pl-[76px]">
           {lc.evidence[0]}
         </div>
       ) : null}
-      <EditWorkItemDialog
-        orgId={orgId}
-        itemKey={task.key}
-        currentTitle={task.title}
-        open={renameOpen}
-        onOpenChange={setRenameOpen}
-        onSaved={onMutated}
-      />
       <TaskConversationSheet
         orgId={orgId}
         taskKey={task.key}

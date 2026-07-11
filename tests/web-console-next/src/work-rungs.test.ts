@@ -11,7 +11,9 @@ import {
   arcDasharray,
   meterSegments,
   milestoneDiamondState,
+  pinIntent,
   rungGlyph,
+  truthSourceTag,
 } from "@web-console-next/lib/work/rungs";
 import {
   MilestoneDiamond,
@@ -154,5 +156,29 @@ describe("MilestoneDiamond / WorkMeter", () => {
     expect(html).toContain("6/14");
     expect(html).toContain("width:43%");
     expect(html).toContain("width:21%");
+  });
+});
+
+describe("pinIntent / truthSourceTag (§3.6 — WV3)", () => {
+  const observed = { rung: "in_progress" as const };
+  const pinned = {
+    rung: "in_progress" as const,
+    pinned: { rung: "done" as const, by: { id: "elena" } },
+  };
+
+  it("clicking another rung mints a pin; the observed rung is a no-op", () => {
+    expect(pinIntent("done", observed)).toEqual({ rung: "done" });
+    expect(pinIntent("in_progress", observed)).toBeNull();
+  });
+
+  it("clicking the pinned rung (or observed truth) clears the pin", () => {
+    expect(pinIntent("done", pinned)).toEqual({ rung: null });
+    expect(pinIntent("in_progress", pinned)).toEqual({ rung: null });
+    expect(pinIntent("ready", pinned)).toEqual({ rung: "ready" });
+  });
+
+  it("the truth-source tag is never absent: observed or attributed pin", () => {
+    expect(truthSourceTag(observed)).toBe("observed");
+    expect(truthSourceTag(pinned)).toBe("pinned by elena");
   });
 });
