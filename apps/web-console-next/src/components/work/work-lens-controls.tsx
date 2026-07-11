@@ -105,7 +105,7 @@ export function FilterMenu({
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <ControlPill active={hasActiveFilters(filters)}>
+        <ControlPill id="work-filter-trigger" active={hasActiveFilters(filters)}>
           <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
             <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3" />
           </svg>
@@ -229,7 +229,7 @@ export function DisplayMenu({
     <>
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
-          <ControlPill>
+          <ControlPill id="work-display-trigger">
             <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden>
               <line x1="21" x2="14" y1="4" y2="4" />
               <line x1="10" x2="3" y1="4" y2="4" />

@@ -45,12 +45,17 @@ import { DisplayMenu, FilterMenu } from "@/components/work/work-lens-controls";
 export function WorkWorkbench({
   orgId,
   embedded = false,
+  requestKind = null,
+  onRequestKindConsumed,
 }: {
   orgId: string;
   /** orun-work-v5 WV1: render as the Work home's Tasks lens — no Screen
    *  wrapper, no page header (the home owns both). Interim until WV2
    *  rebuilds this surface as the lens proper. */
   embedded?: boolean;
+  /** WV5: the home's keyboard grammar (`c`) asks for a create dialog. */
+  requestKind?: WorkItemKind | null;
+  onRequestKindConsumed?: (() => void) | undefined;
 }) {
   const { client } = useSession();
   const summary = useApiQuery(qk.orgWork(orgId), () =>
@@ -216,6 +221,12 @@ export function WorkWorkbench({
   // PM4: Cmd-K verbs land here as query params (?new=task|spec|initiative,
   // ?layout=board|list) — consumed once, then stripped from the URL.
   const [requestedKind, setRequestedKind] = React.useState<WorkItemKind | null>(null);
+  React.useEffect(() => {
+    if (requestKind) {
+      setRequestedKind(requestKind);
+      onRequestKindConsumed?.();
+    }
+  }, [requestKind, onRequestKindConsumed]);
   React.useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const created = params.get("new");

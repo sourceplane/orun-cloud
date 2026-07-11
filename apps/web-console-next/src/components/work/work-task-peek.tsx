@@ -60,10 +60,19 @@ export function TaskPeek({
 
   const lc = task.lifecycle;
 
-  // Esc closes (unless a sheet/dialog stacked above owns the key).
+  // Esc closes (unless a sheet/dialog stacked above owns the key); `p`
+  // focuses the rung ladder so ↑↓ + Enter can pin without the mouse (WV5).
   React.useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape" && !renameOpen && !threadOpen && !docOpen) onClose();
+      if (renameOpen || threadOpen || docOpen) return;
+      if (e.key === "Escape") onClose();
+      if (e.key === "p" && !e.metaKey && !e.ctrlKey && !e.altKey) {
+        const target = e.target as HTMLElement | null;
+        const tag = target?.tagName?.toUpperCase();
+        if (tag === "INPUT" || tag === "TEXTAREA" || target?.isContentEditable) return;
+        e.preventDefault();
+        panelRef.current?.querySelector<HTMLButtonElement>("[data-rung-row]")?.focus();
+      }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -99,7 +108,7 @@ export function TaskPeek({
       role="complementary"
       aria-label={`Task ${task.key}`}
       tabIndex={-1}
-      className="fixed bottom-3.5 right-3.5 top-3.5 z-40 flex w-[440px] max-w-[calc(100vw-28px)] flex-col overflow-hidden rounded-[14px] border bg-card shadow-2xl outline-none animate-fade-up"
+      className="fixed bottom-3.5 right-3.5 top-3.5 z-40 flex w-[440px] max-w-[calc(100vw-28px)] flex-col overflow-hidden rounded-[14px] border bg-card shadow-2xl outline-none animate-peek-in"
     >
       <div className="min-h-0 flex-1 overflow-y-auto px-6 py-5">
         {/* header */}
@@ -166,6 +175,7 @@ export function TaskPeek({
                 <button
                   key={rung}
                   type="button"
+                  data-rung-row
                   disabled={busy}
                   onClick={() => void clickRung(rung)}
                   className={cn(

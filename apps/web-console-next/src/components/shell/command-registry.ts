@@ -135,6 +135,25 @@ export function buildBaseCommands(ctx: CommandContext): CommandDescriptor[] {
         "board",
         "kanban",
       ]),
+      // orun-work-v5 WV5: the home's three lenses as verbs (design.md §4).
+      // No verb here can write a rung — the category is unrepresentable.
+      navItem("nav.work-initiatives", "Work: Initiatives lens", `${orgBase}/work?lens=initiatives`, "ListTodo", [
+        "initiatives",
+        "portfolio",
+        "health",
+        "work",
+      ]),
+      navItem("nav.work-epics", "Work: Epics lens", `${orgBase}/work?lens=epics`, "ListTodo", [
+        "epics",
+        "approval",
+        "drift",
+        "work",
+      ]),
+      navItem("nav.work-tasks", "Work: Tasks lens", `${orgBase}/work?lens=tasks`, "ListTodo", [
+        "tasks",
+        "cycle",
+        "work",
+      ]),
       navItem("nav.work-board", "Work: board layout", `${orgBase}/work?layout=board`, "ListTodo", [
         "board",
         "kanban",
