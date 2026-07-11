@@ -125,7 +125,7 @@ export function TaskActions({
           }}
         >
           <select
-            className="h-8 cursor-pointer rounded-[8px] border border-border bg-[#FCFCFC] px-2 text-[13px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring dark:bg-card"
+            className="h-8 cursor-pointer rounded-[8px] border border-border bg-card px-2 text-[13px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             value={pinRung}
             onChange={(e) => setPinRung(e.target.value as WorkRung)}
           >

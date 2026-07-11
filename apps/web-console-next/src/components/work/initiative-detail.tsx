@@ -97,8 +97,8 @@ export function InitiativeDetail({ orgId, initiativeKey }: { orgId: string; init
 
           {/* health promotes its evidence onto the page (§3.4) */}
           {troubled && data.evidence?.length ? (
-            <div className="mt-3.5 rounded-[10px] border border-[#EFE3C2] bg-warning-wash px-4 py-3 dark:border-warning-accent/30">
-              <div className="flex items-center gap-2 text-[12.5px] font-semibold text-[#6E5A22] dark:text-warning">
+            <div className="mt-3.5 rounded-[10px] border border-[hsl(var(--warning-border))] bg-warning-wash px-4 py-3">
+              <div className="flex items-center gap-2 text-[12.5px] font-semibold text-[hsl(var(--warning-ink))]">
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
                   <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z" />
                   <line x1="12" x2="12" y1="9" y2="13" />
@@ -107,7 +107,7 @@ export function InitiativeDetail({ orgId, initiativeKey }: { orgId: string; init
                 {data.health === "off_track" ? "Off track" : "At risk"} — folded from {data.epics.length}{" "}
                 {data.epics.length === 1 ? "epic" : "epics"}
               </div>
-              <div className="mt-1.5 flex flex-col gap-1 text-[12.5px] leading-normal text-[#6E5A22]/90 dark:text-warning/90">
+              <div className="mt-1.5 flex flex-col gap-1 text-[12.5px] leading-normal text-[hsl(var(--warning-ink))]/90">
                 {data.evidence.map((e, i) => (
                   <div key={i}>· {e}</div>
                 ))}

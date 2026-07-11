@@ -20,7 +20,8 @@
     "react": "19.0.0-rc-66855b96-20241106",
     "react-dom": "19.0.0-rc-66855b96-20241106",
     "ts-jest": "^29.4.11",
-    "typescript": "^5.9.3"
+    "typescript": "^5.9.3",
+    "@types/node": "^22.15.0"
   },
   "jest": {
     "preset": "ts-jest/presets/default-esm",

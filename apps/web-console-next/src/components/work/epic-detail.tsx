@@ -307,13 +307,13 @@ function DriftBanner({
     ? `the document is now @${shortDigest(currentRev)}`
     : "the milestone ladder changed";
   return (
-    <div className="mt-3.5 flex flex-wrap items-center gap-3 rounded-[10px] border border-[#EFE3C2] bg-warning-wash px-4 py-3 dark:border-warning-accent/30">
+    <div className="mt-3.5 flex flex-wrap items-center gap-3 rounded-[10px] border border-[hsl(var(--warning-border))] bg-warning-wash px-4 py-3">
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="hsl(var(--warning))" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0" aria-hidden>
         <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z" />
         <line x1="12" x2="12" y1="9" y2="13" />
         <line x1="12" x2="12.01" y1="17" y2="17" />
       </svg>
-      <span className="min-w-[220px] flex-1 text-[12.5px] leading-normal text-[#6E5A22] dark:text-warning">
+      <span className="min-w-[220px] flex-1 text-[12.5px] leading-normal text-[hsl(var(--warning-ink))]">
         Approved at <span className="font-mono text-[11.5px]">@{shortDigest(approvedRev)}</span> — {what}.
         Re-approval required before agents pick up new tasks.
       </span>
@@ -321,7 +321,7 @@ function DriftBanner({
         <button
           type="button"
           onClick={onReview}
-          className="rounded-lg border border-[#E0D5B5] bg-card px-3 py-1.5 text-xs font-medium transition-colors hover:bg-muted dark:border-warning-accent/30"
+          className="rounded-lg border border-[hsl(var(--warning-border))] bg-card px-3 py-1.5 text-xs font-medium transition-colors hover:bg-muted"
         >
           Review changes
         </button>

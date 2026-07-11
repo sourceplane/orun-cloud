@@ -8,6 +8,10 @@ import type { WorkPriority, WorkRung, WorkTaskView, WorkViewConfig } from "@saas
  *  collapsed tail column, never a drop target. */
 export const BOARD_RUNGS: WorkRung[] = ["draft", "ready", "in_progress", "in_review", "done", "released"];
 
+/** The two layouts Display offers (v5 WV2: the board is a layout, not a
+ *  destination). */
+export type WorkLayout = "board" | "list";
+
 export const PRIORITY_ORDER: Record<WorkPriority, number> = {
   urgent: 0,
   high: 1,

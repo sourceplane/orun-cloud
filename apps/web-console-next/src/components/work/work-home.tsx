@@ -230,7 +230,6 @@ export function WorkHome({ orgId }: { orgId: string }) {
       {lens === "tasks" ? (
         <WorkWorkbench
           orgId={orgId}
-          embedded
           requestKind={externalKind}
           onRequestKindConsumed={() => setExternalKind(null)}
         />
