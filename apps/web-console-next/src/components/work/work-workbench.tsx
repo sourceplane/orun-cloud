@@ -40,7 +40,16 @@ import { AssigneeChip, SessionChip, WorkBoard } from "@/components/work/work-boa
 import { WorkViewBar, type WorkLayout } from "@/components/work/work-view-bar";
 import { SpawnAgentDialog } from "@/components/agents/spawn-agent-dialog";
 
-export function WorkWorkbench({ orgId }: { orgId: string }) {
+export function WorkWorkbench({
+  orgId,
+  embedded = false,
+}: {
+  orgId: string;
+  /** orun-work-v5 WV1: render as the Work home's Tasks lens — no Screen
+   *  wrapper, no page header (the home owns both). Interim until WV2
+   *  rebuilds this surface as the lens proper. */
+  embedded?: boolean;
+}) {
   const { client } = useSession();
   const summary = useApiQuery(qk.orgWork(orgId), () =>
     wrap(async () => client.work.summary(orgId)),
@@ -255,6 +264,40 @@ export function WorkWorkbench({ orgId }: { orgId: string }) {
     );
   }
 
+  if (embedded) {
+    return (
+      <>
+        {data && !empty ? (
+          <div className="mt-4 flex flex-wrap items-start justify-between gap-3">
+            <div className="min-w-0 flex-1">
+              <WorkViewBar
+                orgId={orgId}
+                tasks={data.tasks}
+                layout={layout}
+                filters={filters}
+                onLayoutChange={setLayout}
+                onFiltersChange={setFilters}
+              />
+            </div>
+            <WorkCreateMenu
+              orgId={orgId}
+              specs={data.specs}
+              onCreated={reload}
+              requestedKind={requestedKind}
+              onRequestConsumed={() => setRequestedKind(null)}
+            />
+          </div>
+        ) : null}
+        {body}
+        {data && !empty && (cycles.length > 0 || data.tasks.length > 0) ? (
+          <div className="mt-[26px]">
+            <CyclesSection orgId={orgId} cycles={cycles} onMutated={reload} />
+          </div>
+        ) : null}
+      </>
+    );
+  }
+
   return (
     <Screen>
       <PageHeader
@@ -266,7 +309,7 @@ export function WorkWorkbench({ orgId }: { orgId: string }) {
                 <div className="flex items-center gap-5">
                   {!empty ? <HeaderStats tasks={data.tasks} /> : null}
                   <Link
-                    href={`/orgs/${orgSlug}/work/initiatives`}
+                    href={`/orgs/${orgSlug}/work?lens=initiatives`}
                     className="text-[12.5px] text-muted-foreground underline-offset-2 hover:underline"
                   >
                     Initiatives
