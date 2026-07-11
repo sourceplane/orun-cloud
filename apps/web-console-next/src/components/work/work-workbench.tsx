@@ -266,6 +266,12 @@ export function WorkWorkbench({ orgId }: { orgId: string }) {
                 <div className="flex items-center gap-5">
                   {!empty ? <HeaderStats tasks={data.tasks} /> : null}
                   <Link
+                    href={`/orgs/${orgSlug}/work/initiatives`}
+                    className="text-[12.5px] text-muted-foreground underline-offset-2 hover:underline"
+                  >
+                    Initiatives
+                  </Link>
+                  <Link
                     href={`/orgs/${orgSlug}/work/triage`}
                     className="text-[12.5px] text-muted-foreground underline-offset-2 hover:underline"
                   >
@@ -396,6 +402,8 @@ function SpecGroupSection({
   onMutated: () => void;
 }) {
   const title = spec?.title;
+  const groupParams = useParams<{ orgSlug?: string }>();
+  const groupOrgSlug = groupParams?.orgSlug ?? "";
   const [docOpen, setDocOpen] = React.useState(false);
   const [renameOpen, setRenameOpen] = React.useState(false);
   const [agentOpen, setAgentOpen] = React.useState(false);
@@ -411,12 +419,13 @@ function SpecGroupSection({
     <section>
       <div className="mb-2.5 flex items-center gap-2.5">
         {group.spec ? (
-          <span
-            className="truncate font-mono text-[12.5px] font-semibold text-secondary-foreground"
+          <Link
+            href={`/orgs/${groupOrgSlug}/work/epics/${encodeURIComponent(group.spec)}`}
+            className="truncate font-mono text-[12.5px] font-semibold text-secondary-foreground underline-offset-2 hover:underline"
             {...(title && title !== group.spec ? { title } : {})}
           >
             {group.spec}
-          </span>
+          </Link>
         ) : (
           <span className="text-[12.5px] font-semibold text-muted-foreground">Inbox</span>
         )}
