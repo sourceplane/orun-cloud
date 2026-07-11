@@ -11,7 +11,7 @@
 
 | | |
 |---|---|
-| **Status** | Draft (ready to start) |
+| **Status** | **✅ Shipped — WV0–WV6** (orun-cloud #427 #428 #429 #430 #431 #432 #433); the docs-screenshot refresh and deployed-console profiling ride the live dogfood pass (see [`IMPLEMENTATION-STATUS.md`](./IMPLEMENTATION-STATUS.md)) |
 | **Cluster** | **WV** (`WV0 → WV6`, plan in [`implementation-plan.md`](./implementation-plan.md)) |
 | **Repos** | `sourceplane/orun-cloud` only (`apps/web-console-next`, `docs/northwind-design.md`). No schema, mutator, route, fold, oracle, CLI, or MCP change anywhere. |
 | **Builds on** | orun-work v2 (WP, shipped): the derived delivery ladder and the pin seam · v3 (PM, shipped): authoring, board, cycles, views, conversation · v4 (WH, shipped): the five-noun hierarchy, designs, approval, drift, rollups — v5 renders what WH0–WH6 already serve; every screen in this epic is a re-presentation of existing reads |
