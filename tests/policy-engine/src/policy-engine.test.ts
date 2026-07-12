@@ -731,8 +731,11 @@ describe("listEffectivePermissions", () => {
     // + 2 ES2 organization.notification_rule.* actions
     // + 2 ES3 organization.notification_channel.* actions
     // + 2 ES4 organization.event.{read,ingest} actions
-    // + 8 saas-agents organization.agent.* actions.
-    expect(allowed.length).toBe(70);
+    // + 8 saas-agents organization.agent.* actions
+    // + 6 saas-agents-fleet/live organization.agent.* actions
+    //   (session.spawn, session.interact, routine.read, routine.write,
+    //    budget.read, budget.write).
+    expect(allowed.length).toBe(77);
   });
 
   it("returns limited permissions for viewer", () => {
@@ -746,8 +749,10 @@ describe("listEffectivePermissions", () => {
     expect(allowed.map((p) => p.action).sort()).toEqual([
       "catalog.read",
       "organization.agent.autonomy.read",
+      "organization.agent.budget.read",
       "organization.agent.profile.read",
       "organization.agent.provider.read",
+      "organization.agent.routine.read",
       "organization.agent.session.read",
       "organization.config.read",
       "organization.event.read",
@@ -1364,10 +1369,35 @@ describe("saas-agents actions (the deny-by-default grant)", () => {
         "organization.agent.profile.write",
         "organization.agent.autonomy.read",
         "organization.agent.autonomy.write",
+        // saas-agents-live + saas-agents-fleet additions.
+        "organization.agent.session.spawn",
+        "organization.agent.session.interact",
+        "organization.agent.routine.read",
+        "organization.agent.routine.write",
+        "organization.agent.budget.read",
+        "organization.agent.budget.write",
       ]) {
         expect(authorize(req(action, role))).toMatchObject({ allow: true });
       }
     }
+  });
+
+  it("builder gets the fleet ops surface (interact/spawn/routines/budget.read) but not budget.write", () => {
+    for (const action of [
+      "organization.agent.session.interact",
+      "organization.agent.session.spawn",
+      "organization.agent.routine.read",
+      "organization.agent.routine.write",
+      "organization.agent.budget.read",
+    ]) {
+      expect(authorize(req(action, "builder"))).toMatchObject({ allow: true });
+    }
+    // Budget CEILINGS are governance — owner/admin only, like autonomy.write.
+    expect(authorize(req("organization.agent.budget.write", "builder"))).toMatchObject({ allow: false });
+    // Viewers read the registries but drive nothing.
+    expect(authorize(req("organization.agent.routine.read", "viewer"))).toMatchObject({ allow: true });
+    expect(authorize(req("organization.agent.routine.write", "viewer"))).toMatchObject({ allow: false });
+    expect(authorize(req("organization.agent.session.interact", "viewer"))).toMatchObject({ allow: false });
   });
 
   it("provider connect + autonomy write are known but denied for builder/viewer, never unknown_action", () => {

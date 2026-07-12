@@ -37,12 +37,19 @@ export function AgentsWorkbench({ orgId, orgSlug }: { orgId: string; orgSlug: st
   const { client } = useSession();
   const fleet = useApiQuery(qk.orgAgents(orgId), () =>
     wrap(async () => {
-      const [sessionRows, profileRows, attention, routineRows, recordRows] = await Promise.all([
+      // The core reads gate the page (a real failure here IS the page's
+      // failure). The newer secondary surfaces — routines (AF6), records
+      // (AF7) — degrade to empty rather than blank the fleet home if they
+      // fail (e.g. a role without the routine grant); the page still shows
+      // sessions and the needs-you queue.
+      const [sessionRows, profileRows, attention] = await Promise.all([
         client.agents.listSessions(orgId),
         client.agents.listProfiles(orgId),
         client.agents.attention(orgId),
-        client.agents.listRoutines(orgId),
-        client.agents.records(orgId),
+      ]);
+      const [routineRows, recordRows] = await Promise.all([
+        client.agents.listRoutines(orgId).catch(() => []),
+        client.agents.records(orgId).catch(() => []),
       ]);
       return {
         sessions: sessionRows,
