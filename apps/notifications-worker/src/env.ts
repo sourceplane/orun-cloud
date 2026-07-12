@@ -11,6 +11,12 @@ export interface Env {
   /** Entitlement checks for Slack channels (ES3). */
   BILLING_WORKER?: Fetcher;
   /**
+   * slack_app delivery-credential reads (saas-integration-hub IH2): the bot
+   * token is fetched per send over this binding and held in isolate memory
+   * only — this worker never stores a provider credential (design §4.2).
+   */
+  INTEGRATIONS_WORKER?: Fetcher;
+  /**
    * Hex-encoded 256-bit key for AES-256-GCM encryption of channel bearer
    * credentials (Slack incoming-webhook URLs). Set out-of-band via
    * `wrangler secret put SECRET_ENCRYPTION_KEY --env <env>`; absent locally.

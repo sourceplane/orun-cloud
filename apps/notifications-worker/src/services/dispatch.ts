@@ -5,20 +5,25 @@ import type {
 import type {
   NotificationChannelsRepository,
   NotificationsRepository,
+  SlackGroupMessagesRepository,
   StoredNotification,
 } from "@saas/db/notifications";
 import { asUuid, type Uuid } from "@saas/db/ids";
 import { createEncryptionAdapter } from "../encryption.js";
 import { createSlackWebhookProvider } from "../providers/slack-webhook.js";
-import { parseChannelPublicId } from "../ids.js";
+import { createSlackAppProvider } from "../providers/slack-app.js";
+import { fetchSlackDeliveryCredentials } from "./slack-credentials.js";
+import { orgPublicId, parseChannelPublicId } from "../ids.js";
 
 /**
  * Channel-aware send + retry dispatch (saas-event-streaming ES3). Shared by
  * the synchronous enqueue path (attempt 1) and the async retry cron
  * (attempts 2..N). The provider is resolved per-notification by channel:
  * `email` uses the injected email provider; `slack` resolves the configured
- * channel, decrypts its incoming-webhook URL, and builds a stateless Slack
- * provider for this one send.
+ * channel and branches on its kind — `slack_incoming_webhook` decrypts the
+ * webhook URL for a stateless append-post, `slack_app` (IH2) decrypts the
+ * connection REFERENCE, fetches the bot token over the integrations service
+ * binding, and builds the group-aware chat.update provider.
  */
 
 /** Bounded backoff ladder, identical to the webhooks drain: 30s·4^(n-1). */
@@ -40,6 +45,10 @@ export interface DispatchDeps {
   /** AES key for decrypting channel credentials (undefined ⇒ slack unavailable). */
   encryptionKey?: string | undefined;
   consoleBaseUrl?: string | undefined;
+  /** Service binding for slack_app credential reads (IH2; undefined ⇒ kind unavailable). */
+  integrationsBinding?: Fetcher | undefined;
+  /** Event-group ↔ Slack message identity store (IH2 chat.update upgrade). */
+  slackGroupsRepo?: SlackGroupMessagesRepository | undefined;
   /** Injectable for tests. */
   fetchImpl?: typeof fetch;
 }
@@ -70,16 +79,51 @@ export async function resolveSendProvider(
     if (cfg.value.status !== "active") return { ok: false, errorReason: "channel_disabled" };
     const adapter = await createEncryptionAdapter(deps.encryptionKey);
     if (!adapter) return { ok: false, errorReason: "encryption_unavailable" };
-    let webhookUrl: string;
+    let plaintext: string;
     try {
-      webhookUrl = await adapter.decrypt(JSON.parse(cfg.value.configCiphertext));
+      plaintext = await adapter.decrypt(JSON.parse(cfg.value.configCiphertext));
     } catch {
       return { ok: false, errorReason: "channel_decrypt_failed" };
     }
+
+    if (cfg.value.kind === "slack_app") {
+      // IH2: the config is a connection REFERENCE; the credential is fetched
+      // per send over the service binding and lives in isolate memory only.
+      if (!deps.integrationsBinding) {
+        return { ok: false, errorReason: "slack_app_not_configured" };
+      }
+      let ref: { connectionId?: unknown; channelExternalId?: unknown };
+      try {
+        ref = JSON.parse(plaintext) as typeof ref;
+      } catch {
+        return { ok: false, errorReason: "channel_decrypt_failed" };
+      }
+      if (typeof ref.connectionId !== "string" || typeof ref.channelExternalId !== "string") {
+        return { ok: false, errorReason: "invalid_channel_config" };
+      }
+      const credentials = await fetchSlackDeliveryCredentials(
+        deps.integrationsBinding,
+        orgPublicId(orgUuid),
+        ref.connectionId,
+      );
+      if (!credentials.ok) return { ok: false, errorReason: credentials.reason };
+      return {
+        ok: true,
+        provider: createSlackAppProvider({
+          botToken: credentials.botToken,
+          channelExternalId: ref.channelExternalId,
+          channelRowId: cfg.value.id,
+          groupsRepo: deps.slackGroupsRepo,
+          consoleBaseUrl: deps.consoleBaseUrl,
+          fetchImpl: deps.fetchImpl,
+        }),
+      };
+    }
+
     return {
       ok: true,
       provider: createSlackWebhookProvider({
-        webhookUrl,
+        webhookUrl: plaintext,
         ...(deps.consoleBaseUrl ? { consoleBaseUrl: deps.consoleBaseUrl } : {}),
         ...(deps.fetchImpl ? { fetchImpl: deps.fetchImpl } : {}),
       }),

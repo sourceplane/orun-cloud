@@ -669,5 +669,14 @@ export const manifest: MigrationManifest = {
       description:
         "Integration-hub substrate (saas-integration-hub IH0), dormant: provider_credentials (parent-credential custody — Slack bot / Cloudflare parent / Supabase refresh tokens as write-only AES-256-GCM envelopes, one row per connection+kind, zeroized on revoke), minted_credentials (the credential-broker ledger — template/params/purpose/actor/run attribution/TTL/provider_ref, NEVER values; keyset per org+connection, partial live-mint index for the IH9 orphan sweep), and the per-provider facts tables slack_workspaces (team_id UNIQUE — the Slack tenancy keystone, the installation_id rule), cloudflare_accounts (verified parent grant + token health), supabase_orgs (org facts + cached project refs). No live behavior. Additive + idempotent.",
     },
+    {
+      id: "740_slack_app_channels",
+      context: "notifications",
+      path: "740_slack_app_channels/up.sql",
+      checksum:
+        "283c7480378abe0ab7230105df98128d0cacff5a9f2bf24b7e467e90051aa02d",
+      description:
+        "slack_app delivery channel kind (saas-integration-hub IH2): the notification_channels kind CHECK widens to admit slack_app (config_ciphertext stores a {connectionId, channelExternalId, channelName} REFERENCE, never a credential — the bot token stays in integrations-worker custody, fetched per send over the internal service binding), plus slack_group_messages — the event-group ↔ Slack message identity map behind the chat.update upgrade (root-message coordinates per (channel, group_key), severity high-water for escalation display; CASCADE on channel delete). Guarded CHECK swap + CREATE IF NOT EXISTS; idempotent as a unit.",
+    },
   ],
 };

@@ -113,12 +113,15 @@ export interface CredentialBrokerCapability {
 
 /** Channel discovery for the messaging archetype (IH2). Message DELIVERY is
  *  deliberately NOT here — it stays behind the ES ChannelProvider seam in
- *  notifications-worker (design §4.2, the custody/delivery split). */
+ *  notifications-worker (design §4.2, the custody/delivery split). The
+ *  adapter is per-environment; the per-connection bot token is decrypted by
+ *  the caller from custody and handed in per call, never held. */
 export interface MessagingCapability {
   listChannels(input: {
+    accessToken: string;
     query?: string;
     cursor?: string;
-  }): Promise<{ channels: Array<{ externalId: string; name: string; isPrivate: boolean }>; nextCursor: string | null }>;
+  }): Promise<{ channels: Array<{ externalId: string; name: string; isPrivate: boolean }>; nextCursor: string | null } | null>;
 }
 
 // ── Core adapter contract ───────────────────────────────────

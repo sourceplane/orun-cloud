@@ -36,6 +36,7 @@ export type {
   RuleAttributeFilter,
   StoredNotificationRule,
   ThrottleAdmission,
+  GroupNotifyDecision,
   CreateNotificationRuleInput,
   UpdateNotificationRulePatch,
   StoredRuleTarget,

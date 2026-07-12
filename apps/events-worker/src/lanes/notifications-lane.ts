@@ -181,10 +181,15 @@ export function createNotificationsLaneHandler(deps: NotificationsLaneDeps): Lan
           tenant: { orgId: event.orgId },
           payload: event.payload,
         });
+        // Grouped fires carry the story identity + fire cause downstream so a
+        // slack_app channel can edit one message per story and thread-reply on
+        // escalation (IH2) instead of append-posting.
+        let grouped: { groupKey: string; escalation: boolean } | null = null;
         if (groupKey) {
           const decision = await deps.rulesRepo.tryNotifyGroup(rule.id, groupKey, severity);
           if (!decision.ok) throw new Error("group_notify_state_failed");
-          if (!decision.value) continue;
+          if (!decision.value.fire) continue;
+          grouped = { groupKey, escalation: decision.value.escalated };
         } else {
           const admission = await deps.rulesRepo.tryConsumeThrottle(
             rule.id,
@@ -238,6 +243,9 @@ export function createNotificationsLaneHandler(deps: NotificationsLaneDeps): Lan
                 ruleName: rule.name,
                 occurredAt: event.occurredAt.toISOString(),
                 sourceEventId: event.id,
+                ...(grouped
+                  ? { groupKey: grouped.groupKey, escalation: grouped.escalation }
+                  : {}),
               },
               recipient: {
                 channel: target.targetKind === "slack_channel" ? "slack" : "email",

@@ -1,7 +1,11 @@
 import type { Env } from "../env.js";
 import type { InternalActor } from "../router.js";
 import { createSqlExecutor } from "@saas/db/hyperdrive";
-import { createNotificationsRepository, createNotificationChannelsRepository } from "@saas/db/notifications";
+import {
+  createNotificationChannelsRepository,
+  createNotificationsRepository,
+  createSlackGroupMessagesRepository,
+} from "@saas/db/notifications";
 import { successResponse, errorResponse, validationError } from "../http.js";
 import { resolveProvider } from "../providers/index.js";
 import { enqueueNotification, validateEnqueueRequest } from "../services/notifications.js";
@@ -43,6 +47,9 @@ export async function handleEnqueueNotification(
     // real DB (tests inject via deps.service.channelsRepo).
     const channelsRepo =
       deps?.service?.channelsRepo ?? (executor ? createNotificationChannelsRepository(executor) : undefined);
+    const slackGroupsRepo =
+      deps?.service?.slackGroupsRepo ??
+      (executor ? createSlackGroupMessagesRepository(executor) : undefined);
 
     const result = await enqueueNotification(
       {
@@ -56,6 +63,7 @@ export async function handleEnqueueNotification(
         generateUuid: deps?.service?.generateUuid,
         emit: deps?.service?.emit,
         channelsRepo,
+        slackGroupsRepo,
         fetchImpl: deps?.service?.fetchImpl,
       },
       validated.value!,

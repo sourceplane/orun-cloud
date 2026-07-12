@@ -68,6 +68,10 @@
         {
           "binding": "BILLING_WORKER",
           "service": "billing-worker-stage"
+        },
+        {
+          "binding": "INTEGRATIONS_WORKER",
+          "service": "integrations-worker-stage"
         }
       ]
     },
@@ -104,6 +108,10 @@
         {
           "binding": "BILLING_WORKER",
           "service": "billing-worker-prod"
+        },
+        {
+          "binding": "INTEGRATIONS_WORKER",
+          "service": "integrations-worker-prod"
         }
       ]
     }

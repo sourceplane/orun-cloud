@@ -285,7 +285,7 @@ describe("notification rules repository", () => {
     const repo1 = createNotificationRulesRepository(first.executor);
     const r1 = await repo1.tryNotifyGroup(SAMPLE_RULE_ROW.id, "run:org:acme/api:sha1", "notice");
     expect(r1.ok).toBe(true);
-    if (r1.ok) expect(r1.value).toBe(true);
+    if (r1.ok) expect(r1.value).toEqual({ fire: true, escalated: false });
     expect(first.queries[0]!.text).toContain("INSERT INTO events.rule_group_notifications");
     expect(first.queries[0]!.text).toContain("ON CONFLICT (rule_id, group_key) DO UPDATE");
 
@@ -293,7 +293,7 @@ describe("notification rules repository", () => {
     const same = createFakeExecutor({ rows: [{ prev: "notice" }] });
     const repo2 = createNotificationRulesRepository(same.executor);
     const r2 = await repo2.tryNotifyGroup(SAMPLE_RULE_ROW.id, "run:org:acme/api:sha1", "notice");
-    if (r2.ok) expect(r2.value).toBe(false);
+    if (r2.ok) expect(r2.value).toEqual({ fire: false, escalated: false });
   });
 
   it("tryNotifyGroup fires again on severity escalation", async () => {
@@ -301,7 +301,7 @@ describe("notification rules repository", () => {
     const repo = createNotificationRulesRepository(esc.executor);
     const r = await repo.tryNotifyGroup(SAMPLE_RULE_ROW.id, "run:org:acme/api:sha1", "error");
     expect(r.ok).toBe(true);
-    if (r.ok) expect(r.value).toBe(true);
+    if (r.ok) expect(r.value).toEqual({ fire: true, escalated: true });
   });
 
   it("countRulesByOrg returns the org total", async () => {

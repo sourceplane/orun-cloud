@@ -330,6 +330,27 @@ export interface ListRepositoriesResponse {
   truncated: boolean;
 }
 
+// ── Slack channel picker (saas-integration-hub IH2, design §4.2) ──
+
+/** A Slack conversation the bot can be asked to post to. */
+export interface SlackChannelRef {
+  /** Slack channel id (`C…`/`G…`) — what the notification channel stores. */
+  id: string;
+  name: string;
+  /** Private channels need the bot invited before delivery works. */
+  isPrivate: boolean;
+}
+
+/**
+ * GET …/integrations/{connectionId}/slack/channels — MessagingCapability
+ * `listChannels`. `query` filters by name substring; `cursor` pages through
+ * Slack's `conversations.list`.
+ */
+export interface ListSlackChannelsResponse {
+  channels: SlackChannelRef[];
+  nextCursor: string | null;
+}
+
 // ── Repo link flow ──────────────────────────────────────────
 
 /**
@@ -567,6 +588,10 @@ export interface WritebackResponse {
 
 /** The only caller allowed to drive write-back (service-binding only). */
 export const INTEGRATIONS_WRITEBACK_CALLER = "state-worker";
+
+/** The only caller allowed to read Slack delivery credentials (IH2 —
+ *  service-binding only; the bot token lives in its isolate memory ≤5 min). */
+export const SLACK_CREDENTIALS_CALLER = "notifications-worker";
 
 // ── Event taxonomy ──────────────────────────────────────────
 
