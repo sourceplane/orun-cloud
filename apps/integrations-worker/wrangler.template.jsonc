@@ -9,7 +9,11 @@
   "main": "src/index.ts",
   "minify": false,
   "vars": {
-    "ENVIRONMENT": "local"
+    "ENVIRONMENT": "local",
+    // Public api-edge origin OAuth-kind connect flows build their
+    // redirect_uri from (IH1 Slack: {base}/ingress/slack/oauth). Same
+    // convention as identity-worker's OAUTH_REDIRECT_BASE_URL.
+    "OAUTH_REDIRECT_BASE_URL": "http://localhost:8787"
   },
   // Inbox drain (IG2): attribute → normalize → emit, every minute — same
   // cadence as the outbound webhooks dispatcher. Unblocked 2026-06-11 by the
@@ -27,7 +31,8 @@
     "stage": {
       "workers_dev": false,
       "vars": {
-        "ENVIRONMENT": "stage"
+        "ENVIRONMENT": "stage",
+        "OAUTH_REDIRECT_BASE_URL": "https://api-edge-stage.oruncloud.workers.dev"
         // Runtime secrets are provisioned by the deploy `secrets-live` step from
         // AWS Secrets Manager (tooling/secrets-sync), not by manual
         // `wrangler secret put`. See secrets.manifest.json → integrations-worker
@@ -35,6 +40,8 @@
         //   SECRET_ENCRYPTION_KEY, INTEGRATIONS_STATE_SECRET,
         //   GITHUB_APP_ID, GITHUB_APP_SLUG, GITHUB_APP_CLIENT_ID,
         //   GITHUB_APP_PRIVATE_KEY, GITHUB_APP_WEBHOOK_SECRET, GITHUB_APP_CLIENT_SECRET
+        // Deferred until the per-environment Slack App exists (IH risks D1):
+        //   SLACK_APP_CLIENT_ID, SLACK_APP_CLIENT_SECRET, SLACK_APP_SIGNING_SECRET
       },
       "hyperdrive": [
         {
@@ -64,7 +71,8 @@
     "prod": {
       "workers_dev": false,
       "vars": {
-        "ENVIRONMENT": "prod"
+        "ENVIRONMENT": "prod",
+        "OAUTH_REDIRECT_BASE_URL": "https://api-edge-prod.oruncloud.workers.dev"
         // Runtime secrets: same set as stage, provisioned by `secrets-live`.
       },
       "hyperdrive": [

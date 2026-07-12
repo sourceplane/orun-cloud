@@ -78,6 +78,28 @@ export class IntegrationsClient {
     );
   }
 
+  /**
+   * POST /v1/organizations/:orgId/integrations/slack/connect
+   *
+   * The oauth-kind twin of `connectGithub`: returns a pending connection plus
+   * the Slack authorize URL carrying the signed single-use state; open it in
+   * a popup and poll `get` until the connection turns `active`.
+   */
+  connectSlack(
+    orgId: string,
+    body: ConnectIntegrationRequest = {},
+    opts: RequestOptions = {},
+  ): Promise<ConnectIntegrationResponse> {
+    return this.transport.request<ConnectIntegrationResponse>(
+      {
+        method: "POST",
+        path: `/v1/organizations/${encodeURIComponent(orgId)}/integrations/slack/connect`,
+        body,
+      },
+      opts,
+    );
+  }
+
   /** GET /v1/organizations/:orgId/integrations/:connectionId/deliveries */
   listDeliveries(
     orgId: string,

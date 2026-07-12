@@ -32,7 +32,9 @@ function escapeHtml(s: string): string {
     .replace(/"/g, "&quot;");
 }
 
-function popupPage(kind: "success" | "error", title: string, message: string): Response {
+/** Shared by the GitHub setup and Slack OAuth callbacks — the popup's only
+ *  job is to tell the human what happened and close itself. */
+export function popupPage(kind: "success" | "error", title: string, message: string): Response {
   const tone = kind === "success" ? "#16a34a" : "#dc2626";
   const html = `<!doctype html>
 <html><head><meta charset="utf-8"><title>${escapeHtml(title)}</title>

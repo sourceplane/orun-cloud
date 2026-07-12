@@ -17,7 +17,9 @@ import {
   handleGetIntegration,
   handleListIntegrations,
   handleRevokeIntegration,
+  isConnectableProvider,
 } from "./handlers/connections.js";
+import { handleSlackOauthCallback, SLACK_OAUTH_CALLBACK_PATH } from "./handlers/slack-oauth.js";
 import {
   handleCreateConnectionGrant,
   handleListConnectionGrants,
@@ -74,7 +76,7 @@ function resolveActor(request: Request): ActorContext | null {
 }
 
 const ORG_INTEGRATIONS_RE = /^\/v1\/organizations\/([^/]+)\/integrations$/;
-const ORG_INTEGRATIONS_CONNECT_RE = /^\/v1\/organizations\/([^/]+)\/integrations\/github\/connect$/;
+const ORG_INTEGRATIONS_CONNECT_RE = /^\/v1\/organizations\/([^/]+)\/integrations\/([a-z]+)\/connect$/;
 const ORG_INTEGRATION_RE = /^\/v1\/organizations\/([^/]+)\/integrations\/([^/]+)$/;
 const ORG_DELIVERIES_RE = /^\/v1\/organizations\/([^/]+)\/integrations\/([^/]+)\/deliveries$/;
 const ORG_DELIVERY_REPLAY_RE =
@@ -109,6 +111,13 @@ export async function route(request: Request, env: Env): Promise<Response> {
   if (pathname === GITHUB_SETUP_PATH) {
     if (request.method !== "GET") return methodNotAllowed(requestId);
     return handleGithubSetupCallback(request, env, requestId);
+  }
+
+  // Slack OAuth-callback ingress (IH1): the oauth-kind twin of the GitHub
+  // setup callback — signed single-use state, same fail-closed orphan rule.
+  if (pathname === SLACK_OAUTH_CALLBACK_PATH) {
+    if (request.method !== "GET") return methodNotAllowed(requestId);
+    return handleSlackOauthCallback(request, env, requestId);
   }
 
   // Inbound webhook ingress: authenticated by HMAC over the raw body, never
@@ -152,12 +161,13 @@ export async function route(request: Request, env: Env): Promise<Response> {
   m = pathname.match(ORG_INTEGRATIONS_CONNECT_RE);
   if (m) {
     const orgId = parseOrgPublicId(m[1]!);
-    if (!orgId) return notFound(requestId, pathname);
+    const provider = m[2]!;
+    if (!orgId || !isConnectableProvider(provider)) return notFound(requestId, pathname);
     if (request.method !== "POST") return methodNotAllowed(requestId);
     if (!env.BILLING_WORKER) {
       return errorResponse("internal_error", "Entitlement service not configured", 503, requestId);
     }
-    return handleConnectIntegration(request, env, requestId, actor, orgId);
+    return handleConnectIntegration(request, env, requestId, actor, orgId, provider);
   }
 
   m = pathname.match(ORG_INTEGRATIONS_RE);

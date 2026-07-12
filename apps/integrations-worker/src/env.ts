@@ -26,6 +26,14 @@ export interface Env {
   /** GitHub App slug, used to build the public install URL. */
   GITHUB_APP_SLUG?: string;
 
+  /**
+   * Public origin of api-edge for this environment (plain var, not a secret;
+   * same convention as identity-worker). OAuth-kind connect flows build their
+   * redirect_uri from it: `{base}/ingress/slack/oauth` (IH1). Unset = the
+   * oauth connect surface parks with a typed 412.
+   */
+  OAUTH_REDIRECT_BASE_URL?: string;
+
   // ── saas-integration-hub provider credentials (IH0; all optional) ──
   // Slack App per environment (IH risks D1). Dormant until set.
   SLACK_APP_CLIENT_ID?: string;

@@ -180,9 +180,7 @@ describe("POST .../integrations/github/connect", () => {
   it("denies via policy as 404 (no resource disclosure)", async () => {
     const env = createEnv({ POLICY_WORKER: policyFetcher(false) });
     const { executor, queries } = fakeExecutor(() => []);
-    const res = await handleConnectIntegration(connectRequest(), env, "req_1", ACTOR, ORG_ID, {
-      executor,
-    });
+    const res = await handleConnectIntegration(connectRequest(), env, "req_1", ACTOR, ORG_ID, "github", { executor });
     expect(res.status).toBe(404);
     expect(queries).toHaveLength(0); // denied before any DB touch
   });
@@ -190,9 +188,7 @@ describe("POST .../integrations/github/connect", () => {
   it("returns 412 with the entitlement reason when the plan lacks the feature", async () => {
     const env = createEnv({ BILLING_WORKER: billingFetcher(false, "disabled") });
     const { executor } = fakeExecutor(() => []);
-    const res = await handleConnectIntegration(connectRequest(), env, "req_1", ACTOR, ORG_ID, {
-      executor,
-    });
+    const res = await handleConnectIntegration(connectRequest(), env, "req_1", ACTOR, ORG_ID, "github", { executor });
     expect(res.status).toBe(412);
     const body = await json(res);
     const error = body.error as Record<string, unknown>;
@@ -203,9 +199,7 @@ describe("POST .../integrations/github/connect", () => {
   it("parks on D1 with 412/not_configured when the App secrets are unset", async () => {
     const env = createEnv({ GITHUB_APP_ID: undefined });
     const { executor } = fakeExecutor(() => []);
-    const res = await handleConnectIntegration(connectRequest(), env, "req_1", ACTOR, ORG_ID, {
-      executor,
-    });
+    const res = await handleConnectIntegration(connectRequest(), env, "req_1", ACTOR, ORG_ID, "github", { executor });
     expect(res.status).toBe(412);
     const error = (await json(res)).error as Record<string, unknown>;
     expect((error.details as Record<string, unknown>).gate).toBe("github_app_registration");
@@ -222,9 +216,7 @@ describe("POST .../integrations/github/connect", () => {
       return [];
     });
 
-    const res = await handleConnectIntegration(connectRequest(), env, "req_1", ACTOR, ORG_ID, {
-      executor,
-    });
+    const res = await handleConnectIntegration(connectRequest(), env, "req_1", ACTOR, ORG_ID, "github", { executor });
     expect(res.status).toBe(201);
     const data = (await json(res)).data as Record<string, unknown>;
     const connection = data.connection as Record<string, unknown>;
@@ -264,7 +256,7 @@ describe("POST .../integrations/github/connect", () => {
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ scope: "workspace" }),
     });
-    const res = await handleConnectIntegration(req, env, "req_1", ACTOR, ORG_ID, { executor });
+    const res = await handleConnectIntegration(req, env, "req_1", ACTOR, ORG_ID, "github", { executor });
     expect(res.status).toBe(201);
     expect(insertedParams[3]).toBe("workspace"); // recorded from the request
     const data = (await json(res)).data as Record<string, unknown>;
@@ -288,7 +280,7 @@ describe("POST .../integrations/github/connect", () => {
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ scope: "account" }),
     });
-    const res = await handleConnectIntegration(req, env, "req_1", ACTOR, ORG_ID, { executor });
+    const res = await handleConnectIntegration(req, env, "req_1", ACTOR, ORG_ID, "github", { executor });
     expect(res.status).toBe(201);
     expect(insertedParams[3]).toBe("workspace"); // forced — a child cannot share
     const data = (await json(res)).data as Record<string, unknown>;

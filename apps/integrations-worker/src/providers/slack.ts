@@ -1,17 +1,20 @@
 // Slack adapter (saas-integration-hub IH1–IH3) — the messaging archetype.
 //
-// IH0 registers it DORMANT: the adapter compiles, its pure logic (authorize
-// URL, v0 request-signature verification) is fixture-testable, and the
-// registry returns it only when the per-environment Slack App credentials
-// exist (risks D1). No route reaches it until IH1 wires the connect flow.
+// IH1 wires the OAuth v2 connect flow end-to-end: authorize URL → signed
+// single-use state → `oauth.v2.access` code exchange → bot-token custody.
+// The registry still gates the adapter on the per-environment Slack App
+// credentials (risks D1) — without them every Slack surface parks typed.
 //
 // Custody rule: the bot token this adapter's connect flow obtains lives ONLY
 // as a provider_credentials envelope; delivery stays behind the ES
 // ChannelProvider seam in notifications-worker (design §4.2).
 
+import type { FetchLike } from "../github-app.js";
 import type { InboundCapability, IntegrationProvider, SlackAppCredentials } from "./types.js";
 
 const AUTHORIZE_URL = "https://slack.com/oauth/v2/authorize";
+const OAUTH_ACCESS_URL = "https://slack.com/api/oauth.v2.access";
+const AUTH_REVOKE_URL = "https://slack.com/api/auth.revoke";
 
 /**
  * Bot scope set (risks D2, minimal two-way default): post/update messages,
@@ -99,7 +102,105 @@ export function buildSlackAuthorizeUrl(input: {
   return url.toString();
 }
 
-export function createSlackProvider(credentials: SlackAppCredentials): IntegrationProvider {
+/** Verified grant from `oauth.v2.access` — the team_id inside it is the
+ *  provider-verified half of the `team_id ↔ org_id` keystone (design §4.1). */
+export interface SlackOauthGrant {
+  /** The workspace bot token (xoxb-…) — custody-envelope material ONLY. */
+  accessToken: string;
+  grantedScopes: string[];
+  teamId: string;
+  teamName: string | null;
+  enterpriseId: string | null;
+  botUserId: string | null;
+  appId: string | null;
+  /** Slack user id of the installing member (provenance, never identity). */
+  installedByExternalUser: string | null;
+}
+
+/**
+ * Exchange the callback's code for a bot token (`oauth.v2.access`). Slack
+ * verifies the code AND that redirect_uri matches the authorize request, so a
+ * non-ok response means the callback is not a grant we initiated — null, and
+ * callers fail closed.
+ */
+export async function exchangeSlackOauthCode(
+  credentials: SlackAppCredentials,
+  input: { code: string; redirectUri: string },
+  fetchImpl: FetchLike = fetch,
+): Promise<SlackOauthGrant | null> {
+  const body = new URLSearchParams({
+    client_id: credentials.clientId,
+    client_secret: credentials.clientSecret,
+    code: input.code,
+    redirect_uri: input.redirectUri,
+  });
+  let payload: Record<string, unknown>;
+  try {
+    const response = await fetchImpl(OAUTH_ACCESS_URL, {
+      method: "POST",
+      headers: { "content-type": "application/x-www-form-urlencoded" },
+      body: body.toString(),
+    });
+    if (!response.ok) return null;
+    payload = (await response.json()) as Record<string, unknown>;
+  } catch {
+    return null;
+  }
+
+  if (payload.ok !== true) return null;
+  const accessToken = payload.access_token;
+  const team = payload.team as { id?: unknown; name?: unknown } | null | undefined;
+  const teamId = team?.id;
+  if (typeof accessToken !== "string" || !accessToken || typeof teamId !== "string" || !teamId) {
+    return null;
+  }
+  // D2: we request bot scopes only — a grant that came back as anything but a
+  // bot token is not one we asked for.
+  if ((payload.token_type ?? "bot") !== "bot") return null;
+
+  const enterprise = payload.enterprise as { id?: unknown } | null | undefined;
+  const authedUser = payload.authed_user as { id?: unknown } | null | undefined;
+  return {
+    accessToken,
+    grantedScopes:
+      typeof payload.scope === "string" && payload.scope.length > 0
+        ? payload.scope.split(",")
+        : [],
+    teamId,
+    teamName: typeof team?.name === "string" ? team.name : null,
+    enterpriseId: typeof enterprise?.id === "string" ? enterprise.id : null,
+    botUserId: typeof payload.bot_user_id === "string" ? payload.bot_user_id : null,
+    appId: typeof payload.app_id === "string" ? payload.app_id : null,
+    installedByExternalUser: typeof authedUser?.id === "string" ? authedUser.id : null,
+  };
+}
+
+/** Best-effort `auth.revoke` on platform revoke — TTL-less bot tokens die
+ *  provider-side too, not just in our custody table. */
+export async function revokeSlackToken(
+  accessToken: string,
+  fetchImpl: FetchLike = fetch,
+): Promise<boolean> {
+  try {
+    const response = await fetchImpl(AUTH_REVOKE_URL, {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${accessToken}`,
+        "content-type": "application/x-www-form-urlencoded",
+      },
+    });
+    if (!response.ok) return false;
+    const payload = (await response.json()) as { ok?: unknown; revoked?: unknown };
+    return payload.ok === true && payload.revoked === true;
+  } catch {
+    return false;
+  }
+}
+
+export function createSlackProvider(
+  credentials: SlackAppCredentials,
+  fetchImpl?: FetchLike,
+): IntegrationProvider {
   const inbound: InboundCapability = {
     async verifySignature(rawBody, headers, nowMs): Promise<boolean> {
       return verifySlackSignature(
@@ -121,5 +222,23 @@ export function createSlackProvider(credentials: SlackAppCredentials): Integrati
     capabilities: ["connect", "inbound"],
 
     inbound,
+
+    buildAuthorizeUrl(input) {
+      return buildSlackAuthorizeUrl({
+        clientId: credentials.clientId,
+        state: input.state,
+        redirectUri: input.redirectUri,
+      });
+    },
+    exchangeOauthCode(input) {
+      return exchangeSlackOauthCode(
+        credentials,
+        { code: input.code, redirectUri: input.redirectUri },
+        fetchImpl,
+      );
+    },
+    revokeOauthToken(accessToken) {
+      return revokeSlackToken(accessToken, fetchImpl);
+    },
   };
 }

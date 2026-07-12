@@ -26,12 +26,30 @@ export function connectionStatusMeta(status: IntegrationConnectionStatus): Conne
   return CONNECTION_STATUS_META[status] ?? { label: status, tone: "default" };
 }
 
+/** Human name for a connection's provider ("GitHub", "Slack", …). */
+export function connectionProviderName(
+  connection: Pick<PublicConnection, "provider">,
+): string {
+  switch (connection.provider) {
+    case "github":
+      return "GitHub";
+    case "slack":
+      return "Slack";
+    case "cloudflare":
+      return "Cloudflare";
+    case "supabase":
+      return "Supabase";
+    default:
+      return connection.provider;
+  }
+}
+
 /** Display name for a connection row: label > account login > provider. */
 export function connectionDisplayName(connection: PublicConnection): string {
   return (
     connection.displayName ??
     connection.externalAccountLogin ??
-    "GitHub connection"
+    `${connectionProviderName(connection)} connection`
   );
 }
 
@@ -67,11 +85,11 @@ export function connectionScopeMeta(scope: IntegrationConnectionScope): Connecti
   return scope === "workspace"
     ? {
         label: "Workspace-private",
-        description: "Private to this workspace — its own GitHub account, not shared with the rest of the account.",
+        description: "Private to this workspace — its own provider account, not shared with the rest of the account.",
       }
     : {
         label: "Account-shared",
-        description: "Serves the whole account — every workspace under it can link repos against this connection.",
+        description: "Serves the whole account — every workspace under it can use this connection.",
       };
 }
 
@@ -102,12 +120,17 @@ export function connectionShareModeMeta(
 
 /**
  * Blast-radius disclosure for the revoke/uninstall confirmation. An
- * account-shared connection removes GitHub for the whole account; a
+ * account-shared connection removes the provider for the whole account; a
  * workspace-private one affects only that workspace.
  */
 export function uninstallDisclosure(
-  connection: Pick<PublicConnection, "scope">,
+  connection: Pick<PublicConnection, "scope" | "provider">,
 ): string {
+  if (connection.provider === "slack") {
+    return connection.scope === "account"
+      ? "This connection serves the whole account. Revoking it deletes the workspace's bot token, revokes it with Slack, and stops Slack notifications for every workspace using it."
+      : "Revoking disconnects this Slack workspace: the bot token is deleted and revoked with Slack, and channels backed by this connection stop receiving notifications.";
+  }
   return connection.scope === "account"
     ? "This connection serves the whole account. Revoking it uninstalls the GitHub App for this account and stops events and token issuance for every workspace's linked repositories."
     : "The platform stops receiving events for this installation and any linked repositories stop updating. This also uninstalls the App from GitHub when possible.";
