@@ -30,6 +30,8 @@ const ORG_AGENTS_SESSION_TOKEN_RE = /^\/v1\/organizations\/[^/]+\/agents\/sessio
 const ORG_AGENTS_SESSION_ATTACH_RE = /^\/v1\/organizations\/[^/]+\/agents\/sessions\/[^/]+\/attach$/;
 const ORG_AGENTS_SESSION_INPUT_RE = /^\/v1\/organizations\/[^/]+\/agents\/sessions\/[^/]+\/input$/;
 const ORG_AGENTS_AUTONOMY_RE = /^\/v1\/organizations\/[^/]+\/agents\/autonomy$/;
+// The needs-you fold (saas-agents-fleet AF5): the fleet home's attention queue.
+const ORG_AGENTS_ATTENTION_RE = /^\/v1\/organizations\/[^/]+\/agents\/attention$/;
 const ORG_AGENTS_DISPATCH_RE = /^\/v1\/organizations\/[^/]+\/agents\/dispatch$/;
 const ORG_AGENTS_PROVIDERS_RE = /^\/v1\/organizations\/[^/]+\/agents\/providers$/;
 const ORG_AGENTS_PROVIDER_RE = /^\/v1\/organizations\/[^/]+\/agents\/providers\/[^/]+$/;
@@ -52,6 +54,7 @@ export function isAgentsRoute(pathname: string): boolean {
     ORG_AGENTS_PROVIDER_RE.test(pathname) ||
     ORG_AGENTS_PROVIDER_VERIFY_RE.test(pathname) ||
     ORG_AGENTS_AUTONOMY_RE.test(pathname) ||
+    ORG_AGENTS_ATTENTION_RE.test(pathname) ||
     ORG_AGENTS_DISPATCH_RE.test(pathname)
   );
 }

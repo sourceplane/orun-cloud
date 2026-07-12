@@ -13,6 +13,7 @@ import type {
   AgentSessionEventWire,
   AgentSessionState,
   AgentProvider,
+  AttentionSummary,
   CreateAgentProfileRequest,
   CreateAgentSessionRequest,
   CreateProviderConnectionRequest,
@@ -122,6 +123,21 @@ export class AgentsClient {
   ): Promise<{ v: number; t: string; ok?: boolean; reason?: string; ref?: string }> {
     return this.transport.request(
       { method: "POST", path: `${agentsBase(orgId)}/sessions/${encodeURIComponent(sessionId)}/input`, body: frame },
+      opts,
+    );
+  }
+
+  // ── The attention plane (saas-agents-fleet AF5) ─────────────
+
+  /**
+   * GET /agents/attention — the needs-you fold: verdicts waiting, budget
+   * marks, parked routines, retryable failures, stuck sessions. Derived on
+   * read (no stored inbox); acting on an item removes it by making its
+   * source fact false.
+   */
+  attention(orgId: string, opts: RequestOptions = {}): Promise<AttentionSummary> {
+    return this.transport.request<AttentionSummary>(
+      { method: "GET", path: `${agentsBase(orgId)}/attention` },
       opts,
     );
   }

@@ -43,6 +43,14 @@ describe("agents resource", () => {
     expect(calls[3]!.url).toContain("/agents/sessions/as_1/events");
   });
 
+  it("reads the needs-you fold (saas-agents-fleet AF5)", async () => {
+    const { fetch: f, calls } = captureFetch({ items: [], counts: {}, running: 0 });
+    const c = client(f);
+    await c.agents.attention("org_x");
+    expect(calls[0]!.url).toContain("/v1/organizations/org_x/agents/attention");
+    expect(calls[0]!.init.method).toBe("GET");
+  });
+
   it("connects a provider with the key in the body exactly once, and disconnects with DELETE", async () => {
     const { fetch: f, calls } = captureFetch({ id: "apc_1", status: "verified" });
     const c = client(f);

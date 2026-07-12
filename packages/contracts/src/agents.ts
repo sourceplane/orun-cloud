@@ -248,6 +248,73 @@ export interface SandboxProvider {
   health(ref: SandboxRef): Promise<SandboxHealth>;
 }
 
+// ── The attention plane (saas-agents-fleet AF5) ─────────────
+// The needs-you fold: a computed read over facts already stored — session
+// states, budget marks, routine parks, lease health. There is no stored inbox
+// row and no dismiss verb; acting on an item removes it by making its source
+// fact false (design §4.1: attention is derived, never authored).
+
+/**
+ * The closed attention-source vocabulary. Enum-complete from day one:
+ * `budget` items appear once AF8 lands budgets, `routine_parked` once AF6
+ * lands routines — both fold to zero until then.
+ */
+export const ATTENTION_KINDS = [
+  /** A session is blocked on a human verdict (`awaiting_approval`). */
+  "verdict",
+  /** A live session/tree crossed its budget's soft mark (AF8). */
+  "budget",
+  /** A routine parked after repeated failures and needs a resume (AF6). */
+  "routine_parked",
+  /** A session failed on a task with retry budget left — re-dispatch offer. */
+  "failed_retryable",
+  /** A live session's lease lapsed but the sweep has not reclaimed it yet. */
+  "stuck",
+] as const;
+export type AttentionKind = (typeof ATTENTION_KINDS)[number];
+
+/** Rank by kind — the queue's sort order (design §4.1). Lower renders first. */
+export const ATTENTION_RANK: Record<AttentionKind, number> = {
+  verdict: 1,
+  budget: 2,
+  routine_parked: 3,
+  failed_retryable: 4,
+  stuck: 5,
+};
+
+/**
+ * One needs-you item. Every item carries its provenance — the session, the
+ * work pointer, and the fact that produced it — so the fold shows its
+ * arithmetic. All v1 kinds are session-backed; routine items gain a
+ * routineId in AF6.
+ */
+export interface AttentionItem {
+  kind: AttentionKind;
+  /** The session the item is about (`as_…`). */
+  sessionId: string;
+  profileId?: string;
+  runKind?: AgentRunKind;
+  state?: AgentSessionState;
+  workRef?: string;
+  taskKey?: string;
+  /** The producing fact, human-readable ("wants to run npx wrangler deploy"). */
+  reason: string;
+  /** When the underlying fact arose (approval asked / lease lapsed / ended). */
+  at: string;
+  /** verdict items: the pending request, answerable from the fleet home. */
+  request?: { requestId: string; tool: string };
+}
+
+/** GET /v1/organizations/{orgId}/agents/attention */
+export interface AttentionSummary {
+  /** Ranked (ATTENTION_RANK asc, then oldest fact first). */
+  items: AttentionItem[];
+  /** Per-kind counts, every kind always present (zero included). */
+  counts: Record<AttentionKind, number>;
+  /** Sessions currently `running` — the fleet home's other stat numeral. */
+  running: number;
+}
+
 // ── Provider connections (AG12) ─────────────────────────────
 // BYO provider accounts: a workspace connects its own Daytona account and
 // Anthropic key. The key is write-only (custody in the secret manager under
