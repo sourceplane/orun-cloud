@@ -33,6 +33,7 @@ import { asUuid, uuidFromPublicId } from "@saas/db/ids";
 import { encodeCursor, parsePageParams } from "../pagination.js";
 import { getConfiguredProvider } from "../providers/registry.js";
 import { createEncryptionAdapter, type CiphertextEnvelope } from "../encryption.js";
+import { revokeLiveMintsForConnection } from "./credential-broker.js";
 import {
   CONNECT_STATE_TTL_MS,
   generateStateNonce,
@@ -447,6 +448,21 @@ export async function handleRevokeIntegration(
 
     // Cached platform token is dead the moment the connection is.
     await repo.deleteInstallationToken(connectionId);
+
+    // Revoke fan-out (IH4, design §5.1): sweep the connection's live mints —
+    // best-effort provider-side revoke, ledger marked either way. Never
+    // blocks the platform revoke.
+    try {
+      await revokeLiveMintsForConnection(
+        env,
+        executor,
+        connectionId,
+        existing.value.provider,
+        deps?.fetchImpl,
+      );
+    } catch {
+      // TTL is the backstop.
+    }
 
     if (existing.value.provider === "slack") {
       // Custody zeroize (design §3) + best-effort provider-side `auth.revoke`

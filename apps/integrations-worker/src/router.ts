@@ -26,6 +26,11 @@ import {
   handleSlackInteractivityIngest,
 } from "./handlers/slack-ingress.js";
 import { handleListSlackChannels } from "./handlers/slack-channels.js";
+import {
+  handleListMintedCredentials,
+  handleMintCredential,
+  handleRevokeMintedCredential,
+} from "./handlers/credential-broker.js";
 import { handleSlackCredentialsInternal } from "./handlers/slack-credentials-internal.js";
 import {
   handleCreateConnectionGrant,
@@ -101,6 +106,10 @@ const PROJECT_REPO_LINKS_RE =
   /^\/v1\/organizations\/([^/]+)\/projects\/([^/]+)\/repo-links$/;
 const PROJECT_REPO_LINK_RE =
   /^\/v1\/organizations\/([^/]+)\/projects\/([^/]+)\/repo-links\/([^/]+)$/;
+const ORG_CONNECTION_CREDENTIALS_RE =
+  /^\/v1\/organizations\/([^/]+)\/integrations\/([^/]+)\/credentials$/;
+const ORG_CONNECTION_CREDENTIAL_RE =
+  /^\/v1\/organizations\/([^/]+)\/integrations\/([^/]+)\/credentials\/([^/]+)$/;
 const ORG_CONNECTION_SLACK_CHANNELS_RE =
   /^\/v1\/organizations\/([^/]+)\/integrations\/([^/]+)\/slack\/channels$/;
 const GITHUB_SETUP_PATH = "/ingress/github/setup";
@@ -232,6 +241,33 @@ export async function route(request: Request, env: Env): Promise<Response> {
       return errorResponse("internal_error", "Entitlement service not configured", 503, requestId);
     }
     return handleIssueGithubToken(request, env, requestId, actor, orgId);
+  }
+
+  m = pathname.match(ORG_CONNECTION_CREDENTIALS_RE);
+  if (m) {
+    const orgId = parseOrgPublicId(m[1]!);
+    const connectionUuid = parseConnectionPublicId(m[2]!);
+    if (!orgId || !connectionUuid) return notFound(requestId, pathname);
+    switch (request.method) {
+      case "POST":
+        if (!env.BILLING_WORKER) {
+          return errorResponse("internal_error", "Entitlement service not configured", 503, requestId);
+        }
+        return handleMintCredential(request, env, requestId, actor, orgId, asUuid(connectionUuid));
+      case "GET":
+        return handleListMintedCredentials(request, env, requestId, actor, orgId, asUuid(connectionUuid));
+      default:
+        return methodNotAllowed(requestId);
+    }
+  }
+
+  m = pathname.match(ORG_CONNECTION_CREDENTIAL_RE);
+  if (m) {
+    const orgId = parseOrgPublicId(m[1]!);
+    const connectionUuid = parseConnectionPublicId(m[2]!);
+    if (!orgId || !connectionUuid) return notFound(requestId, pathname);
+    if (request.method !== "DELETE") return methodNotAllowed(requestId);
+    return handleRevokeMintedCredential(env, requestId, actor, orgId, m[3]!);
   }
 
   m = pathname.match(ORG_CONNECTION_SLACK_CHANNELS_RE);
