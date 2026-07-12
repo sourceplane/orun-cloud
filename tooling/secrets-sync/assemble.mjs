@@ -68,15 +68,29 @@ const allWorkers = () => {
 };
 
 // Per-worker required secret names (active) and deferred secret names.
+// Deferral is either coarse (a whole worker in manifest.deferredConsumers) or
+// fine-grained (an integration doc with `"deferred": true`) — the latter lets
+// a live consumer (integrations-worker owns GitHub) defer only the secrets of
+// a not-yet-registered provider (Slack/Supabase apps, IH risks D1/D4) so
+// secrets-live does not hard-fail requiring them before the app exists.
 function projectSecretManifest() {
   const workers = {};
   for (const worker of allWorkers()) workers[worker] = { required: [], deferredNames: [] };
-  const place = (worker, name) => {
-    const bucket = deferredConsumers.has(worker) ? "deferredNames" : "required";
-    if (!workers[worker][bucket].includes(name)) workers[worker][bucket].push(name);
+  const place = (worker, name, deferred) => {
+    const w = workers[worker];
+    if (deferred || deferredConsumers.has(worker)) {
+      // Deferred placement: skip if a live consumer already requires it
+      // (required wins), else record it as deferred.
+      if (!w.required.includes(name) && !w.deferredNames.includes(name)) w.deferredNames.push(name);
+    } else {
+      // Required placement wins over any prior deferred copy of the same name.
+      if (!w.required.includes(name)) w.required.push(name);
+      const di = w.deferredNames.indexOf(name);
+      if (di !== -1) w.deferredNames.splice(di, 1);
+    }
   };
   for (const spec of Object.values(integrations)) {
-    for (const name of spec.secret ?? []) for (const w of spec.consumers) place(w, name);
+    for (const name of spec.secret ?? []) for (const w of spec.consumers) place(w, name, spec.deferred === true);
   }
   for (const [name, consumers] of Object.entries(platform.secret ?? {})) {
     for (const w of consumers) place(w, name);
@@ -86,7 +100,8 @@ function projectSecretManifest() {
     out[worker] = { required: required.sort() };
     if (deferredNames.length > 0) {
       out[worker].deferred = {
-        reason: "deferred consumer — activate by removing from manifest.deferredConsumers",
+        reason:
+          "deferred secrets — secrets-live does not require them; activate by clearing the integration doc's `deferred` flag (or removing the worker from manifest.deferredConsumers), then seeding the escrow doc",
         names: deferredNames.sort(),
       };
     }
@@ -174,8 +189,13 @@ function readDoc(name) {
 for (const [name, spec] of Object.entries(integrations)) {
   const consumersActive = spec.consumers.filter((w) => !deferredConsumers.has(w));
   const doc = readDoc(name);
-  if (consumersActive.length === 0) continue; // fully deferred integration
+  if (consumersActive.length === 0) continue; // fully deferred integration (all consumers deferred)
   if (doc === undefined) {
+    // A per-integration-deferred doc (an unregistered provider app, e.g. the
+    // Slack/Supabase apps behind IH risks D1/D4) is OPTIONAL: tolerate its
+    // absence so secrets-live does not hard-fail before the app exists. When
+    // an operator seeds it and clears `deferred`, it becomes required.
+    if (spec.deferred === true) continue;
     violations.push(`${env}: integration document ${name}.json not fetched (doc ${spec.doc})`);
     continue;
   }

@@ -1,36 +1,69 @@
 {
   "$comment": "SS6 source of truth (saas-secrets-sync): per-integration documents in AWS Secrets Manager, each holding the non-secret config AND the secret(s) for ONE provider integration. Non-integration secrets (repo/account-generated, not tied to a provider) live in a single platform-secrets doc. assemble.mjs projects this into (a) the per-worker secret view committed as secrets.manifest.json and consumed by check.mjs/sync.mjs, and (b) the per-worker config view rendered into wrangler vars. config keys are non-secret and may be logged; secret keys never are.",
   "escrowRoot": "sourceplane/orun-cloud",
-  "environments": ["stage", "prod"],
-  "deferredConsumers": ["state-worker"],
+  "environments": [
+    "stage",
+    "prod"
+  ],
+  "deferredConsumers": [
+    "state-worker"
+  ],
   "integrations": {
     "github-oauth": {
       "doc": "integrations/github-oauth/<env>",
-      "config": ["GITHUB_OAUTH_CLIENT_ID"],
-      "secret": ["GITHUB_OAUTH_CLIENT_SECRET"],
-      "consumers": ["identity-worker"]
+      "config": [
+        "GITHUB_OAUTH_CLIENT_ID"
+      ],
+      "secret": [
+        "GITHUB_OAUTH_CLIENT_SECRET"
+      ],
+      "consumers": [
+        "identity-worker"
+      ]
     },
     "google-oauth": {
       "doc": "integrations/google-oauth/<env>",
-      "config": ["GOOGLE_OAUTH_CLIENT_ID"],
-      "secret": ["GOOGLE_OAUTH_CLIENT_SECRET"],
-      "consumers": ["identity-worker"]
+      "config": [
+        "GOOGLE_OAUTH_CLIENT_ID"
+      ],
+      "secret": [
+        "GOOGLE_OAUTH_CLIENT_SECRET"
+      ],
+      "consumers": [
+        "identity-worker"
+      ]
     },
     "polar": {
       "doc": "integrations/polar/<env>",
-      "config": ["BILLING_PROVIDER", "POLAR_SERVER", "POLAR_PRODUCT_MAP", "POLAR_SUCCESS_URL"],
-      "secret": ["POLAR_ACCESS_TOKEN", "POLAR_WEBHOOK_SECRET"],
-      "consumers": ["billing-worker"]
+      "config": [
+        "BILLING_PROVIDER",
+        "POLAR_SERVER",
+        "POLAR_PRODUCT_MAP",
+        "POLAR_SUCCESS_URL"
+      ],
+      "secret": [
+        "POLAR_ACCESS_TOKEN",
+        "POLAR_WEBHOOK_SECRET"
+      ],
+      "consumers": [
+        "billing-worker"
+      ]
     },
     "cloudflare-email": {
       "doc": "integrations/cloudflare-email/<env>",
-      "config": ["NOTIFICATIONS_PROVIDER", "EMAIL_FROM_ADDRESS", "EMAIL_FROM_NAME"],
+      "config": [
+        "NOTIFICATIONS_PROVIDER",
+        "EMAIL_FROM_ADDRESS",
+        "EMAIL_FROM_NAME"
+      ],
       "secret": [],
-      "consumers": ["notifications-worker"]
+      "consumers": [
+        "notifications-worker"
+      ]
     },
     "github-app": {
       "doc": "integrations/github-app/<env>",
-      "$comment": "GITHUB_APP_ID/SLUG/CLIENT_ID are not sensitive, but the deploy lane only pushes `secret`-classified keys to the worker (non-secret `config` is hand-maintained in each worker's wrangler vars). integrations-worker reads GITHUB_APP_ID/SLUG at runtime via getConfiguredProvider, so all App keys are classified as secrets to flow through secrets-live — matching the worker template's documented expectation.",
+      "$comment": "GITHUB_APP_ID/SLUG/CLIENT_ID are not sensitive, but the deploy lane only pushes `secret`-classified keys to the worker (non-secret `config` is hand-maintained in each worker's wrangler vars). integrations-worker reads GITHUB_APP_ID/SLUG at runtime via getConfiguredProvider, so all App keys are classified as secrets to flow through secrets-live \u2014 matching the worker template's documented expectation.",
       "config": [],
       "secret": [
         "GITHUB_APP_ID",
@@ -40,39 +73,62 @@
         "GITHUB_APP_WEBHOOK_SECRET",
         "GITHUB_APP_CLIENT_SECRET"
       ],
-      "consumers": ["integrations-worker"]
+      "consumers": [
+        "integrations-worker"
+      ]
     },
     "slack-app": {
       "doc": "integrations/slack-app/<env>",
-      "$comment": "Per-environment Slack App credentials (IH1 connect flow + IH3 signed-request verification). Previously deferred behind the 'per-environment Slack App exists' risk (IH risks D1); IH9 lifts them into the escrow instance-parameter surface alongside the GitHub App's so the deploy lane owns them end to end.",
+      "$comment": "Per-environment Slack App credentials (IH1 connect flow + IH3 signed-request verification). Documented in the escrow instance-parameter surface alongside the GitHub App's, but marked deferred (IH risks D1): the Slack App is not yet registered per environment, so secrets-live must NOT require these until an operator seeds integrations/slack-app/<env> and clears `deferred`.",
+      "deferred": true,
       "config": [],
       "secret": [
         "SLACK_APP_CLIENT_ID",
         "SLACK_APP_CLIENT_SECRET",
         "SLACK_APP_SIGNING_SECRET"
       ],
-      "consumers": ["integrations-worker"]
+      "consumers": [
+        "integrations-worker"
+      ]
     },
     "supabase-oauth": {
       "doc": "integrations/supabase-oauth/<env>",
-      "$comment": "Per-environment Supabase OAuth app credentials (IH6 connect + token refresh). IH9 lifts them into the escrow instance-parameter surface alongside the GitHub App's so the deploy lane owns them end to end.",
+      "$comment": "Per-environment Supabase OAuth app credentials (IH6 connect + token refresh). Documented alongside the GitHub App's but marked deferred (IH risks D4): the Supabase OAuth app is not yet registered per environment, so secrets-live must NOT require these until an operator seeds integrations/supabase-oauth/<env> and clears `deferred`.",
+      "deferred": true,
       "config": [],
       "secret": [
         "SUPABASE_OAUTH_CLIENT_ID",
         "SUPABASE_OAUTH_CLIENT_SECRET"
       ],
-      "consumers": ["integrations-worker"]
+      "consumers": [
+        "integrations-worker"
+      ]
     }
   },
   "platform": {
     "doc": "platform-secrets/<env>",
     "secret": {
-      "SECRET_ENCRYPTION_KEY": ["webhooks-worker", "config-worker", "integrations-worker", "notifications-worker"],
-      "SECRET_KEK": ["config-worker"],
-      "OAUTH_STATE_SECRET": ["identity-worker"],
-      "CLI_JWT_SIGNING_KEY": ["identity-worker"],
-      "INTEGRATIONS_STATE_SECRET": ["integrations-worker"],
-      "STATE_ENCRYPTION_KEY": ["state-worker"]
+      "SECRET_ENCRYPTION_KEY": [
+        "webhooks-worker",
+        "config-worker",
+        "integrations-worker",
+        "notifications-worker"
+      ],
+      "SECRET_KEK": [
+        "config-worker"
+      ],
+      "OAUTH_STATE_SECRET": [
+        "identity-worker"
+      ],
+      "CLI_JWT_SIGNING_KEY": [
+        "identity-worker"
+      ],
+      "INTEGRATIONS_STATE_SECRET": [
+        "integrations-worker"
+      ],
+      "STATE_ENCRYPTION_KEY": [
+        "state-worker"
+      ]
     }
   }
 }
