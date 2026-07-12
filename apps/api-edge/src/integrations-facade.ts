@@ -23,6 +23,12 @@ const GITHUB_SETUP_PATH = "/ingress/github/setup";
 // billing webhook). Allowlist-routed; rate-limited per source.
 const GITHUB_WEBHOOK_PATH = "/ingress/github/webhook";
 
+// Public Slack OAuth-callback ingress (IH1, design §4.1): Slack redirects the
+// installing user's BROWSER here after the consent screen. Same posture as
+// the GitHub setup path — no bearer, authenticated by the signed single-use
+// state integrations-worker verifies. Allowlist-routed, GET only, rate-limited.
+const SLACK_OAUTH_PATH = "/ingress/slack/oauth";
+
 const FORWARDED_WEBHOOK_HEADERS = [
   "content-type",
   "x-github-delivery",
@@ -42,7 +48,11 @@ export function isIntegrationsRoute(pathname: string): boolean {
 }
 
 export function isIntegrationsIngressRoute(pathname: string): boolean {
-  return pathname === GITHUB_SETUP_PATH || pathname === GITHUB_WEBHOOK_PATH;
+  return (
+    pathname === GITHUB_SETUP_PATH ||
+    pathname === GITHUB_WEBHOOK_PATH ||
+    pathname === SLACK_OAUTH_PATH
+  );
 }
 
 export async function handleIntegrationsIngressRoute(

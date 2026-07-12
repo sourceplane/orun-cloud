@@ -36,13 +36,15 @@ export function getConfiguredProvider(
       };
     }
     case "slack": {
-      // IH risks D1: one Slack App per environment. Dormant until the three
-      // secrets exist; no route reaches the adapter before IH1 regardless.
+      // IH risks D1: one Slack App per environment. The connect flow (IH1)
+      // parks with a typed 412 until the three secrets exist.
       const clientId = env.SLACK_APP_CLIENT_ID;
       const clientSecret = env.SLACK_APP_CLIENT_SECRET;
       const signingSecret = env.SLACK_APP_SIGNING_SECRET;
       if (!clientId || !clientSecret || !signingSecret) return null;
-      return { provider: createSlackProvider({ clientId, clientSecret, signingSecret }) };
+      return {
+        provider: createSlackProvider({ clientId, clientSecret, signingSecret }, fetchImpl),
+      };
     }
     case "cloudflare": {
       // No platform credential exists for Cloudflare (the customer's pasted

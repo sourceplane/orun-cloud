@@ -1,4 +1,5 @@
 import type { Env } from "../env.js";
+import type { FetchLike } from "../github-app.js";
 import type { ActorContext } from "../router.js";
 import type { PolicyResource } from "@saas/contracts/policy";
 import type {
@@ -13,7 +14,7 @@ import {
   INTEGRATION_EVENT_TYPES,
   INTEGRATION_POLICY_ACTIONS,
 } from "@saas/contracts/integrations";
-import { createIntegrationsRepository } from "@saas/db/integrations";
+import { createIntegrationHubRepository, createIntegrationsRepository } from "@saas/db/integrations";
 import { createEventsRepository } from "@saas/db/events";
 import { createSqlExecutor } from "@saas/db/hyperdrive";
 import type { Uuid } from "@saas/db/ids";
@@ -31,6 +32,7 @@ import { generateUuid, orgPublicId, parseOrgPublicId } from "../ids.js";
 import { asUuid, uuidFromPublicId } from "@saas/db/ids";
 import { encodeCursor, parsePageParams } from "../pagination.js";
 import { getConfiguredProvider } from "../providers/registry.js";
+import { createEncryptionAdapter, type CiphertextEnvelope } from "../encryption.js";
 import {
   CONNECT_STATE_TTL_MS,
   generateStateNonce,
@@ -38,9 +40,25 @@ import {
   signConnectState,
 } from "../state.js";
 
-/** Test seam: inject a fake executor; production callers omit it. */
+function providerDisplayName(provider: string): string {
+  switch (provider) {
+    case "github":
+      return "GitHub";
+    case "slack":
+      return "Slack";
+    case "cloudflare":
+      return "Cloudflare";
+    case "supabase":
+      return "Supabase";
+    default:
+      return provider;
+  }
+}
+
+/** Test seam: inject a fake executor / provider fetch; production omits it. */
 export interface HandlerDeps {
   executor?: SqlExecutor;
+  fetchImpl?: FetchLike;
 }
 
 function resolveExecutor(env: Env, deps?: HandlerDeps): { executor: SqlExecutor; owned: boolean } {
@@ -93,14 +111,44 @@ async function authorizeIntegration(
 
 // ── Connect ─────────────────────────────────────────────────
 
+/** Per-provider connect wiring: entitlement key, D1 gate naming, and — for
+ *  oauth-kind providers — the ingress path their redirect_uri points at. */
+const CONNECT_PROVIDERS = {
+  github: {
+    displayName: "GitHub",
+    entitlementKey: INTEGRATION_ENTITLEMENTS.GITHUB,
+    planMessage: "GitHub integration is not included in your current plan",
+    notConfiguredMessage: "The GitHub App for this environment is not configured yet",
+    gate: "github_app_registration",
+    oauthCallbackPath: null,
+  },
+  slack: {
+    displayName: "Slack",
+    entitlementKey: INTEGRATION_ENTITLEMENTS.SLACK,
+    planMessage: "Slack integration is not included in your current plan",
+    notConfiguredMessage: "The Slack App for this environment is not configured yet",
+    gate: "slack_app_registration",
+    oauthCallbackPath: "/ingress/slack/oauth",
+  },
+} as const;
+
+export type ConnectableProviderId = keyof typeof CONNECT_PROVIDERS;
+
+export function isConnectableProvider(value: string): value is ConnectableProviderId {
+  return value in CONNECT_PROVIDERS;
+}
+
 export async function handleConnectIntegration(
   request: Request,
   env: Env,
   requestId: string,
   actor: ActorContext,
   orgId: Uuid,
+  providerId: ConnectableProviderId,
   deps?: HandlerDeps,
 ): Promise<Response> {
+  const wiring = CONNECT_PROVIDERS[providerId];
+
   const denied = await authorizeIntegration(
     env,
     actor,
@@ -114,7 +162,7 @@ export async function handleConnectIntegration(
   const entitlement = await checkBillingEntitlement(
     env.BILLING_WORKER!,
     orgPublicId(orgId),
-    INTEGRATION_ENTITLEMENTS.GITHUB,
+    wiring.entitlementKey,
     requestId,
   );
   if (entitlement.kind === "service_error") {
@@ -122,28 +170,26 @@ export async function handleConnectIntegration(
   }
   if (!entitlement.decision.allowed) {
     const reason = entitlement.decision.reason ?? "not_configured";
-    return errorResponse(
-      "precondition_failed",
-      "GitHub integration is not included in your current plan",
-      412,
-      requestId,
-      { reason, entitlementKey: INTEGRATION_ENTITLEMENTS.GITHUB },
-    );
+    return errorResponse("precondition_failed", wiring.planMessage, 412, requestId, {
+      reason,
+      entitlementKey: wiring.entitlementKey,
+    });
   }
 
-  // D1 gate: live connect parks until the environment's GitHub App exists.
-  // (IH0: install-kind connect only — the oauth/token connect kinds land with
-  // their provider milestones, so the install-URL builder must exist here.)
-  const configured = getConfiguredProvider(env, "github");
-  const buildInstallUrl = configured?.provider.buildInstallUrl;
-  if (!configured || !buildInstallUrl || !env.INTEGRATIONS_STATE_SECRET) {
-    return errorResponse(
-      "precondition_failed",
-      "The GitHub App for this environment is not configured yet",
-      412,
-      requestId,
-      { reason: "not_configured", gate: "github_app_registration" },
-    );
+  // D1 gate: live connect parks until the environment's provider app exists.
+  // An oauth-kind provider additionally needs the public redirect origin
+  // (OAUTH_REDIRECT_BASE_URL) its redirect_uri is built from.
+  const configured = getConfiguredProvider(env, providerId);
+  const provider = configured?.provider;
+  const canBuildUrl =
+    provider &&
+    (provider.buildInstallUrl ||
+      (provider.buildAuthorizeUrl && wiring.oauthCallbackPath && env.OAUTH_REDIRECT_BASE_URL));
+  if (!provider || !canBuildUrl || !env.INTEGRATIONS_STATE_SECRET) {
+    return errorResponse("precondition_failed", wiring.notConfiguredMessage, 412, requestId, {
+      reason: "not_configured",
+      gate: wiring.gate,
+    });
   }
 
   let displayName: string | null = null;
@@ -199,7 +245,7 @@ export async function handleConnectIntegration(
     const created = await repo.createConnection({
       id: connectionId,
       orgId,
-      provider: "github",
+      provider: providerId,
       scope,
       displayName,
       createdBy: createdByUuid,
@@ -214,10 +260,15 @@ export async function handleConnectIntegration(
     }
 
     const state = await signConnectState(
-      { n: nonce, p: "github", c: connectionId, o: orgId, exp: now + CONNECT_STATE_TTL_MS },
+      { n: nonce, p: providerId, c: connectionId, o: orgId, exp: now + CONNECT_STATE_TTL_MS },
       env.INTEGRATIONS_STATE_SECRET,
     );
-    const installUrl = buildInstallUrl({ state });
+    const installUrl = provider.buildInstallUrl
+      ? provider.buildInstallUrl({ state })
+      : provider.buildAuthorizeUrl!({
+          state,
+          redirectUri: `${env.OAUTH_REDIRECT_BASE_URL!.replace(/\/+$/, "")}${wiring.oauthCallbackPath}`,
+        });
 
     const payload: ConnectIntegrationResponse = {
       connection: toPublicConnection(created.value),
@@ -397,16 +448,38 @@ export async function handleRevokeIntegration(
     // Cached platform token is dead the moment the connection is.
     await repo.deleteInstallationToken(connectionId);
 
-    // Best-effort GitHub-side uninstall (the inverse arrives via IG2 once the
-    // inbound pipeline lands). Failure here never blocks the platform revoke.
-    const installation = await repo.getGithubInstallationByConnectionId(connectionId);
-    if (installation.ok) {
-      const configured = getConfiguredProvider(env, "github");
-      if (configured?.provider.revokeInstallation) {
-        await configured.provider.revokeInstallation(
-          installation.value.installationId,
-          Date.now(),
-        );
+    if (existing.value.provider === "slack") {
+      // Custody zeroize (design §3) + best-effort provider-side `auth.revoke`
+      // — decrypt-then-revoke before the envelope rows are deleted. Neither
+      // step blocks the platform revoke.
+      const hub = createIntegrationHubRepository(executor);
+      const credential = await hub.getProviderCredential(connectionId, "slack_bot_token");
+      if (credential.ok) {
+        const configured = getConfiguredProvider(env, "slack", deps?.fetchImpl);
+        const encryption = await createEncryptionAdapter(env.SECRET_ENCRYPTION_KEY);
+        if (configured?.provider.revokeOauthToken && encryption) {
+          try {
+            const envelope = JSON.parse(credential.value.ciphertext) as CiphertextEnvelope;
+            const token = await encryption.decrypt(envelope);
+            await configured.provider.revokeOauthToken(token, Date.now());
+          } catch {
+            // Unreadable envelope or provider error — the zeroize below still runs.
+          }
+        }
+      }
+      await hub.deleteProviderCredentials(connectionId);
+    } else {
+      // Best-effort GitHub-side uninstall (the inverse arrives via IG2 once the
+      // inbound pipeline lands). Failure here never blocks the platform revoke.
+      const installation = await repo.getGithubInstallationByConnectionId(connectionId);
+      if (installation.ok) {
+        const configured = getConfiguredProvider(env, "github");
+        if (configured?.provider.revokeInstallation) {
+          await configured.provider.revokeInstallation(
+            installation.value.installationId,
+            Date.now(),
+          );
+        }
       }
     }
 
@@ -426,14 +499,14 @@ export async function handleRevokeIntegration(
           subjectId: connectionId,
           requestId,
           payload: {
-            provider: "github",
+            provider: existing.value.provider,
             externalAccountLogin: existing.value.externalAccountLogin,
           },
         },
         audit: {
           id: generateUuid(),
           category: "integrations",
-          description: `GitHub connection revoked${existing.value.externalAccountLogin ? ` (${existing.value.externalAccountLogin})` : ""}`,
+          description: `${providerDisplayName(existing.value.provider)} connection revoked${existing.value.externalAccountLogin ? ` (${existing.value.externalAccountLogin})` : ""}`,
         },
       });
     } catch {

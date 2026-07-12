@@ -1,12 +1,17 @@
 "use client";
 
 // The Integrations hub — a first-class org surface (promoted out of Settings):
-// the place to connect the external providers Orun coordinates. GitHub is live
-// and fully managed here (install/connect, status, revoke); the roadmap
-// providers (Supabase, Cloudflare, Slack) render as honest "Soon" slots.
+// the place to connect the external providers Orun coordinates. GitHub
+// (install-kind) and Slack (oauth-kind, IH1) are live and fully managed here
+// (connect, status, revoke); the roadmap providers (Supabase, Cloudflare)
+// render as honest "Soon" slots.
+//
+// Both connect kinds share one UX: popup + poll. The worker returns a URL
+// carrying the signed single-use state; the provider redirects back to our
+// ingress, which activates the connection the poll loop then observes.
 //
 // Northwind restyle: serif page header, "Connected" kicker over a white
-// connection card (black GitHub tile, status pill, inner stat tiles), and an
+// connection card (provider tile, status pill, inner stat tiles), and an
 // "On the roadmap" kicker over dashed provider cards.
 
 import * as React from "react";
@@ -38,6 +43,7 @@ import {
 } from "@/components/ui/northwind";
 import {
   connectionDisplayName,
+  connectionProviderName,
   connectionScopeMeta,
   connectionShareModeMeta,
   connectionStatusMeta,
@@ -45,7 +51,10 @@ import {
   uninstallDisclosure,
   visibleConnections,
 } from "@/components/integrations/connections";
-import { roadmapProviders } from "@/components/integrations/providers";
+import {
+  availableProviders,
+  roadmapProviders,
+} from "@/components/integrations/providers";
 import { ProviderConnections } from "@/components/agents/provider-connections";
 import { ConnectionAdmission } from "@/components/integrations/connection-admission";
 
@@ -78,19 +87,24 @@ export function IntegrationsHub({ orgId, orgSlug }: { orgId: string; orgSlug: st
     wrap(async () => (await client.integrations.list(orgId)).connections),
   );
 
-  const [connecting, setConnecting] = React.useState(false);
+  const [connectingProvider, setConnectingProvider] = React.useState<
+    "github" | "slack" | null
+  >(null);
   const [gateError, setGateError] = React.useState<ApiErrorBody | null>(null);
   const [revokeTarget, setRevokeTarget] = React.useState<PublicConnection | null>(null);
   const pollUntil = React.useRef<number>(0);
 
   const connections = list.data ?? [];
   const visible = visibleConnections(connections);
-  const hasActive = connections.some((c) => c.status === "active");
+  const connectingActive =
+    connectingProvider !== null &&
+    connections.some((c) => c.provider === connectingProvider && c.status === "active");
 
   // While a connect popup is in flight (or a pending row exists), poll the list
   // so the row flips to Active without a manual refresh.
   const shouldPoll =
-    (connecting || hasPendingConnection(connections)) && Date.now() < pollUntil.current;
+    (connectingProvider !== null || hasPendingConnection(connections)) &&
+    Date.now() < pollUntil.current;
   React.useEffect(() => {
     if (!shouldPoll) return;
     const t = setInterval(() => list.reload(), POLL_INTERVAL_MS);
@@ -98,15 +112,22 @@ export function IntegrationsHub({ orgId, orgSlug }: { orgId: string; orgSlug: st
   }, [shouldPoll, list]);
 
   React.useEffect(() => {
-    if (connecting && hasActive) {
-      setConnecting(false);
-      toast({ kind: "success", title: "GitHub connected" });
+    if (connectingActive) {
+      toast({
+        kind: "success",
+        title: `${connectingProvider === "slack" ? "Slack" : "GitHub"} connected`,
+      });
+      setConnectingProvider(null);
     }
-  }, [connecting, hasActive, toast]);
+  }, [connectingActive, connectingProvider, toast]);
 
-  const connect = async () => {
+  const connect = async (provider: "github" | "slack") => {
     setGateError(null);
-    const r = await wrap(() => client.integrations.connectGithub(orgId));
+    const r = await wrap(() =>
+      provider === "slack"
+        ? client.integrations.connectSlack(orgId)
+        : client.integrations.connectGithub(orgId),
+    );
     if (!r.ok) {
       if (r.status === 412) {
         setGateError(r.error);
@@ -116,9 +137,9 @@ export function IntegrationsHub({ orgId, orgSlug }: { orgId: string; orgSlug: st
       return;
     }
     pollUntil.current = Date.now() + POLL_BUDGET_MS;
-    setConnecting(true);
+    setConnectingProvider(provider);
     list.reload();
-    const popup = window.open(r.data.installUrl, "github-connect", "width=1020,height=780");
+    const popup = window.open(r.data.installUrl, `${provider}-connect`, "width=1020,height=780");
     if (!popup) {
       // Popup blocked — same flow, same tab.
       window.location.assign(r.data.installUrl);
@@ -141,8 +162,12 @@ export function IntegrationsHub({ orgId, orgSlug }: { orgId: string; orgSlug: st
         title="Integrations"
         description="Orun is an orchestration plane over the services you already use. Connect a provider, and plans can act on it — without storing your credentials."
         actions={
-          <Button onClick={() => void connect()} disabled={connecting}>
-            {connecting ? "Waiting for GitHub…" : hasActive ? "Connect another" : "Connect GitHub"}
+          <Button onClick={() => void connect("github")} disabled={connectingProvider !== null}>
+            {connectingProvider === "github"
+              ? "Waiting for GitHub…"
+              : connections.some((c) => c.provider === "github" && c.status === "active")
+                ? "Connect another"
+                : "Connect GitHub"}
           </Button>
         }
       />
@@ -171,9 +196,9 @@ export function IntegrationsHub({ orgId, orgSlug }: { orgId: string; orgSlug: st
       ) : visible.length === 0 ? (
         <EmptyState
           icon={GitBranch}
-          title="No GitHub connection yet"
-          description="Connect a GitHub organization or account to start linking repositories to repos."
-          primaryAction={{ label: "Connect GitHub", onClick: () => void connect() }}
+          title="No connections yet"
+          description="Connect a provider below — GitHub for repositories, Slack for notifications — and plans can act on it."
+          primaryAction={{ label: "Connect GitHub", onClick: () => void connect("github") }}
         />
       ) : (
         <div className="space-y-3">
@@ -188,6 +213,54 @@ export function IntegrationsHub({ orgId, orgSlug }: { orgId: string; orgSlug: st
           ))}
         </div>
       )}
+
+      {/* Live-but-unconnected providers (IH1): each available provider without
+          a live connection gets a real Connect card — same popup + poll flow
+          for every connect kind. */}
+      {(() => {
+        const unconnected = availableProviders().filter(
+          (p) =>
+            !connections.some(
+              (c) => c.provider === p.id && (c.status === "active" || c.status === "pending"),
+            ),
+        );
+        if (unconnected.length === 0) return null;
+        return (
+          <>
+            <Kicker className="mb-2.5 mt-8">Connect a provider</Kicker>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              {unconnected.map((provider) => {
+                const Icon = PROVIDER_ICONS[provider.icon] ?? Plug;
+                const waiting = connectingProvider === provider.id;
+                return (
+                  <div key={provider.id} className="rounded-xl border bg-card px-5 py-[18px]">
+                    <div className="flex items-center gap-2.5">
+                      <Icon
+                        className="h-[18px] w-[18px] shrink-0 text-secondary-foreground"
+                        strokeWidth={1.8}
+                        aria-hidden
+                      />
+                      <span className="text-[13.5px] font-semibold">{provider.name}</span>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="ml-auto shrink-0"
+                        disabled={connectingProvider !== null}
+                        onClick={() => void connect(provider.id as "github" | "slack")}
+                      >
+                        {waiting ? `Waiting for ${provider.name}…` : "Connect"}
+                      </Button>
+                    </div>
+                    <p className="mt-2.5 text-[12.5px] leading-relaxed text-muted-foreground">
+                      {provider.description}
+                    </p>
+                  </div>
+                );
+              })}
+            </div>
+          </>
+        );
+      })()}
 
       {/* BYO agent providers (saas-agents AG12 §10.5): Daytona compute +
           Anthropic model keys, the same connections the Agents tab manages. */}
@@ -219,11 +292,11 @@ export function IntegrationsHub({ orgId, orgSlug }: { orgId: string; orgSlug: st
         onOpenChange={(open) => {
           if (!open) setRevokeTarget(null);
         }}
-        title="Revoke GitHub connection?"
+        title={`Revoke ${revokeTarget ? connectionProviderName(revokeTarget) : ""} connection?`}
         description={
           revokeTarget
             ? uninstallDisclosure(revokeTarget)
-            : "The platform stops receiving events for this installation and any linked repositories stop updating. This also uninstalls the App from GitHub when possible."
+            : "The platform stops receiving events for this connection and anything linked to it stops updating."
         }
         resourceName={revokeTarget ? connectionDisplayName(revokeTarget) : undefined}
         confirmLabel="Revoke connection"
@@ -255,29 +328,37 @@ function ConnectionCard({
   const shareMeta = connectionShareModeMeta(connection);
   const tone = STATUS_TONE[meta.tone] ?? "neutral";
   const statusLabel = connection.status === "active" ? "Connected" : meta.label;
+  const providerName = connectionProviderName(connection);
+  const isSlack = connection.provider === "slack";
 
   const caption = connection.inherited
     ? `Shared by ${connection.sharedByName ?? "your account"}${
         connection.sharedByWorkspaceRef ? ` (${connection.sharedByWorkspaceRef})` : ""
-      } — link repos from a project's Git tab`
+      }${isSlack ? "" : " — link repos from a project's Git tab"}`
     : connection.connectedAt
       ? `authorized ${new Date(connection.connectedAt).toLocaleDateString(undefined, {
           month: "short",
           year: "numeric",
         })}`
       : connection.status === "pending"
-        ? "waiting for the GitHub install to finish"
+        ? isSlack
+          ? "waiting for the Slack authorization to finish"
+          : "waiting for the GitHub install to finish"
         : null;
 
   return (
     <div className="rounded-xl border bg-card px-5 py-[18px] sm:px-6 sm:py-[22px]">
       <div className="flex flex-wrap items-center gap-3.5">
         <span className="grid h-[38px] w-[38px] shrink-0 place-items-center rounded-[10px] bg-[#171717]" aria-hidden>
-          <GithubMark />
+          {isSlack ? (
+            <MessageSquare className="h-5 w-5 text-[#FAFAFA]" strokeWidth={1.8} />
+          ) : (
+            <GithubMark />
+          )}
         </span>
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
-            <span className="text-[15px] font-semibold leading-tight">GitHub</span>
+            <span className="text-[15px] font-semibold leading-tight">{providerName}</span>
             <Pill tone={tone} dot live={connection.status === "pending"}>
               {statusLabel}
             </Pill>
@@ -286,7 +367,7 @@ function ConnectionCard({
             {connection.inherited ? <MiniPill>Inherited</MiniPill> : null}
           </div>
           <div className="mt-[3px] text-[12.5px] text-muted-foreground">
-            Installation{" "}
+            {isSlack ? "Workspace" : "Installation"}{" "}
             <span className="font-mono text-[11.5px]">{connectionDisplayName(connection)}</span>
             {connection.externalAccountType ? <> · {connection.externalAccountType}</> : null}
             {caption ? <> · {caption}</> : null}

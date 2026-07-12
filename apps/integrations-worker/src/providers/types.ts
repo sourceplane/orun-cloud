@@ -16,6 +16,7 @@ import type {
   IntegrationScopeTemplate,
 } from "@saas/contracts/integrations";
 import type { GithubInstallationFacts } from "../github-app.js";
+import type { SlackOauthGrant } from "./slack.js";
 
 export interface BuildInstallUrlInput {
   /** Signed single-use connect state to round-trip through the provider. */
@@ -30,6 +31,28 @@ export interface CompleteConnectInput {
 
 /** Verified provider-side facts for an installation (null = unverifiable). */
 export type ProviderConnectionFacts = GithubInstallationFacts;
+
+// ── OAuth-kind connect (IH1 Slack; IH6 Supabase) ────────────
+
+export interface BuildAuthorizeUrlInput {
+  /** Signed single-use connect state to round-trip through the provider. */
+  state: string;
+  /** Our public callback URL — must match the provider app's configuration. */
+  redirectUri: string;
+}
+
+export interface ExchangeOauthCodeInput {
+  /** Authorization code from the provider's redirect. */
+  code: string;
+  /** The exact redirect URI the authorize URL carried (providers verify it). */
+  redirectUri: string;
+  nowMs: number;
+}
+
+/** Verified grant from an OAuth code exchange (null = provider refused).
+ *  Slack-shaped today, the same way ProviderConnectionFacts is GitHub-shaped;
+ *  IH6 widens this to a union when the Supabase exchange lands. */
+export type ProviderOauthGrant = SlackOauthGrant;
 
 // ── Capabilities ────────────────────────────────────────────
 
@@ -114,8 +137,8 @@ export interface IntegrationProvider {
   messaging?: MessagingCapability;
 
   // ── Connect (IG1) — install-kind legacy surface ───────────
-  // These remain the live GitHub connect path; oauth/token connect kinds land
-  // with their milestones (IH1 Slack, IH5 Cloudflare, IH6 Supabase).
+  // These remain the live GitHub connect path; the token connect kind lands
+  // with its milestone (IH5 Cloudflare).
   buildInstallUrl?(input: BuildInstallUrlInput): string;
   /**
    * Fetch + verify installation facts as the App. Returning null means the
@@ -124,6 +147,17 @@ export interface IntegrationProvider {
   completeConnect?(input: CompleteConnectInput): Promise<ProviderConnectionFacts | null>;
   /** Best-effort provider-side uninstall on platform revoke. */
   revokeInstallation?(installationId: number, nowMs: number): Promise<boolean>;
+
+  // ── Connect (IH1) — oauth-kind surface ────────────────────
+  /** The provider's OAuth authorize URL carrying our signed state. */
+  buildAuthorizeUrl?(input: BuildAuthorizeUrlInput): string;
+  /**
+   * Exchange the callback's authorization code for a verified grant.
+   * Returning null means the provider refused the code — callers fail closed.
+   */
+  exchangeOauthCode?(input: ExchangeOauthCodeInput): Promise<ProviderOauthGrant | null>;
+  /** Best-effort provider-side token revocation on platform revoke. */
+  revokeOauthToken?(accessToken: string, nowMs: number): Promise<boolean>;
 
   // ── Inbound (IG2) — legacy single-header alias ────────────
   /** @deprecated Delegates to `inbound.verifySignature`; kept so shipped

@@ -2,6 +2,7 @@ import {
   connectionDisplayName,
   connectionStatusMeta,
   hasPendingConnection,
+  uninstallDisclosure,
   visibleConnections,
 } from "@web-console-next/components/integrations/connections";
 import type { PublicConnection } from "@saas/contracts/integrations";
@@ -36,12 +37,25 @@ describe("integrations connections view-model", () => {
     expect(connectionStatusMeta("revoked").tone).toBe("destructive");
   });
 
-  it("prefers display name, then account login, then a generic label", () => {
+  it("prefers display name, then account login, then a provider-aware label", () => {
     expect(connectionDisplayName(connection({ displayName: "Prod GitHub" }))).toBe("Prod GitHub");
     expect(connectionDisplayName(connection())).toBe("acme");
     expect(
       connectionDisplayName(connection({ displayName: null, externalAccountLogin: null })),
     ).toBe("GitHub connection");
+    expect(
+      connectionDisplayName(
+        connection({ provider: "slack", displayName: null, externalAccountLogin: null }),
+      ),
+    ).toBe("Slack connection");
+  });
+
+  it("discloses a provider-appropriate revoke blast radius", () => {
+    expect(uninstallDisclosure(connection())).toContain("GitHub App");
+    expect(uninstallDisclosure(connection({ provider: "slack" }))).toContain("bot token");
+    expect(uninstallDisclosure(connection({ provider: "slack", scope: "workspace" }))).toContain(
+      "Slack workspace",
+    );
   });
 
   it("shows live rows plus only the most recent revoked row", () => {

@@ -3,9 +3,9 @@
  *
  * Orun is an orchestration plane over external services, so "Integrations" is a
  * first-class hub (not a settings sub-page): you connect the providers Orun
- * coordinates. GitHub is live today; the rest are on the roadmap and render as
- * non-interactive "Soon" slots so the hub communicates direction honestly,
- * without faking functionality.
+ * coordinates. GitHub and Slack are live (IH1); the rest are on the roadmap
+ * and render as non-interactive "Soon" slots so the hub communicates direction
+ * honestly, without faking functionality.
  *
  * Dependency-free (no React, no icons) so the catalog is unit-testable; icon
  * names resolve in the renderer.
@@ -50,7 +50,7 @@ export const INTEGRATION_PROVIDERS: readonly IntegrationProvider[] = [
     id: "slack",
     name: "Slack",
     description: "Post run and deployment notifications to your channels.",
-    status: "soon",
+    status: "available",
     icon: "MessageSquare",
   },
 ];
@@ -58,4 +58,9 @@ export const INTEGRATION_PROVIDERS: readonly IntegrationProvider[] = [
 /** Providers that are not yet connectable (rendered as muted "Soon" slots). */
 export function roadmapProviders(): IntegrationProvider[] {
   return INTEGRATION_PROVIDERS.filter((p) => p.status === "soon");
+}
+
+/** Providers the hub can start a connect flow for. */
+export function availableProviders(): IntegrationProvider[] {
+  return INTEGRATION_PROVIDERS.filter((p) => p.status === "available");
 }

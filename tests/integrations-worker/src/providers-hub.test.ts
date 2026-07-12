@@ -8,6 +8,8 @@ import { webcrypto } from "node:crypto";
 import { getConfiguredProvider, KNOWN_PROVIDER_IDS } from "@integrations-worker/providers/registry";
 import {
   buildSlackAuthorizeUrl,
+  exchangeSlackOauthCode,
+  revokeSlackToken,
   SLACK_BOT_SCOPES,
   verifySlackSignature,
 } from "@integrations-worker/providers/slack";
@@ -250,5 +252,89 @@ describe("credential-broker adapters (IH0 dormant)", () => {
     await expect(
       cf.broker!.mintCredential({ template: "nope", params: {}, ttlSeconds: 900, nowMs: NOW }),
     ).resolves.toEqual({ ok: false, reason: "template_unknown" });
+  });
+});
+
+// ── Slack OAuth exchange + revoke (IH1) ─────────────────────
+
+describe("slack oauth.v2.access exchange (IH1)", () => {
+  const CREDS = { clientId: "cid", clientSecret: "cs", signingSecret: SIGNING_SECRET };
+
+  function accessResponse(overrides?: Record<string, unknown>): Record<string, unknown> {
+    return {
+      ok: true,
+      access_token: "xoxb-abc",
+      token_type: "bot",
+      scope: "chat:write,commands",
+      bot_user_id: "U0B",
+      app_id: "A0A",
+      team: { id: "T0T", name: "Acme" },
+      enterprise: { id: "E0E" },
+      authed_user: { id: "U0U" },
+      ...overrides,
+    };
+  }
+
+  it("maps a verified grant: token, split scopes, team + enterprise facts", async () => {
+    let sentBody = "";
+    const grant = await exchangeSlackOauthCode(
+      CREDS,
+      { code: "c0de", redirectUri: "https://edge.test/ingress/slack/oauth" },
+      (_url, init) => {
+        sentBody = String(init?.body);
+        return Promise.resolve(Response.json(accessResponse()));
+      },
+    );
+    expect(grant).toEqual({
+      accessToken: "xoxb-abc",
+      grantedScopes: ["chat:write", "commands"],
+      teamId: "T0T",
+      teamName: "Acme",
+      enterpriseId: "E0E",
+      botUserId: "U0B",
+      appId: "A0A",
+      installedByExternalUser: "U0U",
+    });
+    // The exchange is form-encoded and carries the exact redirect_uri.
+    expect(sentBody).toContain("code=c0de");
+    expect(sentBody).toContain(encodeURIComponent("https://edge.test/ingress/slack/oauth"));
+  });
+
+  it("returns null on ok:false, a missing token/team, or a non-bot token", async () => {
+    const cases = [
+      { ok: false, error: "invalid_code" },
+      accessResponse({ access_token: undefined }),
+      accessResponse({ team: null }),
+      accessResponse({ token_type: "user" }),
+    ];
+    for (const body of cases) {
+      await expect(
+        exchangeSlackOauthCode(CREDS, { code: "c", redirectUri: "https://e/x" }, () =>
+          Promise.resolve(Response.json(body)),
+        ),
+      ).resolves.toBeNull();
+    }
+  });
+
+  it("returns null on transport failure — never a throw", async () => {
+    await expect(
+      exchangeSlackOauthCode(CREDS, { code: "c", redirectUri: "https://e/x" }, () =>
+        Promise.reject(new Error("boom")),
+      ),
+    ).resolves.toBeNull();
+  });
+
+  it("revokes with a bearer token and reports the provider's verdict", async () => {
+    let auth: string | null = null;
+    await expect(
+      revokeSlackToken("xoxb-abc", (_url, init) => {
+        auth = new Headers(init?.headers).get("authorization");
+        return Promise.resolve(Response.json({ ok: true, revoked: true }));
+      }),
+    ).resolves.toBe(true);
+    expect(auth).toBe("Bearer xoxb-abc");
+    await expect(
+      revokeSlackToken("xoxb-abc", () => Promise.resolve(Response.json({ ok: false }))),
+    ).resolves.toBe(false);
   });
 });

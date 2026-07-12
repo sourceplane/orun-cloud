@@ -556,7 +556,7 @@ export function createIntegrationHubRepository(executor: SqlExecutor): Integrati
               app_id, granted_scopes, installed_by_external_user)
            VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9)
            ON CONFLICT (team_id) DO UPDATE SET
-             connection_id = EXCLUDED.connection_id,
+             connection_id = COALESCE(EXCLUDED.connection_id, integrations.slack_workspaces.connection_id),
              team_name = EXCLUDED.team_name,
              enterprise_id = EXCLUDED.enterprise_id,
              bot_user_id = EXCLUDED.bot_user_id,
