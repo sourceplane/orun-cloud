@@ -87,14 +87,18 @@ describe("integrations facade — route matching", () => {
     expect(isIntegrationsRoute("/v1/organizations/org_x/projects/prj_y")).toBe(false);
   });
 
-  it("matches exactly the three allowlisted ingress paths", () => {
+  it("matches exactly the allowlisted ingress paths", () => {
     expect(isIntegrationsIngressRoute("/ingress/github/setup")).toBe(true);
     expect(isIntegrationsIngressRoute("/ingress/github/webhook")).toBe(true);
     expect(isIntegrationsIngressRoute("/ingress/slack/oauth")).toBe(true);
+    // IH3: the three Slack inbound routes.
+    expect(isIntegrationsIngressRoute("/ingress/slack/events")).toBe(true);
+    expect(isIntegrationsIngressRoute("/ingress/slack/commands")).toBe(true);
+    expect(isIntegrationsIngressRoute("/ingress/slack/interactivity")).toBe(true);
     expect(isIntegrationsIngressRoute("/ingress/github/setup/extra")).toBe(false);
     expect(isIntegrationsIngressRoute("/ingress/github/other")).toBe(false);
     expect(isIntegrationsIngressRoute("/ingress/slack/oauth/extra")).toBe(false);
-    expect(isIntegrationsIngressRoute("/ingress/slack/events")).toBe(false); // IH3, not yet
+    expect(isIntegrationsIngressRoute("/ingress/slack/events/extra")).toBe(false);
   });
 });
 

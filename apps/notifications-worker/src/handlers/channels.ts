@@ -84,7 +84,7 @@ async function authorize(
   return decision.allow;
 }
 
-async function emitChannelEvent(
+export async function emitChannelEvent(
   env: Env,
   emit: typeof emitEvent,
   input: {

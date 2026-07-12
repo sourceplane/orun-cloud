@@ -34,6 +34,13 @@ export interface Env {
    */
   OAUTH_REDIRECT_BASE_URL?: string;
 
+  /**
+   * Console origin for deep links in Slack responses (IH3 `/orun`,
+   * notification actions) — metadata-only links into the console, where real
+   * RBAC applies. Same convention as notifications-worker's CONSOLE_BASE_URL.
+   */
+  CONSOLE_BASE_URL?: string;
+
   // ── saas-integration-hub provider credentials (IH0; all optional) ──
   // Slack App per environment (IH risks D1). Dormant until set.
   SLACK_APP_CLIENT_ID?: string;

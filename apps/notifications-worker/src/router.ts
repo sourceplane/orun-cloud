@@ -12,6 +12,7 @@ import {
   handleDeleteChannel,
   handleTestChannel,
 } from "./handlers/channels.js";
+import { handleSlackChannelDisable } from "./handlers/channel-freshness.js";
 import { errorResponse, notFound, methodNotAllowed } from "./http.js";
 import { generateRequestId } from "./ids.js";
 import { NOTIFICATIONS_INTERNAL_ACTOR_VALUES } from "@saas/contracts/notifications";
@@ -33,6 +34,10 @@ const SUPPRESS_RE = /^\/v1\/notifications\/recipients\/([^/]+)\/suppress$/;
 const CHANNELS_RE = /^\/v1\/organizations\/([^/]+)\/notification-channels$/;
 const CHANNEL_RE = /^\/v1\/organizations\/([^/]+)\/notification-channels\/([^/]+)$/;
 const CHANNEL_TEST_RE = /^\/v1\/organizations\/([^/]+)\/notification-channels\/([^/]+)\/test$/;
+// Channel freshness on Slack archive (IH3): events-worker's messaging lane
+// posts here when a linked Slack channel is archived so dependent slack_app
+// channels flip to disabled. Internal-actor gated like every other route.
+const SLACK_DISABLE_PATH = "/internal/notification-channels/slack-disable";
 
 export interface InternalActor {
   subjectId: string;
@@ -62,6 +67,14 @@ export async function route(request: Request, env: Env): Promise<Response> {
   try {
     if (url.pathname === "/health" && request.method === "GET") {
       return handleHealth(env, requestId);
+    }
+
+    // Channel freshness (IH3) — internal reaction route, never edge-forwarded.
+    if (url.pathname === SLACK_DISABLE_PATH) {
+      const actor = resolveInternalActor(request);
+      if (!actor) return errorResponse("forbidden", "Internal service-binding required", 403, requestId);
+      if (request.method !== "POST") return methodNotAllowed(requestId);
+      return handleSlackChannelDisable(request, env, requestId, actor);
     }
 
     // Channels CRUD (ES3) — org-scoped.

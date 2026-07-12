@@ -167,6 +167,7 @@ function drainCtx(respond: SqlResponder) {
       events: createEventsRepository(executor),
       state: createStateRepository(executor),
       membership: createMembershipRepository(executor),
+      env: createEnv(),
       now: () => NOW,
     },
     queries,

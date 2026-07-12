@@ -71,6 +71,29 @@ describe("notification channels repository", () => {
     expect(q2[0]!.text).toContain("config_ciphertext");
   });
 
+  it("listChannelConfigsByKind scans one kind's ciphertexts (IH3 freshness path)", async () => {
+    const { executor, queries } = createFakeExecutor({
+      rows: [{ id: CHAN_UUID, org_id: ORG, kind: "slack_app", status: "active", config_ciphertext: "CIPHER" }],
+    });
+    const repo = createNotificationChannelsRepository(executor);
+    const result = await repo.listChannelConfigsByKind(ORG, "slack_app");
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value).toEqual([
+        { id: CHAN_UUID, orgId: ORG, kind: "slack_app", status: "active", configCiphertext: "CIPHER" },
+      ]);
+    }
+    expect(queries[0]!.text).toContain("WHERE org_id = $1 AND kind = $2");
+    expect(queries[0]!.params).toEqual([ORG, "slack_app"]);
+  });
+
+  it("listChannelConfigsByKind maps executor failures to a safe error", async () => {
+    const { executor } = createFakeExecutor({ error: new Error("db down") });
+    const repo = createNotificationChannelsRepository(executor);
+    const result = await repo.listChannelConfigsByKind(ORG, "slack_app");
+    expect(result.ok).toBe(false);
+  });
+
   it("createChannel maps unique-name violations to conflict", async () => {
     const { executor } = createFakeExecutor({ error: { code: "23505" } });
     const repo = createNotificationChannelsRepository(executor);

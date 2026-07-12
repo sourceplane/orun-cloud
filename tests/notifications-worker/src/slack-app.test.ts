@@ -20,6 +20,7 @@ const ORG = "a1b2c3d4-e5f6-7890-abcd-ef1234567890";
 const CHAN_ROW = "11111111-2222-4333-8444-555555555555";
 const KEY = "ab".repeat(32);
 const BOT_TOKEN = "xoxb-secret-token";
+const RULE_ID = "rule_0123456789abcdef0123456789abcdef";
 
 function ctx(templateData: Record<string, string | number | boolean | null>): ProviderSendContext {
   return {
@@ -102,6 +103,15 @@ function groupStore(existing?: Partial<SlackGroupMessage>): {
   return { repo, upserts };
 }
 
+/** The IH3 action buttons of a message body (attachment blocks), or null. */
+function actionsOf(body: Record<string, unknown>): Array<Record<string, unknown>> | null {
+  const attachments = body.attachments as
+    | Array<{ blocks?: Array<Record<string, unknown>> }>
+    | undefined;
+  const block = attachments?.[0]?.blocks?.find((b) => b.type === "actions");
+  return block ? (block.elements as Array<Record<string, unknown>>) : null;
+}
+
 function provider(opts?: {
   groups?: SlackGroupMessagesRepository;
   api?: ReturnType<typeof slackApi>;
@@ -128,15 +138,25 @@ describe("slack-app provider (IH2)", () => {
     expect(api.calls[0]!.method).toBe("chat.postMessage");
     expect(api.calls[0]!.auth).toBe(`Bearer ${BOT_TOKEN}`);
     expect(api.calls[0]!.body.channel).toBe("C0AAA");
+    // IH3: non-grouped posts stay button-less.
+    expect(actionsOf(api.calls[0]!.body)).toBeNull();
     if (result.ok) expect(result.providerMessageId).toContain("slack:C0AAA:");
   });
 
   it("first fire of a story posts and records the message coordinates", async () => {
     const { repo, upserts } = groupStore();
     const { p, api } = provider({ groups: repo });
-    const result = await p.send(ctx({ title: "Run failed", severity: "notice", groupKey: "g1", escalation: false }));
+    const result = await p.send(
+      ctx({ title: "Run failed", severity: "notice", groupKey: "g1", escalation: false, ruleId: RULE_ID }),
+    );
     expect(result.ok).toBe(true);
     expect(api.calls.map((c) => c.method)).toEqual(["chat.postMessage"]);
+    // IH3: grouped story posts carry Acknowledge + Mute rule 1h buttons.
+    const buttons = actionsOf(api.calls[0]!.body);
+    expect(buttons).toEqual([
+      expect.objectContaining({ action_id: "orun_ack", value: "ntf-1" }),
+      expect.objectContaining({ action_id: "orun_mute", value: RULE_ID }),
+    ]);
     expect(upserts).toHaveLength(1);
     expect(upserts[0]).toMatchObject({
       channelId: CHAN_ROW,
@@ -146,26 +166,44 @@ describe("slack-app provider (IH2)", () => {
     });
   });
 
-  it("a subsequent group fire edits the story's message in place", async () => {
+  it("a subsequent group fire edits the story's message in place (buttons included)", async () => {
     const { repo, upserts } = groupStore({});
     const { p, api } = provider({ groups: repo });
-    const result = await p.send(ctx({ title: "Run failed", severity: "notice", groupKey: "g1", escalation: false }));
+    const result = await p.send(
+      ctx({ title: "Run failed", severity: "notice", groupKey: "g1", escalation: false, ruleId: RULE_ID }),
+    );
     expect(result.ok).toBe(true);
     expect(api.calls.map((c) => c.method)).toEqual(["chat.update"]);
     expect(api.calls[0]!.body.ts).toBe("1720000000.000001");
+    const buttons = actionsOf(api.calls[0]!.body);
+    expect(buttons?.map((b) => b.action_id)).toEqual(["orun_ack", "orun_mute"]);
     expect(upserts).toHaveLength(1); // severity high-water refresh, same ts
     expect(upserts[0]!.replaceTs).toBeUndefined();
+  });
+
+  it("omits the mute button when templateData carries no rule id", async () => {
+    const { repo } = groupStore();
+    const { p, api } = provider({ groups: repo });
+    const result = await p.send(ctx({ title: "Run failed", severity: "notice", groupKey: "g1", escalation: false }));
+    expect(result.ok).toBe(true);
+    const buttons = actionsOf(api.calls[0]!.body);
+    expect(buttons?.map((b) => b.action_id)).toEqual(["orun_ack"]);
   });
 
   it("a severity escalation edits the root AND replies in its thread", async () => {
     const { repo } = groupStore({});
     const { p, api } = provider({ groups: repo });
-    const result = await p.send(ctx({ title: "Run failed", severity: "error", groupKey: "g1", escalation: true }));
+    const result = await p.send(
+      ctx({ title: "Run failed", severity: "error", groupKey: "g1", escalation: true, ruleId: RULE_ID }),
+    );
     expect(result.ok).toBe(true);
     expect(api.calls.map((c) => c.method)).toEqual(["chat.update", "chat.postMessage"]);
     const reply = api.calls[1]!.body;
     expect(reply.thread_ts).toBe("1720000000.000001");
     expect(String(reply.text)).toContain("escalated");
+    // The thread reply overrides blocks/attachments — no buttons ride it.
+    expect(actionsOf(reply)).toBeNull();
+    expect((reply.blocks as Array<{ type: string }>).every((b) => b.type !== "actions")).toBe(true);
   });
 
   it("re-roots the story when the original message is gone", async () => {

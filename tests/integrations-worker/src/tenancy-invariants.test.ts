@@ -230,6 +230,7 @@ function drainCtx(respond: SqlResponder) {
       events: createEventsRepository(executor),
       state: createStateRepository(executor),
       membership: createMembershipRepository(executor),
+      env: {} as import("@integrations-worker/env").Env,
       now: () => NOW,
     },
     queries,
