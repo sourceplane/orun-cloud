@@ -3,6 +3,7 @@ import type { Env } from "../env.js";
 import type { LaneHandler } from "./types.js";
 import { createNotificationsLaneHandler } from "./notifications-lane.js";
 import { createGroupingLaneHandler } from "./grouping-lane.js";
+import { createMessagingLaneHandler } from "./messaging-lane.js";
 
 /**
  * The events-owned lane handler registry (saas-event-streaming).
@@ -10,6 +11,8 @@ import { createGroupingLaneHandler } from "./grouping-lane.js";
  * - 'grouping' (ES4): maintains the dedup/correlation read-model. Alphabetical
  *   lane ordering drains it before 'notifications', though the two share no
  *   state (each computes group keys independently).
+ * - 'messaging' (saas-integration-hub IH3): reacts to normalized inbound
+ *   Slack activity — mute-rule actions and channel archives.
  * - 'notifications' (ES2): the rules engine, group-aware as of ES4.
  * - 'webhooks' never appears here — webhooks-worker owns its own drain and
  *   shares only the cursor storage.
@@ -30,6 +33,12 @@ export function buildLaneHandlers(
     createGroupingLaneHandler({
       groupsRepo: deps.groupsRepo,
       eventsRepo: deps.eventsRepo,
+    }),
+    createMessagingLaneHandler({
+      rulesRepo: deps.rulesRepo,
+      eventsRepo: deps.eventsRepo,
+      notificationsEnv: env.NOTIFICATIONS_WORKER ? { NOTIFICATIONS_WORKER: env.NOTIFICATIONS_WORKER } : {},
+      requestId: deps.requestId,
     }),
     createNotificationsLaneHandler({
       rulesRepo: deps.rulesRepo,

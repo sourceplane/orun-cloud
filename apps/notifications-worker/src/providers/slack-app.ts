@@ -72,6 +72,44 @@ async function slackCall(
   }
 }
 
+/** Slack block-action ids for notification buttons (IH3, design §4.3). */
+export const SLACK_ACTION_ACKNOWLEDGE = "orun_ack";
+export const SLACK_ACTION_MUTE_RULE = "orun_mute";
+
+/**
+ * Append the IH3 action buttons to a GROUPED story message (design §4.3):
+ * "Acknowledge" (value = the notification public id) and — only when the
+ * rules lane put a rule public id on templateData — "Mute rule 1h" (value =
+ * that rule id, handed back verbatim by the interactivity drain as
+ * messaging.action.invoked). The block rides the severity-colored attachment
+ * so chat.postMessage and chat.update both carry it; the escalation thread
+ * reply overrides `blocks`/`attachments` and stays button-less. Non-grouped
+ * sends never call this — they stay webhook-equivalent.
+ */
+function appendActionButtons(message: Record<string, unknown>, ctx: ProviderSendContext): void {
+  const elements: Array<Record<string, unknown>> = [
+    {
+      type: "button",
+      text: { type: "plain_text", text: "Acknowledge" },
+      action_id: SLACK_ACTION_ACKNOWLEDGE,
+      value: ctx.notificationId,
+    },
+  ];
+  const ruleId = ctx.templateData.ruleId;
+  if (typeof ruleId === "string" && ruleId) {
+    elements.push({
+      type: "button",
+      text: { type: "plain_text", text: "Mute rule 1h" },
+      action_id: SLACK_ACTION_MUTE_RULE,
+      value: ruleId,
+    });
+  }
+  const attachments = message.attachments as
+    | Array<{ blocks?: Array<Record<string, unknown>> }>
+    | undefined;
+  attachments?.[0]?.blocks?.push({ type: "actions", elements });
+}
+
 function failure(error: string | null): ProviderSendResult {
   return { ok: false, providerMessageId: null, errorReason: `slack_api_${error ?? "unknown"}` };
 }
@@ -93,6 +131,10 @@ export function createSlackAppProvider(opts: SlackAppProviderOptions): Notificat
       const escalation = ctx.templateData.escalation === true;
       const severity =
         typeof ctx.templateData.severity === "string" ? ctx.templateData.severity : null;
+
+      // Grouped story messages carry the IH3 action buttons; plain posts do
+      // not (a non-grouped notification has no story to act on).
+      if (groupKey) appendActionButtons(message, ctx);
 
       const post = (extra?: Record<string, unknown>) =>
         slackCall(doFetch, opts.botToken, "chat.postMessage", {

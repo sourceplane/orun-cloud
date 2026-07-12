@@ -63,6 +63,16 @@ export interface NotificationChannelsRepository {
     orgId: Uuid,
     id: string,
   ): Promise<NotificationsResult<NotificationChannelConfigForSend | null>>;
+  /**
+   * Freshness-path read (saas-integration-hub IH3): every channel of one kind
+   * for an org, ciphertext included, so the caller can decrypt-scan for the
+   * rows referencing an archived Slack channel. Same projection rules as
+   * getChannelConfigForSend — never for any CRUD response.
+   */
+  listChannelConfigsByKind(
+    orgId: Uuid,
+    kind: NotificationChannelKind,
+  ): Promise<NotificationsResult<NotificationChannelConfigForSend[]>>;
   listChannels(orgId: Uuid): Promise<NotificationsResult<StoredNotificationChannel[]>>;
   countChannels(orgId: Uuid): Promise<NotificationsResult<number>>;
   updateChannel(
@@ -166,6 +176,30 @@ export function createNotificationChannelsRepository(
         };
       } catch {
         return safeError("Failed to read notification channel config");
+      }
+    },
+
+    async listChannelConfigsByKind(orgId, kind) {
+      try {
+        const result = await executor.execute<Record<string, unknown>>(
+          `SELECT id, org_id, kind, status, config_ciphertext
+           FROM notifications.notification_channels
+           WHERE org_id = $1 AND kind = $2
+           ORDER BY created_at DESC, id DESC`,
+          [orgId, kind],
+        );
+        return {
+          ok: true,
+          value: result.rows.map((row) => ({
+            id: row.id as string,
+            orgId: row.org_id as string,
+            kind: row.kind as NotificationChannelKind,
+            status: row.status as NotificationChannelStatus,
+            configCiphertext: row.config_ciphertext as string,
+          })),
+        };
+      } catch {
+        return safeError("Failed to list notification channel configs");
       }
     },
 

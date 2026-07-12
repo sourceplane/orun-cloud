@@ -241,6 +241,12 @@ export function createNotificationsLaneHandler(deps: NotificationsLaneDeps): Lan
                 eventType: event.type,
                 severity,
                 ruleName: rule.name,
+                // The rule's public id (rule_<32hex> — the TEXT PK is the
+                // public form). IH3: slack_app deliveries put it on the
+                // "Mute rule 1h" button (action_id orun_mute) so the Slack
+                // interactivity drain can hand it back verbatim on
+                // messaging.action.invoked.
+                ruleId: rule.id,
                 occurredAt: event.occurredAt.toISOString(),
                 sourceEventId: event.id,
                 ...(grouped

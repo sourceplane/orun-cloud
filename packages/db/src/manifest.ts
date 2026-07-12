@@ -723,5 +723,14 @@ export const manifest: MigrationManifest = {
       description:
         "slack_app delivery channel kind (saas-integration-hub IH2): the notification_channels kind CHECK widens to admit slack_app (config_ciphertext stores a {connectionId, channelExternalId, channelName} REFERENCE, never a credential — the bot token stays in integrations-worker custody, fetched per send over the internal service binding), plus slack_group_messages — the event-group ↔ Slack message identity map behind the chat.update upgrade (root-message coordinates per (channel, group_key), severity high-water for escalation display; CASCADE on channel delete). Guarded CHECK swap + CREATE IF NOT EXISTS; idempotent as a unit. (Renumbered from 740: main took 740-780 while IH2 was in flight.)",
     },
+    {
+      id: "800_messaging_lane",
+      context: "events",
+      path: "800_messaging_lane/up.sql",
+      checksum:
+        "6010857c8e1d52c97e153eca43a7c76e2a39c8a3855e2d06960cf6b5ac9ec8ca",
+      description:
+        "Seed the messaging reaction lane (saas-integration-hub IH3): the events-worker lane row that turns the Slack inbox drain's messaging.* emissions into platform reactions — mute_rule actions suppress notification rules for the ES7 storm cooldown (exactly 1h), channel-archived events disable dependent slack_app notification channels via the internal notifications route. Pure seed row, ON CONFLICT DO NOTHING; idempotent.",
+    },
   ],
 };

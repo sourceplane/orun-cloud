@@ -531,6 +531,9 @@ describe("notifications lane handler", () => {
     const templateData = body.templateData as Record<string, unknown>;
     expect(templateData.eventType).toBe("scm.pull_request.merged");
     expect(String(templateData.title)).toContain("acme/api");
+    // IH3: the rule's public id rides templateData so slack_app deliveries
+    // can put it on the "Mute rule 1h" button.
+    expect(templateData.ruleId).toBe(RULE_ID);
   });
 
   it("consumes the throttle once per rule and skips when saturated", async () => {
