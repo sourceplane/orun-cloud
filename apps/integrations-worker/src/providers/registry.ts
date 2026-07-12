@@ -58,7 +58,7 @@ export function getConfiguredProvider(
       const clientId = env.SUPABASE_OAUTH_CLIENT_ID;
       const clientSecret = env.SUPABASE_OAUTH_CLIENT_SECRET;
       if (!clientId || !clientSecret) return null;
-      return { provider: createSupabaseProvider() };
+      return { provider: createSupabaseProvider({ clientId, clientSecret }, fetchImpl) };
     }
     default:
       return null;

@@ -384,6 +384,32 @@ export async function handleMintCredential(
       }
     }
 
+    // Rotating parents (IH6 Supabase): the mint consumed the parent and the
+    // provider handed back a NEW one — re-envelope custody BEFORE the ledger
+    // insert so the rotation is never dropped on a later failure. Best-effort:
+    // a re-envelope failure logs nothing sensitive and does NOT fail the mint;
+    // a lost rotation surfaces as parent_grant_insufficient on the NEXT mint —
+    // an IH9 health concern, not a data-loss one.
+    const rotationKind = PARENT_CREDENTIAL_KINDS[connection.provider];
+    if (outcome.value.rotatedParentCredential && rotationKind && parent) {
+      try {
+        const encryption = await createEncryptionAdapter(env.SECRET_ENCRYPTION_KEY);
+        if (encryption) {
+          const envelope = await encryption.encrypt(outcome.value.rotatedParentCredential);
+          await hub.upsertProviderCredential({
+            id: generateUuid(),
+            connectionId: asUuid(connection.id),
+            kind: rotationKind,
+            ciphertext: JSON.stringify(envelope),
+            // Keep the custody row anchored to the same provider-side ref.
+            externalRef: parent.externalRef,
+          });
+        }
+      } catch {
+        // best-effort (see above)
+      }
+    }
+
     // Ledger BEFORE reveal: an unledgered credential must never leave the
     // platform. If the insert fails, best-effort revoke and refuse.
     const inserted = await hub.insertMintedCredential({

@@ -2,7 +2,9 @@
 // - registry: per-provider configuration gates (park-and-continue), unknown
 //   ids stay null, GitHub behavior unchanged.
 // - slack: OAuth authorize URL + v0 signature verification (±300s window).
-// - cloudflare/supabase: template catalogs published; mint parks typed.
+// - cloudflare/supabase: template catalogs published; mint refusals typed
+//   (both adapters live since IH5/IH6 — a call without parent custody is a
+//   typed provider_error, never a throw).
 
 import { webcrypto } from "node:crypto";
 import { getConfiguredProvider, KNOWN_PROVIDER_IDS } from "@integrations-worker/providers/registry";
@@ -252,6 +254,24 @@ describe("credential-broker adapters (IH0 dormant)", () => {
     ).resolves.toEqual({ ok: false, reason: "provider_error", detail: expect.any(String) });
     await expect(
       cf.broker!.mintCredential({ template: "nope", params: {}, ttlSeconds: 900, nowMs: NOW }),
+    ).resolves.toEqual({ ok: false, reason: "template_unknown" });
+  });
+
+  it("supabase mints stay typed — never a throw (live since IH6)", async () => {
+    const sb = getConfiguredProvider(
+      {
+        ...GITHUB_ENV,
+        SUPABASE_OAUTH_CLIENT_ID: "cid",
+        SUPABASE_OAUTH_CLIENT_SECRET: "cs",
+      } as Env,
+      "supabase",
+    )!.provider;
+    // Live adapter, but no parent custody handed in — typed refusal.
+    await expect(
+      sb.broker!.mintCredential({ template: "management-access", params: {}, ttlSeconds: 900, nowMs: NOW }),
+    ).resolves.toEqual({ ok: false, reason: "provider_error", detail: expect.any(String) });
+    await expect(
+      sb.broker!.mintCredential({ template: "nope", params: {}, ttlSeconds: 900, nowMs: NOW }),
     ).resolves.toEqual({ ok: false, reason: "template_unknown" });
   });
 });

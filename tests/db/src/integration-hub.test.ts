@@ -114,6 +114,17 @@ describe("integration-hub repository (IH0)", () => {
       expect(queries[0]!.text).toContain("DELETE FROM integrations.provider_credentials");
     });
 
+    it("deletes ONE custody row by kind (consumed PKCE verifier, IH6)", async () => {
+      const { executor, queries } = createFakeExecutor({ rows: [], rowCount: 1 });
+      const repo = createIntegrationHubRepository(executor);
+      const result = await repo.deleteProviderCredential(CONNECTION_ID, "supabase_pkce_verifier");
+      expect(result.ok).toBe(true);
+      if (result.ok) expect(result.value.deleted).toBe(1);
+      expect(queries[0]!.text).toContain("DELETE FROM integrations.provider_credentials");
+      expect(queries[0]!.text).toContain("kind = $2");
+      expect(queries[0]!.params).toEqual([CONNECTION_ID, "supabase_pkce_verifier"]);
+    });
+
     it("fails safe on executor errors", async () => {
       const { executor } = createFakeExecutor({ error: new Error("boom") });
       const repo = createIntegrationHubRepository(executor);
