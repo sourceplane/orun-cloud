@@ -23,6 +23,7 @@ import {
   handleSessionHeartbeat,
 } from "./handlers/runtime.js";
 import { handleGetAutonomy, handleSetAutonomy } from "./handlers/autonomy.js";
+import { handleGetAttention } from "./handlers/attention.js";
 import { handleDispatch } from "./handlers/dispatch.js";
 import {
   handleCreateConnection,
@@ -81,6 +82,8 @@ const SESSION_TOKEN_RE = /^\/v1\/organizations\/([^/]+)\/agents\/sessions\/([^/]
 const SESSION_ATTACH_RE = /^\/v1\/organizations\/([^/]+)\/agents\/sessions\/([^/]+)\/attach$/;
 const SESSION_INPUT_RE = /^\/v1\/organizations\/([^/]+)\/agents\/sessions\/([^/]+)\/input$/;
 const AUTONOMY_RE = /^\/v1\/organizations\/([^/]+)\/agents\/autonomy$/;
+// The needs-you fold (saas-agents-fleet AF5): a derived read, no storage.
+const ATTENTION_RE = /^\/v1\/organizations\/([^/]+)\/agents\/attention$/;
 const DISPATCH_RE = /^\/v1\/organizations\/([^/]+)\/agents\/dispatch$/;
 const PROVIDERS_RE = /^\/v1\/organizations\/([^/]+)\/agents\/providers$/;
 const PROVIDER_RE = /^\/v1\/organizations\/([^/]+)\/agents\/providers\/([^/]+)$/;
@@ -113,6 +116,7 @@ export async function route(request: Request, env: Env, injectedDeps?: AgentsDep
       PROVIDER_RE.test(url.pathname) ||
       PROVIDER_VERIFY_RE.test(url.pathname) ||
       AUTONOMY_RE.test(url.pathname) ||
+      ATTENTION_RE.test(url.pathname) ||
       DISPATCH_RE.test(url.pathname);
     if (!isAgentsRoute) {
       return notFound(requestId, url.pathname);
@@ -167,6 +171,14 @@ async function dispatch(
     const orgId = parseOrgPublicId(m[1]!);
     if (!orgId) return notFound(requestId, url.pathname);
     if (request.method === "POST") return handleDispatch(request, deps, orgId, actor, requestId);
+    return methodNotAllowed(requestId);
+  }
+
+  m = ATTENTION_RE.exec(url.pathname);
+  if (m) {
+    const orgId = parseOrgPublicId(m[1]!);
+    if (!orgId) return notFound(requestId, url.pathname);
+    if (request.method === "GET") return handleGetAttention(deps, orgId, actor, requestId);
     return methodNotAllowed(requestId);
   }
 
