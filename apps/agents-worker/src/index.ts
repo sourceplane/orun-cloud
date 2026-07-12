@@ -10,6 +10,7 @@ import type { Env } from "./env.js";
 import { route } from "./router.js";
 import { buildDeps, ready } from "./deps.js";
 import { sweepLapsedSessions } from "./sweep.js";
+import { routineTick } from "./tick.js";
 
 // The per-session attach relay DO (saas-agents-live AL6). Exported so the
 // Workers runtime can instantiate the class named in wrangler's
@@ -21,9 +22,11 @@ export default {
     return route(request, env);
   },
 
-  // The lease sweep (design §4.3): every tick reclaims lapsed sessions and
-  // destroys their sandboxes. Skips silently when the worker is unbound (the
-  // AG5 dormant posture deploys everywhere; the cron only bites where wired).
+  // The lease sweep (design §4.3) + the routine scheduler tick (fleet AF6):
+  // every beat reclaims lapsed sessions/orphans and fires due routines
+  // through the dispatch gates. Skips silently when the worker is unbound
+  // (the AG5 dormant posture deploys everywhere; the cron only bites where
+  // wired).
   async scheduled(_controller: ScheduledController, env: Env, ctx: ExecutionContext): Promise<void> {
     if (!ready(env)) return;
     const deps = buildDeps(env);
@@ -33,7 +36,13 @@ export default {
           const summary = await sweepLapsedSessions(deps, `sweep_${Date.now()}`);
           if (summary.examined > 0) {
             console.warn(
-              `[agents-sweep] examined=${summary.examined} reclaimed=${summary.reclaimed} destroyed=${summary.destroyed} destroyErrors=${summary.destroyErrors}`,
+              `[agents-sweep] examined=${summary.examined} reclaimed=${summary.reclaimed} destroyed=${summary.destroyed} destroyErrors=${summary.destroyErrors} orphaned=${summary.orphaned}`,
+            );
+          }
+          const tick = await routineTick(deps, `tick_${Date.now()}`);
+          if (tick.fired > 0 || tick.parked > 0 || tick.refused > 0) {
+            console.warn(
+              `[agents-routines] examined=${tick.examined} fired=${tick.fired} refused=${tick.refused} parked=${tick.parked}`,
             );
           }
         } finally {

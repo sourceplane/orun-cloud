@@ -88,6 +88,10 @@ describe("api-edge agents facade", () => {
     it("matches the tree-transitive cancel (saas-agents-fleet AF4)", () => {
       expect(isAgentsRoute("/v1/organizations/org_abc/agents/sessions/as_1/cancel")).toBe(true);
     });
+    it("matches the routine registry (saas-agents-fleet AF6)", () => {
+      expect(isAgentsRoute("/v1/organizations/org_abc/agents/routines")).toBe(true);
+      expect(isAgentsRoute("/v1/organizations/org_abc/agents/routines/rt_1")).toBe(true);
+    });
     it("matches the head-facing relay attach + input routes (AL7)", () => {
       expect(isAgentsRoute("/v1/organizations/org_abc/agents/sessions/as_1/attach")).toBe(true);
       expect(isAgentsRoute("/v1/organizations/org_abc/agents/sessions/as_1/input")).toBe(true);
@@ -221,10 +225,12 @@ describe("api-edge agents facade", () => {
     });
 
     it("405s an unsupported method", async () => {
+      // PATCH joined the allowlist with the AF6 routine registry; OPTIONS
+      // stays out — the facade never answers preflight for the worker.
       const env = createEnv();
       const path = "/v1/organizations/org_abc/agents/profiles";
       const req = new Request(`https://api-edge${path}`, {
-        method: "PATCH",
+        method: "OPTIONS",
         headers: { authorization: "Bearer tok_test" },
       });
       const res = await handleAgentsRoute(req, env as never, "req_test", path);

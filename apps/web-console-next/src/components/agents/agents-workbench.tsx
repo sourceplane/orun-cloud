@@ -29,6 +29,7 @@ import { useSession } from "@/lib/session";
 import { orderFleetRows, sessionLabel, sessionTone } from "@/lib/agents/model";
 import { compactAge } from "@/lib/agents/attention";
 import { AttentionQueue } from "@/components/agents/attention-queue";
+import { RoutinesCard } from "@/components/agents/routines-card";
 import { ProviderConnections } from "@/components/agents/provider-connections";
 import { CreateProfileDialog } from "@/components/agents/create-profile-dialog";
 
@@ -36,12 +37,13 @@ export function AgentsWorkbench({ orgId, orgSlug }: { orgId: string; orgSlug: st
   const { client } = useSession();
   const fleet = useApiQuery(qk.orgAgents(orgId), () =>
     wrap(async () => {
-      const [sessionRows, profileRows, attention] = await Promise.all([
+      const [sessionRows, profileRows, attention, routineRows] = await Promise.all([
         client.agents.listSessions(orgId),
         client.agents.listProfiles(orgId),
         client.agents.attention(orgId),
+        client.agents.listRoutines(orgId),
       ]);
-      return { sessions: sessionRows, profiles: profileRows, attention };
+      return { sessions: sessionRows, profiles: profileRows, attention, routines: routineRows };
     }),
   );
 
@@ -158,6 +160,8 @@ export function AgentsWorkbench({ orgId, orgSlug }: { orgId: string; orgSlug: st
               </p>
             </>
           )}
+
+          <RoutinesCard orgId={orgId} routines={data!.routines} onChanged={fleet.reload} />
 
           <Kicker className="mb-2.5 mt-8">Providers</Kicker>
           <ProviderConnections orgId={orgId} />

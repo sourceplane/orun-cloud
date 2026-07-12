@@ -49,10 +49,14 @@ export async function handleDispatch(
     return validationError(requestId, { body: ["invalid JSON"] });
   }
   const b = body as Record<string, unknown>;
-  if (typeof b.taskKey !== "string" || !b.taskKey) {
-    return validationError(requestId, { taskKey: ["required"] });
+  // Two provenances, ONE door (design §5.2): a task dispatch (the ladder
+  // gates it) or a routine firing (the standing human authorization gates
+  // it). Both share entitlement, dedupe, and the concurrency cap.
+  const routineId = typeof b.routineId === "string" && b.routineId ? b.routineId : undefined;
+  if (!routineId && (typeof b.taskKey !== "string" || !b.taskKey)) {
+    return validationError(requestId, { taskKey: ["required (or routineId)"] });
   }
-  const taskKey = b.taskKey;
+  const taskKey = typeof b.taskKey === "string" && b.taskKey ? b.taskKey : undefined;
   const specKey = typeof b.specKey === "string" && b.specKey ? b.specKey : undefined;
 
   // Gate 0 — the feature.agents entitlement (AG10 §8, D3-open: only an
@@ -63,6 +67,10 @@ export async function handleDispatch(
       return errorResponse("forbidden", gate.message, 403, requestId);
     }
   }
+
+  if (routineId) return dispatchRoutineFiring(deps, orgId, routineId, actor, requestId);
+
+  if (!taskKey) return validationError(requestId, { taskKey: ["required"] });
 
   // Gate 1 — the autonomy ladder: the spec override wins over the workspace
   // default; anything below auto-dispatch refuses (a human spawns manually).
@@ -131,6 +139,17 @@ export async function handleDispatch(
 
   // Boot it. A spawn-gate refusal (providers unverified) leaves the session
   // requested — dispatched-but-parked, surfaced in the payload, retryable.
+  return bootDispatchedSession(deps, orgId, session, actor, requestId);
+}
+
+/** Shared boot tail for both provenances: provision, or park honestly. */
+async function bootDispatchedSession(
+  deps: AgentsDeps,
+  orgId: string,
+  session: AgentSession,
+  actor: ActorContext,
+  requestId: string,
+): Promise<Response> {
   const provision = await handleProvisionSession(deps, orgId, session.publicId, actor, requestId);
   if (provision.ok) {
     const provisioned = (await provision.json()) as { data: unknown };
@@ -148,4 +167,80 @@ export async function handleDispatch(
     requestId,
     201,
   );
+}
+
+/**
+ * A routine firing (saas-agents-fleet AF6, design §5.2). The ladder does not
+ * gate it — the standing human authorization is the routine row itself
+ * (enabled, unparked); what remains are the shared mechanical gates: one
+ * live run per routine, and the workspace concurrency cap. Exported for the
+ * scheduler tick, which enters below the HTTP authorize (the sweep posture:
+ * an internal maintenance path acting on a human-authorized standing order).
+ */
+export async function dispatchRoutineFiring(
+  deps: AgentsDeps,
+  orgId: string,
+  routineId: string,
+  actor: ActorContext,
+  requestId: string,
+  now: () => Date = () => new Date(),
+): Promise<Response> {
+  const scope = { orgId };
+  const routine = await deps.repo.getRoutine(scope, routineId);
+  if (!routine) {
+    return errorResponse("agent_routine_not_found", `Routine ${routineId} not found`, 404, requestId);
+  }
+  if (!routine.enabled || routine.parked) {
+    return errorResponse(
+      "agent_routine_not_live",
+      routine.parked
+        ? `Routine is parked (${routine.parkedReason ?? "repeated failures"}); resume it first`
+        : "Routine is disabled",
+      409,
+      requestId,
+    );
+  }
+
+  const sessions = await deps.repo.listSessions(scope);
+  const active = sessions.filter(isActive);
+
+  // Dedupe — one live run per routine (the task-dedupe idiom).
+  const existing = active.find((s) => s.routineId === routine.publicId);
+  if (existing) {
+    return errorResponse(
+      "conflict",
+      `Session ${existing.publicId} is already running routine ${routine.name}`,
+      409,
+      requestId,
+    );
+  }
+
+  // The workspace concurrency cap, shared with task dispatch.
+  const policy = await deps.repo.getAutonomy(scope);
+  const rawCap = policy?.caps?.maxConcurrent;
+  const cap = typeof rawCap === "number" && rawCap > 0 ? rawCap : DEFAULT_MAX_CONCURRENT;
+  if (active.length >= cap) {
+    return errorResponse(
+      "conflict",
+      `Concurrency cap reached (${active.length}/${cap} active sessions)`,
+      409,
+      requestId,
+    );
+  }
+
+  const session = await deps.repo.createSession(scope, {
+    profileId: routine.profileId,
+    runKind: routine.runKind,
+    spawnedBy: actor.subjectId,
+    routineId: routine.publicId,
+    workRef: `work://${orgPublicId(orgId)}/routine/${routine.name}`,
+  });
+  // The firing mark moves regardless of how the session ends — misfire
+  // semantics key off it (fire once on recovery, never a backlog).
+  await deps.repo.updateRoutineState(scope, {
+    publicId: routine.publicId,
+    lastFiredAt: now().toISOString(),
+  });
+
+  return bootDispatchedSession(deps, orgId, session, actor, requestId);
 }

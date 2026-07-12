@@ -14,6 +14,8 @@ import type {
   ConnectionStatus,
   Provider,
   ProviderConnection,
+  Routine,
+  RoutineTriggerKind,
   RunKind,
   SessionEvent,
   SessionEventKind,
@@ -47,6 +49,8 @@ export interface CreateSessionInput {
   parentSessionId?: string;
   /** Create-time infrastructure facts (AF4: the applied capability ceiling). */
   sandbox?: Record<string, unknown>;
+  /** Routine provenance (AF6): the firing routine's public id. */
+  routineId?: string;
 }
 
 export interface AdvanceSessionInput {
@@ -121,6 +125,39 @@ export interface AgentsRepository extends ProviderConnectionsRepository {
 
   setAutonomy(scope: WorkspaceScope, input: SetAutonomyInput): Promise<AutonomyPolicy>;
   getAutonomy(scope: WorkspaceScope, specKey?: string): Promise<AutonomyPolicy | null>;
+
+  // ── Routines (saas-agents-fleet AF6) ──────────────────────
+  createRoutine(scope: WorkspaceScope, input: CreateRoutineInput): Promise<Routine>;
+  getRoutine(scope: WorkspaceScope, publicId: string): Promise<Routine | null>;
+  listRoutines(scope: WorkspaceScope): Promise<Routine[]>;
+  /** Mutate the standing state: enable/disable, park/resume (resume resets
+   * the failure count), the last-fired mark, the failure counter. */
+  updateRoutineState(scope: WorkspaceScope, input: UpdateRoutineStateInput): Promise<Routine>;
+  deleteRoutine(scope: WorkspaceScope, publicId: string): Promise<boolean>;
+  /** CROSS-ORG scan for the scheduler tick: enabled, unparked routines. */
+  listLiveRoutines(limit: number): Promise<Routine[]>;
+  /** The most recent sessions a routine fired, newest first (park math). */
+  listRoutineSessions(scope: WorkspaceScope, routinePublicId: string, limit: number): Promise<AgentSession[]>;
+}
+
+export interface CreateRoutineInput {
+  name: string;
+  profileId: string;
+  runKind: RunKind;
+  triggerKind: RoutineTriggerKind;
+  triggerConfig?: Record<string, unknown>;
+  definitionRef?: string;
+  caps?: Record<string, unknown>;
+  createdBy: string;
+}
+
+export interface UpdateRoutineStateInput {
+  publicId: string;
+  enabled?: boolean;
+  parked?: boolean;
+  parkedReason?: string | null;
+  consecutiveFailures?: number;
+  lastFiredAt?: string;
 }
 
 // ── Provider connections (AG12) ─────────────────────────────

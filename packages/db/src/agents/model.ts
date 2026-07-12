@@ -134,6 +134,8 @@ export interface AgentSession {
   parentSessionId?: string;
   rootSessionId: string;
   depth: number;
+  /** Routine provenance (AF6): the firing routine's public id, when fired. */
+  routineId?: string;
 }
 
 export interface SessionEvent {
@@ -188,6 +190,51 @@ export function validateSessionEvent(e: { seq: number; kind: string }): void {
   if (!isSessionEventKind(e.kind)) {
     // A status/lifecycle kind is unrepresentable — the honesty invariant.
     throw new AgentsError("agent_session_event_invalid", `event kind ${JSON.stringify(e.kind)} not in the closed vocabulary`);
+  }
+}
+
+// ── Routines (saas-agents-fleet AF6) ────────────────────────
+
+export const ROUTINE_TRIGGER_KINDS = ["cron", "event"] as const;
+export type RoutineTriggerKind = (typeof ROUTINE_TRIGGER_KINDS)[number];
+
+/**
+ * A standing routine: trigger + binding configuration. A routine only ever
+ * SPAWNS sessions (every firing re-enters the dispatch door); the only
+ * execution state here is the park latch and the last-fired mark.
+ */
+export interface Routine {
+  id: string;
+  publicId: string;
+  orgId: string;
+  name: string;
+  profileId: string;
+  runKind: RunKind;
+  /** Content hash of the sealed RoutineSnapshot (orun AF2), when pinned. */
+  definitionRef?: string;
+  triggerKind: RoutineTriggerKind;
+  /** cron: { cron: "0 7 * * *" }; event: { lane, predicate } (ES1). */
+  triggerConfig: Record<string, unknown>;
+  /** Budget stub until AF8 binds real ceilings. */
+  caps: Record<string, unknown>;
+  enabled: boolean;
+  parked: boolean;
+  parkedReason?: string;
+  consecutiveFailures: number;
+  lastFiredAt?: string;
+  createdBy: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+const ROUTINE_NAME_RE = /^[a-z0-9][a-z0-9-]*$/;
+
+export function validateRoutineInput(input: { name: string; triggerKind: string }): void {
+  if (!ROUTINE_NAME_RE.test(input.name)) {
+    throw new AgentsError("agent_routine_invalid", `routine name ${JSON.stringify(input.name)} invalid`);
+  }
+  if (!(ROUTINE_TRIGGER_KINDS as readonly string[]).includes(input.triggerKind)) {
+    throw new AgentsError("agent_routine_invalid", `trigger ${JSON.stringify(input.triggerKind)} not cron|event`);
   }
 }
 

@@ -13,11 +13,14 @@ import type {
   AgentSessionEventWire,
   AgentSessionState,
   AgentProvider,
+  AgentRoutine,
   AttentionSummary,
   CreateAgentProfileRequest,
+  CreateAgentRoutineRequest,
   CreateAgentSessionRequest,
   CreateProviderConnectionRequest,
   ProviderConnection,
+  UpdateAgentRoutineRequest,
 } from "@saas/contracts/agents";
 
 import type { Transport, RequestOptions } from "./transport.js";
@@ -155,6 +158,54 @@ export class AgentsClient {
   attention(orgId: string, opts: RequestOptions = {}): Promise<AttentionSummary> {
     return this.transport.request<AttentionSummary>(
       { method: "GET", path: `${agentsBase(orgId)}/attention` },
+      opts,
+    );
+  }
+
+  // ── Routines (saas-agents-fleet AF6) ────────────────────────
+
+  /** GET /agents/routines — the standing-work registry. */
+  listRoutines(orgId: string, opts: RequestOptions = {}): Promise<AgentRoutine[]> {
+    return this.transport.request<AgentRoutine[]>(
+      { method: "GET", path: `${agentsBase(orgId)}/routines` },
+      opts,
+    );
+  }
+
+  /** POST /agents/routines — cron triggers are validated to the hourly floor. */
+  createRoutine(
+    orgId: string,
+    body: CreateAgentRoutineRequest,
+    opts: RequestOptions = {},
+  ): Promise<AgentRoutine> {
+    return this.transport.request<AgentRoutine>(
+      { method: "POST", path: `${agentsBase(orgId)}/routines`, body },
+      opts,
+    );
+  }
+
+  /** PATCH /agents/routines/:id — enable/disable, or resume a parked routine
+   * (`parked: false`; parking itself is automatic). */
+  updateRoutine(
+    orgId: string,
+    routineId: string,
+    body: UpdateAgentRoutineRequest,
+    opts: RequestOptions = {},
+  ): Promise<AgentRoutine> {
+    return this.transport.request<AgentRoutine>(
+      { method: "PATCH", path: `${agentsBase(orgId)}/routines/${encodeURIComponent(routineId)}`, body },
+      opts,
+    );
+  }
+
+  /** DELETE /agents/routines/:id */
+  deleteRoutine(
+    orgId: string,
+    routineId: string,
+    opts: RequestOptions = {},
+  ): Promise<{ deleted: boolean }> {
+    return this.transport.request<{ deleted: boolean }>(
+      { method: "DELETE", path: `${agentsBase(orgId)}/routines/${encodeURIComponent(routineId)}` },
       opts,
     );
   }

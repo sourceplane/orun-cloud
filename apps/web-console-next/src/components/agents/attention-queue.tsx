@@ -33,7 +33,7 @@ export function AttentionQueue({
 
   const answer = React.useCallback(
     async (item: AttentionItem, approved: boolean) => {
-      if (!item.request) return;
+      if (!item.request || !item.sessionId) return;
       setBusy(item.sessionId);
       setError(null);
       try {
@@ -56,6 +56,25 @@ export function AttentionQueue({
     [client, orgId, onActed],
   );
 
+  // A parked routine's action is resuming it — the item disappears because
+  // the fact went false, the no-dismiss rule as a button.
+  const resume = React.useCallback(
+    async (item: AttentionItem) => {
+      if (!item.routineId) return;
+      setBusy(item.routineId);
+      setError(null);
+      try {
+        await client.agents.updateRoutine(orgId, item.routineId, { parked: false });
+        onActed();
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Failed to resume routine");
+      } finally {
+        setBusy(null);
+      }
+    },
+    [client, orgId, onActed],
+  );
+
   if (attention.items.length === 0) return null;
 
   return (
@@ -63,10 +82,10 @@ export function AttentionQueue({
       <Kicker className="mb-2.5">Needs you · {attention.items.length}</Kicker>
       <ListCard className="mb-8">
         {attention.items.map((item) => (
-          <ListRow key={`${item.kind}:${item.sessionId}`}>
+          <ListRow key={`${item.kind}:${item.sessionId ?? item.routineId}`}>
             <div className="min-w-0 flex-1">
               <div className="flex items-center gap-2">
-                <span className="truncate font-mono text-[12.5px]">{item.sessionId}</span>
+                <span className="truncate font-mono text-[12.5px]">{item.sessionId ?? item.routineId}</span>
                 <Pill tone={attentionTone(item.kind)}>{attentionKindLabel(item.kind)}</Pill>
                 <span className="truncate text-[12.5px]">{item.reason}</span>
               </div>
@@ -96,12 +115,24 @@ export function AttentionQueue({
                   </Button>
                 </>
               ) : null}
-              <Link
-                href={`/orgs/${orgSlug}/agents/${item.sessionId}`}
-                className="text-[12.5px] text-muted-foreground hover:text-foreground"
-              >
-                View session →
-              </Link>
+              {item.kind === "routine_parked" && item.routineId ? (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={busy === item.routineId}
+                  onClick={() => void resume(item)}
+                >
+                  Resume
+                </Button>
+              ) : null}
+              {item.sessionId ? (
+                <Link
+                  href={`/orgs/${orgSlug}/agents/${item.sessionId}`}
+                  className="text-[12.5px] text-muted-foreground hover:text-foreground"
+                >
+                  View session →
+                </Link>
+              ) : null}
             </div>
           </ListRow>
         ))}
