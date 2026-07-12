@@ -94,10 +94,16 @@ const ORG_ROLE_PERMISSIONS: Record<OrganizationRole, readonly string[]> = {
     "organization.agent.provider.write",
     "organization.agent.session.read",
     "organization.agent.session.create",
+    "organization.agent.session.spawn",
+    "organization.agent.session.interact",
     "organization.agent.profile.read",
     "organization.agent.profile.write",
     "organization.agent.autonomy.read",
     "organization.agent.autonomy.write",
+    "organization.agent.routine.read",
+    "organization.agent.routine.write",
+    "organization.agent.budget.read",
+    "organization.agent.budget.write",
   ],
   admin: [
     "organization.read",
@@ -175,10 +181,16 @@ const ORG_ROLE_PERMISSIONS: Record<OrganizationRole, readonly string[]> = {
     "organization.agent.provider.write",
     "organization.agent.session.read",
     "organization.agent.session.create",
+    "organization.agent.session.spawn",
+    "organization.agent.session.interact",
     "organization.agent.profile.read",
     "organization.agent.profile.write",
     "organization.agent.autonomy.read",
     "organization.agent.autonomy.write",
+    "organization.agent.routine.read",
+    "organization.agent.routine.write",
+    "organization.agent.budget.read",
+    "organization.agent.budget.write",
   ],
   builder: [
     "organization.read",
@@ -210,14 +222,21 @@ const ORG_ROLE_PERMISSIONS: Record<OrganizationRole, readonly string[]> = {
     "work.read",
     "work.write",
     // Builders run the day-to-day agent surface: read providers/autonomy,
-    // spawn + manage sessions and profiles. Connecting provider accounts and
-    // setting workspace autonomy stay owner/admin (billing/policy shaped).
+    // spawn + manage sessions and profiles, drive live sessions (interact:
+    // steer/approve/kill), and author operational routines. Connecting
+    // provider accounts, setting workspace autonomy, and budget CEILINGS stay
+    // owner/admin (billing/policy shaped); budget.read is day-to-day.
     "organization.agent.provider.read",
     "organization.agent.session.read",
     "organization.agent.session.create",
+    "organization.agent.session.spawn",
+    "organization.agent.session.interact",
     "organization.agent.profile.read",
     "organization.agent.profile.write",
     "organization.agent.autonomy.read",
+    "organization.agent.routine.read",
+    "organization.agent.routine.write",
+    "organization.agent.budget.read",
   ],
   viewer: [
     "organization.read",
@@ -242,6 +261,8 @@ const ORG_ROLE_PERMISSIONS: Record<OrganizationRole, readonly string[]> = {
     "organization.agent.session.read",
     "organization.agent.profile.read",
     "organization.agent.autonomy.read",
+    "organization.agent.routine.read",
+    "organization.agent.budget.read",
   ],
   billing_admin: [
     "organization.read",
@@ -445,6 +466,18 @@ const ALL_KNOWN_ACTIONS: ReadonlySet<string> = new Set([
   "organization.agent.profile.write",
   "organization.agent.autonomy.read",
   "organization.agent.autonomy.write",
+  // saas-agents-live AL6 — driving a live session (steer/approve/kill) is a
+  // distinct privilege from watching it (read); the tree-kill + fleet verdict
+  // ride it too.
+  "organization.agent.session.interact",
+  // saas-agents-fleet — the workforce plane (workspace-scoped): delegation
+  // (an agent-session principal spawns children), standing routines, and
+  // budget ceilings.
+  "organization.agent.session.spawn",
+  "organization.agent.routine.read",
+  "organization.agent.routine.write",
+  "organization.agent.budget.read",
+  "organization.agent.budget.write",
 ]);
 
 function isOrgRole(role: string): role is OrganizationRole {

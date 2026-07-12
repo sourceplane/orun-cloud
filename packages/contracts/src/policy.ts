@@ -169,6 +169,14 @@ export const ORGANIZATION_ACTIONS = [
   "organization.agent.profile.write",
   "organization.agent.autonomy.read",
   "organization.agent.autonomy.write",
+  // saas-agents-fleet — the workforce plane (workspace-scoped). Delegation
+  // (an agent-session principal spawns children), standing routines (ops —
+  // day-to-day), and budget ceilings (governance — owner/admin write).
+  "organization.agent.session.spawn",
+  "organization.agent.routine.read",
+  "organization.agent.routine.write",
+  "organization.agent.budget.read",
+  "organization.agent.budget.write",
 ] as const;
 
 export type OrganizationAction = (typeof ORGANIZATION_ACTIONS)[number];
