@@ -29,6 +29,7 @@ import { useSession } from "@/lib/session";
 import { orderFleetRows, sessionLabel, sessionTone } from "@/lib/agents/model";
 import { compactAge, compactTokens } from "@/lib/agents/attention";
 import { AttentionQueue } from "@/components/agents/attention-queue";
+import { QuickSpawnCard } from "@/components/agents/quick-spawn-card";
 import { RoutinesCard } from "@/components/agents/routines-card";
 import { ProviderConnections } from "@/components/agents/provider-connections";
 import { CreateProfileDialog } from "@/components/agents/create-profile-dialog";
@@ -93,6 +94,13 @@ export function AgentsWorkbench({ orgId, orgSlug }: { orgId: string; orgSlug: st
         <StatusText tone="error">{fleet.error.message}</StatusText>
       ) : (
         <>
+          <QuickSpawnCard
+            orgId={orgId}
+            orgSlug={orgSlug}
+            profiles={data!.profiles}
+            onSpawned={fleet.reload}
+          />
+
           <AttentionQueue
             orgId={orgId}
             orgSlug={orgSlug}
@@ -137,44 +145,52 @@ export function AgentsWorkbench({ orgId, orgSlug }: { orgId: string; orgSlug: st
             </>
           ) : null}
 
-          <div className="mb-2.5 mt-8 flex items-center justify-between">
-            <Kicker className="mb-0">Profiles</Kicker>
-            {(data?.profiles.length ?? 0) > 0 ? (
-              <Button size="sm" variant="outline" onClick={() => setProfileOpen(true)}>
-                New profile
-              </Button>
-            ) : null}
-          </div>
-          {(data?.profiles.length ?? 0) === 0 ? (
-            <EmptyState
-              title="No agent profiles"
-              description="A profile binds an orun agent type to a service principal with a responsible owner. It's the identity a session runs as."
-              primaryAction={{ label: "New profile", onClick: () => setProfileOpen(true) }}
-            />
-          ) : (
-            <>
-              <ListCard>
-                {data!.profiles.map((p) => (
-                  <ProfileRow
-                    key={p.id}
-                    profile={p}
-                    entry={data!.records.find((r) => r.profileId === p.id)}
-                    orgId={orgId}
-                    onChanged={fleet.reload}
-                  />
-                ))}
-              </ListCard>
-              <p className="mt-2 text-[12px] text-muted-foreground">
-                A profile is the identity a session runs as — an agent type bound to a service
-                principal with a responsible owner.
-              </p>
-            </>
-          )}
-
           <RoutinesCard orgId={orgId} routines={data!.routines} onChanged={fleet.reload} />
 
-          <Kicker className="mb-2.5 mt-8">Providers</Kicker>
-          <ProviderConnections orgId={orgId} />
+          {/* Profiles and Providers sit side by side (the mock footer): what a
+              session runs AS, next to what it runs ON. */}
+          <div className="mt-8 grid grid-cols-1 gap-x-10 gap-y-8 lg:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)]">
+            <div>
+              <div className="mb-2.5 flex items-center justify-between">
+                <Kicker className="mb-0">Profiles</Kicker>
+                {(data?.profiles.length ?? 0) > 0 ? (
+                  <Button size="sm" variant="outline" onClick={() => setProfileOpen(true)}>
+                    New profile
+                  </Button>
+                ) : null}
+              </div>
+              {(data?.profiles.length ?? 0) === 0 ? (
+                <EmptyState
+                  title="No agent profiles"
+                  description="A profile binds an orun agent type to a service principal with a responsible owner. It's the identity a session runs as."
+                  primaryAction={{ label: "New profile", onClick: () => setProfileOpen(true) }}
+                />
+              ) : (
+                <>
+                  <ListCard>
+                    {data!.profiles.map((p) => (
+                      <ProfileRow
+                        key={p.id}
+                        profile={p}
+                        entry={data!.records.find((r) => r.profileId === p.id)}
+                        orgId={orgId}
+                        onChanged={fleet.reload}
+                      />
+                    ))}
+                  </ListCard>
+                  <p className="mt-2 text-[12px] text-muted-foreground">
+                    A profile is the identity a session runs as — an agent type bound to a service
+                    principal with a responsible owner.
+                  </p>
+                </>
+              )}
+            </div>
+
+            <div>
+              <Kicker className="mb-2.5">Providers</Kicker>
+              <ProviderConnections orgId={orgId} />
+            </div>
+          </div>
         </>
       )}
 
