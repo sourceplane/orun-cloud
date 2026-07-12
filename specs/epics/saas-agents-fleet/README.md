@@ -24,7 +24,7 @@ door.
 
 | Field | Value |
 |-------|-------|
-| Status | **Draft** — authored, ready for review; open decisions in `risks-and-open-questions.md` |
+| Status | **In progress** — AF4–AF9 cores shipped (PRs merged incrementally to `main`); remaining items (topbar badge, digests, event triggers, audit binding, forecast strip, live-runtime evals) tracked in `IMPLEMENTATION-STATUS.md` |
 | Cluster | **AF** (agents fleet — cross-repo, shared with `orun`; **orun owns the runtime legs: spawn/await tools, orchestrator + judge modes, the routine object kind, the track-record fold (AF0–AF3)**, this repo owns the **delegation plane + attention plane + routines control plane + earned autonomy + budgets (AF4–AF9)**) |
 | Owner(s) | `apps/agents-worker` (tree columns + spawn door, attention fold, routine scheduler + ES lane consumer, budget enforcement) · `packages/db/src/agents` (tree columns, `routines`, `budgets`) · `apps/web-console-next` (the fleet home per the Northwind Agents mock, tree strip, profile record page, routine + budget surfaces) · `apps/api-edge` (facade for the new routes) · `apps/notifications-worker` (digests, budget + park notices) · `packages/contracts`/`sdk` (tree/routine/budget/attention shapes) |
 | Target branch | `claude/agent-epic-evolution-knqcf6` (design PR), then `main` (PRs merged incrementally) |
@@ -79,17 +79,20 @@ plane; it makes the ones we sealed compose.
    the attention fold, routines, earned autonomy, budgets, security posture.
 4. [`implementation-plan.md`](./implementation-plan.md) — AF4–AF9.
 5. [`risks-and-open-questions.md`](./risks-and-open-questions.md).
+6. [`incident-runbook.md`](./incident-runbook.md) — the fleet-plane on-call
+   index (AF9): tree out of control, hijacked session, spend spike,
+   misbehaving routine, the new-environment drill.
 
 ## Milestones at a glance (cloud-owned; AF0–AF3 in `orun/specs/orun-agents-fleet/`)
 
 | ID | Milestone | Status |
 |----|-----------|--------|
-| AF4 | The delegation plane: tree columns (`parent_session_id`/`root_session_id`/`depth`), the `agent.session.spawn` action + spawn door (ceiling intersection, depth/width caps, shared budget), tree-transitive kill, orphan sweep, the children strip + judge verdict cards on the session page | 🗓️ Planned |
-| AF5 | The attention plane: the needs-you fold (`GET …/agents/attention`), the fleet home rebuilt to the Northwind Agents mock (verdict queue · quick-spawn · active/recent · profiles · providers), the topbar badge, digest notifications | 🗓️ Planned (no orun dependency — first slice) |
-| AF6 | Routines: `agents.routines` rows binding a sealed routine definition to a profile + trigger (cron / ES lane) + budget; both trigger paths re-enter the AG9 dispatch door; quiet-by-default outcome digests; park-on-repeated-failure | 🗓️ Planned |
-| AF7 | Track record & earned autonomy: the per-profile record (orun AF3 fold joined with cloud facts), record chips + the profile page, promotion suggestion cards with evidence, human-ack promotion + automatic demotion, `agent.autonomy.*` audit | 🗓️ Planned |
-| AF8 | Budgets: `agents.budgets` at four grains, enforcement at spawn + ingest, the 80% attention mark, graceful `budget_exhausted` interrupt, Usage forecast strip | 🗓️ Planned |
-| AF9 | Hardening + evals: hostile-orchestrator fixtures (widen-a-child / spawn-storm / cap evasion), routine injection posture, runaway-tree kill drill, the §10 acceptance narrative as tests | 🗓️ Planned |
+| AF4 | The delegation plane: tree columns (`parent_session_id`/`root_session_id`/`depth`), the `agent.session.spawn` action + spawn door (ceiling intersection, depth/width caps, shared budget), tree-transitive kill, orphan sweep, the children strip + judge verdict cards on the session page | 🏗️ Core shipped |
+| AF5 | The attention plane: the needs-you fold (`GET …/agents/attention`), the fleet home rebuilt to the Northwind Agents mock (verdict queue · quick-spawn · active/recent · profiles · providers), the topbar badge, digest notifications | 🏗️ Core shipped (badge + digest remain) |
+| AF6 | Routines: `agents.routines` rows binding a sealed routine definition to a profile + trigger (cron / ES lane) + budget; both trigger paths re-enter the AG9 dispatch door; quiet-by-default outcome digests; park-on-repeated-failure | 🏗️ Core shipped (cron live; event-trigger + digest remain) |
+| AF7 | Track record & earned autonomy: the per-profile record (orun AF3 fold joined with cloud facts), record chips + the profile page, promotion suggestion cards with evidence, human-ack promotion + automatic demotion, `agent.autonomy.*` audit | 🏗️ Core shipped (audit binding remains) |
+| AF8 | Budgets: `agents.budgets` at four grains, enforcement at spawn + ingest, the 80% attention mark, graceful `budget_exhausted` interrupt, Usage forecast strip | 🏗️ Core shipped (forecast strip remains) |
+| AF9 | Hardening + evals: hostile-orchestrator fixtures (widen-a-child / spawn-storm / cap evasion), routine injection posture, runaway-tree kill drill, the §10 acceptance narrative as tests | 🏗️ Core shipped (live-runtime injection evals remain) |
 
 ## Scope boundary
 

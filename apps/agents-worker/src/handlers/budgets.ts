@@ -9,6 +9,21 @@ import { AgentsError, BUDGET_GRAINS, type BudgetGrain, type Budget } from "@saas
 import { errorResponse, listResponse, notFound, successResponse, validationError } from "../http.js";
 import type { AgentBudget } from "@saas/contracts/agents";
 
+/** AF9 hardening: an agent-session bearer raising its own ceiling defeats
+ * the budget plane — structural refusal, before policy (the autonomy
+ * no-self-service posture applied to spend). */
+function refuseAgentSessionWrite(actor: ActorContext, requestId: string): Response | null {
+  if (actor.agentSessionId) {
+    return errorResponse(
+      "agent_session_config_write",
+      "A running agent session cannot author standing configuration",
+      403,
+      requestId,
+    );
+  }
+  return null;
+}
+
 function toPublicBudget(b: Budget): AgentBudget {
   return {
     id: b.publicId,
@@ -41,6 +56,8 @@ export async function handleSetBudget(
   actor: ActorContext,
   requestId: string,
 ): Promise<Response> {
+  const refused = refuseAgentSessionWrite(actor, requestId);
+  if (refused) return refused;
   if (!(await deps.authorize("organization.agent.budget.write", orgId, actor, requestId))) {
     return errorResponse("forbidden", "Not authorized", 403, requestId);
   }
@@ -95,6 +112,8 @@ export async function handleDeleteBudget(
   actor: ActorContext,
   requestId: string,
 ): Promise<Response> {
+  const refused = refuseAgentSessionWrite(actor, requestId);
+  if (refused) return refused;
   if (!(await deps.authorize("organization.agent.budget.write", orgId, actor, requestId))) {
     return errorResponse("forbidden", "Not authorized", 403, requestId);
   }

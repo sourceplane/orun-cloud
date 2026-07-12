@@ -12,6 +12,22 @@ import { errorResponse, listResponse, notFound, successResponse, validationError
 import { toPublicRoutine } from "../mappers.js";
 import { isHourlyOrCoarser, parseCron } from "../cron.js";
 
+/** AF9 hardening: an agent-session bearer may never author standing config —
+ * a hijacked session creating a cron routine is a persistence backdoor, so
+ * the guard is structural (before policy), like the autonomy no-self-service
+ * rule. Plain service principals (sk_ automation) stay allowed. */
+function refuseAgentSessionWrite(actor: ActorContext, requestId: string): Response | null {
+  if (actor.agentSessionId) {
+    return errorResponse(
+      "agent_session_config_write",
+      "A running agent session cannot author standing configuration",
+      403,
+      requestId,
+    );
+  }
+  return null;
+}
+
 export async function handleListRoutines(
   deps: AgentsDeps,
   orgId: string,
@@ -32,6 +48,8 @@ export async function handleCreateRoutine(
   actor: ActorContext,
   requestId: string,
 ): Promise<Response> {
+  const refused = refuseAgentSessionWrite(actor, requestId);
+  if (refused) return refused;
   if (!(await deps.authorize("organization.agent.routine.write", orgId, actor, requestId))) {
     return errorResponse("forbidden", "Not authorized", 403, requestId);
   }
@@ -106,6 +124,8 @@ export async function handleUpdateRoutine(
   actor: ActorContext,
   requestId: string,
 ): Promise<Response> {
+  const refused = refuseAgentSessionWrite(actor, requestId);
+  if (refused) return refused;
   if (!(await deps.authorize("organization.agent.routine.write", orgId, actor, requestId))) {
     return errorResponse("forbidden", "Not authorized", 403, requestId);
   }
@@ -150,6 +170,8 @@ export async function handleDeleteRoutine(
   actor: ActorContext,
   requestId: string,
 ): Promise<Response> {
+  const refused = refuseAgentSessionWrite(actor, requestId);
+  if (refused) return refused;
   if (!(await deps.authorize("organization.agent.routine.write", orgId, actor, requestId))) {
     return errorResponse("forbidden", "Not authorized", 403, requestId);
   }
