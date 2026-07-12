@@ -232,16 +232,23 @@ export interface IntegrationsCursor {
 export interface ConnectIntegrationRequest {
   /** Optional operator label for the connection. */
   displayName?: string;
+  /**
+   * Token-kind connect (IH5 Cloudflare): the pasted parent API token.
+   * WRITE-ONLY — verified, enveloped, never echoed or logged.
+   */
+  parentToken?: string;
 }
 
 export interface ConnectIntegrationResponse {
   connection: PublicConnection;
   /**
-   * Provider install URL carrying the signed single-use state. The console
-   * opens this in a popup; the provider redirects back to the platform's
-   * setup ingress which activates the connection.
+   * Provider install/authorize URL carrying the signed single-use state. The
+   * console opens this in a popup; the provider redirects back to the
+   * platform's ingress which activates the connection. ABSENT for token-kind
+   * connects (IH5 Cloudflare): the paste is verified synchronously and the
+   * returned connection is already active.
    */
-  installUrl: string;
+  installUrl?: string;
 }
 
 /** GET /v1/organizations/{orgId}/integrations */

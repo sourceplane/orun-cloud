@@ -22,7 +22,7 @@ import {
   INTEGRATION_POLICY_ACTIONS,
   type IssueIntegrationTokenResponse,
 } from "@saas/contracts/integrations";
-import { createIntegrationsRepository } from "@saas/db/integrations";
+import { createIntegrationHubRepository, createIntegrationsRepository } from "@saas/db/integrations";
 import { createEventsRepository } from "@saas/db/events";
 import { createSqlExecutor } from "@saas/db/hyperdrive";
 import { asUuid, type Uuid } from "@saas/db/ids";
@@ -259,6 +259,31 @@ export async function handleIssueGithubToken(
     );
     if (!minted) {
       return errorResponse("internal_error", "GitHub did not issue a token", 503, requestId);
+    }
+
+    // One broker, one ledger (IH4, design §5.1): the IG4 route is re-expressed
+    // as template "repo-token" on the minted_credentials ledger (alias
+    // preserved — this route IS the alias). Best-effort: GitHub installation
+    // tokens hard-expire in 1h and cannot be revoked individually, so a ledger
+    // hiccup must not fail an already-minted issuance.
+    try {
+      const hub = createIntegrationHubRepository(executor);
+      await hub.insertMintedCredential({
+        id: generateUuid(),
+        orgId,
+        connectionId: asUuid(connectionId!),
+        provider: "github",
+        template: "repo-token",
+        params: { repositories, permissions },
+        purpose: "api",
+        requestedBy: actor.subjectId,
+        ttlSeconds: 3600,
+        providerRef: null,
+        expiresAt: new Date(minted.expiresAt),
+      });
+    } catch {
+      // Ledger projection is additive here; the TOKEN_ISSUED event below
+      // remains the authoritative audit record for this route.
     }
 
     try {

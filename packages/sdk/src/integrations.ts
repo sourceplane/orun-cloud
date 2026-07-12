@@ -1,4 +1,8 @@
 import type {
+  RevokeMintedCredentialResponse,
+  ListMintedCredentialsResponse,
+  MintCredentialResponse,
+  MintCredentialRequest,
   ListSlackChannelsResponse,
   ConnectIntegrationRequest,
   IssueIntegrationTokenRequest,
@@ -121,6 +125,76 @@ export class IntegrationsClient {
       {
         method: "GET",
         path: `/v1/organizations/${encodeURIComponent(orgId)}/integrations/${encodeURIComponent(connectionId)}/slack/channels${qs ? `?${qs}` : ""}`,
+      },
+      opts,
+    );
+  }
+
+  /**
+   * POST /v1/organizations/:orgId/integrations/cloudflare/connect
+   *
+   * Token-kind connect (IH5): pass the pasted parent token; the returned
+   * connection is already active — no popup, no polling. The token is
+   * write-only from this call onward.
+   */
+  connectCloudflare(
+    orgId: string,
+    body: ConnectIntegrationRequest & { parentToken: string },
+    opts: RequestOptions = {},
+  ): Promise<ConnectIntegrationResponse> {
+    return this.transport.request<ConnectIntegrationResponse>(
+      {
+        method: "POST",
+        path: `/v1/organizations/${encodeURIComponent(orgId)}/integrations/cloudflare/connect`,
+        body,
+      },
+      opts,
+    );
+  }
+
+  /** POST …/integrations/:connectionId/credentials — mint (reveal-once). */
+  mintCredential(
+    orgId: string,
+    connectionId: string,
+    body: MintCredentialRequest,
+    opts: RequestOptions = {},
+  ): Promise<MintCredentialResponse> {
+    return this.transport.request<MintCredentialResponse>(
+      {
+        method: "POST",
+        path: `/v1/organizations/${encodeURIComponent(orgId)}/integrations/${encodeURIComponent(connectionId)}/credentials`,
+        body,
+      },
+      opts,
+    );
+  }
+
+  /** GET …/integrations/:connectionId/credentials — the mint ledger. */
+  listMintedCredentials(
+    orgId: string,
+    connectionId: string,
+    opts: RequestOptions = {},
+  ): Promise<ListMintedCredentialsResponse> {
+    return this.transport.request<ListMintedCredentialsResponse>(
+      {
+        method: "GET",
+        path: `/v1/organizations/${encodeURIComponent(orgId)}/integrations/${encodeURIComponent(connectionId)}/credentials`,
+      },
+      opts,
+    );
+  }
+
+  /** DELETE …/credentials/:mintId — best-effort revoke; TTL is the backstop. */
+  revokeMintedCredential(
+    orgId: string,
+    connectionId: string,
+    mintId: string,
+    opts: RequestOptions = {},
+  ): Promise<RevokeMintedCredentialResponse> {
+    return this.transport.request<RevokeMintedCredentialResponse>(
+      {
+        method: "DELETE",
+        path: `/v1/organizations/${encodeURIComponent(orgId)}/integrations/${encodeURIComponent(connectionId)}/credentials/${encodeURIComponent(mintId)}`,
       },
       opts,
     );
