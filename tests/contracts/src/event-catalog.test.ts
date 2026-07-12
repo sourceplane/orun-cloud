@@ -15,7 +15,11 @@ import {
   severityRank,
 } from "@saas/contracts/event-catalog";
 import { NOTIFICATION_EVENT_TYPES } from "@saas/contracts/notifications";
-import { SCM_EVENT_TYPES, INTEGRATION_EVENT_TYPES } from "@saas/contracts/integrations";
+import {
+  SCM_EVENT_TYPES,
+  INTEGRATION_EVENT_TYPES,
+  MESSAGING_EVENT_TYPES,
+} from "@saas/contracts/integrations";
 import { STATE_EVENT_TYPES } from "@saas/contracts/state";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -223,6 +227,7 @@ describe("event catalog totality (CI guard)", () => {
       ...Object.values(NOTIFICATION_EVENT_TYPES),
       ...Object.values(SCM_EVENT_TYPES),
       ...Object.values(INTEGRATION_EVENT_TYPES),
+      ...Object.values(MESSAGING_EVENT_TYPES),
       ...Object.values(STATE_EVENT_TYPES),
     ];
     const missing = constantValues.filter((t) => !EVENT_CATALOG[t]);

@@ -25,4 +25,17 @@ export interface Env {
   GITHUB_APP_CLIENT_SECRET?: string;
   /** GitHub App slug, used to build the public install URL. */
   GITHUB_APP_SLUG?: string;
+
+  // ── saas-integration-hub provider credentials (IH0; all optional) ──
+  // Slack App per environment (IH risks D1). Dormant until set.
+  SLACK_APP_CLIENT_ID?: string;
+  SLACK_APP_CLIENT_SECRET?: string;
+  /** Signing secret Slack signs inbound requests with (v0 scheme). */
+  SLACK_APP_SIGNING_SECRET?: string;
+  // Supabase OAuth app per environment (IH risks D4). Dormant until set.
+  SUPABASE_OAUTH_CLIENT_ID?: string;
+  SUPABASE_OAUTH_CLIENT_SECRET?: string;
+  // Cloudflare needs no platform credential: the customer's pasted parent
+  // token is the only credential (IH risks D3); custody uses
+  // SECRET_ENCRYPTION_KEY above.
 }

@@ -220,6 +220,10 @@ function createFakeEventsRepo(overrides?: Partial<Record<keyof EventsRepository,
     async queryEventLogByOrg() { return { ok: true, value: { items: [], nextCursor: null } }; },
     async findEventByIdempotencyKey() { return { ok: true, value: null }; },
     async countCustomEventsSince() { return { ok: true, value: 0 }; },
+    async deleteExpiredEvents() { return { ok: true, value: 0 }; },
+    async deleteExpiredAuditEntries() { return { ok: true, value: 0 }; },
+    async deleteExpiredDeadLetters() { return { ok: true, value: 0 }; },
+    async deleteClosedGroupsBefore() { return { ok: true, value: 0 }; },
   };
 
   if (overrides) {

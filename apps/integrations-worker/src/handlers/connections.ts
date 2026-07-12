@@ -132,8 +132,11 @@ export async function handleConnectIntegration(
   }
 
   // D1 gate: live connect parks until the environment's GitHub App exists.
+  // (IH0: install-kind connect only — the oauth/token connect kinds land with
+  // their provider milestones, so the install-URL builder must exist here.)
   const configured = getConfiguredProvider(env, "github");
-  if (!configured || !env.INTEGRATIONS_STATE_SECRET) {
+  const buildInstallUrl = configured?.provider.buildInstallUrl;
+  if (!configured || !buildInstallUrl || !env.INTEGRATIONS_STATE_SECRET) {
     return errorResponse(
       "precondition_failed",
       "The GitHub App for this environment is not configured yet",
@@ -214,7 +217,7 @@ export async function handleConnectIntegration(
       { n: nonce, p: "github", c: connectionId, o: orgId, exp: now + CONNECT_STATE_TTL_MS },
       env.INTEGRATIONS_STATE_SECRET,
     );
-    const installUrl = configured.provider.buildInstallUrl({ state });
+    const installUrl = buildInstallUrl({ state });
 
     const payload: ConnectIntegrationResponse = {
       connection: toPublicConnection(created.value),
@@ -399,7 +402,7 @@ export async function handleRevokeIntegration(
     const installation = await repo.getGithubInstallationByConnectionId(connectionId);
     if (installation.ok) {
       const configured = getConfiguredProvider(env, "github");
-      if (configured) {
+      if (configured?.provider.revokeInstallation) {
         await configured.provider.revokeInstallation(
           installation.value.installationId,
           Date.now(),

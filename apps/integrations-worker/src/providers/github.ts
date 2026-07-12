@@ -3,6 +3,7 @@ import { deleteInstallation, fetchInstallation, mintAppJwt } from "../github-app
 import type {
   BuildInstallUrlInput,
   CompleteConnectInput,
+  InboundCapability,
   IntegrationProvider,
   ProviderConnectionFacts,
   ProviderCredentials,
@@ -18,13 +19,56 @@ function timingSafeEqualHex(a: string, b: string): boolean {
   return mismatch === 0;
 }
 
+// GitHub signs the RAW request body: X-Hub-Signature-256 = "sha256=" +
+// HMAC-SHA256(webhook secret, body). Verify before any parse (IG2 wires
+// the ingress; the verifier lives on the seam from day one).
+async function verifyGithubSignature(
+  webhookSecret: string,
+  rawBody: ArrayBuffer,
+  signatureHeader: string | null,
+): Promise<boolean> {
+  if (!signatureHeader || !signatureHeader.startsWith("sha256=")) return false;
+  const provided = signatureHeader.slice("sha256=".length).toLowerCase();
+  if (!/^[0-9a-f]{64}$/.test(provided)) return false;
+
+  const key = await crypto.subtle.importKey(
+    "raw",
+    new TextEncoder().encode(webhookSecret),
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign"],
+  );
+  const sig = await crypto.subtle.sign("HMAC", key, rawBody);
+  const bytes = new Uint8Array(sig);
+  let expected = "";
+  for (let i = 0; i < bytes.length; i++) expected += bytes[i]!.toString(16).padStart(2, "0");
+  return timingSafeEqualHex(provided, expected);
+}
+
 export function createGithubProvider(
   credentials: ProviderCredentials,
   fetchImpl: FetchLike = fetch,
 ): IntegrationProvider {
+  const inbound: InboundCapability = {
+    async verifySignature(rawBody, headers): Promise<boolean> {
+      return verifyGithubSignature(
+        credentials.webhookSecret,
+        rawBody,
+        headers["x-hub-signature-256"] ?? null,
+      );
+    },
+  };
+
   return {
     id: "github",
     displayName: "GitHub",
+    connectKind: "install",
+    // IG4's token broker is re-expressed as the first credential-broker
+    // capability in IH4; until then the capability is advertised through the
+    // shipped github/token route, not the generic broker object.
+    capabilities: ["connect", "inbound", "scm"],
+
+    inbound,
 
     buildInstallUrl({ state }: BuildInstallUrlInput): string {
       const url = new URL(`${INSTALL_BASE}/${credentials.appSlug}/installations/new`);
@@ -47,29 +91,13 @@ export function createGithubProvider(
       return deleteInstallation(jwt, installationId, fetchImpl);
     },
 
-    // GitHub signs the RAW request body: X-Hub-Signature-256 = "sha256=" +
-    // HMAC-SHA256(webhook secret, body). Verify before any parse (IG2 wires
-    // the ingress; the verifier lives on the seam from day one).
+    // Legacy single-header alias (shipped IG2 handlers/tests) — delegates to
+    // the capability object; one implementation, two call shapes.
     async verifyInboundSignature(
       rawBody: ArrayBuffer,
       signatureHeader: string | null,
     ): Promise<boolean> {
-      if (!signatureHeader || !signatureHeader.startsWith("sha256=")) return false;
-      const provided = signatureHeader.slice("sha256=".length).toLowerCase();
-      if (!/^[0-9a-f]{64}$/.test(provided)) return false;
-
-      const key = await crypto.subtle.importKey(
-        "raw",
-        new TextEncoder().encode(credentials.webhookSecret),
-        { name: "HMAC", hash: "SHA-256" },
-        false,
-        ["sign"],
-      );
-      const sig = await crypto.subtle.sign("HMAC", key, rawBody);
-      const bytes = new Uint8Array(sig);
-      let expected = "";
-      for (let i = 0; i < bytes.length; i++) expected += bytes[i]!.toString(16).padStart(2, "0");
-      return timingSafeEqualHex(provided, expected);
+      return inbound.verifySignature(rawBody, { "x-hub-signature-256": signatureHeader }, 0);
     },
   };
 }

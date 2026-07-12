@@ -40,6 +40,7 @@ describe("Integrations Migration Verification", () => {
       "380_integrations_repo_single_claim",
       "390_integrations_connection_scope",
       "400_integrations_admission",
+      "730_integration_hub_foundation",
     ]) {
       const entry = manifest.migrations.find((m) => m.id === id)!;
       const content = readFileSync(resolve(MIGRATIONS_ROOT, entry.path));
@@ -78,6 +79,26 @@ describe("Integrations Migration Verification", () => {
     expect(sql).toContain("ADD COLUMN IF NOT EXISTS scope TEXT NOT NULL DEFAULT 'account'");
     expect(sql).toContain("chk_integrations_connections_scope");
     expect(sql).toMatch(/CHECK \(scope IN \('account', 'workspace'\)\)/);
+    expect(sql).not.toMatch(/DROP\s+(COLUMN|TABLE)/i);
+  });
+
+  it("730 lands the hub substrate (IH0): custody, ledger, provider facts — additively", () => {
+    const sql = readFileSync(
+      resolve(MIGRATIONS_ROOT, "730_integration_hub_foundation/up.sql"),
+      "utf-8",
+    );
+    expect(sql).toContain("CREATE TABLE IF NOT EXISTS integrations.provider_credentials");
+    expect(sql).toContain("uq_integrations_provider_credential_kind");
+    expect(sql).toContain("CREATE TABLE IF NOT EXISTS integrations.minted_credentials");
+    expect(sql).toContain("idx_integrations_minted_credentials_live");
+    expect(sql).toMatch(/WHERE revoke_status = 'pending'/);
+    expect(sql).toContain("CREATE TABLE IF NOT EXISTS integrations.slack_workspaces");
+    // The Slack tenancy keystone: team_id globally unique (installation_id rule).
+    expect(sql).toContain("uq_integrations_slack_workspace_team");
+    expect(sql).toContain("CREATE TABLE IF NOT EXISTS integrations.cloudflare_accounts");
+    expect(sql).toContain("CREATE TABLE IF NOT EXISTS integrations.supabase_orgs");
+    // Custody rule: the ledger carries no credential value column.
+    expect(sql).not.toMatch(/credential_value|token_plaintext/i);
     expect(sql).not.toMatch(/DROP\s+(COLUMN|TABLE)/i);
   });
 
