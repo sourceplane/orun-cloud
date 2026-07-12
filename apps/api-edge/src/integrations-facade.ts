@@ -29,6 +29,12 @@ const GITHUB_WEBHOOK_PATH = "/ingress/github/webhook";
 // state integrations-worker verifies. Allowlist-routed, GET only, rate-limited.
 const SLACK_OAUTH_PATH = "/ingress/slack/oauth";
 
+// Public Supabase OAuth-callback ingress (IH6, design §5.3): same posture as
+// the Slack OAuth path — no bearer, authenticated by the signed single-use
+// state (plus PKCE) integrations-worker verifies. Allowlist-routed, GET only,
+// rate-limited.
+const SUPABASE_OAUTH_PATH = "/ingress/supabase/oauth";
+
 // Public Slack inbound ingress (IH3, design §4.3): Slack POSTs signed
 // requests here — Events API (JSON), slash commands and interactivity
 // (form-encoded). Same posture as the GitHub webhook: the edge does NOT
@@ -71,6 +77,7 @@ export function isIntegrationsIngressRoute(pathname: string): boolean {
     pathname === GITHUB_SETUP_PATH ||
     pathname === GITHUB_WEBHOOK_PATH ||
     pathname === SLACK_OAUTH_PATH ||
+    pathname === SUPABASE_OAUTH_PATH ||
     SLACK_INBOUND_PATHS.has(pathname)
   );
 }

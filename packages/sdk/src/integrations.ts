@@ -152,6 +152,29 @@ export class IntegrationsClient {
     );
   }
 
+  /**
+   * POST /v1/organizations/:orgId/integrations/supabase/connect
+   *
+   * The oauth-kind (PKCE) connect for Supabase (IH6): returns a pending
+   * connection plus the Supabase authorize URL carrying the signed single-use
+   * state; open it in a popup and poll `get` until the connection turns
+   * `active`.
+   */
+  connectSupabase(
+    orgId: string,
+    body: ConnectIntegrationRequest = {},
+    opts: RequestOptions = {},
+  ): Promise<ConnectIntegrationResponse> {
+    return this.transport.request<ConnectIntegrationResponse>(
+      {
+        method: "POST",
+        path: `/v1/organizations/${encodeURIComponent(orgId)}/integrations/supabase/connect`,
+        body,
+      },
+      opts,
+    );
+  }
+
   /** POST …/integrations/:connectionId/credentials — mint (reveal-once). */
   mintCredential(
     orgId: string,

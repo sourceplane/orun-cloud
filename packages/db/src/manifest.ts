@@ -732,5 +732,14 @@ export const manifest: MigrationManifest = {
       description:
         "Seed the messaging reaction lane (saas-integration-hub IH3): the events-worker lane row that turns the Slack inbox drain's messaging.* emissions into platform reactions — mute_rule actions suppress notification rules for the ES7 storm cooldown (exactly 1h), channel-archived events disable dependent slack_app notification channels via the internal notifications route. Pure seed row, ON CONFLICT DO NOTHING; idempotent.",
     },
+    {
+      id: "810_supabase_oauth",
+      context: "integrations",
+      path: "810_supabase_oauth/up.sql",
+      checksum:
+        "145acfeb83bf257363801786c65cbcf41e33b29776aae9a53962109478d443f2",
+      description:
+        "Supabase OAuth custody support (saas-integration-hub IH6): the provider_credentials kind CHECK widens to admit supabase_pkce_verifier — the PKCE code_verifier lives server-side between authorize and callback as an enveloped custody row bound to the pending connection, deleted the moment the exchange consumes it. Guarded CHECK swap (auto-named inline constraint, the 720 lesson); idempotent.",
+    },
   ],
 };

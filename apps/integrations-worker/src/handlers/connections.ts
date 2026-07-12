@@ -35,6 +35,7 @@ import { getConfiguredProvider } from "../providers/registry.js";
 import { createEncryptionAdapter, type CiphertextEnvelope } from "../encryption.js";
 import { revokeLiveMintsForConnection } from "./credential-broker.js";
 import { handleCloudflareTokenConnect } from "./cloudflare-connect.js";
+import { computeCodeChallenge, generateCodeVerifier } from "../pkce.js";
 import {
   CONNECT_STATE_TTL_MS,
   generateStateNonce,
@@ -139,6 +140,14 @@ const CONNECT_PROVIDERS = {
     notConfiguredMessage: "Credential custody is not configured for this environment",
     gate: "cloudflare_custody",
     oauthCallbackPath: null,
+  },
+  supabase: {
+    displayName: "Supabase",
+    entitlementKey: INTEGRATION_ENTITLEMENTS.SUPABASE,
+    planMessage: "Supabase integration is not included in your current plan",
+    notConfiguredMessage: "The Supabase OAuth app for this environment is not configured yet",
+    gate: "supabase_oauth_registration",
+    oauthCallbackPath: "/ingress/supabase/oauth",
   },
 } as const;
 
@@ -257,6 +266,26 @@ export async function handleConnectIntegration(
     );
   }
 
+  // PKCE (IH6 Supabase): the verifier must live server-side in custody
+  // between the authorize redirect and the callback, so custody (the envelope
+  // key) is a hard gate — checked BEFORE the pending connection is created.
+  let pkce: {
+    verifier: string;
+    challenge: string;
+    encryption: NonNullable<Awaited<ReturnType<typeof createEncryptionAdapter>>>;
+  } | null = null;
+  if (providerId === "supabase") {
+    const encryption = await createEncryptionAdapter(env.SECRET_ENCRYPTION_KEY);
+    if (!encryption) {
+      return errorResponse("precondition_failed", wiring.notConfiguredMessage, 412, requestId, {
+        reason: "not_configured",
+        gate: wiring.gate,
+      });
+    }
+    const verifier = generateCodeVerifier();
+    pkce = { verifier, challenge: await computeCodeChallenge(verifier), encryption };
+  }
+
   // created_by stores the decoded actor UUID (repo-wide convention enforced
   // by lint); the public form is re-derivable for display.
   const createdByUuid = uuidFromPublicId(actor.subjectId);
@@ -287,6 +316,23 @@ export async function handleConnectIntegration(
       return errorResponse("internal_error", "Service unavailable", 503, requestId);
     }
 
+    // PKCE custody (IH6): the verifier rides the custody table as its own
+    // kind, bound to the just-created pending connection; the callback reads
+    // it once, deletes it, and hands it to the code exchange.
+    if (pkce) {
+      const hub = createIntegrationHubRepository(executor);
+      const envelope = await pkce.encryption.encrypt(pkce.verifier);
+      const stored = await hub.upsertProviderCredential({
+        id: generateUuid(),
+        connectionId: asUuid(connectionId),
+        kind: "supabase_pkce_verifier",
+        ciphertext: JSON.stringify(envelope),
+      });
+      if (!stored.ok) {
+        return errorResponse("internal_error", "Service unavailable", 503, requestId);
+      }
+    }
+
     const state = await signConnectState(
       { n: nonce, p: providerId, c: connectionId, o: orgId, exp: now + CONNECT_STATE_TTL_MS },
       env.INTEGRATIONS_STATE_SECRET,
@@ -296,6 +342,7 @@ export async function handleConnectIntegration(
       : provider.buildAuthorizeUrl!({
           state,
           redirectUri: `${env.OAUTH_REDIRECT_BASE_URL!.replace(/\/+$/, "")}${wiring.oauthCallbackPath}`,
+          ...(pkce ? { codeChallenge: pkce.challenge } : {}),
         });
 
     const payload: ConnectIntegrationResponse = {

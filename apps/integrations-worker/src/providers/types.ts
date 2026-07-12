@@ -39,6 +39,8 @@ export interface BuildAuthorizeUrlInput {
   state: string;
   /** Our public callback URL — must match the provider app's configuration. */
   redirectUri: string;
+  /** PKCE S256 code challenge (IH6 Supabase) — base64url(SHA-256(verifier)). */
+  codeChallenge?: string;
 }
 
 export interface ExchangeOauthCodeInput {
@@ -79,6 +81,13 @@ export interface BrokeredCredentialValue {
   providerRef: string | null;
   /** Actual expiry the provider granted (TTL clamps are provider-side). */
   expiresAt: Date;
+  /**
+   * When the mint consumed a ROTATING parent (Supabase refresh tokens rotate
+   * on use), the NEW parent credential the provider handed back — the broker
+   * handler must re-envelope it into custody or the next mint fails with
+   * `parent_grant_insufficient`. Never logged; lives only for the one call.
+   */
+  rotatedParentCredential?: string;
 }
 
 export type MintCredentialOutcome =

@@ -21,6 +21,10 @@ import {
 } from "./handlers/connections.js";
 import { handleSlackOauthCallback, SLACK_OAUTH_CALLBACK_PATH } from "./handlers/slack-oauth.js";
 import {
+  handleSupabaseOauthCallback,
+  SUPABASE_OAUTH_CALLBACK_PATH,
+} from "./handlers/supabase-oauth.js";
+import {
   handleSlackCommandsIngest,
   handleSlackEventsIngest,
   handleSlackInteractivityIngest,
@@ -142,6 +146,14 @@ export async function route(request: Request, env: Env): Promise<Response> {
   if (pathname === SLACK_OAUTH_CALLBACK_PATH) {
     if (request.method !== "GET") return methodNotAllowed(requestId);
     return handleSlackOauthCallback(request, env, requestId);
+  }
+
+  // Supabase OAuth-callback ingress (IH6): signed single-use state + PKCE —
+  // the exchange cannot run without the custody-held verifier, so a
+  // state-less callback fails closed with nothing to orphan.
+  if (pathname === SUPABASE_OAUTH_CALLBACK_PATH) {
+    if (request.method !== "GET") return methodNotAllowed(requestId);
+    return handleSupabaseOauthCallback(request, env, requestId);
   }
 
   // Inbound webhook ingress: authenticated by HMAC over the raw body, never

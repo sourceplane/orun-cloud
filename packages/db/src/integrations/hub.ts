@@ -26,7 +26,8 @@ export type ProviderCredentialKind =
   | "slack_bot_token"
   | "cloudflare_parent_token"
   | "supabase_refresh_token"
-  | "supabase_access_token_cache";
+  | "supabase_access_token_cache"
+  | "supabase_pkce_verifier";
 
 export interface ProviderCredential {
   id: string;
@@ -190,6 +191,11 @@ export interface IntegrationHubRepository {
   /** Zeroize: hard-delete every custody row for a revoked connection. */
   deleteProviderCredentials(
     connectionId: Uuid,
+  ): Promise<IntegrationsResult<{ deleted: number }>>;
+  /** Delete ONE custody row (e.g. a consumed PKCE verifier, IH6). */
+  deleteProviderCredential(
+    connectionId: Uuid,
+    kind: ProviderCredentialKind,
   ): Promise<IntegrationsResult<{ deleted: number }>>;
 
   // Minted-credential ledger
@@ -414,6 +420,19 @@ export function createIntegrationHubRepository(executor: SqlExecutor): Integrati
         return { ok: true, value: { deleted: result.rowCount ?? 0 } };
       } catch (err) {
         return safeError(`provider credential zeroize failed: ${String(err)}`);
+      }
+    },
+
+    async deleteProviderCredential(connectionId, kind) {
+      try {
+        const result = await executor.execute(
+          `DELETE FROM integrations.provider_credentials
+           WHERE connection_id = $1 AND kind = $2`,
+          [connectionId, kind],
+        );
+        return { ok: true, value: { deleted: result.rowCount ?? 0 } };
+      } catch (err) {
+        return safeError(`provider credential delete failed: ${String(err)}`);
       }
     },
 

@@ -91,6 +91,9 @@ describe("integrations facade — route matching", () => {
     expect(isIntegrationsIngressRoute("/ingress/github/setup")).toBe(true);
     expect(isIntegrationsIngressRoute("/ingress/github/webhook")).toBe(true);
     expect(isIntegrationsIngressRoute("/ingress/slack/oauth")).toBe(true);
+    // IH6: the Supabase OAuth (PKCE) callback.
+    expect(isIntegrationsIngressRoute("/ingress/supabase/oauth")).toBe(true);
+    expect(isIntegrationsIngressRoute("/ingress/supabase/oauth/extra")).toBe(false);
     // IH3: the three Slack inbound routes.
     expect(isIntegrationsIngressRoute("/ingress/slack/events")).toBe(true);
     expect(isIntegrationsIngressRoute("/ingress/slack/commands")).toBe(true);

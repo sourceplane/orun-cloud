@@ -87,3 +87,4 @@
 780_agents_budgets
 790_slack_app_channels
 800_messaging_lane
+810_supabase_oauth
