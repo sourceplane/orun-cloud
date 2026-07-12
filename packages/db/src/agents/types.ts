@@ -126,6 +126,10 @@ export interface AgentsRepository extends ProviderConnectionsRepository {
   setAutonomy(scope: WorkspaceScope, input: SetAutonomyInput): Promise<AutonomyPolicy>;
   getAutonomy(scope: WorkspaceScope, specKey?: string): Promise<AutonomyPolicy | null>;
 
+  /** Move a profile's autonomy (AF7). Evidence is the movement's address —
+   * stored verbatim, rendered wherever the level renders. */
+  setProfileAutonomy(scope: WorkspaceScope, input: SetProfileAutonomyInput): Promise<AgentProfile>;
+
   // ── Routines (saas-agents-fleet AF6) ──────────────────────
   createRoutine(scope: WorkspaceScope, input: CreateRoutineInput): Promise<Routine>;
   getRoutine(scope: WorkspaceScope, publicId: string): Promise<Routine | null>;
@@ -149,6 +153,12 @@ export interface CreateRoutineInput {
   definitionRef?: string;
   caps?: Record<string, unknown>;
   createdBy: string;
+}
+
+export interface SetProfileAutonomyInput {
+  publicId: string;
+  autonomyDefault: AutonomyLevel;
+  evidence: Record<string, unknown>;
 }
 
 export interface UpdateRoutineStateInput {

@@ -31,6 +31,7 @@ import type {
   ListOrphanedSessionsInput,
   SetAutonomyInput,
   SetConnectionStatusInput,
+  SetProfileAutonomyInput,
   UpdateRoutineStateInput,
   WorkspaceScope,
 } from "./types.js";
@@ -267,6 +268,18 @@ export class MemoryAgentsRepository implements AgentsRepository {
   async getAutonomy(scope: WorkspaceScope, specKey?: string): Promise<AutonomyPolicy | null> {
     const key = specKey ?? null;
     return this.store(scope.orgId).policies.find((p) => (p.specKey ?? null) === key) ?? null;
+  }
+
+  async setProfileAutonomy(scope: WorkspaceScope, input: SetProfileAutonomyInput): Promise<AgentProfile> {
+    const s = this.store(scope.orgId);
+    const profile = s.profiles.find((p) => p.publicId === input.publicId || p.id === input.publicId);
+    if (!profile) {
+      throw new AgentsError("agent_profile_not_found", `profile ${input.publicId} not found`);
+    }
+    profile.autonomyDefault = input.autonomyDefault;
+    profile.autonomyEvidence = input.evidence;
+    profile.updatedAt = this.now();
+    return profile;
   }
 
   // ── Routines (saas-agents-fleet AF6) ──────────────────────

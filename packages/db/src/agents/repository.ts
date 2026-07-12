@@ -38,6 +38,7 @@ import type {
   ListOrphanedSessionsInput,
   SetAutonomyInput,
   SetConnectionStatusInput,
+  SetProfileAutonomyInput,
   UpdateRoutineStateInput,
   WorkspaceScope,
 } from "./types.js";
@@ -69,7 +70,7 @@ function newPublicId(prefix: string): string {
 }
 
 function mapProfile(row: Row): AgentProfile {
-  return {
+  const p: AgentProfile = {
     id: String(row.id),
     publicId: String(row.public_id),
     orgId: String(row.org_id),
@@ -84,6 +85,10 @@ function mapProfile(row: Row): AgentProfile {
     createdAt: toIso(row.created_at),
     updatedAt: toIso(row.updated_at),
   };
+  if (row.autonomy_evidence != null) {
+    p.autonomyEvidence = parseJson<Record<string, unknown>>(row.autonomy_evidence, {});
+  }
+  return p;
 }
 
 function mapSession(row: Row): AgentSession {
@@ -484,6 +489,20 @@ export function createAgentsRepository(sql: TransactionalSqlExecutor): AgentsRep
       return policy;
     },
 
+
+    async setProfileAutonomy(scope: WorkspaceScope, input: SetProfileAutonomyInput): Promise<AgentProfile> {
+      const res = await sql.execute(
+        `UPDATE agents.agent_profiles
+            SET autonomy_default = $3, autonomy_evidence = $4::jsonb, updated_at = now()
+          WHERE org_id = $1 AND (public_id = $2 OR id::text = $2)
+          RETURNING *`,
+        [scope.orgId, input.publicId, input.autonomyDefault, JSON.stringify(input.evidence)],
+      );
+      if (!res.rows[0]) {
+        throw new AgentsError("agent_profile_not_found", `profile ${input.publicId} not found`);
+      }
+      return mapProfile(res.rows[0] as Row);
+    },
 
     // ── Routines (saas-agents-fleet AF6) ──────────────────────
 
