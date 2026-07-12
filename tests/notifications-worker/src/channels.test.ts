@@ -221,3 +221,100 @@ describe("notification channels handler", () => {
     expect(emitted).toEqual(["notification_channel.verified"]);
   });
 });
+
+// ── slack_app channel creation (IH2) ────────────────────────
+
+describe("handleCreateChannel (slack_app)", () => {
+  function slackAppBody(overrides?: Record<string, unknown>): Record<string, unknown> {
+    return {
+      name: "Alerts bot",
+      kind: "slack_app",
+      connectionId: "int_00000000000000000000000000000abc",
+      channelExternalId: "C0123ABCDEF",
+      channelName: "alerts",
+      ...overrides,
+    };
+  }
+
+  function credentialsBinding(outcome: Record<string, unknown>): Fetcher {
+    return createMockFetcher(async () =>
+      Response.json({ data: outcome, meta: { requestId: REQ } }),
+    );
+  }
+
+  function requestOf(body: unknown): Request {
+    return new Request("https://worker.test/x", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(body),
+    });
+  }
+
+  it("validates the connection reference shape", async () => {
+    const { repo } = fakeChannelsRepo();
+    const res = await handleCreateChannel(
+      requestOf(slackAppBody({ channelExternalId: "not-a-channel-id" })),
+      createEnv({ INTEGRATIONS_WORKER: credentialsBinding({ ok: true, botToken: "t", teamId: "T" }) }),
+      REQ,
+      ACTOR,
+      ORG_PUBLIC,
+      { channelsRepo: repo },
+    );
+    expect(res.status).toBe(422);
+  });
+
+  it("refuses a connection the org cannot use (412 with the read's reason)", async () => {
+    const { repo, created } = fakeChannelsRepo();
+    const res = await handleCreateChannel(
+      requestOf(slackAppBody()),
+      createEnv({ INTEGRATIONS_WORKER: credentialsBinding({ ok: false, reason: "not_found" }) }),
+      REQ,
+      ACTOR,
+      ORG_PUBLIC,
+      { channelsRepo: repo },
+    );
+    expect(res.status).toBe(412);
+    expect(created).toHaveLength(0);
+  });
+
+  it("stores an encrypted REFERENCE — connection + channel ids, no credential", async () => {
+    const { repo, created } = fakeChannelsRepo();
+    const res = await handleCreateChannel(
+      requestOf(slackAppBody()),
+      createEnv({ INTEGRATIONS_WORKER: credentialsBinding({ ok: true, botToken: "xoxb-t", teamId: "T" }) }),
+      REQ,
+      ACTOR,
+      ORG_PUBLIC,
+      { channelsRepo: repo },
+    );
+    expect(res.status).toBe(201);
+    expect(created).toHaveLength(1);
+    const input = created[0] as { kind: string; configCiphertext: string };
+    expect(input.kind).toBe("slack_app");
+    // Ciphertext is an AES envelope — the reference (and certainly no token)
+    // must not be readable from the stored value.
+    expect(input.configCiphertext).not.toContain("C0123ABCDEF");
+    expect(input.configCiphertext).not.toContain("xoxb-t");
+    const { createEncryptionAdapter } = await import("@notifications-worker/encryption");
+    const adapter = (await createEncryptionAdapter(KEY))!;
+    const ref = JSON.parse(await adapter.decrypt(JSON.parse(input.configCiphertext)));
+    expect(ref).toEqual({
+      connectionId: "int_00000000000000000000000000000abc",
+      channelExternalId: "C0123ABCDEF",
+      channelName: "alerts",
+    });
+  });
+
+  it("parks 412 when the integrations binding is absent", async () => {
+    const { repo } = fakeChannelsRepo();
+    const res = await handleCreateChannel(
+      requestOf(slackAppBody()),
+      createEnv(),
+      REQ,
+      ACTOR,
+      ORG_PUBLIC,
+      { channelsRepo: repo },
+    );
+    expect(res.status).toBe(412);
+  });
+});

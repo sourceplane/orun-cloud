@@ -1,4 +1,5 @@
 import type {
+  ListSlackChannelsResponse,
   ConnectIntegrationRequest,
   IssueIntegrationTokenRequest,
   IssueIntegrationTokenResponse,
@@ -95,6 +96,31 @@ export class IntegrationsClient {
         method: "POST",
         path: `/v1/organizations/${encodeURIComponent(orgId)}/integrations/slack/connect`,
         body,
+      },
+      opts,
+    );
+  }
+
+  /**
+   * GET /v1/organizations/:orgId/integrations/:connectionId/slack/channels
+   *
+   * The slack_app channel picker (IH2): channels the workspace bot can see.
+   * `query` filters by name substring; `cursor` pages the Slack list.
+   */
+  listSlackChannels(
+    orgId: string,
+    connectionId: string,
+    params: { query?: string; cursor?: string } = {},
+    opts: RequestOptions = {},
+  ): Promise<ListSlackChannelsResponse> {
+    const search = new URLSearchParams();
+    if (params.query) search.set("query", params.query);
+    if (params.cursor) search.set("cursor", params.cursor);
+    const qs = search.toString();
+    return this.transport.request<ListSlackChannelsResponse>(
+      {
+        method: "GET",
+        path: `/v1/organizations/${encodeURIComponent(orgId)}/integrations/${encodeURIComponent(connectionId)}/slack/channels${qs ? `?${qs}` : ""}`,
       },
       opts,
     );

@@ -62,6 +62,14 @@ export interface ThrottleAdmission {
   saturatedWindows: number;
 }
 
+/** Outcome of group-aware notification admission (ES4/IH2). */
+export interface GroupNotifyDecision {
+  /** Enqueue a notification for this event. */
+  fire: boolean;
+  /** The fire is a severity escalation of an already-notified story. */
+  escalated: boolean;
+}
+
 export interface CreateNotificationRuleInput {
   id: string;
   orgId: string;
@@ -170,16 +178,17 @@ export interface NotificationRulesRepository {
 
   /**
    * Group-aware notification admission (ES4). For a (rule, dedup group key),
-   * record the high-water severity notified and return true when this event
+   * record the high-water severity notified and decide whether this event
    * should fire — i.e. it opened the story (first) or escalated its severity
    * above what was already notified. Single-statement upsert: race-free per
-   * (rule, group). Returns false for a non-first, non-escalating member.
+   * (rule, group). `escalated` distinguishes the two fire causes (IH2: an
+   * escalation renders as a thread reply on the story's Slack message).
    */
   tryNotifyGroup(
     ruleId: string,
     groupKey: string,
     severity: string,
-  ): Promise<EventsResult<boolean>>;
+  ): Promise<EventsResult<GroupNotifyDecision>>;
 
   addTarget(input: AddRuleTargetInput): Promise<EventsResult<StoredRuleTarget>>;
   listTargetsByRule(ruleId: string): Promise<EventsResult<StoredRuleTarget[]>>;
@@ -460,10 +469,9 @@ export function createNotificationRulesRepository(executor: SqlExecutor): Notifi
         );
         const prev = (result.rows[0]?.prev as string | null) ?? null;
         // Fire when the story is new (no prior) or this event escalates it.
-        const fire =
-          prev === null ||
-          SEVERITY_LADDER.indexOf(severity) > SEVERITY_LADDER.indexOf(prev);
-        return { ok: true, value: fire };
+        const escalated =
+          prev !== null && SEVERITY_LADDER.indexOf(severity) > SEVERITY_LADDER.indexOf(prev);
+        return { ok: true, value: { fire: prev === null || escalated, escalated } };
       } catch {
         // Fail-closed: an unknown ledger state must not fan out a storm.
         return safeError("Failed to evaluate group notification");

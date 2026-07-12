@@ -33,9 +33,13 @@ export type NotificationChannel = "email" | "slack";
 
 /**
  * Configured delivery-channel kinds (ES3). A channel row holds an encrypted
- * bearer credential; `slack_incoming_webhook` is the first kind.
+ * config: `slack_incoming_webhook` stores a bearer webhook URL; `slack_app`
+ * (saas-integration-hub IH2) stores a REFERENCE — `{connectionId,
+ * channelExternalId, channelName}` — never a credential; the bot token stays
+ * in integrations-worker custody and is fetched per send over the internal
+ * service binding.
  */
-export type NotificationChannelKind = "slack_incoming_webhook";
+export type NotificationChannelKind = "slack_incoming_webhook" | "slack_app";
 
 /**
  * High-level routing category. Used for preferences and audit categorisation.
@@ -488,11 +492,21 @@ export interface PublicNotificationChannel {
   updatedAt: string;
 }
 
-/** Request body for POST …/notification-channels. `webhookUrl` is write-only. */
+/**
+ * Request body for POST …/notification-channels. `webhookUrl` is write-only
+ * and required for `slack_incoming_webhook` (the default kind); the three
+ * connection-reference fields are required for `slack_app` instead.
+ */
 export interface CreateNotificationChannelRequest {
   name: string;
   kind?: NotificationChannelKind;
-  webhookUrl: string;
+  webhookUrl?: string;
+  /** slack_app: public connection id (`int_…`) the channel posts through. */
+  connectionId?: string;
+  /** slack_app: Slack channel id (e.g. `C0123ABCDEF`) from the picker. */
+  channelExternalId?: string;
+  /** slack_app: human channel name at pick time (display only). */
+  channelName?: string;
 }
 
 /** Request body for PATCH …/notification-channels/:channelId. */

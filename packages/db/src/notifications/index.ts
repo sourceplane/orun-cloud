@@ -26,3 +26,9 @@ export type {
 } from "./channels.js";
 
 export { createNotificationChannelsRepository } from "./channels.js";
+export type {
+  SlackGroupMessage,
+  SlackGroupMessagesRepository,
+  UpsertSlackGroupMessageInput,
+} from "./slack-groups.js";
+export { createSlackGroupMessagesRepository } from "./slack-groups.js";

@@ -22,6 +22,7 @@ spec:
     - component: membership-worker
     - component: policy-worker
     - component: billing-worker
+    - component: integrations-worker
   subscribe:
     environments:
       - name: dev

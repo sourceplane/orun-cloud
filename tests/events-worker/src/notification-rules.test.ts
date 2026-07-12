@@ -165,7 +165,7 @@ function fakeRulesRepo(options?: {
       calls.groupNotifyCalls.push({ ruleId, groupKey, severity });
       const fire = options?.groupNotify?.[groupIdx] ?? true;
       groupIdx++;
-      return { ok: true, value: fire };
+      return { ok: true, value: { fire, escalated: false } };
     },
     async addTarget(input) {
       calls.targets.push(input);

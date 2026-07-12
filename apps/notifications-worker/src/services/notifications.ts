@@ -10,6 +10,7 @@ import { NOTIFICATION_EVENT_TYPES } from "@saas/contracts/notifications";
 import type {
   NotificationChannelsRepository,
   NotificationsRepository,
+  SlackGroupMessagesRepository,
   StoredNotification,
   StoredNotificationAttempt,
 } from "@saas/db/notifications";
@@ -144,6 +145,8 @@ export interface NotificationsServiceDeps {
   requestId: string;
   /** ES3: channel config store for slack delivery (undefined ⇒ slack disabled). */
   channelsRepo?: NotificationChannelsRepository | undefined;
+  /** IH2: event-group ↔ Slack message identity store (slack_app chat.update). */
+  slackGroupsRepo?: SlackGroupMessagesRepository | undefined;
   /** ES3: injectable fetch for the slack provider (tests). */
   fetchImpl?: typeof fetch | undefined;
 }
@@ -314,6 +317,8 @@ export async function enqueueNotification(
       channelsRepo: deps.channelsRepo,
       encryptionKey: deps.env.SECRET_ENCRYPTION_KEY,
       consoleBaseUrl: deps.env.CONSOLE_BASE_URL,
+      integrationsBinding: deps.env.INTEGRATIONS_WORKER,
+      slackGroupsRepo: deps.slackGroupsRepo,
       ...(deps.fetchImpl ? { fetchImpl: deps.fetchImpl } : {}),
     },
     notification,

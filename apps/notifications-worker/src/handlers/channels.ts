@@ -9,6 +9,8 @@ import { createSqlExecutor } from "@saas/db/hyperdrive";
 import { uuidFromPublicId, asUuid } from "@saas/db/ids";
 import { createEncryptionAdapter } from "../encryption.js";
 import { createSlackWebhookProvider } from "../providers/slack-webhook.js";
+import { createSlackAppProvider } from "../providers/slack-app.js";
+import { fetchSlackDeliveryCredentials } from "../services/slack-credentials.js";
 import { fetchAuthorizationContext } from "../membership-client.js";
 import { authorizeViaPolicy } from "../policy-client.js";
 import { checkBillingEntitlement } from "../billing-client.js";
@@ -21,6 +23,11 @@ export const LIMIT_NOTIFICATION_CHANNELS = "limit.notification_channels";
 
 const NAME_RE = /^[\w][\w .:/-]{0,118}[\w)]?$/;
 const SLACK_WEBHOOK_RE = /^https:\/\/hooks\.slack\.com\/services\/[A-Za-z0-9/_-]+$/;
+// slack_app references (IH2): the public connection id + Slack channel id the
+// picker returned. Shapes only — usability of the connection is re-verified
+// against integrations-worker at create time AND on every send.
+const CONNECTION_ID_RE = /^int_[0-9a-f]{32}$/;
+const SLACK_CHANNEL_ID_RE = /^[CDG][A-Z0-9]{5,63}$/;
 
 export interface ChannelsHandlerDeps {
   channelsRepo?: NotificationChannelsRepository;
@@ -169,10 +176,24 @@ export async function handleCreateChannel(
   if (typeof b.name !== "string" || !NAME_RE.test(b.name)) {
     errors.name = ["Required: 1-120 chars"];
   }
-  if (b.kind !== undefined && b.kind !== "slack_incoming_webhook") {
-    errors.kind = ['Only "slack_incoming_webhook" is supported'];
+  const kindRaw = b.kind === undefined ? "slack_incoming_webhook" : b.kind;
+  if (kindRaw !== "slack_incoming_webhook" && kindRaw !== "slack_app") {
+    errors.kind = ['Must be "slack_incoming_webhook" or "slack_app"'];
   }
-  if (typeof b.webhookUrl !== "string" || !SLACK_WEBHOOK_RE.test(b.webhookUrl)) {
+  const kind = (kindRaw === "slack_app" ? "slack_app" : "slack_incoming_webhook") as
+    | "slack_app"
+    | "slack_incoming_webhook";
+  if (kind === "slack_app") {
+    if (typeof b.connectionId !== "string" || !CONNECTION_ID_RE.test(b.connectionId)) {
+      errors.connectionId = ["Required: the Slack connection id (int_…)"];
+    }
+    if (typeof b.channelExternalId !== "string" || !SLACK_CHANNEL_ID_RE.test(b.channelExternalId)) {
+      errors.channelExternalId = ["Required: a Slack channel id (e.g. C0123ABCDEF)"];
+    }
+    if (typeof b.channelName !== "string" || !NAME_RE.test(b.channelName)) {
+      errors.channelName = ["Required: 1-120 chars"];
+    }
+  } else if (typeof b.webhookUrl !== "string" || !SLACK_WEBHOOK_RE.test(b.webhookUrl)) {
     errors.webhookUrl = ["Must be a Slack incoming-webhook URL (https://hooks.slack.com/services/...)"];
   }
   if (Object.keys(errors).length > 0) return validationError(requestId, errors);
@@ -209,15 +230,47 @@ export async function handleCreateChannel(
       }
     }
 
+    if (kind === "slack_app") {
+      // The reference must point at a connection THIS org may use (own or
+      // account-shared with admission) — verified against integrations-worker
+      // custody now, and again on every send (the paste-a-foreign-id hole).
+      if (!env.INTEGRATIONS_WORKER) {
+        return errorResponse("precondition_failed", "Slack workspace channels are not available in this environment", 412, requestId, {
+          reason: "not_configured",
+          gate: "integrations_binding",
+        });
+      }
+      const usable = await fetchSlackDeliveryCredentials(
+        env.INTEGRATIONS_WORKER,
+        orgPublicId(orgUuid),
+        b.connectionId as string,
+      );
+      if (!usable.ok) {
+        return errorResponse("precondition_failed", "The Slack connection is not usable by this organization", 412, requestId, {
+          reason: usable.reason,
+        });
+      }
+    }
+
     const adapter = await createEncryptionAdapter(env.SECRET_ENCRYPTION_KEY);
     if (!adapter) return errorResponse("internal_error", "Channel encryption not configured", 503, requestId);
-    const envelope = await adapter.encrypt(b.webhookUrl as string);
+    // slack_app stores a REFERENCE (connection + channel ids), never a
+    // credential; the webhook kind stores its bearer URL — both encrypted.
+    const plaintext =
+      kind === "slack_app"
+        ? JSON.stringify({
+            connectionId: b.connectionId as string,
+            channelExternalId: b.channelExternalId as string,
+            channelName: b.channelName as string,
+          })
+        : (b.webhookUrl as string);
+    const envelope = await adapter.encrypt(plaintext);
 
     const createdByUuid = uuidFromPublicId(actor.subjectId) ?? asUuid(actor.subjectId);
     const created = await repo.createChannel({
       id: generateChannelId(),
       orgId: asUuid(orgUuid),
-      kind: "slack_incoming_webhook",
+      kind,
       name: b.name as string,
       configCiphertext: JSON.stringify(envelope),
       createdBy: createdByUuid,
@@ -369,17 +422,48 @@ export async function handleTestChannel(
     if (!cfg.value) return errorResponse("not_found", "Not found", 404, requestId);
     const adapter = await createEncryptionAdapter(env.SECRET_ENCRYPTION_KEY);
     if (!adapter) return errorResponse("internal_error", "Channel encryption not configured", 503, requestId);
-    let webhookUrl: string;
+    let plaintext: string;
     try {
-      webhookUrl = await adapter.decrypt(JSON.parse(cfg.value.configCiphertext));
+      plaintext = await adapter.decrypt(JSON.parse(cfg.value.configCiphertext));
     } catch {
       return errorResponse("internal_error", "Channel config is unreadable", 500, requestId);
     }
-    const provider = createSlackWebhookProvider({
-      webhookUrl,
-      ...(env.CONSOLE_BASE_URL ? { consoleBaseUrl: env.CONSOLE_BASE_URL } : {}),
-      ...(deps.fetchImpl ? { fetchImpl: deps.fetchImpl } : {}),
-    });
+    let provider;
+    if (cfg.value.kind === "slack_app") {
+      if (!env.INTEGRATIONS_WORKER) {
+        return errorResponse("bad_gateway", "Test send failed (slack_app_not_configured)", 502, requestId);
+      }
+      let ref: { connectionId?: unknown; channelExternalId?: unknown };
+      try {
+        ref = JSON.parse(plaintext) as typeof ref;
+      } catch {
+        return errorResponse("internal_error", "Channel config is unreadable", 500, requestId);
+      }
+      if (typeof ref.connectionId !== "string" || typeof ref.channelExternalId !== "string") {
+        return errorResponse("internal_error", "Channel config is unreadable", 500, requestId);
+      }
+      const credentials = await fetchSlackDeliveryCredentials(
+        env.INTEGRATIONS_WORKER,
+        orgPublicId(orgUuid),
+        ref.connectionId,
+      );
+      if (!credentials.ok) {
+        return errorResponse("bad_gateway", `Test send failed (${credentials.reason})`, 502, requestId);
+      }
+      provider = createSlackAppProvider({
+        botToken: credentials.botToken,
+        channelExternalId: ref.channelExternalId,
+        channelRowId: cfg.value.id,
+        consoleBaseUrl: env.CONSOLE_BASE_URL,
+        fetchImpl: deps.fetchImpl,
+      });
+    } else {
+      provider = createSlackWebhookProvider({
+        webhookUrl: plaintext,
+        ...(env.CONSOLE_BASE_URL ? { consoleBaseUrl: env.CONSOLE_BASE_URL } : {}),
+        ...(deps.fetchImpl ? { fetchImpl: deps.fetchImpl } : {}),
+      });
+    }
     const result = await provider.send({
       notificationId: `test-${requestId}`,
       orgId: orgUuid,

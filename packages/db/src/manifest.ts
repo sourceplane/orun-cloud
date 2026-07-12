@@ -714,5 +714,14 @@ export const manifest: MigrationManifest = {
       description:
         "Budgets as ceilings (saas-agents-fleet AF8): agents.budgets — org-scoped token ceilings at four grains (workspace 30d rolling spend · tree shared envelope · session single-run · routine per-firing; NULL-ref rows are org-wide defaults, routine rows pin a routine's public id; one ceiling per grain+ref via a COALESCE unique index) — and agent_sessions.tokens_used, the accumulated relayed spend that makes every check row arithmetic and the 80% attention marks a pure fold. Ceilings, not advisories (locked decision 6): the door refuses against an exhausted envelope; an ingest crossing becomes a graceful sealed interrupt, never a hard kill. Additive + idempotent.",
     },
+    {
+      id: "790_slack_app_channels",
+      context: "notifications",
+      path: "790_slack_app_channels/up.sql",
+      checksum:
+        "ff8cb28166b00380490c43077ab6a29a07a73b49ea68d0b067d1775ee6923f45",
+      description:
+        "slack_app delivery channel kind (saas-integration-hub IH2): the notification_channels kind CHECK widens to admit slack_app (config_ciphertext stores a {connectionId, channelExternalId, channelName} REFERENCE, never a credential — the bot token stays in integrations-worker custody, fetched per send over the internal service binding), plus slack_group_messages — the event-group ↔ Slack message identity map behind the chat.update upgrade (root-message coordinates per (channel, group_key), severity high-water for escalation display; CASCADE on channel delete). Guarded CHECK swap + CREATE IF NOT EXISTS; idempotent as a unit. (Renumbered from 740: main took 740-780 while IH2 was in flight.)",
+    },
   ],
 };

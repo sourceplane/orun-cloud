@@ -60,6 +60,11 @@ const DEFAULT_TIER_ENTITLEMENTS: Record<string, number> = {
   // repo link. Catalog rows override these the moment plans configure them.
   "feature.integrations.github": 1,
   "limit.repo_links": 1,
+  // saas-integration-hub IH1 (that epic's risks D7, resolved to the GitHub D4
+  // posture): Slack connect is an activation feature, available on the
+  // default tier — without this, an org whose rows predate the key parks on
+  // 412/not_configured at the hub's Connect button.
+  "feature.integrations.slack": 1,
   // saas-event-streaming ES2 (D3 defaults): rules available on the default
   // tier with a conservative cap; catalog rows override once materialized.
   "feature.event_routing": 1,

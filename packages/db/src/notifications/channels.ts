@@ -10,7 +10,7 @@ import type { NotificationsResult } from "./types.js";
 // send path reads it via getChannelConfigForSend.
 // ---------------------------------------------------------------------------
 
-export type NotificationChannelKind = "slack_incoming_webhook";
+export type NotificationChannelKind = "slack_incoming_webhook" | "slack_app";
 export type NotificationChannelStatus = "active" | "disabled";
 
 /** Safe channel projection — never carries config_ciphertext. */

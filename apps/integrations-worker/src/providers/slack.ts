@@ -15,6 +15,7 @@ import type { InboundCapability, IntegrationProvider, SlackAppCredentials } from
 const AUTHORIZE_URL = "https://slack.com/oauth/v2/authorize";
 const OAUTH_ACCESS_URL = "https://slack.com/api/oauth.v2.access";
 const AUTH_REVOKE_URL = "https://slack.com/api/auth.revoke";
+const CONVERSATIONS_LIST_URL = "https://slack.com/api/conversations.list";
 
 /**
  * Bot scope set (risks D2, minimal two-way default): post/update messages,
@@ -197,6 +198,56 @@ export async function revokeSlackToken(
   }
 }
 
+/**
+ * Channel discovery (`conversations.list`, IH2): public + private channels
+ * the bot can see, one page per call. Slack has no server-side name filter,
+ * so `query` narrows the returned page client-side. Null = provider refused
+ * (bad/revoked token) — callers surface a typed error, never a 500.
+ */
+export async function listSlackChannels(
+  input: { accessToken: string; query?: string; cursor?: string },
+  fetchImpl: FetchLike = fetch,
+): Promise<{
+  channels: Array<{ externalId: string; name: string; isPrivate: boolean }>;
+  nextCursor: string | null;
+} | null> {
+  const url = new URL(CONVERSATIONS_LIST_URL);
+  url.searchParams.set("types", "public_channel,private_channel");
+  url.searchParams.set("exclude_archived", "true");
+  url.searchParams.set("limit", "200");
+  if (input.cursor) url.searchParams.set("cursor", input.cursor);
+
+  let payload: Record<string, unknown>;
+  try {
+    const response = await fetchImpl(url.toString(), {
+      method: "GET",
+      headers: { authorization: `Bearer ${input.accessToken}` },
+    });
+    if (!response.ok) return null;
+    payload = (await response.json()) as Record<string, unknown>;
+  } catch {
+    return null;
+  }
+  if (payload.ok !== true || !Array.isArray(payload.channels)) return null;
+
+  const needle = input.query?.trim().toLowerCase() ?? "";
+  const channels = (payload.channels as Array<Record<string, unknown>>)
+    .filter((c) => typeof c.id === "string" && typeof c.name === "string")
+    .map((c) => ({
+      externalId: c.id as string,
+      name: c.name as string,
+      isPrivate: c.is_private === true,
+    }))
+    .filter((c) => (needle ? c.name.toLowerCase().includes(needle) : true));
+
+  const metadata = payload.response_metadata as { next_cursor?: unknown } | undefined;
+  const nextCursor =
+    typeof metadata?.next_cursor === "string" && metadata.next_cursor.length > 0
+      ? metadata.next_cursor
+      : null;
+  return { channels, nextCursor };
+}
+
 export function createSlackProvider(
   credentials: SlackAppCredentials,
   fetchImpl?: FetchLike,
@@ -217,11 +268,14 @@ export function createSlackProvider(
     id: "slack",
     displayName: "Slack",
     connectKind: "oauth",
-    // "messaging" (listChannels) lands with IH2; the capability list reflects
-    // what the adapter object actually exposes today.
-    capabilities: ["connect", "inbound"],
+    capabilities: ["connect", "inbound", "messaging"],
 
     inbound,
+    messaging: {
+      listChannels(input) {
+        return listSlackChannels(input, fetchImpl);
+      },
+    },
 
     buildAuthorizeUrl(input) {
       return buildSlackAuthorizeUrl({

@@ -20,6 +20,8 @@ import {
   isConnectableProvider,
 } from "./handlers/connections.js";
 import { handleSlackOauthCallback, SLACK_OAUTH_CALLBACK_PATH } from "./handlers/slack-oauth.js";
+import { handleListSlackChannels } from "./handlers/slack-channels.js";
+import { handleSlackCredentialsInternal } from "./handlers/slack-credentials-internal.js";
 import {
   handleCreateConnectionGrant,
   handleListConnectionGrants,
@@ -49,6 +51,8 @@ const INTERNAL_CALLER_RE = /^[a-z][a-z0-9-]{0,63}$/;
 const ALLOWED_INTERNAL_CALLERS: ReadonlySet<string> = new Set([
   // state-worker drives the write-back proxy on a run-result event (OV5).
   "state-worker",
+  // notifications-worker reads slack_app delivery credentials per send (IH2).
+  "notifications-worker",
 ]);
 
 function isAllowedInternalCaller(value: string | null): value is string {
@@ -92,9 +96,12 @@ const PROJECT_REPO_LINKS_RE =
   /^\/v1\/organizations\/([^/]+)\/projects\/([^/]+)\/repo-links$/;
 const PROJECT_REPO_LINK_RE =
   /^\/v1\/organizations\/([^/]+)\/projects\/([^/]+)\/repo-links\/([^/]+)$/;
+const ORG_CONNECTION_SLACK_CHANNELS_RE =
+  /^\/v1\/organizations\/([^/]+)\/integrations\/([^/]+)\/slack\/channels$/;
 const GITHUB_SETUP_PATH = "/ingress/github/setup";
 const GITHUB_WEBHOOK_PATH = "/ingress/github/webhook";
 const GITHUB_WRITEBACK_PATH = "/internal/github/writeback";
+const SLACK_CREDENTIALS_PATH = "/internal/slack/credentials";
 
 export async function route(request: Request, env: Env): Promise<Response> {
   const requestId = resolveRequestId(request);
@@ -143,6 +150,20 @@ export async function route(request: Request, env: Env): Promise<Response> {
     return handleWritebackInternal(request, env, requestId);
   }
 
+  // Internal slack_app delivery-credential read (IH2, design §4.2): the bot
+  // token crosses ONLY the service binding; the caller holds it in isolate
+  // memory. Authenticated by the binding boundary, never a user bearer.
+  if (pathname === SLACK_CREDENTIALS_PATH) {
+    if (request.method !== "POST") return methodNotAllowed(requestId);
+    if (!isAllowedInternalCaller(request.headers.get(INTERNAL_CALLER_HEADER))) {
+      return errorResponse("unauthorized", "Internal service-binding required", 403, requestId);
+    }
+    if (!env.PLATFORM_DB) {
+      return errorResponse("internal_error", "Database not configured", 503, requestId);
+    }
+    return handleSlackCredentialsInternal(request, env, requestId);
+  }
+
   // Everything below is the authenticated org surface.
   if (!env.PLATFORM_DB) {
     return errorResponse("internal_error", "Database not configured", 503, requestId);
@@ -187,6 +208,15 @@ export async function route(request: Request, env: Env): Promise<Response> {
       return errorResponse("internal_error", "Entitlement service not configured", 503, requestId);
     }
     return handleIssueGithubToken(request, env, requestId, actor, orgId);
+  }
+
+  m = pathname.match(ORG_CONNECTION_SLACK_CHANNELS_RE);
+  if (m) {
+    const orgId = parseOrgPublicId(m[1]!);
+    const connectionUuid = parseConnectionPublicId(m[2]!);
+    if (!orgId || !connectionUuid) return notFound(requestId, pathname);
+    if (request.method !== "GET") return methodNotAllowed(requestId);
+    return handleListSlackChannels(request, env, requestId, actor, orgId, asUuid(connectionUuid));
   }
 
   m = pathname.match(ORG_CONNECTION_REPOSITORIES_RE);

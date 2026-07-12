@@ -2,6 +2,7 @@ import type { Env } from "./env.js";
 import { route } from "./router.js";
 import { createSqlExecutor } from "@saas/db/hyperdrive";
 import {
+  createSlackGroupMessagesRepository,
   createNotificationsRepository,
   createNotificationChannelsRepository,
 } from "@saas/db/notifications";
@@ -27,6 +28,8 @@ export default {
         repo: createNotificationsRepository(executor),
         emailProvider: resolveProvider(env),
         channelsRepo: createNotificationChannelsRepository(executor),
+        slackGroupsRepo: createSlackGroupMessagesRepository(executor),
+        integrationsBinding: env.INTEGRATIONS_WORKER,
         encryptionKey: env.SECRET_ENCRYPTION_KEY,
         consoleBaseUrl: env.CONSOLE_BASE_URL,
         env,
