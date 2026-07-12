@@ -103,6 +103,13 @@ export const PLAN_CATALOG: PlanDefinition[] = [
       // Slack connect (saas-integration-hub IH1; risks D7 resolved to the same
       // activation posture as GitHub): available on every tier.
       { entitlementKey: "feature.integrations.slack", valueType: "boolean", enabled: true, limitValue: null },
+      // Cloudflare/Supabase connect + the credential broker (saas-integration-hub
+      // IH4/IH5/IH6; risks D5/D7): same activation posture — available on every
+      // tier, with the mint rate limit as the D5 abuse bound.
+      { entitlementKey: "feature.integrations.cloudflare", valueType: "boolean", enabled: true, limitValue: null },
+      { entitlementKey: "feature.integrations.supabase", valueType: "boolean", enabled: true, limitValue: null },
+      { entitlementKey: "feature.integrations.credential_broker", valueType: "boolean", enabled: true, limitValue: null },
+      { entitlementKey: "limit.credential_mints_per_day", valueType: "quantity", enabled: true, limitValue: 200 },
       { entitlementKey: "limit.repo_links", valueType: "quantity", enabled: true, limitValue: 1 },
       // Event routing (saas-event-streaming ES2, D3 defaults): rules are an
       // activation feature — enabled on free with a conservative cap.
@@ -148,6 +155,13 @@ export const PLAN_CATALOG: PlanDefinition[] = [
       // Slack connect (saas-integration-hub IH1; risks D7 resolved to the same
       // activation posture as GitHub): available on every tier.
       { entitlementKey: "feature.integrations.slack", valueType: "boolean", enabled: true, limitValue: null },
+      // Cloudflare/Supabase connect + the credential broker (saas-integration-hub
+      // IH4/IH5/IH6; risks D5/D7): same activation posture — available on every
+      // tier, with the mint rate limit as the D5 abuse bound.
+      { entitlementKey: "feature.integrations.cloudflare", valueType: "boolean", enabled: true, limitValue: null },
+      { entitlementKey: "feature.integrations.supabase", valueType: "boolean", enabled: true, limitValue: null },
+      { entitlementKey: "feature.integrations.credential_broker", valueType: "boolean", enabled: true, limitValue: null },
+      { entitlementKey: "limit.credential_mints_per_day", valueType: "quantity", enabled: true, limitValue: 200 },
       { entitlementKey: "limit.repo_links", valueType: "quantity", enabled: true, limitValue: 10 },
       { entitlementKey: "feature.event_routing", valueType: "boolean", enabled: true, limitValue: null },
       { entitlementKey: "limit.notification_rules", valueType: "quantity", enabled: true, limitValue: 50 },
@@ -178,6 +192,13 @@ export const PLAN_CATALOG: PlanDefinition[] = [
       // Slack connect (saas-integration-hub IH1; risks D7 resolved to the same
       // activation posture as GitHub): available on every tier.
       { entitlementKey: "feature.integrations.slack", valueType: "boolean", enabled: true, limitValue: null },
+      // Cloudflare/Supabase connect + the credential broker (saas-integration-hub
+      // IH4/IH5/IH6; risks D5/D7): same activation posture — available on every
+      // tier, with the mint rate limit as the D5 abuse bound.
+      { entitlementKey: "feature.integrations.cloudflare", valueType: "boolean", enabled: true, limitValue: null },
+      { entitlementKey: "feature.integrations.supabase", valueType: "boolean", enabled: true, limitValue: null },
+      { entitlementKey: "feature.integrations.credential_broker", valueType: "boolean", enabled: true, limitValue: null },
+      { entitlementKey: "limit.credential_mints_per_day", valueType: "quantity", enabled: true, limitValue: 200 },
       { entitlementKey: "limit.repo_links", valueType: "quantity", enabled: true, limitValue: 50 },
       { entitlementKey: "feature.event_routing", valueType: "boolean", enabled: true, limitValue: null },
       { entitlementKey: "limit.notification_rules", valueType: "quantity", enabled: true, limitValue: 200 },
@@ -208,6 +229,13 @@ export const PLAN_CATALOG: PlanDefinition[] = [
       // Slack connect (saas-integration-hub IH1; risks D7 resolved to the same
       // activation posture as GitHub): available on every tier.
       { entitlementKey: "feature.integrations.slack", valueType: "boolean", enabled: true, limitValue: null },
+      // Cloudflare/Supabase connect + the credential broker (saas-integration-hub
+      // IH4/IH5/IH6; risks D5/D7): same activation posture — available on every
+      // tier, with the mint rate limit as the D5 abuse bound.
+      { entitlementKey: "feature.integrations.cloudflare", valueType: "boolean", enabled: true, limitValue: null },
+      { entitlementKey: "feature.integrations.supabase", valueType: "boolean", enabled: true, limitValue: null },
+      { entitlementKey: "feature.integrations.credential_broker", valueType: "boolean", enabled: true, limitValue: null },
+      { entitlementKey: "limit.credential_mints_per_day", valueType: "quantity", enabled: true, limitValue: 200 },
       { entitlementKey: "limit.repo_links", valueType: "quantity", enabled: true, limitValue: null },
       { entitlementKey: "feature.event_routing", valueType: "boolean", enabled: true, limitValue: null },
       { entitlementKey: "limit.notification_rules", valueType: "quantity", enabled: true, limitValue: null },

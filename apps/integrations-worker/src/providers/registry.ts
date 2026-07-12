@@ -51,7 +51,7 @@ export function getConfiguredProvider(
       // parent token is the only credential — risks D3). Custody requires the
       // envelope key; the adapter stays dormant without it.
       if (!env.SECRET_ENCRYPTION_KEY) return null;
-      return { provider: createCloudflareProvider() };
+      return { provider: createCloudflareProvider(fetchImpl) };
     }
     case "supabase": {
       // IH risks D4: one Supabase OAuth app per environment.

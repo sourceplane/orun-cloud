@@ -65,6 +65,12 @@ const DEFAULT_TIER_ENTITLEMENTS: Record<string, number> = {
   // default tier — without this, an org whose rows predate the key parks on
   // 412/not_configured at the hub's Connect button.
   "feature.integrations.slack": 1,
+  // saas-integration-hub IH4/IH5/IH6 (risks D5/D7, same resolution): broker +
+  // infra providers on the default tier; the per-day mint limit is the bound.
+  "feature.integrations.cloudflare": 1,
+  "feature.integrations.supabase": 1,
+  "feature.integrations.credential_broker": 1,
+  "limit.credential_mints_per_day": 200,
   // saas-event-streaming ES2 (D3 defaults): rules available on the default
   // tier with a conservative cap; catalog rows override once materialized.
   "feature.event_routing": 1,

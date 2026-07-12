@@ -57,7 +57,13 @@ import { authorizeViaPolicy } from "../policy-client.js";
 import { checkBillingEntitlement } from "../billing-client.js";
 import { encodeCursor, parsePageParams } from "../pagination.js";
 import { getConfiguredProvider } from "../providers/registry.js";
-import { getCapability, type IntegrationProvider } from "../providers/types.js";
+import {
+  getCapability,
+  type IntegrationProvider,
+  type ParentCredentialContext,
+} from "../providers/types.js";
+import { createEncryptionAdapter, type CiphertextEnvelope } from "../encryption.js";
+import type { ProviderCredentialKind } from "@saas/db/integrations";
 
 /** D5: default 15 min, hard ceiling 1h — no template may exceed it. */
 export const DEFAULT_TTL_SECONDS = 15 * 60;
@@ -65,6 +71,40 @@ export const MAX_TTL_SECONDS = 60 * 60;
 
 const MAX_PARAM_KEYS = 10;
 const TEMPLATE_ID_RE = /^[a-z][a-z0-9-]{0,63}$/;
+
+/** Providers whose mints derive from a parent credential in custody. */
+const PARENT_CREDENTIAL_KINDS: Record<string, ProviderCredentialKind> = {
+  cloudflare: "cloudflare_parent_token",
+  supabase: "supabase_refresh_token",
+};
+
+/** Decrypt the connection's parent credential for one broker call. Returns
+ *  undefined when the provider needs none; null when it needs one and custody
+ *  cannot supply it (missing row / unreadable envelope). */
+async function readParentCredential(
+  env: Env,
+  executor: SqlExecutor,
+  connectionUuid: Uuid,
+  providerId: string,
+): Promise<ParentCredentialContext | null | undefined> {
+  const kind = PARENT_CREDENTIAL_KINDS[providerId];
+  if (!kind) return undefined;
+  const encryption = await createEncryptionAdapter(env.SECRET_ENCRYPTION_KEY);
+  if (!encryption) return null;
+  const hub = createIntegrationHubRepository(executor);
+  const credential = await hub.getProviderCredential(connectionUuid, kind);
+  if (!credential.ok) return null;
+  try {
+    return {
+      credential: await encryption.decrypt(
+        JSON.parse(credential.value.ciphertext) as CiphertextEnvelope,
+      ),
+      externalRef: credential.value.externalRef,
+    };
+  } catch {
+    return null;
+  }
+}
 
 export interface CredentialBrokerDeps {
   executor?: SqlExecutor;
@@ -266,8 +306,30 @@ export async function handleMintCredential(
     // TTL requested, clamped (D5): the ledger will record the ACTUAL expiry.
     const ttlSeconds = Math.min(requestedTtl, template.maxTtlSeconds, MAX_TTL_SECONDS);
 
+    // Parent custody (IH5+): decrypted for this one call, never held.
+    const parent = await readParentCredential(env, executor, asUuid(connection.id), connection.provider);
+    if (parent === null) {
+      return errorResponse(
+        "precondition_failed",
+        "The connection's parent credential is unavailable",
+        412,
+        requestId,
+        { reason: "parent_credential_missing" },
+      );
+    }
+
+    // The mint id is generated BEFORE the provider call so the minted
+    // credential carries its ledger identity provider-side (IH9 reconcile).
+    const mintId = generateUuid();
     const nowMs = Date.now();
-    const outcome = await broker.mintCredential({ template: templateId, params, ttlSeconds, nowMs });
+    const outcome = await broker.mintCredential({
+      template: templateId,
+      params,
+      ttlSeconds,
+      nowMs,
+      ...(parent ? { parent } : {}),
+      mintRef: `orun/${orgPublicId(orgId)}/${templateId}/${mintedCredentialPublicId(mintId)}`,
+    });
     if (!outcome.ok) {
       // Best-effort failure event — surfaced in connection health.
       try {
@@ -324,7 +386,6 @@ export async function handleMintCredential(
 
     // Ledger BEFORE reveal: an unledgered credential must never leave the
     // platform. If the insert fails, best-effort revoke and refuse.
-    const mintId = generateUuid();
     const inserted = await hub.insertMintedCredential({
       id: mintId,
       orgId,
@@ -340,7 +401,7 @@ export async function handleMintCredential(
     });
     if (!inserted.ok) {
       if (outcome.value.providerRef) {
-        await broker.revokeCredential(outcome.value.providerRef, Date.now());
+        await broker.revokeCredential(outcome.value.providerRef, Date.now(), parent);
       }
       return errorResponse("internal_error", "Service unavailable", 503, requestId);
     }
@@ -484,7 +545,13 @@ export async function handleRevokeMintedCredential(
       const provider = resolveProvider(env, mint.value.provider, deps);
       const broker = provider ? getCapability(provider, "broker") : null;
       if (broker) {
-        await broker.revokeCredential(mint.value.providerRef, Date.now());
+        const parent = await readParentCredential(
+          env,
+          executor,
+          asUuid(mint.value.connectionId),
+          mint.value.provider,
+        );
+        await broker.revokeCredential(mint.value.providerRef, Date.now(), parent ?? undefined);
       }
     }
 
@@ -554,11 +621,16 @@ export async function revokeLiveMintsForConnection(
 
   const provider = getConfiguredProvider(env, providerId, fetchImpl)?.provider ?? null;
   const broker = provider ? getCapability(provider, "broker") : null;
+  // The sweep runs BEFORE custody zeroize in the revoke flow, so the parent
+  // is still readable for provider-side child revocation.
+  const parent = broker
+    ? await readParentCredential(env, executor, connectionUuid, providerId)
+    : undefined;
   let swept = 0;
   for (const mint of live.value) {
     if (broker && mint.providerRef) {
       try {
-        await broker.revokeCredential(mint.providerRef, Date.now());
+        await broker.revokeCredential(mint.providerRef, Date.now(), parent ?? undefined);
       } catch {
         // TTL is the backstop.
       }

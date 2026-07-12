@@ -130,6 +130,28 @@ export class IntegrationsClient {
     );
   }
 
+  /**
+   * POST /v1/organizations/:orgId/integrations/cloudflare/connect
+   *
+   * Token-kind connect (IH5): pass the pasted parent token; the returned
+   * connection is already active — no popup, no polling. The token is
+   * write-only from this call onward.
+   */
+  connectCloudflare(
+    orgId: string,
+    body: ConnectIntegrationRequest & { parentToken: string },
+    opts: RequestOptions = {},
+  ): Promise<ConnectIntegrationResponse> {
+    return this.transport.request<ConnectIntegrationResponse>(
+      {
+        method: "POST",
+        path: `/v1/organizations/${encodeURIComponent(orgId)}/integrations/cloudflare/connect`,
+        body,
+      },
+      opts,
+    );
+  }
+
   /** POST …/integrations/:connectionId/credentials — mint (reveal-once). */
   mintCredential(
     orgId: string,

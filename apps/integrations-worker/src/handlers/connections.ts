@@ -34,6 +34,7 @@ import { encodeCursor, parsePageParams } from "../pagination.js";
 import { getConfiguredProvider } from "../providers/registry.js";
 import { createEncryptionAdapter, type CiphertextEnvelope } from "../encryption.js";
 import { revokeLiveMintsForConnection } from "./credential-broker.js";
+import { handleCloudflareTokenConnect } from "./cloudflare-connect.js";
 import {
   CONNECT_STATE_TTL_MS,
   generateStateNonce,
@@ -131,6 +132,14 @@ const CONNECT_PROVIDERS = {
     gate: "slack_app_registration",
     oauthCallbackPath: "/ingress/slack/oauth",
   },
+  cloudflare: {
+    displayName: "Cloudflare",
+    entitlementKey: INTEGRATION_ENTITLEMENTS.CLOUDFLARE,
+    planMessage: "Cloudflare integration is not included in your current plan",
+    notConfiguredMessage: "Credential custody is not configured for this environment",
+    gate: "cloudflare_custody",
+    oauthCallbackPath: null,
+  },
 } as const;
 
 export type ConnectableProviderId = keyof typeof CONNECT_PROVIDERS;
@@ -182,11 +191,12 @@ export async function handleConnectIntegration(
   // (OAUTH_REDIRECT_BASE_URL) its redirect_uri is built from.
   const configured = getConfiguredProvider(env, providerId);
   const provider = configured?.provider;
-  const canBuildUrl =
+  const canConnect =
     provider &&
-    (provider.buildInstallUrl ||
+    (provider.connectKind === "token" ||
+      provider.buildInstallUrl ||
       (provider.buildAuthorizeUrl && wiring.oauthCallbackPath && env.OAUTH_REDIRECT_BASE_URL));
-  if (!provider || !canBuildUrl || !env.INTEGRATIONS_STATE_SECRET) {
+  if (!provider || !canConnect || !env.INTEGRATIONS_STATE_SECRET) {
     return errorResponse("precondition_failed", wiring.notConfiguredMessage, 412, requestId, {
       reason: "not_configured",
       gate: wiring.gate,
@@ -199,6 +209,9 @@ export async function handleConnectIntegration(
   // connects 'workspace' (private to this org, never resolved up). Default to
   // 'account' for back-compat when the field is absent.
   let scope: "account" | "workspace" = "account";
+  // Token-kind connect (IH5 Cloudflare): the pasted parent credential.
+  // Write-only from the moment it is read — never echoed, never logged.
+  let parentToken: unknown;
   if (request.headers.get("content-length") !== "0" && request.body) {
     try {
       const body = (await request.json()) as Record<string, unknown>;
@@ -208,6 +221,7 @@ export async function handleConnectIntegration(
       if (body.scope === "workspace") {
         scope = "workspace";
       }
+      parentToken = body.parentToken;
     } catch {
       // Empty/absent body is fine — displayName + scope are optional.
     }
@@ -228,6 +242,19 @@ export async function handleConnectIntegration(
     if (parent.ok && parent.isChild) {
       scope = "workspace";
     }
+  }
+
+  // Token-kind connect (IH5): no state round-trip, no popup — verify the
+  // paste, store custody, activate, all in this request.
+  if (provider.connectKind === "token") {
+    return handleCloudflareTokenConnect(
+      env,
+      requestId,
+      actor,
+      orgId,
+      { parentToken, displayName, scope },
+      deps,
+    );
   }
 
   // created_by stores the decoded actor UUID (repo-wide convention enforced
@@ -464,22 +491,26 @@ export async function handleRevokeIntegration(
       // TTL is the backstop.
     }
 
-    if (existing.value.provider === "slack") {
-      // Custody zeroize (design §3) + best-effort provider-side `auth.revoke`
-      // — decrypt-then-revoke before the envelope rows are deleted. Neither
-      // step blocks the platform revoke.
+    if (existing.value.provider !== "github") {
+      // Custody zeroize (design §3) for every custody-holding provider, plus
+      // Slack's best-effort provider-side `auth.revoke` (decrypt-then-revoke
+      // before the envelope rows are deleted). Cloudflare's parent token is
+      // the CUSTOMER'S credential — never revoked provider-side, only
+      // forgotten. Nothing here blocks the platform revoke.
       const hub = createIntegrationHubRepository(executor);
-      const credential = await hub.getProviderCredential(connectionId, "slack_bot_token");
-      if (credential.ok) {
-        const configured = getConfiguredProvider(env, "slack", deps?.fetchImpl);
-        const encryption = await createEncryptionAdapter(env.SECRET_ENCRYPTION_KEY);
-        if (configured?.provider.revokeOauthToken && encryption) {
-          try {
-            const envelope = JSON.parse(credential.value.ciphertext) as CiphertextEnvelope;
-            const token = await encryption.decrypt(envelope);
-            await configured.provider.revokeOauthToken(token, Date.now());
-          } catch {
-            // Unreadable envelope or provider error — the zeroize below still runs.
+      if (existing.value.provider === "slack") {
+        const credential = await hub.getProviderCredential(connectionId, "slack_bot_token");
+        if (credential.ok) {
+          const configured = getConfiguredProvider(env, "slack", deps?.fetchImpl);
+          const encryption = await createEncryptionAdapter(env.SECRET_ENCRYPTION_KEY);
+          if (configured?.provider.revokeOauthToken && encryption) {
+            try {
+              const envelope = JSON.parse(credential.value.ciphertext) as CiphertextEnvelope;
+              const token = await encryption.decrypt(envelope);
+              await configured.provider.revokeOauthToken(token, Date.now());
+            } catch {
+              // Unreadable envelope or provider error — the zeroize below still runs.
+            }
           }
         }
       }

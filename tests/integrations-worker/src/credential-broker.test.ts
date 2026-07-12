@@ -187,6 +187,22 @@ function fakeBrokerProvider(opts?: {
   return { provider, revokes };
 }
 
+let CUSTODY_ROW: Record<string, unknown>;
+beforeAll(async () => {
+  const { createEncryptionAdapter } = await import("@integrations-worker/encryption");
+  const adapter = (await createEncryptionAdapter("ab".repeat(32)))!;
+  const envelope = await adapter.encrypt("cf-parent-token");
+  CUSTODY_ROW = {
+    id: "cred",
+    connection_id: CONNECTION_UUID,
+    kind: "cloudflare_parent_token",
+    ciphertext: JSON.stringify(envelope),
+    external_ref: "acc-1",
+    created_at: NOW.toISOString(),
+    updated_at: NOW.toISOString(),
+  };
+});
+
 function mintRequest(body: Record<string, unknown>): Request {
   return new Request("https://worker.test/x", {
     method: "POST",
@@ -254,9 +270,11 @@ describe("POST …/credentials (mint)", () => {
 
   it("parks a not-yet-live adapter with 412 and a mint_failed event", async () => {
     const { provider } = fakeBrokerProvider({ mintFails: "not_implemented" });
-    const { executor, queries } = fakeExecutor((text) =>
-      text.includes("FROM integrations.connections") ? [connectionRow()] : [],
-    );
+    const { executor, queries } = fakeExecutor((text) => {
+      if (text.includes("FROM integrations.connections")) return [connectionRow()];
+      if (text.includes("FROM integrations.provider_credentials")) return [CUSTODY_ROW];
+      return [];
+    });
     const res = await handleMintCredential(
       mintRequest({ template: "workers-deploy" }),
       createEnv(), "req_1", ACTOR, ORG_ID, CONNECTION_ID, { executor, provider },
@@ -289,6 +307,7 @@ describe("POST …/credentials (mint)", () => {
     let ledgerInsert: unknown[] = [];
     const { executor, queries } = fakeExecutor((text, params) => {
       if (text.includes("FROM integrations.connections")) return [connectionRow()];
+      if (text.includes("FROM integrations.provider_credentials")) return [CUSTODY_ROW];
       if (text.includes("INSERT INTO integrations.minted_credentials")) {
         ledgerInsert = params;
         return [mintRow({ ttl_seconds: params[10] })];
@@ -321,6 +340,7 @@ describe("POST …/credentials (mint)", () => {
     const { provider, revokes } = fakeBrokerProvider();
     const { executor } = fakeExecutor((text) => {
       if (text.includes("FROM integrations.connections")) return [connectionRow()];
+      if (text.includes("FROM integrations.provider_credentials")) return [CUSTODY_ROW];
       if (text.includes("INSERT INTO integrations.minted_credentials")) return []; // no row = failure
       return [];
     });

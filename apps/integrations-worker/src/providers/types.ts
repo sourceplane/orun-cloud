@@ -94,6 +94,29 @@ export type MintCredentialOutcome =
       detail?: string;
     };
 
+/** Decrypted parent credential + its provider-side ref, handed to broker
+ *  calls by the mint handler from custody (never held by the adapter). */
+export interface ParentCredentialContext {
+  /** The decrypted parent credential (Cloudflare parent token, Supabase
+   *  refresh token). Never logged; lives only for the one call. */
+  credential: string;
+  /** Provider-side anchor from the custody row (e.g. Cloudflare account id). */
+  externalRef: string | null;
+}
+
+export interface MintCredentialInput {
+  template: string;
+  params: Record<string, unknown>;
+  ttlSeconds: number;
+  nowMs: number;
+  /** Present for providers whose mints derive from a parent credential. */
+  parent?: ParentCredentialContext;
+  /** Provider-side name for the minted credential —
+   *  `orun/{org}/{template}/{mintId}` — so the IH9 orphan sweep can
+   *  reconcile provider truth against the ledger. */
+  mintRef?: string;
+}
+
 /**
  * Short-lived scoped credential minting (IH4; generalizes the IG4 broker).
  * Adapters publish named, versioned scope templates; every mint is
@@ -101,14 +124,13 @@ export type MintCredentialOutcome =
  */
 export interface CredentialBrokerCapability {
   scopeTemplates(): readonly IntegrationScopeTemplate[];
-  mintCredential(input: {
-    template: string;
-    params: Record<string, unknown>;
-    ttlSeconds: number;
-    nowMs: number;
-  }): Promise<MintCredentialOutcome>;
+  mintCredential(input: MintCredentialInput): Promise<MintCredentialOutcome>;
   /** Best-effort provider-side revoke; TTL is the backstop. */
-  revokeCredential(providerRef: string, nowMs: number): Promise<boolean>;
+  revokeCredential(
+    providerRef: string,
+    nowMs: number,
+    parent?: ParentCredentialContext,
+  ): Promise<boolean>;
 }
 
 /** Channel discovery for the messaging archetype (IH2). Message DELIVERY is

@@ -241,14 +241,15 @@ describe("credential-broker adapters (IH0 dormant)", () => {
     expect(byId.get("management-access")!.params).toHaveLength(0);
   });
 
-  it("mints park with a typed reason — never a throw (IH5/IH6 fill them in)", async () => {
+  it("mints stay typed — never a throw (cloudflare live since IH5)", async () => {
     const cf = getConfiguredProvider(
       { ...GITHUB_ENV, SECRET_ENCRYPTION_KEY: "0".repeat(64) } as Env,
       "cloudflare",
     )!.provider;
+    // Live adapter, but no parent custody handed in — typed refusal.
     await expect(
       cf.broker!.mintCredential({ template: "workers-deploy", params: {}, ttlSeconds: 900, nowMs: NOW }),
-    ).resolves.toEqual({ ok: false, reason: "not_implemented", detail: expect.any(String) });
+    ).resolves.toEqual({ ok: false, reason: "provider_error", detail: expect.any(String) });
     await expect(
       cf.broker!.mintCredential({ template: "nope", params: {}, ttlSeconds: 900, nowMs: NOW }),
     ).resolves.toEqual({ ok: false, reason: "template_unknown" });
