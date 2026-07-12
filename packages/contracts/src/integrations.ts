@@ -15,7 +15,19 @@
  * special case; the type widens as adapters land (saas-integration-hub IH0
  * added slack/cloudflare/supabase).
  */
-export type IntegrationProviderId = "github" | "slack" | "cloudflare" | "supabase";
+// `aws` and `discord` are RESERVED, dormant providers (design §8, IH10): they
+// name the two archetypes' next entrants and carry compile-only adapter proofs
+// (the Stripe-after-Polar discipline, per-capability). No live connect path,
+// no env secrets, no console card beyond the "On the roadmap" strip — the
+// registry never resolves them to a configured adapter. Listing them here is
+// additive (R7) and is what lets a dormant adapter's scope templates typecheck.
+export type IntegrationProviderId =
+  | "github"
+  | "slack"
+  | "cloudflare"
+  | "supabase"
+  | "aws"
+  | "discord";
 
 /**
  * Provider capabilities (saas-integration-hub design §1–§2). The registry
@@ -70,6 +82,18 @@ export const INTEGRATION_PROVIDER_DESCRIPTORS: Record<
     displayName: "Supabase",
     connectKind: "oauth",
     capabilities: ["connect", "credential-broker"],
+  },
+  // Dormant (IH10): reserved descriptors for the roadmap strip. The adapters
+  // implement the capability seam but no live path exists.
+  aws: {
+    displayName: "AWS",
+    connectKind: "token",
+    capabilities: ["connect", "credential-broker"],
+  },
+  discord: {
+    displayName: "Discord",
+    connectKind: "oauth",
+    capabilities: ["connect", "messaging"],
   },
 } as const;
 

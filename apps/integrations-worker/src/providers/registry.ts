@@ -1,6 +1,8 @@
 import type { Env } from "../env.js";
 import type { FetchLike } from "../github-app.js";
+import { createAwsProvider } from "./aws.js";
 import { createCloudflareProvider } from "./cloudflare.js";
+import { createDiscordProvider } from "./discord.js";
 import { createGithubProvider } from "./github.js";
 import { createSlackProvider } from "./slack.js";
 import { createSupabaseProvider } from "./supabase.js";
@@ -65,5 +67,29 @@ export function getConfiguredProvider(
   }
 }
 
-/** Provider ids the registry knows about (marketplace cards, validation). */
+/** Provider ids with a LIVE (or gated-live) path — marketplace cards,
+ *  validation, the connect surface. Dormant ids are deliberately excluded. */
 export const KNOWN_PROVIDER_IDS = ["github", "slack", "cloudflare", "supabase"] as const;
+
+/**
+ * Reserved, DORMANT provider ids (IH10, design §8): registered against the
+ * capability seam but with no live path — `getConfiguredProvider` never
+ * resolves them (they own no env secrets and no connect milestone), so they
+ * can never be reached by a live handler. They exist to PROVE the seam accepts
+ * a new provider per archetype (broker: AWS/STS; messaging: Discord) with zero
+ * handler/console changes. `getDormantProvider` instantiates the compile-time
+ * proof and is the graft point a future connect milestone would promote into
+ * `getConfiguredProvider`.
+ */
+export const DORMANT_PROVIDER_IDS = ["aws", "discord"] as const;
+
+export function getDormantProvider(providerId: string): IntegrationProvider | null {
+  switch (providerId) {
+    case "aws":
+      return createAwsProvider();
+    case "discord":
+      return createDiscordProvider();
+    default:
+      return null;
+  }
+}
