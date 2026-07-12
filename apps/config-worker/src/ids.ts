@@ -60,3 +60,12 @@ export function parseSecretMetadataPublicId(publicId: string): string | null {
   if (!publicId.startsWith("sec_")) return null;
   return hexToUuid(publicId.slice(4));
 }
+
+/**
+ * Public form of an integrations connection id (`int_<32hex>`), as referenced
+ * by a brokered secret binding (IH7). Mirrors integrations-worker's
+ * connectionPublicId — replicated locally (workers never import across apps).
+ */
+export function connectionPublicId(uuid: string): string {
+  return `int_${uuidToHex(uuid)}`;
+}

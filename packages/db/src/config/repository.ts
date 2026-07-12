@@ -113,6 +113,10 @@ function mapSecretMetadata(row: Record<string, unknown>): SecretMetadata {
     personalOwner: (row.personal_owner as string) ?? null,
     overridable: (row.overridable as boolean) ?? true,
     lastUsedAt: row.last_used_at ? new Date(row.last_used_at as string) : null,
+    source: row.source === "brokered" ? "brokered" : "static",
+    bindingProvider: (row.binding_provider as string) ?? null,
+    bindingConnectionId: (row.binding_connection_id as string) ?? null,
+    bindingTemplate: (row.binding_template as string) ?? null,
     createdAt: new Date(row.created_at as string),
     updatedAt: new Date(row.updated_at as string),
   };
@@ -183,7 +187,7 @@ const ZERO_UUID = "00000000-0000-0000-0000-000000000000";
 
 // ── Secret metadata safe columns (no ciphertext_envelope) ──
 
-const SECRET_METADATA_SAFE_COLUMNS = `id, org_id, project_id, environment_id, scope_kind, secret_key, display_name, status, version, rotation_policy, last_rotated_at, expires_at, created_by, personal_owner, overridable, last_used_at, created_at, updated_at`;
+const SECRET_METADATA_SAFE_COLUMNS = `id, org_id, project_id, environment_id, scope_kind, secret_key, display_name, status, version, rotation_policy, last_rotated_at, expires_at, created_by, personal_owner, overridable, last_used_at, source, binding_provider, binding_connection_id, binding_template, created_at, updated_at`;
 
 const SECRET_VERSION_SAFE_COLUMNS = `secret_id, version, status, created_by, created_at`;
 
@@ -457,18 +461,18 @@ export function createConfigRepository(executor: SqlExecutor): ConfigRepository 
         // without an explicit transaction.
         const sql = hasCiphertext
           ? `WITH head AS (
-             INSERT INTO config.secret_metadata (id, org_id, project_id, environment_id, scope_kind, secret_key, display_name, status, version, rotation_policy, expires_at, created_by, personal_owner, overridable, ciphertext_envelope, created_at, updated_at)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, 'active', 1, $8, $9, $10, $11, $12, $13, now(), now())
+             INSERT INTO config.secret_metadata (id, org_id, project_id, environment_id, scope_kind, secret_key, display_name, status, version, rotation_policy, expires_at, created_by, personal_owner, overridable, source, binding_provider, binding_connection_id, binding_template, ciphertext_envelope, created_at, updated_at)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, 'active', 1, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, now(), now())
              RETURNING *
            ), version_append AS (
              INSERT INTO config.secret_versions (secret_id, version, ciphertext_envelope, created_by)
              SELECT id, version, ciphertext_envelope, created_by FROM head
            )
            SELECT ${SECRET_METADATA_SAFE_COLUMNS} FROM head`
-          : `INSERT INTO config.secret_metadata (id, org_id, project_id, environment_id, scope_kind, secret_key, display_name, status, version, rotation_policy, expires_at, created_by, personal_owner, overridable, created_at, updated_at)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, 'active', 1, $8, $9, $10, $11, $12, now(), now())
+          : `INSERT INTO config.secret_metadata (id, org_id, project_id, environment_id, scope_kind, secret_key, display_name, status, version, rotation_policy, expires_at, created_by, personal_owner, overridable, source, binding_provider, binding_connection_id, binding_template, created_at, updated_at)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, 'active', 1, $8, $9, $10, $11, $12, $13, $14, $15, $16, now(), now())
            RETURNING ${SECRET_METADATA_SAFE_COLUMNS}`;
-        const params = [input.id, sc.orgId, sc.projectId, sc.environmentId, sc.scopeKind, input.secretKey, input.displayName ?? null, input.rotationPolicy ?? null, input.expiresAt?.toISOString() ?? null, input.createdBy, input.personalOwner ?? null, input.overridable ?? true];
+        const params = [input.id, sc.orgId, sc.projectId, sc.environmentId, sc.scopeKind, input.secretKey, input.displayName ?? null, input.rotationPolicy ?? null, input.expiresAt?.toISOString() ?? null, input.createdBy, input.personalOwner ?? null, input.overridable ?? true, input.source ?? "static", input.bindingProvider ?? null, input.bindingConnectionId ?? null, input.bindingTemplate ?? null];
         if (hasCiphertext) {
           params.push(input.ciphertextEnvelope!);
         }
@@ -592,6 +596,23 @@ export function createConfigRepository(executor: SqlExecutor): ConfigRepository 
         return { ok: true, value: mapSecretMetadata(result.rows[0]!) };
       } catch {
         return safeError("Failed to revoke secret metadata");
+      }
+    },
+
+    async countBrokeredSecrets(orgId: string): Promise<ConfigResult<number>> {
+      try {
+        // Brokered-secret entitlement gate (IH7): live brokered bindings in
+        // the org. Only live heads count against limit.brokered_secrets —
+        // revoked rows are historical. Served by the partial
+        // secret_metadata_brokered_org_idx (820).
+        const result = await executor.execute<Record<string, unknown>>(
+          `SELECT COUNT(*)::int AS count FROM config.secret_metadata
+           WHERE org_id = $1 AND source = 'brokered' AND status IN ('active', 'rotated')`,
+          [orgId],
+        );
+        return { ok: true, value: Number(result.rows[0]?.count ?? 0) };
+      } catch (err) {
+        return safeError(`brokered secret count failed: ${String(err)}`);
       }
     },
 

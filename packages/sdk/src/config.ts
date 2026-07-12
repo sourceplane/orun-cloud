@@ -1,4 +1,5 @@
 import type {
+  CreateBrokeredSecretRequest,
   CreateFeatureFlagRequest,
   CreateFeatureFlagResponse,
   CreateSecretMetadataResponse,
@@ -168,6 +169,26 @@ export class ConfigClient {
   createSecretMetadata(
     scope: ConfigScope,
     body: CreateSecretRequest,
+    opts: RequestOptions = {},
+  ): Promise<CreateSecretMetadataResponse> {
+    return this.transport.request<CreateSecretMetadataResponse>(
+      { method: "POST", path: `${scopeBase(scope)}/secrets`, body },
+      opts,
+    );
+  }
+
+  /**
+   * POST <scope>/config/secrets — brokered creation (saas-integration-hub IH7).
+   *
+   * The `binding` names a credential-broker connection + scope template in
+   * place of a `value`: nothing is stored; the value is minted just-in-time at
+   * resolve. Requires both `secret.write` and the broker's
+   * `organization.integration.credential.issue`. Mutually exclusive with
+   * `value` and `personal`.
+   */
+  createBrokeredSecret(
+    scope: ConfigScope,
+    body: CreateBrokeredSecretRequest,
     opts: RequestOptions = {},
   ): Promise<CreateSecretMetadataResponse> {
     return this.transport.request<CreateSecretMetadataResponse>(

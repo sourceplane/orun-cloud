@@ -20,6 +20,10 @@ spec:
       input: true
     - component: membership-worker
     - component: policy-worker
+    # IH7 brokered secrets: service bindings to the broker (validate-binding +
+    # mint-at-resolve) and to billing (limit.brokered_secrets entitlement).
+    - component: integrations-worker
+    - component: billing-worker
   subscribe:
     environments:
       - name: dev

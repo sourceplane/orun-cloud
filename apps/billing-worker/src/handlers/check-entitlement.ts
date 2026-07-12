@@ -71,6 +71,9 @@ const DEFAULT_TIER_ENTITLEMENTS: Record<string, number> = {
   "feature.integrations.supabase": 1,
   "feature.integrations.credential_broker": 1,
   "limit.credential_mints_per_day": 200,
+  // saas-integration-hub IH7: brokered secret bindings — conservative default
+  // for orgs whose rows predate the key; catalog rows carry per-tier values.
+  "limit.brokered_secrets": 25,
   // saas-event-streaming ES2 (D3 defaults): rules available on the default
   // tier with a conservative cap; catalog rows override once materialized.
   "feature.event_routing": 1,

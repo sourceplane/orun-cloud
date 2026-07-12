@@ -14,6 +14,7 @@ import {
   featureFlagPublicId,
   secretMetadataPublicId,
   secretSyncPublicId,
+  connectionPublicId,
 } from "./ids.js";
 
 function projectPublicId(uuid: string): string {
@@ -120,6 +121,23 @@ export function toPublicSecretMetadata(s: SecretMetadata): PublicSecretMetadata 
     overridable: s.overridable,
     personal: s.personalOwner !== null,
     lastUsedAt: s.lastUsedAt ? toISOString(s.lastUsedAt) : null,
+    // Brokered source + binding facts (IH7) — additive: omitted entirely for a
+    // static secret so pre-IH7 consumers see exactly the old shape. Binding is
+    // display-only provenance (provider/connection/template) — never params.
+    ...(s.source === "brokered"
+      ? {
+          source: "brokered" as const,
+          ...(s.bindingProvider && s.bindingConnectionId && s.bindingTemplate
+            ? {
+                binding: {
+                  provider: s.bindingProvider,
+                  connectionId: connectionPublicId(s.bindingConnectionId),
+                  template: s.bindingTemplate,
+                },
+              }
+            : {}),
+        }
+      : {}),
     createdAt: toISOString(s.createdAt),
     updatedAt: toISOString(s.updatedAt),
   };

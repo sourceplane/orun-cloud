@@ -1,7 +1,7 @@
 import type { Env } from "../env.js";
 import type { ActorContext } from "../router.js";
 import type { Scope, CreateSecretMetadataInput } from "@saas/db/config";
-import type { EventsRepository } from "@saas/db/events";
+import type { EventsRepository, AppendEventWithAuditInput } from "@saas/db/events";
 import type { ConfigRepository } from "@saas/db/config";
 import type { MembershipRepository } from "@saas/db/membership";
 import { createConfigRepository } from "@saas/db/config";
@@ -16,8 +16,23 @@ import { toPublicSecretMetadata } from "../mappers.js";
 import { findLockedSecretAbove } from "../config-resolver.js";
 import type { PolicyResource } from "@saas/contracts/policy";
 import type { EncryptionAdapter } from "../encryption.js";
+import type { SecretBrokerBinding } from "@saas/contracts/config";
+import {
+  INTEGRATION_ENTITLEMENTS,
+  INTEGRATION_EVENT_TYPES,
+  INTEGRATION_POLICY_ACTIONS,
+  type ValidateBrokerBindingRequest,
+} from "@saas/contracts/integrations";
+import { validateBrokerBinding, type BrokerBindingValidation } from "../integrations-client.js";
+import { checkBillingEntitlement, type BillingEntitlementResult } from "../billing-client.js";
+import { orgPublicId } from "../ids.js";
 
 const KEY_RE = /^[a-zA-Z][a-zA-Z0-9._-]{0,127}$/;
+
+// ── Brokered binding grammar (saas-integration-hub IH7) ──
+const CONNECTION_ID_RE = /^int_[0-9a-f]{32}$/;
+const TEMPLATE_RE = /^[a-z][a-z0-9-]{0,63}$/;
+const MAX_BINDING_PARAM_KEYS = 10;
 
 /** A locked guardrail above the target scope blocked this write (SM1). */
 const LOCKED_MESSAGE = "Cannot override a locked secret";
@@ -39,7 +54,8 @@ const SECRET_MATERIAL_FIELDS = [
 ];
 
 export interface CreateSecretDeps {
-  repo: Pick<ConfigRepository, "createSecretMetadata"> & Partial<Pick<ConfigRepository, "getSecretMetadataByScopeKey">>;
+  repo: Pick<ConfigRepository, "createSecretMetadata"> &
+    Partial<Pick<ConfigRepository, "getSecretMetadataByScopeKey" | "countBrokeredSecrets">>;
   /** Needed for the locked-guardrail probe; when omitted (older test fakes) the
    * deps path skips the guardrail — the production path always enforces it. */
   membershipRepo?: Pick<MembershipRepository, "getOrganizationById">;
@@ -47,6 +63,14 @@ export interface CreateSecretDeps {
   generateId?: () => string;
   now?: () => Date;
   encryptionAdapter?: EncryptionAdapter | null;
+  /** IH7 seam: broker validate-binding (tests). Production wires
+   * validateBrokerBinding over the INTEGRATIONS_WORKER service binding.
+   * A brokered create with no validator available fails closed (503). */
+  validateBinding?: (req: ValidateBrokerBindingRequest) => Promise<BrokerBindingValidation>;
+  /** IH7 seam: billing entitlement check (tests). Production wires
+   * checkBillingEntitlement over the BILLING_WORKER service binding.
+   * A brokered create with no checker available fails closed (503). */
+  checkEntitlement?: (orgPublicId: string, entitlementKey: string) => Promise<BillingEntitlementResult>;
 }
 
 function randomHex(bytes: number): string {
@@ -88,7 +112,7 @@ export async function handleCreateSecret(
     }
   }
 
-  const { secretKey, displayName, rotationPolicy, expiresAt, value, overridable, personal } = raw as {
+  const { secretKey, displayName, rotationPolicy, expiresAt, value, overridable, personal, binding } = raw as {
     secretKey?: unknown;
     displayName?: unknown;
     rotationPolicy?: unknown;
@@ -96,6 +120,7 @@ export async function handleCreateSecret(
     value?: unknown;
     overridable?: unknown;
     personal?: unknown;
+    binding?: unknown;
   };
 
   if (typeof secretKey !== "string" || !KEY_RE.test(secretKey)) {
@@ -125,6 +150,46 @@ export async function handleCreateSecret(
     fields.value = ["value must not be empty"];
   }
 
+  // ── Brokered binding (IH7): `binding` in place of `value`. ──
+  let parsedBinding: SecretBrokerBinding | null = null;
+  if (binding !== undefined) {
+    if (!binding || typeof binding !== "object" || Array.isArray(binding)) {
+      fields.binding = ["binding must be an object { connectionId, template, params? }"];
+    } else {
+      const b = binding as Record<string, unknown>;
+      const bindingErrors: string[] = [];
+      if (typeof b.connectionId !== "string" || !CONNECTION_ID_RE.test(b.connectionId)) {
+        bindingErrors.push("binding.connectionId must be a connection public id (int_<32 hex>)");
+      }
+      if (typeof b.template !== "string" || !TEMPLATE_RE.test(b.template)) {
+        bindingErrors.push("binding.template must be a template id (lowercase letters, digits, hyphens; 1-64 chars)");
+      }
+      let bindingParams: Record<string, unknown> | undefined;
+      if (b.params !== undefined) {
+        if (!b.params || typeof b.params !== "object" || Array.isArray(b.params)) {
+          bindingErrors.push("binding.params must be a plain object");
+        } else if (Object.keys(b.params).length > MAX_BINDING_PARAM_KEYS) {
+          bindingErrors.push(`binding.params allows at most ${MAX_BINDING_PARAM_KEYS} keys`);
+        } else if (Object.keys(b.params).length > 0) {
+          bindingParams = b.params as Record<string, unknown>;
+        }
+      }
+      if (bindingErrors.length > 0) {
+        fields.binding = bindingErrors;
+      } else {
+        parsedBinding = {
+          connectionId: b.connectionId as string,
+          template: b.template as string,
+          ...(bindingParams ? { params: bindingParams } : {}),
+        };
+      }
+    }
+    // Mutually exclusive with a stored value (CreateBrokeredSecretRequest).
+    if (value !== undefined && value !== null) {
+      fields.binding = [...(fields.binding ?? []), "binding and value are mutually exclusive"];
+    }
+  }
+
   let parsedExpiresAt: Date | undefined;
   if (expiresAt !== undefined && expiresAt !== null) {
     if (typeof expiresAt !== "string") {
@@ -148,9 +213,15 @@ export async function handleCreateSecret(
     return errorResponse("bad_request", "Personal secrets are only supported at environment scope", 400, requestId);
   }
 
-  // Resolve encryption adapter
+  // A personal overlay can never be brokered (IH7 — CreateBrokeredSecretRequest).
+  if (parsedBinding && personal === true) {
+    return errorResponse("bad_request", "A personal secret cannot be brokered", 400, requestId);
+  }
+
+  // Resolve encryption adapter (a brokered pointer is NOT ciphertext — the
+  // adapter is only needed when a stored value is being written).
   let encryptionAdapter: EncryptionAdapter | null | undefined = deps?.encryptionAdapter;
-  if (encryptionAdapter === undefined && !deps) {
+  if (encryptionAdapter === undefined && !deps && !parsedBinding) {
     // Production path: lazy-import encryption adapter. Workspace-bound (SM2):
     // v:2 DEK envelopes when SECRET_KEK is configured, else the v:1 static key.
     const { createSecretEncryptionAdapter } = await import("../encryption.js");
@@ -206,6 +277,25 @@ export async function handleCreateSecret(
     if (!policyResult.allow) {
       return errorResponse("not_found", "Not found", 404, requestId);
     }
+
+    // Binding a broker (IH7, design §5.4): "you cannot bind authority you
+    // could not mint" — a brokered create ADDITIONALLY requires the broker's
+    // own issue action on the organization. Deny → resource-hiding 404, same
+    // as the secret.write deny above.
+    if (parsedBinding) {
+      const issueResult = await authorizeViaPolicy(
+        env.POLICY_WORKER!,
+        actor.subjectId,
+        actor.subjectType,
+        INTEGRATION_POLICY_ACTIONS.CREDENTIAL_ISSUE,
+        { kind: "organization", orgId: scope.orgId },
+        contextResult.memberships,
+        requestId,
+      );
+      if (!issueResult.allow) {
+        return errorResponse("not_found", "Not found", 404, requestId);
+      }
+    }
   }
 
   // Encrypt value before any DB mutation
@@ -252,8 +342,107 @@ export async function handleCreateSecret(
     input.personalOwner = createdByUuid;
   }
 
+  // Provider slug learned from the broker's validate-binding (IH7); rides the
+  // stored metadata + the secret_binding.created event. Never params.
+  let bindingProvider: string | undefined;
+
   const executor = deps ? null : createSqlExecutor(env.PLATFORM_DB!);
   try {
+    // ── Brokered gates (IH7): entitlement, then broker validation — BEFORE
+    //    any DB mutation. Both fail closed when their seam is unavailable. ──
+    if (parsedBinding) {
+      const checkEntitlement =
+        deps?.checkEntitlement ??
+        (!deps && env.BILLING_WORKER
+          ? (orgPub: string, key: string) => checkBillingEntitlement(env.BILLING_WORKER!, orgPub, key, requestId)
+          : null);
+      if (!checkEntitlement) {
+        return errorResponse("internal_error", "Service unavailable", 503, requestId);
+      }
+      const entitlement = await checkEntitlement(
+        orgPublicId(scope.orgId),
+        INTEGRATION_ENTITLEMENTS.BROKERED_SECRETS_LIMIT,
+      );
+      if (entitlement.kind === "service_error") {
+        return errorResponse("internal_error", "Service unavailable", 503, requestId);
+      }
+      if (!entitlement.decision.allowed) {
+        return errorResponse(
+          "precondition_failed",
+          "Brokered secrets are not included in your current plan",
+          412,
+          requestId,
+          {
+            reason: entitlement.decision.reason ?? "not_configured",
+            entitlementKey: INTEGRATION_ENTITLEMENTS.BROKERED_SECRETS_LIMIT,
+          },
+        );
+      }
+      if (entitlement.decision.limitValue !== null && entitlement.decision.limitValue !== undefined) {
+        const countRepo = deps ? deps.repo : createConfigRepository(executor!);
+        if (countRepo.countBrokeredSecrets) {
+          const count = await countRepo.countBrokeredSecrets(scope.orgId);
+          if (!count.ok) {
+            return errorResponse("internal_error", "Service unavailable", 503, requestId);
+          }
+          if (count.value >= entitlement.decision.limitValue) {
+            return errorResponse(
+              "precondition_failed",
+              "Brokered secret limit reached for the current plan",
+              412,
+              requestId,
+              {
+                reason: "limit_reached",
+                entitlementKey: INTEGRATION_ENTITLEMENTS.BROKERED_SECRETS_LIMIT,
+                limit: entitlement.decision.limitValue,
+              },
+            );
+          }
+        }
+      }
+
+      const validateBindingFn =
+        deps?.validateBinding ??
+        (!deps && env.INTEGRATIONS_WORKER
+          ? (r: ValidateBrokerBindingRequest) => validateBrokerBinding(env.INTEGRATIONS_WORKER!, r, requestId)
+          : null);
+      if (!validateBindingFn) {
+        return errorResponse("internal_error", "Service unavailable", 503, requestId);
+      }
+      const validation = await validateBindingFn({
+        orgId: scope.orgId,
+        connectionId: parsedBinding.connectionId,
+        template: parsedBinding.template,
+        ...(parsedBinding.params ? { params: parsedBinding.params } : {}),
+      });
+      if (!validation.ok) {
+        return brokeredValidationFailure(validation.reason, parsedBinding, requestId);
+      }
+
+      const connectionUuid = uuidFromPublicId(parsedBinding.connectionId, "int");
+      if (!connectionUuid) {
+        return validationError(requestId, {
+          binding: ["binding.connectionId must be a connection public id (int_<32 hex>)"],
+        });
+      }
+
+      // The envelope slot stores the binding POINTER, not ciphertext — the
+      // encrypt step is deliberately skipped (there is no value to store).
+      input.ciphertextEnvelope = JSON.stringify({
+        v: "brokered",
+        provider: {
+          connectionId: parsedBinding.connectionId,
+          template: parsedBinding.template,
+          ...(parsedBinding.params ? { params: parsedBinding.params } : {}),
+        },
+      });
+      input.source = "brokered";
+      input.bindingProvider = validation.provider;
+      input.bindingConnectionId = connectionUuid;
+      input.bindingTemplate = parsedBinding.template;
+      bindingProvider = validation.provider;
+    }
+
     if (executor && "transaction" in executor) {
       const txResult = await executor.transaction(async (txExec) => {
         const txRepo = createConfigRepository(txExec);
@@ -305,6 +494,18 @@ export async function handleCreateSecret(
 
         if (!eventResult.ok) {
           throw new Error("Failed to append event");
+        }
+
+        // IH7: a brokered create ADDITIONALLY announces the binding on the
+        // integrations event stream (provider/connection/template — NEVER
+        // params, NEVER a value).
+        if (parsedBinding) {
+          const bindingEventResult = await txEventsRepo.appendEventWithAudit(
+            bindingCreatedEvent(genId, now, actor, scope, secretId, secretKey as string, parsedBinding, bindingProvider ?? "", requestId),
+          );
+          if (!bindingEventResult.ok) {
+            throw new Error("Failed to append event");
+          }
         }
 
         return { result };
@@ -383,6 +584,17 @@ export async function handleCreateSecret(
         if (!eventResult.ok) {
           throw new Error("Failed to append event");
         }
+
+        // IH7: brokered creates also announce the binding (deps path mirrors
+        // the transactional path — only when an eventsRepo is present).
+        if (parsedBinding) {
+          const bindingEventResult = await deps.eventsRepo.appendEventWithAudit(
+            bindingCreatedEvent(genId, now, actor, scope, secretId, secretKey as string, parsedBinding, bindingProvider ?? "", requestId),
+          );
+          if (!bindingEventResult.ok) {
+            throw new Error("Failed to append event");
+          }
+        }
       }
 
       return successResponse({ secret: toPublicSecretMetadata(result.value) }, requestId, 201);
@@ -394,4 +606,91 @@ export async function handleCreateSecret(
   } finally {
     if (executor) await executor.dispose();
   }
+}
+
+// ── Brokered helpers (IH7) ───────────────────────────────────
+
+/**
+ * Map a typed validate-binding failure onto this surface's error idiom:
+ * unknown connection hides as 404, an inactive connection is a 412
+ * precondition, and pointer-shape problems are 422 validation errors naming
+ * the offending binding field.
+ */
+function brokeredValidationFailure(
+  reason: string,
+  binding: SecretBrokerBinding,
+  requestId: string,
+): Response {
+  switch (reason) {
+    case "connection_not_found":
+      return errorResponse("not_found", "Not found", 404, requestId);
+    case "connection_inactive":
+      return errorResponse("precondition_failed", "The connection is not active", 412, requestId, {
+        reason,
+      });
+    case "capability_not_supported":
+      return validationError(requestId, {
+        binding: ["This connection's provider does not mint credentials"],
+      });
+    case "template_unknown":
+      return validationError(requestId, {
+        "binding.template": [`Unknown template "${binding.template}" for this connection`],
+      });
+    case "params_invalid":
+      return validationError(requestId, {
+        "binding.params": ["Invalid params for the requested template"],
+      });
+    default:
+      return errorResponse("internal_error", "Service unavailable", 503, requestId);
+  }
+}
+
+/**
+ * The `integration.secret_binding.created` event + audit row (IH7). Payload
+ * carries binding facts only — key, scope rung, provider, public connection
+ * id, template. NEVER params, NEVER a value.
+ */
+function bindingCreatedEvent(
+  genId: () => string,
+  now: Date,
+  actor: ActorContext,
+  scope: Scope,
+  secretId: string,
+  secretKey: string,
+  binding: SecretBrokerBinding,
+  provider: string,
+  requestId: string,
+): AppendEventWithAuditInput {
+  return {
+    event: {
+      id: genId(),
+      type: INTEGRATION_EVENT_TYPES.SECRET_BINDING_CREATED,
+      version: 1,
+      source: "config-worker",
+      occurredAt: now,
+      actorType: actor.subjectType,
+      actorId: actor.subjectId,
+      orgId: scope.orgId,
+      projectId: "projectId" in scope ? scope.projectId : null,
+      environmentId: "environmentId" in scope ? scope.environmentId : null,
+      subjectKind: "secret",
+      subjectId: secretId,
+      subjectName: secretKey,
+      requestId,
+      payload: {
+        key: secretKey,
+        scope: scope.kind,
+        provider,
+        connectionId: binding.connectionId,
+        template: binding.template,
+      },
+    },
+    audit: {
+      id: genId(),
+      category: "config",
+      description: `Brokered secret bound: ${secretKey} ← ${provider}/${binding.template}`,
+      projectId: "projectId" in scope ? scope.projectId : null,
+      environmentId: "environmentId" in scope ? scope.environmentId : null,
+    },
+  };
 }

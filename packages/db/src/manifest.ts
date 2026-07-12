@@ -741,5 +741,14 @@ export const manifest: MigrationManifest = {
       description:
         "Supabase OAuth custody support (saas-integration-hub IH6): the provider_credentials kind CHECK widens to admit supabase_pkce_verifier — the PKCE code_verifier lives server-side between authorize and callback as an enveloped custody row bound to the pending connection, deleted the moment the exchange consumes it. Guarded CHECK swap (auto-named inline constraint, the 720 lesson); idempotent.",
     },
+    {
+      id: "820_config_brokered_secrets",
+      context: "config",
+      path: "820_config_brokered_secrets/up.sql",
+      checksum:
+        "8d660a345e60e55613faf87eef0f097bafdaef955733f681edcba5c1d32e3b23",
+      description:
+        "Brokered-secret metadata discriminator (saas-integration-hub IH7): config.secret_metadata gains source ('static'|'brokered') plus display-only binding facts (binding_provider, binding_connection_id, binding_template) so list/chain reads render broker provenance without touching the envelope — the authoritative binding pointer rides the existing version envelope. Guard CHECKs keep binding facts all-or-nothing with the discriminator and forbid brokered personal overlays; a partial org index backs the entitlement count. Additive + idempotent.",
+    },
   ],
 };

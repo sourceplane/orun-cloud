@@ -3,8 +3,10 @@
 // payload; a protected-env / policy deny returns BEFORE any decrypt attempt.
 
 import { handleInternalResolveSecrets, type InternalResolveDeps } from "@config-worker/handlers/internal-resolve-secrets";
+import type { BrokeredMintOutcome } from "@config-worker/integrations-client";
 import type { Env } from "@config-worker/env";
 import type { ActorContext } from "@config-worker/router";
+import type { InternalMintCredentialRequest } from "@saas/contracts/integrations";
 import type { ConfigResult, SecretMetadata, SecretPolicyRecord } from "@saas/db/config";
 import type { AppendEventWithAuditInput, EventsResult, StoredEvent, StoredAuditEntry } from "@saas/db/events";
 
@@ -31,6 +33,10 @@ function head(over: Partial<SecretMetadata> = {}): SecretMetadata {
     expiresAt: null,
     createdBy: "00000000-0000-0000-0000-000000000000",
     personalOwner: null,
+    source: "static" as const,
+    bindingProvider: null,
+    bindingConnectionId: null,
+    bindingTemplate: null,
     overridable: true,
     lastUsedAt: null,
     createdAt: new Date("2026-01-01T00:00:00Z"),
@@ -48,6 +54,10 @@ interface Captured {
 function makeDeps(over: {
   policies?: SecretPolicyRecord[];
   headResult?: ConfigResult<SecretMetadata>;
+  /** Envelope text served by getSecretCiphertext (IH7 brokered-pointer tests). */
+  envelope?: string;
+  /** Brokered mint injector (IH7). */
+  mint?: (req: InternalMintCredentialRequest) => Promise<BrokeredMintOutcome>;
   capture: Captured;
 }): InternalResolveDeps {
   const okEvent: EventsResult<{ event: StoredEvent; audit: StoredAuditEntry }> = {
@@ -60,7 +70,7 @@ function makeDeps(over: {
         scope.kind === "environment" ? (over.headResult ?? { ok: true, value: head() }) : { ok: false, error: { kind: "not_found" } },
       getSecretCiphertext: async (): Promise<ConfigResult<string>> => {
         over.capture.decryptCalls; // no-op — real signal is decrypt() below
-        return { ok: true, value: JSON.stringify({ alg: "AES-256-GCM", v: 1, iv: "aaa", ct: "bbb" }) };
+        return { ok: true, value: over.envelope ?? JSON.stringify({ alg: "AES-256-GCM", v: 1, iv: "aaa", ct: "bbb" }) };
       },
       touchSecretLastUsed: async (): Promise<ConfigResult<void>> => {
         over.capture.touchCalls++;
@@ -81,6 +91,7 @@ function makeDeps(over: {
       over.capture.decryptCalls++;
       return PLAINTEXT;
     },
+    ...(over.mint ? { mintBrokered: over.mint } : {}),
     generateId: () => "abcdef00-0000-0000-0000-000000000000",
     now: () => new Date("2026-07-02T00:00:00Z"),
   };
@@ -195,5 +206,161 @@ describe("internal resolve — validation", () => {
     const capture: Captured = { events: [], decryptCalls: 0, touchCalls: 0 };
     const res = await handleInternalResolveSecrets(req(baseBody({ platform: "bogus" })), ENV, "req_5", ACTOR, makeDeps({ capture }));
     expect(res.status).toBe(400);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════
+// Brokered heads (saas-integration-hub IH7): mint at resolve
+// ═══════════════════════════════════════════════════════════
+
+const CONNECTION_PUBLIC = "int_" + "ab".repeat(16);
+const MINTED = "minted-VALUE-never-logged";
+const POINTER = JSON.stringify({
+  v: "brokered",
+  provider: { connectionId: CONNECTION_PUBLIC, template: "workers-deploy", params: { accountId: "acc-1" } },
+});
+
+describe("internal resolve — brokered head (IH7)", () => {
+  it("mints through the broker, never touches decrypt, and carries broker provenance", async () => {
+    const capture: Captured = { events: [], decryptCalls: 0, touchCalls: 0 };
+    let mintReq: InternalMintCredentialRequest | null = null;
+    const res = await handleInternalResolveSecrets(
+      req(baseBody()),
+      ENV,
+      "req_b1",
+      ACTOR,
+      makeDeps({
+        capture,
+        envelope: POINTER,
+        mint: async (r) => {
+          mintReq = r;
+          return {
+            ok: true,
+            value: MINTED,
+            mintId: "mint_" + "cd".repeat(16),
+            provider: "cloudflare",
+            template: "workers-deploy",
+            expiresAt: "2026-07-02T00:15:00Z",
+          };
+        },
+      }),
+    );
+    expect(res.status).toBe(200);
+    const json = (await res.json()) as {
+      data: {
+        secrets: Record<string, string>;
+        resolved: Array<{ key: string; version: number; scope: string; source?: string; mintId?: string; provider?: string; template?: string }>;
+      };
+    };
+    // The minted value lands in the secrets map — indistinguishable from static.
+    expect(json.data.secrets.DATABASE_URL).toBe(MINTED);
+    // Additive broker provenance on the resolved[] entry.
+    const entry = json.data.resolved[0]!;
+    expect(entry.source).toBe("broker");
+    expect(entry.mintId).toBe("mint_" + "cd".repeat(16));
+    expect(entry.provider).toBe("cloudflare");
+    expect(entry.template).toBe("workers-deploy");
+    expect(entry.version).toBe(9);
+    // Decrypt must NEVER run for a brokered head; last_used still stamps.
+    expect(capture.decryptCalls).toBe(0);
+    expect(capture.touchCalls).toBe(1);
+    // The mint request carries the pointer + run attribution, no ttlSeconds.
+    expect(mintReq).not.toBeNull();
+    expect(mintReq!.orgId).toBe(ORG);
+    expect(mintReq!.connectionId).toBe(CONNECTION_PUBLIC);
+    expect(mintReq!.template).toBe("workers-deploy");
+    expect(mintReq!.params).toEqual({ accountId: "acc-1" });
+    expect(mintReq!.purpose).toBe("secret_resolve");
+    expect(mintReq!.requestedBy).toBe(ACTOR.subjectId);
+    expect(mintReq!.runId).toBe("01JRUN");
+    expect(mintReq!.jobId).toBe("deploy");
+    expect("ttlSeconds" in mintReq!).toBe(false);
+  });
+
+  it("audits the access with the mintId join key — NEVER the minted value", async () => {
+    const capture: Captured = { events: [], decryptCalls: 0, touchCalls: 0 };
+    await handleInternalResolveSecrets(
+      req(baseBody()),
+      ENV,
+      "req_b2",
+      ACTOR,
+      makeDeps({
+        capture,
+        envelope: POINTER,
+        mint: async () => ({
+          ok: true,
+          value: MINTED,
+          mintId: "mint_" + "cd".repeat(16),
+          provider: "cloudflare",
+          template: "workers-deploy",
+          expiresAt: "2026-07-02T00:15:00Z",
+        }),
+      }),
+    );
+    expect(capture.events).toHaveLength(1);
+    const evt = capture.events[0]!;
+    expect(evt.event.type).toBe("secret.accessed");
+    expect(evt.event.payload.source).toBe("broker");
+    expect(evt.event.payload.mintId).toBe("mint_" + "cd".repeat(16));
+    expect(evt.event.payload.provider).toBe("cloudflare");
+    expect(evt.event.payload.template).toBe("workers-deploy");
+    expect(JSON.stringify(evt)).not.toContain(MINTED);
+  });
+
+  it("fails the WHOLE resolve 412 binding_unavailable on a mint failure + audits a denial", async () => {
+    const capture: Captured = { events: [], decryptCalls: 0, touchCalls: 0 };
+    const res = await handleInternalResolveSecrets(
+      req(baseBody()),
+      ENV,
+      "req_b3",
+      ACTOR,
+      makeDeps({
+        capture,
+        envelope: POINTER,
+        mint: async () => ({ ok: false, status: 502, reason: "provider_error" }),
+      }),
+    );
+    expect(res.status).toBe(412);
+    const json = (await res.json()) as { error: { code: string; details: { key: string; reason: string; connectionId: string; decisionId: string } } };
+    expect(json.error.code).toBe("precondition_failed");
+    expect(json.error.details.reason).toBe("binding_unavailable");
+    expect(json.error.details.key).toBe("DATABASE_URL");
+    expect(json.error.details.connectionId).toBe(CONNECTION_PUBLIC);
+    expect(json.error.details.decisionId).toMatch(/^dec_/);
+    // Fail-closed: no decrypt, no last_used stamp, a secret.denied audit.
+    expect(capture.decryptCalls).toBe(0);
+    expect(capture.touchCalls).toBe(0);
+    expect(capture.events).toHaveLength(1);
+    expect(capture.events[0]!.event.type).toBe("secret.denied");
+    expect(capture.events[0]!.event.payload.reason).toBe("binding_unavailable");
+  });
+
+  it("static heads are unaffected: no mint call, pre-IH7 provenance shape", async () => {
+    const capture: Captured = { events: [], decryptCalls: 0, touchCalls: 0 };
+    let mintCalls = 0;
+    const res = await handleInternalResolveSecrets(
+      req(baseBody()),
+      ENV,
+      "req_b4",
+      ACTOR,
+      makeDeps({
+        capture,
+        mint: async () => {
+          mintCalls++;
+          return { ok: false, status: 503, reason: "unavailable" };
+        },
+      }),
+    );
+    expect(res.status).toBe(200);
+    const json = (await res.json()) as { data: { secrets: Record<string, string>; resolved: Array<Record<string, unknown>> } };
+    expect(json.data.secrets.DATABASE_URL).toBe(PLAINTEXT);
+    expect(mintCalls).toBe(0);
+    expect(capture.decryptCalls).toBe(1);
+    // Static entries carry exactly the pre-IH7 shape — no broker fields.
+    const entry = json.data.resolved[0]!;
+    expect(entry.source).toBeUndefined();
+    expect(entry.mintId).toBeUndefined();
+    expect(entry.provider).toBeUndefined();
+    expect(entry.template).toBeUndefined();
   });
 });

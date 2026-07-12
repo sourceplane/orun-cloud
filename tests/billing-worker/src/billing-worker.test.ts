@@ -521,6 +521,31 @@ describe("router", () => {
     const body = (await res.json()) as { error: { code: string } };
     expect(body.error.code).toBe("internal_error");
   });
+
+  it("internal entitlement-check route accepts config-worker caller (IH7)", async () => {
+    // config-worker gates brokered secret bindings on limit.brokered_secrets
+    // (saas-integration-hub IH7). Same proof shape: 503 with DB missing, not
+    // 403 — the allow-list admits the caller before repository access.
+    const env = createFakeEnv({ PLATFORM_DB: undefined });
+    const req = new Request(
+      "https://billing-worker/v1/internal/billing/entitlements/check",
+      {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "x-internal-caller": "config-worker",
+        },
+        body: JSON.stringify({
+          orgId: TEST_ORG_PUBLIC,
+          entitlementKey: "limit.brokered_secrets",
+        }),
+      },
+    );
+    const res = await route(req, env);
+    expect(res.status).toBe(503);
+    const body = (await res.json()) as { error: { code: string } };
+    expect(body.error.code).toBe("internal_error");
+  });
 });
 
 // ── Internal entitlement-check unit tests ────────────────────

@@ -38,6 +38,8 @@ import {
   type ServesFrom,
 } from "../secret-policy.js";
 import { SECRET_EVENT_TYPES } from "../secret-events.js";
+import type { InternalMintCredentialRequest } from "@saas/contracts/integrations";
+import { mintBrokeredCredential, type BrokeredMintOutcome } from "../integrations-client.js";
 
 const TTL_SECONDS = 300;
 const PLATFORMS: Platform[] = ["local-cli", "ci-oidc", "service"];
@@ -74,8 +76,52 @@ export interface InternalResolveDeps {
   subjectTeams?: string[];
   /** Decrypt injector for tests; production wires decryptEnvelope over the DEK repo. */
   decrypt?: (envelope: string, orgId: string) => Promise<string>;
+  /** Brokered mint injector (IH7, tests); production wires mintBrokeredCredential
+   * over the INTEGRATIONS_WORKER service binding. A brokered head with no mint
+   * seam available fails closed (`binding_unavailable`). */
+  mintBrokered?: (req: InternalMintCredentialRequest) => Promise<BrokeredMintOutcome>;
   generateId?: () => string;
   now?: () => Date;
+}
+
+/**
+ * The brokered envelope pointer (IH7): stored in the version row IN PLACE of a
+ * ciphertext envelope. Detected (and short-circuited past decrypt) by
+ * `v === "brokered"`. `params` present only when non-empty.
+ */
+interface BrokeredPointer {
+  v: "brokered";
+  provider: { connectionId: string; template: string; params?: Record<string, unknown> };
+}
+
+function parseBrokeredPointer(envelope: string): BrokeredPointer | null {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(envelope);
+  } catch {
+    return null;
+  }
+  if (!parsed || typeof parsed !== "object") return null;
+  const obj = parsed as Record<string, unknown>;
+  if (obj.v !== "brokered") return null;
+  const provider = obj.provider as Record<string, unknown> | undefined;
+  if (!provider || typeof provider !== "object") return null;
+  if (typeof provider.connectionId !== "string" || typeof provider.template !== "string") return null;
+  return parsed as BrokeredPointer;
+}
+
+/** One `resolved[]` provenance entry. Broker fields are ADDITIVE (IH7):
+ *  static entries carry exactly the pre-IH7 shape. */
+interface ResolvedEntry {
+  key: string;
+  version: number;
+  scope: string;
+  personal: boolean;
+  decisionId: string;
+  source?: "broker";
+  mintId?: string;
+  provider?: string;
+  template?: string;
 }
 
 export async function handleInternalResolveSecrets(
@@ -150,8 +196,16 @@ export async function handleInternalResolveSecrets(
         ? uuidFromPublicId(actor.subjectId) ?? undefined
         : undefined;
 
+    // Brokered mint seam (IH7): deps injector in tests; the service binding in
+    // production. A missing binding is a mint failure (fail closed), not a 500.
+    const mintBrokered: (req: InternalMintCredentialRequest) => Promise<BrokeredMintOutcome> =
+      deps?.mintBrokered ??
+      (env.INTEGRATIONS_WORKER
+        ? (req) => mintBrokeredCredential(env.INTEGRATIONS_WORKER!, req, requestId)
+        : async () => ({ ok: false, status: 503, reason: "unavailable" }));
+
     const secrets: Record<string, string> = {};
-    const resolved: Array<{ key: string; version: number; scope: string; personal: boolean; decisionId: string }> = [];
+    const resolved: ResolvedEntry[] = [];
 
     for (const ref of body.keys) {
       const decisionId = `dec_${genId().replace(/-/g, "")}`;
@@ -204,6 +258,63 @@ export async function handleInternalResolveSecrets(
         await auditDenied(eventsRepo, genId, now, body, subject, ref.key, "version-unavailable", decisionId, head, requestId);
         return errorResponse("not_found", "Secret version not found", 404, requestId, { key: ref.key, reason: "version-unavailable", decisionId });
       }
+      // ── Brokered head (IH7): the stored envelope is a POINTER, not
+      //    ciphertext — short-circuit decrypt and mint just-in-time. ──
+      const pointer = parseBrokeredPointer(cipherResult.value);
+      if (pointer) {
+        const mintReq: InternalMintCredentialRequest = {
+          orgId: body.orgId,
+          connectionId: pointer.provider.connectionId,
+          template: pointer.provider.template,
+          ...(pointer.provider.params ? { params: pointer.provider.params } : {}),
+          // No ttlSeconds: the broker's own default + clamp governs — the 300s
+          // resolve TTL re-resolves well inside the default mint lifetime.
+          purpose: "secret_resolve",
+          requestedBy: actor.subjectId,
+          runId: body.runId,
+          jobId: body.jobId,
+        };
+        const outcome = await mintBrokered(mintReq);
+        if (!outcome.ok) {
+          // Fail the WHOLE resolve fail-closed — the same posture as a policy
+          // deny. The typed error names the connection, never a value.
+          await auditDenied(eventsRepo, genId, now, body, subject, ref.key, "binding_unavailable", decisionId, head, requestId);
+          return errorResponse("precondition_failed", "Brokered secret binding unavailable", 412, requestId, {
+            key: ref.key,
+            reason: "binding_unavailable",
+            connectionId: pointer.provider.connectionId,
+            decisionId,
+          });
+        }
+
+        // The minted value exists ONLY in the secrets map — never in an
+        // event, audit payload, provenance entry, or error.
+        secrets[ref.key] = outcome.value;
+        resolved.push({
+          key: ref.key,
+          version,
+          scope: walk.servesFrom,
+          personal,
+          decisionId,
+          source: "broker",
+          mintId: outcome.mintId,
+          provider: outcome.provider,
+          template: outcome.template,
+        });
+
+        // Stamp last_used_at on the served head (best-effort — never fails the resolve).
+        await repo.touchSecretLastUsed(head.orgId, head.id, now);
+
+        // Doubly visible (design §5.4): secret.accessed carries the mintId
+        // join key onto the broker's ledger entry. NEVER the value.
+        await auditAccessed(eventsRepo, genId, now, body, subject, ref.key, version, walk.servesFrom, personal, decisionId, head, requestId, decision.ruleId, {
+          mintId: outcome.mintId,
+          provider: outcome.provider,
+          template: outcome.template,
+        });
+        continue;
+      }
+
       let plaintext: string;
       try {
         plaintext = await decrypt(cipherResult.value, head.orgId);
@@ -246,6 +357,7 @@ async function auditAccessed(
   head: SecretMetadata,
   requestId: string,
   ruleId?: string,
+  broker?: { mintId: string; provider: string; template: string },
 ): Promise<void> {
   if (!eventsRepo) return;
   await eventsRepo.appendEventWithAudit({
@@ -264,8 +376,19 @@ async function auditAccessed(
       subjectId: head.id,
       subjectName: key,
       requestId,
-      // Key-name + version + scope + decisionId only. NEVER the value.
-      payload: { key, version, scope, personal, decisionId, runId: body.runId, jobId: body.jobId, ...(ruleId ? { ruleId } : {}) },
+      // Key-name + version + scope + decisionId (+ broker mint join key for a
+      // brokered head, IH7) only. NEVER the value.
+      payload: {
+        key,
+        version,
+        scope,
+        personal,
+        decisionId,
+        runId: body.runId,
+        jobId: body.jobId,
+        ...(ruleId ? { ruleId } : {}),
+        ...(broker ? { source: "broker", mintId: broker.mintId, provider: broker.provider, template: broker.template } : {}),
+      },
     },
     audit: {
       id: genId(),

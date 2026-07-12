@@ -144,6 +144,12 @@ export async function handleRotateSecret(
           return { result: { ok: false as const, error: { kind: "not_found" as const } } };
         }
 
+        // Brokered guard (IH7): there is no stored value to rotate — the
+        // envelope is a binding pointer. v1 re-bind = delete + recreate.
+        if (existing.value.source === "brokered") {
+          return { result: { ok: false as const, error: { kind: "brokered" as const } } };
+        }
+
         // Authorize
         const contextResult = await fetchAuthorizationContext(
           env.MEMBERSHIP_WORKER!,
@@ -225,6 +231,9 @@ export async function handleRotateSecret(
         if (err.kind === "not_found") {
           return errorResponse("not_found", "Secret not found", 404, requestId);
         }
+        if (err.kind === "brokered") {
+          return errorResponse("unsupported", "A brokered secret cannot be rotated with a value; remove and re-bind", 400, requestId, { reason: "brokered" });
+        }
         return errorResponse("internal_error", "Service unavailable", 503, requestId);
       }
 
@@ -244,6 +253,11 @@ export async function handleRotateSecret(
 
       if (!scopeMatchesRequested(existing.value, requestedScope)) {
         return errorResponse("not_found", "Secret not found", 404, requestId);
+      }
+
+      // Brokered guard (IH7): no stored value to rotate; re-bind = delete + recreate.
+      if (existing.value.source === "brokered") {
+        return errorResponse("unsupported", "A brokered secret cannot be rotated with a value; remove and re-bind", 400, requestId, { reason: "brokered" });
       }
 
       const result = await deps.repo.rotateSecretMetadata(orgId, secretId, createdByUuid, ciphertextEnvelope);
