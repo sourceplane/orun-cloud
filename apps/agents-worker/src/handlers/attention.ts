@@ -7,7 +7,8 @@
 
 import type { AgentsDeps } from "../deps.js";
 import type { ActorContext } from "../router.js";
-import type { AgentSession, Routine, SessionEvent } from "@saas/db/agents";
+import type { AgentSession, Budget, Routine, SessionEvent } from "@saas/db/agents";
+import { budgetMarks } from "../budget.js";
 import type { AttentionItem, AttentionKind, AttentionSummary } from "@saas/contracts/agents";
 import { ATTENTION_RANK, ATTENTION_KINDS } from "@saas/contracts/agents";
 import { errorResponse, successResponse } from "../http.js";
@@ -57,9 +58,22 @@ export function foldAttention(
   eventsBySession: Map<string, SessionEvent[]>,
   now: Date,
   routines: Routine[] = [],
+  budgets: Budget[] = [],
 ): AttentionSummary {
   const items: AttentionItem[] = [];
   const t = now.getTime();
+
+  // Budget marks (AF8): envelopes at or past the soft mark. Raising the
+  // ceiling, killing the tree, or the session finishing removes the item.
+  for (const mark of budgetMarks(budgets, sessions, now)) {
+    const pct = Math.floor((mark.used / mark.limit) * 100);
+    items.push({
+      kind: "budget",
+      ...(mark.grain !== "workspace" && mark.ref ? { sessionId: mark.ref } : {}),
+      reason: `${mark.grain} budget at ${pct}% (${mark.used}/${mark.limit} tokens)`,
+      at: now.toISOString(),
+    });
+  }
 
   // Parked routines (AF6): the standing order stopped standing — a human
   // must resume it. Acting (resume/disable/delete) removes the item.
@@ -139,6 +153,7 @@ export async function handleGetAttention(
   const scope = { orgId };
   const sessions = await deps.repo.listSessions(scope);
   const routines = await deps.repo.listRoutines(scope);
+  const budgets = await deps.repo.listBudgets(scope);
   // Only awaiting sessions need their events (for the answerable ask); the
   // fleet rarely holds more than a handful at once.
   const eventsBySession = new Map<string, SessionEvent[]>();
@@ -146,5 +161,5 @@ export async function handleGetAttention(
     if (s.state !== "awaiting_approval") continue;
     eventsBySession.set(s.publicId, await deps.repo.listSessionEvents(scope, s.publicId));
   }
-  return successResponse(foldAttention(sessions, eventsBySession, now(), routines), requestId);
+  return successResponse(foldAttention(sessions, eventsBySession, now(), routines, budgets), requestId);
 }

@@ -52,3 +52,14 @@ export function compactAge(fromIso: string, now: Date): string {
   if (hours < 24) return `${hours}h`;
   return `${Math.floor(hours / 24)}d`;
 }
+
+/** "48.2k" / "1.3M" — the mock's token column (AF8 spend on session rows). */
+export function compactTokens(n: number | undefined): string {
+  if (n === undefined || !Number.isFinite(n) || n <= 0) return "—";
+  if (n < 1000) return String(n);
+  if (n < 1_000_000) {
+    const k = n / 1000;
+    return `${k >= 100 ? Math.round(k) : Math.round(k * 10) / 10}k`;
+  }
+  return `${Math.round((n / 1_000_000) * 10) / 10}M`;
+}

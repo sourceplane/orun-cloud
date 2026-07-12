@@ -54,6 +54,8 @@ export function toPublicSession(s: DbSession): AgentSession {
   out.depth = s.depth;
   // Routine provenance (AF6) — fleet grouping + park math.
   if (s.routineId !== undefined) out.routineId = s.routineId;
+  // Accumulated spend (AF8) — the mock's token column, budget arithmetic.
+  out.tokensUsed = s.tokensUsed;
   return out;
 }
 

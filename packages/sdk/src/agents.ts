@@ -12,6 +12,7 @@ import type {
   AgentSession,
   AgentSessionEventWire,
   AgentSessionState,
+  AgentBudget,
   AgentProvider,
   AgentRecordsEntry,
   AgentRoutine,
@@ -21,6 +22,7 @@ import type {
   CreateAgentSessionRequest,
   CreateProviderConnectionRequest,
   ProviderConnection,
+  SetBudgetRequest,
   SetProfileAutonomyRequest,
   UpdateAgentRoutineRequest,
 } from "@saas/contracts/agents";
@@ -160,6 +162,32 @@ export class AgentsClient {
   attention(orgId: string, opts: RequestOptions = {}): Promise<AttentionSummary> {
     return this.transport.request<AttentionSummary>(
       { method: "GET", path: `${agentsBase(orgId)}/attention` },
+      opts,
+    );
+  }
+
+  // ── Budgets (saas-agents-fleet AF8) ─────────────────────────
+
+  /** GET /agents/budgets — the ceilings registry. */
+  listBudgets(orgId: string, opts: RequestOptions = {}): Promise<AgentBudget[]> {
+    return this.transport.request<AgentBudget[]>(
+      { method: "GET", path: `${agentsBase(orgId)}/budgets` },
+      opts,
+    );
+  }
+
+  /** PUT /agents/budgets — upsert the ceiling for a grain(+ref). */
+  setBudget(orgId: string, body: SetBudgetRequest, opts: RequestOptions = {}): Promise<AgentBudget> {
+    return this.transport.request<AgentBudget>(
+      { method: "PUT", path: `${agentsBase(orgId)}/budgets`, body },
+      opts,
+    );
+  }
+
+  /** DELETE /agents/budgets/:id — lift a ceiling. */
+  deleteBudget(orgId: string, budgetId: string, opts: RequestOptions = {}): Promise<{ deleted: boolean }> {
+    return this.transport.request<{ deleted: boolean }>(
+      { method: "DELETE", path: `${agentsBase(orgId)}/budgets/${encodeURIComponent(budgetId)}` },
       opts,
     );
   }

@@ -177,6 +177,8 @@ export interface AgentSession {
   depth?: number;
   /** Routine provenance (AF6): the firing routine's public id (`rt_…`). */
   routineId?: string;
+  /** Accumulated relayed spend (AF8): summed cost samples. */
+  tokensUsed?: number;
 }
 
 /**
@@ -343,6 +345,47 @@ export function intersectCeiling(parent: CapabilityCeiling, child: CapabilityCei
     }
   }
   return out;
+}
+
+// ── Budgets (saas-agents-fleet AF8) ─────────────────────────
+// Ceilings, not advisories (locked decision 6): the door refuses a spawn
+// against an exhausted envelope; an ingest crossing becomes a graceful,
+// sealed interrupt — the log is worth more than the last 2% of budget.
+
+export const BUDGET_GRAINS = ["workspace", "tree", "session", "routine"] as const;
+export type BudgetGrain = (typeof BUDGET_GRAINS)[number];
+
+/** The soft mark: crossing this fraction of a ceiling raises an attention
+ * item; crossing 1.0 interrupts (design §7). */
+export const BUDGET_SOFT_MARK = 0.8;
+
+export const BUDGET_ERROR_CODES = {
+  budgetInvalid: "agent_budget_invalid",
+  budgetNotFound: "agent_budget_not_found",
+  /** The applicable envelope is exhausted — refused at the door. */
+  budgetExhausted: "budget_exhausted",
+} as const;
+export type BudgetErrorCode = (typeof BUDGET_ERROR_CODES)[keyof typeof BUDGET_ERROR_CODES];
+
+/** A token ceiling. workspace/tree/session rows are org-wide defaults (no
+ * ref); routine rows pin one routine's public id. */
+export interface AgentBudget {
+  /** Public id, `bud_…`. */
+  id: string;
+  grain: BudgetGrain;
+  ref?: string;
+  maxTokens: number;
+  createdBy: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** PUT /agents/budgets — upsert the ceiling for a grain(+ref). */
+export interface SetBudgetRequest {
+  grain: BudgetGrain;
+  /** routine grain only: the routine's public id. */
+  ref?: string;
+  maxTokens: number;
 }
 
 // ── Track record & earned autonomy (saas-agents-fleet AF7) ──

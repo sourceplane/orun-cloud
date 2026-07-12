@@ -11,6 +11,8 @@ import type {
   AgentSession,
   AutonomyLevel,
   AutonomyPolicy,
+  Budget,
+  BudgetGrain,
   ConnectionStatus,
   Provider,
   ProviderConnection,
@@ -130,6 +132,14 @@ export interface AgentsRepository extends ProviderConnectionsRepository {
    * stored verbatim, rendered wherever the level renders. */
   setProfileAutonomy(scope: WorkspaceScope, input: SetProfileAutonomyInput): Promise<AgentProfile>;
 
+  // ── Budgets (saas-agents-fleet AF8) ───────────────────────
+  /** Upsert the ceiling for a grain(+ref). */
+  setBudget(scope: WorkspaceScope, input: SetBudgetInput): Promise<Budget>;
+  listBudgets(scope: WorkspaceScope): Promise<Budget[]>;
+  deleteBudget(scope: WorkspaceScope, publicId: string): Promise<boolean>;
+  /** Accumulate relayed spend on the session row; returns the new total. */
+  addSessionTokens(scope: WorkspaceScope, sessionPublicId: string, delta: number): Promise<AgentSession>;
+
   // ── Routines (saas-agents-fleet AF6) ──────────────────────
   createRoutine(scope: WorkspaceScope, input: CreateRoutineInput): Promise<Routine>;
   getRoutine(scope: WorkspaceScope, publicId: string): Promise<Routine | null>;
@@ -152,6 +162,13 @@ export interface CreateRoutineInput {
   triggerConfig?: Record<string, unknown>;
   definitionRef?: string;
   caps?: Record<string, unknown>;
+  createdBy: string;
+}
+
+export interface SetBudgetInput {
+  grain: BudgetGrain;
+  ref?: string;
+  maxTokens: number;
   createdBy: string;
 }
 
