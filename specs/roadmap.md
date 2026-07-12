@@ -38,6 +38,7 @@ The architect-style ground rules:
 | **PX** | [`epics/saas-product-experience/`](./epics/saas-product-experience/) | In progress | Close the backend-ahead-of-surface gap: PX1 console truth/papercuts · PX2 config/flags/secrets UI · PX3 notification preferences e2e · PX4 rename lifecycle · PX5 first-run onboarding · PX6 Cmd-K resource search. All human-independent. |
 | **SI** | [`epics/_archive/saas-settings-ia/`](./epics/_archive/saas-settings-ia/) | ✅ Shipped (archived) | Console **information architecture** — made navigation mirror the shipped `You → Account → Workspace` scope model: SI1 re-file the mis-scoped surfaces (Billing→Account · Sessions→personal · disambiguate the two Notifications) · SI2 doorways (settings follow the switcher) · SI3 one **People & Access** surface (Members·Pending·Roles·Access; invitations become Pending; inline role edit; access provenance) · SI4 Roles as a permission-matrix destination (custom-roles seam for **TG**) · SI5 end the tenant/person "account" collision (`/account`→`/you`). Relabel & regroup only — no tables, no tenancy change. SI1–SI5 shipped (PRs #365–#369). |
 | **IG** | [`epics/saas-integrations/`](./epics/saas-integrations/) | Draft | Pluggable integrations platform (promotes P5), GitHub App first: IG0 foundation · IG1 connect flow · IG2 inbound `scm.*` events · IG3 repo links · IG4 token broker · IG5 console · IG6 lifecycle hardening · IG7 pluggability/instance proof · IG8 inbound projection fields · IG9 write-back proxy (the Orun Cloud v2 state bridge — `epics/saas-integrations/bridge-to-state.md`). |
+| **IH** | [`epics/saas-integration-hub/`](./epics/saas-integration-hub/) | Draft | The ghost cards become real — three providers, three archetypes, one capability-typed seam over IG: IH0 foundation (capability seam + `700_integration_hub_foundation`: parent-credential custody, mint ledger, provider facts) · IH1 Slack OAuth connect (`team_id ↔ org_id` keystone) · IH2 `slack_app` channel (picker, event-group message *updating*) · IH3 Slack inbound (`messaging.*`, `/orun` command, ack/mute actions) · IH4 provider-generic credential broker (scope templates, mint ledger; IG4 re-expressed) · IH5 Cloudflare (parent-token custody → short-TTL scoped child tokens) · IH6 Supabase (OAuth → short-lived access) · IH7 **brokered secrets** (mint-at-resolve on the SM3 lease-bound path; zero orun-CLI change) · IH8 marketplace console · IH9 hardening/reconcile/BF params · IH10 dormant AWS/Discord proof. |
 | **ES** | [`epics/saas-event-streaming/`](./epics/saas-event-streaming/) | In progress | Datadog-grade event pipeline over the canonical `event_log` (pays spec 09's router debt; no new worker, no queues): ES0 typed event catalog + foundation · ES1 shared cursor lanes + dead-letter/replay (webhooks lane adopts) · ES2 notification rules (globs · severity · attribute filters · throttling) · ES3 channel seam + Slack (incoming webhooks) + async retry · ES4 dedup/correlation into event groups (`scm.*` × `state.run.*`) · ES5 custom event ingest + SDK/CLI · ES6 console Events explorer + rules/channels UX · ES7 retention/fairness/storm breaker. |
 | **SS** | [`epics/saas-secrets-sync/`](./epics/saas-secrets-sync/) | Draft (SS0/SS1 in progress) | One write path for every secret: SS0 escrow convention + manifest · SS1 drift checker enforced in verify lanes · SS2 deploy-lane sync · SS3 escrow seeding (human-gated) · SS4 Secrets Store for shared keys · SS5 rotation runbook + BF9 preflight. |
 | **BM** | [`epics/saas-orun-backend-merge/`](./epics/saas-orun-backend-merge/) | Ready | Replace `orun-backend`'s relational coordination plane with **native event-sourced coordination** (DO-sharded per run, Postgres projection, content-addressed `job-result` memoization), cross-repo with `orun` (**NC**): BM0 contract v2 + vendor · BM1 object kinds + memoization · BM2 per-run Durable-Object event log (conditional append) · BM3 projections · BM4 CLI adoption · BM5 auth/quota · BM6 cutover · BM7 decommission. Greenfield (no permanent backcompat); `orun-backend` is the parity reference. Extends OP/OV. |
@@ -104,6 +105,20 @@ see [`README.md`](./README.md).
   after IG2 is live, ES is the highest-leverage way to make integration events
   *visible and actionable*; TC's team notification targets plug into ES's rule
   engine rather than building their own.
+- **IH (integration hub)** is the payoff milestone for three shipped programs
+  at once: it promotes IG's dormant pluggability proof into live providers,
+  resolves ES's parked D1 (the OAuth Slack App) as the additive `slack_app`
+  channel kind ES designed for, and gives the secret manager's reserved
+  `provider`-envelope seam its first real occupant (brokered secrets:
+  Cloudflare/Supabase credentials minted at lease-bound resolve, zero orun-CLI
+  change). Two parallel spines after IH0: messaging (IH1→IH3, gated on Slack
+  App registration per env) and broker (IH4→IH7; Cloudflare first — no OAuth
+  app needed, fastest path to the "deploy a Worker with no stored key" e2e).
+  IH7's live path waits on SM3 (the resolve endpoint) — sequence the
+  `saas-secret-manager` spine accordingly; everything else is fixture-first
+  and park-and-continue, the IG/Polar posture. Tenancy (IT scope/share-mode)
+  and entitlement gating are consumed as-is; no new tenancy machinery, no new
+  delivery engine, no queues.
 - **SC (service catalog)** evolves OP's shipped OV7 catalog into an internal
   developer portal without touching the read-model contract: SC0–SC4 (drill-down
   route + contextual sidebar + drawer, dependency graph, deployments/activity

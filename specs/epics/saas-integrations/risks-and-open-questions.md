@@ -113,7 +113,11 @@ re-derived (replay) rather than re-fetched.
 ## Explicitly deferred
 
 - Second live provider (GitLab/Bitbucket) — IG7 proves the seam dormant; a live
-  adapter waits for demand.
+  adapter waits for demand. **⬆ The non-SCM expansion of the seam (Slack,
+  Cloudflare, Supabase — messaging + credential-broker archetypes) is now
+  owned by [`saas-integration-hub`](../saas-integration-hub/), which evolves
+  the adapter interface into capability form (IH0) and re-expresses the IG4
+  broker on a provider-generic core (IH4) with the GitHub route preserved.**
 - Check-run/deployment **proxy** endpoints — **promoted to IG9** by the v2
   state bridge (`bridge-to-state.md`); the token broker remains the primitive
   underneath. Likewise, ingesting `scm.*` into the Orun object graph (IG8 +
