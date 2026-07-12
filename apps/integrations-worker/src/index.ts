@@ -10,9 +10,8 @@ export default {
 
   // Inbox drain (IG2): attribute received inbound deliveries to connections,
   // process provider lifecycle events, normalize and emit `scm.*` into the
-  // event log. NOTE: the cron trigger is not attached yet — the Cloudflare
-  // account is at its 5-cron limit (see the epic IMPLEMENTATION-STATUS) —
-  // so this handler is ready but idle until a slot frees.
+  // event log. The cron trigger is attached in wrangler.template.jsonc
+  // (crons: ["* * * * *"]), so this runs every minute.
   async scheduled(_controller: ScheduledController, env: Env, _ctx: ExecutionContext): Promise<void> {
     if (!env.PLATFORM_DB) {
       return;

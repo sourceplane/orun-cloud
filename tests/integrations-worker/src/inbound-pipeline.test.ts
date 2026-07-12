@@ -2,6 +2,8 @@ import { handleGithubWebhookIngest } from "@integrations-worker/handlers/ingest"
 import { drainInboundDeliveries, processDelivery } from "@integrations-worker/drain";
 import { createIntegrationsRepository, type InboundDelivery } from "@saas/db/integrations";
 import { createEventsRepository } from "@saas/db/events";
+import { createStateRepository } from "@saas/db/state";
+import { createMembershipRepository } from "@saas/db/membership";
 import type { Env } from "@integrations-worker/env";
 import type { SqlExecutor, SqlExecutorResult, SqlRow } from "@saas/db/hyperdrive";
 
@@ -163,6 +165,8 @@ function drainCtx(respond: SqlResponder) {
       executor,
       repo: createIntegrationsRepository(executor),
       events: createEventsRepository(executor),
+      state: createStateRepository(executor),
+      membership: createMembershipRepository(executor),
       now: () => NOW,
     },
     queries,
@@ -581,6 +585,256 @@ describe("inbox drain — attribute, lifecycle, normalize, emit", () => {
     expect(summary.emitted).toBe(1);
     expect(summary.skipped).toBe(1);
     expect(summary.failed).toBe(0);
+  });
+});
+
+// ── OV2 federation: state.workspace_links → auto-claim → workspace routing ──
+
+describe("inbox drain — workspace-link federation and auto-claim (OV2)", () => {
+  const WORKSPACE_ORG = "22222222-2222-4222-8222-222222222222";
+  const HOSTILE_ORG = "99999999-9999-4999-8999-999999999999";
+  const PROJECT_UUID = "44444444-4444-4444-8444-444444444444";
+  const OTHER_PROJECT_UUID = "88888888-8888-4888-8888-888888888888";
+
+  function workspaceLinkRow(overrides?: Record<string, unknown>): Record<string, unknown> {
+    return {
+      id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      org_id: WORKSPACE_ORG,
+      project_id: PROJECT_UUID,
+      remote_url: "github.com/acme/storefront",
+      status: "active",
+      provider: "github",
+      provider_repo_id: "777001",
+      provider_owner_id: "42",
+      provider_owner_login: "acme",
+      created_by: null,
+      created_by_kind: null,
+      last_seen_at: null,
+      created_at: NOW.toISOString(),
+      updated_at: NOW.toISOString(),
+      ...overrides,
+    };
+  }
+
+  function repoLinkRow(overrides?: Record<string, unknown>): Record<string, unknown> {
+    return {
+      id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+      org_id: WORKSPACE_ORG,
+      project_id: PROJECT_UUID,
+      connection_id: CONNECTION_UUID,
+      repo_external_id: "777001",
+      repo_full_name: "acme/storefront",
+      default_branch: null,
+      branch_env_map: {},
+      status: "active",
+      created_by: null,
+      created_at: NOW.toISOString(),
+      updated_at: NOW.toISOString(),
+      ...overrides,
+    };
+  }
+
+  function orgRow(id: string, parentOrgId: string | null): Record<string, unknown> {
+    return {
+      id,
+      name: "Workspace",
+      slug: "workspace",
+      slug_lower: "workspace",
+      public_ref: "workspace-1",
+      status: "active",
+      parent_org_id: parentOrgId,
+      created_at: NOW.toISOString(),
+      updated_at: NOW.toISOString(),
+    };
+  }
+
+  it("auto-claims a state-plane link and routes the event to the owning workspace", async () => {
+    // The repo was added to a child workspace via `orun cloud link` (state
+    // plane only) — no integrations.repo_links claim exists. The drain must
+    // federate on (provider, provider_repo_id), verify the workspace may use
+    // the account connection (IT10), materialize the claim, and emit to the
+    // WORKSPACE org — this is the self-healing path for live installs.
+    const { ctx, queries } = drainCtx((text) => {
+      if (text.includes("FROM integrations.github_installations WHERE installation_id"))
+        return [installationRow()];
+      if (text.includes("FROM integrations.connections WHERE id = $1")) return [connectionRow()];
+      if (text.includes("FROM integrations.repo_links")) return []; // no claim yet
+      if (text.includes("FROM state.workspace_links")) return [workspaceLinkRow()];
+      if (text.includes("FROM membership.organizations WHERE id = $1"))
+        return [orgRow(WORKSPACE_ORG, ORG_UUID)]; // child of the account org
+      if (text.includes("AS admitted")) return [{ admitted: true }];
+      if (text.includes("INSERT INTO integrations.repo_links")) return [repoLinkRow()];
+      if (text.includes("events.event_log")) return [EVENT_ROW];
+      if (text.includes("UPDATE integrations.inbound_deliveries"))
+        return [deliveryRow({ status: "emitted" })];
+      return [];
+    });
+
+    const outcome = await processDelivery(ctx, mapDelivery(deliveryRow()));
+    expect(outcome).toEqual({ kind: "emitted", eventType: "scm.push" });
+
+    // Auto-claim: the integrations.repo_links row is created from the
+    // workspace link + delivering connection.
+    const claim = queries.find((q) => q.text.includes("INSERT INTO integrations.repo_links"));
+    expect(claim).toBeDefined();
+    expect(claim!.params[1]).toBe(WORKSPACE_ORG); // orgId from the workspace link
+    expect(claim!.params[2]).toBe(PROJECT_UUID); // projectId from the workspace link
+    expect(claim!.params[3]).toBe(CONNECTION_UUID); // delivering connection
+    expect(claim!.params[4]).toBe("777001"); // normalized.repo.externalId
+    expect(claim!.params[5]).toBe("acme/storefront"); // normalized.repo.fullName
+    expect(claim!.params[8]).toBeNull(); // createdBy: system claim
+
+    // Event emitted to the WORKSPACE org with its projectId…
+    const eventInsert = queries.find((q) => q.text.includes("events.event_log"));
+    expect(eventInsert!.params[9]).toBe(WORKSPACE_ORG);
+    expect(eventInsert!.params[10]).toBe(PROJECT_UUID);
+    // …while the delivery row stays attributed to the account connection.
+    const mark = queries.find((q) => q.text.includes("UPDATE integrations.inbound_deliveries"));
+    expect(mark!.params).toContain(ORG_UUID);
+  });
+
+  it("routes to the race winner when the auto-claim hits the IT2 unique index", async () => {
+    let linkLookups = 0;
+    const { ctx, queries } = drainCtx((text) => {
+      if (text.includes("FROM integrations.github_installations WHERE installation_id"))
+        return [installationRow()];
+      if (text.includes("FROM integrations.connections WHERE id = $1")) return [connectionRow()];
+      if (text.includes("FROM integrations.repo_links")) {
+        linkLookups += 1;
+        // First lookup: no claim. Re-read after the conflict: the winner.
+        return linkLookups === 1
+          ? []
+          : [repoLinkRow({ org_id: WORKSPACE_ORG, project_id: OTHER_PROJECT_UUID })];
+      }
+      if (text.includes("FROM state.workspace_links"))
+        return [workspaceLinkRow({ org_id: ORG_UUID })]; // connection's own org
+      if (text.includes("INSERT INTO integrations.repo_links")) {
+        throw { code: "23505", constraint: "uq_integrations_repo_claim" };
+      }
+      if (text.includes("events.event_log")) return [EVENT_ROW];
+      if (text.includes("UPDATE integrations.inbound_deliveries"))
+        return [deliveryRow({ status: "emitted" })];
+      return [];
+    });
+
+    const outcome = await processDelivery(ctx, mapDelivery(deliveryRow()));
+    expect(outcome).toEqual({ kind: "emitted", eventType: "scm.push" });
+    expect(linkLookups).toBe(2); // re-read after losing the claim race
+
+    const eventInsert = queries.find((q) => q.text.includes("events.event_log"));
+    expect(eventInsert!.params[9]).toBe(WORKSPACE_ORG); // the winner's org
+    expect(eventInsert!.params[10]).toBe(OTHER_PROJECT_UUID); // the winner's project
+  });
+
+  it("falls back to the account org when no workspace link matches (unchanged)", async () => {
+    const { ctx, queries } = drainCtx((text) => {
+      if (text.includes("FROM integrations.github_installations WHERE installation_id"))
+        return [installationRow()];
+      if (text.includes("FROM integrations.connections WHERE id = $1")) return [connectionRow()];
+      if (text.includes("FROM integrations.repo_links")) return [];
+      if (text.includes("FROM state.workspace_links")) return []; // linked in neither plane
+      if (text.includes("events.event_log")) return [EVENT_ROW];
+      if (text.includes("UPDATE integrations.inbound_deliveries"))
+        return [deliveryRow({ status: "emitted" })];
+      return [];
+    });
+
+    const outcome = await processDelivery(ctx, mapDelivery(deliveryRow()));
+    expect(outcome).toEqual({ kind: "emitted", eventType: "scm.push" });
+
+    // The federation lookup ran, found nothing, and nothing was claimed.
+    expect(queries.some((q) => q.text.includes("FROM state.workspace_links"))).toBe(true);
+    expect(queries.some((q) => q.text.includes("INSERT INTO integrations.repo_links"))).toBe(false);
+    const eventInsert = queries.find((q) => q.text.includes("events.event_log"));
+    expect(eventInsert!.params[9]).toBe(ORG_UUID); // account org
+    expect(eventInsert!.params[10]).toBeNull(); // org-scoped only
+  });
+
+  it("fails closed to the account org on an ambiguous double-claim (pre-650 data)", async () => {
+    const { ctx, queries } = drainCtx((text) => {
+      if (text.includes("FROM integrations.github_installations WHERE installation_id"))
+        return [installationRow()];
+      if (text.includes("FROM integrations.connections WHERE id = $1")) return [connectionRow()];
+      if (text.includes("FROM integrations.repo_links")) return [];
+      if (text.includes("FROM state.workspace_links"))
+        return [
+          workspaceLinkRow({ org_id: ORG_UUID, project_id: PROJECT_UUID }),
+          workspaceLinkRow({
+            id: "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+            org_id: ORG_UUID,
+            project_id: OTHER_PROJECT_UUID,
+          }),
+        ];
+      if (text.includes("events.event_log")) return [EVENT_ROW];
+      if (text.includes("UPDATE integrations.inbound_deliveries"))
+        return [deliveryRow({ status: "emitted" })];
+      return [];
+    });
+
+    const outcome = await processDelivery(ctx, mapDelivery(deliveryRow()));
+    expect(outcome).toEqual({ kind: "emitted", eventType: "scm.push" });
+
+    // Never guess a workspace: no claim, account-org routing.
+    expect(queries.some((q) => q.text.includes("INSERT INTO integrations.repo_links"))).toBe(false);
+    const eventInsert = queries.find((q) => q.text.includes("events.event_log"));
+    expect(eventInsert!.params[9]).toBe(ORG_UUID);
+    expect(eventInsert!.params[10]).toBeNull();
+  });
+
+  it("ignores a workspace link whose org may not use the connection (tenant safety)", async () => {
+    // A hostile tenant squats the provider_repo_id in state.workspace_links.
+    // Its org is NOT the connection's org and NOT a child of the owning
+    // Account, so the guard rejects it — the event must not leak there.
+    const { ctx, queries } = drainCtx((text) => {
+      if (text.includes("FROM integrations.github_installations WHERE installation_id"))
+        return [installationRow()];
+      if (text.includes("FROM integrations.connections WHERE id = $1")) return [connectionRow()];
+      if (text.includes("FROM integrations.repo_links")) return [];
+      if (text.includes("FROM state.workspace_links"))
+        return [workspaceLinkRow({ org_id: HOSTILE_ORG })];
+      if (text.includes("FROM membership.organizations WHERE id = $1"))
+        return [orgRow(HOSTILE_ORG, null)]; // standalone org, unrelated to the account
+      if (text.includes("events.event_log")) return [EVENT_ROW];
+      if (text.includes("UPDATE integrations.inbound_deliveries"))
+        return [deliveryRow({ status: "emitted" })];
+      return [];
+    });
+
+    const outcome = await processDelivery(ctx, mapDelivery(deliveryRow()));
+    expect(outcome).toEqual({ kind: "emitted", eventType: "scm.push" });
+
+    expect(queries.some((q) => q.text.includes("INSERT INTO integrations.repo_links"))).toBe(false);
+    const eventInsert = queries.find((q) => q.text.includes("events.event_log"));
+    expect(eventInsert!.params[9]).toBe(ORG_UUID); // account org, never the squatter
+    expect(eventInsert!.params[10]).toBeNull();
+  });
+
+  it("requires admission for a child workspace under a granted-mode connection", async () => {
+    // The workspace IS a child of the account, but the connection is in
+    // 'granted' share mode and the workspace holds no active grant — the
+    // admission probe fails closed and the event stays account-scoped.
+    const { ctx, queries } = drainCtx((text) => {
+      if (text.includes("FROM integrations.github_installations WHERE installation_id"))
+        return [installationRow()];
+      if (text.includes("FROM integrations.connections WHERE id = $1"))
+        return [connectionRow({ share_mode: "granted" })];
+      if (text.includes("FROM integrations.repo_links")) return [];
+      if (text.includes("FROM state.workspace_links")) return [workspaceLinkRow()];
+      if (text.includes("FROM membership.organizations WHERE id = $1"))
+        return [orgRow(WORKSPACE_ORG, ORG_UUID)];
+      if (text.includes("AS admitted")) return [{ admitted: false }];
+      if (text.includes("events.event_log")) return [EVENT_ROW];
+      if (text.includes("UPDATE integrations.inbound_deliveries"))
+        return [deliveryRow({ status: "emitted" })];
+      return [];
+    });
+
+    const outcome = await processDelivery(ctx, mapDelivery(deliveryRow()));
+    expect(outcome).toEqual({ kind: "emitted", eventType: "scm.push" });
+
+    expect(queries.some((q) => q.text.includes("INSERT INTO integrations.repo_links"))).toBe(false);
+    const eventInsert = queries.find((q) => q.text.includes("events.event_log"));
+    expect(eventInsert!.params[9]).toBe(ORG_UUID);
   });
 });
 

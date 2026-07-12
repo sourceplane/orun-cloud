@@ -669,5 +669,14 @@ export const manifest: MigrationManifest = {
       description:
         "Integration-hub substrate (saas-integration-hub IH0), dormant: provider_credentials (parent-credential custody — Slack bot / Cloudflare parent / Supabase refresh tokens as write-only AES-256-GCM envelopes, one row per connection+kind, zeroized on revoke), minted_credentials (the credential-broker ledger — template/params/purpose/actor/run attribution/TTL/provider_ref, NEVER values; keyset per org+connection, partial live-mint index for the IH9 orphan sweep), and the per-provider facts tables slack_workspaces (team_id UNIQUE — the Slack tenancy keystone, the installation_id rule), cloudflare_accounts (verified parent grant + token health), supabase_orgs (org facts + cached project refs). No live behavior. Additive + idempotent.",
     },
+    {
+      id: "740_repo_link_one_to_one",
+      context: "state",
+      path: "740_repo_link_one_to_one/up.sql",
+      checksum:
+        "26be25efc55d014ef3d679391aa00dae70ffecd3493b0e11a68951f198da73d9",
+      description:
+        "One-to-one repo claim on the state plane (OV2 federation hardening) — a repo actively linked in one workspace cannot be linked in another until unlinked. Step 1 deterministically dedupes pre-existing double-claims (earliest created_at stays active, later rows soft-unlinked for audit; idempotent), then a partial UNIQUE index on (provider, provider_repo_id) WHERE active enforces first-claim-wins across all orgs — the twin of integrations' uq_integrations_repo_claim (380) and the backstop behind state-worker's cross-workspace 409. Enables the inbound drain's federation/auto-claim routing (GitHub deliveries land in the linked workspace, not the account org). Additive + idempotent; same-context only.",
+    },
   ],
 };
