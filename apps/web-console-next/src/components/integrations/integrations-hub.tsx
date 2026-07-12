@@ -139,10 +139,11 @@ export function IntegrationsHub({ orgId, orgSlug }: { orgId: string; orgSlug: st
     pollUntil.current = Date.now() + POLL_BUDGET_MS;
     setConnectingProvider(provider);
     list.reload();
-    const popup = window.open(r.data.installUrl, `${provider}-connect`, "width=1020,height=780");
-    if (!popup) {
+    const { installUrl } = r.data;
+    const popup = window.open(installUrl, `${provider}-connect`, "width=1020,height=780");
+    if (!popup && installUrl) {
       // Popup blocked — same flow, same tab.
-      window.location.assign(r.data.installUrl);
+      window.location.assign(installUrl);
     }
   };
 
