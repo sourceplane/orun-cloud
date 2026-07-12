@@ -29,11 +29,30 @@ const GITHUB_WEBHOOK_PATH = "/ingress/github/webhook";
 // state integrations-worker verifies. Allowlist-routed, GET only, rate-limited.
 const SLACK_OAUTH_PATH = "/ingress/slack/oauth";
 
+// Public Slack inbound ingress (IH3, design §4.3): Slack POSTs signed
+// requests here — Events API (JSON), slash commands and interactivity
+// (form-encoded). Same posture as the GitHub webhook: the edge does NOT
+// verify or parse — it streams the RAW body plus the v0 signature headers to
+// integrations-worker, which owns the signing secret and verifies over raw
+// bytes before any parse. Allowlist-routed; rate-limited per source.
+const SLACK_EVENTS_PATH = "/ingress/slack/events";
+const SLACK_COMMANDS_PATH = "/ingress/slack/commands";
+const SLACK_INTERACTIVITY_PATH = "/ingress/slack/interactivity";
+
+const SLACK_INBOUND_PATHS: ReadonlySet<string> = new Set([
+  SLACK_EVENTS_PATH,
+  SLACK_COMMANDS_PATH,
+  SLACK_INTERACTIVITY_PATH,
+]);
+
 const FORWARDED_WEBHOOK_HEADERS = [
   "content-type",
   "x-github-delivery",
   "x-github-event",
   "x-hub-signature-256",
+  // Slack v0 request signing (IH3) — verified over raw bytes by the worker.
+  "x-slack-signature",
+  "x-slack-request-timestamp",
 ];
 
 const FORWARDED_HEADERS = [
@@ -51,7 +70,8 @@ export function isIntegrationsIngressRoute(pathname: string): boolean {
   return (
     pathname === GITHUB_SETUP_PATH ||
     pathname === GITHUB_WEBHOOK_PATH ||
-    pathname === SLACK_OAUTH_PATH
+    pathname === SLACK_OAUTH_PATH ||
+    SLACK_INBOUND_PATHS.has(pathname)
   );
 }
 
@@ -65,7 +85,7 @@ export async function handleIntegrationsIngressRoute(
     return errorResponse("internal_error", "Integrations service unavailable", 503, requestId);
   }
 
-  if (pathname === GITHUB_WEBHOOK_PATH) {
+  if (pathname === GITHUB_WEBHOOK_PATH || SLACK_INBOUND_PATHS.has(pathname)) {
     if (request.method !== "POST") {
       return errorResponse("unsupported", "Method not allowed", 405, requestId);
     }

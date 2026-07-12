@@ -178,6 +178,7 @@ export async function handleReplayDelivery(
         events: createEventsRepository(executor),
         state: createStateRepository(executor),
         membership: createMembershipRepository(executor),
+        env,
         now: () => new Date(),
       },
       delivery.value,

@@ -9,6 +9,7 @@ import type { Env } from "./env.js";
 import {
   INTEGRATION_EVENT_TYPES,
   type IntegrationEventType,
+  type MessagingEventType,
   type ScmEventType,
 } from "@saas/contracts/integrations";
 import {
@@ -37,6 +38,7 @@ import {
   LIFECYCLE_EVENT_TYPES,
   normalizeScmEvent,
 } from "./normalize.js";
+import { processSlackDelivery } from "./slack-drain.js";
 
 const DEFAULT_BATCH_SIZE = 50;
 const MAX_ATTEMPTS = 5;
@@ -59,7 +61,7 @@ export interface DrainSummary {
   failed: number;
 }
 
-interface ProcessCtx {
+export interface ProcessCtx {
   executor: SqlExecutor;
   repo: IntegrationsRepository;
   events: EventsRepository;
@@ -72,10 +74,12 @@ interface ProcessCtx {
   state: Pick<StateRepository, "listActiveWorkspaceLinksForProviderRepo">;
   /** Parent-org reader backing the IT10 tenant-safety guard on federation. */
   membership: Pick<MembershipRepository, "getOrganizationById">;
+  /** Worker env: Slack custody decrypt + console links (IH3). */
+  env: Env;
   now: () => Date;
 }
 
-async function markSkipped(
+export async function markSkipped(
   ctx: ProcessCtx,
   delivery: InboundDelivery,
   reason: string,
@@ -91,7 +95,7 @@ async function markSkipped(
   return { kind: "skipped", reason };
 }
 
-async function markRetryOrFail(
+export async function markRetryOrFail(
   ctx: ProcessCtx,
   delivery: InboundDelivery,
   reason: string,
@@ -118,11 +122,11 @@ async function markRetryOrFail(
  * Emit one event and mark the delivery `emitted` transactionally when the
  * executor supports transactions; sequential best-effort otherwise (tests).
  */
-async function emitAndMark(
+export async function emitAndMark(
   ctx: ProcessCtx,
   delivery: InboundDelivery,
   connection: IntegrationConnection,
-  eventType: IntegrationEventType | ScmEventType,
+  eventType: IntegrationEventType | ScmEventType | MessagingEventType,
   subject: { kind: string; id: string; name?: string | null },
   payload: Record<string, unknown>,
   description: string,
@@ -306,6 +310,12 @@ export async function processDelivery(
   // trust that invariant blindly.
   if (!delivery.signatureOk) {
     return markSkipped(ctx, delivery, "signature_unverified");
+  }
+
+  // The Slack half of the inbox (IH3): attribution by team_id, messaging.*
+  // normalization, Slack lifecycle. Same ledger, same retry discipline.
+  if (delivery.provider === "slack") {
+    return processSlackDelivery(ctx, delivery);
   }
 
   const installationId = installationIdFromPayload(delivery.payload);
@@ -596,7 +606,7 @@ async function emitScmEvents(
 /** One cron tick: claim due inbox rows oldest-first and process each. */
 export async function drainInboundDeliveries(
   executor: SqlExecutor,
-  _env: Env,
+  env: Env,
   opts?: { batchSize?: number; now?: () => Date },
 ): Promise<DrainSummary> {
   const ctx: ProcessCtx = {
@@ -605,6 +615,7 @@ export async function drainInboundDeliveries(
     events: createEventsRepository(executor),
     state: createStateRepository(executor),
     membership: createMembershipRepository(executor),
+    env,
     now: opts?.now ?? (() => new Date()),
   };
   const summary: DrainSummary = { processed: 0, emitted: 0, skipped: 0, retried: 0, failed: 0 };

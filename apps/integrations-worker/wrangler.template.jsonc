@@ -13,7 +13,10 @@
     // Public api-edge origin OAuth-kind connect flows build their
     // redirect_uri from (IH1 Slack: {base}/ingress/slack/oauth). Same
     // convention as identity-worker's OAUTH_REDIRECT_BASE_URL.
-    "OAUTH_REDIRECT_BASE_URL": "http://localhost:8787"
+    "OAUTH_REDIRECT_BASE_URL": "http://localhost:8787",
+    // Console origin for Slack deep links (IH3) — notifications-worker's
+    // CONSOLE_BASE_URL convention.
+    "CONSOLE_BASE_URL": "http://localhost:3000"
   },
   // Inbox drain (IG2): attribute → normalize → emit, every minute — same
   // cadence as the outbound webhooks dispatcher. Unblocked 2026-06-11 by the
@@ -32,7 +35,8 @@
       "workers_dev": false,
       "vars": {
         "ENVIRONMENT": "stage",
-        "OAUTH_REDIRECT_BASE_URL": "https://api-edge-stage.oruncloud.workers.dev"
+        "OAUTH_REDIRECT_BASE_URL": "https://api-edge-stage.oruncloud.workers.dev",
+        "CONSOLE_BASE_URL": "https://stage.orun.dev"
         // Runtime secrets are provisioned by the deploy `secrets-live` step from
         // AWS Secrets Manager (tooling/secrets-sync), not by manual
         // `wrangler secret put`. See secrets.manifest.json → integrations-worker
@@ -72,7 +76,8 @@
       "workers_dev": false,
       "vars": {
         "ENVIRONMENT": "prod",
-        "OAUTH_REDIRECT_BASE_URL": "https://api-edge-prod.oruncloud.workers.dev"
+        "OAUTH_REDIRECT_BASE_URL": "https://api-edge-prod.oruncloud.workers.dev",
+        "CONSOLE_BASE_URL": "https://app.orun.dev"
         // Runtime secrets: same set as stage, provisioned by `secrets-live`.
       },
       "hyperdrive": [

@@ -20,6 +20,11 @@ import {
   isConnectableProvider,
 } from "./handlers/connections.js";
 import { handleSlackOauthCallback, SLACK_OAUTH_CALLBACK_PATH } from "./handlers/slack-oauth.js";
+import {
+  handleSlackCommandsIngest,
+  handleSlackEventsIngest,
+  handleSlackInteractivityIngest,
+} from "./handlers/slack-ingress.js";
 import { handleListSlackChannels } from "./handlers/slack-channels.js";
 import { handleSlackCredentialsInternal } from "./handlers/slack-credentials-internal.js";
 import {
@@ -102,6 +107,9 @@ const GITHUB_SETUP_PATH = "/ingress/github/setup";
 const GITHUB_WEBHOOK_PATH = "/ingress/github/webhook";
 const GITHUB_WRITEBACK_PATH = "/internal/github/writeback";
 const SLACK_CREDENTIALS_PATH = "/internal/slack/credentials";
+const SLACK_EVENTS_PATH = "/ingress/slack/events";
+const SLACK_COMMANDS_PATH = "/ingress/slack/commands";
+const SLACK_INTERACTIVITY_PATH = "/ingress/slack/interactivity";
 
 export async function route(request: Request, env: Env): Promise<Response> {
   const requestId = resolveRequestId(request);
@@ -133,6 +141,22 @@ export async function route(request: Request, env: Env): Promise<Response> {
   if (pathname === GITHUB_WEBHOOK_PATH) {
     if (request.method !== "POST") return methodNotAllowed(requestId);
     return handleGithubWebhookIngest(request, env, requestId);
+  }
+
+  // Slack inbound ingress (IH3): three routes, one discipline — v0 signature
+  // over raw bytes, inbox insert, fast ack. Only url_verification and the
+  // slash-command ephemeral ack ever return a synchronous body.
+  if (pathname === SLACK_EVENTS_PATH) {
+    if (request.method !== "POST") return methodNotAllowed(requestId);
+    return handleSlackEventsIngest(request, env, requestId);
+  }
+  if (pathname === SLACK_COMMANDS_PATH) {
+    if (request.method !== "POST") return methodNotAllowed(requestId);
+    return handleSlackCommandsIngest(request, env, requestId);
+  }
+  if (pathname === SLACK_INTERACTIVITY_PATH) {
+    if (request.method !== "POST") return methodNotAllowed(requestId);
+    return handleSlackInteractivityIngest(request, env, requestId);
   }
 
   // Internal write-back driver (IG9.3 outbound bridge): state-worker posts a
