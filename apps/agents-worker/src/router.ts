@@ -31,6 +31,7 @@ import {
   handleListRoutines,
   handleUpdateRoutine,
 } from "./handlers/routines.js";
+import { handleListRecords, handleSetProfileAutonomy } from "./handlers/records.js";
 import { handleDispatch } from "./handlers/dispatch.js";
 import {
   handleCreateConnection,
@@ -79,6 +80,10 @@ function resolveActor(request: Request): ActorContext | null {
 
 // Workspace(org)-scoped routes.
 const PROFILES_RE = /^\/v1\/organizations\/([^/]+)\/agents\/profiles$/;
+// Earned autonomy (saas-agents-fleet AF7): the profile item (autonomy PATCH)
+// and the org-wide record read.
+const PROFILE_RE = /^\/v1\/organizations\/([^/]+)\/agents\/profiles\/([^/]+)$/;
+const RECORDS_RE = /^\/v1\/organizations\/([^/]+)\/agents\/records$/;
 const SESSIONS_RE = /^\/v1\/organizations\/([^/]+)\/agents\/sessions$/;
 const SESSION_RE = /^\/v1\/organizations\/([^/]+)\/agents\/sessions\/([^/]+)$/;
 const SESSION_EVENTS_RE = /^\/v1\/organizations\/([^/]+)\/agents\/sessions\/([^/]+)\/events$/;
@@ -116,6 +121,8 @@ export async function route(request: Request, env: Env, injectedDeps?: AgentsDep
 
     const isAgentsRoute =
       PROFILES_RE.test(url.pathname) ||
+      PROFILE_RE.test(url.pathname) ||
+      RECORDS_RE.test(url.pathname) ||
       SESSIONS_RE.test(url.pathname) ||
       SESSION_RE.test(url.pathname) ||
       SESSION_EVENTS_RE.test(url.pathname) ||
@@ -163,7 +170,26 @@ async function dispatch(
   actor: ActorContext,
   requestId: string,
 ): Promise<Response> {
-  let m = PROFILES_RE.exec(url.pathname);
+  let m = PROFILE_RE.exec(url.pathname);
+  if (m) {
+    const orgId = parseOrgPublicId(m[1]!);
+    if (!orgId) return notFound(requestId, url.pathname);
+    const profileId = m[2]!;
+    if (request.method === "PATCH") {
+      return handleSetProfileAutonomy(request, deps, orgId, profileId, actor, requestId);
+    }
+    return methodNotAllowed(requestId);
+  }
+
+  m = RECORDS_RE.exec(url.pathname);
+  if (m) {
+    const orgId = parseOrgPublicId(m[1]!);
+    if (!orgId) return notFound(requestId, url.pathname);
+    if (request.method === "GET") return handleListRecords(deps, orgId, actor, requestId);
+    return methodNotAllowed(requestId);
+  }
+
+  m = PROFILES_RE.exec(url.pathname);
   if (m) {
     const orgId = parseOrgPublicId(m[1]!);
     if (!orgId) return notFound(requestId, url.pathname);

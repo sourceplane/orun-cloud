@@ -117,6 +117,9 @@ export interface AgentProfile {
   harness: string;
   model: string;
   autonomyDefault: AgentAutonomyLevel;
+  /** The address of the last autonomy movement (AF7): {direction, from, to,
+   * by, at, record?|trigger?}. Absent = never moved. */
+  autonomyEvidence?: Record<string, unknown>;
   createdAt: string;
   updatedAt: string;
 }
@@ -340,6 +343,98 @@ export function intersectCeiling(parent: CapabilityCeiling, child: CapabilityCei
     }
   }
   return out;
+}
+
+// ── Track record & earned autonomy (saas-agents-fleet AF7) ──
+// The record is a COMPUTED read over session rows + relayed events — never
+// stored, never writable by an agent. Movement is asymmetric: promotion is
+// suggested by the record and applied only by a human ack (with the
+// server-computed evidence attached); demotion is automatic and loud. No
+// sequence of agent actions can widen any leash.
+
+/** A profile's track record — named rates with their numerators visible
+ * (the work-plane meter discipline: no scores, no ranking). */
+export interface AgentProfileRecord {
+  profileId: string;
+  /** Sessions considered (all-time in v1; windows ride orun AF3's fold). */
+  sessions: number;
+  byKind: Partial<Record<AgentRunKind, number>>;
+  completed: number;
+  failed: number;
+  /** completed / (completed + failed); null until any run finishes. */
+  completionRate: number | null;
+  /** Terminal sessions that produced a PR artifact. */
+  prProduced: number;
+  /** Human verdicts asked / granted (agent-answered verdicts are EXCLUDED —
+   * the record only counts human trust). */
+  verdictAsks: number;
+  verdictGrants: number;
+  grantRate: number | null;
+  /** Human steers observed (interventions). */
+  steers: number;
+  /** Tokens observed via relayed cost samples (the sampled sessions only). */
+  tokensObserved: number;
+}
+
+/** The workspace promotion bar (F-Q4 — shipped as defaults, overridable via
+ * the autonomy policy's caps.promotionBar). */
+export interface PromotionBar {
+  minSessions: number;
+  minCompletionRate: number;
+}
+
+export const PROMOTION_BAR_DEFAULTS: PromotionBar = {
+  minSessions: 20,
+  minCompletionRate: 0.85,
+};
+
+/** The promotion assessment beside a record: eligible + the suggested next
+ * rung. Suggests, never applies — the apply is a human PATCH. */
+export interface PromotionAssessment {
+  eligible: boolean;
+  bar: PromotionBar;
+  /** The rung above the profile's current level; absent at `full`. */
+  suggested?: AgentAutonomyLevel;
+}
+
+/** The next rung up the ladder; null at the top. */
+export function nextAutonomyLevel(level: AgentAutonomyLevel): AgentAutonomyLevel | null {
+  const i = AGENT_AUTONOMY_LEVELS.indexOf(level);
+  return i >= 0 && i < AGENT_AUTONOMY_LEVELS.length - 1 ? AGENT_AUTONOMY_LEVELS[i + 1]! : null;
+}
+
+/** The rung below; null at the floor (manual is never demotable further). */
+export function previousAutonomyLevel(level: AgentAutonomyLevel): AgentAutonomyLevel | null {
+  const i = AGENT_AUTONOMY_LEVELS.indexOf(level);
+  return i > 0 ? AGENT_AUTONOMY_LEVELS[i - 1]! : null;
+}
+
+/** assessPromotion — pure: does the record clear the bar, and to where? */
+export function assessPromotion(
+  record: AgentProfileRecord,
+  currentLevel: AgentAutonomyLevel,
+  bar: PromotionBar = PROMOTION_BAR_DEFAULTS,
+): PromotionAssessment {
+  const suggested = nextAutonomyLevel(currentLevel);
+  const eligible =
+    suggested !== null &&
+    record.sessions >= bar.minSessions &&
+    record.completionRate !== null &&
+    record.completionRate >= bar.minCompletionRate;
+  return { eligible, bar, ...(eligible && suggested ? { suggested } : {}) };
+}
+
+/** GET /agents/records — the per-profile record + assessment, org-wide. */
+export interface AgentRecordsEntry {
+  profileId: string;
+  autonomyDefault: AgentAutonomyLevel;
+  record: AgentProfileRecord;
+  promotion: PromotionAssessment;
+}
+
+/** PATCH /agents/profiles/:id — the human-ack autonomy movement. */
+export interface SetProfileAutonomyRequest {
+  autonomyDefault: AgentAutonomyLevel;
 }
 
 // ── Routines (saas-agents-fleet AF6) ────────────────────────

@@ -13,6 +13,7 @@ import type {
   AgentSessionEventWire,
   AgentSessionState,
   AgentProvider,
+  AgentRecordsEntry,
   AgentRoutine,
   AttentionSummary,
   CreateAgentProfileRequest,
@@ -20,6 +21,7 @@ import type {
   CreateAgentSessionRequest,
   CreateProviderConnectionRequest,
   ProviderConnection,
+  SetProfileAutonomyRequest,
   UpdateAgentRoutineRequest,
 } from "@saas/contracts/agents";
 
@@ -158,6 +160,32 @@ export class AgentsClient {
   attention(orgId: string, opts: RequestOptions = {}): Promise<AttentionSummary> {
     return this.transport.request<AttentionSummary>(
       { method: "GET", path: `${agentsBase(orgId)}/attention` },
+      opts,
+    );
+  }
+
+  // ── Track record & earned autonomy (saas-agents-fleet AF7) ──
+
+  /** GET /agents/records — every profile's computed track record + the
+   * promotion assessment (suggests, never applies). */
+  records(orgId: string, opts: RequestOptions = {}): Promise<AgentRecordsEntry[]> {
+    return this.transport.request<AgentRecordsEntry[]>(
+      { method: "GET", path: `${agentsBase(orgId)}/records` },
+      opts,
+    );
+  }
+
+  /** PATCH /agents/profiles/:id — the human-ack autonomy movement. Upward
+   * movement stores the server-computed record as evidence; agent
+   * identities are refused structurally (no self-promotion path). */
+  setProfileAutonomy(
+    orgId: string,
+    profileId: string,
+    body: SetProfileAutonomyRequest,
+    opts: RequestOptions = {},
+  ): Promise<AgentProfile> {
+    return this.transport.request<AgentProfile>(
+      { method: "PATCH", path: `${agentsBase(orgId)}/profiles/${encodeURIComponent(profileId)}`, body },
       opts,
     );
   }

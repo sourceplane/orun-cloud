@@ -10,6 +10,10 @@ import { resolveActor } from "./resolve-actor.js";
 // (/v1/internal/*) are never forwarded here — the in-sandbox runtime reaches
 // the DO relay over its own session credential (a later AG6 slice).
 const ORG_AGENTS_PROFILES_RE = /^\/v1\/organizations\/[^/]+\/agents\/profiles$/;
+// Earned autonomy (saas-agents-fleet AF7): the profile item (autonomy PATCH,
+// human-acked) and the org-wide track-record read.
+const ORG_AGENTS_PROFILE_RE = /^\/v1\/organizations\/[^/]+\/agents\/profiles\/[^/]+$/;
+const ORG_AGENTS_RECORDS_RE = /^\/v1\/organizations\/[^/]+\/agents\/records$/;
 const ORG_AGENTS_SESSIONS_RE = /^\/v1\/organizations\/[^/]+\/agents\/sessions$/;
 const ORG_AGENTS_SESSION_RE = /^\/v1\/organizations\/[^/]+\/agents\/sessions\/[^/]+$/;
 const ORG_AGENTS_SESSION_EVENTS_RE = /^\/v1\/organizations\/[^/]+\/agents\/sessions\/[^/]+\/events$/;
@@ -47,6 +51,8 @@ const FORWARDED_HEADERS = ["content-type", "x-request-id", "traceparent", "idemp
 export function isAgentsRoute(pathname: string): boolean {
   return (
     ORG_AGENTS_PROFILES_RE.test(pathname) ||
+    ORG_AGENTS_PROFILE_RE.test(pathname) ||
+    ORG_AGENTS_RECORDS_RE.test(pathname) ||
     ORG_AGENTS_SESSIONS_RE.test(pathname) ||
     ORG_AGENTS_SESSION_RE.test(pathname) ||
     ORG_AGENTS_SESSION_EVENTS_RE.test(pathname) ||

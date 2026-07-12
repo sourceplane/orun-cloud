@@ -51,6 +51,16 @@ describe("agents resource", () => {
     expect(calls[0]!.init.method).toBe("POST");
   });
 
+  it("reads records and moves autonomy with a human ack (saas-agents-fleet AF7)", async () => {
+    const { fetch: f, calls } = captureFetch([]);
+    const c = client(f);
+    await c.agents.records("org_x");
+    await c.agents.setProfileAutonomy("org_x", "agp_1", { autonomyDefault: "auto-dispatch" });
+    expect(calls[0]!.url).toContain("/v1/organizations/org_x/agents/records");
+    expect(calls[1]!.url).toContain("/agents/profiles/agp_1");
+    expect(calls[1]!.init.method).toBe("PATCH");
+  });
+
   it("drives the routine registry (saas-agents-fleet AF6)", async () => {
     const { fetch: f, calls } = captureFetch({ id: "rt_1", enabled: true });
     const c = client(f);

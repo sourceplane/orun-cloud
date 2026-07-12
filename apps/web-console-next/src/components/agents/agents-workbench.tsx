@@ -8,7 +8,7 @@
 // links to its task, never restates it.
 
 import * as React from "react";
-import type { AgentProfile, AgentSession } from "@saas/contracts/agents";
+import type { AgentProfile, AgentRecordsEntry, AgentSession } from "@saas/contracts/agents";
 import { isTerminalSessionState } from "@saas/contracts/agents";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
@@ -37,13 +37,20 @@ export function AgentsWorkbench({ orgId, orgSlug }: { orgId: string; orgSlug: st
   const { client } = useSession();
   const fleet = useApiQuery(qk.orgAgents(orgId), () =>
     wrap(async () => {
-      const [sessionRows, profileRows, attention, routineRows] = await Promise.all([
+      const [sessionRows, profileRows, attention, routineRows, recordRows] = await Promise.all([
         client.agents.listSessions(orgId),
         client.agents.listProfiles(orgId),
         client.agents.attention(orgId),
         client.agents.listRoutines(orgId),
+        client.agents.records(orgId),
       ]);
-      return { sessions: sessionRows, profiles: profileRows, attention, routines: routineRows };
+      return {
+        sessions: sessionRows,
+        profiles: profileRows,
+        attention,
+        routines: routineRows,
+        records: recordRows,
+      };
     }),
   );
 
@@ -141,17 +148,13 @@ export function AgentsWorkbench({ orgId, orgSlug }: { orgId: string; orgSlug: st
             <>
               <ListCard>
                 {data!.profiles.map((p) => (
-                  <ListRow key={p.id}>
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-2">
-                        <span className="text-[13px] font-medium">{p.name}</span>
-                        <Pill tone="neutral">{p.agentType}</Pill>
-                      </div>
-                      <div className="mt-0.5 text-[12px] text-muted-foreground">
-                        {p.harness} · {p.model} · owner {p.owner} · autonomy {p.autonomyDefault}
-                      </div>
-                    </div>
-                  </ListRow>
+                  <ProfileRow
+                    key={p.id}
+                    profile={p}
+                    entry={data!.records.find((r) => r.profileId === p.id)}
+                    orgId={orgId}
+                    onChanged={fleet.reload}
+                  />
                 ))}
               </ListCard>
               <p className="mt-2 text-[12px] text-muted-foreground">
@@ -215,6 +218,87 @@ function SessionRow({
       <span className="shrink-0 font-mono text-[12px] text-muted-foreground">
         {compactAge(live ? session.startedAt ?? session.createdAt : session.endedAt ?? session.createdAt, new Date())}
       </span>
+    </ListRow>
+  );
+}
+
+/** A profile row with its track record and — when the record clears the
+ * workspace bar — the promotion suggestion (AF7). The suggestion never
+ * applies itself: Apply is the human ack, and the server attaches the
+ * record it computed as the movement's evidence. */
+function ProfileRow({
+  profile,
+  entry,
+  orgId,
+  onChanged,
+}: {
+  profile: AgentProfile;
+  entry: AgentRecordsEntry | undefined;
+  orgId: string;
+  onChanged: () => void;
+}) {
+  const { client } = useSession();
+  const [busy, setBusy] = React.useState(false);
+  const [error, setError] = React.useState<string | null>(null);
+  const record = entry?.record;
+  const promotion = entry?.promotion;
+  const evidence = profile.autonomyEvidence as
+    | { direction?: string; at?: string; by?: string; trigger?: string }
+    | undefined;
+
+  const promote = React.useCallback(async () => {
+    if (!promotion?.suggested) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await client.agents.setProfileAutonomy(orgId, profile.id, {
+        autonomyDefault: promotion.suggested,
+      });
+      onChanged();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Promotion failed");
+    } finally {
+      setBusy(false);
+    }
+  }, [client, orgId, profile.id, promotion, onChanged]);
+
+  return (
+    <ListRow>
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center gap-2">
+          <span className="text-[13px] font-medium">{profile.name}</span>
+          <Pill tone="neutral">{profile.agentType}</Pill>
+          {promotion?.eligible && promotion.suggested ? (
+            <Pill tone="info">promotion suggested</Pill>
+          ) : null}
+        </div>
+        <div className="mt-0.5 text-[12px] text-muted-foreground">
+          {profile.harness} · {profile.model} · owner {profile.owner} · autonomy {profile.autonomyDefault}
+          {evidence?.direction && evidence.at
+            ? ` · ${evidence.direction} ${new Date(evidence.at).toLocaleDateString()}${
+                evidence.direction === "demoted" && evidence.trigger
+                  ? ` (${evidence.trigger})`
+                  : evidence.by
+                    ? ` by ${evidence.by}`
+                    : ""
+              }`
+            : ""}
+        </div>
+        {error ? <StatusText tone="error">{error}</StatusText> : null}
+      </div>
+      <div className="flex shrink-0 items-center gap-3">
+        {record ? (
+          <span className="font-mono text-[12px] text-muted-foreground">
+            {record.sessions} runs
+            {record.completionRate !== null ? ` · ${Math.round(record.completionRate * 100)}% completed` : ""}
+          </span>
+        ) : null}
+        {promotion?.eligible && promotion.suggested ? (
+          <Button size="sm" variant="outline" disabled={busy} onClick={() => void promote()}>
+            Promote to {promotion.suggested}
+          </Button>
+        ) : null}
+      </div>
     </ListRow>
   );
 }

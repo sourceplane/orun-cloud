@@ -696,5 +696,14 @@ export const manifest: MigrationManifest = {
       description:
         "Standing routines (saas-agents-fleet AF6): agents.routines — workspace-scoped trigger+binding rows (profile, run_kind, optional sealed definition_ref, cron|event trigger_config, budget-stub caps, enabled, the park latch with consecutive_failures, last_fired_at) with a live partial index for the cross-org scheduler tick; agent_sessions gains routine_id (partial index) so firings group on the fleet home and the park math reads straight off session rows. A routine only ever SPAWNS sessions — every firing re-enters the AG9 dispatch door (locked decision 3: no second execution path); success is digest material, two consecutive failures park it until a human resumes. Additive + idempotent.",
     },
+    {
+      id: "770_agents_trust",
+      context: "agents",
+      path: "770_agents_trust/up.sql",
+      checksum:
+        "1c2964720e5a2048edeee001aa72b605a93f7a8b208d4e7d99213d5fc910e63a",
+      description:
+        "Earned autonomy (saas-agents-fleet AF7): agent_profiles gains autonomy_evidence JSONB — the ADDRESS of the last autonomy movement (direction, from/to, by, at, the server-computed record snapshot on promotion, the trigger on demotion). The record itself is never stored (a computed read over session rows + relayed events, the attention-plane epistemology); movement is asymmetric — promotion is human-acked, demotion automatic and loud — and every non-default autonomy renders with its provenance. Additive + idempotent.",
+    },
   ],
 };

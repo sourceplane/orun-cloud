@@ -8,7 +8,7 @@ import type { AgentsDeps } from "./deps.js";
 import type { ActorContext } from "./router.js";
 import { dispatchRoutineFiring } from "./handlers/dispatch.js";
 import { dueSince, parseCron } from "./cron.js";
-import { ROUTINE_PARK_THRESHOLD } from "@saas/contracts/agents";
+import { previousAutonomyLevel, ROUTINE_PARK_THRESHOLD } from "@saas/contracts/agents";
 
 /** Forget slots older than this: a worker outage fires each routine at most
  * ONCE on recovery (predicates, not backlogs — design §5.3). */
@@ -24,6 +24,9 @@ export interface TickSummary {
   fired: number;
   refused: number;
   parked: number;
+  /** Profiles dropped a rung by the park trigger (AF7 — demotion is
+   * automatic and loud; promotion has no such path). */
+  demoted: number;
 }
 
 /**
@@ -38,7 +41,7 @@ export async function routineTick(
 ): Promise<TickSummary> {
   const t = now();
   const routines = await deps.repo.listLiveRoutines(TICK_BATCH);
-  const summary: TickSummary = { examined: routines.length, fired: 0, refused: 0, parked: 0 };
+  const summary: TickSummary = { examined: routines.length, fired: 0, refused: 0, parked: 0, demoted: 0 };
 
   for (const routine of routines) {
     const scope = { orgId: routine.orgId };
@@ -59,6 +62,33 @@ export async function routineTick(
         consecutiveFailures: failures,
       });
       summary.parked++;
+
+      // Automatic demotion (AF7 §6.2): the park IS the repeated-failure
+      // trigger — the bound profile drops one rung with the evidence
+      // attached. The floor is manual; a demotion race never blocks a park.
+      try {
+        const profile = (await deps.repo.listProfiles(scope)).find((p) => p.id === routine.profileId);
+        const to = profile ? previousAutonomyLevel(profile.autonomyDefault) : null;
+        if (profile && to) {
+          await deps.repo.setProfileAutonomy(scope, {
+            publicId: profile.publicId,
+            autonomyDefault: to,
+            evidence: {
+              direction: "demoted",
+              from: profile.autonomyDefault,
+              to,
+              by: TICK_ACTOR.subjectId,
+              at: t.toISOString(),
+              trigger: `routine_parked:${routine.name}`,
+            },
+          });
+          summary.demoted++;
+        }
+      } catch {
+        // Best-effort: the latch already closed; demotion retries next tick
+        // never happen (parked routines leave the live scan) — acceptable,
+        // the park item is already loud on the attention plane.
+      }
       continue;
     }
 

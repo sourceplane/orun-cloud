@@ -108,6 +108,9 @@ export interface AgentProfile {
   model: string;
   autonomyDefault: AutonomyLevel;
   capability: Record<string, unknown>;
+  /** The address of the last autonomy movement (AF7): direction, from/to,
+   * by, at, evidence. Absent = the level was never moved. */
+  autonomyEvidence?: Record<string, unknown>;
   createdAt: string;
   updatedAt: string;
 }
