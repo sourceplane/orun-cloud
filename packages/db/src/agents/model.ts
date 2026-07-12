@@ -139,6 +139,8 @@ export interface AgentSession {
   depth: number;
   /** Routine provenance (AF6): the firing routine's public id, when fired. */
   routineId?: string;
+  /** Accumulated relayed spend (AF8) — summed cost samples, row arithmetic. */
+  tokensUsed: number;
 }
 
 export interface SessionEvent {
@@ -238,6 +240,34 @@ export function validateRoutineInput(input: { name: string; triggerKind: string 
   }
   if (!(ROUTINE_TRIGGER_KINDS as readonly string[]).includes(input.triggerKind)) {
     throw new AgentsError("agent_routine_invalid", `trigger ${JSON.stringify(input.triggerKind)} not cron|event`);
+  }
+}
+
+// ── Budgets (saas-agents-fleet AF8) ─────────────────────────
+
+export const BUDGET_GRAINS = ["workspace", "tree", "session", "routine"] as const;
+export type BudgetGrain = (typeof BUDGET_GRAINS)[number];
+
+/** A token ceiling. workspace/tree/session rows are org-wide defaults
+ * (ref undefined); routine rows pin one routine's public id. */
+export interface Budget {
+  id: string;
+  publicId: string;
+  orgId: string;
+  grain: BudgetGrain;
+  ref?: string;
+  maxTokens: number;
+  createdBy: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export function validateBudgetInput(input: { grain: string; maxTokens: number }): void {
+  if (!(BUDGET_GRAINS as readonly string[]).includes(input.grain)) {
+    throw new AgentsError("agent_budget_invalid", `grain ${JSON.stringify(input.grain)} invalid`);
+  }
+  if (!Number.isFinite(input.maxTokens) || input.maxTokens <= 0) {
+    throw new AgentsError("agent_budget_invalid", "maxTokens must be a positive number");
   }
 }
 

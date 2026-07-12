@@ -6,6 +6,7 @@ import {
   AgentsError,
   canTransition,
   isTerminal,
+  validateBudgetInput,
   validateConnectionInput,
   validateProfileInput,
   validateRoutineInput,
@@ -13,6 +14,7 @@ import {
   type AgentProfile,
   type AgentSession,
   type AutonomyPolicy,
+  type Budget,
   type Provider,
   type ProviderConnection,
   type Routine,
@@ -27,6 +29,7 @@ import type {
   CreateProfileInput,
   CreateRoutineInput,
   CreateSessionInput,
+  SetBudgetInput,
   ListLapsedSessionsInput,
   ListOrphanedSessionsInput,
   SetAutonomyInput,
@@ -44,6 +47,7 @@ interface Stored {
   policies: AutonomyPolicy[];
   connections: ProviderConnection[];
   routines: Routine[];
+  budgets: Budget[];
 }
 
 export class MemoryAgentsRepository implements AgentsRepository {
@@ -61,7 +65,7 @@ export class MemoryAgentsRepository implements AgentsRepository {
   private store(orgId: string): Stored {
     let s = this.byOrg.get(orgId);
     if (!s) {
-      s = { profiles: [], sessions: [], events: new Map(), eventSeqs: new Map(), policies: [], connections: [], routines: [] };
+      s = { profiles: [], sessions: [], events: new Map(), eventSeqs: new Map(), policies: [], connections: [], routines: [], budgets: [] };
       this.byOrg.set(orgId, s);
     }
     return s;
@@ -132,6 +136,7 @@ export class MemoryAgentsRepository implements AgentsRepository {
       createdAt: this.now(),
       rootSessionId: parent ? parent.rootSessionId : publicId,
       depth: parent ? parent.depth + 1 : 0,
+      tokensUsed: 0,
       ...(parent ? { parentSessionId: parent.publicId } : {}),
       ...(input.workRef !== undefined ? { workRef: input.workRef } : {}),
       ...(input.taskKey !== undefined ? { taskKey: input.taskKey } : {}),
@@ -280,6 +285,54 @@ export class MemoryAgentsRepository implements AgentsRepository {
     profile.autonomyEvidence = input.evidence;
     profile.updatedAt = this.now();
     return profile;
+  }
+
+  // ── Budgets (saas-agents-fleet AF8) ───────────────────────
+
+  async setBudget(scope: WorkspaceScope, input: SetBudgetInput): Promise<Budget> {
+    validateBudgetInput(input);
+    const s = this.store(scope.orgId);
+    const ref = input.ref ?? undefined;
+    let budget = s.budgets.find((b) => b.grain === input.grain && (b.ref ?? "") === (ref ?? ""));
+    if (budget) {
+      budget.maxTokens = input.maxTokens;
+      budget.updatedAt = this.now();
+      return budget;
+    }
+    const ts = this.now();
+    budget = {
+      id: this.id("id_"),
+      publicId: this.id("bud_"),
+      orgId: scope.orgId,
+      grain: input.grain,
+      maxTokens: input.maxTokens,
+      createdBy: input.createdBy,
+      createdAt: ts,
+      updatedAt: ts,
+      ...(ref !== undefined ? { ref } : {}),
+    };
+    s.budgets.push(budget);
+    return budget;
+  }
+
+  async listBudgets(scope: WorkspaceScope): Promise<Budget[]> {
+    return [...this.store(scope.orgId).budgets].sort((a, b) => a.grain.localeCompare(b.grain));
+  }
+
+  async deleteBudget(scope: WorkspaceScope, publicId: string): Promise<boolean> {
+    const s = this.store(scope.orgId);
+    const before = s.budgets.length;
+    s.budgets = s.budgets.filter((b) => b.publicId !== publicId);
+    return s.budgets.length < before;
+  }
+
+  async addSessionTokens(scope: WorkspaceScope, sessionPublicId: string, delta: number): Promise<AgentSession> {
+    const session = await this.getSession(scope, sessionPublicId);
+    if (!session) {
+      throw new AgentsError("agent_session_not_found", `session ${sessionPublicId} not found`);
+    }
+    session.tokensUsed += Math.max(0, delta);
+    return session;
   }
 
   // ── Routines (saas-agents-fleet AF6) ──────────────────────

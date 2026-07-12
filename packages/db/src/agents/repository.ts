@@ -9,6 +9,7 @@ import {
   AgentsError,
   canTransition,
   isTerminal,
+  validateBudgetInput,
   validateConnectionInput,
   validateProfileInput,
   validateRoutineInput,
@@ -17,6 +18,8 @@ import {
   type AgentSession,
   type AutonomyLevel,
   type AutonomyPolicy,
+  type Budget,
+  type BudgetGrain,
   type ConnectionStatus,
   type Provider,
   type ProviderConnection,
@@ -37,6 +40,7 @@ import type {
   ListLapsedSessionsInput,
   ListOrphanedSessionsInput,
   SetAutonomyInput,
+  SetBudgetInput,
   SetConnectionStatusInput,
   SetProfileAutonomyInput,
   UpdateRoutineStateInput,
@@ -107,6 +111,7 @@ function mapSession(row: Row): AgentSession {
     // roots at depth 0 (the migration backfills, this is the belt).
     rootSessionId: optStr(row.root_session_id) ?? publicId,
     depth: typeof row.depth === "number" ? row.depth : Number(row.depth ?? 0),
+    tokensUsed: Number(row.tokens_used ?? 0),
   };
   const parentSessionId = optStr(row.parent_session_id);
   if (parentSessionId !== undefined) s.parentSessionId = parentSessionId;
@@ -178,6 +183,22 @@ function mapRoutine(row: Row): Routine {
   const lastFired = optIso(row.last_fired_at);
   if (lastFired !== undefined) r.lastFiredAt = lastFired;
   return r;
+}
+
+function mapBudget(row: Row): Budget {
+  const b: Budget = {
+    id: String(row.id),
+    publicId: String(row.public_id),
+    orgId: String(row.org_id),
+    grain: String(row.grain) as BudgetGrain,
+    maxTokens: Number(row.max_tokens),
+    createdBy: String(row.created_by),
+    createdAt: toIso(row.created_at),
+    updatedAt: toIso(row.updated_at),
+  };
+  const ref = optStr(row.ref);
+  if (ref !== undefined) b.ref = ref;
+  return b;
 }
 
 export function createAgentsRepository(sql: TransactionalSqlExecutor): AgentsRepository {
@@ -502,6 +523,50 @@ export function createAgentsRepository(sql: TransactionalSqlExecutor): AgentsRep
         throw new AgentsError("agent_profile_not_found", `profile ${input.publicId} not found`);
       }
       return mapProfile(res.rows[0] as Row);
+    },
+
+    // ── Budgets (saas-agents-fleet AF8) ───────────────────────
+
+    async setBudget(scope: WorkspaceScope, input: SetBudgetInput): Promise<Budget> {
+      validateBudgetInput(input);
+      const res = await sql.execute(
+        `INSERT INTO agents.budgets (public_id, org_id, grain, ref, max_tokens, created_by)
+         VALUES ($1,$2,$3,$4,$5,$6)
+         ON CONFLICT (org_id, grain, COALESCE(ref, ''))
+         DO UPDATE SET max_tokens = EXCLUDED.max_tokens, updated_at = now()
+         RETURNING *`,
+        [newPublicId("bud_"), scope.orgId, input.grain, input.ref ?? null, input.maxTokens, input.createdBy],
+      );
+      return mapBudget(res.rows[0] as Row);
+    },
+
+    async listBudgets(scope: WorkspaceScope): Promise<Budget[]> {
+      const res = await sql.execute(
+        `SELECT * FROM agents.budgets WHERE org_id = $1 ORDER BY grain, ref NULLS FIRST`,
+        [scope.orgId],
+      );
+      return res.rows.map((r) => mapBudget(r as Row));
+    },
+
+    async deleteBudget(scope: WorkspaceScope, publicId: string): Promise<boolean> {
+      const res = await sql.execute(
+        `DELETE FROM agents.budgets WHERE org_id = $1 AND public_id = $2`,
+        [scope.orgId, publicId],
+      );
+      return (res.rowCount ?? 0) > 0;
+    },
+
+    async addSessionTokens(scope: WorkspaceScope, sessionPublicId: string, delta: number): Promise<AgentSession> {
+      const res = await sql.execute(
+        `UPDATE agents.agent_sessions SET tokens_used = tokens_used + GREATEST(0, $3)
+         WHERE org_id = $1 AND public_id = $2
+         RETURNING *`,
+        [scope.orgId, sessionPublicId, Math.max(0, Math.round(delta))],
+      );
+      if (!res.rows[0]) {
+        throw new AgentsError("agent_session_not_found", `session ${sessionPublicId} not found`);
+      }
+      return mapSession(res.rows[0] as Row);
     },
 
     // ── Routines (saas-agents-fleet AF6) ──────────────────────

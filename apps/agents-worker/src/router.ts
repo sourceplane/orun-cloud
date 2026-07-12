@@ -32,6 +32,7 @@ import {
   handleUpdateRoutine,
 } from "./handlers/routines.js";
 import { handleListRecords, handleSetProfileAutonomy } from "./handlers/records.js";
+import { handleDeleteBudget, handleListBudgets, handleSetBudget } from "./handlers/budgets.js";
 import { handleDispatch } from "./handlers/dispatch.js";
 import {
   handleCreateConnection,
@@ -101,6 +102,9 @@ const ATTENTION_RE = /^\/v1\/organizations\/([^/]+)\/agents\/attention$/;
 // Standing routines (saas-agents-fleet AF6): registry CRUD + resume.
 const ROUTINES_RE = /^\/v1\/organizations\/([^/]+)\/agents\/routines$/;
 const ROUTINE_RE = /^\/v1\/organizations\/([^/]+)\/agents\/routines\/([^/]+)$/;
+// Budgets (saas-agents-fleet AF8): the ceilings registry.
+const BUDGETS_RE = /^\/v1\/organizations\/([^/]+)\/agents\/budgets$/;
+const BUDGET_RE = /^\/v1\/organizations\/([^/]+)\/agents\/budgets\/([^/]+)$/;
 const DISPATCH_RE = /^\/v1\/organizations\/([^/]+)\/agents\/dispatch$/;
 const PROVIDERS_RE = /^\/v1\/organizations\/([^/]+)\/agents\/providers$/;
 const PROVIDER_RE = /^\/v1\/organizations\/([^/]+)\/agents\/providers\/([^/]+)$/;
@@ -139,6 +143,8 @@ export async function route(request: Request, env: Env, injectedDeps?: AgentsDep
       ATTENTION_RE.test(url.pathname) ||
       ROUTINES_RE.test(url.pathname) ||
       ROUTINE_RE.test(url.pathname) ||
+      BUDGETS_RE.test(url.pathname) ||
+      BUDGET_RE.test(url.pathname) ||
       DISPATCH_RE.test(url.pathname);
     if (!isAgentsRoute) {
       return notFound(requestId, url.pathname);
@@ -233,6 +239,24 @@ async function dispatch(
     return methodNotAllowed(requestId);
   }
 
+  m = BUDGET_RE.exec(url.pathname);
+  if (m) {
+    const orgId = parseOrgPublicId(m[1]!);
+    if (!orgId) return notFound(requestId, url.pathname);
+    const budgetId = m[2]!;
+    if (request.method === "DELETE") return handleDeleteBudget(deps, orgId, budgetId, actor, requestId);
+    return methodNotAllowed(requestId);
+  }
+
+  m = BUDGETS_RE.exec(url.pathname);
+  if (m) {
+    const orgId = parseOrgPublicId(m[1]!);
+    if (!orgId) return notFound(requestId, url.pathname);
+    if (request.method === "GET") return handleListBudgets(deps, orgId, actor, requestId);
+    if (request.method === "PUT") return handleSetBudget(request, deps, orgId, actor, requestId);
+    return methodNotAllowed(requestId);
+  }
+
   m = ROUTINES_RE.exec(url.pathname);
   if (m) {
     const orgId = parseOrgPublicId(m[1]!);
@@ -311,7 +335,7 @@ async function dispatch(
     if (!orgId) return notFound(requestId, url.pathname);
     const sessionId = m[2]!;
     if (request.method === "GET") return handleListSessionEvents(deps, orgId, sessionId, actor, requestId);
-    if (request.method === "POST") return handleIngestSessionEvent(request, deps, orgId, sessionId, actor, requestId);
+    if (request.method === "POST") return handleIngestSessionEvent(request, deps, orgId, env, sessionId, actor, requestId);
     return methodNotAllowed(requestId);
   }
 

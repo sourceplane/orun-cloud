@@ -705,5 +705,14 @@ export const manifest: MigrationManifest = {
       description:
         "Earned autonomy (saas-agents-fleet AF7): agent_profiles gains autonomy_evidence JSONB — the ADDRESS of the last autonomy movement (direction, from/to, by, at, the server-computed record snapshot on promotion, the trigger on demotion). The record itself is never stored (a computed read over session rows + relayed events, the attention-plane epistemology); movement is asymmetric — promotion is human-acked, demotion automatic and loud — and every non-default autonomy renders with its provenance. Additive + idempotent.",
     },
+    {
+      id: "780_agents_budgets",
+      context: "agents",
+      path: "780_agents_budgets/up.sql",
+      checksum:
+        "7b21b9c0954cfe89b5b7c9154d847f18dca7694caa58d0969173aa0798e86fb3",
+      description:
+        "Budgets as ceilings (saas-agents-fleet AF8): agents.budgets — org-scoped token ceilings at four grains (workspace 30d rolling spend · tree shared envelope · session single-run · routine per-firing; NULL-ref rows are org-wide defaults, routine rows pin a routine's public id; one ceiling per grain+ref via a COALESCE unique index) — and agent_sessions.tokens_used, the accumulated relayed spend that makes every check row arithmetic and the 80% attention marks a pure fold. Ceilings, not advisories (locked decision 6): the door refuses against an exhausted envelope; an ingest crossing becomes a graceful sealed interrupt, never a hard kill. Additive + idempotent.",
+    },
   ],
 };

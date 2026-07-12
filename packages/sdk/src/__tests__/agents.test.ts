@@ -51,6 +51,18 @@ describe("agents resource", () => {
     expect(calls[0]!.init.method).toBe("POST");
   });
 
+  it("drives the budgets registry (saas-agents-fleet AF8)", async () => {
+    const { fetch: f, calls } = captureFetch({ id: "bud_1", grain: "workspace", maxTokens: 500000 });
+    const c = client(f);
+    await c.agents.listBudgets("org_x");
+    await c.agents.setBudget("org_x", { grain: "workspace", maxTokens: 500000 });
+    await c.agents.deleteBudget("org_x", "bud_1");
+    expect(calls[0]!.url).toContain("/v1/organizations/org_x/agents/budgets");
+    expect(calls[1]!.init.method).toBe("PUT");
+    expect(calls[2]!.url).toContain("/agents/budgets/bud_1");
+    expect(calls[2]!.init.method).toBe("DELETE");
+  });
+
   it("reads records and moves autonomy with a human ack (saas-agents-fleet AF7)", async () => {
     const { fetch: f, calls } = captureFetch([]);
     const c = client(f);

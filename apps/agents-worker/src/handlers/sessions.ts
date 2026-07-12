@@ -14,6 +14,7 @@ import {
 } from "@saas/contracts/agents";
 import { errorResponse, listResponse, notFound, successResponse, validationError } from "../http.js";
 import { toPublicSession } from "../mappers.js";
+import { checkDoor } from "../budget.js";
 
 const RUN_KINDS: readonly string[] = ["design", "implementation", "interactive", "fix"];
 
@@ -70,7 +71,7 @@ async function evaluateSpawnGates(
   requestId: string,
 ): Promise<
   | { refusal: Response }
-  | { parentSessionId: string; sandbox: Record<string, unknown> }
+  | { parentSessionId: string; sandbox: Record<string, unknown>; rootSessionId: string }
 > {
   const scope = { orgId };
   const parent = await deps.repo.getSession(scope, parentPublicId);
@@ -138,6 +139,7 @@ async function evaluateSpawnGates(
   const applied = intersectCeiling(parentApplied, ceilingOf(childProfile?.capability));
   return {
     parentSessionId: parent.publicId,
+    rootSessionId: parent.rootSessionId,
     // The applied ceiling is an infrastructure fact on the child; the runtime
     // additionally seals it into both session logs (orun AF0).
     sandbox: { appliedCeiling: applied as unknown as Record<string, unknown> },
@@ -180,10 +182,29 @@ export async function handleCreateSession(
   if (Object.keys(missing).length > 0) return validationError(requestId, missing);
 
   let spawnExtras: { parentSessionId: string; sandbox: Record<string, unknown> } | undefined;
+  let parentRoot: string | undefined;
   if (isAgentSpawn) {
     const gate = await evaluateSpawnGates(deps, orgId, actor.agentSessionId!, b.profileId as string, requestId);
     if ("refusal" in gate) return gate.refusal;
-    spawnExtras = gate;
+    spawnExtras = { parentSessionId: gate.parentSessionId, sandbox: gate.sandbox };
+    parentRoot = gate.rootSessionId;
+  }
+
+  // The budget door (AF8): the workspace envelope gates every create; a
+  // delegated spawn additionally draws the tree envelope (the child shares
+  // its root's budget — locked decision 2).
+  {
+    const [budgets, sessions] = await Promise.all([
+      deps.repo.listBudgets({ orgId }),
+      deps.repo.listSessions({ orgId }),
+    ]);
+    const refusal = checkDoor(
+      budgets,
+      sessions,
+      parentRoot ? { rootSessionId: parentRoot } : {},
+      new Date(),
+    );
+    if (refusal) return errorResponse(refusal.code, refusal.message, 409, requestId);
   }
 
   try {

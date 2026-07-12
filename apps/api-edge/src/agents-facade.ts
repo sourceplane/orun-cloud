@@ -41,6 +41,9 @@ const ORG_AGENTS_ATTENTION_RE = /^\/v1\/organizations\/[^/]+\/agents\/attention$
 // Standing routines (saas-agents-fleet AF6): registry CRUD + resume.
 const ORG_AGENTS_ROUTINES_RE = /^\/v1\/organizations\/[^/]+\/agents\/routines$/;
 const ORG_AGENTS_ROUTINE_RE = /^\/v1\/organizations\/[^/]+\/agents\/routines\/[^/]+$/;
+// Budgets (saas-agents-fleet AF8): the ceilings registry.
+const ORG_AGENTS_BUDGETS_RE = /^\/v1\/organizations\/[^/]+\/agents\/budgets$/;
+const ORG_AGENTS_BUDGET_RE = /^\/v1\/organizations\/[^/]+\/agents\/budgets\/[^/]+$/;
 const ORG_AGENTS_DISPATCH_RE = /^\/v1\/organizations\/[^/]+\/agents\/dispatch$/;
 const ORG_AGENTS_PROVIDERS_RE = /^\/v1\/organizations\/[^/]+\/agents\/providers$/;
 const ORG_AGENTS_PROVIDER_RE = /^\/v1\/organizations\/[^/]+\/agents\/providers\/[^/]+$/;
@@ -69,6 +72,8 @@ export function isAgentsRoute(pathname: string): boolean {
     ORG_AGENTS_ATTENTION_RE.test(pathname) ||
     ORG_AGENTS_ROUTINES_RE.test(pathname) ||
     ORG_AGENTS_ROUTINE_RE.test(pathname) ||
+    ORG_AGENTS_BUDGETS_RE.test(pathname) ||
+    ORG_AGENTS_BUDGET_RE.test(pathname) ||
     ORG_AGENTS_DISPATCH_RE.test(pathname)
   );
 }

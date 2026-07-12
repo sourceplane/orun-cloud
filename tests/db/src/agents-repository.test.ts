@@ -431,3 +431,29 @@ describe("routines (saas-agents-fleet AF6)", () => {
     expect(fired.map((x) => x.publicId)).toEqual([s.publicId]);
   });
 });
+
+describe("budgets (saas-agents-fleet AF8)", () => {
+  it("upserts one ceiling per grain+ref and accumulates session spend", async () => {
+    const r = repo();
+    const first = await r.setBudget(scope, { grain: "workspace", maxTokens: 1000, createdBy: "u" });
+    const updated = await r.setBudget(scope, { grain: "workspace", maxTokens: 2000, createdBy: "u" });
+    expect(updated.publicId).toBe(first.publicId);
+    expect((await r.listBudgets(scope)).length).toBe(1);
+
+    await expect(
+      r.setBudget(scope, { grain: "nope" as never, maxTokens: 10, createdBy: "u" }),
+    ).rejects.toThrow(AgentsError);
+    await expect(
+      r.setBudget(scope, { grain: "session", maxTokens: 0, createdBy: "u" }),
+    ).rejects.toThrow(AgentsError);
+
+    const p = await seedProfile(r);
+    const s = await r.createSession(scope, { profileId: p.publicId, runKind: "fix", spawnedBy: "u" });
+    expect(s.tokensUsed).toBe(0);
+    await r.addSessionTokens(scope, s.publicId, 100);
+    const after = await r.addSessionTokens(scope, s.publicId, 50);
+    expect(after.tokensUsed).toBe(150);
+    // Negative deltas never shrink spend.
+    expect((await r.addSessionTokens(scope, s.publicId, -20)).tokensUsed).toBe(150);
+  });
+});

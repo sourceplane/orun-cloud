@@ -17,6 +17,7 @@ import type { AgentSession } from "@saas/db/agents";
 import { errorResponse, successResponse, validationError } from "../http.js";
 import { toPublicSession } from "../mappers.js";
 import { handleProvisionSession } from "./provision.js";
+import { checkDoor } from "../budget.js";
 import { uuidToHex } from "@saas/db/ids";
 
 /** Public `org_<hex>` id for the work:// provenance ref (the scope orgId is
@@ -66,6 +67,17 @@ export async function handleDispatch(
     if (gate.kind === "deny") {
       return errorResponse("forbidden", gate.message, 403, requestId);
     }
+  }
+
+  // Gate 0.5 — the budget door (AF8): an exhausted envelope refuses loud
+  // before anything spawns. Ceilings, not advisories.
+  {
+    const [budgets, sessions] = await Promise.all([
+      deps.repo.listBudgets({ orgId }),
+      deps.repo.listSessions({ orgId }),
+    ]);
+    const refusal = checkDoor(budgets, sessions, {}, new Date());
+    if (refusal) return errorResponse(refusal.code, refusal.message, 409, requestId);
   }
 
   if (routineId) return dispatchRoutineFiring(deps, orgId, routineId, actor, requestId);

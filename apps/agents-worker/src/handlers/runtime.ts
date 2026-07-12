@@ -15,9 +15,11 @@
 //     which is exactly how a kill or a runaway dies within one TTL.
 
 import type { AgentsDeps } from "../deps.js";
+import type { Env } from "../env.js";
 import type { ActorContext } from "../router.js";
 import type { AgentSession } from "@saas/db/agents";
 import { AgentsError, isTerminal } from "@saas/db/agents";
+import { envelopeCrossings } from "../budget.js";
 import { errorResponse, notFound, successResponse, validationError } from "../http.js";
 import { toPublicSession } from "../mappers.js";
 import { uuidToHex } from "@saas/db/ids";
@@ -92,6 +94,7 @@ export async function handleIngestSessionEvent(
   request: Request,
   deps: AgentsDeps,
   orgId: string,
+  env: Env | undefined,
   sessionId: string,
   actor: ActorContext,
   requestId: string,
@@ -140,6 +143,51 @@ export async function handleIngestSessionEvent(
   // cost samples, minutes on the terminal transition. Fire-and-forget — a
   // lost sample is a reconciliation problem, never a failed ingest.
   emitMetering(deps, orgId, gate.session, events, actor, requestId);
+
+  // Budget accumulation + the graceful interrupt (AF8 §7): spend lands on
+  // the session row; crossing an envelope enqueues ONE interrupt on the DO
+  // return queue — the runtime finishes its current tool call and seals a
+  // budget_exhausted terminal, never a hard kill. Best-effort like metering.
+  try {
+    let delta = 0;
+    for (const raw of events) {
+      const e = raw as Record<string, unknown>;
+      const payload = (e.payload ?? {}) as Record<string, unknown>;
+      if (e.kind === "cost_sample" && typeof payload.tokens === "number" && payload.tokens > 0) {
+        delta += payload.tokens;
+      }
+    }
+    if (delta > 0) {
+      const prev = gate.session.tokensUsed;
+      const updated = await deps.repo.addSessionTokens({ orgId }, sessionId, delta);
+      const [budgets, sessions] = await Promise.all([
+        deps.repo.listBudgets({ orgId }),
+        deps.repo.listSessions({ orgId }),
+      ]);
+      const crossing = envelopeCrossings(budgets, sessions, updated, prev);
+      if (crossing && env?.SESSION_RELAY) {
+        const stub = env.SESSION_RELAY.get(env.SESSION_RELAY.idFromName(sessionId));
+        await stub.fetch(
+          new Request("https://relay/input", {
+            method: "POST",
+            headers: {
+              "content-type": "application/json",
+              "x-actor-principal": "agents-worker-budget",
+            },
+            body: JSON.stringify({
+              v: 1,
+              t: "interrupt",
+              ref: `budget-${sessionId}-${crossing.grain}`,
+              reason: `budget_exhausted: ${crossing.grain} ceiling ${crossing.limit} tokens (used ${crossing.used})`,
+            }),
+          }),
+        );
+      }
+    }
+  } catch {
+    // A budget bookkeeping failure never fails an ingest; the sweep and the
+    // attention fold still see the spend on the next batch.
+  }
 
   return successResponse({ accepted: events.length }, requestId);
 }

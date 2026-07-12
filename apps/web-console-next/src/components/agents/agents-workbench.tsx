@@ -27,7 +27,7 @@ import { wrap } from "@/lib/api";
 import { qk, useApiQuery } from "@/lib/query";
 import { useSession } from "@/lib/session";
 import { orderFleetRows, sessionLabel, sessionTone } from "@/lib/agents/model";
-import { compactAge } from "@/lib/agents/attention";
+import { compactAge, compactTokens } from "@/lib/agents/attention";
 import { AttentionQueue } from "@/components/agents/attention-queue";
 import { RoutinesCard } from "@/components/agents/routines-card";
 import { ProviderConnections } from "@/components/agents/provider-connections";
@@ -215,6 +215,9 @@ function SessionRow({
           spawned by {session.spawnedBy}
         </div>
       </div>
+      <span className="shrink-0 font-mono text-[12px] text-muted-foreground">
+        {compactTokens(session.tokensUsed)} tok
+      </span>
       <span className="shrink-0 font-mono text-[12px] text-muted-foreground">
         {compactAge(live ? session.startedAt ?? session.createdAt : session.endedAt ?? session.createdAt, new Date())}
       </span>
