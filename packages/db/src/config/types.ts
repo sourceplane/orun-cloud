@@ -172,6 +172,22 @@ export interface SecretMetadata {
   overridable: boolean;
   /** Stamped when a value is served by the resolve path (SM3). */
   lastUsedAt: Date | null;
+  /**
+   * Value provenance discriminator (saas-integration-hub IH7). `"static"` =
+   * the value is a stored ciphertext version. `"brokered"` = no stored value;
+   * the head envelope is a binding pointer and the value is minted
+   * just-in-time from the integrations credential broker at resolve.
+   */
+  source: "static" | "brokered";
+  /** Display-only broker binding fact (IH7): provider slug (e.g. cloudflare).
+   * `null` unless `source === "brokered"` (DB CHECK enforces this). */
+  bindingProvider: string | null;
+  /** Display-only broker binding fact (IH7): raw uuid of the integrations
+   * connection the value is minted against. Opaque reference. */
+  bindingConnectionId: string | null;
+  /** Display-only broker binding fact (IH7): credential template name
+   * (e.g. workers-deploy). */
+  bindingTemplate: string | null;
   createdAt: Date;
   updatedAt: Date;
   // NOTE: ciphertext_envelope is intentionally excluded from the type.
@@ -230,6 +246,16 @@ export interface CreateSecretMetadataInput {
   /** JSON-serialized ciphertext envelope. Write-only — never returned. When
    * present, version 1 is appended to config.secret_versions atomically. */
   ciphertextEnvelope?: string;
+  /** Value provenance discriminator (IH7). Defaults to `"static"`. For a
+   * brokered secret the envelope carries the binding pointer; the three
+   * binding facts below are display-only and must accompany it (DB CHECK). */
+  source?: "static" | "brokered";
+  /** Display-only broker binding fact (IH7): provider slug. */
+  bindingProvider?: string;
+  /** Display-only broker binding fact (IH7): the integrations connection uuid. */
+  bindingConnectionId?: Uuid;
+  /** Display-only broker binding fact (IH7): credential template name. */
+  bindingTemplate?: string;
 }
 
 // ── Secret policies (saas-secret-manager SM3, Layer 2) ──────
@@ -414,6 +440,8 @@ export interface ConfigRepository {
    */
   rotateSecretMetadata(orgId: string, secretId: string, createdBy: Uuid, ciphertextEnvelope?: string): Promise<ConfigResult<SecretMetadata>>;
   revokeSecretMetadata(orgId: string, secretId: string): Promise<ConfigResult<SecretMetadata>>;
+  /** Brokered-secret entitlement gate (IH7): live brokered bindings in the org. */
+  countBrokeredSecrets(orgId: string): Promise<ConfigResult<number>>;
   /** Version history, newest first. Metadata only — never ciphertext. */
   listSecretVersions(orgId: string, secretId: string, params: PageQueryParams): Promise<ConfigResult<PagedResult<SecretVersion>>>;
   /**

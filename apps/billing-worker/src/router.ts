@@ -47,6 +47,9 @@ const ALLOWED_INTERNAL_CALLERS: ReadonlySet<string> = new Set([
   "api-edge",
   // agents-worker gates dispatch on feature.agents (saas-agents AG10).
   "agents-worker",
+  // config-worker gates brokered secret bindings on limit.brokered_secrets
+  // (saas-integration-hub IH7).
+  "config-worker",
 ]);
 
 function isAllowedInternalCaller(value: string | null): value is string {

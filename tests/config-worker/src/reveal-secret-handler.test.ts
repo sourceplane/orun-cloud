@@ -64,6 +64,10 @@ function fakeSecret(overrides?: Partial<SecretMetadata>): SecretMetadata {
     expiresAt: null,
     createdBy: TEST_USER_ID,
     personalOwner: null,
+    source: "static" as const,
+    bindingProvider: null,
+    bindingConnectionId: null,
+    bindingTemplate: null,
     overridable: true,
     lastUsedAt: null,
     createdAt: FIXED_NOW,
@@ -310,5 +314,62 @@ describe("config-worker router - break-glass reveal", () => {
     );
     const res = await route(req, {} as Env);
     expect(res.status).toBe(401);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════
+// Brokered guard (saas-integration-hub IH7)
+// ═══════════════════════════════════════════════════════════
+
+describe("handleRevealSecret — brokered guard (IH7)", () => {
+  it("rejects revealing a brokered head with 400 before any decrypt", async () => {
+    let decryptCalls = 0;
+    const deps = makeDeps({
+      secret: {
+        ok: true as const,
+        value: fakeSecret({
+          source: "brokered",
+          bindingProvider: "cloudflare",
+          bindingConnectionId: "cdcdcdcd-cdcd-cdcd-cdcd-cdcdcdcdcdcd",
+          bindingTemplate: "workers-deploy",
+        }),
+      },
+      decrypt: () => {
+        decryptCalls++;
+        return Promise.resolve(PLAINTEXT);
+      },
+    });
+    const res = await handleRevealSecret(
+      makeRevealRequest({ reason: "debugging" }), FAKE_ENV, "req_br1", ACTOR, ORG_SCOPE, SECRET_UUID, deps,
+    );
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { error: { code: string; message: string; details: { reason: string } } };
+    expect(body.error.code).toBe("unsupported");
+    expect(body.error.message).toBe("A brokered secret has no stored value to reveal");
+    expect(body.error.details.reason).toBe("brokered");
+    expect(decryptCalls).toBe(0);
+  });
+
+  it("belt-and-braces: an envelope that parses as the pointer never reaches decrypt", async () => {
+    let decryptCalls = 0;
+    // Metadata says static (e.g. a lagging projection) but the stored envelope
+    // is the brokered pointer — the guard must still refuse to decrypt it.
+    const deps = makeDeps({
+      cipher: {
+        ok: true as const,
+        value: JSON.stringify({ v: "brokered", provider: { connectionId: "int_" + "cd".repeat(16), template: "workers-deploy" } }),
+      },
+      decrypt: () => {
+        decryptCalls++;
+        return Promise.resolve(PLAINTEXT);
+      },
+    });
+    const res = await handleRevealSecret(
+      makeRevealRequest({ reason: "debugging" }), FAKE_ENV, "req_br2", ACTOR, ORG_SCOPE, SECRET_UUID, deps,
+    );
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { error: { details: { reason: string } } };
+    expect(body.error.details.reason).toBe("brokered");
+    expect(decryptCalls).toBe(0);
   });
 });

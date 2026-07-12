@@ -600,6 +600,73 @@ export const INTEGRATIONS_WRITEBACK_CALLER = "state-worker";
  *  service-binding only; the bot token lives in its isolate memory ≤5 min). */
 export const SLACK_CREDENTIALS_CALLER = "notifications-worker";
 
+// ── Brokered-secret mint (IH7 — internal endpoints) ─────────
+
+/** The only caller allowed on the internal broker routes (IH7 —
+ *  service-binding only; config-worker's secret create/resolve paths). */
+export const BROKERED_MINT_CALLER = "config-worker";
+
+/**
+ * POST /internal/credentials/validate-binding — config-worker validates a
+ * brokered secret binding at CREATE time (design §5.4: "you cannot bind
+ * authority you could not mint" — the caller has already enforced the dual
+ * policy; this validates the pointer itself and returns the provider for
+ * chain provenance). Raw org UUID (internal convention); public connection id
+ * as stored in the binding pointer.
+ */
+export interface ValidateBrokerBindingRequest {
+  /** Raw org UUID. */
+  orgId: string;
+  /** Public connection id (int_…) from the binding pointer. */
+  connectionId: string;
+  template: string;
+  params?: Record<string, unknown>;
+}
+
+export interface ValidateBrokerBindingResponse {
+  /** The connection's provider — stored for binding provenance/display. */
+  provider: IntegrationProviderId;
+  /** The template's TTL ceiling (informational). */
+  maxTtlSeconds: number;
+}
+
+/**
+ * POST /internal/credentials/mint — service-binding-only mint for brokered
+ * secret resolution (design §5.4). config-worker has already gated the
+ * SECRET read (Layer-1 bearer authz + live lease in state-worker, Layer-2
+ * secret policy in config-worker); the broker still enforces its own
+ * entitlement, the per-org daily mint rate limit, template validation, and
+ * ledger-before-reveal. Executed as the platform; the run attribution lands
+ * in the ledger (`purpose: "secret_resolve"`, requestedBy/runId/jobId).
+ */
+export interface InternalMintCredentialRequest {
+  /** Raw org UUID. */
+  orgId: string;
+  /** Public connection id (int_…) from the binding pointer. */
+  connectionId: string;
+  template: string;
+  params?: Record<string, unknown>;
+  /** Requested TTL; the broker clamps to min(request, template max, 1h). */
+  ttlSeconds?: number;
+  purpose: "secret_resolve";
+  /** Ledger attribution (never an authz input). */
+  requestedBy?: string | null;
+  /** The verified actor kind behind requestedBy (event attribution only). */
+  requestedByType?: string | null;
+  runId?: string | null;
+  jobId?: string | null;
+}
+
+export interface InternalMintCredentialResponse {
+  /**
+   * The injectable secret value (reveal-once). The broker requires the
+   * provider's credential material to be a single opaque value — it is
+   * returned here and NEVER retrievable again.
+   */
+  value: string;
+  mint: PublicMintedCredential;
+}
+
 // ── Event taxonomy ──────────────────────────────────────────
 
 /** Platform lifecycle events emitted by the integrations context. */

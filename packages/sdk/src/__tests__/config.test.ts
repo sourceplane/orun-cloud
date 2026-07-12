@@ -176,3 +176,29 @@ describe("ConfigClient — secret policies (SM3)", () => {
     expect(res.decision.allow).toBe(false);
   });
 });
+
+describe("ConfigClient — brokered secrets (IH7)", () => {
+  it("createBrokeredSecret POSTs the binding to the scope's secrets path", async () => {
+    const { fetch, calls } = captureFetch(
+      jsonResponse(envelope({ secret: { id: "sec_1", secretKey: "CF_TOKEN" } }), { status: 201 }),
+    );
+    await client(fetch).config.createBrokeredSecret(ENV_SCOPE, {
+      secretKey: "CF_TOKEN",
+      binding: {
+        connectionId: "int_" + "ab".repeat(16),
+        template: "workers-deploy",
+        params: { accountId: "acc-1" },
+      },
+    });
+    expect(calls[0]!.url).toBe(`${ENV_BASE}/secrets`);
+    expect(calls[0]!.init.method).toBe("POST");
+    expect(bodyOf(calls[0]!)).toEqual({
+      secretKey: "CF_TOKEN",
+      binding: {
+        connectionId: "int_" + "ab".repeat(16),
+        template: "workers-deploy",
+        params: { accountId: "acc-1" },
+      },
+    });
+  });
+});

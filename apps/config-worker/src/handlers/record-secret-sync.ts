@@ -112,6 +112,15 @@ export async function handleRecordSecretSync(
       return errorResponse("internal_error", "Service unavailable", 503, requestId);
     }
 
+    // Materialization is excluded for brokered bindings in v1 (IH7, design
+    // §5.4): materializing a minutes-lived minted token into a provider store
+    // is self-defeating. Reject the sync record with a typed error.
+    if (secret.value.source === "brokered") {
+      return errorResponse("unsupported", "A brokered secret cannot be materialized", 400, requestId, {
+        reason: "brokered_not_materializable",
+      });
+    }
+
     const input: RecordSecretSyncInput = {
       id: crypto.randomUUID(),
       scope,

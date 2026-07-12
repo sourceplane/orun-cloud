@@ -31,9 +31,11 @@ import {
 } from "./handlers/slack-ingress.js";
 import { handleListSlackChannels } from "./handlers/slack-channels.js";
 import {
+  handleInternalMintCredential,
   handleListMintedCredentials,
   handleMintCredential,
   handleRevokeMintedCredential,
+  handleValidateBrokerBinding,
 } from "./handlers/credential-broker.js";
 import { handleSlackCredentialsInternal } from "./handlers/slack-credentials-internal.js";
 import {
@@ -67,6 +69,8 @@ const ALLOWED_INTERNAL_CALLERS: ReadonlySet<string> = new Set([
   "state-worker",
   // notifications-worker reads slack_app delivery credentials per send (IH2).
   "notifications-worker",
+  // config-worker validates and mints brokered secret bindings (IH7).
+  "config-worker",
 ]);
 
 function isAllowedInternalCaller(value: string | null): value is string {
@@ -120,6 +124,8 @@ const GITHUB_SETUP_PATH = "/ingress/github/setup";
 const GITHUB_WEBHOOK_PATH = "/ingress/github/webhook";
 const GITHUB_WRITEBACK_PATH = "/internal/github/writeback";
 const SLACK_CREDENTIALS_PATH = "/internal/slack/credentials";
+const BROKER_MINT_PATH = "/internal/credentials/mint";
+const BROKER_VALIDATE_BINDING_PATH = "/internal/credentials/validate-binding";
 const SLACK_EVENTS_PATH = "/ingress/slack/events";
 const SLACK_COMMANDS_PATH = "/ingress/slack/commands";
 const SLACK_INTERACTIVITY_PATH = "/ingress/slack/interactivity";
@@ -207,6 +213,23 @@ export async function route(request: Request, env: Env): Promise<Response> {
       return errorResponse("internal_error", "Database not configured", 503, requestId);
     }
     return handleSlackCredentialsInternal(request, env, requestId);
+  }
+
+  // Internal brokered-secret surface (IH7, design §5.4): config-worker
+  // validates bindings at secret-create and mints at resolve. Authenticated
+  // by the service-binding boundary; the dual policy already ran upstream
+  // (see the handler header), and the broker's own gates run in-handler.
+  if (pathname === BROKER_MINT_PATH || pathname === BROKER_VALIDATE_BINDING_PATH) {
+    if (request.method !== "POST") return methodNotAllowed(requestId);
+    if (!isAllowedInternalCaller(request.headers.get(INTERNAL_CALLER_HEADER))) {
+      return errorResponse("unauthorized", "Internal service-binding required", 403, requestId);
+    }
+    if (!env.PLATFORM_DB) {
+      return errorResponse("internal_error", "Database not configured", 503, requestId);
+    }
+    return pathname === BROKER_MINT_PATH
+      ? handleInternalMintCredential(request, env, requestId)
+      : handleValidateBrokerBinding(request, env, requestId);
   }
 
   // Everything below is the authenticated org surface.

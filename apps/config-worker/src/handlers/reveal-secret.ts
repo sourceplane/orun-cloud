@@ -158,11 +158,23 @@ export async function handleRevealSecret(
       return errorResponse("forbidden", "Not authorized to reveal this secret", 403, requestId, { decisionId });
     }
 
+    // ── Brokered guard (IH7): a brokered head has no stored value — its
+    //    envelope is a binding pointer, so there is nothing to reveal. ──
+    if (secret.source === "brokered") {
+      return errorResponse("unsupported", "A brokered secret has no stored value to reveal", 400, requestId, { reason: "brokered" });
+    }
+
     // ── Load the serving version's ciphertext (404 when the version is gone). ──
     const version = pinnedVersion ?? secret.version;
     const cipherResult = await repo.getSecretCiphertext(secretId, version);
     if (!cipherResult.ok) {
       return errorResponse("not_found", "Secret version not found", 404, requestId, { decisionId });
+    }
+
+    // Belt-and-braces (IH7): even if the metadata flag is missing, an envelope
+    // that parses as the brokered pointer must never reach decrypt.
+    if (isBrokeredPointer(cipherResult.value)) {
+      return errorResponse("unsupported", "A brokered secret has no stored value to reveal", 400, requestId, { reason: "brokered" });
     }
 
     // ── Decrypt — the plaintext materializes ONLY here + the response body. ──
@@ -217,6 +229,16 @@ export async function handleRevealSecret(
     return errorResponse("internal_error", "Service unavailable", 503, requestId);
   } finally {
     if (executor) await executor.dispose();
+  }
+}
+
+/** True when the envelope text is the IH7 brokered binding pointer, not ciphertext. */
+function isBrokeredPointer(envelope: string): boolean {
+  try {
+    const parsed = JSON.parse(envelope) as unknown;
+    return !!parsed && typeof parsed === "object" && (parsed as { v?: unknown }).v === "brokered";
+  } catch {
+    return false;
   }
 }
 

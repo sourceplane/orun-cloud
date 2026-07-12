@@ -110,6 +110,9 @@ export const PLAN_CATALOG: PlanDefinition[] = [
       { entitlementKey: "feature.integrations.supabase", valueType: "boolean", enabled: true, limitValue: null },
       { entitlementKey: "feature.integrations.credential_broker", valueType: "boolean", enabled: true, limitValue: null },
       { entitlementKey: "limit.credential_mints_per_day", valueType: "quantity", enabled: true, limitValue: 200 },
+      // Brokered secret bindings (saas-integration-hub IH7): scale with tier
+      // like repo links; the mint rate limit stays the per-day abuse bound.
+      { entitlementKey: "limit.brokered_secrets", valueType: "quantity", enabled: true, limitValue: 5 },
       { entitlementKey: "limit.repo_links", valueType: "quantity", enabled: true, limitValue: 1 },
       // Event routing (saas-event-streaming ES2, D3 defaults): rules are an
       // activation feature — enabled on free with a conservative cap.
@@ -162,6 +165,7 @@ export const PLAN_CATALOG: PlanDefinition[] = [
       { entitlementKey: "feature.integrations.supabase", valueType: "boolean", enabled: true, limitValue: null },
       { entitlementKey: "feature.integrations.credential_broker", valueType: "boolean", enabled: true, limitValue: null },
       { entitlementKey: "limit.credential_mints_per_day", valueType: "quantity", enabled: true, limitValue: 200 },
+      { entitlementKey: "limit.brokered_secrets", valueType: "quantity", enabled: true, limitValue: 25 },
       { entitlementKey: "limit.repo_links", valueType: "quantity", enabled: true, limitValue: 10 },
       { entitlementKey: "feature.event_routing", valueType: "boolean", enabled: true, limitValue: null },
       { entitlementKey: "limit.notification_rules", valueType: "quantity", enabled: true, limitValue: 50 },
@@ -199,6 +203,7 @@ export const PLAN_CATALOG: PlanDefinition[] = [
       { entitlementKey: "feature.integrations.supabase", valueType: "boolean", enabled: true, limitValue: null },
       { entitlementKey: "feature.integrations.credential_broker", valueType: "boolean", enabled: true, limitValue: null },
       { entitlementKey: "limit.credential_mints_per_day", valueType: "quantity", enabled: true, limitValue: 200 },
+      { entitlementKey: "limit.brokered_secrets", valueType: "quantity", enabled: true, limitValue: 100 },
       { entitlementKey: "limit.repo_links", valueType: "quantity", enabled: true, limitValue: 50 },
       { entitlementKey: "feature.event_routing", valueType: "boolean", enabled: true, limitValue: null },
       { entitlementKey: "limit.notification_rules", valueType: "quantity", enabled: true, limitValue: 200 },
@@ -236,6 +241,7 @@ export const PLAN_CATALOG: PlanDefinition[] = [
       { entitlementKey: "feature.integrations.supabase", valueType: "boolean", enabled: true, limitValue: null },
       { entitlementKey: "feature.integrations.credential_broker", valueType: "boolean", enabled: true, limitValue: null },
       { entitlementKey: "limit.credential_mints_per_day", valueType: "quantity", enabled: true, limitValue: 200 },
+      { entitlementKey: "limit.brokered_secrets", valueType: "quantity", enabled: true, limitValue: null },
       { entitlementKey: "limit.repo_links", valueType: "quantity", enabled: true, limitValue: null },
       { entitlementKey: "feature.event_routing", valueType: "boolean", enabled: true, limitValue: null },
       { entitlementKey: "limit.notification_rules", valueType: "quantity", enabled: true, limitValue: null },

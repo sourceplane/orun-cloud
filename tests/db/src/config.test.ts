@@ -79,8 +79,24 @@ const SAMPLE_SECRET_ROW = {
   personal_owner: null,
   overridable: true,
   last_used_at: null,
+  source: "static",
+  binding_provider: null,
+  binding_connection_id: null,
+  binding_template: null,
   created_at: NOW.toISOString(),
   updated_at: NOW.toISOString(),
+};
+
+// A brokered head (saas-integration-hub IH7): no stored value — the envelope
+// is a binding pointer; the metadata carries the display-only binding facts.
+const BROKERED_SECRET_ROW = {
+  ...SAMPLE_SECRET_ROW,
+  id: "sec-brk",
+  secret_key: "CLOUDFLARE_API_TOKEN",
+  source: "brokered",
+  binding_provider: "cloudflare",
+  binding_connection_id: "00000000-0000-0000-0000-00000000c0f1",
+  binding_template: "workers-deploy",
 };
 
 const SAMPLE_SECRET_VERSION_ROW = {
@@ -724,6 +740,109 @@ describe("ConfigRepository — Secret Store v3 (SM1)", () => {
   });
 });
 
+// ── Brokered secrets (saas-integration-hub IH7) ────────────
+
+describe("ConfigRepository — Brokered Secrets (IH7)", () => {
+  const CONNECTION_ID = asUuid("00000000-0000-0000-0000-00000000c0f1");
+  const BROKERED_ENVELOPE = "{\"v\":\"brokered\",\"provider\":{\"connectionId\":\"int_1\",\"template\":\"workers-deploy\",\"params\":{}}}";
+
+  it("create persists the discriminator and the three binding facts", async () => {
+    const { executor, queries } = createFakeExecutor({ rows: [BROKERED_SECRET_ROW] });
+    const repo = createConfigRepository(executor);
+    const result = await repo.createSecretMetadata({
+      id: "sec-brk",
+      scope: ORG_SCOPE,
+      secretKey: "CLOUDFLARE_API_TOKEN",
+      createdBy: CREATED_BY,
+      source: "brokered",
+      bindingProvider: "cloudflare",
+      bindingConnectionId: CONNECTION_ID,
+      bindingTemplate: "workers-deploy",
+      ciphertextEnvelope: BROKERED_ENVELOPE,
+    });
+    expect(result.ok).toBe(true);
+    expect(queries).toHaveLength(1);
+    const q = queries[0]!;
+    expect(q.text).toContain("source, binding_provider, binding_connection_id, binding_template");
+    expect(q.params[12]).toBe("brokered");
+    expect(q.params[13]).toBe("cloudflare");
+    expect(q.params[14]).toBe("00000000-0000-0000-0000-00000000c0f1");
+    expect(q.params[15]).toBe("workers-deploy");
+    // The binding pointer still rides the existing envelope write path.
+    expect(q.params[16]).toBe(BROKERED_ENVELOPE);
+    expect(q.text).toContain("INSERT INTO config.secret_versions");
+  });
+
+  it("create defaults source to 'static' with no binding facts", async () => {
+    const { executor, queries } = createFakeExecutor({ rows: [SAMPLE_SECRET_ROW] });
+    const repo = createConfigRepository(executor);
+    const result = await repo.createSecretMetadata({
+      id: "sec-001",
+      scope: ORG_SCOPE,
+      secretKey: "DB_PASSWORD",
+      createdBy: CREATED_BY,
+    });
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value.source).toBe("static");
+      expect(result.value.bindingProvider).toBeNull();
+      expect(result.value.bindingConnectionId).toBeNull();
+      expect(result.value.bindingTemplate).toBeNull();
+    }
+    expect(queries[0]!.params[12]).toBe("static");
+    expect(queries[0]!.params[13]).toBeNull();
+    expect(queries[0]!.params[14]).toBeNull();
+    expect(queries[0]!.params[15]).toBeNull();
+  });
+
+  it("the mapper surfaces broker provenance on reads", async () => {
+    const { executor, queries } = createFakeExecutor({ rows: [BROKERED_SECRET_ROW] });
+    const repo = createConfigRepository(executor);
+    const result = await repo.getSecretMetadata("org-001", "sec-brk");
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value.source).toBe("brokered");
+      expect(result.value.bindingProvider).toBe("cloudflare");
+      expect(result.value.bindingConnectionId).toBe("00000000-0000-0000-0000-00000000c0f1");
+      expect(result.value.bindingTemplate).toBe("workers-deploy");
+    }
+    // Provenance rides the safe-column projection — never the envelope.
+    expect(queries[0]!.text).toContain("binding_provider");
+    expect(queries[0]!.text).not.toContain("ciphertext_envelope");
+  });
+
+  it("countBrokeredSecrets counts live brokered bindings in the org", async () => {
+    const { executor, queries } = createFakeExecutor({ rows: [{ count: 3 }] });
+    const repo = createConfigRepository(executor);
+    const result = await repo.countBrokeredSecrets("org-001");
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.value).toBe(3);
+    expect(queries).toHaveLength(1);
+    expect(queries[0]!.text).toContain("COUNT(*)");
+    expect(queries[0]!.text).toContain("FROM config.secret_metadata");
+    expect(queries[0]!.text).toContain("source = 'brokered'");
+    // Only live heads count against limit.brokered_secrets.
+    expect(queries[0]!.text).toContain("status IN ('active', 'rotated')");
+    expect(queries[0]!.params).toEqual(["org-001"]);
+  });
+
+  it("countBrokeredSecrets returns 0 when no row comes back", async () => {
+    const { executor } = createFakeExecutor({ rows: [] });
+    const repo = createConfigRepository(executor);
+    const result = await repo.countBrokeredSecrets("org-001");
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.value).toBe(0);
+  });
+
+  it("countBrokeredSecrets maps executor failure to internal", async () => {
+    const { executor } = createFakeExecutor({ error: new Error("boom") });
+    const repo = createConfigRepository(executor);
+    const result = await repo.countBrokeredSecrets("org-001");
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.kind).toBe("internal");
+  });
+});
+
 describe("ConfigRepository — Scope Validation", () => {
   it("rejects setting creation when check constraint violated", async () => {
     const { executor } = createFakeExecutor({ error: { code: "23514" } });
@@ -786,6 +905,10 @@ describe("Secret Safety Invariants", () => {
       personalOwner: null,
       overridable: true,
       lastUsedAt: null,
+      source: "static",
+      bindingProvider: null,
+      bindingConnectionId: null,
+      bindingTemplate: null,
       createdAt: NOW,
       updatedAt: NOW,
     };

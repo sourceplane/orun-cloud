@@ -148,6 +148,23 @@ export interface PublicSecretMetadata {
    * workspace -> account) was walked. Absent on exact-scope management reads.
    */
   servesFrom?: "personal" | "environment" | "project" | "workspace" | "account";
+  /**
+   * Value source (saas-integration-hub IH7). `brokered` marks a mint-at-resolve
+   * binding — no stored value exists; the envelope is a pointer. Absent on
+   * surfaces that predate brokered secrets (treat as `static`).
+   */
+  source?: "static" | "brokered";
+  /**
+   * Present when source === "brokered": display-only binding facts for chain
+   * provenance (`KEY ← environment (brokered · cloudflare · workers-deploy)`).
+   * Never the template params, never credential material.
+   */
+  binding?: {
+    provider: string;
+    /** Public connection id (int_…). */
+    connectionId: string;
+    template: string;
+  };
   createdAt: string;
   updatedAt: string;
 }
@@ -198,6 +215,37 @@ export interface CreateSecretRequest {
   overridable?: boolean;
   /** Create as the caller's personal overlay — environment scope only (SM1). */
   personal?: boolean;
+}
+
+/**
+ * Brokered binding pointer (saas-integration-hub IH7): the secret's value is
+ * minted just-in-time from the credential broker at resolve, never stored.
+ * Creating one requires BOTH `secret.write` and
+ * `organization.integration.credential.issue` — you cannot bind authority you
+ * could not mint.
+ */
+export interface SecretBrokerBinding {
+  /** Public connection id (int_…) — own or account-shared with admission. */
+  connectionId: string;
+  /** Scope template id published by the connection's provider. */
+  template: string;
+  /** Template params (validated against the template's declared params). */
+  params?: Record<string, unknown>;
+}
+
+/**
+ * Brokered secret creation (IH7): `binding` in place of `value`. Mutually
+ * exclusive with `value` and with `personal` (a personal overlay can never be
+ * brokered).
+ */
+export interface CreateBrokeredSecretRequest {
+  secretKey: string;
+  binding: SecretBrokerBinding;
+  displayName?: string | null;
+  rotationPolicy?: string | null;
+  expiresAt?: string | null;
+  /** Lock this key as a guardrail — account/organization scope only (SM1). */
+  overridable?: boolean;
 }
 
 export interface CreateSecretMetadataResponse {

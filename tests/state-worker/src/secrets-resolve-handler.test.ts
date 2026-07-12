@@ -135,3 +135,63 @@ describe("live lease → forwards to config-worker", () => {
     expect(res.status).toBe(422);
   });
 });
+
+describe("brokered provenance relay (saas-integration-hub IH7)", () => {
+  it("relays a brokered resolved[] entry (source/mintId/provider/template) verbatim", async () => {
+    const brokeredEntry = {
+      key: "DATABASE_URL",
+      version: 3,
+      scope: "environment",
+      personal: false,
+      decisionId: "dec_2",
+      source: "broker",
+      mintId: "mint_" + "cd".repeat(16),
+      provider: "cloudflare",
+      template: "workers-deploy",
+    };
+    const res = await handleResolveRunSecrets(request(body()), ENV, "req_broker", ACTOR, ORG, PRJ, RUN, {
+      executor: runExecutor(),
+      verifyLease: async () => ({ live: true }),
+      resolveOrgSegment: async () => ORG,
+      resolveProjectSlug: async () => PRJ,
+      listEnvironments: async () => [{ id: "env-1", slug: "prod", name: "prod", status: "active" }],
+      configResolve: async () =>
+        Response.json({ data: { secrets: { DATABASE_URL: "minted-value" }, resolved: [brokeredEntry] } }),
+    });
+    expect(res.status).toBe(200);
+    const json = (await res.json()) as {
+      data: { secrets: Record<string, string>; resolved: Array<Record<string, unknown>>; ttlSeconds: number };
+    };
+    // The relay is verbatim: the brokered entry passes through untouched.
+    expect(json.data.secrets.DATABASE_URL).toBe("minted-value");
+    expect(json.data.resolved[0]).toEqual(brokeredEntry);
+    expect(json.data.ttlSeconds).toBe(300);
+  });
+
+  it("relays config-worker's 412 binding_unavailable envelope verbatim", async () => {
+    const res = await handleResolveRunSecrets(request(body()), ENV, "req_broker2", ACTOR, ORG, PRJ, RUN, {
+      executor: runExecutor(),
+      verifyLease: async () => ({ live: true }),
+      resolveOrgSegment: async () => ORG,
+      resolveProjectSlug: async () => PRJ,
+      listEnvironments: async () => [{ id: "env-1", slug: "prod", name: "prod", status: "active" }],
+      configResolve: async () =>
+        Response.json(
+          {
+            error: {
+              code: "precondition_failed",
+              message: "Brokered secret binding unavailable",
+              details: { key: "DATABASE_URL", reason: "binding_unavailable", connectionId: "int_" + "ab".repeat(16), decisionId: "dec_3" },
+              requestId: "req_downstream",
+            },
+          },
+          { status: 412 },
+        ),
+    });
+    expect(res.status).toBe(412);
+    const json = (await res.json()) as { error: { code: string; details: { reason: string; connectionId: string } } };
+    expect(json.error.code).toBe("precondition_failed");
+    expect(json.error.details.reason).toBe("binding_unavailable");
+    expect(json.error.details.connectionId).toBe("int_" + "ab".repeat(16));
+  });
+});

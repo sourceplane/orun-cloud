@@ -23,10 +23,13 @@ import type { Env } from "../env.js";
 import type { ActorContext } from "../router.js";
 import type { PolicyResource } from "@saas/contracts/policy";
 import type {
+  InternalMintCredentialRequest,
+  InternalMintCredentialResponse,
   ListMintedCredentialsResponse,
   MintCredentialResponse,
   PublicMintedCredential,
   RevokeMintedCredentialResponse,
+  ValidateBrokerBindingResponse,
 } from "@saas/contracts/integrations";
 import {
   INTEGRATION_ENTITLEMENTS,
@@ -37,7 +40,9 @@ import {
 import {
   createIntegrationHubRepository,
   createIntegrationsRepository,
+  type IntegrationConnection,
   type MintedCredential,
+  type MintPurpose,
 } from "@saas/db/integrations";
 import { createEventsRepository } from "@saas/db/events";
 import { createSqlExecutor, type SqlExecutor } from "@saas/db/hyperdrive";
@@ -50,6 +55,7 @@ import {
   mintedCredentialPublicId,
   connectionPublicId,
   orgPublicId,
+  parseConnectionPublicId,
   parseMintedCredentialPublicId,
 } from "../ids.js";
 import { fetchAuthorizationContext } from "../membership-client.js";
@@ -232,7 +238,6 @@ export async function handleMintCredential(
   const owned = !deps?.executor;
   try {
     const repo = createIntegrationsRepository(executor);
-    const hub = createIntegrationHubRepository(executor);
 
     // Own or account-shared with admission (IT10) — the IG rule, uniformly.
     const connection = await resolveUsableConnection(env, repo, orgId, connectionId, requestId);
@@ -243,11 +248,281 @@ export async function handleMintCredential(
       });
     }
 
-    const provider = resolveProvider(env, connection.provider, deps);
-    const broker = provider ? getCapability(provider, "broker") : null;
-    if (!broker) {
-      // Typed capability miss — a provider without a broker (or an
-      // unconfigured environment) is a 4xx, never a 500 (design §2).
+    const core = await executeMintCore(
+      env,
+      requestId,
+      executor,
+      orgId,
+      connection,
+      { templateId, params, requestedTtl },
+      {
+        purpose: "api",
+        requestedBy: actor.subjectId,
+        actorType: actor.subjectType,
+        actorId: actor.subjectId,
+      },
+      deps,
+    );
+    if (!core.ok) {
+      return publicMintFailureResponse(core.failure, requestId, templateId, connection.provider);
+    }
+
+    const payload: MintCredentialResponse = {
+      credential: core.credential,
+      mint: toPublicMintedCredential(core.mint),
+    };
+    return successResponse(payload, requestId, 201);
+  } catch {
+    return errorResponse("internal_error", "Service unavailable", 503, requestId);
+  } finally {
+    if (owned && "dispose" in executor && typeof (executor as { dispose?: unknown }).dispose === "function") {
+      await (executor as unknown as { dispose: () => Promise<void> }).dispose();
+    }
+  }
+}
+
+// ── The shared mint core (IH4 public surface + IH7 internal surface) ──
+
+/** Ledger + event attribution for one mint execution. */
+interface MintAttribution {
+  purpose: MintPurpose;
+  /** Ledger requested_by — the subject the mint is FOR (never an authz input). */
+  requestedBy: string | null;
+  runId?: string | null;
+  jobId?: string | null;
+  /** Event-log actor. Internal (platform-executed) paths pass the verified
+   *  resolve subject when known, else "system"/"config-worker". */
+  actorType: string;
+  actorId: string;
+}
+
+type MintCoreFailure =
+  | { kind: "capability_not_supported" }
+  | { kind: "template_unknown" }
+  | { kind: "params_invalid"; unknownParams: string[] }
+  | { kind: "limit_reached"; limit: number }
+  | { kind: "parent_credential_missing" }
+  | { kind: "mint_failed"; reason: string }
+  | { kind: "service_error" };
+
+type MintCoreResult =
+  | { ok: true; credential: Record<string, string>; mint: MintedCredential }
+  | { ok: false; failure: MintCoreFailure };
+
+/**
+ * Everything between "the connection is usable" and "the credential leaves the
+ * platform": capability + template validation, the per-org daily rate limit,
+ * TTL clamping, parent custody, the provider mint, rotation re-envelope, and
+ * ledger-before-reveal. Both the public handler (purpose "api") and the
+ * internal brokered-secret path (purpose "secret_resolve", design §5.4) run
+ * THIS code — the custody invariants cannot diverge between surfaces.
+ */
+async function executeMintCore(
+  env: Env,
+  requestId: string,
+  executor: SqlExecutor,
+  // The REQUESTING org — for an account-shared connection this differs from
+  // connection.orgId, and the rate limit + ledger row bind to the requester.
+  orgId: Uuid,
+  connection: IntegrationConnection,
+  input: { templateId: string; params: Record<string, unknown>; requestedTtl: number },
+  attribution: MintAttribution,
+  deps?: CredentialBrokerDeps,
+): Promise<MintCoreResult> {
+  const { templateId, params, requestedTtl } = input;
+  const hub = createIntegrationHubRepository(executor);
+
+  const provider = resolveProvider(env, connection.provider, deps);
+  const broker = provider ? getCapability(provider, "broker") : null;
+  if (!broker) {
+    // Typed capability miss — a provider without a broker (or an
+    // unconfigured environment) is a 4xx, never a 500 (design §2).
+    return { ok: false, failure: { kind: "capability_not_supported" } };
+  }
+
+  const template = broker.scopeTemplates().find((t) => t.id === templateId);
+  if (!template) {
+    return { ok: false, failure: { kind: "template_unknown" } };
+  }
+  const unknownParams = Object.keys(params).filter((k) => !template.params.includes(k));
+  if (unknownParams.length > 0) {
+    return { ok: false, failure: { kind: "params_invalid", unknownParams } };
+  }
+
+  // Per-org daily mint rate limit, enforced against the ledger itself.
+  const limit = await checkBillingEntitlement(
+    env.BILLING_WORKER!,
+    orgPublicId(orgId),
+    INTEGRATION_ENTITLEMENTS.CREDENTIAL_MINTS_PER_DAY_LIMIT,
+    requestId,
+  );
+  if (limit.kind === "service_error") {
+    return { ok: false, failure: { kind: "service_error" } };
+  }
+  if (
+    limit.decision.allowed &&
+    limit.decision.limitValue !== null &&
+    limit.decision.limitValue !== undefined
+  ) {
+    const since = new Date(Date.now() - 24 * 60 * 60 * 1000);
+    const count = await hub.countMintedCredentialsSince(orgId, since);
+    if (!count.ok) return { ok: false, failure: { kind: "service_error" } };
+    if (count.value >= limit.decision.limitValue) {
+      return { ok: false, failure: { kind: "limit_reached", limit: limit.decision.limitValue } };
+    }
+  }
+
+  // TTL requested, clamped (D5): the ledger will record the ACTUAL expiry.
+  const ttlSeconds = Math.min(requestedTtl, template.maxTtlSeconds, MAX_TTL_SECONDS);
+
+  // Parent custody (IH5+): decrypted for this one call, never held.
+  const parent = await readParentCredential(env, executor, asUuid(connection.id), connection.provider);
+  if (parent === null) {
+    return { ok: false, failure: { kind: "parent_credential_missing" } };
+  }
+
+  // The mint id is generated BEFORE the provider call so the minted
+  // credential carries its ledger identity provider-side (IH9 reconcile).
+  const mintId = generateUuid();
+  const nowMs = Date.now();
+  const outcome = await broker.mintCredential({
+    template: templateId,
+    params,
+    ttlSeconds,
+    nowMs,
+    ...(parent ? { parent } : {}),
+    mintRef: `orun/${orgPublicId(orgId)}/${templateId}/${mintedCredentialPublicId(mintId)}`,
+  });
+  if (!outcome.ok) {
+    // Best-effort failure event — surfaced in connection health.
+    try {
+      const events = createEventsRepository(executor);
+      await events.appendEventWithAudit({
+        event: {
+          id: generateUuid(),
+          type: INTEGRATION_EVENT_TYPES.CREDENTIAL_MINT_FAILED,
+          version: 1,
+          source: "integrations-worker",
+          occurredAt: new Date(),
+          actorType: attribution.actorType,
+          actorId: attribution.actorId,
+          orgId,
+          subjectKind: "integration_connection",
+          subjectId: connection.id,
+          requestId,
+          payload: { provider: connection.provider, template: templateId, reason: outcome.reason },
+        },
+        audit: {
+          id: generateUuid(),
+          category: "integrations",
+          description: `Credential mint failed (${templateId}): ${outcome.reason}`,
+        },
+      });
+    } catch {
+      // best-effort
+    }
+    return { ok: false, failure: { kind: "mint_failed", reason: outcome.reason } };
+  }
+
+  // Rotating parents (IH6 Supabase): the mint consumed the parent and the
+  // provider handed back a NEW one — re-envelope custody BEFORE the ledger
+  // insert so the rotation is never dropped on a later failure. Best-effort:
+  // a re-envelope failure logs nothing sensitive and does NOT fail the mint;
+  // a lost rotation surfaces as parent_grant_insufficient on the NEXT mint —
+  // an IH9 health concern, not a data-loss one.
+  const rotationKind = PARENT_CREDENTIAL_KINDS[connection.provider];
+  if (outcome.value.rotatedParentCredential && rotationKind && parent) {
+    try {
+      const encryption = await createEncryptionAdapter(env.SECRET_ENCRYPTION_KEY);
+      if (encryption) {
+        const envelope = await encryption.encrypt(outcome.value.rotatedParentCredential);
+        await hub.upsertProviderCredential({
+          id: generateUuid(),
+          connectionId: asUuid(connection.id),
+          kind: rotationKind,
+          ciphertext: JSON.stringify(envelope),
+          // Keep the custody row anchored to the same provider-side ref.
+          externalRef: parent.externalRef,
+        });
+      }
+    } catch {
+      // best-effort (see above)
+    }
+  }
+
+  // Ledger BEFORE reveal: an unledgered credential must never leave the
+  // platform. If the insert fails, best-effort revoke and refuse.
+  const inserted = await hub.insertMintedCredential({
+    id: mintId,
+    orgId,
+    connectionId: asUuid(connection.id),
+    provider: connection.provider,
+    template: templateId,
+    params: Object.keys(params).length > 0 ? params : null,
+    purpose: attribution.purpose,
+    requestedBy: attribution.requestedBy,
+    runId: attribution.runId ?? null,
+    jobId: attribution.jobId ?? null,
+    ttlSeconds,
+    providerRef: outcome.value.providerRef,
+    expiresAt: outcome.value.expiresAt,
+  });
+  if (!inserted.ok) {
+    if (outcome.value.providerRef) {
+      await broker.revokeCredential(outcome.value.providerRef, Date.now(), parent);
+    }
+    return { ok: false, failure: { kind: "service_error" } };
+  }
+
+  try {
+    const events = createEventsRepository(executor);
+    await events.appendEventWithAudit({
+      event: {
+        id: generateUuid(),
+        type: INTEGRATION_EVENT_TYPES.CREDENTIAL_ISSUED,
+        version: 1,
+        source: "integrations-worker",
+        occurredAt: new Date(),
+        actorType: attribution.actorType,
+        actorId: attribution.actorId,
+        orgId,
+        subjectKind: "integration_connection",
+        subjectId: connection.id,
+        requestId,
+        // template/params/ttl/actor/mint id — NEVER the credential.
+        payload: {
+          provider: connection.provider,
+          template: templateId,
+          params,
+          ttlSeconds,
+          mintId: mintedCredentialPublicId(mintId),
+          expiresAt: outcome.value.expiresAt.toISOString(),
+          purpose: attribution.purpose,
+          ...(attribution.runId ? { runId: attribution.runId } : {}),
+        },
+      },
+      audit: {
+        id: generateUuid(),
+        category: "integrations",
+        description: `Credential minted: ${connection.provider}/${templateId} (ttl ${ttlSeconds}s)`,
+      },
+    });
+  } catch {
+    // Audit emission is best-effort; the mint is already ledgered.
+  }
+
+  return { ok: true, credential: outcome.value.credential, mint: inserted.value };
+}
+
+/** Map a core failure onto the PUBLIC surface's shipped error shapes (IH4). */
+function publicMintFailureResponse(
+  failure: MintCoreFailure,
+  requestId: string,
+  templateId: string,
+  providerId: string,
+): Response {
+  switch (failure.kind) {
+    case "capability_not_supported":
       return errorResponse(
         "unsupported",
         "This connection's provider does not mint credentials",
@@ -255,60 +530,27 @@ export async function handleMintCredential(
         requestId,
         { reason: "capability_not_supported" },
       );
-    }
-
-    const template = broker.scopeTemplates().find((t) => t.id === templateId);
-    if (!template) {
+    case "template_unknown":
       return validationError(requestId, {
-        template: [`Unknown template "${templateId}" for provider ${connection.provider}`],
+        template: [`Unknown template "${templateId}" for provider ${providerId}`],
       });
-    }
-    const unknownParams = Object.keys(params).filter((k) => !template.params.includes(k));
-    if (unknownParams.length > 0) {
+    case "params_invalid":
       return validationError(requestId, {
-        params: [`Unknown params for ${templateId}: ${unknownParams.join(", ")}`],
+        params: [`Unknown params for ${templateId}: ${failure.unknownParams.join(", ")}`],
       });
-    }
-
-    // Per-org daily mint rate limit, enforced against the ledger itself.
-    const limit = await checkBillingEntitlement(
-      env.BILLING_WORKER!,
-      orgPublicId(orgId),
-      INTEGRATION_ENTITLEMENTS.CREDENTIAL_MINTS_PER_DAY_LIMIT,
-      requestId,
-    );
-    if (limit.kind === "service_error") {
-      return errorResponse("internal_error", "Service unavailable", 503, requestId);
-    }
-    if (
-      limit.decision.allowed &&
-      limit.decision.limitValue !== null &&
-      limit.decision.limitValue !== undefined
-    ) {
-      const since = new Date(Date.now() - 24 * 60 * 60 * 1000);
-      const count = await hub.countMintedCredentialsSince(orgId, since);
-      if (!count.ok) return errorResponse("internal_error", "Service unavailable", 503, requestId);
-      if (count.value >= limit.decision.limitValue) {
-        return errorResponse(
-          "precondition_failed",
-          "Credential mint limit reached for the current plan",
-          412,
-          requestId,
-          {
-            reason: "limit_reached",
-            entitlementKey: INTEGRATION_ENTITLEMENTS.CREDENTIAL_MINTS_PER_DAY_LIMIT,
-            limit: limit.decision.limitValue,
-          },
-        );
-      }
-    }
-
-    // TTL requested, clamped (D5): the ledger will record the ACTUAL expiry.
-    const ttlSeconds = Math.min(requestedTtl, template.maxTtlSeconds, MAX_TTL_SECONDS);
-
-    // Parent custody (IH5+): decrypted for this one call, never held.
-    const parent = await readParentCredential(env, executor, asUuid(connection.id), connection.provider);
-    if (parent === null) {
+    case "limit_reached":
+      return errorResponse(
+        "precondition_failed",
+        "Credential mint limit reached for the current plan",
+        412,
+        requestId,
+        {
+          reason: "limit_reached",
+          entitlementKey: INTEGRATION_ENTITLEMENTS.CREDENTIAL_MINTS_PER_DAY_LIMIT,
+          limit: failure.limit,
+        },
+      );
+    case "parent_credential_missing":
       return errorResponse(
         "precondition_failed",
         "The connection's parent credential is unavailable",
@@ -316,49 +558,8 @@ export async function handleMintCredential(
         requestId,
         { reason: "parent_credential_missing" },
       );
-    }
-
-    // The mint id is generated BEFORE the provider call so the minted
-    // credential carries its ledger identity provider-side (IH9 reconcile).
-    const mintId = generateUuid();
-    const nowMs = Date.now();
-    const outcome = await broker.mintCredential({
-      template: templateId,
-      params,
-      ttlSeconds,
-      nowMs,
-      ...(parent ? { parent } : {}),
-      mintRef: `orun/${orgPublicId(orgId)}/${templateId}/${mintedCredentialPublicId(mintId)}`,
-    });
-    if (!outcome.ok) {
-      // Best-effort failure event — surfaced in connection health.
-      try {
-        const events = createEventsRepository(executor);
-        await events.appendEventWithAudit({
-          event: {
-            id: generateUuid(),
-            type: INTEGRATION_EVENT_TYPES.CREDENTIAL_MINT_FAILED,
-            version: 1,
-            source: "integrations-worker",
-            occurredAt: new Date(),
-            actorType: actor.subjectType,
-            actorId: actor.subjectId,
-            orgId,
-            subjectKind: "integration_connection",
-            subjectId: connection.id,
-            requestId,
-            payload: { provider: connection.provider, template: templateId, reason: outcome.reason },
-          },
-          audit: {
-            id: generateUuid(),
-            category: "integrations",
-            description: `Credential mint failed (${templateId}): ${outcome.reason}`,
-          },
-        });
-      } catch {
-        // best-effort
-      }
-      switch (outcome.reason) {
+    case "mint_failed":
+      switch (failure.reason) {
         case "not_implemented":
           return errorResponse(
             "precondition_failed",
@@ -382,98 +583,297 @@ export async function handleMintCredential(
             reason: "provider_error",
           });
       }
-    }
-
-    // Rotating parents (IH6 Supabase): the mint consumed the parent and the
-    // provider handed back a NEW one — re-envelope custody BEFORE the ledger
-    // insert so the rotation is never dropped on a later failure. Best-effort:
-    // a re-envelope failure logs nothing sensitive and does NOT fail the mint;
-    // a lost rotation surfaces as parent_grant_insufficient on the NEXT mint —
-    // an IH9 health concern, not a data-loss one.
-    const rotationKind = PARENT_CREDENTIAL_KINDS[connection.provider];
-    if (outcome.value.rotatedParentCredential && rotationKind && parent) {
-      try {
-        const encryption = await createEncryptionAdapter(env.SECRET_ENCRYPTION_KEY);
-        if (encryption) {
-          const envelope = await encryption.encrypt(outcome.value.rotatedParentCredential);
-          await hub.upsertProviderCredential({
-            id: generateUuid(),
-            connectionId: asUuid(connection.id),
-            kind: rotationKind,
-            ciphertext: JSON.stringify(envelope),
-            // Keep the custody row anchored to the same provider-side ref.
-            externalRef: parent.externalRef,
-          });
-        }
-      } catch {
-        // best-effort (see above)
-      }
-    }
-
-    // Ledger BEFORE reveal: an unledgered credential must never leave the
-    // platform. If the insert fails, best-effort revoke and refuse.
-    const inserted = await hub.insertMintedCredential({
-      id: mintId,
-      orgId,
-      connectionId: asUuid(connection.id),
-      provider: connection.provider,
-      template: templateId,
-      params: Object.keys(params).length > 0 ? params : null,
-      purpose: "api",
-      requestedBy: actor.subjectId,
-      ttlSeconds,
-      providerRef: outcome.value.providerRef,
-      expiresAt: outcome.value.expiresAt,
-    });
-    if (!inserted.ok) {
-      if (outcome.value.providerRef) {
-        await broker.revokeCredential(outcome.value.providerRef, Date.now(), parent);
-      }
+    case "service_error":
       return errorResponse("internal_error", "Service unavailable", 503, requestId);
-    }
+  }
+}
 
-    try {
-      const events = createEventsRepository(executor);
-      await events.appendEventWithAudit({
-        event: {
-          id: generateUuid(),
-          type: INTEGRATION_EVENT_TYPES.CREDENTIAL_ISSUED,
-          version: 1,
-          source: "integrations-worker",
-          occurredAt: new Date(),
-          actorType: actor.subjectType,
-          actorId: actor.subjectId,
-          orgId,
-          subjectKind: "integration_connection",
-          subjectId: connection.id,
-          requestId,
-          // template/params/ttl/actor/mint id — NEVER the credential.
-          payload: {
-            provider: connection.provider,
-            template: templateId,
-            params,
-            ttlSeconds,
-            mintId: mintedCredentialPublicId(mintId),
-            expiresAt: outcome.value.expiresAt.toISOString(),
-          },
-        },
-        audit: {
-          id: generateUuid(),
-          category: "integrations",
-          description: `Credential minted: ${connection.provider}/${templateId} (ttl ${ttlSeconds}s)`,
-        },
+/** Map a core failure onto the INTERNAL surface's machine-readable envelope
+ *  (IH7): every failure carries `details.reason` so config-worker can map it
+ *  to its typed `binding_unavailable` without parsing messages. */
+function internalMintFailureResponse(failure: MintCoreFailure, requestId: string): Response {
+  switch (failure.kind) {
+    case "capability_not_supported":
+      return errorResponse("unsupported", "This connection's provider does not mint credentials", 400, requestId, {
+        reason: "capability_not_supported",
       });
-    } catch {
-      // Audit emission is best-effort; the mint is already ledgered.
+    case "template_unknown":
+      return errorResponse("validation_failed", "Unknown template", 422, requestId, {
+        reason: "template_unknown",
+      });
+    case "params_invalid":
+      return errorResponse("validation_failed", "Unknown template params", 422, requestId, {
+        reason: "params_invalid",
+        params: failure.unknownParams,
+      });
+    case "limit_reached":
+      return errorResponse("precondition_failed", "Credential mint limit reached", 412, requestId, {
+        reason: "limit_reached",
+        entitlementKey: INTEGRATION_ENTITLEMENTS.CREDENTIAL_MINTS_PER_DAY_LIMIT,
+        limit: failure.limit,
+      });
+    case "parent_credential_missing":
+      return errorResponse("precondition_failed", "The connection's parent credential is unavailable", 412, requestId, {
+        reason: "parent_credential_missing",
+      });
+    case "mint_failed":
+      switch (failure.reason) {
+        case "not_implemented":
+          return errorResponse("precondition_failed", "Minting is not live for this provider", 412, requestId, {
+            reason: "not_implemented",
+          });
+        case "template_unknown":
+          return errorResponse("validation_failed", "Unknown template", 422, requestId, {
+            reason: "template_unknown",
+          });
+        case "parent_grant_insufficient":
+          return errorResponse("precondition_failed", "The parent credential cannot cover this template", 412, requestId, {
+            reason: "parent_grant_insufficient",
+          });
+        default:
+          return errorResponse("bad_gateway", "The provider refused the mint", 502, requestId, {
+            reason: "provider_error",
+          });
+      }
+    case "service_error":
+      return errorResponse("internal_error", "Service unavailable", 503, requestId, {
+        reason: "unavailable",
+      });
+  }
+}
+
+// ── Internal brokered-secret surface (IH7, design §5.4) ─────
+//
+// Both routes are service-binding-only (router: x-internal-caller
+// "config-worker") — there is NO bearer/user policy here BY DESIGN: the dual
+// policy already ran where it belongs. At BIND time config-worker enforced
+// `secret.write` AND `organization.integration.credential.issue` ("you cannot
+// bind authority you could not mint"); at RESOLVE time state-worker enforced
+// bearer authz + a live job lease and config-worker enforced Layer-2 secret
+// policy. The broker still enforces everything that is ITS OWN: entitlement,
+// the per-org daily rate limit, template validation, custody, and
+// ledger-before-reveal — via the same executeMintCore as the public surface.
+
+const INTERNAL_CONNECTION_ID_RE = /^int_[0-9a-f]{32}$/;
+
+interface ParsedInternalBinding {
+  orgId: Uuid;
+  connectionUuid: Uuid;
+  templateId: string;
+  params: Record<string, unknown>;
+}
+
+function parseInternalBindingBody(body: Record<string, unknown>): ParsedInternalBinding | string {
+  const rawOrg = typeof body.orgId === "string" ? body.orgId : "";
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(rawOrg)) {
+    return "orgId must be a raw org UUID";
+  }
+  const rawConnection = typeof body.connectionId === "string" ? body.connectionId : "";
+  if (!INTERNAL_CONNECTION_ID_RE.test(rawConnection)) {
+    return "connectionId must be a public connection id (int_…)";
+  }
+  const connectionUuid = parseConnectionPublicId(rawConnection);
+  if (!connectionUuid) return "connectionId must be a public connection id (int_…)";
+  const templateId = typeof body.template === "string" ? body.template : "";
+  if (!TEMPLATE_ID_RE.test(templateId)) return "template must be a template id";
+  const params =
+    body.params && typeof body.params === "object" && !Array.isArray(body.params)
+      ? (body.params as Record<string, unknown>)
+      : {};
+  if (Object.keys(params).length > MAX_PARAM_KEYS) {
+    return `params may carry at most ${MAX_PARAM_KEYS} keys`;
+  }
+  return { orgId: asUuid(rawOrg), connectionUuid: asUuid(connectionUuid), templateId, params };
+}
+
+/**
+ * POST /internal/credentials/validate-binding — config-worker validates a
+ * brokered binding at secret-CREATE time and learns the provider for chain
+ * provenance. Read-only: no mint, no ledger row, no entitlement spend.
+ */
+export async function handleValidateBrokerBinding(
+  request: Request,
+  env: Env,
+  requestId: string,
+  deps?: CredentialBrokerDeps,
+): Promise<Response> {
+  let body: Record<string, unknown>;
+  try {
+    body = (await request.json()) as Record<string, unknown>;
+  } catch {
+    return errorResponse("bad_request", "Invalid JSON body", 400, requestId);
+  }
+  const parsed = parseInternalBindingBody(body);
+  if (typeof parsed === "string") {
+    return errorResponse("validation_failed", parsed, 422, requestId, { reason: "params_invalid" });
+  }
+
+  const executor = deps?.executor ?? createSqlExecutor(env.PLATFORM_DB!);
+  const owned = !deps?.executor;
+  try {
+    const repo = createIntegrationsRepository(executor);
+    const connection = await resolveUsableConnection(env, repo, parsed.orgId, parsed.connectionUuid, requestId);
+    if (!connection) {
+      return errorResponse("not_found", "Not found", 404, requestId, { reason: "connection_not_found" });
+    }
+    if (connection.status !== "active") {
+      return errorResponse("precondition_failed", "The connection is not active", 412, requestId, {
+        reason: "connection_inactive",
+      });
     }
 
-    const payload: MintCredentialResponse = {
-      credential: outcome.value.credential,
-      mint: toPublicMintedCredential(inserted.value),
+    const provider = resolveProvider(env, connection.provider, deps);
+    const broker = provider ? getCapability(provider, "broker") : null;
+    if (!broker) {
+      return errorResponse("unsupported", "This connection's provider does not mint credentials", 400, requestId, {
+        reason: "capability_not_supported",
+      });
+    }
+    const template = broker.scopeTemplates().find((t) => t.id === parsed.templateId);
+    if (!template) {
+      return errorResponse("validation_failed", "Unknown template", 422, requestId, {
+        reason: "template_unknown",
+      });
+    }
+    const unknownParams = Object.keys(parsed.params).filter((k) => !template.params.includes(k));
+    if (unknownParams.length > 0) {
+      return errorResponse("validation_failed", "Unknown template params", 422, requestId, {
+        reason: "params_invalid",
+        params: unknownParams,
+      });
+    }
+
+    const payload: ValidateBrokerBindingResponse = {
+      provider: connection.provider as ValidateBrokerBindingResponse["provider"],
+      maxTtlSeconds: Math.min(template.maxTtlSeconds, MAX_TTL_SECONDS),
+    };
+    return successResponse(payload, requestId);
+  } catch {
+    return errorResponse("internal_error", "Service unavailable", 503, requestId);
+  } finally {
+    if (owned && "dispose" in executor && typeof (executor as { dispose?: unknown }).dispose === "function") {
+      await (executor as unknown as { dispose: () => Promise<void> }).dispose();
+    }
+  }
+}
+
+/**
+ * POST /internal/credentials/mint — the brokered-secret mint (design §5.4).
+ * The minted material must be a SINGLE opaque value: it is injected into the
+ * resolve response's `secrets{}` map as-is, indistinguishable from a stored
+ * value to the runner.
+ */
+export async function handleInternalMintCredential(
+  request: Request,
+  env: Env,
+  requestId: string,
+  deps?: CredentialBrokerDeps,
+): Promise<Response> {
+  let body: Record<string, unknown>;
+  try {
+    body = (await request.json()) as Record<string, unknown>;
+  } catch {
+    return errorResponse("bad_request", "Invalid JSON body", 400, requestId);
+  }
+  if (body.purpose !== "secret_resolve") {
+    return errorResponse("validation_failed", 'purpose must be "secret_resolve"', 422, requestId, {
+      reason: "params_invalid",
+    });
+  }
+  const parsed = parseInternalBindingBody(body);
+  if (typeof parsed === "string") {
+    return errorResponse("validation_failed", parsed, 422, requestId, { reason: "params_invalid" });
+  }
+  const req = body as unknown as InternalMintCredentialRequest;
+  const requestedTtl =
+    typeof body.ttlSeconds === "number" && Number.isInteger(body.ttlSeconds) && body.ttlSeconds > 0
+      ? body.ttlSeconds
+      : DEFAULT_TTL_SECONDS;
+
+  const entitlement = await checkBillingEntitlement(
+    env.BILLING_WORKER!,
+    orgPublicId(parsed.orgId),
+    INTEGRATION_ENTITLEMENTS.CREDENTIAL_BROKER,
+    requestId,
+  );
+  if (entitlement.kind === "service_error") {
+    return errorResponse("internal_error", "Service unavailable", 503, requestId, { reason: "unavailable" });
+  }
+  if (!entitlement.decision.allowed) {
+    return errorResponse("precondition_failed", "The credential broker is not included in the plan", 412, requestId, {
+      reason: entitlement.decision.reason ?? "not_configured",
+      entitlementKey: INTEGRATION_ENTITLEMENTS.CREDENTIAL_BROKER,
+    });
+  }
+
+  const executor = deps?.executor ?? createSqlExecutor(env.PLATFORM_DB!);
+  const owned = !deps?.executor;
+  try {
+    const repo = createIntegrationsRepository(executor);
+    const connection = await resolveUsableConnection(env, repo, parsed.orgId, parsed.connectionUuid, requestId);
+    if (!connection) {
+      return errorResponse("not_found", "Not found", 404, requestId, { reason: "connection_not_found" });
+    }
+    if (connection.status !== "active") {
+      // The design's fail-closed rung: a revoked/suspended connection makes
+      // dependent keys resolve to a typed binding_unavailable upstream.
+      return errorResponse("precondition_failed", "The connection is not active", 412, requestId, {
+        reason: "connection_inactive",
+      });
+    }
+
+    const core = await executeMintCore(
+      env,
+      requestId,
+      executor,
+      parsed.orgId,
+      connection,
+      { templateId: parsed.templateId, params: parsed.params, requestedTtl },
+      {
+        purpose: "secret_resolve",
+        requestedBy: typeof req.requestedBy === "string" ? req.requestedBy : null,
+        runId: typeof req.runId === "string" ? req.runId : null,
+        jobId: typeof req.jobId === "string" ? req.jobId : null,
+        actorType: typeof req.requestedByType === "string" ? req.requestedByType : "system",
+        actorId: typeof req.requestedBy === "string" ? req.requestedBy : "config-worker",
+      },
+      deps,
+    );
+    if (!core.ok) {
+      return internalMintFailureResponse(core.failure, requestId);
+    }
+
+    // Exactly ONE opaque value may cross (both live brokers mint a single
+    // token). More/less is a provider-contract violation — revoke the orphan
+    // and refuse rather than guess which entry is the secret.
+    const values = Object.values(core.credential);
+    if (values.length !== 1 || typeof values[0] !== "string") {
+      const provider = resolveProvider(env, connection.provider, deps);
+      const broker = provider ? getCapability(provider, "broker") : null;
+      if (broker && core.mint.providerRef) {
+        try {
+          const parent = await readParentCredential(env, executor, asUuid(connection.id), connection.provider);
+          await broker.revokeCredential(core.mint.providerRef, Date.now(), parent ?? undefined);
+        } catch {
+          // TTL is the backstop.
+        }
+      }
+      await createIntegrationHubRepository(executor).markMintedCredential(asUuid(core.mint.id), {
+        revokeStatus: "orphaned",
+        revokedAt: new Date(),
+      });
+      return errorResponse("bad_gateway", "The provider returned an unusable credential shape", 502, requestId, {
+        reason: "provider_error",
+      });
+    }
+
+    const payload: InternalMintCredentialResponse = {
+      value: values[0],
+      mint: toPublicMintedCredential(core.mint),
     };
     return successResponse(payload, requestId, 201);
   } catch {
-    return errorResponse("internal_error", "Service unavailable", 503, requestId);
+    return errorResponse("internal_error", "Service unavailable", 503, requestId, { reason: "unavailable" });
   } finally {
     if (owned && "dispose" in executor && typeof (executor as { dispose?: unknown }).dispose === "function") {
       await (executor as unknown as { dispose: () => Promise<void> }).dispose();

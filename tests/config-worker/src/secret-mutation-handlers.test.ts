@@ -161,6 +161,10 @@ function fakeSecret(overrides?: Partial<SecretMetadata>): SecretMetadata {
     expiresAt: null,
     createdBy: TEST_USER_ID,
     personalOwner: null,
+    source: "static" as const,
+    bindingProvider: null,
+    bindingConnectionId: null,
+    bindingTemplate: null,
     overridable: true,
     lastUsedAt: null,
     createdAt: FIXED_NOW,
@@ -745,5 +749,341 @@ describe("config-worker router - secret mutations", () => {
     );
     const res = await route(req, {} as Env);
     expect(res.status).toBe(401);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════
+// Brokered secrets (saas-integration-hub IH7)
+// ═══════════════════════════════════════════════════════════
+
+const CONN_PUBLIC = "int_" + "cd".repeat(16);
+const CONN_UUID = "cdcdcdcd-cdcd-cdcd-cdcd-cdcdcdcdcdcd";
+const BROKERED_POINTER = JSON.stringify({
+  v: "brokered",
+  provider: { connectionId: CONN_PUBLIC, template: "workers-deploy", params: { accountId: "acc-1" } },
+});
+
+function brokeredSecret(overrides?: Partial<SecretMetadata>): SecretMetadata {
+  return fakeSecret({
+    secretKey: "CF_TOKEN",
+    source: "brokered",
+    bindingProvider: "cloudflare",
+    bindingConnectionId: CONN_UUID,
+    bindingTemplate: "workers-deploy",
+    ...overrides,
+  });
+}
+
+const allowedUnlimited = () =>
+  Promise.resolve({
+    kind: "decision" as const,
+    decision: {
+      allowed: true as const,
+      orgId: TEST_ORG_PUBLIC,
+      entitlementKey: "limit.brokered_secrets",
+      valueType: "quantity" as const,
+      limitValue: null,
+      source: "plan" as const,
+      subscriptionId: null,
+    },
+  });
+
+const validationOk = () =>
+  Promise.resolve({ ok: true as const, provider: "cloudflare", maxTtlSeconds: 900 });
+
+const throwingAdapter = {
+  encrypt: () => {
+    throw new Error("the encryption adapter must not run for a brokered create");
+  },
+};
+
+describe("handleCreateSecret — brokered binding (IH7)", () => {
+  it("persists the binding pointer + facts, skips encryption, and emits SECRET_BINDING_CREATED", async () => {
+    let captured: CreateSecretMetadataInput | undefined;
+    const eventsRepo = fakeEventsRepo();
+    const res = await handleCreateSecret(
+      makeJsonRequest({
+        secretKey: "CF_TOKEN",
+        binding: { connectionId: CONN_PUBLIC, template: "workers-deploy", params: { accountId: "acc-1" } },
+      }),
+      FAKE_ENV, "req_b1", ACTOR, ORG_SCOPE,
+      {
+        repo: {
+          createSecretMetadata: (input: CreateSecretMetadataInput) => {
+            captured = input;
+            return Promise.resolve({ ok: true as const, value: brokeredSecret() });
+          },
+        },
+        eventsRepo,
+        encryptionAdapter: throwingAdapter,
+        checkEntitlement: allowedUnlimited,
+        validateBinding: validationOk,
+        generateId: () => FIXED_ID,
+        now: () => FIXED_NOW,
+      },
+    );
+    expect(res.status).toBe(201);
+    // The persisted row is a brokered head: pointer envelope, binding facts.
+    expect(captured?.source).toBe("brokered");
+    expect(captured?.bindingProvider).toBe("cloudflare");
+    expect(captured?.bindingConnectionId).toBe(CONN_UUID);
+    expect(captured?.bindingTemplate).toBe("workers-deploy");
+    expect(captured?.ciphertextEnvelope).toBe(BROKERED_POINTER);
+    // Public projection carries source + display-only binding, never params.
+    const body = (await res.json()) as { data: { secret: { source?: string; binding?: { provider: string; connectionId: string; template: string } } } };
+    expect(body.data.secret.source).toBe("brokered");
+    expect(body.data.secret.binding).toEqual({ provider: "cloudflare", connectionId: CONN_PUBLIC, template: "workers-deploy" });
+    // Both events: the existing secrets.updated AND the binding announcement.
+    expect(eventsRepo.calls).toHaveLength(2);
+    expect(eventsRepo.calls[0]!.event.type).toBe("secrets.updated");
+    const bindingEvt = eventsRepo.calls[1]!;
+    expect(bindingEvt.event.type).toBe("integration.secret_binding.created");
+    expect(bindingEvt.event.payload).toEqual({
+      key: "CF_TOKEN",
+      scope: "organization",
+      provider: "cloudflare",
+      connectionId: CONN_PUBLIC,
+      template: "workers-deploy",
+    });
+    expect(JSON.stringify(bindingEvt)).not.toContain("acc-1"); // NEVER params
+    expect(bindingEvt.audit.description).toContain("CF_TOKEN");
+    expect(bindingEvt.audit.description).toContain("cloudflare/workers-deploy");
+  });
+
+  it("omits the params key from the pointer when params are empty", async () => {
+    let captured: CreateSecretMetadataInput | undefined;
+    const res = await handleCreateSecret(
+      makeJsonRequest({ secretKey: "CF_TOKEN", binding: { connectionId: CONN_PUBLIC, template: "workers-deploy", params: {} } }),
+      FAKE_ENV, "req_b2", ACTOR, ORG_SCOPE,
+      {
+        repo: {
+          createSecretMetadata: (input: CreateSecretMetadataInput) => {
+            captured = input;
+            return Promise.resolve({ ok: true as const, value: brokeredSecret() });
+          },
+        },
+        checkEntitlement: allowedUnlimited,
+        validateBinding: validationOk,
+        generateId: () => FIXED_ID,
+        now: () => FIXED_NOW,
+      },
+    );
+    expect(res.status).toBe(201);
+    expect(captured?.ciphertextEnvelope).toBe(
+      JSON.stringify({ v: "brokered", provider: { connectionId: CONN_PUBLIC, template: "workers-deploy" } }),
+    );
+  });
+
+  it("rejects binding + value as mutually exclusive (422)", async () => {
+    const res = await handleCreateSecret(
+      makeJsonRequest({ secretKey: "CF_TOKEN", value: "v", binding: { connectionId: CONN_PUBLIC, template: "workers-deploy" } }),
+      FAKE_ENV, "req_b3", ACTOR, ORG_SCOPE,
+      { repo: { createSecretMetadata: () => unusedConfigFailure<SecretMetadata>() } },
+    );
+    expect(res.status).toBe(422);
+    const body = (await res.json()) as JsonResp;
+    expect(body.error.details?.fields?.binding).toBeDefined();
+  });
+
+  it("rejects binding + personal (400: a personal secret cannot be brokered)", async () => {
+    const res = await handleCreateSecret(
+      makeJsonRequest({ secretKey: "CF_TOKEN", personal: true, binding: { connectionId: CONN_PUBLIC, template: "workers-deploy" } }),
+      FAKE_ENV, "req_b4", ACTOR, ENV_SCOPE,
+      { repo: { createSecretMetadata: () => unusedConfigFailure<SecretMetadata>() } },
+    );
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as JsonResp;
+    expect(body.error.message).toBe("A personal secret cannot be brokered");
+  });
+
+  it("rejects malformed binding shapes (connectionId, template, params) with 422", async () => {
+    const badBindings = [
+      "not-an-object",
+      { connectionId: "bogus", template: "workers-deploy" },
+      { connectionId: CONN_PUBLIC, template: "Not_A_Template!" },
+      { connectionId: CONN_PUBLIC, template: "workers-deploy", params: ["not", "an", "object"] },
+      { connectionId: CONN_PUBLIC, template: "workers-deploy", params: Object.fromEntries(Array.from({ length: 11 }, (_, i) => [`k${i}`, i])) },
+    ];
+    for (const binding of badBindings) {
+      const res = await handleCreateSecret(
+        makeJsonRequest({ secretKey: "CF_TOKEN", binding }),
+        FAKE_ENV, "req_b5", ACTOR, ORG_SCOPE,
+        { repo: { createSecretMetadata: () => unusedConfigFailure<SecretMetadata>() } },
+      );
+      expect(res.status).toBe(422);
+      const body = (await res.json()) as JsonResp;
+      expect(body.error.details?.fields?.binding).toBeDefined();
+    }
+  });
+
+  it("returns 412 limit_reached when live brokered bindings meet the plan limit", async () => {
+    const res = await handleCreateSecret(
+      makeJsonRequest({ secretKey: "CF_TOKEN", binding: { connectionId: CONN_PUBLIC, template: "workers-deploy" } }),
+      FAKE_ENV, "req_b6", ACTOR, ORG_SCOPE,
+      {
+        repo: {
+          createSecretMetadata: () => unusedConfigFailure<SecretMetadata>(),
+          countBrokeredSecrets: () => Promise.resolve({ ok: true as const, value: 1 }),
+        },
+        checkEntitlement: () =>
+          Promise.resolve({
+            kind: "decision" as const,
+            decision: {
+              allowed: true as const,
+              orgId: TEST_ORG_PUBLIC,
+              entitlementKey: "limit.brokered_secrets",
+              valueType: "quantity" as const,
+              limitValue: 1,
+              source: "plan" as const,
+              subscriptionId: null,
+            },
+          }),
+        validateBinding: validationOk,
+      },
+    );
+    expect(res.status).toBe(412);
+    const body = (await res.json()) as { error: { code: string; details: { reason: string; entitlementKey: string; limit: number } } };
+    expect(body.error.code).toBe("precondition_failed");
+    expect(body.error.details.reason).toBe("limit_reached");
+    expect(body.error.details.entitlementKey).toBe("limit.brokered_secrets");
+    expect(body.error.details.limit).toBe(1);
+  });
+
+  it("returns 412 with the billing reason when the entitlement is denied", async () => {
+    const res = await handleCreateSecret(
+      makeJsonRequest({ secretKey: "CF_TOKEN", binding: { connectionId: CONN_PUBLIC, template: "workers-deploy" } }),
+      FAKE_ENV, "req_b7", ACTOR, ORG_SCOPE,
+      {
+        repo: { createSecretMetadata: () => unusedConfigFailure<SecretMetadata>() },
+        checkEntitlement: () =>
+          Promise.resolve({
+            kind: "decision" as const,
+            decision: {
+              allowed: false as const,
+              orgId: TEST_ORG_PUBLIC,
+              entitlementKey: "limit.brokered_secrets",
+              reason: "disabled" as const,
+            },
+          }),
+        validateBinding: validationOk,
+      },
+    );
+    expect(res.status).toBe(412);
+    const body = (await res.json()) as { error: { details: { reason: string; entitlementKey: string } } };
+    expect(body.error.details.reason).toBe("disabled");
+    expect(body.error.details.entitlementKey).toBe("limit.brokered_secrets");
+  });
+
+  it("returns 503 on a billing service error and when the entitlement seam is missing", async () => {
+    const serviceError = await handleCreateSecret(
+      makeJsonRequest({ secretKey: "CF_TOKEN", binding: { connectionId: CONN_PUBLIC, template: "workers-deploy" } }),
+      FAKE_ENV, "req_b8", ACTOR, ORG_SCOPE,
+      {
+        repo: { createSecretMetadata: () => unusedConfigFailure<SecretMetadata>() },
+        checkEntitlement: () => Promise.resolve({ kind: "service_error" as const }),
+        validateBinding: validationOk,
+      },
+    );
+    expect(serviceError.status).toBe(503);
+
+    // Fail closed: a brokered create with no entitlement seam cannot proceed.
+    const noSeam = await handleCreateSecret(
+      makeJsonRequest({ secretKey: "CF_TOKEN", binding: { connectionId: CONN_PUBLIC, template: "workers-deploy" } }),
+      FAKE_ENV, "req_b9", ACTOR, ORG_SCOPE,
+      { repo: { createSecretMetadata: () => unusedConfigFailure<SecretMetadata>() } },
+    );
+    expect(noSeam.status).toBe(503);
+  });
+
+  it("maps validate-binding failures: connection_not_found → 404, connection_inactive → 412, template_unknown → 422", async () => {
+    const cases: Array<{ reason: string; status: number }> = [
+      { reason: "connection_not_found", status: 404 },
+      { reason: "connection_inactive", status: 412 },
+      { reason: "template_unknown", status: 422 },
+      { reason: "params_invalid", status: 422 },
+      { reason: "capability_not_supported", status: 422 },
+    ];
+    for (const c of cases) {
+      const res = await handleCreateSecret(
+        makeJsonRequest({ secretKey: "CF_TOKEN", binding: { connectionId: CONN_PUBLIC, template: "workers-deploy" } }),
+        FAKE_ENV, "req_b10", ACTOR, ORG_SCOPE,
+        {
+          repo: { createSecretMetadata: () => unusedConfigFailure<SecretMetadata>() },
+          checkEntitlement: allowedUnlimited,
+          validateBinding: () => Promise.resolve({ ok: false as const, status: c.status, reason: c.reason }),
+        },
+      );
+      expect(res.status).toBe(c.status);
+    }
+  });
+});
+
+describe("handleRotateSecret — brokered guard (IH7)", () => {
+  it("rejects rotating a brokered head with 400 (re-bind = delete + recreate)", async () => {
+    const res = await handleRotateSecret(
+      makeJsonRequest({ value: "new-value" }), FAKE_ENV, "req_b11", ACTOR, ORG_SCOPE, SECRET_UUID,
+      {
+        repo: {
+          getSecretMetadata: () => Promise.resolve({ ok: true as const, value: brokeredSecret() }),
+          rotateSecretMetadata: () => unusedConfigFailure<SecretMetadata>(),
+        },
+        eventsRepo: fakeEventsRepo(),
+        // A value rotation encrypts before the head is even loaded — the fake
+        // adapter lets the request reach the brokered guard.
+        encryptionAdapter: { encrypt: () => Promise.resolve({ alg: "AES-256-GCM" as const, v: 1 as const, iv: "aaa", ct: "bbb" }) },
+      },
+    );
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { error: { code: string; message: string; details: { reason: string } } };
+    expect(body.error.code).toBe("unsupported");
+    expect(body.error.message).toContain("re-bind");
+    expect(body.error.details.reason).toBe("brokered");
+  });
+});
+
+describe("handleRevokeSecret — brokered binding removal (IH7)", () => {
+  it("emits SECRET_BINDING_REMOVED alongside secrets.updated when revoking a brokered head", async () => {
+    const eventsRepo = fakeEventsRepo();
+    const res = await handleRevokeSecret(
+      makeDeleteRequest(), FAKE_ENV, "req_b12", ACTOR, ORG_SCOPE, SECRET_UUID,
+      {
+        repo: {
+          getSecretMetadata: () => Promise.resolve({ ok: true as const, value: brokeredSecret() }),
+          revokeSecretMetadata: () => Promise.resolve({ ok: true as const, value: brokeredSecret({ status: "revoked" }) }),
+        },
+        eventsRepo,
+        generateId: () => FIXED_ID,
+        now: () => FIXED_NOW,
+      },
+    );
+    expect(res.status).toBe(200);
+    expect(eventsRepo.calls).toHaveLength(2);
+    expect(eventsRepo.calls[0]!.event.type).toBe("secrets.updated");
+    const removal = eventsRepo.calls[1]!;
+    expect(removal.event.type).toBe("integration.secret_binding.removed");
+    expect(removal.event.payload).toEqual({
+      key: "CF_TOKEN",
+      provider: "cloudflare",
+      connectionId: CONN_PUBLIC,
+      template: "workers-deploy",
+    });
+  });
+
+  it("does NOT emit a binding-removal event for a static head", async () => {
+    const eventsRepo = fakeEventsRepo();
+    await handleRevokeSecret(
+      makeDeleteRequest(), FAKE_ENV, "req_b13", ACTOR, ORG_SCOPE, SECRET_UUID,
+      {
+        repo: {
+          getSecretMetadata: () => Promise.resolve({ ok: true as const, value: fakeSecret() }),
+          revokeSecretMetadata: () => Promise.resolve({ ok: true as const, value: fakeSecret({ status: "revoked" }) }),
+        },
+        eventsRepo,
+        generateId: () => FIXED_ID,
+        now: () => FIXED_NOW,
+      },
+    );
+    expect(eventsRepo.calls).toHaveLength(1);
+    expect(eventsRepo.calls[0]!.event.type).toBe("secrets.updated");
   });
 });

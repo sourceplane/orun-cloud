@@ -55,6 +55,10 @@ function fakeSecret(over?: Partial<SecretMetadata>): SecretMetadata {
     expiresAt: null,
     createdBy: "abababab-abab-abab-abab-abababababab",
     personalOwner: null,
+    source: "static" as const,
+    bindingProvider: null,
+    bindingConnectionId: null,
+    bindingTemplate: null,
     overridable: true,
     lastUsedAt: null,
     createdAt: new Date("2026-06-01T00:00:00Z"),
@@ -298,5 +302,43 @@ describe("config-worker router — SM5 syncs routes + RBAC actions", () => {
     // a DB), proving the syncs match did not swallow the {id} catch-all.
     const res = await route(routerRequest(`/v1/organizations/${ORG_PUBLIC}/config/secrets/sec_cccccccccccccccccccccccccccccccc`, "DELETE"), {} as Env);
     expect(res.status).toBe(503);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════
+// Brokered guard (saas-integration-hub IH7): materialization excluded in v1
+// ═══════════════════════════════════════════════════════════
+
+describe("handleRecordSecretSync — brokered guard (IH7)", () => {
+  it("rejects recording a sync for a brokered secret with a typed 400", async () => {
+    let recorded = 0;
+    const res = await handleRecordSecretSync(
+      jsonRequest({ secretKey: "DATABASE_URL", version: 7, target: "cloudflare-worker", entityRef: "Resource/worker-api-prod", runId: "01JRUNULID" }),
+      FAKE_ENV, "req_br1", ACTOR, ENV_SCOPE,
+      {
+        repo: {
+          getSecretMetadataByScopeKey: async () => ({
+            ok: true,
+            value: fakeSecret({
+              source: "brokered",
+              bindingProvider: "cloudflare",
+              bindingConnectionId: "cdcdcdcd-cdcd-cdcd-cdcd-cdcdcdcdcdcd",
+              bindingTemplate: "workers-deploy",
+            }),
+          }),
+          recordSecretSync: async () => {
+            recorded++;
+            return { ok: true, value: fakeSync() };
+          },
+        },
+        eventsRepo: { appendEventWithAudit: async () => okEvent },
+        generateId: () => "id",
+      },
+    );
+    expect(res.status).toBe(400);
+    const json = (await res.json()) as { error: { code: string; details: { reason: string } } };
+    expect(json.error.code).toBe("unsupported");
+    expect(json.error.details.reason).toBe("brokered_not_materializable");
+    expect(recorded).toBe(0);
   });
 });

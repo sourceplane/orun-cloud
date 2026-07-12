@@ -1,7 +1,9 @@
 import type { Env } from "../env.js";
 import type { ActorContext } from "../router.js";
-import type { ConfigRepository, Scope } from "@saas/db/config";
-import type { EventsRepository } from "@saas/db/events";
+import type { ConfigRepository, Scope, SecretMetadata } from "@saas/db/config";
+import type { EventsRepository, AppendEventWithAuditInput } from "@saas/db/events";
+import { INTEGRATION_EVENT_TYPES } from "@saas/contracts/integrations";
+import { connectionPublicId } from "../ids.js";
 import { createConfigRepository } from "@saas/db/config";
 import { createEventsRepository } from "@saas/db/events";
 import { createSqlExecutor } from "@saas/db/hyperdrive";
@@ -142,6 +144,17 @@ export async function handleRevokeSecret(
           throw new Error("Failed to append event");
         }
 
+        // IH7: revoking a brokered head removes its binding — announce it on
+        // the integrations event stream (binding facts only, never a value).
+        if (secret.source === "brokered") {
+          const bindingEventResult = await txEventsRepo.appendEventWithAudit(
+            bindingRemovedEvent(genId, now, actor, secret, secretId, requestId),
+          );
+          if (!bindingEventResult.ok) {
+            throw new Error("Failed to append event");
+          }
+        }
+
         return { result };
       });
 
@@ -211,6 +224,17 @@ export async function handleRevokeSecret(
         if (!eventResult.ok) {
           throw new Error("Failed to append event");
         }
+
+        // IH7: brokered revokes also announce the binding removal (deps path
+        // mirrors the transactional path — only when an eventsRepo is present).
+        if (existing.value.source === "brokered") {
+          const bindingEventResult = await deps.eventsRepo.appendEventWithAudit(
+            bindingRemovedEvent(genId, now, actor, existing.value, secretId, requestId),
+          );
+          if (!bindingEventResult.ok) {
+            throw new Error("Failed to append event");
+          }
+        }
       }
 
       return successResponse({ secret: toPublicSecretMetadata(result.value) }, requestId);
@@ -222,4 +246,50 @@ export async function handleRevokeSecret(
   } finally {
     if (executor) await executor.dispose();
   }
+}
+
+/**
+ * The `integration.secret_binding.removed` event + audit row (IH7). Payload
+ * carries binding facts only — key, provider, public connection id, template.
+ * NEVER params, NEVER a value.
+ */
+function bindingRemovedEvent(
+  genId: () => string,
+  now: Date,
+  actor: ActorContext,
+  secret: SecretMetadata,
+  secretId: string,
+  requestId: string,
+): AppendEventWithAuditInput {
+  return {
+    event: {
+      id: genId(),
+      type: INTEGRATION_EVENT_TYPES.SECRET_BINDING_REMOVED,
+      version: 1,
+      source: "config-worker",
+      occurredAt: now,
+      actorType: actor.subjectType,
+      actorId: actor.subjectId,
+      orgId: secret.orgId,
+      projectId: secret.projectId,
+      environmentId: secret.environmentId,
+      subjectKind: "secret",
+      subjectId: secretId,
+      subjectName: secret.secretKey,
+      requestId,
+      payload: {
+        key: secret.secretKey,
+        provider: secret.bindingProvider,
+        connectionId: secret.bindingConnectionId ? connectionPublicId(secret.bindingConnectionId) : null,
+        template: secret.bindingTemplate,
+      },
+    },
+    audit: {
+      id: genId(),
+      category: "config",
+      description: `Brokered secret binding removed: ${secret.secretKey} (${secret.bindingProvider ?? "unknown"}/${secret.bindingTemplate ?? "unknown"})`,
+      projectId: secret.projectId,
+      environmentId: secret.environmentId,
+    },
+  };
 }

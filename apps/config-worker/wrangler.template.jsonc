@@ -26,7 +26,19 @@
     "dev": {
       "vars": {
         "ENVIRONMENT": "dev"
-      }
+      },
+      "services": [
+        {
+          // IH7 brokered secrets: validate-binding at create + mint-at-resolve.
+          "binding": "INTEGRATIONS_WORKER",
+          "service": "integrations-worker-dev"
+        },
+        {
+          // IH7: limit.brokered_secrets entitlement gate on brokered creation.
+          "binding": "BILLING_WORKER",
+          "service": "billing-worker-dev"
+        }
+      ]
     },
     "stage": {
       "workers_dev": false,
@@ -49,6 +61,16 @@
         {
           "binding": "POLICY_WORKER",
           "service": "policy-worker-stage"
+        },
+        {
+          // IH7 brokered secrets: validate-binding at create + mint-at-resolve.
+          "binding": "INTEGRATIONS_WORKER",
+          "service": "integrations-worker-stage"
+        },
+        {
+          // IH7: limit.brokered_secrets entitlement gate on brokered creation.
+          "binding": "BILLING_WORKER",
+          "service": "billing-worker-stage"
         }
       ]
     },
@@ -73,6 +95,16 @@
         {
           "binding": "POLICY_WORKER",
           "service": "policy-worker-prod"
+        },
+        {
+          // IH7 brokered secrets: validate-binding at create + mint-at-resolve.
+          "binding": "INTEGRATIONS_WORKER",
+          "service": "integrations-worker-prod"
+        },
+        {
+          // IH7: limit.brokered_secrets entitlement gate on brokered creation.
+          "binding": "BILLING_WORKER",
+          "service": "billing-worker-prod"
         }
       ]
     }
