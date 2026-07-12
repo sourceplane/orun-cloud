@@ -85,6 +85,9 @@ describe("api-edge agents facade", () => {
     it("matches the attention fold (saas-agents-fleet AF5)", () => {
       expect(isAgentsRoute("/v1/organizations/org_abc/agents/attention")).toBe(true);
     });
+    it("matches the tree-transitive cancel (saas-agents-fleet AF4)", () => {
+      expect(isAgentsRoute("/v1/organizations/org_abc/agents/sessions/as_1/cancel")).toBe(true);
+    });
     it("matches the head-facing relay attach + input routes (AL7)", () => {
       expect(isAgentsRoute("/v1/organizations/org_abc/agents/sessions/as_1/attach")).toBe(true);
       expect(isAgentsRoute("/v1/organizations/org_abc/agents/sessions/as_1/input")).toBe(true);

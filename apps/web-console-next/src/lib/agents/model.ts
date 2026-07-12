@@ -52,6 +52,43 @@ export function workRefForItem(orgId: string, itemKey: string): string {
   return `work://${orgId}/${itemKey}`;
 }
 
+/** A fleet row with its tree placement (saas-agents-fleet AF4 §2.1). */
+export interface FleetRow<S> {
+  session: S;
+  /** 0 for roots; children indent one gutter step per level. */
+  depth: number;
+}
+
+/**
+ * orderFleetRows groups delegation trees: every session appears exactly once,
+ * children directly under their parent (input order preserved otherwise —
+ * the caller sorts roots). A child whose parent is not in the input (e.g.
+ * filtered into another section) renders as a root — never dropped.
+ */
+export function orderFleetRows<
+  S extends { id: string; parentSessionId?: string },
+>(sessions: S[]): FleetRow<S>[] {
+  const present = new Set(sessions.map((s) => s.id));
+  const children = new Map<string, S[]>();
+  const roots: S[] = [];
+  for (const s of sessions) {
+    if (s.parentSessionId && present.has(s.parentSessionId)) {
+      const list = children.get(s.parentSessionId) ?? [];
+      list.push(s);
+      children.set(s.parentSessionId, list);
+    } else {
+      roots.push(s);
+    }
+  }
+  const out: FleetRow<S>[] = [];
+  const walk = (s: S, depth: number) => {
+    out.push({ session: s, depth });
+    for (const child of children.get(s.id) ?? []) walk(child, depth + 1);
+  };
+  for (const root of roots) walk(root, 0);
+  return out;
+}
+
 /** The orun agent types shipped in the base image (agents/*.md). A profile
  * binds one of these to a service principal (saas-agents §5). */
 export const AGENT_TYPES = [

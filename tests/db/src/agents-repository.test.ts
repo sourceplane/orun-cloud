@@ -273,3 +273,74 @@ describe("provider connections (AG12)", () => {
     ).rejects.toThrow(/not found/);
   });
 });
+
+describe("delegation tree (saas-agents-fleet AF4)", () => {
+  it("a child inherits the parent's root and depth+1; a root is its own root", async () => {
+    const r = repo();
+    const p = await seedProfile(r);
+    const root = await r.createSession(scope, {
+      profileId: p.publicId,
+      runKind: "design",
+      spawnedBy: "usr_1",
+    });
+    expect(root.rootSessionId).toBe(root.publicId);
+    expect(root.depth).toBe(0);
+    expect(root.parentSessionId).toBeUndefined();
+
+    const child = await r.createSession(scope, {
+      profileId: p.publicId,
+      runKind: "implementation",
+      spawnedBy: root.publicId,
+      parentSessionId: root.publicId,
+      sandbox: { appliedCeiling: { tools: ["bash"] } },
+    });
+    expect(child.parentSessionId).toBe(root.publicId);
+    expect(child.rootSessionId).toBe(root.publicId);
+    expect(child.depth).toBe(1);
+    expect(child.sandbox.appliedCeiling).toEqual({ tools: ["bash"] });
+
+    const grand = await r.createSession(scope, {
+      profileId: p.publicId,
+      runKind: "fix",
+      spawnedBy: child.publicId,
+      parentSessionId: child.publicId,
+    });
+    expect(grand.rootSessionId).toBe(root.publicId);
+    expect(grand.depth).toBe(2);
+  });
+
+  it("refuses a child of a missing parent", async () => {
+    const r = repo();
+    const p = await seedProfile(r);
+    await expect(
+      r.createSession(scope, {
+        profileId: p.publicId,
+        runKind: "fix",
+        spawnedBy: "usr_1",
+        parentSessionId: "as_missing",
+      }),
+    ).rejects.toThrow(AgentsError);
+  });
+
+  it("listOrphanedSessions finds live children of terminal parents past the cutoff, cross-org", async () => {
+    const r = new MemoryAgentsRepository({ now: () => "2026-07-12T09:00:00.000Z" });
+    const p = await seedProfile(r);
+    const root = await r.createSession(scope, { profileId: p.publicId, runKind: "design", spawnedBy: "u" });
+    const child = await r.createSession(scope, {
+      profileId: p.publicId,
+      runKind: "implementation",
+      spawnedBy: root.publicId,
+      parentSessionId: root.publicId,
+    });
+    await r.advanceSession(scope, { publicId: root.publicId, to: "failed" });
+
+    // Cutoff before the parent's end: nothing yet.
+    expect(await r.listOrphanedSessions({ parentEndedCutoff: "2026-07-12T08:00:00.000Z", limit: 10 })).toEqual([]);
+    // Cutoff after: the live child surfaces.
+    const orphans = await r.listOrphanedSessions({ parentEndedCutoff: "2026-07-12T10:00:00.000Z", limit: 10 });
+    expect(orphans.map((s) => s.publicId)).toEqual([child.publicId]);
+    // A terminal child never surfaces.
+    await r.advanceSession(scope, { publicId: child.publicId, to: "failed" });
+    expect(await r.listOrphanedSessions({ parentEndedCutoff: "2026-07-12T10:00:00.000Z", limit: 10 })).toEqual([]);
+  });
+});

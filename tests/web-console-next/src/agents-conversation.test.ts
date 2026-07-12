@@ -90,3 +90,21 @@ describe("foldConversation", () => {
     expect(c.items).toHaveLength(1);
   });
 });
+
+describe("delegation events (saas-agents-fleet AF4)", () => {
+  it("folds the parent's child_* story into note lines with the child id as detail", () => {
+    const c = foldConversation([
+      { seq: 0, kind: "child_spawned", payload: { sessionId: "as_kid1", goal: "draft option A" } },
+      { seq: 1, kind: "child_completed", payload: { sessionId: "as_kid1", verdict: "pass", summary: "34 tests green" } },
+      { seq: 2, kind: "child_failed", payload: { sessionId: "as_kid2", reason: "sandbox expired" } },
+    ]);
+    expect(c.items.map((i) => i.kind)).toEqual(["note", "note", "note"]);
+    expect(c.items[0]!.text).toBe("Spawned as_kid1 — draft option A");
+    expect(c.items[1]!.text).toContain("verdict: pass");
+    expect(c.items[1]!.detail).toBe("as_kid1");
+    expect(c.items[2]!.text).toContain("sandbox expired");
+    // Child lifecycle never flips the parent terminal — infrastructure
+    // narration, not a state change.
+    expect(c.terminal).toBe(false);
+  });
+});

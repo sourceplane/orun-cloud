@@ -31,6 +31,7 @@ import type {
   CreateProfileInput,
   CreateSessionInput,
   ListLapsedSessionsInput,
+  ListOrphanedSessionsInput,
   SetAutonomyInput,
   SetConnectionStatusInput,
   WorkspaceScope,
@@ -81,9 +82,10 @@ function mapProfile(row: Row): AgentProfile {
 }
 
 function mapSession(row: Row): AgentSession {
+  const publicId = String(row.public_id);
   const s: AgentSession = {
     id: String(row.id),
-    publicId: String(row.public_id),
+    publicId,
     orgId: String(row.org_id),
     profileId: String(row.profile_id),
     runKind: String(row.run_kind) as RunKind,
@@ -91,7 +93,13 @@ function mapSession(row: Row): AgentSession {
     sandbox: parseJson<Record<string, unknown>>(row.sandbox, {}),
     spawnedBy: String(row.spawned_by),
     createdAt: toIso(row.created_at),
+    // Tree columns (AF4) are public-id keyed; pre-750 rows read as their own
+    // roots at depth 0 (the migration backfills, this is the belt).
+    rootSessionId: optStr(row.root_session_id) ?? publicId,
+    depth: typeof row.depth === "number" ? row.depth : Number(row.depth ?? 0),
   };
+  const parentSessionId = optStr(row.parent_session_id);
+  if (parentSessionId !== undefined) s.parentSessionId = parentSessionId;
   const workRef = optStr(row.work_ref);
   if (workRef !== undefined) s.workRef = workRef;
   const taskKey = optStr(row.task_key);
@@ -184,19 +192,43 @@ export function createAgentsRepository(sql: TransactionalSqlExecutor): AgentsRep
           throw new AgentsError("agent_profile_not_found", `profile ${input.profileId} not found`);
         }
         const profileId = String((p.rows[0] as Row).id);
+        // Delegation (AF4): resolve the parent inside the transaction so the
+        // child's root/depth can never race a parent delete.
+        let parent: { rootSessionId: string; depth: number } | null = null;
+        if (input.parentSessionId !== undefined) {
+          const pr = await tx.execute(
+            `SELECT public_id, root_session_id, depth FROM agents.agent_sessions
+             WHERE org_id = $1 AND public_id = $2`,
+            [scope.orgId, input.parentSessionId],
+          );
+          if (!pr.rows[0]) {
+            throw new AgentsError("agent_session_not_found", `parent ${input.parentSessionId} not found`);
+          }
+          const row = pr.rows[0] as Row;
+          parent = {
+            rootSessionId: optStr(row.root_session_id) ?? String(row.public_id),
+            depth: Number(row.depth ?? 0),
+          };
+        }
+        const publicId = newPublicId("as_");
         const res = await tx.execute(
           `INSERT INTO agents.agent_sessions
-             (public_id, org_id, profile_id, run_kind, state, spawned_by, work_ref, task_key)
-           VALUES ($1,$2,$3,$4,'requested',$5,$6,$7)
+             (public_id, org_id, profile_id, run_kind, state, spawned_by, work_ref, task_key,
+              sandbox, parent_session_id, root_session_id, depth)
+           VALUES ($1,$2,$3,$4,'requested',$5,$6,$7,$8::jsonb,$9,$10,$11)
            RETURNING *`,
           [
-            newPublicId("as_"),
+            publicId,
             scope.orgId,
             profileId,
             input.runKind,
             input.spawnedBy,
             input.workRef ?? null,
             input.taskKey ?? null,
+            JSON.stringify(input.sandbox ?? {}),
+            input.parentSessionId ?? null,
+            parent ? parent.rootSessionId : publicId,
+            parent ? parent.depth + 1 : 0,
           ],
         );
         return mapSession(res.rows[0] as Row);
@@ -261,6 +293,22 @@ export function createAgentsRepository(sql: TransactionalSqlExecutor): AgentsRep
          ORDER BY created_at
          LIMIT $3`,
         [input.leaseCutoff, input.provisioningCutoff, input.limit],
+      );
+      return res.rows.map((r) => mapSession(r as Row));
+    },
+
+    async listOrphanedSessions(input: ListOrphanedSessionsInput): Promise<AgentSession[]> {
+      // Deliberately CROSS-ORG like the lease sweep: live children whose
+      // parent went terminal past grace — the tree converges (AF4 §3.2).
+      const res = await sql.execute(
+        `SELECT c.* FROM agents.agent_sessions c
+           JOIN agents.agent_sessions p ON p.public_id = c.parent_session_id
+         WHERE c.state NOT IN ('completed','failed','canceled','expired')
+           AND p.state IN ('completed','failed','canceled','expired')
+           AND COALESCE(p.ended_at, p.created_at) < $1
+         ORDER BY c.created_at
+         LIMIT $2`,
+        [input.parentEndedCutoff, input.limit],
       );
       return res.rows.map((r) => mapSession(r as Row));
     },

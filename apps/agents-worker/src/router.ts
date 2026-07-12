@@ -24,6 +24,7 @@ import {
 } from "./handlers/runtime.js";
 import { handleGetAutonomy, handleSetAutonomy } from "./handlers/autonomy.js";
 import { handleGetAttention } from "./handlers/attention.js";
+import { handleCancelSession } from "./handlers/tree.js";
 import { handleDispatch } from "./handlers/dispatch.js";
 import {
   handleCreateConnection,
@@ -76,6 +77,8 @@ const SESSIONS_RE = /^\/v1\/organizations\/([^/]+)\/agents\/sessions$/;
 const SESSION_RE = /^\/v1\/organizations\/([^/]+)\/agents\/sessions\/([^/]+)$/;
 const SESSION_EVENTS_RE = /^\/v1\/organizations\/([^/]+)\/agents\/sessions\/([^/]+)\/events$/;
 const SESSION_PROVISION_RE = /^\/v1\/organizations\/([^/]+)\/agents\/sessions\/([^/]+)\/provision$/;
+// Tree-transitive kill (saas-agents-fleet AF4): cancel the node + its subtree.
+const SESSION_CANCEL_RE = /^\/v1\/organizations\/([^/]+)\/agents\/sessions\/([^/]+)\/cancel$/;
 const SESSION_HEARTBEAT_RE = /^\/v1\/organizations\/([^/]+)\/agents\/sessions\/([^/]+)\/heartbeat$/;
 const SESSION_TOKEN_RE = /^\/v1\/organizations\/([^/]+)\/agents\/sessions\/([^/]+)\/token$/;
 // Head-facing relay routes (saas-agents-live AL6): SSE feed + input.
@@ -108,6 +111,7 @@ export async function route(request: Request, env: Env, injectedDeps?: AgentsDep
       SESSION_RE.test(url.pathname) ||
       SESSION_EVENTS_RE.test(url.pathname) ||
       SESSION_PROVISION_RE.test(url.pathname) ||
+      SESSION_CANCEL_RE.test(url.pathname) ||
       SESSION_HEARTBEAT_RE.test(url.pathname) ||
       SESSION_TOKEN_RE.test(url.pathname) ||
       SESSION_ATTACH_RE.test(url.pathname) ||
@@ -215,6 +219,15 @@ async function dispatch(
     if (!orgId) return notFound(requestId, url.pathname);
     const sessionId = m[2]!;
     if (request.method === "POST") return handleProvisionSession(deps, orgId, sessionId, actor, requestId);
+    return methodNotAllowed(requestId);
+  }
+
+  m = SESSION_CANCEL_RE.exec(url.pathname);
+  if (m) {
+    const orgId = parseOrgPublicId(m[1]!);
+    if (!orgId) return notFound(requestId, url.pathname);
+    const sessionId = m[2]!;
+    if (request.method === "POST") return handleCancelSession(deps, orgId, sessionId, actor, requestId);
     return methodNotAllowed(requestId);
   }
 

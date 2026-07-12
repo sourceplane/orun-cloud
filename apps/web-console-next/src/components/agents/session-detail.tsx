@@ -73,6 +73,15 @@ export function SessionDetail({
   const events = useApiQuery(qk.orgAgentSessionEvents(orgId, sessionId), () =>
     wrap(async () => client.agents.listSessionEvents(orgId, sessionId)),
   );
+  // The children strip (AF4): direct children of this session, live state
+  // from the tree columns (the parent's own sealed child_* events carry the
+  // narrative in the conversation).
+  const children = useApiQuery(qk.orgAgentSessionChildren(orgId, sessionId), () =>
+    wrap(async () => {
+      const all = await client.agents.listSessions(orgId);
+      return all.filter((x) => x.parentSessionId === sessionId);
+    }),
+  );
 
   // Poll while live; stop on terminal states. (The SSE live tail over the DO
   // relay replaces the poll when the api-edge attach stream lands — AL8.)
@@ -130,6 +139,25 @@ export function SessionDetail({
     [sendFrame],
   );
 
+  // Tree-transitive kill (AF4): cancel this session AND its subtree,
+  // children first; the sweep collects any straggler boxes.
+  const [killing, setKilling] = React.useState(false);
+  const reloadChildren = children.reload;
+  const onKill = React.useCallback(async () => {
+    setKilling(true);
+    setInputError(null);
+    try {
+      await client.agents.cancelSession(orgId, sessionId);
+      reloadSession();
+      reloadEvents();
+      reloadChildren();
+    } catch (err) {
+      setInputError(err instanceof Error ? err.message : "Failed to cancel");
+    } finally {
+      setKilling(false);
+    }
+  }, [client, orgId, sessionId, reloadSession, reloadEvents, reloadChildren]);
+
   if (session.loading && !session.data) {
     return (
       <Screen>
@@ -163,7 +191,23 @@ export function SessionDetail({
             </Pill>
           </span>
         }
-        description={`${s.runKind} run · spawned by ${s.spawnedBy}`}
+        description={`${s.runKind} run · spawned by ${s.spawnedBy}${s.parentSessionId ? ` · child of ${s.parentSessionId}` : ""}`}
+        actions={
+          live ? (
+            <button
+              type="button"
+              onClick={() => void onKill()}
+              disabled={killing}
+              className="rounded-lg border border-destructive/50 px-3 py-1.5 text-[13px] text-destructive hover:bg-destructive/10 disabled:opacity-50"
+            >
+              {killing
+                ? "Stopping…"
+                : (children.data?.length ?? 0) > 0
+                  ? "Kill tree"
+                  : "Kill session"}
+            </button>
+          ) : undefined
+        }
       />
 
       {s.failureReason ? (
@@ -198,6 +242,36 @@ export function SessionDetail({
           cheap and pasteable — `orun agent attach` works from anywhere your
           identity works, the desktop-app "continue in terminal" move. */}
       {live ? <ContinueInTerminal sessionId={s.id} /> : null}
+
+      {/* The children strip (AF4 §2.2): the delegation tree at a glance. The
+          conversation carries the parent's own sealed child_* narrative;
+          these rows are the live infrastructure facts. */}
+      {(children.data?.length ?? 0) > 0 ? (
+        <>
+          <Kicker className="mb-2.5 mt-8">
+            Children · {children.data!.length}
+          </Kicker>
+          <div className="overflow-hidden rounded-xl border border-border/60">
+            {children.data!.map((c) => (
+              <Link
+                key={c.id}
+                href={`/orgs/${orgSlug}/agents/${c.id}`}
+                className="flex items-center gap-2 border-t border-border/50 px-4 py-2.5 first:border-t-0 hover:bg-muted"
+              >
+                <span className="text-[12px] text-muted-foreground/60">├</span>
+                <span className="font-mono text-[12.5px]">{c.id}</span>
+                <Pill tone={sessionTone(c.state)} dot live={c.state === "running"}>
+                  {sessionLabel(c.state)}
+                </Pill>
+                <Pill tone="neutral">{c.runKind}</Pill>
+                {c.failureReason ? (
+                  <span className="truncate text-[12px] text-muted-foreground">{c.failureReason}</span>
+                ) : null}
+              </Link>
+            ))}
+          </div>
+        </>
+      ) : null}
 
       <Kicker className="mb-2.5 mt-8">Conversation{live ? " · live" : ""}</Kicker>
       {events.loading && !events.data ? (

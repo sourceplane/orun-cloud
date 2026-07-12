@@ -15,6 +15,9 @@ import type { AgentSession, ProviderConnection } from "@saas/db/agents";
 const LEASE_GRACE_MS = 5 * 60 * 1000;
 /** A provisioning session that has not heartbeat within this never booted. */
 const PROVISIONING_STALL_MS = 30 * 60 * 1000;
+/** An orphan (live child of a terminal parent, AF4 §3.2) gets this grace —
+ * enough for the runtime's own graceful shutdown to land first. */
+const ORPHAN_GRACE_MS = 5 * 60 * 1000;
 const SWEEP_BATCH = 50;
 
 /** The sweep's synthetic actor — custody resolve is audit-stamped with it. */
@@ -25,6 +28,8 @@ export interface SweepSummary {
   reclaimed: number;
   destroyed: number;
   destroyErrors: number;
+  /** Orphans converged this tick (AF4). */
+  orphaned: number;
 }
 
 function pickDaytona(rows: ProviderConnection[]): ProviderConnection | null {
@@ -34,12 +39,19 @@ function pickDaytona(rows: ProviderConnection[]): ProviderConnection | null {
   return rows.length === 1 ? rows[0]! : (rows.find((c) => c.name === "default") ?? null);
 }
 
-async function destroySandbox(deps: AgentsDeps, session: AgentSession, requestId: string): Promise<boolean> {
+/** Best-effort sandbox destroy on the workspace's own provider account —
+ * shared by the sweep and the AF4 tree kill (over-destroy on ambiguity). */
+export async function destroySandbox(
+  deps: AgentsDeps,
+  session: AgentSession,
+  requestId: string,
+  actor: ActorContext = SWEEP_ACTOR,
+): Promise<boolean> {
   const sandboxId = typeof session.sandbox.id === "string" ? session.sandbox.id : null;
   if (!sandboxId || !deps.providerKeys || !deps.sandboxes) return false;
   const connection = pickDaytona(await deps.repo.listConnections({ orgId: session.orgId }, "daytona"));
   if (!connection) return false;
-  const apiKey = await deps.providerKeys.resolve(session.orgId, connection.secretRef, SWEEP_ACTOR, requestId);
+  const apiKey = await deps.providerKeys.resolve(session.orgId, connection.secretRef, actor, requestId);
   if (!apiKey) return false;
   const provider = deps.sandboxes("daytona", apiKey, connection.config);
   if (!provider) return false;
@@ -59,7 +71,7 @@ export async function sweepLapsedSessions(
     limit: SWEEP_BATCH,
   });
 
-  const summary: SweepSummary = { examined: lapsed.length, reclaimed: 0, destroyed: 0, destroyErrors: 0 };
+  const summary: SweepSummary = { examined: lapsed.length, reclaimed: 0, destroyed: 0, destroyErrors: 0, orphaned: 0 };
   for (const session of lapsed) {
     try {
       if (await destroySandbox(deps, session, requestId)) summary.destroyed++;
@@ -81,6 +93,36 @@ export async function sweepLapsedSessions(
     } catch {
       // A racing transition (the runtime completed in the same tick) is fine —
       // the session reached a terminal state either way.
+    }
+  }
+
+  // The orphan pass (AF4 §3.2): a tree cannot outlive its root's intent. A
+  // live child whose parent went terminal past grace is failed + destroyed —
+  // the same over-destroy posture, the tree converges within two ticks.
+  const orphans = await deps.repo.listOrphanedSessions({
+    parentEndedCutoff: new Date(t - ORPHAN_GRACE_MS).toISOString(),
+    limit: SWEEP_BATCH,
+  });
+  summary.examined += orphans.length;
+  for (const session of orphans) {
+    try {
+      if (await destroySandbox(deps, session, requestId)) summary.destroyed++;
+    } catch {
+      summary.destroyErrors++;
+    }
+    try {
+      await deps.repo.advanceSession(
+        { orgId: session.orgId },
+        {
+          publicId: session.publicId,
+          // suspended has no failed edge; canceled is its honest terminal.
+          to: session.state === "suspended" ? "canceled" : "failed",
+          sandbox: { ...session.sandbox, error: "orphaned" },
+        },
+      );
+      summary.orphaned++;
+    } catch {
+      // Racing transition — terminal either way.
     }
   }
   return summary;

@@ -45,6 +45,10 @@ export function toPublicSession(s: DbSession): AgentSession {
   if (s.snapshotId !== undefined) out.snapshotId = s.snapshotId;
   if (s.startedAt !== undefined) out.startedAt = s.startedAt;
   if (s.endedAt !== undefined) out.endedAt = s.endedAt;
+  // Delegation tree (AF4) — public-id keyed, safe to surface verbatim.
+  if (s.parentSessionId !== undefined) out.parentSessionId = s.parentSessionId;
+  out.rootSessionId = s.rootSessionId;
+  out.depth = s.depth;
   return out;
 }
 

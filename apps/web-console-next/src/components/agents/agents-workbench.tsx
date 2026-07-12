@@ -26,7 +26,7 @@ import { Button } from "@/components/ui/button";
 import { wrap } from "@/lib/api";
 import { qk, useApiQuery } from "@/lib/query";
 import { useSession } from "@/lib/session";
-import { sessionLabel, sessionTone } from "@/lib/agents/model";
+import { orderFleetRows, sessionLabel, sessionTone } from "@/lib/agents/model";
 import { compactAge } from "@/lib/agents/attention";
 import { AttentionQueue } from "@/components/agents/attention-queue";
 import { ProviderConnections } from "@/components/agents/provider-connections";
@@ -92,8 +92,14 @@ export function AgentsWorkbench({ orgId, orgSlug }: { orgId: string; orgSlug: st
             />
           ) : (
             <ListCard>
-              {active.map((s) => (
-                <SessionRow key={s.id} session={s} orgSlug={orgSlug} profiles={data!.profiles} />
+              {orderFleetRows(active).map((row) => (
+                <SessionRow
+                  key={row.session.id}
+                  session={row.session}
+                  treeDepth={row.depth}
+                  orgSlug={orgSlug}
+                  profiles={data!.profiles}
+                />
               ))}
             </ListCard>
           )}
@@ -102,8 +108,14 @@ export function AgentsWorkbench({ orgId, orgSlug }: { orgId: string; orgSlug: st
             <>
               <Kicker className="mb-2.5 mt-8">Recent</Kicker>
               <ListCard>
-                {recent.map((s) => (
-                  <SessionRow key={s.id} session={s} orgSlug={orgSlug} profiles={data!.profiles} />
+                {orderFleetRows(recent).map((row) => (
+                  <SessionRow
+                    key={row.session.id}
+                    session={row.session}
+                    treeDepth={row.depth}
+                    orgSlug={orgSlug}
+                    profiles={data!.profiles}
+                  />
                 ))}
               </ListCard>
             </>
@@ -164,10 +176,13 @@ export function AgentsWorkbench({ orgId, orgSlug }: { orgId: string; orgSlug: st
 
 function SessionRow({
   session,
+  treeDepth = 0,
   orgSlug,
   profiles,
 }: {
   session: AgentSession;
+  /** Delegation indent (AF4): children nest one gutter step per level. */
+  treeDepth?: number;
   orgSlug: string;
   profiles: AgentProfile[];
 }) {
@@ -175,8 +190,9 @@ function SessionRow({
   const live = !isTerminalSessionState(session.state);
   return (
     <ListRow href={`/orgs/${orgSlug}/agents/${session.id}`} chevron>
-      <div className="min-w-0 flex-1">
+      <div className="min-w-0 flex-1" style={treeDepth > 0 ? { paddingLeft: treeDepth * 16 } : undefined}>
         <div className="flex items-center gap-2">
+          {treeDepth > 0 ? <span className="text-[12px] text-muted-foreground/60">├</span> : null}
           <span className="truncate font-mono text-[12.5px]">{session.id}</span>
           <Pill tone={sessionTone(session.state)} dot live={session.state === "running"}>
             {sessionLabel(session.state)}

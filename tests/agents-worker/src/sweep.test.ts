@@ -138,7 +138,7 @@ describe("lease sweep (AG6 §4.3)", () => {
     const id = await f.make({ state: "running", lease: "2026-07-09T11:00:00Z", sandboxId: "sb_lapsed" });
     const summary = await sweepLapsedSessions(f.deps, "req_t", () => NOW);
 
-    expect(summary).toEqual({ examined: 1, reclaimed: 1, destroyed: 1, destroyErrors: 0 });
+    expect(summary).toEqual({ examined: 1, reclaimed: 1, destroyed: 1, destroyErrors: 0, orphaned: 0 });
     expect(f.destroyed).toEqual(["sb_lapsed"]);
     const s = await f.repo.getSession({ orgId: ORG_UUID }, id);
     expect(s?.state).toBe("failed");
@@ -176,7 +176,7 @@ describe("lease sweep (AG6 §4.3)", () => {
     const f = fixture({ failDestroy: true });
     const id = await f.make({ state: "running", lease: "2026-07-09T11:00:00Z", sandboxId: "sb_gone" });
     const summary = await sweepLapsedSessions(f.deps, "req_t", () => NOW);
-    expect(summary).toEqual({ examined: 1, reclaimed: 1, destroyed: 0, destroyErrors: 1 });
+    expect(summary).toEqual({ examined: 1, reclaimed: 1, destroyed: 0, destroyErrors: 1, orphaned: 0 });
     expect((await f.repo.getSession({ orgId: ORG_UUID }, id))?.state).toBe("failed");
   });
 
