@@ -167,6 +167,9 @@ export const EVENT_CATALOG: Readonly<Record<string, CatalogEntry>> = Object.from
   }),
   entry({ type: "state.job.failed", version: 1, category: "activity", severity: "error", title: "Job {subject.id} failed", audit: true }),
   entry({ type: "state.gc.collected", version: 1, category: "system", severity: "info", title: "Garbage collection completed", audit: true }),
+  // Work plane (state-worker; orun-work-v3 PM1 mention fan-out — ES2 rules
+  // deliver). Registered here to keep the emit-line totality guard green.
+  entry({ type: "work.task.mentioned", version: 1, category: "activity", severity: "info", title: "@{payload.handle} mentioned on {payload.taskKey}", audit: false }),
 
   // --- scm.* — normalized source-control events (integrations-worker) ------
   entry({
@@ -203,6 +206,18 @@ export const EVENT_CATALOG: Readonly<Record<string, CatalogEntry>> = Object.from
   entry({ type: "integration.token.issued", version: 1, category: "security", severity: "info", title: "Scoped integration token issued", audit: true }),
   entry({ type: "integration.checkrun.posted", version: 1, category: "activity", severity: "info", title: "Check run posted to {payload.repoFullName}", audit: true }),
   entry({ type: "integration.commit_status.posted", version: 1, category: "activity", severity: "info", title: "Commit status posted to {payload.repoFullName}", audit: true }),
+  // Credential broker + brokered secret bindings (saas-integration-hub IH4/IH7).
+  entry({ type: "integration.credential.issued", version: 1, category: "security", severity: "info", title: "Scoped credential minted ({payload.provider} · {payload.template})", audit: true }),
+  entry({ type: "integration.credential.revoked", version: 1, category: "security", severity: "notice", title: "Minted credential revoked ({payload.provider})", audit: true }),
+  entry({ type: "integration.credential.mint_failed", version: 1, category: "security", severity: "warning", title: "Credential mint failed ({payload.provider} · {payload.template})", audit: true }),
+  entry({ type: "integration.secret_binding.created", version: 1, category: "security", severity: "notice", title: "Secret bound to integration ({payload.provider} · {payload.template})", audit: true }),
+  entry({ type: "integration.secret_binding.removed", version: 1, category: "security", severity: "notice", title: "Brokered secret binding removed", audit: true }),
+
+  // --- messaging.* — normalized messaging events (integrations-worker, IH3) --
+  entry({ type: "messaging.command.invoked", version: 1, category: "activity", severity: "info", title: "Slash command invoked ({payload.command})", audit: true }),
+  entry({ type: "messaging.action.invoked", version: 1, category: "activity", severity: "info", title: "Notification action invoked ({payload.actionId})", audit: true }),
+  entry({ type: "messaging.channel.renamed", version: 1, category: "activity", severity: "info", title: "Linked channel renamed", audit: false }),
+  entry({ type: "messaging.channel.archived", version: 1, category: "activity", severity: "warning", title: "Linked channel archived", audit: true }),
 
   // --- webhooks (webhooks-worker) --------------------------------------------
   // Delivery lifecycle types are event_log-only (no audit projection) and are

@@ -39,7 +39,8 @@ export async function handleGithubWebhookIngest(
   }
   // No webhook secret for this environment yet (D1) → nothing can verify.
   const configured = getConfiguredProvider(env, "github", deps?.fetchImpl);
-  if (!configured) {
+  const inbound = configured?.provider.inbound;
+  if (!configured || !inbound) {
     return errorResponse("internal_error", "Ingress not configured", 503, requestId);
   }
 
@@ -68,9 +69,10 @@ export async function handleGithubWebhookIngest(
   }
 
   // Verify BEFORE parse, immediate 401 without detail on failure.
-  const signatureOk = await configured.provider.verifyInboundSignature(
+  const signatureOk = await inbound.verifySignature(
     rawBody,
-    request.headers.get("x-hub-signature-256"),
+    { "x-hub-signature-256": request.headers.get("x-hub-signature-256") },
+    Date.now(),
   );
   if (!signatureOk) {
     return errorResponse("unauthenticated", "Unauthorized", 401, requestId);

@@ -32,3 +32,27 @@ export type {
 } from "./types.js";
 
 export { createIntegrationsRepository } from "./repository.js";
+
+// Integration-hub substrate (saas-integration-hub IH0): custody, mint ledger,
+// per-provider facts. Additive module beside the IG repository.
+export type {
+  ProviderCredentialKind,
+  ProviderCredential,
+  UpsertProviderCredentialInput,
+  MintPurpose,
+  MintRevokeStatus,
+  MintedCredential,
+  InsertMintedCredentialInput,
+  MarkMintedCredentialInput,
+  ListMintedCredentialsQuery,
+  SlackWorkspace,
+  UpsertSlackWorkspaceInput,
+  CloudflareTokenStatus,
+  CloudflareAccount,
+  UpsertCloudflareAccountInput,
+  SupabaseOrg,
+  UpsertSupabaseOrgInput,
+  IntegrationHubRepository,
+} from "./hub.js";
+
+export { createIntegrationHubRepository } from "./hub.js";

@@ -660,5 +660,14 @@ export const manifest: MigrationManifest = {
       description:
         "Repair: the coordination-log kind CHECK becomes ONE constraint again. 560 created work.events with an inline unnamed CHECK (auto-named events_kind_check); the 660 and 700 vocabulary regenerations dropped the WRONG name (work_events_kind_check, a silent no-op) before adding it, so production enforced BOTH the original 9-kind v2 CHECK and the 27-kind v4 CHECK — every kind added since v2 (doc_edited, prioritized, …, milestone_edited, approved, …) was rejected at insert. Found by the WH6 dogfood import's milestone phase (the first real v3+/v4 write through the Postgres path). Drops both names, re-adds the canonical 27-kind work_events_kind_check — enforcement plumbing only, the vocabulary is exactly 700's: still no delivery-lifecycle-write kind (WP-3), observation CHECK untouched (V4-1). Idempotent as a unit.",
     },
+    {
+      id: "730_integration_hub_foundation",
+      context: "integrations",
+      path: "730_integration_hub_foundation/up.sql",
+      checksum:
+        "081229f8e288270e05a3fb172490f3a3c3c76cbbee9bc252c592e29b1f3ddf4f",
+      description:
+        "Integration-hub substrate (saas-integration-hub IH0), dormant: provider_credentials (parent-credential custody — Slack bot / Cloudflare parent / Supabase refresh tokens as write-only AES-256-GCM envelopes, one row per connection+kind, zeroized on revoke), minted_credentials (the credential-broker ledger — template/params/purpose/actor/run attribution/TTL/provider_ref, NEVER values; keyset per org+connection, partial live-mint index for the IH9 orphan sweep), and the per-provider facts tables slack_workspaces (team_id UNIQUE — the Slack tenancy keystone, the installation_id rule), cloudflare_accounts (verified parent grant + token health), supabase_orgs (org facts + cached project refs). No live behavior. Additive + idempotent.",
+    },
   ],
 };

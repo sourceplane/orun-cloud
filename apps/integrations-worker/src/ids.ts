@@ -65,3 +65,13 @@ export function parseInboundDeliveryPublicId(publicId: string): string | null {
   if (!publicId.startsWith("igd_")) return null;
   return hexToUuid(publicId.slice(4));
 }
+
+/** Minted-credential ledger entries (saas-integration-hub IH0). */
+export function mintedCredentialPublicId(uuid: string): string {
+  return `mint_${uuidToHex(uuid)}`;
+}
+
+export function parseMintedCredentialPublicId(publicId: string): string | null {
+  if (!publicId.startsWith("mint_")) return null;
+  return hexToUuid(publicId.slice(5));
+}

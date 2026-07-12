@@ -9,7 +9,6 @@ import type { ConfigResult, Scope, SecretPolicyRecord } from "@saas/db/config";
 import type { AppendEventWithAuditInput, EventsResult, StoredEvent, StoredAuditEntry } from "@saas/db/events";
 
 const ORG = "11111111-1111-1111-1111-111111111111";
-const PRJ = "22222222-2222-2222-2222-222222222222";
 const ACTOR: ActorContext = { subjectId: "usr_aabbccdd", subjectType: "user" };
 const ENV = {} as Env;
 const ORG_SCOPE: Scope = { kind: "organization", orgId: ORG };

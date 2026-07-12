@@ -70,7 +70,7 @@ async function recordOrphan(
     events?: unknown[] | null;
   } = {};
   const configured = getConfiguredProvider(env, "github", fetchImpl);
-  if (configured) {
+  if (configured?.provider.completeConnect) {
     const fetched = await configured.provider.completeConnect({
       installationId,
       nowMs: Date.now(),
@@ -157,7 +157,8 @@ export async function handleGithubSetupCallback(
     }
 
     const configured = getConfiguredProvider(env, "github", deps?.fetchImpl);
-    if (!configured) {
+    const completeConnect = configured?.provider.completeConnect;
+    if (!configured || !completeConnect) {
       return popupPage(
         "error",
         "Not configured",
@@ -167,7 +168,7 @@ export async function handleGithubSetupCallback(
 
     // Verify the installation with GitHub as the App — never trust the
     // redirect's claims beyond the id we look up.
-    const facts = await configured.provider.completeConnect({
+    const facts = await completeConnect({
       installationId,
       nowMs: Date.now(),
     });

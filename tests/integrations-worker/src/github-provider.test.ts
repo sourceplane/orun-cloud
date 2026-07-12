@@ -56,7 +56,7 @@ function credentials(pem = "irrelevant"): ProviderCredentials {
 describe("GitHub provider adapter", () => {
   it("builds the App install URL with the signed state attached", () => {
     const provider = createGithubProvider(credentials());
-    const url = new URL(provider.buildInstallUrl({ state: "abc.def" }));
+    const url = new URL(provider.buildInstallUrl!({ state: "abc.def" }));
     expect(url.origin + url.pathname).toBe(
       "https://github.com/apps/sourceplane-stage/installations/new",
     );
@@ -69,14 +69,14 @@ describe("GitHub provider adapter", () => {
     const raw = new TextEncoder().encode(body).buffer as ArrayBuffer;
     const goodSig = `sha256=${await hmacHex(WEBHOOK_SECRET, body)}`;
 
-    expect(await provider.verifyInboundSignature(raw, goodSig)).toBe(true);
-    expect(await provider.verifyInboundSignature(raw, goodSig.toUpperCase())).toBe(false);
-    expect(await provider.verifyInboundSignature(raw, null)).toBe(false);
-    expect(await provider.verifyInboundSignature(raw, "sha256=deadbeef")).toBe(false);
+    expect(await provider.verifyInboundSignature!(raw, goodSig)).toBe(true);
+    expect(await provider.verifyInboundSignature!(raw, goodSig.toUpperCase())).toBe(false);
+    expect(await provider.verifyInboundSignature!(raw, null)).toBe(false);
+    expect(await provider.verifyInboundSignature!(raw, "sha256=deadbeef")).toBe(false);
     expect(
-      await provider.verifyInboundSignature(raw, `sha256=${await hmacHex("wrong", body)}`),
+      await provider.verifyInboundSignature!(raw, `sha256=${await hmacHex("wrong", body)}`),
     ).toBe(false);
-    expect(await provider.verifyInboundSignature(raw, goodSig.replace("sha256=", "sha1="))).toBe(
+    expect(await provider.verifyInboundSignature!(raw, goodSig.replace("sha256=", "sha1="))).toBe(
       false,
     );
   });
@@ -98,7 +98,7 @@ describe("GitHub provider adapter", () => {
       );
     };
     const provider = createGithubProvider(credentials(pem), fetchImpl);
-    const facts = await provider.completeConnect({ installationId: 9912345, nowMs: Date.now() });
+    const facts = await provider.completeConnect!({ installationId: 9912345, nowMs: Date.now() });
     expect(facts).not.toBeNull();
     expect(facts!.installationId).toBe(9912345);
     expect(facts!.accountLogin).toBe("acme");
@@ -109,7 +109,7 @@ describe("GitHub provider adapter", () => {
 
   it("completeConnect fails closed on a malformed private key", async () => {
     const provider = createGithubProvider(credentials("-----BEGIN RSA PRIVATE KEY-----\nnotakey\n-----END RSA PRIVATE KEY-----"));
-    const facts = await provider.completeConnect({ installationId: 1, nowMs: Date.now() });
+    const facts = await provider.completeConnect!({ installationId: 1, nowMs: Date.now() });
     expect(facts).toBeNull();
   });
 });

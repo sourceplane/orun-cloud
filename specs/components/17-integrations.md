@@ -1,6 +1,6 @@
 # Integrations
 
-Status: In progress — IG0 foundation landed dormant (schema, contracts, repo layer, worker skeleton; no live behavior). Owning work epic: specs/epics/saas-integrations/ + specs/roadmap.md.
+Status: In progress — IG0 foundation landed dormant (schema, contracts, repo layer, worker skeleton; no live behavior); IG1–IG4/IG9 code-complete (see `specs/epics/saas-integrations/IMPLEMENTATION-STATUS.md`); IH0 landed the capability seam + hub substrate dormant. Owning work epics: specs/epics/saas-integrations/ (IG) + specs/epics/saas-integration-hub/ (IH) + specs/roadmap.md.
 
 Primary monorepo targets:
 - `apps/integrations-worker`
@@ -24,6 +24,17 @@ on the canonical event log, project ↔ repository links with branch →
 environment mapping, and the short-lived installation-token broker. The
 control plane holds the only durable provider credentials; tenant products
 never do.
+
+The provider seam is **capability-typed** (saas-integration-hub IH0): one
+core connect/lifecycle contract every adapter implements, plus optional
+capabilities — `inbound` (verified ingress → inbox → normalized events),
+`scm` (repo links), `messaging` (channel discovery; delivery stays behind
+the notifications ChannelProvider seam), and `credential-broker`
+(short-lived scoped credential minting against named, versioned scope
+templates, ledgered and revocable). A provider's connect flow starts per its
+`connectKind`: `install` (GitHub App), `oauth` (Slack, Supabase), or `token`
+(Cloudflare parent-token paste). Asking an adapter for a capability it lacks
+is a typed `capability_not_supported` error, never a 500.
 
 ## Scope
 
@@ -81,10 +92,15 @@ never do.
 - `integration.revoked`
 - `integration.repo_selection_changed`
 - `integration.token.issued`
+- `integration.credential.issued|revoked|mint_failed` (IH4 broker)
+- `integration.secret_binding.created|removed` (IH7 brokered secrets)
 - `scm.push`, `scm.pull_request.opened|updated|merged|closed`,
   `scm.check.completed`, `scm.release.published`,
   `scm.branch.created|deleted`, `scm.tag.created`,
   `scm.repo.linked`, `scm.repo.unlinked`
+- `messaging.command.invoked`, `messaging.action.invoked`,
+  `messaging.channel.renamed|archived` (IH3 — the messaging-archetype twin
+  of `scm.*`; versioned, additive-only, raw payloads stay in the inbox)
 
 ### Integration Rules
 
@@ -98,8 +114,19 @@ never do.
   emission into event_log is transactional with the `emitted` mark
   (exactly-once by construction); replay re-runs normalize/emit from the
   persisted row and never re-trusts the wire.
-- Platform credentials (App private key, webhook secret, client secrets) are
-  per-environment worker secrets — never rows, never logs, never repo.
+- Platform credentials (App private key, webhook secret, client secrets —
+  incl. the Slack App and Supabase OAuth app sets) are per-environment worker
+  secrets — never rows, never logs, never repo.
+- Customer parent credentials (IH0) live ONLY as write-only AES-256-GCM
+  envelopes in `provider_credentials`: no read API returns plaintext, ever;
+  rows are zeroized on connection revoke; every credential minted from them
+  is short-lived, scoped-down (template ⊆ parent grant, deny-by-default),
+  recorded in the ledger without its value, and revocable with TTL as the
+  backstop.
+- Cross-context internal seams are contractual, allowlisted, and mint/read
+  only (IH risks R7): notifications-worker fetches Slack delivery credentials
+  over a service binding (custody here, delivery there); config-worker's
+  secret resolve mints brokered credentials over a service binding (IH7).
 - Cached installation tokens serve only the platform's own calls and are
   stored as AES-256-GCM envelopes; brokered tenant tokens are always minted
   fresh, scoped down (repos ∩ links, permissions ⊆ App grant), never cached,
@@ -109,7 +136,15 @@ never do.
 
 This component owns (schema `integrations`): provider connections, GitHub
 installation facts, repo links (incl. branch → environment maps), the inbound
-delivery inbox, and the installation-token cache.
+delivery inbox, and the installation-token cache. The IH0 hub substrate adds:
+parent-credential custody (`provider_credentials` — Slack bot / Cloudflare
+parent / Supabase refresh tokens as write-only AES-256-GCM envelopes, one row
+per connection+kind, zeroized on connection revoke), the minted-credential
+ledger (`minted_credentials` — template, params, purpose, actor/run
+attribution, TTL, provider ref; **never values**; doubles as the reconcile
+work-queue), and per-provider facts (`slack_workspaces` with the `team_id`
+UNIQUE tenancy keystone; `cloudflare_accounts` with the verified parent
+grant; `supabase_orgs`).
 
 ## Agent Freedom
 

@@ -12,9 +12,66 @@
 
 /**
  * Registry-driven provider identifier. GitHub is the first adapter, not a
- * special case; the type widens ("gitlab" | "bitbucket") as adapters land.
+ * special case; the type widens as adapters land (saas-integration-hub IH0
+ * added slack/cloudflare/supabase).
  */
-export type IntegrationProviderId = "github";
+export type IntegrationProviderId = "github" | "slack" | "cloudflare" | "supabase";
+
+/**
+ * Provider capabilities (saas-integration-hub design §1–§2). The registry
+ * exposes what an adapter implements; handlers 404 with a typed
+ * `capability_not_supported` error on mismatch instead of 500ing.
+ * - "connect": connection lifecycle + health (every provider).
+ * - "inbound": verified ingress → durable inbox → normalized events.
+ * - "scm": repo links + branch→environment mapping.
+ * - "messaging": channel delivery through the ES ChannelProvider seam.
+ * - "credential-broker": short-lived scoped credential minting.
+ */
+export type IntegrationCapability =
+  | "connect"
+  | "inbound"
+  | "scm"
+  | "messaging"
+  | "credential-broker";
+
+/**
+ * How a provider's connect flow starts (drives the console connect UX):
+ * - "install": provider-hosted app install page (GitHub App).
+ * - "oauth": OAuth authorization-code flow (Slack, Supabase).
+ * - "token": customer pastes a parent credential once (Cloudflare).
+ */
+export type IntegrationConnectKind = "install" | "oauth" | "token";
+
+/** Static provider descriptors (marketplace cards, capability narrowing). */
+export const INTEGRATION_PROVIDER_DESCRIPTORS: Record<
+  IntegrationProviderId,
+  {
+    displayName: string;
+    connectKind: IntegrationConnectKind;
+    capabilities: readonly IntegrationCapability[];
+  }
+> = {
+  github: {
+    displayName: "GitHub",
+    connectKind: "install",
+    capabilities: ["connect", "inbound", "scm", "credential-broker"],
+  },
+  slack: {
+    displayName: "Slack",
+    connectKind: "oauth",
+    capabilities: ["connect", "inbound", "messaging"],
+  },
+  cloudflare: {
+    displayName: "Cloudflare",
+    connectKind: "token",
+    capabilities: ["connect", "credential-broker"],
+  },
+  supabase: {
+    displayName: "Supabase",
+    connectKind: "oauth",
+    capabilities: ["connect", "credential-broker"],
+  },
+} as const;
 
 // ── Connections ─────────────────────────────────────────────
 
@@ -355,6 +412,99 @@ export interface IssueIntegrationTokenResponse {
   permissions: Record<string, "read" | "write">;
 }
 
+// ── Credential broker (saas-integration-hub IH0/IH4) ────────
+// Provider-generic generalization of the IG4 GitHub token broker: adapters
+// publish named, versioned SCOPE TEMPLATES; a mint names a template + params;
+// the adapter computes the provider-native grant (template ⊆ parent grant,
+// deny-by-default), TTL is clamped, the value is revealed exactly once, and
+// the LEDGER records everything except the value.
+
+/**
+ * A named, versioned credential scope an adapter can mint against, e.g.
+ * Cloudflare "workers-deploy" or Supabase "db-migrate". Safe descriptor —
+ * rendered in the console template catalog.
+ */
+export interface IntegrationScopeTemplate {
+  /** Stable template id, unique per provider (e.g. "workers-deploy"). */
+  id: string;
+  provider: IntegrationProviderId;
+  version: 1;
+  displayName: string;
+  /** What the minted credential can do — the EFFECTIVE breadth, honestly
+   *  stated (risks R5: a template that cannot be narrowed must say so). */
+  description: string;
+  /** Names of accepted params (e.g. ["zoneIds"], ["projectRef"]). */
+  params: readonly string[];
+  /** Hard TTL ceiling for this template, seconds. */
+  maxTtlSeconds: number;
+}
+
+export type IntegrationMintPurpose = "api" | "secret_resolve";
+
+export type IntegrationMintRevokeStatus = "pending" | "revoked" | "expired" | "orphaned";
+
+/**
+ * Safe ledger projection of one minted credential. NEVER carries the
+ * credential value — the value is revealed exactly once at mint time.
+ */
+export interface PublicMintedCredential {
+  /** Public id, `mint_<32hex>`. */
+  id: string;
+  orgId: string;
+  /** Owning connection public id (`int_<32hex>`). */
+  connectionId: string;
+  provider: IntegrationProviderId;
+  template: string;
+  /** Scoped-down request params — never secrets. */
+  params: Record<string, unknown> | null;
+  purpose: IntegrationMintPurpose;
+  /** Actor public id; null for internal (secret-resolve) mints. */
+  requestedBy: string | null;
+  /** Run/job attribution when purpose = "secret_resolve". */
+  runId: string | null;
+  jobId: string | null;
+  ttlSeconds: number;
+  mintedAt: string;
+  expiresAt: string;
+  revokedAt: string | null;
+  revokeStatus: IntegrationMintRevokeStatus;
+}
+
+/**
+ * POST /v1/organizations/{orgId}/integrations/{connectionId}/credentials
+ * Policy: organization.integration.credential.issue.
+ * Entitlement: feature.integrations.credential_broker.
+ */
+export interface MintCredentialRequest {
+  /** Scope template id (must be published by the connection's provider). */
+  template: string;
+  /** Template params (validated against the template's declared params). */
+  params?: Record<string, unknown>;
+  /** Requested TTL; clamped to min(request, template max, provider max). */
+  ttlSeconds?: number;
+}
+
+export interface MintCredentialResponse {
+  /**
+   * Reveal-once credential material, shape per provider (e.g. Cloudflare
+   * `{ token }`, Supabase `{ accessToken }`). Never cached, never logged,
+   * never retrievable again.
+   */
+  credential: Record<string, string>;
+  mint: PublicMintedCredential;
+}
+
+/** GET /v1/organizations/{orgId}/integrations/{connectionId}/credentials */
+export interface ListMintedCredentialsResponse {
+  mints: PublicMintedCredential[];
+  nextCursor: IntegrationsCursor | null;
+}
+
+/** DELETE .../credentials/{mintId} — best-effort provider-side revoke. */
+export interface RevokeMintedCredentialResponse {
+  revoked: true;
+}
+
 // ── Write-back proxy (IG9 outbound bridge — internal endpoint) ──
 
 /** Check Run projection posted back to GitHub (mirrors the GitHub API shape). */
@@ -431,6 +581,13 @@ export const INTEGRATION_EVENT_TYPES = {
   // Write-back proxy (IG9 outbound bridge).
   CHECKRUN_POSTED: "integration.checkrun.posted",
   COMMIT_STATUS_POSTED: "integration.commit_status.posted",
+  // Credential broker (saas-integration-hub IH4).
+  CREDENTIAL_ISSUED: "integration.credential.issued",
+  CREDENTIAL_REVOKED: "integration.credential.revoked",
+  CREDENTIAL_MINT_FAILED: "integration.credential.mint_failed",
+  // Brokered secret bindings (saas-integration-hub IH7).
+  SECRET_BINDING_CREATED: "integration.secret_binding.created",
+  SECRET_BINDING_REMOVED: "integration.secret_binding.removed",
 } as const;
 
 export type IntegrationEventType =
@@ -540,6 +697,59 @@ export interface ScmRepoLinkEventV1 extends ScmEventBaseV1 {
   repoLinkId: string;
 }
 
+// ── Normalized `messaging.*` events (saas-integration-hub IH0/IH3) ──
+// The messaging-archetype twin of `scm.*`: provider-neutral projections of
+// inbound messaging-platform activity (Slack first). Additive-only by rule
+// (IH risks R8); raw payloads stay in the inbox for replay.
+
+export const MESSAGING_EVENT_TYPES = {
+  COMMAND_INVOKED: "messaging.command.invoked",
+  ACTION_INVOKED: "messaging.action.invoked",
+  CHANNEL_RENAMED: "messaging.channel.renamed",
+  CHANNEL_ARCHIVED: "messaging.channel.archived",
+} as const;
+
+export type MessagingEventType =
+  (typeof MESSAGING_EVENT_TYPES)[keyof typeof MESSAGING_EVENT_TYPES];
+
+/** Common envelope-payload base for messaging.* events (version 1). */
+export interface MessagingEventBaseV1 {
+  version: 1;
+  /** Public org id. */
+  orgId: string;
+  provider: IntegrationProviderId;
+  /** Owning connection public id (`int_<32hex>`). */
+  connectionId: string;
+  /** Provider-side workspace/team id (Slack team_id). */
+  workspaceExternalId: string;
+}
+
+export interface MessagingCommandInvokedEventV1 extends MessagingEventBaseV1 {
+  /** Command name without the slash, e.g. "orun". */
+  command: string;
+  /** Sub-command / argument text as typed (may be empty). */
+  text: string;
+  /** Provider-side channel id the command was invoked in. */
+  channelExternalId: string;
+  /** Provider-side user id of the invoker (NOT a platform identity — D6). */
+  invokedByExternalUser: string | null;
+}
+
+export interface MessagingActionInvokedEventV1 extends MessagingEventBaseV1 {
+  /** Stable action id carried by the message, e.g. "ack", "mute_rule". */
+  actionId: string;
+  /** Opaque action value (e.g. the rule public id the button targets). */
+  value: string | null;
+  channelExternalId: string;
+  invokedByExternalUser: string | null;
+}
+
+export interface MessagingChannelEventV1 extends MessagingEventBaseV1 {
+  channelExternalId: string;
+  /** Channel name after the change (renamed) or at archive time. */
+  channelName: string | null;
+}
+
 // ── Governance constants ────────────────────────────────────
 
 /** Policy actions evaluated by policy-worker (deny-by-default). */
@@ -549,10 +759,21 @@ export const INTEGRATION_POLICY_ACTIONS = {
   MANAGE: "organization.integration.manage",
   TOKEN_ISSUE: "organization.integration.token.issue",
   REPO_LINK_WRITE: "project.repo_link.write",
+  // Credential broker (saas-integration-hub IH4; exposure posture D5).
+  CREDENTIAL_ISSUE: "organization.integration.credential.issue",
+  // Channel picker + notification-action administration (IH2/IH3).
+  MESSAGING_MANAGE: "organization.integration.messaging.manage",
 } as const;
 
 /** Entitlement keys gating the surface (412 + upgrade UX on deny). */
 export const INTEGRATION_ENTITLEMENTS = {
   GITHUB: "feature.integrations.github",
   REPO_LINKS_LIMIT: "limit.repo_links",
+  // saas-integration-hub providers (plan placement: IH risks D7).
+  SLACK: "feature.integrations.slack",
+  CLOUDFLARE: "feature.integrations.cloudflare",
+  SUPABASE: "feature.integrations.supabase",
+  CREDENTIAL_BROKER: "feature.integrations.credential_broker",
+  BROKERED_SECRETS_LIMIT: "limit.brokered_secrets",
+  CREDENTIAL_MINTS_PER_DAY_LIMIT: "limit.credential_mints_per_day",
 } as const;

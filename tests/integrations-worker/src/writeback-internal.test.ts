@@ -161,7 +161,8 @@ describe("handler validation", () => {
   });
 
   it("422 on a missing repo id", async () => {
-    const { repoExternalId: _omit, ...rest } = CHECK_RUN_BODY;
+    const { repoExternalId, ...rest } = CHECK_RUN_BODY;
+    void repoExternalId;
     const res = await handleWritebackInternal(req(rest), createEnv(), "req_1");
     expect(res.status).toBe(422);
   });
