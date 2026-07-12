@@ -172,6 +172,8 @@ export interface AgentSession {
   parentSessionId?: string;
   rootSessionId?: string;
   depth?: number;
+  /** Routine provenance (AF6): the firing routine's public id (`rt_…`). */
+  routineId?: string;
 }
 
 /**
@@ -340,6 +342,70 @@ export function intersectCeiling(parent: CapabilityCeiling, child: CapabilityCei
   return out;
 }
 
+// ── Routines (saas-agents-fleet AF6) ────────────────────────
+// Standing work: a trigger + binding that SPAWNS sessions through the AG9
+// dispatch door (locked decision 3: there is no second way to start work).
+// Success is digest material; two consecutive failed firings park the
+// routine until a human resumes it.
+
+export const ROUTINE_TRIGGER_KINDS = ["cron", "event"] as const;
+export type RoutineTriggerKind = (typeof ROUTINE_TRIGGER_KINDS)[number];
+
+export const ROUTINE_ERROR_CODES = {
+  routineNotFound: "agent_routine_not_found",
+  routineConflict: "agent_routine_conflict",
+  routineInvalid: "agent_routine_invalid",
+  /** A parked/disabled routine refuses to fire until resumed/enabled. */
+  routineNotLive: "agent_routine_not_live",
+} as const;
+export type RoutineErrorCode =
+  (typeof ROUTINE_ERROR_CODES)[keyof typeof ROUTINE_ERROR_CODES];
+
+/** Consecutive failed firings before the park latch closes (design §5.3). */
+export const ROUTINE_PARK_THRESHOLD = 2;
+
+export interface AgentRoutine {
+  /** Public id, `rt_…`. */
+  id: string;
+  name: string;
+  profileId: string;
+  runKind: AgentRunKind;
+  /** Content hash of the sealed RoutineSnapshot (orun AF2), when pinned. */
+  definitionRef?: string;
+  triggerKind: RoutineTriggerKind;
+  /** cron: { cron: "0 7 * * *" } (5-field, hourly minimum); event: { lane, predicate }. */
+  triggerConfig: Record<string, unknown>;
+  caps: Record<string, unknown>;
+  enabled: boolean;
+  parked: boolean;
+  parkedReason?: string;
+  consecutiveFailures: number;
+  lastFiredAt?: string;
+  createdBy: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** POST /agents/routines */
+export interface CreateAgentRoutineRequest {
+  name: string;
+  profileId: string;
+  runKind: AgentRunKind;
+  triggerKind: RoutineTriggerKind;
+  triggerConfig?: Record<string, unknown>;
+  definitionRef?: string;
+  caps?: Record<string, unknown>;
+}
+
+/** PATCH /agents/routines/:id — standing-state changes only. Resuming a
+ * parked routine resets its failure count; the definition/trigger are
+ * immutable (delete + recreate — the sealed-definition posture). */
+export interface UpdateAgentRoutineRequest {
+  enabled?: boolean;
+  /** false = resume (only transition allowed; parking is automatic). */
+  parked?: boolean;
+}
+
 // ── The attention plane (saas-agents-fleet AF5) ─────────────
 // The needs-you fold: a computed read over facts already stored — session
 // states, budget marks, routine parks, lease health. There is no stored inbox
@@ -375,15 +441,16 @@ export const ATTENTION_RANK: Record<AttentionKind, number> = {
 };
 
 /**
- * One needs-you item. Every item carries its provenance — the session, the
- * work pointer, and the fact that produced it — so the fold shows its
- * arithmetic. All v1 kinds are session-backed; routine items gain a
- * routineId in AF6.
+ * One needs-you item. Every item carries its provenance — the session or
+ * routine, the work pointer, and the fact that produced it — so the fold
+ * shows its arithmetic.
  */
 export interface AttentionItem {
   kind: AttentionKind;
-  /** The session the item is about (`as_…`). */
-  sessionId: string;
+  /** The session the item is about (`as_…`); absent on routine items. */
+  sessionId?: string;
+  /** The routine the item is about (`rt_…`) — routine_parked items (AF6). */
+  routineId?: string;
   profileId?: string;
   runKind?: AgentRunKind;
   state?: AgentSessionState;

@@ -7,7 +7,7 @@
 
 import type { AgentsDeps } from "../deps.js";
 import type { ActorContext } from "../router.js";
-import type { AgentSession, SessionEvent } from "@saas/db/agents";
+import type { AgentSession, Routine, SessionEvent } from "@saas/db/agents";
 import type { AttentionItem, AttentionKind, AttentionSummary } from "@saas/contracts/agents";
 import { ATTENTION_RANK, ATTENTION_KINDS } from "@saas/contracts/agents";
 import { errorResponse, successResponse } from "../http.js";
@@ -56,9 +56,22 @@ export function foldAttention(
   sessions: AgentSession[],
   eventsBySession: Map<string, SessionEvent[]>,
   now: Date,
+  routines: Routine[] = [],
 ): AttentionSummary {
   const items: AttentionItem[] = [];
   const t = now.getTime();
+
+  // Parked routines (AF6): the standing order stopped standing — a human
+  // must resume it. Acting (resume/disable/delete) removes the item.
+  for (const r of routines) {
+    if (!r.parked) continue;
+    items.push({
+      kind: "routine_parked",
+      routineId: r.publicId,
+      reason: r.parkedReason ?? "parked after repeated failures",
+      at: r.updatedAt,
+    });
+  }
 
   for (const s of sessions) {
     if (s.state === "awaiting_approval") {
@@ -125,6 +138,7 @@ export async function handleGetAttention(
   }
   const scope = { orgId };
   const sessions = await deps.repo.listSessions(scope);
+  const routines = await deps.repo.listRoutines(scope);
   // Only awaiting sessions need their events (for the answerable ask); the
   // fleet rarely holds more than a handful at once.
   const eventsBySession = new Map<string, SessionEvent[]>();
@@ -132,5 +146,5 @@ export async function handleGetAttention(
     if (s.state !== "awaiting_approval") continue;
     eventsBySession.set(s.publicId, await deps.repo.listSessionEvents(scope, s.publicId));
   }
-  return successResponse(foldAttention(sessions, eventsBySession, now()), requestId);
+  return successResponse(foldAttention(sessions, eventsBySession, now(), routines), requestId);
 }

@@ -344,3 +344,90 @@ describe("delegation tree (saas-agents-fleet AF4)", () => {
     expect(await r.listOrphanedSessions({ parentEndedCutoff: "2026-07-12T10:00:00.000Z", limit: 10 })).toEqual([]);
   });
 });
+
+describe("routines (saas-agents-fleet AF6)", () => {
+  async function seedRoutine(r: MemoryAgentsRepository) {
+    const p = await seedProfile(r);
+    return r.createRoutine(scope, {
+      name: "nightly-triage",
+      profileId: p.publicId,
+      runKind: "fix",
+      triggerKind: "cron",
+      triggerConfig: { cron: "0 7 * * *" },
+      createdBy: "usr_1",
+    });
+  }
+
+  it("creates with defaults, enforces name + trigger vocab + profile existence", async () => {
+    const r = repo();
+    const routine = await seedRoutine(r);
+    expect(routine.publicId).toMatch(/^rt_/);
+    expect(routine.enabled).toBe(true);
+    expect(routine.parked).toBe(false);
+    expect(routine.consecutiveFailures).toBe(0);
+
+    await expect(seedRoutine(r)).rejects.toThrow(AgentsError); // name conflict
+    await expect(
+      r.createRoutine(scope, {
+        name: "bad-trigger",
+        profileId: routine.profileId,
+        runKind: "fix",
+        triggerKind: "webhook" as never,
+        createdBy: "u",
+      }),
+    ).rejects.toThrow(AgentsError);
+    await expect(
+      r.createRoutine(scope, {
+        name: "no-profile",
+        profileId: "agp_missing",
+        runKind: "fix",
+        triggerKind: "cron",
+        createdBy: "u",
+      }),
+    ).rejects.toThrow(AgentsError);
+  });
+
+  it("state updates: park with reason, resume resets, last-fired mark", async () => {
+    const r = repo();
+    const routine = await seedRoutine(r);
+    await r.updateRoutineState(scope, {
+      publicId: routine.publicId,
+      parked: true,
+      parkedReason: "2 consecutive failures",
+      consecutiveFailures: 2,
+    });
+    let row = await r.getRoutine(scope, routine.publicId);
+    expect(row?.parked).toBe(true);
+    expect(row?.parkedReason).toContain("failures");
+
+    await r.updateRoutineState(scope, {
+      publicId: routine.publicId,
+      parked: false,
+      parkedReason: null,
+      consecutiveFailures: 0,
+      lastFiredAt: "2026-07-12T07:00:00.000Z",
+    });
+    row = await r.getRoutine(scope, routine.publicId);
+    expect(row?.parked).toBe(false);
+    expect(row?.parkedReason).toBeUndefined();
+    expect(row?.lastFiredAt).toBe("2026-07-12T07:00:00.000Z");
+  });
+
+  it("the live scan excludes disabled and parked routines; sessions link back", async () => {
+    const r = repo();
+    const routine = await seedRoutine(r);
+    expect((await r.listLiveRoutines(10)).map((x) => x.publicId)).toEqual([routine.publicId]);
+    await r.updateRoutineState(scope, { publicId: routine.publicId, enabled: false });
+    expect(await r.listLiveRoutines(10)).toEqual([]);
+
+    const s = await r.createSession(scope, {
+      profileId: routine.profileId,
+      runKind: "fix",
+      spawnedBy: "svc",
+      routineId: routine.publicId,
+    });
+    expect(s.routineId).toBe(routine.publicId);
+    const fired = await r.listRoutineSessions(scope, routine.publicId, 5);
+    expect(fired.map((x) => x.publicId)).toEqual([s.publicId]);
+  });
+});

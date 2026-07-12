@@ -687,5 +687,14 @@ export const manifest: MigrationManifest = {
       description:
         "The delegation plane (saas-agents-fleet AF4): agent_sessions gains parent_session_id/root_session_id/depth — public_id-keyed tree columns (a tree, never a graph; existing rows backfilled as their own roots) with partial parent + root indexes for the children strip, width caps, and tree-transitive kill. The session-event kind CHECK regenerates as one named constraint (the 720 discipline) appending child_spawned/child_completed/child_failed — the parent owns its children's story as sealed relayed events; still no status/lifecycle kind. Ceiling-intersection math stays application code (packages/contracts); the applied ceiling lands on the child's sandbox JSONB. Additive + idempotent.",
     },
+    {
+      id: "760_agents_routines",
+      context: "agents",
+      path: "760_agents_routines/up.sql",
+      checksum:
+        "c1e1d769821b672ab42ebe905f6c3d992a31f7e1261bd32c649c3884637b00b3",
+      description:
+        "Standing routines (saas-agents-fleet AF6): agents.routines — workspace-scoped trigger+binding rows (profile, run_kind, optional sealed definition_ref, cron|event trigger_config, budget-stub caps, enabled, the park latch with consecutive_failures, last_fired_at) with a live partial index for the cross-org scheduler tick; agent_sessions gains routine_id (partial index) so firings group on the fleet home and the park math reads straight off session rows. A routine only ever SPAWNS sessions — every firing re-enters the AG9 dispatch door (locked decision 3: no second execution path); success is digest material, two consecutive failures park it until a human resumes. Additive + idempotent.",
+    },
   ],
 };

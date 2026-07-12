@@ -11,6 +11,7 @@ import {
   isTerminal,
   validateConnectionInput,
   validateProfileInput,
+  validateRoutineInput,
   validateSessionEvent,
   type AgentProfile,
   type AgentSession,
@@ -19,6 +20,8 @@ import {
   type ConnectionStatus,
   type Provider,
   type ProviderConnection,
+  type Routine,
+  type RoutineTriggerKind,
   type RunKind,
   type SessionEvent,
   type SessionState,
@@ -29,11 +32,13 @@ import type {
   AppendSessionEventInput,
   CreateConnectionInput,
   CreateProfileInput,
+  CreateRoutineInput,
   CreateSessionInput,
   ListLapsedSessionsInput,
   ListOrphanedSessionsInput,
   SetAutonomyInput,
   SetConnectionStatusInput,
+  UpdateRoutineStateInput,
   WorkspaceScope,
 } from "./types.js";
 
@@ -100,6 +105,8 @@ function mapSession(row: Row): AgentSession {
   };
   const parentSessionId = optStr(row.parent_session_id);
   if (parentSessionId !== undefined) s.parentSessionId = parentSessionId;
+  const routineId = optStr(row.routine_id);
+  if (routineId !== undefined) s.routineId = routineId;
   const workRef = optStr(row.work_ref);
   if (workRef !== undefined) s.workRef = workRef;
   const taskKey = optStr(row.task_key);
@@ -139,6 +146,33 @@ function mapConnection(row: Row): ProviderConnection {
   const reason = optStr(row.status_reason);
   if (reason !== undefined) c.statusReason = reason;
   return c;
+}
+
+function mapRoutine(row: Row): Routine {
+  const r: Routine = {
+    id: String(row.id),
+    publicId: String(row.public_id),
+    orgId: String(row.org_id),
+    name: String(row.name),
+    profileId: String(row.profile_id),
+    runKind: String(row.run_kind) as RunKind,
+    triggerKind: String(row.trigger_kind) as RoutineTriggerKind,
+    triggerConfig: parseJson<Record<string, unknown>>(row.trigger_config, {}),
+    caps: parseJson<Record<string, unknown>>(row.caps, {}),
+    enabled: Boolean(row.enabled),
+    parked: Boolean(row.parked),
+    consecutiveFailures: Number(row.consecutive_failures ?? 0),
+    createdBy: String(row.created_by),
+    createdAt: toIso(row.created_at),
+    updatedAt: toIso(row.updated_at),
+  };
+  const definitionRef = optStr(row.definition_ref);
+  if (definitionRef !== undefined) r.definitionRef = definitionRef;
+  const parkedReason = optStr(row.parked_reason);
+  if (parkedReason !== undefined) r.parkedReason = parkedReason;
+  const lastFired = optIso(row.last_fired_at);
+  if (lastFired !== undefined) r.lastFiredAt = lastFired;
+  return r;
 }
 
 export function createAgentsRepository(sql: TransactionalSqlExecutor): AgentsRepository {
@@ -214,8 +248,8 @@ export function createAgentsRepository(sql: TransactionalSqlExecutor): AgentsRep
         const res = await tx.execute(
           `INSERT INTO agents.agent_sessions
              (public_id, org_id, profile_id, run_kind, state, spawned_by, work_ref, task_key,
-              sandbox, parent_session_id, root_session_id, depth)
-           VALUES ($1,$2,$3,$4,'requested',$5,$6,$7,$8::jsonb,$9,$10,$11)
+              sandbox, parent_session_id, root_session_id, depth, routine_id)
+           VALUES ($1,$2,$3,$4,'requested',$5,$6,$7,$8::jsonb,$9,$10,$11,$12)
            RETURNING *`,
           [
             publicId,
@@ -229,6 +263,7 @@ export function createAgentsRepository(sql: TransactionalSqlExecutor): AgentsRep
             input.parentSessionId ?? null,
             parent ? parent.rootSessionId : publicId,
             parent ? parent.depth + 1 : 0,
+            input.routineId ?? null,
           ],
         );
         return mapSession(res.rows[0] as Row);
@@ -447,6 +482,117 @@ export function createAgentsRepository(sql: TransactionalSqlExecutor): AgentsRep
       const sk = optStr(r.spec_key);
       if (sk !== undefined) policy.specKey = sk;
       return policy;
+    },
+
+
+    // ── Routines (saas-agents-fleet AF6) ──────────────────────
+
+    async createRoutine(scope: WorkspaceScope, input: CreateRoutineInput): Promise<Routine> {
+      validateRoutineInput(input);
+      return sql.transaction(async (tx) => {
+        const p = await tx.execute(
+          `SELECT id FROM agents.agent_profiles WHERE org_id = $1 AND (id::text = $2 OR public_id = $2)`,
+          [scope.orgId, input.profileId],
+        );
+        if (!p.rows[0]) {
+          throw new AgentsError("agent_profile_not_found", `profile ${input.profileId} not found`);
+        }
+        const res = await tx.execute(
+          `INSERT INTO agents.routines
+             (public_id, org_id, name, profile_id, run_kind, definition_ref,
+              trigger_kind, trigger_config, caps, created_by)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8::jsonb,$9::jsonb,$10)
+           RETURNING *`,
+          [
+            newPublicId("rt_"),
+            scope.orgId,
+            input.name,
+            String((p.rows[0] as Row).id),
+            input.runKind,
+            input.definitionRef ?? null,
+            input.triggerKind,
+            JSON.stringify(input.triggerConfig ?? {}),
+            JSON.stringify(input.caps ?? {}),
+            input.createdBy,
+          ],
+        );
+        return mapRoutine(res.rows[0] as Row);
+      });
+    },
+
+    async getRoutine(scope: WorkspaceScope, publicId: string): Promise<Routine | null> {
+      const res = await sql.execute(
+        `SELECT * FROM agents.routines WHERE org_id = $1 AND public_id = $2`,
+        [scope.orgId, publicId],
+      );
+      return res.rows[0] ? mapRoutine(res.rows[0] as Row) : null;
+    },
+
+    async listRoutines(scope: WorkspaceScope): Promise<Routine[]> {
+      const res = await sql.execute(
+        `SELECT * FROM agents.routines WHERE org_id = $1 ORDER BY name`,
+        [scope.orgId],
+      );
+      return res.rows.map((r) => mapRoutine(r as Row));
+    },
+
+    async updateRoutineState(scope: WorkspaceScope, input: UpdateRoutineStateInput): Promise<Routine> {
+      const res = await sql.execute(
+        `UPDATE agents.routines SET
+           enabled = COALESCE($3, enabled),
+           parked = COALESCE($4, parked),
+           parked_reason = CASE WHEN $5::boolean THEN $6 ELSE parked_reason END,
+           consecutive_failures = COALESCE($7, consecutive_failures),
+           last_fired_at = COALESCE($8, last_fired_at),
+           updated_at = now()
+         WHERE org_id = $1 AND public_id = $2
+         RETURNING *`,
+        [
+          scope.orgId,
+          input.publicId,
+          input.enabled ?? null,
+          input.parked ?? null,
+          input.parkedReason !== undefined,
+          input.parkedReason ?? null,
+          input.consecutiveFailures ?? null,
+          input.lastFiredAt ?? null,
+        ],
+      );
+      if (!res.rows[0]) {
+        throw new AgentsError("agent_routine_not_found", `routine ${input.publicId} not found`);
+      }
+      return mapRoutine(res.rows[0] as Row);
+    },
+
+    async deleteRoutine(scope: WorkspaceScope, publicId: string): Promise<boolean> {
+      const res = await sql.execute(
+        `DELETE FROM agents.routines WHERE org_id = $1 AND public_id = $2`,
+        [scope.orgId, publicId],
+      );
+      return (res.rowCount ?? 0) > 0;
+    },
+
+    async listLiveRoutines(limit: number): Promise<Routine[]> {
+      // Deliberately CROSS-ORG: the scheduler tick fires the whole fleet.
+      const res = await sql.execute(
+        `SELECT * FROM agents.routines WHERE enabled AND NOT parked ORDER BY created_at LIMIT $1`,
+        [limit],
+      );
+      return res.rows.map((r) => mapRoutine(r as Row));
+    },
+
+    async listRoutineSessions(
+      scope: WorkspaceScope,
+      routinePublicId: string,
+      limit: number,
+    ): Promise<AgentSession[]> {
+      const res = await sql.execute(
+        `SELECT * FROM agents.agent_sessions
+          WHERE org_id = $1 AND routine_id = $2
+          ORDER BY created_at DESC LIMIT $3`,
+        [scope.orgId, routinePublicId, limit],
+      );
+      return res.rows.map((r) => mapSession(r as Row));
     },
 
     // ── Provider connections (AG12) ───────────────────────────

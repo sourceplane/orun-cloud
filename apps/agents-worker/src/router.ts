@@ -25,6 +25,12 @@ import {
 import { handleGetAutonomy, handleSetAutonomy } from "./handlers/autonomy.js";
 import { handleGetAttention } from "./handlers/attention.js";
 import { handleCancelSession } from "./handlers/tree.js";
+import {
+  handleCreateRoutine,
+  handleDeleteRoutine,
+  handleListRoutines,
+  handleUpdateRoutine,
+} from "./handlers/routines.js";
 import { handleDispatch } from "./handlers/dispatch.js";
 import {
   handleCreateConnection,
@@ -87,6 +93,9 @@ const SESSION_INPUT_RE = /^\/v1\/organizations\/([^/]+)\/agents\/sessions\/([^/]
 const AUTONOMY_RE = /^\/v1\/organizations\/([^/]+)\/agents\/autonomy$/;
 // The needs-you fold (saas-agents-fleet AF5): a derived read, no storage.
 const ATTENTION_RE = /^\/v1\/organizations\/([^/]+)\/agents\/attention$/;
+// Standing routines (saas-agents-fleet AF6): registry CRUD + resume.
+const ROUTINES_RE = /^\/v1\/organizations\/([^/]+)\/agents\/routines$/;
+const ROUTINE_RE = /^\/v1\/organizations\/([^/]+)\/agents\/routines\/([^/]+)$/;
 const DISPATCH_RE = /^\/v1\/organizations\/([^/]+)\/agents\/dispatch$/;
 const PROVIDERS_RE = /^\/v1\/organizations\/([^/]+)\/agents\/providers$/;
 const PROVIDER_RE = /^\/v1\/organizations\/([^/]+)\/agents\/providers\/([^/]+)$/;
@@ -121,6 +130,8 @@ export async function route(request: Request, env: Env, injectedDeps?: AgentsDep
       PROVIDER_VERIFY_RE.test(url.pathname) ||
       AUTONOMY_RE.test(url.pathname) ||
       ATTENTION_RE.test(url.pathname) ||
+      ROUTINES_RE.test(url.pathname) ||
+      ROUTINE_RE.test(url.pathname) ||
       DISPATCH_RE.test(url.pathname);
     if (!isAgentsRoute) {
       return notFound(requestId, url.pathname);
@@ -183,6 +194,25 @@ async function dispatch(
     const orgId = parseOrgPublicId(m[1]!);
     if (!orgId) return notFound(requestId, url.pathname);
     if (request.method === "GET") return handleGetAttention(deps, orgId, actor, requestId);
+    return methodNotAllowed(requestId);
+  }
+
+  m = ROUTINE_RE.exec(url.pathname);
+  if (m) {
+    const orgId = parseOrgPublicId(m[1]!);
+    if (!orgId) return notFound(requestId, url.pathname);
+    const routineId = m[2]!;
+    if (request.method === "PATCH") return handleUpdateRoutine(request, deps, orgId, routineId, actor, requestId);
+    if (request.method === "DELETE") return handleDeleteRoutine(deps, orgId, routineId, actor, requestId);
+    return methodNotAllowed(requestId);
+  }
+
+  m = ROUTINES_RE.exec(url.pathname);
+  if (m) {
+    const orgId = parseOrgPublicId(m[1]!);
+    if (!orgId) return notFound(requestId, url.pathname);
+    if (request.method === "GET") return handleListRoutines(deps, orgId, actor, requestId);
+    if (request.method === "POST") return handleCreateRoutine(request, deps, orgId, actor, requestId);
     return methodNotAllowed(requestId);
   }
 

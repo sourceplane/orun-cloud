@@ -8,12 +8,14 @@ import {
   isTerminal,
   validateConnectionInput,
   validateProfileInput,
+  validateRoutineInput,
   validateSessionEvent,
   type AgentProfile,
   type AgentSession,
   type AutonomyPolicy,
   type Provider,
   type ProviderConnection,
+  type Routine,
   type SessionEvent,
   type SessionState,
 } from "./model.js";
@@ -23,11 +25,13 @@ import type {
   AppendSessionEventInput,
   CreateConnectionInput,
   CreateProfileInput,
+  CreateRoutineInput,
   CreateSessionInput,
   ListLapsedSessionsInput,
   ListOrphanedSessionsInput,
   SetAutonomyInput,
   SetConnectionStatusInput,
+  UpdateRoutineStateInput,
   WorkspaceScope,
 } from "./types.js";
 
@@ -38,6 +42,7 @@ interface Stored {
   eventSeqs: Map<string, Set<number>>;
   policies: AutonomyPolicy[];
   connections: ProviderConnection[];
+  routines: Routine[];
 }
 
 export class MemoryAgentsRepository implements AgentsRepository {
@@ -55,7 +60,7 @@ export class MemoryAgentsRepository implements AgentsRepository {
   private store(orgId: string): Stored {
     let s = this.byOrg.get(orgId);
     if (!s) {
-      s = { profiles: [], sessions: [], events: new Map(), eventSeqs: new Map(), policies: [], connections: [] };
+      s = { profiles: [], sessions: [], events: new Map(), eventSeqs: new Map(), policies: [], connections: [], routines: [] };
       this.byOrg.set(orgId, s);
     }
     return s;
@@ -129,6 +134,7 @@ export class MemoryAgentsRepository implements AgentsRepository {
       ...(parent ? { parentSessionId: parent.publicId } : {}),
       ...(input.workRef !== undefined ? { workRef: input.workRef } : {}),
       ...(input.taskKey !== undefined ? { taskKey: input.taskKey } : {}),
+      ...(input.routineId !== undefined ? { routineId: input.routineId } : {}),
     };
     s.sessions.push(session);
     return session;
@@ -261,6 +267,92 @@ export class MemoryAgentsRepository implements AgentsRepository {
   async getAutonomy(scope: WorkspaceScope, specKey?: string): Promise<AutonomyPolicy | null> {
     const key = specKey ?? null;
     return this.store(scope.orgId).policies.find((p) => (p.specKey ?? null) === key) ?? null;
+  }
+
+  // ── Routines (saas-agents-fleet AF6) ──────────────────────
+
+  async createRoutine(scope: WorkspaceScope, input: CreateRoutineInput): Promise<Routine> {
+    validateRoutineInput(input);
+    const s = this.store(scope.orgId);
+    if (s.routines.some((r) => r.name === input.name)) {
+      throw new AgentsError("agent_routine_conflict", `routine ${input.name} exists`);
+    }
+    const profile = s.profiles.find((p) => p.id === input.profileId || p.publicId === input.profileId);
+    if (!profile) {
+      throw new AgentsError("agent_profile_not_found", `profile ${input.profileId} not found`);
+    }
+    const ts = this.now();
+    const routine: Routine = {
+      id: this.id("id_"),
+      publicId: this.id("rt_"),
+      orgId: scope.orgId,
+      name: input.name,
+      profileId: profile.id,
+      runKind: input.runKind,
+      triggerKind: input.triggerKind,
+      triggerConfig: input.triggerConfig ?? {},
+      caps: input.caps ?? {},
+      enabled: true,
+      parked: false,
+      consecutiveFailures: 0,
+      createdBy: input.createdBy,
+      createdAt: ts,
+      updatedAt: ts,
+      ...(input.definitionRef !== undefined ? { definitionRef: input.definitionRef } : {}),
+    };
+    s.routines.push(routine);
+    return routine;
+  }
+
+  async getRoutine(scope: WorkspaceScope, publicId: string): Promise<Routine | null> {
+    return this.store(scope.orgId).routines.find((r) => r.publicId === publicId) ?? null;
+  }
+
+  async listRoutines(scope: WorkspaceScope): Promise<Routine[]> {
+    return [...this.store(scope.orgId).routines].sort((a, b) => a.name.localeCompare(b.name));
+  }
+
+  async updateRoutineState(scope: WorkspaceScope, input: UpdateRoutineStateInput): Promise<Routine> {
+    const routine = await this.getRoutine(scope, input.publicId);
+    if (!routine) {
+      throw new AgentsError("agent_routine_not_found", `routine ${input.publicId} not found`);
+    }
+    if (input.enabled !== undefined) routine.enabled = input.enabled;
+    if (input.parked !== undefined) routine.parked = input.parked;
+    if (input.parkedReason !== undefined) {
+      if (input.parkedReason === null) delete routine.parkedReason;
+      else routine.parkedReason = input.parkedReason;
+    }
+    if (input.consecutiveFailures !== undefined) routine.consecutiveFailures = input.consecutiveFailures;
+    if (input.lastFiredAt !== undefined) routine.lastFiredAt = input.lastFiredAt;
+    routine.updatedAt = this.now();
+    return routine;
+  }
+
+  async deleteRoutine(scope: WorkspaceScope, publicId: string): Promise<boolean> {
+    const s = this.store(scope.orgId);
+    const before = s.routines.length;
+    s.routines = s.routines.filter((r) => r.publicId !== publicId);
+    return s.routines.length < before;
+  }
+
+  async listLiveRoutines(limit: number): Promise<Routine[]> {
+    const out: Routine[] = [];
+    for (const s of this.byOrg.values()) {
+      for (const r of s.routines) if (r.enabled && !r.parked) out.push(r);
+    }
+    return out.sort((a, b) => a.createdAt.localeCompare(b.createdAt)).slice(0, limit);
+  }
+
+  async listRoutineSessions(
+    scope: WorkspaceScope,
+    routinePublicId: string,
+    limit: number,
+  ): Promise<AgentSession[]> {
+    return this.store(scope.orgId)
+      .sessions.filter((x) => x.routineId === routinePublicId)
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+      .slice(0, limit);
   }
 
   // ── Provider connections (AG12) ───────────────────────────

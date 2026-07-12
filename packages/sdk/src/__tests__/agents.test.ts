@@ -51,6 +51,27 @@ describe("agents resource", () => {
     expect(calls[0]!.init.method).toBe("POST");
   });
 
+  it("drives the routine registry (saas-agents-fleet AF6)", async () => {
+    const { fetch: f, calls } = captureFetch({ id: "rt_1", enabled: true });
+    const c = client(f);
+    await c.agents.listRoutines("org_x");
+    await c.agents.createRoutine("org_x", {
+      name: "nightly",
+      profileId: "agp_1",
+      runKind: "fix",
+      triggerKind: "cron",
+      triggerConfig: { cron: "0 7 * * *" },
+    });
+    await c.agents.updateRoutine("org_x", "rt_1", { parked: false });
+    await c.agents.deleteRoutine("org_x", "rt_1");
+
+    expect(calls[0]!.url).toContain("/v1/organizations/org_x/agents/routines");
+    expect(calls[1]!.init.method).toBe("POST");
+    expect(calls[2]!.url).toContain("/agents/routines/rt_1");
+    expect(calls[2]!.init.method).toBe("PATCH");
+    expect(calls[3]!.init.method).toBe("DELETE");
+  });
+
   it("reads the needs-you fold (saas-agents-fleet AF5)", async () => {
     const { fetch: f, calls } = captureFetch({ items: [], counts: {}, running: 0 });
     const c = client(f);
