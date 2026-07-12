@@ -58,6 +58,24 @@ describe("integrations connections view-model", () => {
     );
   });
 
+  it("discloses the broker revoke blast radius: mints revoked, custody zeroized, secrets fail closed", () => {
+    const cfAccount = uninstallDisclosure(connection({ provider: "cloudflare" }));
+    expect(cfAccount).toContain("whole account");
+    expect(cfAccount).toContain("child token");
+    expect(cfAccount).toContain("zeroize");
+    expect(cfAccount).toContain("fail closed");
+    const cfWorkspace = uninstallDisclosure(connection({ provider: "cloudflare", scope: "workspace" }));
+    expect(cfWorkspace).toContain("parent token");
+    expect(cfWorkspace).toContain("fail closed");
+    const sbAccount = uninstallDisclosure(connection({ provider: "supabase" }));
+    expect(sbAccount).toContain("whole account");
+    expect(sbAccount).toContain("refresh token");
+    expect(sbAccount).toContain("fail closed");
+    const sbWorkspace = uninstallDisclosure(connection({ provider: "supabase", scope: "workspace" }));
+    expect(sbWorkspace).toContain("Supabase organization");
+    expect(sbWorkspace).toContain("zeroize");
+  });
+
   it("shows live rows plus only the most recent revoked row", () => {
     const rows = [
       connection({ id: "int_a", status: "active" }),

@@ -1,0 +1,409 @@
+"use client";
+
+// The per-connection detail page (saas-integration-hub IH8, design §6
+// "Connection detail, per archetype"). One shared header + danger zone; the
+// body branches by provider archetype:
+//
+//   - messaging (Slack): workspace facts, channels the bot can post to, and
+//     the admission panel for account-shared connections.
+//   - infrastructure (Cloudflare/Supabase): account facts, the scope-template
+//     catalog ("what can be minted"), the mint ledger, and a deep link to the
+//     secrets surface for brokered bindings.
+//   - source-control (GitHub): deliberately minimal — facts + a pointer to the
+//     per-project Git tab (design: "GitHub: unchanged") + admission panel.
+
+import * as React from "react";
+import { useRouter } from "next/navigation";
+import {
+  Cloud,
+  Database,
+  GitBranch,
+  Hash,
+  Lock,
+  MessageSquare,
+  Plug,
+  type LucideIcon,
+} from "lucide-react";
+import type { PublicConnection } from "@saas/contracts/integrations";
+import { Button } from "@/components/ui/button";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { EmptyState } from "@/components/ui/empty-state";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Kicker, Pill, QuietLink, Screen, type Tone } from "@/components/ui/northwind";
+import { useToast } from "@/components/ui/toast";
+import { wrap, type ApiErrorBody } from "@/lib/api";
+import { useSession } from "@/lib/session";
+import { useApiQuery, qk } from "@/lib/query";
+import {
+  connectionDisplayName,
+  connectionProviderName,
+  connectionScopeMeta,
+  connectionShareModeMeta,
+  connectionStatusMeta,
+  uninstallDisclosure,
+} from "@/components/integrations/connections";
+import { archetypeForProvider, SCOPE_TEMPLATE_CATALOG } from "@/components/integrations/archetype";
+import { ConnectionAdmission } from "@/components/integrations/connection-admission";
+import { MintLedger } from "@/components/integrations/mint-ledger";
+
+/** Badge tone (connections.ts) → Northwind pill tone (mirrors the hub). */
+const STATUS_TONE: Record<string, Tone> = {
+  default: "neutral",
+  success: "success",
+  warning: "warning",
+  destructive: "error",
+};
+
+const PROVIDER_ICONS: Record<string, LucideIcon> = {
+  github: GitBranch,
+  slack: MessageSquare,
+  cloudflare: Cloud,
+  supabase: Database,
+};
+
+export function ConnectionDetail({
+  orgId,
+  orgSlug,
+  connectionId,
+}: {
+  orgId: string;
+  orgSlug: string;
+  connectionId: string;
+}) {
+  const { client } = useSession();
+  const { toast } = useToast();
+  const router = useRouter();
+  const hubHref = `/orgs/${orgSlug}/integrations`;
+
+  // `useApiQuery` narrows errors to { code, message }; keep the full body
+  // alongside so the load-error card can show the requestId (design §6:
+  // "error with requestId").
+  const lastLoadError = React.useRef<{ error: ApiErrorBody; status: number } | null>(null);
+  const conn = useApiQuery<PublicConnection>(qk.integration(orgId, connectionId), async () => {
+    const r = await wrap(async () => (await client.integrations.get(orgId, connectionId)).connection);
+    lastLoadError.current = r.ok ? null : { error: r.error, status: r.status };
+    return r;
+  });
+
+  const [revokeOpen, setRevokeOpen] = React.useState(false);
+
+  if (conn.loading) {
+    return (
+      <Screen>
+        <div className="space-y-4 pt-2">
+          <Skeleton className="h-5 w-40" />
+          <Skeleton className="h-[120px] w-full rounded-xl" />
+          <Skeleton className="h-[220px] w-full rounded-xl" />
+        </div>
+      </Screen>
+    );
+  }
+
+  if (conn.error) {
+    const failure = lastLoadError.current;
+    // An unknown or foreign connection id 404s — render the honest empty state
+    // with a way back, not an error card.
+    if (failure?.status === 404 || conn.error.code === "not_found") {
+      return (
+        <Screen>
+          <EmptyState
+            icon={Plug}
+            title="Connection not found"
+            description="This connection doesn't exist in this organization — it may have been revoked, or the link points at another workspace's connection."
+            primaryAction={{ label: "Back to Integrations", href: hubHref }}
+          />
+        </Screen>
+      );
+    }
+    return (
+      <Screen>
+        <QuietLink href={hubHref}>← Integrations</QuietLink>
+        <div className="mt-4 rounded-xl border bg-card px-6 py-5">
+          <div className="text-[13.5px] font-medium text-destructive">Failed to load the connection</div>
+          <div className="mt-1 text-xs text-muted-foreground">{conn.error.message}</div>
+          {failure?.error.requestId ? (
+            <div className="mt-1 font-mono text-[11px] text-muted-foreground">
+              requestId: {failure.error.requestId}
+            </div>
+          ) : null}
+          <Button size="sm" variant="outline" className="mt-3" onClick={() => conn.reload()}>
+            Retry
+          </Button>
+        </div>
+      </Screen>
+    );
+  }
+
+  const connection = conn.data;
+  if (!connection) return null;
+
+  const archetype = archetypeForProvider(connection.provider);
+  const providerName = connectionProviderName(connection);
+  const statusMeta = connectionStatusMeta(connection.status);
+  const scopeMeta = connectionScopeMeta(connection.scope);
+  const shareMeta = connectionShareModeMeta(connection);
+  const Icon = PROVIDER_ICONS[connection.provider] ?? Plug;
+  const templates = SCOPE_TEMPLATE_CATALOG[connection.provider] ?? [];
+  const isActive = connection.status === "active";
+  const showAdmission = isActive && connection.scope === "account" && !connection.inherited;
+
+  const revoke = async () => {
+    const r = await wrap(() => client.integrations.revoke(orgId, connection.id));
+    if (!r.ok) {
+      toast({ kind: "error", title: "Revoke failed", description: r.error.message });
+      return;
+    }
+    toast({ kind: "success", title: "Connection revoked" });
+    router.push(hubHref);
+  };
+
+  return (
+    <Screen>
+      <QuietLink href={hubHref}>← Integrations</QuietLink>
+
+      {/* Header — provider tile, name, status, scope/sharing provenance. */}
+      <div className="mt-4 rounded-xl border bg-card px-5 py-[18px] sm:px-6 sm:py-[22px]">
+        <div className="flex flex-wrap items-center gap-3.5">
+          <span className="grid h-[38px] w-[38px] shrink-0 place-items-center rounded-[10px] bg-[#171717]" aria-hidden>
+            <Icon className="h-5 w-5 text-[#FAFAFA]" strokeWidth={1.8} />
+          </span>
+          <div className="min-w-0 flex-1">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-[15px] font-semibold leading-tight">{connectionDisplayName(connection)}</span>
+              <Pill tone={STATUS_TONE[statusMeta.tone] ?? "neutral"} dot live={connection.status === "pending"}>
+                {connection.status === "active" ? "Connected" : statusMeta.label}
+              </Pill>
+              <MiniPill>{providerName}</MiniPill>
+              <MiniPill>{scopeMeta.label}</MiniPill>
+              {shareMeta ? <MiniPill>{shareMeta.label}</MiniPill> : null}
+              {connection.inherited ? <MiniPill>Inherited</MiniPill> : null}
+            </div>
+            <div className="mt-[3px] text-[12.5px] text-muted-foreground">
+              {connection.externalAccountLogin ? (
+                <>
+                  {archetype === "messaging" ? "Workspace" : archetype === "infrastructure" ? "Account" : "Installation"}{" "}
+                  <span className="font-mono text-[11.5px]">{connection.externalAccountLogin}</span>
+                  {connection.externalAccountType ? <> · {connection.externalAccountType}</> : null}
+                  {" · "}
+                </>
+              ) : null}
+              created {new Date(connection.createdAt).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}
+              {connection.connectedAt ? (
+                <>
+                  {" · "}connected{" "}
+                  {new Date(connection.connectedAt).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}
+                </>
+              ) : null}
+              {connection.inherited && connection.sharedByName ? (
+                <>
+                  {" · "}shared by {connection.sharedByName}
+                  {connection.sharedByWorkspaceRef ? ` (${connection.sharedByWorkspaceRef})` : ""}
+                </>
+              ) : null}
+            </div>
+          </div>
+        </div>
+        <p className="mt-3 text-xs text-muted-foreground">{shareMeta?.description ?? scopeMeta.description}</p>
+      </div>
+
+      {/* Archetype body */}
+      {archetype === "messaging" ? (
+        <>
+          <Kicker className="mb-2.5 mt-8">Channels in use</Kicker>
+          <SlackChannels orgId={orgId} connectionId={connection.id} enabled={isActive} />
+        </>
+      ) : null}
+
+      {archetype === "infrastructure" ? (
+        <>
+          <Kicker className="mb-2.5 mt-8">What can be minted</Kicker>
+          {templates.length === 0 ? (
+            <div className="rounded-xl border bg-card px-5 py-4 text-xs text-muted-foreground">
+              No scope templates are published for this provider yet.
+            </div>
+          ) : (
+            <div className="overflow-hidden rounded-xl border bg-card">
+              <div className="overflow-x-auto">
+                <table className="w-full min-w-[560px] text-left text-sm">
+                  <thead>
+                    <tr className="border-b text-[11px] font-semibold uppercase tracking-[0.07em] text-muted-foreground/80">
+                      <th className="px-4 py-2.5">Template</th>
+                      <th className="px-4 py-2.5">Grants</th>
+                      <th className="px-4 py-2.5">Params</th>
+                      <th className="px-4 py-2.5">Max TTL</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {templates.map((t) => (
+                      <tr key={t.id} className="border-t border-border/50 first:border-t-0 align-top">
+                        <td className="px-4 py-2.5">
+                          <span className="block text-[12.5px] font-semibold">{t.displayName}</span>
+                          <span className="block font-mono text-[11px] text-muted-foreground">{t.id}</span>
+                        </td>
+                        <td className="px-4 py-2.5 text-xs text-muted-foreground">{t.description}</td>
+                        <td className="px-4 py-2.5 font-mono text-[11px] text-muted-foreground">
+                          {t.params.length > 0 ? t.params.join(", ") : "—"}
+                        </td>
+                        <td className="whitespace-nowrap px-4 py-2.5 text-xs text-muted-foreground">
+                          {formatTtl(t.maxTtlSeconds)}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          <div className="mt-8">
+            <MintLedger orgId={orgId} connectionId={connection.id} templates={templates} canMint={isActive} />
+          </div>
+
+          <Kicker className="mb-2.5 mt-8">Brokered secrets</Kicker>
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border bg-card px-5 py-4">
+            <div className="flex min-w-0 items-start gap-2.5">
+              <Lock className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" strokeWidth={1.8} />
+              <p className="text-xs text-muted-foreground">
+                Secrets bound to this connection mint their value just-in-time at resolve — nothing is stored.
+                Manage bindings from the Secrets surface.
+              </p>
+            </div>
+            <Button asChild size="sm" variant="outline" className="shrink-0">
+              <a href={`/orgs/${orgSlug}/secrets`}>Open Secrets</a>
+            </Button>
+          </div>
+        </>
+      ) : null}
+
+      {archetype === "source-control" ? (
+        <>
+          <Kicker className="mb-2.5 mt-8">Repositories</Kicker>
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border bg-card px-5 py-4">
+            <p className="text-xs text-muted-foreground">
+              Repository linking lives on each project's Git tab — pick a project to link repositories and map
+              branches to environments.
+            </p>
+            <Button asChild size="sm" variant="outline" className="shrink-0">
+              <a href={`/orgs/${orgSlug}/projects`}>Open projects</a>
+            </Button>
+          </div>
+        </>
+      ) : null}
+
+      {showAdmission ? (
+        <>
+          <Kicker className="mb-2.5 mt-8">Workspace access</Kicker>
+          <ConnectionAdmission orgId={orgId} connection={connection} onChanged={() => conn.reload()} />
+        </>
+      ) : null}
+
+      {/* Danger zone — inherited rows are read-only in a child workspace. */}
+      {connection.status !== "revoked" && !connection.inherited ? (
+        <>
+          <Kicker className="mb-2.5 mt-8">Danger zone</Kicker>
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-destructive/30 bg-card px-5 py-4">
+            <p className="max-w-[640px] text-xs text-muted-foreground">{uninstallDisclosure(connection)}</p>
+            <Button variant="destructive" size="sm" className="shrink-0" onClick={() => setRevokeOpen(true)}>
+              Revoke connection
+            </Button>
+          </div>
+          <ConfirmDialog
+            open={revokeOpen}
+            onOpenChange={setRevokeOpen}
+            title={`Revoke ${providerName} connection?`}
+            description={uninstallDisclosure(connection)}
+            resourceName={connectionDisplayName(connection)}
+            confirmLabel="Revoke connection"
+            onConfirm={revoke}
+          />
+        </>
+      ) : null}
+    </Screen>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Slack: channels the bot can post to (MessagingCapability listChannels)
+// ---------------------------------------------------------------------------
+
+function SlackChannels({
+  orgId,
+  connectionId,
+  enabled,
+}: {
+  orgId: string;
+  connectionId: string;
+  enabled: boolean;
+}) {
+  const { client } = useSession();
+  const channels = useApiQuery(
+    qk.slackChannels(orgId, connectionId),
+    () => wrap(() => client.integrations.listSlackChannels(orgId, connectionId, {})),
+    { enabled },
+  );
+
+  if (!enabled) {
+    return (
+      <div className="rounded-xl border bg-card px-5 py-4 text-xs text-muted-foreground">
+        Channels are listed once the connection is active.
+      </div>
+    );
+  }
+  if (channels.loading) return <Skeleton className="h-[92px] w-full rounded-xl" />;
+  if (channels.error) {
+    return (
+      <div className="rounded-xl border bg-card px-5 py-4">
+        <div className="text-xs font-medium text-destructive">Could not list channels</div>
+        <div className="mt-1 text-xs text-muted-foreground">{channels.error.message}</div>
+      </div>
+    );
+  }
+  const list = channels.data?.channels ?? [];
+  if (list.length === 0) {
+    return (
+      <div className="rounded-xl border bg-card px-5 py-4 text-xs text-muted-foreground">
+        The bot can't see any channels yet. Invite it to a channel in Slack, or create a Slack notification
+        channel under Settings → Notifications.
+      </div>
+    );
+  }
+  return (
+    <div className="rounded-xl border bg-card px-5 py-4">
+      <ul className="flex flex-wrap gap-1.5">
+        {list.map((c) => (
+          <li
+            key={c.id}
+            className="inline-flex items-center gap-1 rounded-[10px] border border-border px-2 py-0.5 text-[11.5px] text-secondary-foreground"
+          >
+            <Hash className="h-3 w-3 text-muted-foreground" strokeWidth={1.8} aria-hidden />
+            {c.name}
+            {c.isPrivate ? <Lock className="h-3 w-3 text-muted-foreground" strokeWidth={1.8} aria-label="private" /> : null}
+          </li>
+        ))}
+      </ul>
+      {channels.data?.nextCursor ? (
+        <p className="mt-2 text-[11px] text-muted-foreground">Showing the first page of channels.</p>
+      ) : null}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+
+/** 10.5px caps outline mini-pill (scope / sharing provenance) — hub twin. */
+function MiniPill({ children }: { children: React.ReactNode }) {
+  return (
+    <span className="shrink-0 rounded-[10px] border border-border px-2 py-0.5 text-[10.5px] font-semibold uppercase tracking-[.07em] text-muted-foreground">
+      {children}
+    </span>
+  );
+}
+
+function formatTtl(seconds: number): string {
+  if (seconds % 3600 === 0) {
+    const h = seconds / 3600;
+    return h === 1 ? "1 hour" : `${h} hours`;
+  }
+  if (seconds % 60 === 0) return `${seconds / 60} min`;
+  return `${seconds}s`;
+}

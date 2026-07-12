@@ -1,27 +1,34 @@
 "use client";
 
 // The Integrations hub — a first-class org surface (promoted out of Settings):
-// the place to connect the external providers Orun coordinates. GitHub
-// (install-kind) and Slack (oauth-kind, IH1) are live and fully managed here
-// (connect, status, revoke); the roadmap providers (Supabase, Cloudflare)
-// render as honest "Soon" slots.
+// the place to connect the external providers Orun coordinates. All four live
+// providers are fully managed here (connect, status, revoke), grouped by
+// archetype (design §6): GitHub (source control, install-kind), Slack
+// (messaging, oauth-kind), Cloudflare (infrastructure, token-kind), and
+// Supabase (infrastructure, oauth-kind). Genuinely-future providers (Discord,
+// AWS) render as honest "Soon" slots.
 //
-// Both connect kinds share one UX: popup + poll. The worker returns a URL
+// install/oauth kinds share one UX: popup + poll. The worker returns a URL
 // carrying the signed single-use state; the provider redirects back to our
-// ingress, which activates the connection the poll loop then observes.
+// ingress, which activates the connection the poll loop then observes. The
+// token kind (Cloudflare) opens a paste modal instead — the worker verifies
+// the token before any write and the connection comes back already active.
 //
 // Northwind restyle: serif page header, "Connected" kicker over a white
 // connection card (provider tile, status pill, inner stat tiles), and an
 // "On the roadmap" kicker over dashed provider cards.
 
 import * as React from "react";
-import { useRouter } from "next/navigation";
+import Link from "next/link";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
   GitBranch,
   Plug,
   Database,
   Cloud,
   MessageSquare,
+  MessageCircle,
+  Server,
   type LucideIcon,
 } from "lucide-react";
 import type { PublicConnection } from "@saas/contracts/integrations";
@@ -53,8 +60,12 @@ import {
 } from "@/components/integrations/connections";
 import {
   availableProviders,
+  providerById,
   roadmapProviders,
+  type ProviderId,
 } from "@/components/integrations/providers";
+import { groupByArchetype } from "@/components/integrations/archetype";
+import { CloudflareConnectModal } from "@/components/integrations/cloudflare-connect-modal";
 import { ProviderConnections } from "@/components/agents/provider-connections";
 import { ConnectionAdmission } from "@/components/integrations/connection-admission";
 
@@ -62,10 +73,12 @@ const POLL_INTERVAL_MS = 2500;
 const POLL_BUDGET_MS = 11 * 60 * 1000; // connect state TTL (10 min) + margin
 
 const PROVIDER_ICONS: Record<string, LucideIcon> = {
-  Github: GitBranch, // roadmap slots only; the live GitHub card uses the solid mark
+  Github: GitBranch, // connect slots only; the live GitHub card uses the solid mark
   Database,
   Cloud,
   MessageSquare,
+  MessageCircle,
+  Server,
 };
 
 /** Badge tone (connections.ts) → Northwind pill tone. */
@@ -82,14 +95,15 @@ export function IntegrationsHub({ orgId, orgSlug }: { orgId: string; orgSlug: st
   const { client } = useSession();
   const { toast } = useToast();
   const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
 
   const list = useApiQuery(qk.integrations(orgId), () =>
     wrap(async () => (await client.integrations.list(orgId)).connections),
   );
 
-  const [connectingProvider, setConnectingProvider] = React.useState<
-    "github" | "slack" | null
-  >(null);
+  const [connectingProvider, setConnectingProvider] = React.useState<ProviderId | null>(null);
+  const [cloudflareOpen, setCloudflareOpen] = React.useState(false);
   const [gateError, setGateError] = React.useState<ApiErrorBody | null>(null);
   const [revokeTarget, setRevokeTarget] = React.useState<PublicConnection | null>(null);
   const pollUntil = React.useRef<number>(0);
@@ -112,40 +126,80 @@ export function IntegrationsHub({ orgId, orgSlug }: { orgId: string; orgSlug: st
   }, [shouldPoll, list]);
 
   React.useEffect(() => {
-    if (connectingActive) {
+    if (connectingActive && connectingProvider) {
       toast({
         kind: "success",
-        title: `${connectingProvider === "slack" ? "Slack" : "GitHub"} connected`,
+        title: `${providerById(connectingProvider)?.name ?? connectingProvider} connected`,
       });
       setConnectingProvider(null);
     }
   }, [connectingActive, connectingProvider, toast]);
 
-  const connect = async (provider: "github" | "slack") => {
-    setGateError(null);
-    const r = await wrap(() =>
-      provider === "slack"
-        ? client.integrations.connectSlack(orgId)
-        : client.integrations.connectGithub(orgId),
-    );
-    if (!r.ok) {
-      if (r.status === 412) {
-        setGateError(r.error);
-      } else {
-        toast({ kind: "error", title: "Could not start the connection", description: r.error.message });
+  // Dispatch on the registry's connectKind: install/oauth share the popup +
+  // poll machinery; token (Cloudflare) opens the paste modal instead — the
+  // returned connection is already active, so no poll.
+  const connect = React.useCallback(
+    async (providerId: ProviderId) => {
+      const provider = providerById(providerId);
+      if (!provider || provider.status !== "available") return;
+      setGateError(null);
+      if (provider.connectKind === "token") {
+        setCloudflareOpen(true);
+        return;
       }
-      return;
+      const r = await wrap(() =>
+        provider.id === "slack"
+          ? client.integrations.connectSlack(orgId)
+          : provider.id === "supabase"
+            ? client.integrations.connectSupabase(orgId)
+            : client.integrations.connectGithub(orgId),
+      );
+      if (!r.ok) {
+        if (r.status === 412) {
+          setGateError(r.error);
+        } else {
+          toast({ kind: "error", title: "Could not start the connection", description: r.error.message });
+        }
+        return;
+      }
+      pollUntil.current = Date.now() + POLL_BUDGET_MS;
+      setConnectingProvider(provider.id);
+      list.reload();
+      const { installUrl } = r.data;
+      const popup = window.open(installUrl, `${provider.id}-connect`, "width=1020,height=780");
+      if (!popup && installUrl) {
+        // Popup blocked — same flow, same tab.
+        window.location.assign(installUrl);
+      }
+    },
+    [client, orgId, list, toast],
+  );
+
+  // Cmd-K deep link: `?connect=<provider>` triggers the same connect dispatch
+  // once the list has loaded (so the available/unconnected check is real),
+  // then clears the param — mirroring the app's `?new=1` convention. Popup
+  // kinds opened outside a click gesture may be blocked; `connect()` already
+  // falls back to same-tab navigation, and the token kind just opens a modal.
+  const consumedConnectParam = React.useRef(false);
+  React.useEffect(() => {
+    if (consumedConnectParam.current) return;
+    const requested = searchParams?.get("connect");
+    if (!requested || !list.data) return;
+    consumedConnectParam.current = true;
+    const provider = providerById(requested);
+    const alreadyLive =
+      provider !== null &&
+      list.data.some(
+        (c) => c.provider === provider.id && (c.status === "active" || c.status === "pending"),
+      );
+    if (provider && provider.status === "available" && !alreadyLive) {
+      void connect(provider.id);
     }
-    pollUntil.current = Date.now() + POLL_BUDGET_MS;
-    setConnectingProvider(provider);
-    list.reload();
-    const { installUrl } = r.data;
-    const popup = window.open(installUrl, `${provider}-connect`, "width=1020,height=780");
-    if (!popup && installUrl) {
-      // Popup blocked — same flow, same tab.
-      window.location.assign(installUrl);
-    }
-  };
+    const params = new URLSearchParams(searchParams?.toString() ?? "");
+    params.delete("connect");
+    const qs = params.toString();
+    router.replace(qs ? `${pathname}?${qs}` : pathname);
+  }, [searchParams, list.data, connect, pathname, router]);
 
   const revoke = async (connection: PublicConnection) => {
     const r = await wrap(() => client.integrations.revoke(orgId, connection.id));
@@ -207,6 +261,7 @@ export function IntegrationsHub({ orgId, orgSlug }: { orgId: string; orgSlug: st
             <ConnectionCard
               key={connection.id}
               orgId={orgId}
+              orgSlug={orgSlug}
               connection={connection}
               onRevoke={() => setRevokeTarget(connection)}
               onChanged={() => list.reload()}
@@ -215,53 +270,51 @@ export function IntegrationsHub({ orgId, orgSlug }: { orgId: string; orgSlug: st
         </div>
       )}
 
-      {/* Live-but-unconnected providers (IH1): each available provider without
-          a live connection gets a real Connect card — same popup + poll flow
-          for every connect kind. */}
-      {(() => {
-        const unconnected = availableProviders().filter(
+      {/* Live-but-unconnected providers, marketplace-grouped by archetype
+          (design §6): each available provider without a live connection gets
+          a real Connect card under its archetype kicker. */}
+      {groupByArchetype(
+        availableProviders().filter(
           (p) =>
             !connections.some(
               (c) => c.provider === p.id && (c.status === "active" || c.status === "pending"),
             ),
-        );
-        if (unconnected.length === 0) return null;
-        return (
-          <>
-            <Kicker className="mb-2.5 mt-8">Connect a provider</Kicker>
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-              {unconnected.map((provider) => {
-                const Icon = PROVIDER_ICONS[provider.icon] ?? Plug;
-                const waiting = connectingProvider === provider.id;
-                return (
-                  <div key={provider.id} className="rounded-xl border bg-card px-5 py-[18px]">
-                    <div className="flex items-center gap-2.5">
-                      <Icon
-                        className="h-[18px] w-[18px] shrink-0 text-secondary-foreground"
-                        strokeWidth={1.8}
-                        aria-hidden
-                      />
-                      <span className="text-[13.5px] font-semibold">{provider.name}</span>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="ml-auto shrink-0"
-                        disabled={connectingProvider !== null}
-                        onClick={() => void connect(provider.id as "github" | "slack")}
-                      >
-                        {waiting ? `Waiting for ${provider.name}…` : "Connect"}
-                      </Button>
-                    </div>
-                    <p className="mt-2.5 text-[12.5px] leading-relaxed text-muted-foreground">
-                      {provider.description}
-                    </p>
+        ),
+      ).map((group) => (
+        <React.Fragment key={group.archetype}>
+          <Kicker className="mb-2.5 mt-8">{group.label}</Kicker>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            {group.items.map((provider) => {
+              const Icon = PROVIDER_ICONS[provider.icon] ?? Plug;
+              const waiting = connectingProvider === provider.id;
+              return (
+                <div key={provider.id} className="rounded-xl border bg-card px-5 py-[18px]">
+                  <div className="flex items-center gap-2.5">
+                    <Icon
+                      className="h-[18px] w-[18px] shrink-0 text-secondary-foreground"
+                      strokeWidth={1.8}
+                      aria-hidden
+                    />
+                    <span className="text-[13.5px] font-semibold">{provider.name}</span>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="ml-auto shrink-0"
+                      disabled={connectingProvider !== null}
+                      onClick={() => void connect(provider.id)}
+                    >
+                      {waiting ? `Waiting for ${provider.name}…` : "Connect"}
+                    </Button>
                   </div>
-                );
-              })}
-            </div>
-          </>
-        );
-      })()}
+                  <p className="mt-2.5 text-[12.5px] leading-relaxed text-muted-foreground">
+                    {provider.description}
+                  </p>
+                </div>
+              );
+            })}
+          </div>
+        </React.Fragment>
+      ))}
 
       {/* BYO agent providers (saas-agents AG12 §10.5): Daytona compute +
           Anthropic model keys, the same connections the Agents tab manages. */}
@@ -305,6 +358,18 @@ export function IntegrationsHub({ orgId, orgSlug }: { orgId: string; orgSlug: st
           if (revokeTarget) await revoke(revokeTarget);
         }}
       />
+
+      {/* Token-kind connect (IH5/IH8): paste modal with the scope recipe
+          inline; the worker verifies before saving and the connection comes
+          back active, so success is just a reload. Entitlement 412s ride the
+          same PreconditionInsight path as the popup kinds. */}
+      <CloudflareConnectModal
+        orgId={orgId}
+        open={cloudflareOpen}
+        onOpenChange={setCloudflareOpen}
+        onConnected={() => list.reload()}
+        onGateError={(error) => setGateError(error)}
+      />
     </Screen>
   );
 }
@@ -313,13 +378,36 @@ export function IntegrationsHub({ orgId, orgSlug }: { orgId: string; orgSlug: st
 // Connected provider card
 // ---------------------------------------------------------------------------
 
+/** Dark-tile icon per provider; GitHub keeps its solid mark. */
+const CONNECTED_TILE_ICONS: Record<string, LucideIcon> = {
+  slack: MessageSquare,
+  cloudflare: Cloud,
+  supabase: Database,
+};
+
+/** What the external anchor IS, per provider ("Installation acme · …"). */
+function externalAnchorLabel(provider: PublicConnection["provider"]): string {
+  switch (provider) {
+    case "slack":
+      return "Workspace";
+    case "cloudflare":
+      return "Account";
+    case "supabase":
+      return "Organization";
+    default:
+      return "Installation";
+  }
+}
+
 function ConnectionCard({
   orgId,
+  orgSlug,
   connection,
   onRevoke,
   onChanged,
 }: {
   orgId: string;
+  orgSlug: string;
   connection: PublicConnection;
   onRevoke: () => void;
   onChanged: () => void;
@@ -330,36 +418,41 @@ function ConnectionCard({
   const tone = STATUS_TONE[meta.tone] ?? "neutral";
   const statusLabel = connection.status === "active" ? "Connected" : meta.label;
   const providerName = connectionProviderName(connection);
-  const isSlack = connection.provider === "slack";
+  const TileIcon = CONNECTED_TILE_ICONS[connection.provider];
 
   const caption = connection.inherited
     ? `Shared by ${connection.sharedByName ?? "your account"}${
         connection.sharedByWorkspaceRef ? ` (${connection.sharedByWorkspaceRef})` : ""
-      }${isSlack ? "" : " — link repos from a project's Git tab"}`
+      }${connection.provider === "github" ? " — link repos from a project's Git tab" : ""}`
     : connection.connectedAt
       ? `authorized ${new Date(connection.connectedAt).toLocaleDateString(undefined, {
           month: "short",
           year: "numeric",
         })}`
       : connection.status === "pending"
-        ? isSlack
-          ? "waiting for the Slack authorization to finish"
-          : "waiting for the GitHub install to finish"
+        ? connection.provider === "github"
+          ? "waiting for the GitHub install to finish"
+          : `waiting for the ${providerName} authorization to finish`
         : null;
 
   return (
     <div className="rounded-xl border bg-card px-5 py-[18px] sm:px-6 sm:py-[22px]">
       <div className="flex flex-wrap items-center gap-3.5">
         <span className="grid h-[38px] w-[38px] shrink-0 place-items-center rounded-[10px] bg-[#171717]" aria-hidden>
-          {isSlack ? (
-            <MessageSquare className="h-5 w-5 text-[#FAFAFA]" strokeWidth={1.8} />
+          {TileIcon ? (
+            <TileIcon className="h-5 w-5 text-[#FAFAFA]" strokeWidth={1.8} />
           ) : (
             <GithubMark />
           )}
         </span>
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
-            <span className="text-[15px] font-semibold leading-tight">{providerName}</span>
+            <Link
+              href={`/orgs/${orgSlug}/integrations/${connection.id}`}
+              className="text-[15px] font-semibold leading-tight hover:underline"
+            >
+              {providerName}
+            </Link>
             <Pill tone={tone} dot live={connection.status === "pending"}>
               {statusLabel}
             </Pill>
@@ -368,7 +461,7 @@ function ConnectionCard({
             {connection.inherited ? <MiniPill>Inherited</MiniPill> : null}
           </div>
           <div className="mt-[3px] text-[12.5px] text-muted-foreground">
-            {isSlack ? "Workspace" : "Installation"}{" "}
+            {externalAnchorLabel(connection.provider)}{" "}
             <span className="font-mono text-[11.5px]">{connectionDisplayName(connection)}</span>
             {connection.externalAccountType ? <> · {connection.externalAccountType}</> : null}
             {caption ? <> · {caption}</> : null}

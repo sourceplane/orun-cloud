@@ -1,0 +1,191 @@
+/**
+ * Pure logic for the secrets "Bind to integration" path
+ * (saas-integration-hub IH8, design §6 "Secrets UI").
+ *
+ * Dependency-free (no React, no DOM) so the binding rules are unit-testable
+ * in isolation (tests/web-console-next). The React wiring lives in
+ * `secrets-panel.tsx`; this file owns:
+ *
+ *   - the create dialog's mode ("value" | "binding")
+ *   - which connections can back a brokered secret
+ *   - binding form validation → a `CreateBrokeredSecretRequest`-shaped body
+ *   - `deriveBrokerRow` (row provenance for brokered secrets)
+ *   - the entitlement-aware 412 message for `createBrokeredSecret`
+ *
+ * Nothing here ever touches a secret VALUE — a brokered secret has none.
+ */
+
+import type { CreateBrokeredSecretRequest, PublicSecretMetadata } from "@saas/contracts/config";
+
+/** The create dialog's two paths: a stored value, or a broker binding. */
+export type CreateSecretMode = "value" | "binding";
+
+/** Public connection id shape (`int_<32hex>`), same alphabet as the platform's prefix ids. */
+export const CONNECTION_ID_PATTERN = /^int_[0-9a-f]{32}$/;
+
+/**
+ * Providers with the `credential-broker` capability the console can bind
+ * against (design §5: Cloudflare + Supabase adapters; GitHub's broker serves
+ * repo tokens through the Git surface, not secret bindings, in v1).
+ */
+export const BROKER_CAPABLE_PROVIDERS: readonly string[] = ["cloudflare", "supabase"];
+
+export function isBrokerCapableProvider(providerId: string): boolean {
+  return BROKER_CAPABLE_PROVIDERS.includes(providerId);
+}
+
+/** Connections the binding picker offers: active + broker-capable. */
+export function brokerConnections<T extends { provider: string; status: string }>(
+  connections: readonly T[],
+): T[] {
+  return connections.filter((c) => c.status === "active" && isBrokerCapableProvider(c.provider));
+}
+
+// ---------------------------------------------------------------------------
+// Binding form validation
+// ---------------------------------------------------------------------------
+
+/** Structural twin of `ScopeTemplateInfo` (archetype.ts) — kept local for purity. */
+export interface BindTemplateLike {
+  id: string;
+  params: readonly string[];
+}
+
+export interface BindingFormValues {
+  secretKey: string;
+  displayName: string;
+  /** Public connection id (int_…), from the picker. */
+  connectionId: string;
+  /** Template id chosen from the connection's provider catalog. */
+  template: string;
+  /** Raw param inputs keyed by param name. */
+  params: Record<string, string>;
+}
+
+export type BindingFormResult =
+  | { ok: true; request: CreateBrokeredSecretRequest }
+  | { ok: false; errors: Record<string, string> };
+
+/**
+ * Validate the binding form and shape the `createBrokeredSecret` body.
+ *
+ *   - `secretKey`: same rule as the static-value schema (1..128 after trim);
+ *   - `connectionId`: must match `int_<32hex>`;
+ *   - `template`: must be one of the provider catalog's template ids;
+ *   - params: every param the chosen template declares, non-empty (trimmed);
+ *   - `displayName`: optional, ≤128.
+ *
+ * Errors are keyed by field name (param errors keyed by the param name).
+ */
+export function validateBindingForm(
+  form: BindingFormValues,
+  templates: readonly BindTemplateLike[],
+): BindingFormResult {
+  const errors: Record<string, string> = {};
+
+  const secretKey = form.secretKey.trim();
+  if (secretKey.length === 0) errors.secretKey = "Required";
+  else if (secretKey.length > 128) errors.secretKey = "At most 128 characters";
+
+  if (!CONNECTION_ID_PATTERN.test(form.connectionId)) {
+    errors.connectionId = "Pick a connection";
+  }
+
+  const template = templates.find((t) => t.id === form.template);
+  if (!template) {
+    errors.template = "Pick a scope template";
+  }
+
+  const params: Record<string, string> = {};
+  if (template) {
+    for (const name of template.params) {
+      const value = (form.params[name] ?? "").trim();
+      if (value.length === 0) errors[name] = "Required";
+      else params[name] = value;
+    }
+  }
+
+  const displayName = form.displayName.trim();
+  if (displayName.length > 128) errors.displayName = "At most 128 characters";
+
+  if (Object.keys(errors).length > 0) return { ok: false, errors };
+
+  const request: CreateBrokeredSecretRequest = {
+    secretKey,
+    binding: {
+      connectionId: form.connectionId,
+      template: template!.id,
+      ...(template!.params.length > 0 ? { params } : {}),
+    },
+    ...(displayName.length > 0 ? { displayName } : {}),
+  };
+  return { ok: true, request };
+}
+
+// ---------------------------------------------------------------------------
+// Row provenance
+// ---------------------------------------------------------------------------
+
+export interface BrokerRow {
+  provider: string;
+  template: string;
+  connectionId: string;
+  /** Sub-label provenance, e.g. "brokered · cloudflare · workers-deploy". */
+  label: string;
+}
+
+/**
+ * Derive the broker provenance for a secrets-table row. Returns null for
+ * static rows (absent `source` means static — surfaces that predate brokered
+ * secrets) and for a brokered row missing its display binding (defensive).
+ */
+export function deriveBrokerRow(
+  meta: Pick<PublicSecretMetadata, "source" | "binding">,
+): BrokerRow | null {
+  if (meta.source !== "brokered") return null;
+  const binding = meta.binding;
+  if (!binding) return null;
+  return {
+    provider: binding.provider,
+    template: binding.template,
+    connectionId: binding.connectionId,
+    label: `brokered · ${binding.provider} · ${binding.template}`,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// 412 messaging for createBrokeredSecret
+// ---------------------------------------------------------------------------
+
+/** Structural subset of `ApiErrorBody` (lib/api.ts) — kept local for purity. */
+export interface BrokeredCreateError {
+  message: string;
+  reason?: string | undefined;
+  details?: Record<string, unknown> | undefined;
+}
+
+/**
+ * Entitlement-aware inline message for a 412 from `createBrokeredSecret`
+ * (`limit.brokered_secrets` / broker feature gates). Unknown reasons fall
+ * back to the server message — never a silent toast.
+ */
+export function brokeredCreateErrorMessage(error: BrokeredCreateError): string {
+  const details = error.details ?? {};
+  const key = typeof details.key === "string" ? details.key : null;
+  const entitlement = key ? key.split(".").pop()!.replace(/_/g, " ") : "brokered secrets";
+  switch (error.reason) {
+    case "limit_reached": {
+      const limit = typeof details.limit === "number" ? details.limit : null;
+      const current = typeof details.current === "number" ? details.current : null;
+      const usage =
+        limit !== null && current !== null ? ` (${current} of ${limit} used)` : limit !== null ? ` (limit ${limit})` : "";
+      return `Your plan's ${entitlement} limit is reached${usage}. Upgrade your plan to bind more secrets.`;
+    }
+    case "not_configured":
+      return `Billing isn't configured for this workspace yet, so the ${entitlement} entitlement can't be validated. Finish setup in Billing, then try again.`;
+    case "disabled":
+      return `${entitlement.charAt(0).toUpperCase()}${entitlement.slice(1)} are disabled on your plan. Contact your account team to enable this entitlement.`;
+    default:
+      return error.message;
+  }
+}

@@ -317,6 +317,16 @@ export function buildBaseCommands(ctx: CommandContext): CommandDescriptor[] {
       navItem("create.work-task", "New work task", `${orgBase}/work?new=task`, "PlusCircle", ["task", "work", "new"], "Create"),
       navItem("create.work-spec", "New work spec", `${orgBase}/work?new=spec`, "PlusCircle", ["spec", "work", "epic", "new"], "Create"),
       navItem("create.work-initiative", "New work initiative", `${orgBase}/work?new=initiative`, "PlusCircle", ["initiative", "work", "new"], "Create"),
+      // Integration-hub verbs (saas-integration-hub IH8, design §6). The
+      // `?connect=` param triggers the hub's connect dispatch on arrival —
+      // the same `?new=1` convention the other Create verbs use.
+      navItem("create.connect-slack", "Connect Slack", `${orgBase}/integrations?connect=slack`, "MessageSquare", ["connect", "slack", "integration", "notification", "messaging"], "Create"),
+      navItem("create.connect-cloudflare", "Connect Cloudflare", `${orgBase}/integrations?connect=cloudflare`, "Cloud", ["connect", "cloudflare", "integration", "token", "workers", "infrastructure"], "Create"),
+      navItem("create.connect-supabase", "Connect Supabase", `${orgBase}/integrations?connect=supabase`, "Database", ["connect", "supabase", "integration", "postgres", "database", "infrastructure"], "Create"),
+      // Mint lives on a connection's detail page — the hub is the way in.
+      navItem("create.mint-credential", "Mint credential", `${orgBase}/integrations`, "KeyRound", ["mint", "credential", "token", "broker"], "Create"),
+      // `?bind=1` opens the bind-to-integration path on the secrets surface.
+      navItem("create.bind-secret", "Bind brokered secret", `${orgBase}/secrets?bind=1`, "KeyRound", ["bind", "broker", "brokered", "secret", "integration"], "Create"),
     );
   }
   if (projectBase) {
