@@ -41,12 +41,33 @@
         "GITHUB_APP_CLIENT_SECRET"
       ],
       "consumers": ["integrations-worker"]
+    },
+    "slack-app": {
+      "doc": "integrations/slack-app/<env>",
+      "$comment": "Per-environment Slack App credentials (IH1 connect flow + IH3 signed-request verification). Previously deferred behind the 'per-environment Slack App exists' risk (IH risks D1); IH9 lifts them into the escrow instance-parameter surface alongside the GitHub App's so the deploy lane owns them end to end.",
+      "config": [],
+      "secret": [
+        "SLACK_APP_CLIENT_ID",
+        "SLACK_APP_CLIENT_SECRET",
+        "SLACK_APP_SIGNING_SECRET"
+      ],
+      "consumers": ["integrations-worker"]
+    },
+    "supabase-oauth": {
+      "doc": "integrations/supabase-oauth/<env>",
+      "$comment": "Per-environment Supabase OAuth app credentials (IH6 connect + token refresh). IH9 lifts them into the escrow instance-parameter surface alongside the GitHub App's so the deploy lane owns them end to end.",
+      "config": [],
+      "secret": [
+        "SUPABASE_OAUTH_CLIENT_ID",
+        "SUPABASE_OAUTH_CLIENT_SECRET"
+      ],
+      "consumers": ["integrations-worker"]
     }
   },
   "platform": {
     "doc": "platform-secrets/<env>",
     "secret": {
-      "SECRET_ENCRYPTION_KEY": ["webhooks-worker", "config-worker", "integrations-worker"],
+      "SECRET_ENCRYPTION_KEY": ["webhooks-worker", "config-worker", "integrations-worker", "notifications-worker"],
       "SECRET_KEK": ["config-worker"],
       "OAUTH_STATE_SECRET": ["identity-worker"],
       "CLI_JWT_SIGNING_KEY": ["identity-worker"],

@@ -186,6 +186,95 @@ export async function handleSupabaseOauthCallback(
       );
     }
 
+    // Re-auth (IH9): a Supabase org already bound to a connection means this
+    // OAuth round is a re-authorization. Owned by the state's org → refresh
+    // custody on the EXISTING connection and reactivate it (a suspended
+    // connection heals; brokered secrets keep their binding); the pending
+    // placeholder this state minted is retired. Owned elsewhere → refuse
+    // BEFORE any facts write, so the binding can never flip across orgs.
+    // Only a revoked own connection falls through to the fresh-create path
+    // (the facts upsert rebinds the org to the new connection).
+    const existingOrg = await hub.getSupabaseOrgByExternalId(org.supabaseOrgId);
+    if (
+      existingOrg.ok &&
+      existingOrg.value.connectionId &&
+      existingOrg.value.connectionId !== connection.id
+    ) {
+      const boundId = asUuid(existingOrg.value.connectionId);
+      const own = await repo.getConnection(asUuid(connection.orgId), boundId);
+      if (own.ok && own.value.status !== "revoked") {
+        const reEnvelope = await encryption.encrypt(grant.refreshToken);
+        const restored = await hub.upsertProviderCredential({
+          id: generateUuid(),
+          connectionId: boundId,
+          kind: "supabase_refresh_token",
+          ciphertext: JSON.stringify(reEnvelope),
+          externalRef: org.supabaseOrgId,
+        });
+        if (!restored.ok) {
+          return popupPage("error", "Connection not completed", LINK_FAILED_MESSAGE);
+        }
+        const refreshedProjects = await listSupabaseProjects(grant.accessToken, deps?.fetchImpl);
+        await hub.upsertSupabaseOrg({
+          id: generateUuid(),
+          connectionId: boundId,
+          supabaseOrgId: org.supabaseOrgId,
+          orgName: org.orgName,
+          projects: refreshedProjects,
+        });
+        if (own.value.status !== "active") {
+          const reactivated = await repo.updateConnectionStatus(
+            asUuid(connection.orgId),
+            boundId,
+            "active",
+          );
+          if (!reactivated.ok) {
+            return popupPage("error", "Connection not completed", LINK_FAILED_MESSAGE);
+          }
+        }
+        // Retire the placeholder this state minted — it never activates.
+        await repo.updateConnectionStatus(asUuid(connection.orgId), asUuid(connection.id), "revoked");
+        try {
+          const events = createEventsRepository(executor);
+          await events.appendEventWithAudit({
+            event: {
+              id: generateUuid(),
+              type: INTEGRATION_EVENT_TYPES.REACTIVATED,
+              version: 1,
+              source: "integrations-worker",
+              occurredAt: new Date(),
+              actorType: "user",
+              actorId: connection.createdBy ?? "unknown",
+              orgId: asUuid(connection.orgId),
+              subjectKind: "integration_connection",
+              subjectId: existingOrg.value.connectionId,
+              requestId,
+              payload: { provider: "supabase", reason: "reauthorized" },
+            },
+            audit: {
+              id: generateUuid(),
+              category: "integrations",
+              description: "Supabase connection re-authorized (fresh grant)",
+            },
+          });
+        } catch {
+          // best-effort
+        }
+        return popupPage(
+          "success",
+          "Reconnected",
+          "Supabase access was re-authorized. You can close this window.",
+        );
+      }
+      if (!own.ok) {
+        return popupPage(
+          "error",
+          "Already connected",
+          "This Supabase organization is already linked to a connection.",
+        );
+      }
+    }
+
     // Custody first (design §3): by the time the connection is visible as
     // active, its REFRESH token is already at rest as an encrypted envelope.
     // The short-lived access token is never stored durable.

@@ -218,6 +218,8 @@ export interface IntegrationHubRepository {
   ): Promise<IntegrationsResult<MintedCredential[]>>;
   /** Rate limiting (IH4): mints in the org since a cutoff. */
   countMintedCredentialsSince(orgId: Uuid, since: Date): Promise<IntegrationsResult<number>>;
+  /** Expiry sweep (IH9): flip past-due pending mints to expired; returns the count. */
+  bulkExpireMintedCredentials(before: Date, limit: number): Promise<IntegrationsResult<number>>;
 
   // Slack workspace facts
   upsertSlackWorkspace(
@@ -225,6 +227,11 @@ export interface IntegrationHubRepository {
   ): Promise<IntegrationsResult<SlackWorkspace>>;
   getSlackWorkspaceByTeamId(teamId: string): Promise<IntegrationsResult<SlackWorkspace>>;
   getSlackWorkspaceByConnectionId(
+    connectionId: Uuid,
+  ): Promise<IntegrationsResult<SlackWorkspace>>;
+  /** Re-auth (IH9): rebind a workspace to a new connection — explicit, never via upsert. */
+  rebindSlackWorkspace(
+    teamId: string,
     connectionId: Uuid,
   ): Promise<IntegrationsResult<SlackWorkspace>>;
 
@@ -235,10 +242,24 @@ export interface IntegrationHubRepository {
   getCloudflareAccountByConnectionId(
     connectionId: Uuid,
   ): Promise<IntegrationsResult<CloudflareAccount>>;
+  /** Re-auth/tenancy guard (IH9): the current binding for a provider-side account. */
+  getCloudflareAccountByExternalId(
+    accountExternalId: string,
+  ): Promise<IntegrationsResult<CloudflareAccount>>;
+  /** Health/orphan sweep enumeration (IH9): connected fact rows, stalest first. */
+  listCloudflareAccountsForSweep(
+    limit: number,
+  ): Promise<IntegrationsResult<Array<CloudflareAccount & { orgId: string; connectionStatus: string }>>>;
 
   // Supabase org facts
   upsertSupabaseOrg(input: UpsertSupabaseOrgInput): Promise<IntegrationsResult<SupabaseOrg>>;
   getSupabaseOrgByConnectionId(connectionId: Uuid): Promise<IntegrationsResult<SupabaseOrg>>;
+  /** Re-auth/tenancy guard (IH9): the current binding for a provider-side org. */
+  getSupabaseOrgByExternalId(supabaseOrgId: string): Promise<IntegrationsResult<SupabaseOrg>>;
+  /** Health/orphan sweep enumeration (IH9): connected fact rows, stalest first. */
+  listSupabaseOrgsForSweep(
+    limit: number,
+  ): Promise<IntegrationsResult<Array<SupabaseOrg & { orgId: string; connectionStatus: string }>>>;
 }
 
 // ── Helpers (mirrors repository.ts conventions) ─────────────
@@ -346,6 +367,16 @@ function mapCloudflareAccount(row: Record<string, unknown>): CloudflareAccount {
   };
 }
 
+function mapCloudflareAccountForSweep(
+  row: Record<string, unknown>,
+): CloudflareAccount & { orgId: string; connectionStatus: string } {
+  return {
+    ...mapCloudflareAccount(row),
+    orgId: row.org_id as string,
+    connectionStatus: row.connection_status as string,
+  };
+}
+
 function mapSupabaseOrg(row: Record<string, unknown>): SupabaseOrg {
   return {
     id: row.id as string,
@@ -356,6 +387,16 @@ function mapSupabaseOrg(row: Record<string, unknown>): SupabaseOrg {
     projects: parseJson(row.projects),
     createdAt: toDate(row.created_at),
     updatedAt: toDate(row.updated_at),
+  };
+}
+
+function mapSupabaseOrgForSweep(
+  row: Record<string, unknown>,
+): SupabaseOrg & { orgId: string; connectionStatus: string } {
+  return {
+    ...mapSupabaseOrg(row),
+    orgId: row.org_id as string,
+    connectionStatus: row.connection_status as string,
   };
 }
 
@@ -566,6 +607,26 @@ export function createIntegrationHubRepository(executor: SqlExecutor): Integrati
       }
     },
 
+    async bulkExpireMintedCredentials(before, limit) {
+      try {
+        const result = await executor.execute(
+          `UPDATE integrations.minted_credentials
+           SET revoke_status = 'expired', revoked_at = expires_at, updated_at = now()
+           WHERE id IN (
+             SELECT id FROM integrations.minted_credentials
+             WHERE revoke_status = 'pending' AND expires_at < $1
+             ORDER BY expires_at ASC
+             LIMIT $2
+           )
+           RETURNING id`,
+          [before, limit],
+        );
+        return { ok: true, value: result.rows.length };
+      } catch (err) {
+        return safeError(`minted credential bulk expire failed: ${String(err)}`);
+      }
+    },
+
     // ── Slack workspace facts ─────────────────────────────
     async upsertSlackWorkspace(input) {
       try {
@@ -632,6 +693,23 @@ export function createIntegrationHubRepository(executor: SqlExecutor): Integrati
       }
     },
 
+    async rebindSlackWorkspace(teamId, connectionId) {
+      try {
+        const result = await executor.execute(
+          `UPDATE integrations.slack_workspaces
+           SET connection_id = $2, updated_at = now()
+           WHERE team_id = $1
+           RETURNING *`,
+          [teamId, connectionId],
+        );
+        const row = result.rows[0];
+        if (!row) return notFound();
+        return { ok: true, value: mapSlackWorkspace(row) };
+      } catch (err) {
+        return safeError(`slack workspace rebind failed: ${String(err)}`);
+      }
+    },
+
     // ── Cloudflare account facts ──────────────────────────
     async upsertCloudflareAccount(input) {
       try {
@@ -682,6 +760,36 @@ export function createIntegrationHubRepository(executor: SqlExecutor): Integrati
       }
     },
 
+    async getCloudflareAccountByExternalId(accountExternalId) {
+      try {
+        const result = await executor.execute(
+          `SELECT * FROM integrations.cloudflare_accounts WHERE account_external_id = $1`,
+          [accountExternalId],
+        );
+        const row = result.rows[0];
+        if (!row) return notFound();
+        return { ok: true, value: mapCloudflareAccount(row) };
+      } catch (err) {
+        return safeError(`cloudflare account read failed: ${String(err)}`);
+      }
+    },
+
+    async listCloudflareAccountsForSweep(limit) {
+      try {
+        const result = await executor.execute(
+          `SELECT t.*, c.org_id AS org_id, c.status AS connection_status
+           FROM integrations.cloudflare_accounts t
+           JOIN integrations.connections c ON c.id = t.connection_id
+           ORDER BY t.updated_at ASC
+           LIMIT $1`,
+          [limit],
+        );
+        return { ok: true, value: result.rows.map(mapCloudflareAccountForSweep) };
+      } catch (err) {
+        return safeError(`cloudflare account sweep list failed: ${String(err)}`);
+      }
+    },
+
     // ── Supabase org facts ────────────────────────────────
     async upsertSupabaseOrg(input) {
       try {
@@ -724,6 +832,36 @@ export function createIntegrationHubRepository(executor: SqlExecutor): Integrati
         return { ok: true, value: mapSupabaseOrg(row) };
       } catch (err) {
         return safeError(`supabase org read failed: ${String(err)}`);
+      }
+    },
+
+    async getSupabaseOrgByExternalId(supabaseOrgId) {
+      try {
+        const result = await executor.execute(
+          `SELECT * FROM integrations.supabase_orgs WHERE supabase_org_id = $1`,
+          [supabaseOrgId],
+        );
+        const row = result.rows[0];
+        if (!row) return notFound();
+        return { ok: true, value: mapSupabaseOrg(row) };
+      } catch (err) {
+        return safeError(`supabase org read failed: ${String(err)}`);
+      }
+    },
+
+    async listSupabaseOrgsForSweep(limit) {
+      try {
+        const result = await executor.execute(
+          `SELECT t.*, c.org_id AS org_id, c.status AS connection_status
+           FROM integrations.supabase_orgs t
+           JOIN integrations.connections c ON c.id = t.connection_id
+           ORDER BY t.updated_at ASC
+           LIMIT $1`,
+          [limit],
+        );
+        return { ok: true, value: result.rows.map(mapSupabaseOrgForSweep) };
+      } catch (err) {
+        return safeError(`supabase org sweep list failed: ${String(err)}`);
       }
     },
   };

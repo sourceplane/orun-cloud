@@ -60,9 +60,9 @@ describe("secrets manifest (SS0/SS6b)", () => {
 
   it("covers every worker template that documents a `wrangler secret put`", () => {
     const apps = path.resolve(here, "../../../apps");
-    // The manifest is a projection that also includes config-only consumers
-    // (e.g. notifications-worker) with no secrets; the coverage invariant is
-    // over workers that actually carry secrets (required or deferred).
+    // The manifest is a projection that may also include config-only consumers
+    // with no secrets; the coverage invariant is over workers that actually
+    // carry secrets (required or deferred).
     const withSecrets = Object.entries(
       manifest.workers as Record<string, { required: string[]; deferred?: unknown }>,
     )

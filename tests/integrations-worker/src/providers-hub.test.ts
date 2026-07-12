@@ -15,7 +15,11 @@ import {
   SLACK_BOT_SCOPES,
   verifySlackSignature,
 } from "@integrations-worker/providers/slack";
-import { CLOUDFLARE_SCOPE_TEMPLATES } from "@integrations-worker/providers/cloudflare";
+import {
+  CLOUDFLARE_SCOPE_TEMPLATES,
+  getCloudflareTokenPolicies,
+  listCloudflareAccountTokens,
+} from "@integrations-worker/providers/cloudflare";
 import { SUPABASE_SCOPE_TEMPLATES } from "@integrations-worker/providers/supabase";
 import { getCapability } from "@integrations-worker/providers/types";
 import type { Env } from "@integrations-worker/env";
@@ -273,6 +277,128 @@ describe("credential-broker adapters (IH0 dormant)", () => {
     await expect(
       sb.broker!.mintCredential({ template: "nope", params: {}, ttlSeconds: 900, nowMs: NOW }),
     ).resolves.toEqual({ ok: false, reason: "template_unknown" });
+  });
+});
+
+// ── Cloudflare sweep support (IH9) ──────────────────────────
+
+describe("cloudflare sweep support (IH9)", () => {
+  const PARENT = { credential: "cf-parent-token", externalRef: "acct-1" };
+
+  function tokenRow(overrides?: Record<string, unknown>): Record<string, unknown> {
+    return {
+      id: "tok-1",
+      name: "orun/org_abc/workers-deploy/mint_1",
+      status: "active",
+      expires_on: "2026-07-12T11:00:00Z",
+      ...overrides,
+    };
+  }
+
+  it("lists account tokens across pages, mapping name and expiresOn", async () => {
+    const urls: string[] = [];
+    const auths: Array<string | null> = [];
+    const tokens = await listCloudflareAccountTokens(PARENT, (url, init) => {
+      urls.push(url);
+      auths.push(new Headers(init?.headers).get("authorization"));
+      const page = new URL(url).searchParams.get("page");
+      const body =
+        page === "1"
+          ? {
+              success: true,
+              result: [tokenRow()],
+              result_info: { page: 1, total_pages: 2 },
+            }
+          : {
+              success: true,
+              result: [tokenRow({ id: "tok-2", name: "customer-token", expires_on: null })],
+              result_info: { page: 2, total_pages: 2 },
+            };
+      return Promise.resolve(Response.json(body));
+    });
+    expect(tokens).toEqual([
+      {
+        id: "tok-1",
+        name: "orun/org_abc/workers-deploy/mint_1",
+        status: "active",
+        expiresOn: "2026-07-12T11:00:00Z",
+      },
+      { id: "tok-2", name: "customer-token", status: "active", expiresOn: null },
+    ]);
+    expect(urls).toEqual([
+      "https://api.cloudflare.com/client/v4/accounts/acct-1/tokens?page=1&per_page=50",
+      "https://api.cloudflare.com/client/v4/accounts/acct-1/tokens?page=2&per_page=50",
+    ]);
+    expect(auths).toEqual(["Bearer cf-parent-token", "Bearer cf-parent-token"]);
+  });
+
+  it("stops after one page when result_info says so", async () => {
+    let calls = 0;
+    const tokens = await listCloudflareAccountTokens(PARENT, () => {
+      calls += 1;
+      return Promise.resolve(
+        Response.json({ success: true, result: [tokenRow()], result_info: { total_pages: 1 } }),
+      );
+    });
+    expect(tokens).toHaveLength(1);
+    expect(calls).toBe(1);
+  });
+
+  it("returns null on API failure, success:false, transport error, or no account anchor", async () => {
+    await expect(
+      listCloudflareAccountTokens(PARENT, () =>
+        Promise.resolve(new Response("nope", { status: 403 })),
+      ),
+    ).resolves.toBeNull();
+    await expect(
+      listCloudflareAccountTokens(PARENT, () =>
+        Promise.resolve(Response.json({ success: false, errors: [{ message: "denied" }] })),
+      ),
+    ).resolves.toBeNull();
+    await expect(
+      listCloudflareAccountTokens(PARENT, () => Promise.reject(new Error("boom"))),
+    ).resolves.toBeNull();
+    await expect(
+      listCloudflareAccountTokens({ credential: "cf-parent-token", externalRef: null }, () =>
+        Promise.resolve(Response.json({ success: true, result: [] })),
+      ),
+    ).resolves.toBeNull();
+  });
+
+  it("reads the parent token's own policies for the health cron", async () => {
+    let url = "";
+    let auth: string | null = null;
+    const policies = await getCloudflareTokenPolicies("cf-parent-token", "tok-id-1", (u, init) => {
+      url = u;
+      auth = new Headers(init?.headers).get("authorization");
+      return Promise.resolve(
+        Response.json({ success: true, result: { id: "tok-id-1", policies: [{ effect: "allow" }] } }),
+      );
+    });
+    expect(policies).toEqual([{ effect: "allow" }]);
+    expect(url).toBe("https://api.cloudflare.com/client/v4/user/tokens/tok-id-1");
+    expect(auth).toBe("Bearer cf-parent-token");
+  });
+
+  it("policies read returns null when missing, non-array, refused, or unreachable", async () => {
+    await expect(
+      getCloudflareTokenPolicies("t", "id", () =>
+        Promise.resolve(Response.json({ success: true, result: { id: "id" } })),
+      ),
+    ).resolves.toBeNull();
+    await expect(
+      getCloudflareTokenPolicies("t", "id", () =>
+        Promise.resolve(Response.json({ success: true, result: { policies: "not-an-array" } })),
+      ),
+    ).resolves.toBeNull();
+    await expect(
+      getCloudflareTokenPolicies("t", "id", () =>
+        Promise.resolve(new Response("nope", { status: 401 })),
+      ),
+    ).resolves.toBeNull();
+    await expect(
+      getCloudflareTokenPolicies("t", "id", () => Promise.reject(new Error("boom"))),
+    ).resolves.toBeNull();
   });
 });
 

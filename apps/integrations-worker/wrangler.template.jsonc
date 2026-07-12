@@ -43,9 +43,11 @@
         // for the required set:
         //   SECRET_ENCRYPTION_KEY, INTEGRATIONS_STATE_SECRET,
         //   GITHUB_APP_ID, GITHUB_APP_SLUG, GITHUB_APP_CLIENT_ID,
-        //   GITHUB_APP_PRIVATE_KEY, GITHUB_APP_WEBHOOK_SECRET, GITHUB_APP_CLIENT_SECRET
-        // Deferred until the per-environment Slack App exists (IH risks D1):
-        //   SLACK_APP_CLIENT_ID, SLACK_APP_CLIENT_SECRET, SLACK_APP_SIGNING_SECRET
+        //   GITHUB_APP_PRIVATE_KEY, GITHUB_APP_WEBHOOK_SECRET, GITHUB_APP_CLIENT_SECRET,
+        //   SLACK_APP_CLIENT_ID, SLACK_APP_CLIENT_SECRET, SLACK_APP_SIGNING_SECRET (IH9:
+        //   escrow-managed via the integrations/slack-app/<env> document),
+        //   SUPABASE_OAUTH_CLIENT_ID, SUPABASE_OAUTH_CLIENT_SECRET (IH9: escrow-managed
+        //   via the integrations/supabase-oauth/<env> document)
       },
       "hyperdrive": [
         {

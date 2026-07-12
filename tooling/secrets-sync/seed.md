@@ -20,7 +20,9 @@ secrets share one **platform** document.
 | `…/integrations/polar/<env>` | `BILLING_PROVIDER`, `POLAR_SERVER`, `POLAR_PRODUCT_MAP`, `POLAR_SUCCESS_URL`, `POLAR_ACCESS_TOKEN`, `POLAR_WEBHOOK_SECRET` |
 | `…/integrations/cloudflare-email/<env>` | `NOTIFICATIONS_PROVIDER`, `EMAIL_FROM_ADDRESS`, `EMAIL_FROM_NAME` (no secret) |
 | `…/integrations/github-app/<env>` | GitHub App config + secrets — **deferred** until the App is registered (`saas-integrations` D1) |
-| `…/platform-secrets/<env>` | `SECRET_ENCRYPTION_KEY`, `SECRET_KEK`, `OAUTH_STATE_SECRET`, `INTEGRATIONS_STATE_SECRET` |
+| `…/integrations/slack-app/<env>` | `SLACK_APP_CLIENT_ID`, `SLACK_APP_CLIENT_SECRET`, `SLACK_APP_SIGNING_SECRET` (per-environment Slack App, IH9) |
+| `…/integrations/supabase-oauth/<env>` | `SUPABASE_OAUTH_CLIENT_ID`, `SUPABASE_OAUTH_CLIENT_SECRET` (per-environment Supabase OAuth app, IH9) |
+| `…/platform-secrets/<env>` | `SECRET_ENCRYPTION_KEY`, `SECRET_KEK`, `OAUTH_STATE_SECRET`, `CLI_JWT_SIGNING_KEY`, `INTEGRATIONS_STATE_SECRET` |
 
 **Critical:** `SECRET_ENCRYPTION_KEY` encrypts data at rest — escrow the value
 currently deployed, do NOT generate a new one (a fresh key bricks stored

@@ -388,6 +388,186 @@ describe("POST …/integrations/cloudflare/connect (token paste)", () => {
   });
 });
 
+// ── Re-auth (IH9): a paste for an already-bound account ─────
+
+describe("cloudflare token re-auth (IH9)", () => {
+  const EXISTING_UUID = "44444444-4444-4444-8444-444444444444";
+
+  function connectRequest(body: Record<string, unknown>): Request {
+    return new Request("https://worker.test/v1/organizations/x/integrations/cloudflare/connect", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(body),
+    });
+  }
+
+  function existingConnection(status: string): Record<string, unknown> {
+    return {
+      id: EXISTING_UUID,
+      org_id: ORG_UUID,
+      provider: "cloudflare",
+      status,
+      scope: "account",
+      share_mode: "auto",
+      display_name: "Infra",
+      created_by: "usr_abc",
+      external_account_login: "Acme Infra",
+      external_account_id: ACCOUNT_ID,
+      external_account_type: "account",
+      created_at: NOW.toISOString(),
+      updated_at: NOW.toISOString(),
+    };
+  }
+
+  function boundFactsRow(): Record<string, unknown> {
+    return {
+      id: "facts",
+      connection_id: EXISTING_UUID,
+      account_external_id: ACCOUNT_ID,
+      account_name: "Acme Infra",
+      parent_token_ref: "old-parent-id",
+      granted_policies: null,
+      token_status: "invalid",
+      parent_expires_at: null,
+      created_at: NOW.toISOString(),
+      updated_at: NOW.toISOString(),
+    };
+  }
+
+  it("re-authorizes a suspended connection: fresh custody, facts refresh, reactivate — no new connection", async () => {
+    const api = cloudflareApi();
+    let custodyInsert: unknown[] = [];
+    let factsUpsert: unknown[] = [];
+    const { executor, queries } = fakeExecutor((text, params) => {
+      if (text.includes("FROM integrations.cloudflare_accounts WHERE account_external_id")) {
+        return [boundFactsRow()];
+      }
+      if (text.includes("FROM integrations.connections WHERE org_id")) {
+        return [existingConnection("suspended")];
+      }
+      if (text.includes("INSERT INTO integrations.provider_credentials")) {
+        custodyInsert = params;
+        return [{
+          id: "cred", connection_id: params[1], kind: params[2], ciphertext: params[3],
+          external_ref: params[5], created_at: NOW.toISOString(), updated_at: NOW.toISOString(),
+        }];
+      }
+      if (text.includes("INSERT INTO integrations.cloudflare_accounts")) {
+        factsUpsert = params;
+        return [{ ...boundFactsRow(), token_status: "active", parent_token_ref: params[4] }];
+      }
+      if (text.includes("SET status = $3")) {
+        return [existingConnection("active")];
+      }
+      return [];
+    });
+
+    const res = await handleConnectIntegration(
+      connectRequest({ parentToken: PARENT_TOKEN }),
+      createEnv(), "req_1", ACTOR, ORG_ID, "cloudflare", { executor, fetchImpl: api.fetchImpl },
+    );
+    expect(res.status).toBe(200);
+    const data = ((await res.json()) as { data: Record<string, unknown> }).data;
+    expect((data.connection as Record<string, unknown>).status).toBe("active");
+
+    // Custody landed on the EXISTING connection; no placeholder was created.
+    expect(custodyInsert[1]).toBe(EXISTING_UUID);
+    expect(factsUpsert[1]).toBe(EXISTING_UUID);
+    expect(factsUpsert[4]).toBe("parent-token-id"); // refreshed parent ref
+    expect(queries.some((q) => q.text.includes("INSERT INTO integrations.connections"))).toBe(false);
+    // REACTIVATED event, never the token.
+    const events = queries.filter((q) => q.text.includes("WITH inserted_event"));
+    expect(events.length).toBeGreaterThan(0);
+    expect(JSON.stringify(events[0]!.params)).toContain("integration.reactivated");
+    for (const q of events) {
+      expect(JSON.stringify(q.params)).not.toContain(PARENT_TOKEN);
+    }
+  });
+
+  it("re-auth of an ACTIVE connection refreshes custody without a status write", async () => {
+    const api = cloudflareApi();
+    const { executor, queries } = fakeExecutor((text) => {
+      if (text.includes("FROM integrations.cloudflare_accounts WHERE account_external_id")) {
+        return [boundFactsRow()];
+      }
+      if (text.includes("FROM integrations.connections WHERE org_id")) {
+        return [existingConnection("active")];
+      }
+      if (text.includes("INSERT INTO integrations.provider_credentials")) {
+        return [{ id: "cred", created_at: NOW.toISOString(), updated_at: NOW.toISOString() }];
+      }
+      if (text.includes("INSERT INTO integrations.cloudflare_accounts")) {
+        return [{ ...boundFactsRow(), token_status: "active" }];
+      }
+      return [];
+    });
+    const res = await handleConnectIntegration(
+      connectRequest({ parentToken: PARENT_TOKEN }),
+      createEnv(), "req_1", ACTOR, ORG_ID, "cloudflare", { executor, fetchImpl: api.fetchImpl },
+    );
+    expect(res.status).toBe(200);
+    expect(queries.some((q) => q.text.includes("SET status = $3"))).toBe(false);
+  });
+
+  it("refuses to flip an account bound to a connection this org cannot see", async () => {
+    const api = cloudflareApi();
+    const { executor, queries } = fakeExecutor((text) => {
+      if (text.includes("FROM integrations.cloudflare_accounts WHERE account_external_id")) {
+        return [boundFactsRow()];
+      }
+      // getConnection finds nothing — bound elsewhere.
+      return [];
+    });
+    const res = await handleConnectIntegration(
+      connectRequest({ parentToken: PARENT_TOKEN }),
+      createEnv(), "req_1", ACTOR, ORG_ID, "cloudflare", { executor, fetchImpl: api.fetchImpl },
+    );
+    expect(res.status).toBe(409);
+    // The binding never flipped and nothing was written.
+    expect(queries.some((q) => q.text.includes("INSERT INTO"))).toBe(false);
+  });
+
+  it("falls through to a fresh connect when the own bound connection is revoked", async () => {
+    const api = cloudflareApi();
+    const { executor, queries } = fakeExecutor((text, params) => {
+      if (text.includes("FROM integrations.cloudflare_accounts WHERE account_external_id")) {
+        return [boundFactsRow()];
+      }
+      if (text.includes("FROM integrations.connections WHERE org_id")) {
+        return [existingConnection("revoked")];
+      }
+      if (text.includes("INSERT INTO integrations.connections")) {
+        return [{
+          id: params[0], org_id: ORG_UUID, provider: "cloudflare", status: "pending",
+          scope: "account", share_mode: "auto", created_at: NOW.toISOString(), updated_at: NOW.toISOString(),
+        }];
+      }
+      if (text.includes("INSERT INTO integrations.provider_credentials")) {
+        return [{ id: "cred", created_at: NOW.toISOString(), updated_at: NOW.toISOString() }];
+      }
+      if (text.includes("INSERT INTO integrations.cloudflare_accounts")) {
+        // Flip-style upsert rebinds the account to the fresh connection.
+        return [{ ...boundFactsRow(), connection_id: params[1] }];
+      }
+      if (text.includes("SET status = 'active'")) {
+        return [{
+          id: CONNECTION_UUID, org_id: ORG_UUID, provider: "cloudflare", status: "active",
+          scope: "account", share_mode: "auto", external_account_id: ACCOUNT_ID,
+          external_account_type: "account", connected_at: NOW.toISOString(),
+          created_at: NOW.toISOString(), updated_at: NOW.toISOString(),
+        }];
+      }
+      return [];
+    });
+    const res = await handleConnectIntegration(
+      connectRequest({ parentToken: PARENT_TOKEN }),
+      createEnv(), "req_1", ACTOR, ORG_ID, "cloudflare", { executor, fetchImpl: api.fetchImpl },
+    );
+    expect(res.status).toBe(201);
+    expect(queries.some((q) => q.text.includes("INSERT INTO integrations.connections"))).toBe(true);
+  });
+});
+
 // ── Mint through the IH4 core with real custody ─────────────
 
 describe("mint via broker core (cloudflare)", () => {

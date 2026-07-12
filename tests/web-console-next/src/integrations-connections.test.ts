@@ -2,6 +2,7 @@ import {
   connectionDisplayName,
   connectionStatusMeta,
   hasPendingConnection,
+  reauthAffordance,
   uninstallDisclosure,
   visibleConnections,
 } from "@web-console-next/components/integrations/connections";
@@ -91,5 +92,42 @@ describe("integrations connections view-model", () => {
     expect(hasPendingConnection([connection({ status: "pending" })])).toBe(true);
     expect(hasPendingConnection([connection()])).toBe(false);
     expect(hasPendingConnection([])).toBe(false);
+  });
+
+  // IH9 §5.3: a failed refresh / invalid parent token flips the connection to
+  // suspended; the CTA re-runs the provider's connect flow (which reactivates
+  // the existing row).
+  describe("reauthAffordance (IH9 re-auth CTA)", () => {
+    it("offers a provider-specific Reconnect for suspended oauth/token providers", () => {
+      const supabase = reauthAffordance(connection({ provider: "supabase", status: "suspended" }));
+      expect(supabase?.label).toBe("Reconnect");
+      expect(supabase?.description).toBe(
+        "The authorization expired or was revoked — reconnect to resume minting and brokered secrets.",
+      );
+      const cloudflare = reauthAffordance(
+        connection({ provider: "cloudflare", status: "suspended" }),
+      );
+      expect(cloudflare?.label).toBe("Reconnect");
+      expect(cloudflare?.description).toBe(
+        "The parent token is invalid or expired — paste a fresh token to resume.",
+      );
+      const slack = reauthAffordance(connection({ provider: "slack", status: "suspended" }));
+      expect(slack?.label).toBe("Reconnect");
+      expect(slack?.description).toBe(
+        "The workspace authorization was revoked — reconnect to resume delivery.",
+      );
+    });
+
+    it("returns null for GitHub — its lifecycle is webhook-driven reinstall", () => {
+      expect(reauthAffordance(connection({ provider: "github", status: "suspended" }))).toBeNull();
+    });
+
+    it("returns null for every non-suspended status", () => {
+      for (const status of ["pending", "active", "revoked"] as const) {
+        expect(reauthAffordance(connection({ provider: "supabase", status }))).toBeNull();
+        expect(reauthAffordance(connection({ provider: "cloudflare", status }))).toBeNull();
+        expect(reauthAffordance(connection({ provider: "slack", status }))).toBeNull();
+      }
+    });
   });
 });

@@ -173,6 +173,108 @@ export async function handleSlackOauthCallback(
       );
     }
 
+    // Re-auth (IH9): a workspace already bound to a connection means this
+    // OAuth round is a re-authorization. Owned by the state's org and not
+    // revoked → refresh custody on the EXISTING connection and reactivate
+    // it (suspended connections heal; slack_app channels keep their
+    // binding); the pending placeholder is retired. Owned but REVOKED →
+    // explicitly rebind the workspace to this fresh connection (the
+    // COALESCE upsert deliberately never flips, which would otherwise make
+    // a revoked workspace unreconnectable forever). Owned elsewhere →
+    // refuse.
+    const existingWs = await hub.getSlackWorkspaceByTeamId(grant.teamId);
+    if (
+      existingWs.ok &&
+      existingWs.value.connectionId &&
+      existingWs.value.connectionId !== connection.id
+    ) {
+      const boundId = asUuid(existingWs.value.connectionId);
+      const own = await repo.getConnection(asUuid(connection.orgId), boundId);
+      if (own.ok && own.value.status !== "revoked") {
+        const reEnvelope = await encryption.encrypt(grant.accessToken);
+        const restored = await hub.upsertProviderCredential({
+          id: generateUuid(),
+          connectionId: boundId,
+          kind: "slack_bot_token",
+          ciphertext: JSON.stringify(reEnvelope),
+          scopes: grant.grantedScopes,
+          externalRef: grant.teamId,
+        });
+        if (!restored.ok) {
+          return popupPage("error", "Connection not completed", LINK_FAILED_MESSAGE);
+        }
+        await hub.upsertSlackWorkspace({
+          id: generateUuid(),
+          connectionId: boundId,
+          teamId: grant.teamId,
+          teamName: grant.teamName,
+          enterpriseId: grant.enterpriseId,
+          botUserId: grant.botUserId,
+          appId: grant.appId,
+          grantedScopes: grant.grantedScopes,
+          installedByExternalUser: grant.installedByExternalUser,
+        });
+        if (own.value.status !== "active") {
+          const reactivated = await repo.updateConnectionStatus(
+            asUuid(connection.orgId),
+            boundId,
+            "active",
+          );
+          if (!reactivated.ok) {
+            return popupPage("error", "Connection not completed", LINK_FAILED_MESSAGE);
+          }
+        }
+        // Retire the placeholder this state minted — it never activates.
+        await repo.updateConnectionStatus(asUuid(connection.orgId), asUuid(connection.id), "revoked");
+        try {
+          const events = createEventsRepository(executor);
+          await events.appendEventWithAudit({
+            event: {
+              id: generateUuid(),
+              type: INTEGRATION_EVENT_TYPES.REACTIVATED,
+              version: 1,
+              source: "integrations-worker",
+              occurredAt: new Date(),
+              actorType: "user",
+              actorId: connection.createdBy ?? "unknown",
+              orgId: asUuid(connection.orgId),
+              subjectKind: "integration_connection",
+              subjectId: existingWs.value.connectionId,
+              requestId,
+              payload: { provider: "slack", reason: "reauthorized" },
+            },
+            audit: {
+              id: generateUuid(),
+              category: "integrations",
+              description: "Slack connection re-authorized (fresh grant)",
+            },
+          });
+        } catch {
+          // best-effort
+        }
+        return popupPage(
+          "success",
+          "Reconnected",
+          "Slack access was re-authorized. You can close this window.",
+        );
+      }
+      if (own.ok) {
+        // Revoked own connection: reconnect-after-revoke. Rebind the
+        // workspace row to THIS connection so the normal path below can
+        // bind and activate it.
+        const rebound = await hub.rebindSlackWorkspace(grant.teamId, asUuid(connection.id));
+        if (!rebound.ok) {
+          return popupPage("error", "Connection not completed", LINK_FAILED_MESSAGE);
+        }
+      } else {
+        return popupPage(
+          "error",
+          "Already connected",
+          "This Slack workspace is already linked to a connection.",
+        );
+      }
+    }
+
     // Custody first (design §3): by the time the connection is visible as
     // active, its bot token is already at rest as an encrypted envelope.
     const envelope = await encryption.encrypt(grant.accessToken);

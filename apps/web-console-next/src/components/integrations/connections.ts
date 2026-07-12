@@ -118,6 +118,51 @@ export function connectionShareModeMeta(
       };
 }
 
+// ── Lifecycle hardening (saas-integration-hub IH9, design §5.3) ────────
+// A failed refresh (Supabase) or invalid parent token (Cloudflare) flips the
+// connection to `suspended`; re-running the provider's connect flow
+// REACTIVATES the existing row (same org + same external account/workspace →
+// custody refresh + status active). The console affordance is therefore
+// "Reconnect" — the provider's normal connect flow — not a new connection.
+
+export interface ReauthAffordance {
+  label: string;
+  /** One-line explanation of why the connection is suspended and what reconnecting does. */
+  description: string;
+}
+
+/**
+ * Re-auth CTA for a suspended connection, or null when re-auth is not the
+ * remedy. Only oauth/token-kind providers (Slack, Supabase, Cloudflare) get
+ * the CTA; GitHub's lifecycle is webhook-driven (suspend/unsuspend/reinstall
+ * arrive from GitHub itself), so reconnecting from the console is not the fix.
+ */
+export function reauthAffordance(
+  connection: Pick<PublicConnection, "provider" | "status">,
+): ReauthAffordance | null {
+  if (connection.status !== "suspended") return null;
+  switch (connection.provider) {
+    case "supabase":
+      return {
+        label: "Reconnect",
+        description:
+          "The authorization expired or was revoked — reconnect to resume minting and brokered secrets.",
+      };
+    case "cloudflare":
+      return {
+        label: "Reconnect",
+        description: "The parent token is invalid or expired — paste a fresh token to resume.",
+      };
+    case "slack":
+      return {
+        label: "Reconnect",
+        description: "The workspace authorization was revoked — reconnect to resume delivery.",
+      };
+    default:
+      return null;
+  }
+}
+
 /**
  * Blast-radius disclosure for the revoke/uninstall confirmation. An
  * account-shared connection removes the provider for the whole account; a

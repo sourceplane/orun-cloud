@@ -55,6 +55,7 @@ import {
   connectionShareModeMeta,
   connectionStatusMeta,
   hasPendingConnection,
+  reauthAffordance,
   uninstallDisclosure,
   visibleConnections,
 } from "@/components/integrations/connections";
@@ -264,6 +265,9 @@ export function IntegrationsHub({ orgId, orgSlug }: { orgId: string; orgSlug: st
               orgSlug={orgSlug}
               connection={connection}
               onRevoke={() => setRevokeTarget(connection)}
+              onReconnect={() => void connect(connection.provider)}
+              reconnectWaiting={connectingProvider === connection.provider}
+              reconnectDisabled={connectingProvider !== null}
               onChanged={() => list.reload()}
             />
           ))}
@@ -404,12 +408,18 @@ function ConnectionCard({
   orgSlug,
   connection,
   onRevoke,
+  onReconnect,
+  reconnectWaiting,
+  reconnectDisabled,
   onChanged,
 }: {
   orgId: string;
   orgSlug: string;
   connection: PublicConnection;
   onRevoke: () => void;
+  onReconnect: () => void;
+  reconnectWaiting: boolean;
+  reconnectDisabled: boolean;
   onChanged: () => void;
 }) {
   const meta = connectionStatusMeta(connection.status);
@@ -419,6 +429,9 @@ function ConnectionCard({
   const statusLabel = connection.status === "active" ? "Connected" : meta.label;
   const providerName = connectionProviderName(connection);
   const TileIcon = CONNECTED_TILE_ICONS[connection.provider];
+  // IH9 re-auth CTA: a suspended oauth/token-kind connection re-runs the
+  // provider's connect flow, which reactivates the existing row.
+  const reauth = connection.inherited ? null : reauthAffordance(connection);
 
   const caption = connection.inherited
     ? `Shared by ${connection.sharedByName ?? "your account"}${
@@ -469,11 +482,22 @@ function ConnectionCard({
         </div>
         {/* Inherited connections are read-only in a child workspace. */}
         {connection.status !== "revoked" && !connection.inherited ? (
-          <Button variant="outline" size="sm" className="ml-auto shrink-0" onClick={onRevoke}>
-            Revoke
-          </Button>
+          <div className="ml-auto flex shrink-0 items-center gap-2">
+            {reauth ? (
+              <Button size="sm" disabled={reconnectDisabled} onClick={onReconnect}>
+                {reconnectWaiting ? `Waiting for ${providerName}…` : reauth.label}
+              </Button>
+            ) : null}
+            <Button variant="outline" size="sm" onClick={onRevoke}>
+              Revoke
+            </Button>
+          </div>
         ) : null}
       </div>
+
+      {reauth ? (
+        <p className="mt-3 text-[12.5px] leading-relaxed text-muted-foreground">{reauth.description}</p>
+      ) : null}
 
       {connection.status === "active" ? (
         <div className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-3">

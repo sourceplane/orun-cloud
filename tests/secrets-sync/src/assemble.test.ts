@@ -135,6 +135,17 @@ describe("--list-docs (SS6b deploy-lane fetch list)", () => {
     );
   });
 
+  it("includes the IH9-lifted slack-app and supabase-oauth integration docs", () => {
+    const { lines } = listDocs("stage");
+    const map = new Map(lines);
+    expect(map.get("slack-app")).toBe(
+      "sourceplane/orun-cloud/integrations/slack-app/stage",
+    );
+    expect(map.get("supabase-oauth")).toBe(
+      "sourceplane/orun-cloud/integrations/supabase-oauth/stage",
+    );
+  });
+
   it("works for prod as well, swapping only the env segment", () => {
     const { lines: stage } = listDocs("stage");
     const { lines: prod } = listDocs("prod");
@@ -156,6 +167,7 @@ describe("assemble projection from documents (SS6)", () => {
   it("projects per-worker secrets matching the sync.mjs input contract", () => {
     const { secrets } = assembleStage(integrationsFixturePath);
     expect(Object.keys(w(secrets,"identity-worker")).sort()).toEqual([
+      "CLI_JWT_SIGNING_KEY",
       "GITHUB_OAUTH_CLIENT_SECRET",
       "GOOGLE_OAUTH_CLIENT_SECRET",
       "OAUTH_STATE_SECRET",
@@ -208,8 +220,37 @@ describe("assemble projection from documents (SS6)", () => {
       "GITHUB_APP_WEBHOOK_SECRET",
       "INTEGRATIONS_STATE_SECRET",
       "SECRET_ENCRYPTION_KEY",
+      "SLACK_APP_CLIENT_ID",
+      "SLACK_APP_CLIENT_SECRET",
+      "SLACK_APP_SIGNING_SECRET",
+      "SUPABASE_OAUTH_CLIENT_ID",
+      "SUPABASE_OAUTH_CLIENT_SECRET",
     ]);
     expect(config["integrations-worker"]).toBeUndefined();
+  });
+
+  it("projects the IH9-lifted Slack App and Supabase OAuth credentials from their own docs", () => {
+    const { secrets } = assembleStage(integrationsFixturePath);
+    const worker = w(secrets, "integrations-worker");
+    // slack-app doc → integrations-worker (IH1 connect + IH3 signature verify).
+    expect(worker["SLACK_APP_CLIENT_ID"]).toBe("fixture-slack-app-client-id-stage");
+    expect(worker["SLACK_APP_CLIENT_SECRET"]).toBe("fixture-slack-app-client-secret-stage");
+    expect(worker["SLACK_APP_SIGNING_SECRET"]).toBe("fixture-slack-app-signing-stage");
+    // supabase-oauth doc → integrations-worker (IH6 connect + refresh).
+    expect(worker["SUPABASE_OAUTH_CLIENT_ID"]).toBe("fixture-supabase-oauth-client-id-stage");
+    expect(worker["SUPABASE_OAUTH_CLIENT_SECRET"]).toBe(
+      "fixture-supabase-oauth-client-secret-stage",
+    );
+  });
+
+  it("fails closed when the slack-app document is absent", () => {
+    const fixture = readJson(integrationsFixturePath) as Record<string, Record<string, unknown>>;
+    const stage = fixture["stage"];
+    if (!stage) throw new Error("fixture missing stage");
+    delete stage["slack-app"];
+    const { result } = assembleStage(tmpFile(fixture));
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain("slack-app.json not fetched");
   });
 
   it("fails closed when an integration document is absent", () => {

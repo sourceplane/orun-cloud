@@ -779,6 +779,161 @@ describe("GET /ingress/supabase/oauth", () => {
   });
 });
 
+// ── Re-auth (IH9): an OAuth round for an already-bound org ──
+
+describe("GET /ingress/supabase/oauth — re-auth (IH9)", () => {
+  const EXISTING_UUID = "44444444-4444-4444-8444-444444444444";
+
+  function callbackRequest(params: Record<string, string>): Request {
+    const url = new URL("https://worker.test/ingress/supabase/oauth");
+    for (const [k, v] of Object.entries(params)) url.searchParams.set(k, v);
+    return new Request(url.toString(), { method: "GET" });
+  }
+
+  async function mintState(): Promise<string> {
+    return signConnectState(
+      { n: "e".repeat(32), p: "supabase", c: CONNECTION_UUID, o: ORG_UUID, exp: Date.now() + CONNECT_STATE_TTL_MS },
+      STATE_SECRET,
+    );
+  }
+
+  function existingConnectionRow(status: string): Record<string, unknown> {
+    return {
+      id: EXISTING_UUID,
+      org_id: ORG_UUID,
+      provider: "supabase",
+      status,
+      scope: "account",
+      share_mode: "auto",
+      display_name: "Acme Data",
+      created_by: "usr_abc",
+      external_account_login: "Acme Data",
+      external_account_id: SUPABASE_ORG_ID,
+      external_account_type: "organization",
+      created_at: NOW.toISOString(),
+      updated_at: NOW.toISOString(),
+    };
+  }
+
+  it("re-authorizes an own SUSPENDED connection: fresh custody on the existing connection, reactivate, retire placeholder", async () => {
+    const verifier = "pkce-verifier-under-test-aaaaaaaaaaaaaaaaaaa";
+    const api = supabaseApi();
+    const state = await mintState();
+    const custody = await verifierCustodyRow(verifier);
+    const custodyInserts: unknown[][] = [];
+    const statusWrites: unknown[][] = [];
+    const { executor, queries } = fakeExecutor((text, params) => {
+      if (text.includes("SET state_nonce_hash = NULL")) return [pendingRow()];
+      if (text.includes("SELECT * FROM integrations.provider_credentials")) return [custody];
+      if (text.includes("SELECT * FROM integrations.supabase_orgs WHERE supabase_org_id")) {
+        return [supabaseOrgRow({ connection_id: EXISTING_UUID })];
+      }
+      if (text.includes("SELECT * FROM integrations.connections WHERE org_id")) {
+        return [existingConnectionRow("suspended")];
+      }
+      if (text.includes("INSERT INTO integrations.provider_credentials")) {
+        custodyInserts.push(params);
+        return [{ id: "cred", connection_id: params[1], kind: params[2], ciphertext: params[3], external_ref: params[5], created_at: NOW.toISOString(), updated_at: NOW.toISOString() }];
+      }
+      if (text.includes("INSERT INTO integrations.supabase_orgs")) {
+        return [supabaseOrgRow({ connection_id: EXISTING_UUID })];
+      }
+      if (text.includes("SET status = $3")) {
+        statusWrites.push(params);
+        return [existingConnectionRow(params[2] as string)];
+      }
+      return [];
+    });
+
+    const res = await handleSupabaseOauthCallback(
+      callbackRequest({ code: "c0de", state }),
+      createEnv(), "req_1", { executor, fetchImpl: api.fetchImpl },
+    );
+    expect(res.status).toBe(200);
+    expect(await res.text()).toContain("Reconnected");
+
+    // Refresh-token custody landed on the EXISTING connection, not a new one.
+    const refreshInsert = custodyInserts.find((p) => p[2] === "supabase_refresh_token")!;
+    expect(refreshInsert[1]).toBe(EXISTING_UUID);
+    // The rotated refresh token is ciphertext, never plaintext, in events.
+    // Reactivate the existing connection, then retire the placeholder.
+    expect(statusWrites).toEqual([
+      [ORG_UUID, EXISTING_UUID, "active"],
+      [ORG_UUID, CONNECTION_UUID, "revoked"],
+    ]);
+    // No fresh connection was created (activateConnection path never ran).
+    expect(queries.some((q) => q.text.includes("SET status = 'active'"))).toBe(false);
+    const events = queries.filter((q) => q.text.includes("WITH inserted_event"));
+    expect(JSON.stringify(events.map((q) => q.params))).toContain("integration.reactivated");
+    expect(JSON.stringify(events.map((q) => q.params))).not.toContain("sb-refresh-OLD");
+  });
+
+  it("refuses (Already connected) when the org is bound to a connection this org cannot see", async () => {
+    const api = supabaseApi();
+    const state = await mintState();
+    const custody = await verifierCustodyRow("pkce-verifier-under-test-aaaaaaaaaaaaaaaaaaa");
+    const { executor, queries } = fakeExecutor((text) => {
+      if (text.includes("SET state_nonce_hash = NULL")) return [pendingRow()];
+      if (text.includes("SELECT * FROM integrations.provider_credentials")) return [custody];
+      if (text.includes("SELECT * FROM integrations.supabase_orgs WHERE supabase_org_id")) {
+        return [supabaseOrgRow({ connection_id: EXISTING_UUID })];
+      }
+      // getConnection finds nothing → bound to another org.
+      if (text.includes("SELECT * FROM integrations.connections WHERE org_id")) return [];
+      return [];
+    });
+    const res = await handleSupabaseOauthCallback(
+      callbackRequest({ code: "c0de", state }),
+      createEnv(), "req_1", { executor, fetchImpl: api.fetchImpl },
+    );
+    expect(res.status).toBe(400);
+    expect(await res.text()).toContain("Already connected");
+    // No custody write, no facts flip, no activation — the binding never moved.
+    expect(queries.some((q) => q.text.includes("INSERT INTO integrations.provider_credentials"))).toBe(false);
+    expect(queries.some((q) => q.text.includes("SET status = 'active'"))).toBe(false);
+  });
+
+  it("falls through to a fresh connect when the own bound connection is REVOKED", async () => {
+    const verifier = "pkce-verifier-under-test-aaaaaaaaaaaaaaaaaaa";
+    const api = supabaseApi();
+    const state = await mintState();
+    const custody = await verifierCustodyRow(verifier);
+    const custodyInserts: unknown[][] = [];
+    const { executor, queries } = fakeExecutor((text, params) => {
+      if (text.includes("SET state_nonce_hash = NULL")) return [pendingRow()];
+      if (text.includes("SELECT * FROM integrations.provider_credentials")) return [custody];
+      if (text.includes("SELECT * FROM integrations.supabase_orgs WHERE supabase_org_id")) {
+        return [supabaseOrgRow({ connection_id: EXISTING_UUID })];
+      }
+      if (text.includes("SELECT * FROM integrations.connections WHERE org_id")) {
+        return [existingConnectionRow("revoked")];
+      }
+      if (text.includes("INSERT INTO integrations.provider_credentials")) {
+        custodyInserts.push(params);
+        return [{ id: "cred", connection_id: params[1], kind: params[2], ciphertext: params[3], external_ref: params[5], created_at: NOW.toISOString(), updated_at: NOW.toISOString() }];
+      }
+      if (text.includes("INSERT INTO integrations.supabase_orgs")) {
+        // Flip-style upsert rebinds the org to the pending (fresh) connection.
+        return [supabaseOrgRow({ connection_id: CONNECTION_UUID })];
+      }
+      if (text.includes("SET status = 'active'")) {
+        return [pendingRow({ status: "active", external_account_id: SUPABASE_ORG_ID, external_account_type: "organization", connected_at: NOW.toISOString() })];
+      }
+      return [];
+    });
+    const res = await handleSupabaseOauthCallback(
+      callbackRequest({ code: "c0de", state }),
+      createEnv(), "req_1", { executor, fetchImpl: api.fetchImpl },
+    );
+    expect(res.status).toBe(200);
+    // Normal path: no "Reconnected" popup, custody bound to the pending connection, activation ran.
+    expect(await res.text()).not.toContain("Reconnected");
+    const refreshInsert = custodyInserts.find((p) => p[2] === "supabase_refresh_token")!;
+    expect(refreshInsert[1]).toBe(CONNECTION_UUID);
+    expect(queries.some((q) => q.text.includes("SET status = 'active'"))).toBe(true);
+  });
+});
+
 // ── Mint through the IH4 core with real custody ─────────────
 
 describe("mint via broker core (supabase)", () => {

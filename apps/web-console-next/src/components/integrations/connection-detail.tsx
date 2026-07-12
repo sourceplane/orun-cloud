@@ -29,7 +29,7 @@ import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Kicker, Pill, QuietLink, Screen, type Tone } from "@/components/ui/northwind";
+import { AttentionBanner, Kicker, Pill, QuietLink, Screen, type Tone } from "@/components/ui/northwind";
 import { useToast } from "@/components/ui/toast";
 import { wrap, type ApiErrorBody } from "@/lib/api";
 import { useSession } from "@/lib/session";
@@ -40,6 +40,7 @@ import {
   connectionScopeMeta,
   connectionShareModeMeta,
   connectionStatusMeta,
+  reauthAffordance,
   uninstallDisclosure,
 } from "@/components/integrations/connections";
 import { archetypeForProvider, SCOPE_TEMPLATE_CATALOG } from "@/components/integrations/archetype";
@@ -146,6 +147,12 @@ export function ConnectionDetail({
   const templates = SCOPE_TEMPLATE_CATALOG[connection.provider] ?? [];
   const isActive = connection.status === "active";
   const showAdmission = isActive && connection.scope === "account" && !connection.inherited;
+  // IH9 re-auth CTA (design §5.3): a suspended oauth/token-kind connection is
+  // fixed by re-running the provider's connect flow, which reactivates the
+  // existing row. The hub already dispatches connect from `?connect=<provider>`
+  // (the Cmd-K deep-link convention), so the banner reuses that exact path —
+  // inherited rows stay read-only in a child workspace.
+  const reauth = connection.inherited ? null : reauthAffordance(connection);
 
   const revoke = async () => {
     const r = await wrap(() => client.integrations.revoke(orgId, connection.id));
@@ -205,6 +212,21 @@ export function ConnectionDetail({
         </div>
         <p className="mt-3 text-xs text-muted-foreground">{shareMeta?.description ?? scopeMeta.description}</p>
       </div>
+
+      {/* IH9: prominent re-auth banner above the facts sections. */}
+      {reauth ? (
+        <AttentionBanner
+          tone="warning"
+          className="mt-4"
+          action={
+            <Button asChild size="sm" className="shrink-0">
+              <a href={`${hubHref}?connect=${connection.provider}`}>{reauth.label}</a>
+            </Button>
+          }
+        >
+          <span className="font-medium">Connection suspended.</span> {reauth.description}
+        </AttentionBanner>
+      ) : null}
 
       {/* Archetype body */}
       {archetype === "messaging" ? (

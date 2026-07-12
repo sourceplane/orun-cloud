@@ -63,13 +63,12 @@ import { authorizeViaPolicy } from "../policy-client.js";
 import { checkBillingEntitlement } from "../billing-client.js";
 import { encodeCursor, parsePageParams } from "../pagination.js";
 import { getConfiguredProvider } from "../providers/registry.js";
+import { getCapability, type IntegrationProvider } from "../providers/types.js";
 import {
-  getCapability,
-  type IntegrationProvider,
-  type ParentCredentialContext,
-} from "../providers/types.js";
-import { createEncryptionAdapter, type CiphertextEnvelope } from "../encryption.js";
-import type { ProviderCredentialKind } from "@saas/db/integrations";
+  PARENT_CREDENTIAL_KINDS,
+  readParentCredential,
+  reEnvelopeParentCredential,
+} from "../custody.js";
 
 /** D5: default 15 min, hard ceiling 1h — no template may exceed it. */
 export const DEFAULT_TTL_SECONDS = 15 * 60;
@@ -77,40 +76,6 @@ export const MAX_TTL_SECONDS = 60 * 60;
 
 const MAX_PARAM_KEYS = 10;
 const TEMPLATE_ID_RE = /^[a-z][a-z0-9-]{0,63}$/;
-
-/** Providers whose mints derive from a parent credential in custody. */
-const PARENT_CREDENTIAL_KINDS: Record<string, ProviderCredentialKind> = {
-  cloudflare: "cloudflare_parent_token",
-  supabase: "supabase_refresh_token",
-};
-
-/** Decrypt the connection's parent credential for one broker call. Returns
- *  undefined when the provider needs none; null when it needs one and custody
- *  cannot supply it (missing row / unreadable envelope). */
-async function readParentCredential(
-  env: Env,
-  executor: SqlExecutor,
-  connectionUuid: Uuid,
-  providerId: string,
-): Promise<ParentCredentialContext | null | undefined> {
-  const kind = PARENT_CREDENTIAL_KINDS[providerId];
-  if (!kind) return undefined;
-  const encryption = await createEncryptionAdapter(env.SECRET_ENCRYPTION_KEY);
-  if (!encryption) return null;
-  const hub = createIntegrationHubRepository(executor);
-  const credential = await hub.getProviderCredential(connectionUuid, kind);
-  if (!credential.ok) return null;
-  try {
-    return {
-      credential: await encryption.decrypt(
-        JSON.parse(credential.value.ciphertext) as CiphertextEnvelope,
-      ),
-      externalRef: credential.value.externalRef,
-    };
-  } catch {
-    return null;
-  }
-}
 
 export interface CredentialBrokerDeps {
   executor?: SqlExecutor;
@@ -432,22 +397,15 @@ async function executeMintCore(
   // an IH9 health concern, not a data-loss one.
   const rotationKind = PARENT_CREDENTIAL_KINDS[connection.provider];
   if (outcome.value.rotatedParentCredential && rotationKind && parent) {
-    try {
-      const encryption = await createEncryptionAdapter(env.SECRET_ENCRYPTION_KEY);
-      if (encryption) {
-        const envelope = await encryption.encrypt(outcome.value.rotatedParentCredential);
-        await hub.upsertProviderCredential({
-          id: generateUuid(),
-          connectionId: asUuid(connection.id),
-          kind: rotationKind,
-          ciphertext: JSON.stringify(envelope),
-          // Keep the custody row anchored to the same provider-side ref.
-          externalRef: parent.externalRef,
-        });
-      }
-    } catch {
-      // best-effort (see above)
-    }
+    await reEnvelopeParentCredential(
+      env,
+      executor,
+      asUuid(connection.id),
+      rotationKind,
+      outcome.value.rotatedParentCredential,
+      // Keep the custody row anchored to the same provider-side ref.
+      parent.externalRef,
+    );
   }
 
   // Ledger BEFORE reveal: an unledgered credential must never leave the
