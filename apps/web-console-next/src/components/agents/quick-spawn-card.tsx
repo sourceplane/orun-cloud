@@ -9,10 +9,10 @@
 // `requested`, retryable — the AG8 spawn-dialog posture, one click.
 
 import * as React from "react";
-import Link from "next/link";
+import { useRouter } from "next/navigation";
 import type { AgentProfile } from "@saas/contracts/agents";
 import { Button } from "@/components/ui/button";
-import { Pill, StatusText } from "@/components/ui/northwind";
+import { Pill } from "@/components/ui/northwind";
 import { useToast } from "@/components/ui/toast";
 import { wrap } from "@/lib/api";
 import { useSession } from "@/lib/session";
@@ -30,8 +30,8 @@ export function QuickSpawnCard({
 }) {
   const { client } = useSession();
   const { toast } = useToast();
+  const router = useRouter();
   const [busy, setBusy] = React.useState(false);
-  const [gate, setGate] = React.useState<string | null>(null);
 
   // The primary profile: the impl-default convention, else the sole/first one.
   const profile = profiles.find((p) => p.name === "impl-default" ) ?? profiles[0];
@@ -39,7 +39,6 @@ export function QuickSpawnCard({
   const spawn = React.useCallback(async () => {
     if (!profile) return;
     setBusy(true);
-    setGate(null);
     const created = await wrap(async () =>
       client.agents.createSession(orgId, { profileId: profile.id, runKind: "interactive" }),
     );
@@ -48,18 +47,13 @@ export function QuickSpawnCard({
       toast({ kind: "error", title: "Could not create the session", description: created.error.message });
       return;
     }
-    const boot = await wrap(async () => client.agents.provisionSession(orgId, created.data.id));
-    setBusy(false);
-    if (!boot.ok) {
-      // The spawn gate refused (no verified Daytona/Anthropic): the session
-      // stays `requested`, retryable after connecting. Surface it inline.
-      setGate(boot.error.message);
-      onSpawned();
-      return;
-    }
+    // Provision in the background; the session page shows live state and, on
+    // a provider-gate refusal, the retry affordance. Either way we take the
+    // user straight to the new session (their intent when they clicked Spawn).
+    void wrap(async () => client.agents.provisionSession(orgId, created.data.id));
     onSpawned();
-    toast({ kind: "success", title: "Session spawned", description: `${created.data.id} · watch it above` });
-  }, [profile, client, orgId, toast, onSpawned]);
+    router.push(`/orgs/${orgSlug}/agents/${created.data.id}`);
+  }, [profile, client, orgId, orgSlug, toast, onSpawned, router]);
 
   if (!profile) return null;
 
@@ -91,15 +85,6 @@ export function QuickSpawnCard({
         Runs in your Daytona sandbox as {principalHint} · ANTHROPIC_API_KEY injected at start, never
         stored on the session.
       </p>
-      {gate ? (
-        <StatusText tone="warning" className="mt-2">
-          Session created, but the sandbox refused to start: {gate}.{" "}
-          <Link href={`/orgs/${orgSlug}/agents`} className="underline underline-offset-2">
-            Connect providers below
-          </Link>{" "}
-          and provision it from the session page.
-        </StatusText>
-      ) : null}
     </div>
   );
 }

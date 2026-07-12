@@ -9,6 +9,7 @@
 import * as React from "react";
 import Link from "next/link";
 import { isTerminalSessionState } from "@saas/contracts/agents";
+import type { AgentProfile } from "@saas/contracts/agents";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   Breadcrumbs,
@@ -16,15 +17,45 @@ import {
   PageHeader,
   Pill,
   Screen,
-  StatCard,
   StatusText,
 } from "@/components/ui/northwind";
 import { wrap } from "@/lib/api";
 import { qk, useApiQuery } from "@/lib/query";
 import { useSession } from "@/lib/session";
-import { sessionLabel, sessionTone } from "@/lib/agents/model";
+import { AGENT_MODELS, sessionLabel, sessionTone } from "@/lib/agents/model";
+import { compactTokens } from "@/lib/agents/attention";
 import { ConversationView } from "@/components/agents/conversation-view";
 import type { ConversationEvent, PendingApproval } from "@/lib/agents/conversation";
+
+function modelLabel(model: string): string {
+  return AGENT_MODELS.find((m) => m.value === model)?.label ?? model;
+}
+
+/** A right-rail section: kicker + content. */
+function RailSection({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <div>
+      <Kicker className="mb-2">{title}</Kicker>
+      {children}
+    </div>
+  );
+}
+
+/** A label/value row for the INFRASTRUCTURE + ARTIFACTS rails. */
+function RailRow({ label, value }: { label: string; value: React.ReactNode }) {
+  return (
+    <div className="flex items-baseline justify-between gap-3 py-1 text-[12.5px]">
+      <span className="shrink-0 text-muted-foreground">{label}</span>
+      <span className="min-w-0 truncate text-right font-medium">{value}</span>
+    </div>
+  );
+}
+
+/** Parse a PR number out of a GitHub-ish PR url for the compact "#495" label. */
+function prNumber(url: string): string {
+  const m = url.match(/\/pull\/(\d+)/) ?? url.match(/\/pulls\/(\d+)/);
+  return m ? `#${m[1]}` : "PR ↗";
+}
 
 const LIVE_POLL_MS = 5_000;
 
@@ -72,6 +103,11 @@ export function SessionDetail({
   );
   const events = useApiQuery(qk.orgAgentSessionEvents(orgId, sessionId), () =>
     wrap(async () => client.agents.listSessionEvents(orgId, sessionId)),
+  );
+  // Profiles back the INFRASTRUCTURE rail (type/harness/model/autonomy); a
+  // failure degrades to the raw profile id, never blanks the page.
+  const profiles = useApiQuery(qk.orgAgents(orgId), () =>
+    wrap(async () => client.agents.listProfiles(orgId).catch(() => [] as AgentProfile[])),
   );
   // The children strip (AF4): direct children of this session, live state
   // from the tree columns (the parent's own sealed child_* events carry the
@@ -173,6 +209,12 @@ export function SessionDetail({
     );
   }
   const s = session.data;
+  const profile = (profiles.data ?? []).find((p) => p.id === s.profileId);
+  const startedLabel = s.startedAt
+    ? new Date(s.startedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+    : "—";
+  const createdLabel = new Date(s.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  const hasArtifacts = !!(s.prUrl || s.snapshotId);
 
   return (
     <Screen>
@@ -191,7 +233,7 @@ export function SessionDetail({
             </Pill>
           </span>
         }
-        description={`${s.runKind} run · spawned by ${s.spawnedBy}${s.parentSessionId ? ` · child of ${s.parentSessionId}` : ""}`}
+        description={`${s.runKind} run · spawned by ${s.spawnedBy} · ${createdLabel}${s.parentSessionId ? ` · child of ${s.parentSessionId}` : ""}`}
         actions={
           live ? (
             <button
@@ -210,117 +252,160 @@ export function SessionDetail({
         }
       />
 
-      {s.failureReason ? (
-        <StatusText tone="error" className="mb-4">
-          Failure reason: {s.failureReason}
-        </StatusText>
-      ) : null}
-
-      <div className="grid gap-4 sm:grid-cols-3">
-        <StatCard label="Created" value={new Date(s.createdAt).toLocaleString()} />
-        <StatCard label="Started" value={s.startedAt ? new Date(s.startedAt).toLocaleString() : "—"} />
-        <StatCard label="Ended" value={s.endedAt ? new Date(s.endedAt).toLocaleString() : "—"} />
-      </div>
-
-      {(s.taskKey || s.workRef || s.prUrl || s.snapshotId) && (
-        <div className="mt-4 flex flex-wrap items-center gap-2">
-          {s.taskKey ? (
-            <Link href={`/orgs/${orgSlug}/work`}>
-              <Pill tone="info">{s.taskKey}</Pill>
-            </Link>
-          ) : null}
-          {s.prUrl ? (
-            <a href={s.prUrl} target="_blank" rel="noreferrer">
-              <Pill tone="success">Pull request ↗</Pill>
-            </a>
-          ) : null}
-          {s.snapshotId ? <Pill tone="neutral">sealed {s.snapshotId.slice(0, 18)}…</Pill> : null}
-        </div>
-      )}
-
-      {/* Handoff (AL8): continue this session in the terminal. Session ids are
-          cheap and pasteable — `orun agent attach` works from anywhere your
-          identity works, the desktop-app "continue in terminal" move. */}
-      {live ? <ContinueInTerminal sessionId={s.id} /> : null}
-
-      {/* The children strip (AF4 §2.2): the delegation tree at a glance. The
-          conversation carries the parent's own sealed child_* narrative;
-          these rows are the live infrastructure facts. */}
-      {(children.data?.length ?? 0) > 0 ? (
-        <>
-          <Kicker className="mb-2.5 mt-8">
-            Children · {children.data!.length}
-          </Kicker>
-          <div className="overflow-hidden rounded-xl border border-border/60">
-            {children.data!.map((c) => (
-              <Link
-                key={c.id}
-                href={`/orgs/${orgSlug}/agents/${c.id}`}
-                className="flex items-center gap-2 border-t border-border/50 px-4 py-2.5 first:border-t-0 hover:bg-muted"
-              >
-                <span className="text-[12px] text-muted-foreground/60">├</span>
-                <span className="font-mono text-[12.5px]">{c.id}</span>
-                <Pill tone={sessionTone(c.state)} dot live={c.state === "running"}>
-                  {sessionLabel(c.state)}
-                </Pill>
-                <Pill tone="neutral">{c.runKind}</Pill>
-                {c.failureReason ? (
-                  <span className="truncate text-[12px] text-muted-foreground">{c.failureReason}</span>
-                ) : null}
-              </Link>
-            ))}
-          </div>
-        </>
-      ) : null}
-
-      <Kicker className="mb-2.5 mt-8">Conversation{live ? " · live" : ""}</Kicker>
-      {events.loading && !events.data ? (
-        <Skeleton className="h-48 w-full rounded-xl" />
-      ) : (
-        <div className="rounded-xl border border-border/60 p-4">
-          <ConversationView
-            events={(events.data ?? []) as ConversationEvent[]}
-            onApprove={onApprove}
-            onDeny={onDeny}
-            interacting={interacting}
-          />
-        </div>
-      )}
-
-      {/* Composer — always-on while the session is live. Steering never
-          blocks; the turn is attributed to you and sealed into the log. */}
-      {live ? (
-        <div className="mt-3">
-          <div className="flex gap-2">
-            <input
-              value={composer}
-              onChange={(e) => setComposer(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && !e.shiftKey) {
-                  e.preventDefault();
-                  onSteer();
-                }
-              }}
-              disabled={interacting}
-              placeholder="Message the agent…  (Enter to send)"
-              className="min-w-0 flex-1 rounded-lg border border-border bg-background px-3 py-2 text-[13px] outline-none focus:border-primary disabled:opacity-50"
-            />
-            <button
-              type="button"
-              onClick={onSteer}
-              disabled={interacting || !composer.trim()}
-              className="rounded-lg border border-primary/50 px-3 py-2 text-[13px] text-primary hover:bg-primary/10 disabled:opacity-50"
-            >
-              Send
-            </button>
-          </div>
-          {inputError ? (
-            <StatusText tone="error" className="mt-1.5">
-              {inputError}
+      {/* Two columns: the conversation head (left), the facts rail (right) —
+          the Northwind session-page layout. */}
+      <div className="grid grid-cols-1 gap-x-10 gap-y-6 lg:grid-cols-[minmax(0,1fr)_250px]">
+        {/* ── Main column: the head ─────────────────────────────── */}
+        <div className="min-w-0">
+          {s.failureReason ? (
+            <StatusText tone="error" className="mb-4">
+              Failure reason: {s.failureReason}
             </StatusText>
           ) : null}
+
+          {/* Handoff (AL8): continue this session in the terminal. */}
+          {live ? <ContinueInTerminal sessionId={s.id} /> : null}
+
+          {s.state === "requested" ? (
+            <div className="mt-4 rounded-lg border border-border/60 px-3 py-2 text-[12.5px] text-muted-foreground">
+              Waiting to provision the sandbox on your connected compute — the run starts once the
+              box dials home.
+            </div>
+          ) : null}
+
+          {/* The children strip (AF4 §2.2): the delegation tree at a glance. */}
+          {(children.data?.length ?? 0) > 0 ? (
+            <>
+              <Kicker className="mb-2.5 mt-6">Children · {children.data!.length}</Kicker>
+              <div className="overflow-hidden rounded-xl border border-border/60">
+                {children.data!.map((c) => (
+                  <Link
+                    key={c.id}
+                    href={`/orgs/${orgSlug}/agents/${c.id}`}
+                    className="flex items-center gap-2 border-t border-border/50 px-4 py-2.5 first:border-t-0 hover:bg-muted"
+                  >
+                    <span className="text-[12px] text-muted-foreground/60">├</span>
+                    <span className="font-mono text-[12.5px]">{c.id}</span>
+                    <Pill tone={sessionTone(c.state)} dot live={c.state === "running"}>
+                      {sessionLabel(c.state)}
+                    </Pill>
+                    <Pill tone="neutral">{c.runKind}</Pill>
+                    {c.failureReason ? (
+                      <span className="truncate text-[12px] text-muted-foreground">{c.failureReason}</span>
+                    ) : null}
+                  </Link>
+                ))}
+              </div>
+            </>
+          ) : null}
+
+          <Kicker className="mb-2.5 mt-6">Conversation{live ? " · live" : ""}</Kicker>
+          {events.loading && !events.data ? (
+            <Skeleton className="h-48 w-full rounded-xl" />
+          ) : (
+            <ConversationView
+              events={(events.data ?? []) as ConversationEvent[]}
+              onApprove={onApprove}
+              onDeny={onDeny}
+              interacting={interacting}
+            />
+          )}
+
+          {/* Composer — always-on while the session is live. */}
+          {live ? (
+            <div className="mt-4">
+              <div className="flex items-center gap-2 rounded-xl border border-border px-2 py-1.5 focus-within:border-primary">
+                <input
+                  value={composer}
+                  onChange={(e) => setComposer(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && !e.shiftKey) {
+                      e.preventDefault();
+                      onSteer();
+                    }
+                  }}
+                  disabled={interacting}
+                  placeholder="Steer the run — lands in the session log, attributed to you"
+                  className="min-w-0 flex-1 bg-transparent px-2 py-1 text-[13px] outline-none disabled:opacity-50"
+                />
+                <button
+                  type="button"
+                  onClick={onSteer}
+                  disabled={interacting || !composer.trim()}
+                  className="rounded-lg bg-foreground px-3.5 py-1.5 text-[12.5px] font-medium text-background hover:opacity-90 disabled:opacity-50"
+                >
+                  Send
+                </button>
+              </div>
+              {inputError ? (
+                <StatusText tone="error" className="mt-1.5">
+                  {inputError}
+                </StatusText>
+              ) : null}
+            </div>
+          ) : null}
         </div>
-      ) : null}
+
+        {/* ── Right rail: the facts ─────────────────────────────── */}
+        <aside className="flex flex-col gap-6 lg:sticky lg:top-6 lg:self-start">
+          {s.workRef || s.taskKey ? (
+            <RailSection title="Task pointer">
+              <div className="rounded-xl border bg-card px-3.5 py-3">
+                {s.workRef ? (
+                  <div className="truncate font-mono text-[11.5px] text-muted-foreground">{s.workRef}</div>
+                ) : null}
+                {s.taskKey ? <div className="mt-1 text-[13px] font-medium">{s.taskKey}</div> : null}
+                <Link
+                  href={`/orgs/${orgSlug}/work`}
+                  className="mt-2 inline-block text-[12.5px] text-primary hover:underline"
+                >
+                  Open in Work →
+                </Link>
+              </div>
+              <p className="mt-2 text-[11.5px] leading-relaxed text-muted-foreground">
+                Work truth stays on Work — this session links to it, never restates it.
+              </p>
+            </RailSection>
+          ) : null}
+
+          <RailSection title="Infrastructure">
+            <div className="border-t border-border/50">
+              <RailRow label="Profile" value={profile?.name ?? s.profileId} />
+              {profile?.agentType ? <RailRow label="Type" value={profile.agentType} /> : null}
+              {profile?.harness ? <RailRow label="Harness" value={profile.harness} /> : null}
+              {profile?.model ? <RailRow label="Model" value={modelLabel(profile.model)} /> : null}
+              {profile?.autonomyDefault ? <RailRow label="Autonomy" value={profile.autonomyDefault} /> : null}
+              <RailRow label="Started" value={startedLabel} />
+              <RailRow label="Cost" value={`${compactTokens(s.tokensUsed)} tokens`} />
+            </div>
+          </RailSection>
+
+          {hasArtifacts ? (
+            <RailSection title="Artifacts">
+              <div className="border-t border-border/50">
+                {s.prUrl ? (
+                  <RailRow
+                    label="Pull request"
+                    value={
+                      <a href={s.prUrl} target="_blank" rel="noreferrer" className="text-primary hover:underline">
+                        {prNumber(s.prUrl)}
+                      </a>
+                    }
+                  />
+                ) : null}
+                {s.snapshotId ? <RailRow label="Sealed" value={`${s.snapshotId.slice(0, 12)}…`} /> : null}
+              </div>
+            </RailSection>
+          ) : null}
+
+          <RailSection title="Heads">
+            <p className="text-[11.5px] leading-relaxed text-muted-foreground">
+              Console and terminal drive the same session — the sealed session log is the system of
+              record.
+            </p>
+          </RailSection>
+        </aside>
+      </div>
     </Screen>
   );
 }

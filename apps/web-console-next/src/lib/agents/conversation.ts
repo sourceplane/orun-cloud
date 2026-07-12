@@ -37,6 +37,8 @@ export interface ConversationItem {
 export interface PendingApproval {
   requestId: string;
   tool: string;
+  /** Why the runtime routed this to a human (policy prose), when it says. */
+  reason?: string;
 }
 
 /** The folded conversation: the ordered items, the still-pending approvals,
@@ -85,7 +87,8 @@ export function foldConversation(events: ConversationEvent[]): Conversation {
       case "approval_requested": {
         const requestId = str(p, "requestId");
         const tool = str(p, "tool");
-        pending.push({ requestId, tool });
+        const reason = str(p, "reason");
+        pending.push({ requestId, tool, ...(reason ? { reason } : {}) });
         items.push({ key, kind: "note", text: `Approval needed: ${tool}`, detail: requestId });
         break;
       }
