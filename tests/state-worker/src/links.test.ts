@@ -307,6 +307,8 @@ describe("POST /v1/organizations/{orgId}/cli/links", () => {
 
   it("persists and surfaces rename-stable provider identity (OV2.1)", async () => {
     const { executor, queries } = fakeExecutor((text) => {
+      // One-to-one pre-flight (650): no org holds this provider repo yet.
+      if (text.includes("provider_repo_id = $2")) return [];
       if (text.includes("INSERT INTO state.workspace_links")) {
         return [
           workspaceLinkRow({
@@ -408,6 +410,87 @@ describe("POST /v1/organizations/{orgId}/cli/links", () => {
       apiKeyEnabled: true,
       allowedRefPattern: "refs/heads/main",
       allowedEnvironments: ["prod"],
+    });
+  });
+
+  // One-to-one repo claim (650): a repo actively linked in another org's
+  // workspace cannot be linked here until unlinked there (first claim wins).
+  describe("one-to-one provider repo claim (650)", () => {
+    const claimEnv = () =>
+      createEnv({
+        MEMBERSHIP_WORKER: membershipFetcher({ allow: true, orgs: [ORG_ENTRY] }),
+        POLICY_WORKER: policyFetcher(true),
+        PROJECTS_WORKER: projectsFetcher({
+          resolveSlug: { id: PROJECT_PUBLIC, slug: "platform", name: "platform", status: "active" },
+        }),
+      });
+    const claimRequest = () =>
+      createRequest({
+        remoteUrl: "git@github.com:acme/platform.git",
+        projectSlug: "platform",
+        provider: "github",
+        providerRepoId: "123456",
+      });
+
+    it("409s when another org's active link holds the provider repo, without leaking the org", async () => {
+      const { executor, queries } = fakeExecutor((text) => {
+        if (text.includes("provider_repo_id = $2")) {
+          return [workspaceLinkRow({ org_id: OTHER_ORG_UUID, provider: "github", provider_repo_id: "123456" })];
+        }
+        return [];
+      });
+      const res = await handleCreateWorkspaceLink(
+        claimRequest(), claimEnv(), "req_claim", ACTOR, asUuid(ORG_UUID), { executor },
+      );
+      expect(res.status).toBe(409);
+      const body = (await res.json()) as { error: { message: string; details: { reason: string } } };
+      expect(body.error.message).toBe(
+        "This repository is already linked to another workspace. Unlink it there first.",
+      );
+      expect(body.error.details.reason).toBe("repository_linked_to_another_workspace");
+      // Generic message only — the claiming org is cross-tenant metadata.
+      expect(JSON.stringify(body)).not.toContain(OTHER_ORG_UUID);
+      // Denied pre-flight: no INSERT was attempted.
+      expect(queries.some((q) => q.text.includes("INSERT INTO state.workspace_links"))).toBe(false);
+    });
+
+    it("maps the unique-index race (uq_state_workspace_link_provider_repo) to the same 409", async () => {
+      const { executor } = fakeExecutor((text) => {
+        if (text.includes("provider_repo_id = $2")) return []; // pre-flight saw nothing…
+        if (text.includes("INSERT INTO state.workspace_links")) {
+          // …but another org won the claim race — the 650 backstop fires.
+          throw { code: "23505", constraint: "uq_state_workspace_link_provider_repo" };
+        }
+        if (text.includes("remote_url = $1")) return []; // no same-org link to fall back on
+        return [];
+      });
+      const res = await handleCreateWorkspaceLink(
+        claimRequest(), claimEnv(), "req_race", ACTOR, asUuid(ORG_UUID), { executor },
+      );
+      expect(res.status).toBe(409);
+      const body = (await res.json()) as { error: { details: { reason: string } } };
+      expect(body.error.details.reason).toBe("repository_linked_to_another_workspace");
+    });
+
+    it("keeps same-org re-link idempotent when this org already holds the claim", async () => {
+      const { executor } = fakeExecutor((text) => {
+        if (text.includes("provider_repo_id = $2")) {
+          // Same org holds the claim — the pre-flight lets it through.
+          return [workspaceLinkRow({ provider: "github", provider_repo_id: "123456" })];
+        }
+        if (text.includes("INSERT INTO state.workspace_links")) {
+          // (org, remote) idempotency unique — UO1's existing conflict path.
+          throw { code: "23505", constraint: "uq_state_workspace_link_remote" };
+        }
+        if (text.includes("remote_url = $1")) return [workspaceLinkRow()];
+        return [{ _event: {}, _audit: {} }];
+      });
+      const res = await handleCreateWorkspaceLink(
+        claimRequest(), claimEnv(), "req_same_org", ACTOR, asUuid(ORG_UUID), { executor },
+      );
+      expect(res.status).toBe(201); // idempotent re-link, unchanged (UO1)
+      const body = (await res.json()) as { data: { link: { remoteUrl: string } } };
+      expect(body.data.link.remoteUrl).toBe("github.com/acme/platform");
     });
   });
 

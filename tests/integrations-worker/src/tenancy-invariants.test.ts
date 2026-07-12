@@ -16,6 +16,8 @@ import { handleIssueGithubToken } from "@integrations-worker/handlers/token-brok
 import { processDelivery } from "@integrations-worker/drain";
 import { createIntegrationsRepository, type InboundDelivery } from "@saas/db/integrations";
 import { createEventsRepository } from "@saas/db/events";
+import { createStateRepository } from "@saas/db/state";
+import { createMembershipRepository } from "@saas/db/membership";
 import type { ActorContext } from "@integrations-worker/router";
 import type { Env } from "@integrations-worker/env";
 import type { SqlExecutor, SqlExecutorResult, SqlRow } from "@saas/db/hyperdrive";
@@ -226,6 +228,8 @@ function drainCtx(respond: SqlResponder) {
       executor,
       repo: createIntegrationsRepository(executor),
       events: createEventsRepository(executor),
+      state: createStateRepository(executor),
+      membership: createMembershipRepository(executor),
       now: () => NOW,
     },
     queries,
