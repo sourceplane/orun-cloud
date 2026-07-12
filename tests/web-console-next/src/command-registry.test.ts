@@ -106,6 +106,41 @@ describe("buildBaseCommands", () => {
     expect(byId.has("nav.config")).toBe(false);
   });
 
+  it("exposes the integration-hub verbs: connect per provider, mint, bind (IH8, design §6)", () => {
+    const cmds = buildBaseCommands({ ...baseCtx, orgSlug: "acme" });
+    const byId = new Map(cmds.map((c) => [c.id, c]));
+    for (const [id, provider] of [
+      ["create.connect-slack", "slack"],
+      ["create.connect-cloudflare", "cloudflare"],
+      ["create.connect-supabase", "supabase"],
+    ] as const) {
+      const cmd = byId.get(id)!;
+      expect(cmd).toBeDefined();
+      expect(cmd.group).toBe("Create");
+      expect(cmd.kind).toBe("navigate");
+      if (cmd.kind === "navigate") {
+        expect(cmd.to).toBe(`/orgs/acme/integrations?connect=${provider}`);
+      }
+    }
+    const mint = byId.get("create.mint-credential")!;
+    expect(mint.group).toBe("Create");
+    if (mint.kind === "navigate") expect(mint.to).toBe("/orgs/acme/integrations");
+    expect(mint.keywords).toEqual(expect.arrayContaining(["mint", "credential", "token", "broker"]));
+    const bind = byId.get("create.bind-secret")!;
+    expect(bind.group).toBe("Create");
+    if (bind.kind === "navigate") expect(bind.to).toBe("/orgs/acme/secrets?bind=1");
+    expect(bind.keywords).toEqual(expect.arrayContaining(["bind", "broker", "secret"]));
+  });
+
+  it("omits the integration-hub verbs outside an org scope", () => {
+    const ids = buildBaseCommands(baseCtx).map((c) => c.id);
+    expect(ids).not.toContain("create.connect-slack");
+    expect(ids).not.toContain("create.connect-cloudflare");
+    expect(ids).not.toContain("create.connect-supabase");
+    expect(ids).not.toContain("create.mint-credential");
+    expect(ids).not.toContain("create.bind-secret");
+  });
+
   it("adds project-scoped commands only when both org and project slugs are present", () => {
     const orgOnly = buildBaseCommands({ ...baseCtx, orgSlug: "acme" }).map((c) => c.id);
     expect(orgOnly).not.toContain("nav.environments");

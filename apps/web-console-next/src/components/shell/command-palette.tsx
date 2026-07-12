@@ -40,6 +40,9 @@ import {
   Plug,
   UsersRound,
   ListTodo,
+  MessageSquare,
+  Cloud,
+  Database,
   type LucideIcon,
 } from "lucide-react";
 import {
@@ -78,6 +81,9 @@ const ICONS: Record<string, LucideIcon> = {
   Plug,
   UsersRound,
   ListTodo,
+  MessageSquare,
+  Cloud,
+  Database,
 };
 
 // --- Registration context --------------------------------------------------

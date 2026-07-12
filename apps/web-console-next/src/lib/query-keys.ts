@@ -38,6 +38,15 @@ export const qk = {
   notificationChannels: (orgId: string) => ["notificationChannels", orgId] as const,
   deadLetters: (orgId: string, status: string) => ["deadLetters", orgId, status] as const,
   integrations: (orgId: string) => ["integrations", orgId] as const,
+  /** One connection's detail read (saas-integration-hub IH8). */
+  integration: (orgId: string, connectionId: string) =>
+    ["integration", orgId, connectionId] as const,
+  /** The credential-broker mint ledger for one connection (IH8). */
+  mintedCredentials: (orgId: string, connectionId: string) =>
+    ["mintedCredentials", orgId, connectionId] as const,
+  /** Slack channels visible to a messaging connection's bot (IH8). */
+  slackChannels: (orgId: string, connectionId: string) =>
+    ["slackChannels", orgId, connectionId] as const,
   connectionGrants: (orgId: string, connectionId: string) =>
     ["connectionGrants", orgId, connectionId] as const,
   accountWorkspaces: (orgId: string) => ["accountWorkspaces", orgId] as const,

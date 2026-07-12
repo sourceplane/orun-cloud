@@ -47,6 +47,21 @@ describe("query cache keys (qk)", () => {
     expect(JSON.stringify(qk.orgRuns("org_1"))).not.toEqual(JSON.stringify(qk.orgCatalog("org_1")));
   });
 
+  it("keys the connection-detail surfaces by (org, connection) without colliding (IH8)", () => {
+    expect(qk.integration("org_1", "int_1")).toEqual(["integration", "org_1", "int_1"]);
+    expect(qk.mintedCredentials("org_1", "int_1")).toEqual(["mintedCredentials", "org_1", "int_1"]);
+    expect(qk.slackChannels("org_1", "int_1")).toEqual(["slackChannels", "org_1", "int_1"]);
+    expect(qk.integration("org_1", "int_1")).not.toEqual(qk.integration("org_1", "int_2"));
+    const sameScope = [
+      qk.integrations("org_1"),
+      qk.integration("org_1", "int_1"),
+      qk.mintedCredentials("org_1", "int_1"),
+      qk.slackChannels("org_1", "int_1"),
+      qk.connectionGrants("org_1", "int_1"),
+    ].map((k) => JSON.stringify(k));
+    expect(new Set(sameScope).size).toBe(sameScope.length);
+  });
+
   it("keys repo facets by org and doc objects by (org, project, digest)", () => {
     expect(qk.repoFacets("org_1")).toEqual(["repoFacets", "org_1"]);
     expect(qk.docObject("org_1", "prj_1", "sha256:d")).toEqual(["docObject", "org_1", "prj_1", "sha256:d"]);

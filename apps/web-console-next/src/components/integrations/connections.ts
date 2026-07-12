@@ -131,6 +131,16 @@ export function uninstallDisclosure(
       ? "This connection serves the whole account. Revoking it deletes the workspace's bot token, revokes it with Slack, and stops Slack notifications for every workspace using it."
       : "Revoking disconnects this Slack workspace: the bot token is deleted and revoked with Slack, and channels backed by this connection stop receiving notifications.";
   }
+  if (connection.provider === "cloudflare") {
+    return connection.scope === "account"
+      ? "This connection serves the whole account. Revoking it revokes every live minted child token, zeroizes the parent token in custody, and brokered secrets that depend on it fail closed for every workspace."
+      : "Revoking disconnects this Cloudflare account: live minted child tokens are revoked, the parent token in custody is zeroized, and brokered secrets that depend on this connection fail closed.";
+  }
+  if (connection.provider === "supabase") {
+    return connection.scope === "account"
+      ? "This connection serves the whole account. Revoking it revokes and zeroizes the refresh token, revokes live minted access tokens, and brokered secrets that depend on it fail closed for every workspace."
+      : "Revoking disconnects this Supabase organization: the refresh token is revoked and zeroized, live minted access tokens are revoked, and brokered secrets that depend on this connection fail closed.";
+  }
   return connection.scope === "account"
     ? "This connection serves the whole account. Revoking it uninstalls the GitHub App for this account and stops events and token issuance for every workspace's linked repositories."
     : "The platform stops receiving events for this installation and any linked repositories stop updating. This also uninstalls the App from GitHub when possible.";

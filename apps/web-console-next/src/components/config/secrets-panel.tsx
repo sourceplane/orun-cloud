@@ -11,9 +11,10 @@ import {
   ShieldAlert,
   TriangleAlert,
 } from "lucide-react";
-import { useParams } from "next/navigation";
+import { useParams, usePathname, useRouter, useSearchParams } from "next/navigation";
 import type { ConfigScope } from "@saas/sdk";
 import type { PublicSecretMetadata, PublicSecretVersion, PublicSecretSync } from "@saas/contracts/config";
+import type { PublicConnection } from "@saas/contracts/integrations";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -45,6 +46,14 @@ import { wrap } from "@/lib/api";
 import { ListSkeleton, LoadError } from "./config-shared";
 import { NewSecretContext } from "./config-surface";
 import { rotationStatus, revealGuard, syncStatusView, scopeChainChips } from "./secrets-view";
+import {
+  brokerConnections,
+  brokeredCreateErrorMessage,
+  deriveBrokerRow,
+  validateBindingForm,
+  type CreateSecretMode,
+} from "./bind-secret-flow";
+import { SCOPE_TEMPLATE_CATALOG } from "@/components/integrations/archetype";
 
 const secretSchema = z.object({
   secretKey: z.string().min(1).max(128),
@@ -66,7 +75,12 @@ export function SecretsPanel({ scope, scopeKey }: { scope: ConfigScope; scopeKey
   const { toast } = useToast();
   const params = useParams<{ orgSlug?: string }>();
   const orgSlug = params?.orgSlug ?? "";
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
   const isEnv = scope.kind === "environment";
+  // Every ConfigScope kind carries the org — the binding picker's query scope.
+  const orgId = scope.orgId;
 
   // Environment scope reads the whole chain; other scopes read the exact scope.
   const secrets = useApiQuery(qk.configSecrets(scopeKey), () =>
@@ -78,6 +92,7 @@ export function SecretsPanel({ scope, scopeKey }: { scope: ConfigScope; scopeKey
   );
 
   const [createOpen, setCreateOpen] = React.useState(false);
+  const [createMode, setCreateMode] = React.useState<CreateSecretMode>("value");
   const [rotating, setRotating] = React.useState<PublicSecretMetadata | null>(null);
   const [revoking, setRevoking] = React.useState<PublicSecretMetadata | null>(null);
   const [versionsFor, setVersionsFor] = React.useState<PublicSecretMetadata | null>(null);
@@ -94,6 +109,23 @@ export function SecretsPanel({ scope, scopeKey }: { scope: ConfigScope; scopeKey
       newSecretRef.current = null;
     };
   }, [newSecretRef]);
+
+  // Deep-link (`?bind=1`, saas-integration-hub IH8): the Cmd-K "Bind brokered
+  // secret" entry lands here with the create dialog open in binding mode. Seed
+  // once, then clear the param so a refresh doesn't reopen the dialog.
+  const bindSeeded = React.useRef(false);
+  React.useEffect(() => {
+    if (bindSeeded.current) return;
+    if (searchParams?.get("bind") === "1") {
+      bindSeeded.current = true;
+      setCreateMode("binding");
+      setCreateOpen(true);
+      const next = new URLSearchParams(searchParams.toString());
+      next.delete("bind");
+      const qs = next.toString();
+      router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
+    }
+  }, [searchParams, pathname, router]);
 
   const now = React.useMemo(() => new Date(), [secrets.data]);
 
@@ -131,41 +163,83 @@ export function SecretsPanel({ scope, scopeKey }: { scope: ConfigScope; scopeKey
         </Button>
       </div>
 
-      <Dialog open={createOpen} onOpenChange={setCreateOpen}>
+      <Dialog
+        open={createOpen}
+        onOpenChange={(o) => {
+          setCreateOpen(o);
+          if (!o) setCreateMode("value");
+        }}
+      >
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Create secret</DialogTitle>
             <DialogDescription>
-              The value is encrypted before storage and never shown again — keep your own copy.
+              {createMode === "binding"
+                ? "No value is stored — the credential is minted from the connection just-in-time at resolve."
+                : "The value is encrypted before storage and never shown again — keep your own copy."}
             </DialogDescription>
           </DialogHeader>
-          <ZodForm
-            schema={secretSchema}
-            defaultValues={{ secretKey: "", value: "", displayName: "" }}
-            fields={[
-              { name: "secretKey", label: "Key", placeholder: "stripe_api_key" },
-              { name: "value", label: "Value", type: "password", autoComplete: "off" },
-              { name: "displayName", label: "Display name", placeholder: "Optional" },
-            ]}
-            submitLabel="Create secret"
-            cancel={{ label: "Cancel", onClick: () => setCreateOpen(false) }}
-            onSubmit={async (v) => {
-              const r = await wrap(() =>
-                client.config.createSecretMetadata(scope, {
-                  secretKey: v.secretKey,
-                  value: v.value,
-                  displayName: v.displayName || null,
-                }),
-              );
-              if (!r.ok) {
-                toast({ kind: "error", title: "Create failed", description: r.error.message });
-                return;
-              }
-              setCreateOpen(false);
-              toast({ kind: "success", title: "Secret stored", description: "The value is encrypted and not retrievable." });
-              secrets.reload();
-            }}
-          />
+
+          {/* IH8: a secret is either a stored value or a broker binding. */}
+          <div className="inline-flex self-start overflow-hidden rounded-md border">
+            <button
+              type="button"
+              onClick={() => setCreateMode("value")}
+              className={`px-2.5 py-1 text-xs ${createMode === "value" ? "bg-card font-medium" : "text-muted-foreground"}`}
+            >
+              Static value
+            </button>
+            <button
+              type="button"
+              onClick={() => setCreateMode("binding")}
+              className={`border-l px-2.5 py-1 text-xs ${createMode === "binding" ? "bg-card font-medium" : "text-muted-foreground"}`}
+            >
+              Bind to integration
+            </button>
+          </div>
+
+          {createMode === "value" ? (
+            <ZodForm
+              schema={secretSchema}
+              defaultValues={{ secretKey: "", value: "", displayName: "" }}
+              fields={[
+                { name: "secretKey", label: "Key", placeholder: "stripe_api_key" },
+                { name: "value", label: "Value", type: "password", autoComplete: "off" },
+                { name: "displayName", label: "Display name", placeholder: "Optional" },
+              ]}
+              submitLabel="Create secret"
+              cancel={{ label: "Cancel", onClick: () => setCreateOpen(false) }}
+              onSubmit={async (v) => {
+                const r = await wrap(() =>
+                  client.config.createSecretMetadata(scope, {
+                    secretKey: v.secretKey,
+                    value: v.value,
+                    displayName: v.displayName || null,
+                  }),
+                );
+                if (!r.ok) {
+                  toast({ kind: "error", title: "Create failed", description: r.error.message });
+                  return;
+                }
+                setCreateOpen(false);
+                toast({ kind: "success", title: "Secret stored", description: "The value is encrypted and not retrievable." });
+                secrets.reload();
+              }}
+            />
+          ) : (
+            <BindSecretForm
+              scope={scope}
+              orgId={orgId}
+              enabled={createOpen}
+              onCancel={() => setCreateOpen(false)}
+              onCreated={() => {
+                setCreateOpen(false);
+                setCreateMode("value");
+                toast({ kind: "success", title: "Secret bound", description: "Minted at resolve — nothing is stored." });
+                secrets.reload();
+              }}
+            />
+          )}
         </DialogContent>
       </Dialog>
 
@@ -242,7 +316,12 @@ export function SecretsPanel({ scope, scopeKey }: { scope: ConfigScope; scopeKey
                 const rot = rotationStatus(s, now);
                 const chips = scopeChainChips(s);
                 const sync = syncStatusView({ status: s.status });
-                const used = s.displayName ?? (s.servesFrom ? `serves from ${s.servesFrom}` : null);
+                // Brokered rows (IH8) lead with their binding provenance; no
+                // value-shaped action (rotate/reveal) applies to them.
+                const broker = deriveBrokerRow(s);
+                const used = broker
+                  ? broker.label
+                  : (s.displayName ?? (s.servesFrom ? `serves from ${s.servesFrom}` : null));
                 return (
                   <div
                     key={s.id}
@@ -254,7 +333,14 @@ export function SecretsPanel({ scope, scopeKey }: { scope: ConfigScope; scopeKey
                   >
                     {/* Secret */}
                     <span className="min-w-0">
-                      <span className="block truncate font-mono text-[12.5px] font-semibold">{s.secretKey}</span>
+                      <span className="flex min-w-0 items-center gap-1.5">
+                        <span className="truncate font-mono text-[12.5px] font-semibold">{s.secretKey}</span>
+                        {broker ? (
+                          <Badge variant="info" className="shrink-0 text-[10.5px]">
+                            brokered
+                          </Badge>
+                        ) : null}
+                      </span>
                       {used ? (
                         <span className="mt-0.5 block truncate text-[11.5px] text-muted-foreground/80">{used}</span>
                       ) : null}
@@ -328,11 +414,18 @@ export function SecretsPanel({ scope, scopeKey }: { scope: ConfigScope; scopeKey
                           <DropdownMenuItem onSelect={() => setSyncsFor(s)}>
                             <Waypoints className="mr-2 h-4 w-4" /> Sync provenance
                           </DropdownMenuItem>
-                          <DropdownMenuItem onSelect={() => setRevealFor(s)} className="text-warning">
-                            <Eye className="mr-2 h-4 w-4" /> Reveal (break-glass)
-                          </DropdownMenuItem>
+                          {/* Value-shaped actions don't apply to a brokered
+                              binding — there is no stored value to reveal or
+                              rotate (the backend rejects both). */}
+                          {!broker ? (
+                            <DropdownMenuItem onSelect={() => setRevealFor(s)} className="text-warning">
+                              <Eye className="mr-2 h-4 w-4" /> Reveal (break-glass)
+                            </DropdownMenuItem>
+                          ) : null}
                           <DropdownMenuSeparator />
-                          <DropdownMenuItem onSelect={() => setRotating(s)}>Rotate</DropdownMenuItem>
+                          {!broker ? (
+                            <DropdownMenuItem onSelect={() => setRotating(s)}>Rotate</DropdownMenuItem>
+                          ) : null}
                           <DropdownMenuItem onSelect={() => setRevoking(s)} className="text-destructive">
                             Revoke
                           </DropdownMenuItem>
@@ -360,6 +453,215 @@ export function SecretsPanel({ scope, scopeKey }: { scope: ConfigScope; scopeKey
           ) : null}
         </>
       )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Bind to integration (saas-integration-hub IH8 / IH7)
+// ---------------------------------------------------------------------------
+
+/**
+ * The "Bind to integration" create path: pick a broker-capable connection →
+ * scope template → params → key + display name. Binds at the panel's current
+ * scope, exactly like a value create. No value ever exists — the broker mints
+ * it at resolve.
+ */
+function BindSecretForm({
+  scope,
+  orgId,
+  enabled,
+  onCreated,
+  onCancel,
+}: {
+  scope: ConfigScope;
+  orgId: string;
+  enabled: boolean;
+  onCreated: () => void;
+  onCancel: () => void;
+}) {
+  const { client } = useSession();
+
+  const integrations = useApiQuery(
+    qk.integrations(orgId),
+    () => wrap(async () => (await client.integrations.list(orgId)).connections),
+    { enabled },
+  );
+  const connections = React.useMemo(
+    () => brokerConnections<PublicConnection>(integrations.data ?? []),
+    [integrations.data],
+  );
+
+  const [connectionId, setConnectionId] = React.useState("");
+  const [templateId, setTemplateId] = React.useState("");
+  const [paramInputs, setParamInputs] = React.useState<Record<string, string>>({});
+  const [secretKey, setSecretKey] = React.useState("");
+  const [displayName, setDisplayName] = React.useState("");
+  const [errors, setErrors] = React.useState<Record<string, string>>({});
+  // Typed inline error (412 entitlement gates included) — never a silent toast.
+  const [formError, setFormError] = React.useState<{ message: string; requestId: string | null } | null>(null);
+  const [busy, setBusy] = React.useState(false);
+
+  const selected = connections.find((c) => c.id === connectionId) ?? null;
+  const templates = selected ? (SCOPE_TEMPLATE_CATALOG[selected.provider] ?? []) : [];
+  const template = templates.find((t) => t.id === templateId) ?? null;
+
+  const pickConnection = (id: string) => {
+    setConnectionId(id);
+    const conn = connections.find((c) => c.id === id);
+    const first = conn ? (SCOPE_TEMPLATE_CATALOG[conn.provider] ?? [])[0] : undefined;
+    setTemplateId(first?.id ?? "");
+    setParamInputs({});
+    setErrors({});
+    setFormError(null);
+  };
+
+  const submit = async () => {
+    const v = validateBindingForm(
+      { secretKey, displayName, connectionId, template: templateId, params: paramInputs },
+      templates,
+    );
+    if (!v.ok) {
+      setErrors(v.errors);
+      return;
+    }
+    setErrors({});
+    setFormError(null);
+    setBusy(true);
+    const r = await wrap(() => client.config.createBrokeredSecret(scope, v.request));
+    setBusy(false);
+    if (!r.ok) {
+      if (r.status === 412) {
+        setFormError({ message: brokeredCreateErrorMessage(r.error), requestId: r.error.requestId ?? null });
+      } else {
+        setFormError({ message: r.error.message, requestId: r.error.requestId ?? null });
+      }
+      return;
+    }
+    onCreated();
+  };
+
+  if (integrations.loading) {
+    return <p className="text-sm text-muted-foreground">Loading connections…</p>;
+  }
+  if (connections.length === 0) {
+    return (
+      <div className="space-y-3">
+        <p className="text-sm text-muted-foreground">
+          No broker-capable connection is available. Connect Cloudflare or Supabase from the Integrations hub,
+          then bind secrets to it here.
+        </p>
+        <div className="flex justify-end">
+          <Button type="button" variant="ghost" onClick={onCancel}>
+            Close
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-3">
+      <label className="block space-y-1.5 text-sm font-medium">
+        Connection
+        <select
+          value={connectionId}
+          onChange={(e) => pickConnection(e.target.value)}
+          className="mt-1.5 h-9 w-full rounded-md border bg-card px-2 text-sm font-normal"
+          aria-invalid={errors.connectionId ? true : undefined}
+        >
+          <option value="">Select a connection…</option>
+          {connections.map((c) => (
+            <option key={c.id} value={c.id}>
+              {c.provider}
+              {c.displayName ? ` — ${c.displayName}` : c.externalAccountLogin ? ` — ${c.externalAccountLogin}` : ""}
+            </option>
+          ))}
+        </select>
+        {errors.connectionId ? <span className="block text-xs font-normal text-destructive">{errors.connectionId}</span> : null}
+      </label>
+
+      {selected ? (
+        <label className="block space-y-1.5 text-sm font-medium">
+          Scope template
+          <select
+            value={templateId}
+            onChange={(e) => {
+              setTemplateId(e.target.value);
+              setParamInputs({});
+              setErrors({});
+            }}
+            className="mt-1.5 h-9 w-full rounded-md border bg-card px-2 text-sm font-normal"
+            aria-invalid={errors.template ? true : undefined}
+          >
+            <option value="">Select a template…</option>
+            {templates.map((t) => (
+              <option key={t.id} value={t.id}>
+                {t.displayName}
+              </option>
+            ))}
+          </select>
+          {template ? <span className="block text-xs font-normal text-muted-foreground">{template.description}</span> : null}
+          {errors.template ? <span className="block text-xs font-normal text-destructive">{errors.template}</span> : null}
+        </label>
+      ) : null}
+
+      {template
+        ? template.params.map((name) => (
+            <label key={name} className="block space-y-1.5 text-sm font-medium">
+              <span className="font-mono text-xs">{name}</span>
+              <input
+                value={paramInputs[name] ?? ""}
+                onChange={(e) => setParamInputs((p) => ({ ...p, [name]: e.target.value }))}
+                className="mt-1.5 h-9 w-full rounded-md border bg-card px-2 font-mono text-xs"
+                aria-invalid={errors[name] ? true : undefined}
+              />
+              {errors[name] ? <span className="block text-xs font-normal text-destructive">{errors[name]}</span> : null}
+            </label>
+          ))
+        : null}
+
+      <label className="block space-y-1.5 text-sm font-medium">
+        Key
+        <input
+          value={secretKey}
+          onChange={(e) => setSecretKey(e.target.value)}
+          placeholder="CLOUDFLARE_API_TOKEN"
+          className="mt-1.5 h-9 w-full rounded-md border bg-card px-2 font-mono text-xs"
+          aria-invalid={errors.secretKey ? true : undefined}
+        />
+        {errors.secretKey ? <span className="block text-xs font-normal text-destructive">{errors.secretKey}</span> : null}
+      </label>
+
+      <label className="block space-y-1.5 text-sm font-medium">
+        Display name
+        <input
+          value={displayName}
+          onChange={(e) => setDisplayName(e.target.value)}
+          placeholder="Optional"
+          className="mt-1.5 h-9 w-full rounded-md border bg-card px-2 text-sm font-normal"
+          aria-invalid={errors.displayName ? true : undefined}
+        />
+        {errors.displayName ? <span className="block text-xs font-normal text-destructive">{errors.displayName}</span> : null}
+      </label>
+
+      {formError ? (
+        <div className="rounded-md border border-destructive/40 bg-destructive-soft p-3 text-xs text-destructive">
+          <div>{formError.message}</div>
+          {formError.requestId ? (
+            <div className="mt-1 font-mono text-[11px] opacity-80">requestId: {formError.requestId}</div>
+          ) : null}
+        </div>
+      ) : null}
+
+      <div className="flex justify-end gap-2 pt-1">
+        <Button type="button" variant="ghost" onClick={onCancel}>
+          Cancel
+        </Button>
+        <Button type="button" loading={busy} onClick={() => void submit()}>
+          Bind secret
+        </Button>
+      </div>
     </div>
   );
 }
