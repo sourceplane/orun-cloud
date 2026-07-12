@@ -519,6 +519,139 @@ describe("GET /ingress/slack/oauth", () => {
     expect(await res.text()).toContain("Not configured");
     expect(queries).toHaveLength(0);
   });
+
+  // ── Re-auth (IH9): a grant for an already-bound workspace ──
+
+  const EXISTING_UUID = "44444444-4444-4444-8444-444444444444";
+
+  function existingConnectionRow(status: string): Record<string, unknown> {
+    return {
+      id: EXISTING_UUID,
+      org_id: ORG_UUID,
+      provider: "slack",
+      status,
+      display_name: "Acme Workspace",
+      created_by: "usr_abc",
+      external_account_login: "Acme Workspace",
+      external_account_id: "T0TEAM",
+      external_account_type: "workspace",
+      created_at: NOW.toISOString(),
+      updated_at: NOW.toISOString(),
+    };
+  }
+
+  it("re-authorizes an own SUSPENDED connection: fresh custody on the existing connection, reactivate, retire placeholder", async () => {
+    const env = createEnv();
+    const { fetchImpl } = slackFetch();
+    const { state } = await mintState();
+    const custodyInserts: unknown[][] = [];
+    const statusWrites: unknown[][] = [];
+    const { executor, queries } = fakeExecutor((text, params) => {
+      if (text.includes("SET state_nonce_hash = NULL")) return [pendingRow()];
+      if (text.includes("SELECT * FROM integrations.slack_workspaces WHERE team_id")) {
+        return [workspaceRow({ connection_id: EXISTING_UUID })];
+      }
+      if (text.includes("SELECT * FROM integrations.connections WHERE org_id")) {
+        return [existingConnectionRow("suspended")];
+      }
+      if (text.includes("INSERT INTO integrations.provider_credentials")) {
+        custodyInserts.push(params);
+        return [{ id: "cred", connection_id: params[1], kind: params[2], ciphertext: params[3], external_ref: params[5], created_at: NOW.toISOString(), updated_at: NOW.toISOString() }];
+      }
+      if (text.includes("INSERT INTO integrations.slack_workspaces")) {
+        return [workspaceRow({ connection_id: EXISTING_UUID })];
+      }
+      if (text.includes("SET status = $3")) {
+        statusWrites.push(params);
+        return [existingConnectionRow(params[2] as string)];
+      }
+      if (text.includes("INSERT INTO")) return [{ id: "evt" }];
+      return [];
+    });
+
+    const res = await handleSlackOauthCallback(
+      callbackRequest({ code: "c0de", state }),
+      env, "req_1", { executor, fetchImpl },
+    );
+    expect(res.status).toBe(200);
+    expect(await res.text()).toContain("Reconnected");
+
+    // Custody landed on the EXISTING connection.
+    const botInsert = custodyInserts.find((p) => p[2] === "slack_bot_token")!;
+    expect(botInsert[1]).toBe(EXISTING_UUID);
+    // Reactivate the existing connection, then retire the placeholder.
+    expect(statusWrites).toEqual([
+      [ORG_UUID, EXISTING_UUID, "active"],
+      [ORG_UUID, CONNECTION_UUID, "revoked"],
+    ]);
+    // No fresh activation, no bot token in the event stream.
+    expect(queries.some((q) => q.text.includes("SET status = 'active'"))).toBe(false);
+    const events = queries.filter((q) => q.text.includes("WITH inserted_event"));
+    expect(JSON.stringify(events.map((q) => q.params))).toContain("integration.reactivated");
+    expect(JSON.stringify(queries.map((q) => q.params))).not.toContain("xoxb-test-token");
+  });
+
+  it("reconnect-after-revoke rebinds the workspace and proceeds to a fresh activation", async () => {
+    const env = createEnv();
+    const { fetchImpl } = slackFetch();
+    const { state } = await mintState();
+    let rebind: unknown[] | null = null;
+    const { executor, queries } = fakeExecutor((text, params) => {
+      if (text.includes("SET state_nonce_hash = NULL")) return [pendingRow()];
+      if (text.includes("SELECT * FROM integrations.slack_workspaces WHERE team_id")) {
+        return [workspaceRow({ connection_id: EXISTING_UUID })];
+      }
+      if (text.includes("SELECT * FROM integrations.connections WHERE org_id")) {
+        return [existingConnectionRow("revoked")];
+      }
+      if (text.includes("UPDATE integrations.slack_workspaces")) {
+        rebind = params;
+        return [workspaceRow({ connection_id: CONNECTION_UUID })];
+      }
+      if (text.includes("INSERT INTO integrations.provider_credentials")) {
+        return [{ id: "cred", connection_id: CONNECTION_UUID, kind: "slack_bot_token", ciphertext: "{}", created_at: NOW.toISOString(), updated_at: NOW.toISOString() }];
+      }
+      if (text.includes("INSERT INTO integrations.slack_workspaces")) return [workspaceRow()];
+      if (text.includes("SET status = 'active'")) {
+        return [pendingRow({ status: "active", external_account_id: "T0TEAM", external_account_type: "workspace", connected_at: NOW.toISOString() })];
+      }
+      if (text.includes("INSERT INTO")) return [{ id: "evt" }];
+      return [];
+    });
+
+    const res = await handleSlackOauthCallback(
+      callbackRequest({ code: "c0de", state }),
+      env, "req_1", { executor, fetchImpl },
+    );
+    expect(res.status).toBe(200);
+    expect(await res.text()).toContain("Slack connected");
+    // The revoked workspace was explicitly rebound to the fresh connection —
+    // the COALESCE upsert could never have flipped it.
+    expect(rebind).toEqual(["T0TEAM", CONNECTION_UUID]);
+    expect(queries.some((q) => q.text.includes("SET status = 'active'"))).toBe(true);
+  });
+
+  it("refuses (Already connected) when the workspace is bound to a connection this org cannot see", async () => {
+    const env = createEnv();
+    const { fetchImpl } = slackFetch();
+    const { state } = await mintState();
+    const { executor, queries } = fakeExecutor((text) => {
+      if (text.includes("SET state_nonce_hash = NULL")) return [pendingRow()];
+      if (text.includes("SELECT * FROM integrations.slack_workspaces WHERE team_id")) {
+        return [workspaceRow({ connection_id: EXISTING_UUID })];
+      }
+      if (text.includes("SELECT * FROM integrations.connections WHERE org_id")) return [];
+      return [];
+    });
+    const res = await handleSlackOauthCallback(
+      callbackRequest({ code: "c0de", state }),
+      env, "req_1", { executor, fetchImpl },
+    );
+    expect(res.status).toBe(400);
+    expect(await res.text()).toContain("Already connected");
+    expect(queries.some((q) => q.text.includes("INSERT INTO integrations.provider_credentials"))).toBe(false);
+    expect(queries.some((q) => q.text.includes("SET status = 'active'"))).toBe(false);
+  });
 });
 
 // ── Revoke (custody zeroize + provider-side auth.revoke) ────

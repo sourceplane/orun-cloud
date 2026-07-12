@@ -142,6 +142,72 @@ export async function discoverCloudflareAccount(
   }
 }
 
+/** Orphan sweep (IH9): the platform-named tokens on the account. Paginated;
+ *  null on any API failure — callers leave the ledger untouched. */
+export async function listCloudflareAccountTokens(
+  parent: ParentCredentialContext,
+  fetchImpl: FetchLike = fetch,
+): Promise<Array<{ id: string; name: string; status: string; expiresOn: string | null }> | null> {
+  const accountId = parent.externalRef;
+  if (!accountId) return null;
+  const tokens: Array<{ id: string; name: string; status: string; expiresOn: string | null }> = [];
+  try {
+    // Defensive page cap: 10 pages × 50 tokens is far beyond any real sweep.
+    for (let page = 1; page <= 10; page++) {
+      const response = await fetchImpl(
+        `${API_BASE}/accounts/${accountId}/tokens?page=${page}&per_page=50`,
+        { method: "GET", headers: { authorization: `Bearer ${parent.credential}` } },
+      );
+      if (!response.ok) return null;
+      const body = (await response.json()) as {
+        success?: boolean;
+        result?: Array<{ id?: unknown; name?: unknown; status?: unknown; expires_on?: unknown }>;
+        result_info?: { page?: unknown; total_pages?: unknown };
+      };
+      if (body.success !== true || !Array.isArray(body.result)) return null;
+      for (const token of body.result) {
+        if (typeof token.id !== "string") continue;
+        tokens.push({
+          id: token.id,
+          name: typeof token.name === "string" ? token.name : "",
+          status: typeof token.status === "string" ? token.status : "unknown",
+          expiresOn: typeof token.expires_on === "string" ? token.expires_on : null,
+        });
+      }
+      const totalPages =
+        typeof body.result_info?.total_pages === "number" ? body.result_info.total_pages : 1;
+      if (page >= totalPages) break;
+    }
+    return tokens;
+  } catch {
+    return null;
+  }
+}
+
+/** Health cron (IH9): best-effort read of the parent token's own policy set
+ *  (`GET /user/tokens/{id}`). Null = leave granted_policies unchanged. */
+export async function getCloudflareTokenPolicies(
+  parentToken: string,
+  tokenId: string,
+  fetchImpl: FetchLike = fetch,
+): Promise<unknown[] | null> {
+  try {
+    const response = await fetchImpl(`${API_BASE}/user/tokens/${tokenId}`, {
+      method: "GET",
+      headers: { authorization: `Bearer ${parentToken}` },
+    });
+    if (!response.ok) return null;
+    const body = (await response.json()) as {
+      success?: boolean;
+      result?: { policies?: unknown };
+    };
+    if (body.success !== true || !Array.isArray(body.result?.policies)) return null;
+    return body.result.policies;
+  } catch {
+    return null;
+  }
+}
+
 /** Permission-group NAMES per template. Resolved to ids at mint time via the
  *  parent token's own permission-group listing — never hardcoded ids. A name
  *  the account cannot see is a `parent_grant_insufficient` (deny-by-default:

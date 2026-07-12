@@ -30,10 +30,20 @@
       "GITHUB_APP_WEBHOOK_SECRET": "fixture-gh-app-webhook-stage",
       "GITHUB_APP_CLIENT_SECRET": "fixture-gh-app-client-secret-stage"
     },
+    "slack-app": {
+      "SLACK_APP_CLIENT_ID": "fixture-slack-app-client-id-stage",
+      "SLACK_APP_CLIENT_SECRET": "fixture-slack-app-client-secret-stage",
+      "SLACK_APP_SIGNING_SECRET": "fixture-slack-app-signing-stage"
+    },
+    "supabase-oauth": {
+      "SUPABASE_OAUTH_CLIENT_ID": "fixture-supabase-oauth-client-id-stage",
+      "SUPABASE_OAUTH_CLIENT_SECRET": "fixture-supabase-oauth-client-secret-stage"
+    },
     "platform": {
       "SECRET_ENCRYPTION_KEY": "fixture-encryption-key-stage",
       "SECRET_KEK": "fixture-kek-stage",
       "OAUTH_STATE_SECRET": "fixture-oauth-state-stage",
+      "CLI_JWT_SIGNING_KEY": "fixture-cli-jwt-signing-stage",
       "INTEGRATIONS_STATE_SECRET": "fixture-integrations-state-stage",
       "STATE_ENCRYPTION_KEY": "fixture-state-encryption-key-stage"
     }
@@ -68,10 +78,20 @@
       "GITHUB_APP_WEBHOOK_SECRET": "fixture-gh-app-webhook-prod",
       "GITHUB_APP_CLIENT_SECRET": "fixture-gh-app-client-secret-prod"
     },
+    "slack-app": {
+      "SLACK_APP_CLIENT_ID": "fixture-slack-app-client-id-prod",
+      "SLACK_APP_CLIENT_SECRET": "fixture-slack-app-client-secret-prod",
+      "SLACK_APP_SIGNING_SECRET": "fixture-slack-app-signing-prod"
+    },
+    "supabase-oauth": {
+      "SUPABASE_OAUTH_CLIENT_ID": "fixture-supabase-oauth-client-id-prod",
+      "SUPABASE_OAUTH_CLIENT_SECRET": "fixture-supabase-oauth-client-secret-prod"
+    },
     "platform": {
       "SECRET_ENCRYPTION_KEY": "fixture-encryption-key-prod",
       "SECRET_KEK": "fixture-kek-prod",
       "OAUTH_STATE_SECRET": "fixture-oauth-state-prod",
+      "CLI_JWT_SIGNING_KEY": "fixture-cli-jwt-signing-prod",
       "INTEGRATIONS_STATE_SECRET": "fixture-integrations-state-prod",
       "STATE_ENCRYPTION_KEY": "fixture-state-encryption-key-prod"
     }

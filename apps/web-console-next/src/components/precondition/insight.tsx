@@ -102,20 +102,41 @@ export function PreconditionInsight({
       tone = "default";
       icon = <Wrench className="h-5 w-5" />;
       // The connect/repo-link gates reuse `not_configured` for a non-billing
-      // cause: the environment's provider App isn't registered yet. Detect that
-      // gate so we don't send people to the Billing tab for a platform-setup
-      // step that billing can't fix.
-      if (error.details?.gate === "github_app_registration") {
-        title = "GitHub isn't set up for this workspace yet";
-        body = (
-          <p className="text-sm text-muted-foreground">
-            The GitHub App for this environment hasn&apos;t been configured yet, so connections
-            can&apos;t be created. This is a one-time platform setup step (registering the GitHub
-            App) — not a billing issue. Ask an administrator to finish GitHub App setup, then try
-            again.
-          </p>
-        );
-        // No primary CTA: opening Billing wouldn't resolve an App-registration gate.
+      // cause: the environment's provider app/custody isn't set up yet. Detect
+      // ANY gate so we never send people to the Billing tab for a
+      // platform-setup step that billing can't fix (IH1/IH5/IH6 gates:
+      // slack_app_registration, cloudflare_custody, supabase_oauth_registration).
+      if (typeof error.details?.gate === "string") {
+        const gateCopy: Record<string, { title: string; body: string }> = {
+          github_app_registration: {
+            title: "GitHub isn't set up for this workspace yet",
+            body:
+              "The GitHub App for this environment hasn't been configured yet, so connections can't be created. This is a one-time platform setup step (registering the GitHub App) — not a billing issue. Ask an administrator to finish GitHub App setup, then try again.",
+          },
+          slack_app_registration: {
+            title: "Slack isn't enabled on this environment yet",
+            body:
+              "The per-environment Slack App hasn't been registered yet, so Slack connections can't be created. This is a one-time platform setup step (registering the Slack App and installing its credentials) — not a billing issue. Ask an administrator to finish Slack App setup, then try again.",
+          },
+          supabase_oauth_registration: {
+            title: "Supabase isn't enabled on this environment yet",
+            body:
+              "The per-environment Supabase OAuth app hasn't been registered yet, so Supabase connections can't be created. This is a one-time platform setup step — not a billing issue. Ask an administrator to finish Supabase OAuth setup, then try again.",
+          },
+          cloudflare_custody: {
+            title: "Credential custody isn't configured on this environment yet",
+            body:
+              "Cloudflare connections store the pasted parent token in encrypted custody, and this environment's custody encryption isn't configured yet. This is a platform setup step — not a billing issue. Ask an administrator to finish environment setup, then try again.",
+          },
+        };
+        const copy = gateCopy[error.details.gate] ?? {
+          title: "This integration isn't enabled on this environment yet",
+          body:
+            "A one-time platform setup step for this provider hasn't been completed on this environment. This is not a billing issue. Ask an administrator to finish provider setup, then try again.",
+        };
+        title = copy.title;
+        body = <p className="text-sm text-muted-foreground">{copy.body}</p>;
+        // No primary CTA: opening Billing wouldn't resolve a platform-setup gate.
         break;
       }
       title = "Billing isn't configured yet";

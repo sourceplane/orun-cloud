@@ -204,6 +204,33 @@ describe("integration-hub repository (IH0)", () => {
       expect(result.ok).toBe(true);
       if (result.ok) expect(result.value).toBe(7);
     });
+
+    it("bulk-expires past-due pending mints, bounded, oldest first (IH9)", async () => {
+      const { executor, queries } = createFakeExecutor({
+        rows: [{ id: MINT_ID }, { id: "00000000-0000-4000-8000-000000000004" }],
+      });
+      const repo = createIntegrationHubRepository(executor);
+      const result = await repo.bulkExpireMintedCredentials(NOW, 100);
+      expect(result.ok).toBe(true);
+      if (result.ok) expect(result.value).toBe(2);
+      const text = queries[0]!.text;
+      expect(text).toContain("UPDATE integrations.minted_credentials");
+      expect(text).toContain("revoke_status = 'expired'");
+      // The ledger records the ACTUAL expiry as the revocation instant.
+      expect(text).toContain("revoked_at = expires_at");
+      expect(text).toContain("revoke_status = 'pending' AND expires_at < $1");
+      expect(text).toContain("ORDER BY expires_at ASC");
+      expect(text).toContain("LIMIT $2");
+      expect(queries[0]!.params).toEqual([NOW, 100]);
+    });
+
+    it("bulk expire fails safe on executor errors", async () => {
+      const { executor } = createFakeExecutor({ error: new Error("boom") });
+      const repo = createIntegrationHubRepository(executor);
+      const result = await repo.bulkExpireMintedCredentials(NOW, 100);
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.error.kind).toBe("internal");
+    });
   });
 
   describe("provider facts", () => {
@@ -290,6 +317,186 @@ describe("integration-hub repository (IH0)", () => {
       });
       expect(result.ok).toBe(true);
       if (result.ok) expect(result.value.projects).toEqual([{ ref: "abcd1234" }]);
+    });
+
+    it("reads a cloudflare account by its provider-side id (re-auth guard, IH9)", async () => {
+      const row = {
+        id: "00000000-0000-4000-8000-000000000030",
+        connection_id: CONNECTION_ID,
+        account_external_id: "cf-acct-1",
+        account_name: "Acme",
+        parent_token_ref: "tok-1",
+        granted_policies: null,
+        token_status: "active",
+        parent_expires_at: null,
+        created_at: NOW.toISOString(),
+        updated_at: NOW.toISOString(),
+      };
+      const { executor, queries } = createFakeExecutor({ rows: [row] });
+      const repo = createIntegrationHubRepository(executor);
+      const result = await repo.getCloudflareAccountByExternalId("cf-acct-1");
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.value.accountExternalId).toBe("cf-acct-1");
+        expect(result.value.connectionId).toBe(CONNECTION_ID);
+      }
+      expect(queries[0]!.text).toContain("WHERE account_external_id = $1");
+      expect(queries[0]!.params).toEqual(["cf-acct-1"]);
+    });
+
+    it("cloudflare account external-id miss is not_found, never a throw", async () => {
+      const { executor } = createFakeExecutor({ rows: [] });
+      const repo = createIntegrationHubRepository(executor);
+      const result = await repo.getCloudflareAccountByExternalId("cf-acct-unknown");
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.error.kind).toBe("not_found");
+    });
+
+    it("reads a supabase org by its provider-side id (re-auth guard, IH9)", async () => {
+      const row = {
+        id: "00000000-0000-4000-8000-000000000040",
+        connection_id: CONNECTION_ID,
+        supabase_org_id: "sb-org-1",
+        org_name: "Acme",
+        granted_scopes: null,
+        projects: JSON.stringify([{ ref: "abcd1234" }]),
+        created_at: NOW.toISOString(),
+        updated_at: NOW.toISOString(),
+      };
+      const { executor, queries } = createFakeExecutor({ rows: [row] });
+      const repo = createIntegrationHubRepository(executor);
+      const result = await repo.getSupabaseOrgByExternalId("sb-org-1");
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.value.supabaseOrgId).toBe("sb-org-1");
+        expect(result.value.connectionId).toBe(CONNECTION_ID);
+      }
+      expect(queries[0]!.text).toContain("WHERE supabase_org_id = $1");
+      expect(queries[0]!.params).toEqual(["sb-org-1"]);
+    });
+
+    it("supabase org external-id miss is not_found, never a throw", async () => {
+      const { executor } = createFakeExecutor({ rows: [] });
+      const repo = createIntegrationHubRepository(executor);
+      const result = await repo.getSupabaseOrgByExternalId("sb-org-unknown");
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.error.kind).toBe("not_found");
+    });
+
+    it("rebinds a slack workspace to a new connection explicitly (re-auth, IH9)", async () => {
+      const NEW_CONNECTION_ID = asUuid("00000000-0000-4000-8000-000000000005");
+      const row = {
+        id: "00000000-0000-4000-8000-000000000020",
+        connection_id: NEW_CONNECTION_ID,
+        team_id: "T012AB3CD",
+        team_name: "Acme",
+        enterprise_id: null,
+        bot_user_id: "U0BOT",
+        app_id: "A0APP",
+        granted_scopes: JSON.stringify(["chat:write"]),
+        installed_by_external_user: "U0ADMIN",
+        created_at: NOW.toISOString(),
+        updated_at: NOW.toISOString(),
+      };
+      const { executor, queries } = createFakeExecutor({ rows: [row] });
+      const repo = createIntegrationHubRepository(executor);
+      const result = await repo.rebindSlackWorkspace("T012AB3CD", NEW_CONNECTION_ID);
+      expect(result.ok).toBe(true);
+      if (result.ok) expect(result.value.connectionId).toBe(NEW_CONNECTION_ID);
+      const text = queries[0]!.text;
+      expect(text).toContain("UPDATE integrations.slack_workspaces");
+      expect(text).toContain("SET connection_id = $2, updated_at = now()");
+      expect(text).toContain("WHERE team_id = $1");
+      expect(queries[0]!.params).toEqual(["T012AB3CD", NEW_CONNECTION_ID]);
+    });
+
+    it("rebind of an unknown workspace is not_found, never a throw", async () => {
+      const { executor } = createFakeExecutor({ rows: [] });
+      const repo = createIntegrationHubRepository(executor);
+      const result = await repo.rebindSlackWorkspace("T0UNKNOWN", CONNECTION_ID);
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.error.kind).toBe("not_found");
+    });
+  });
+
+  describe("sweep enumeration (IH9)", () => {
+    const CF_SWEEP_ROW = {
+      id: "00000000-0000-4000-8000-000000000030",
+      connection_id: CONNECTION_ID,
+      account_external_id: "cf-acct-1",
+      account_name: "Acme",
+      parent_token_ref: "tok-1",
+      granted_policies: JSON.stringify([{ id: "p1" }]),
+      token_status: "active",
+      parent_expires_at: null,
+      created_at: NOW.toISOString(),
+      updated_at: NOW.toISOString(),
+      org_id: ORG_ID,
+      connection_status: "active",
+    };
+
+    const SB_SWEEP_ROW = {
+      id: "00000000-0000-4000-8000-000000000040",
+      connection_id: CONNECTION_ID,
+      supabase_org_id: "sb-org-1",
+      org_name: "Acme",
+      granted_scopes: null,
+      projects: JSON.stringify([{ ref: "abcd1234" }]),
+      created_at: NOW.toISOString(),
+      updated_at: NOW.toISOString(),
+      org_id: ORG_ID,
+      connection_status: "revoked",
+    };
+
+    it("lists cloudflare accounts joined to their connection, stalest first", async () => {
+      const { executor, queries } = createFakeExecutor({ rows: [CF_SWEEP_ROW] });
+      const repo = createIntegrationHubRepository(executor);
+      const result = await repo.listCloudflareAccountsForSweep(50);
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.value).toHaveLength(1);
+        expect(result.value[0]!.accountExternalId).toBe("cf-acct-1");
+        expect(result.value[0]!.tokenStatus).toBe("active");
+        expect(result.value[0]!.orgId).toBe(ORG_ID);
+        expect(result.value[0]!.connectionStatus).toBe("active");
+      }
+      const text = queries[0]!.text;
+      // INNER JOIN — fact rows with a NULL connection_id never enter a sweep.
+      expect(text).toContain("JOIN integrations.connections c ON c.id = t.connection_id");
+      expect(text).toContain("FROM integrations.cloudflare_accounts t");
+      expect(text).toContain("c.org_id AS org_id");
+      expect(text).toContain("c.status AS connection_status");
+      expect(text).toContain("ORDER BY t.updated_at ASC");
+      expect(text).toContain("LIMIT $1");
+      expect(queries[0]!.params).toEqual([50]);
+    });
+
+    it("lists supabase orgs joined to their connection, stalest first", async () => {
+      const { executor, queries } = createFakeExecutor({ rows: [SB_SWEEP_ROW] });
+      const repo = createIntegrationHubRepository(executor);
+      const result = await repo.listSupabaseOrgsForSweep(25);
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.value).toHaveLength(1);
+        expect(result.value[0]!.supabaseOrgId).toBe("sb-org-1");
+        expect(result.value[0]!.projects).toEqual([{ ref: "abcd1234" }]);
+        expect(result.value[0]!.orgId).toBe(ORG_ID);
+        expect(result.value[0]!.connectionStatus).toBe("revoked");
+      }
+      const text = queries[0]!.text;
+      expect(text).toContain("JOIN integrations.connections c ON c.id = t.connection_id");
+      expect(text).toContain("FROM integrations.supabase_orgs t");
+      expect(text).toContain("ORDER BY t.updated_at ASC");
+      expect(queries[0]!.params).toEqual([25]);
+    });
+
+    it("sweep lists fail safe on executor errors", async () => {
+      const { executor } = createFakeExecutor({ error: new Error("boom") });
+      const repo = createIntegrationHubRepository(executor);
+      const cf = await repo.listCloudflareAccountsForSweep(10);
+      const sb = await repo.listSupabaseOrgsForSweep(10);
+      expect(cf.ok).toBe(false);
+      expect(sb.ok).toBe(false);
     });
   });
 });

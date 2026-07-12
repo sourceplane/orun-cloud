@@ -4,7 +4,8 @@
     "identity-worker": {
       "GITHUB_OAUTH_CLIENT_SECRET": "fixture-identity-github-stage",
       "GOOGLE_OAUTH_CLIENT_SECRET": "fixture-identity-google-stage",
-      "OAUTH_STATE_SECRET": "fixture-identity-state-stage"
+      "OAUTH_STATE_SECRET": "fixture-identity-state-stage",
+      "CLI_JWT_SIGNING_KEY": "fixture-identity-cli-jwt-stage"
     },
     "billing-worker": {
       "POLAR_ACCESS_TOKEN": "fixture-billing-token-stage",
@@ -12,6 +13,9 @@
     },
     "webhooks-worker": {
       "SECRET_ENCRYPTION_KEY": "fixture-webhooks-key-stage"
+    },
+    "notifications-worker": {
+      "SECRET_ENCRYPTION_KEY": "fixture-notifications-key-stage"
     },
     "config-worker": {
       "SECRET_ENCRYPTION_KEY": "fixture-config-key-stage",
@@ -25,14 +29,20 @@
       "GITHUB_APP_WEBHOOK_SECRET": "fixture-integrations-gh-app-webhook-stage",
       "GITHUB_APP_CLIENT_SECRET": "fixture-integrations-gh-app-client-secret-stage",
       "INTEGRATIONS_STATE_SECRET": "fixture-integrations-state-stage",
-      "SECRET_ENCRYPTION_KEY": "fixture-integrations-encryption-key-stage"
+      "SECRET_ENCRYPTION_KEY": "fixture-integrations-encryption-key-stage",
+      "SLACK_APP_CLIENT_ID": "fixture-integrations-slack-app-client-id-stage",
+      "SLACK_APP_CLIENT_SECRET": "fixture-integrations-slack-app-client-secret-stage",
+      "SLACK_APP_SIGNING_SECRET": "fixture-integrations-slack-app-signing-stage",
+      "SUPABASE_OAUTH_CLIENT_ID": "fixture-integrations-supabase-oauth-client-id-stage",
+      "SUPABASE_OAUTH_CLIENT_SECRET": "fixture-integrations-supabase-oauth-client-secret-stage"
     }
   },
   "prod": {
     "identity-worker": {
       "GITHUB_OAUTH_CLIENT_SECRET": "fixture-identity-github-prod",
       "GOOGLE_OAUTH_CLIENT_SECRET": "fixture-identity-google-prod",
-      "OAUTH_STATE_SECRET": "fixture-identity-state-prod"
+      "OAUTH_STATE_SECRET": "fixture-identity-state-prod",
+      "CLI_JWT_SIGNING_KEY": "fixture-identity-cli-jwt-prod"
     },
     "billing-worker": {
       "POLAR_ACCESS_TOKEN": "fixture-billing-token-prod",
@@ -40,6 +50,9 @@
     },
     "webhooks-worker": {
       "SECRET_ENCRYPTION_KEY": "fixture-webhooks-key-prod"
+    },
+    "notifications-worker": {
+      "SECRET_ENCRYPTION_KEY": "fixture-notifications-key-prod"
     },
     "config-worker": {
       "SECRET_ENCRYPTION_KEY": "fixture-config-key-prod",
@@ -53,7 +66,12 @@
       "GITHUB_APP_WEBHOOK_SECRET": "fixture-integrations-gh-app-webhook-prod",
       "GITHUB_APP_CLIENT_SECRET": "fixture-integrations-gh-app-client-secret-prod",
       "INTEGRATIONS_STATE_SECRET": "fixture-integrations-state-prod",
-      "SECRET_ENCRYPTION_KEY": "fixture-integrations-encryption-key-prod"
+      "SECRET_ENCRYPTION_KEY": "fixture-integrations-encryption-key-prod",
+      "SLACK_APP_CLIENT_ID": "fixture-integrations-slack-app-client-id-prod",
+      "SLACK_APP_CLIENT_SECRET": "fixture-integrations-slack-app-client-secret-prod",
+      "SLACK_APP_SIGNING_SECRET": "fixture-integrations-slack-app-signing-prod",
+      "SUPABASE_OAUTH_CLIENT_ID": "fixture-integrations-supabase-oauth-client-id-prod",
+      "SUPABASE_OAUTH_CLIENT_SECRET": "fixture-integrations-supabase-oauth-client-secret-prod"
     }
   }
 }

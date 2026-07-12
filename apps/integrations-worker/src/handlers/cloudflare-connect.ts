@@ -92,6 +92,91 @@ export async function handleCloudflareTokenConnect(
     const repo = createIntegrationsRepository(executor);
     const hub = createIntegrationHubRepository(executor);
 
+    // Re-auth (IH9): if this account is already bound to a connection, the
+    // paste is a re-authorization, not a new connect. Owned by THIS org →
+    // refresh custody + facts on the EXISTING connection and reactivate it
+    // (a suspended connection heals; its mints/brokered secrets keep their
+    // binding). Owned elsewhere → refuse — the binding must never flip
+    // across orgs. Only a revoked own connection falls through to a fresh
+    // create (revoke was an explicit removal; the flip-style facts upsert
+    // rebinds the account to the new connection).
+    const existing = await hub.getCloudflareAccountByExternalId(account.accountExternalId);
+    if (existing.ok && existing.value.connectionId) {
+      const boundId = asUuid(existing.value.connectionId);
+      const own = await repo.getConnection(orgId, boundId);
+      if (own.ok && own.value.status !== "revoked") {
+        const envelope = await encryption.encrypt(parentToken);
+        const stored = await hub.upsertProviderCredential({
+          id: generateUuid(),
+          connectionId: boundId,
+          kind: "cloudflare_parent_token",
+          ciphertext: JSON.stringify(envelope),
+          externalRef: account.accountExternalId,
+          expiresAt: verification.expiresOn ? new Date(verification.expiresOn) : null,
+        });
+        if (!stored.ok) {
+          return errorResponse("internal_error", "Service unavailable", 503, requestId);
+        }
+        const facts = await hub.upsertCloudflareAccount({
+          id: generateUuid(),
+          connectionId: boundId,
+          accountExternalId: account.accountExternalId,
+          accountName: account.accountName,
+          parentTokenRef: verification.tokenId,
+          tokenStatus: "active",
+          parentExpiresAt: verification.expiresOn ? new Date(verification.expiresOn) : null,
+        });
+        if (!facts.ok) {
+          return errorResponse("internal_error", "Service unavailable", 503, requestId);
+        }
+        let connection = own.value;
+        if (connection.status !== "active") {
+          const reactivated = await repo.updateConnectionStatus(orgId, boundId, "active");
+          if (!reactivated.ok) {
+            return errorResponse("internal_error", "Service unavailable", 503, requestId);
+          }
+          connection = reactivated.value;
+        }
+        try {
+          const events = createEventsRepository(executor);
+          await events.appendEventWithAudit({
+            event: {
+              id: generateUuid(),
+              type: INTEGRATION_EVENT_TYPES.REACTIVATED,
+              version: 1,
+              source: "integrations-worker",
+              occurredAt: new Date(),
+              actorType: actor.subjectType,
+              actorId: actor.subjectId,
+              orgId,
+              subjectKind: "integration_connection",
+              subjectId: connection.id,
+              requestId,
+              payload: { provider: "cloudflare", reason: "reauthorized" },
+            },
+            audit: {
+              id: generateUuid(),
+              category: "integrations",
+              description: "Cloudflare connection re-authorized (fresh parent token)",
+            },
+          });
+        } catch {
+          // best-effort
+        }
+        const payload: ConnectIntegrationResponse = { connection: toPublicConnection(connection) };
+        return successResponse(payload, requestId, 200);
+      }
+      if (!own.ok) {
+        // Bound to a connection this org cannot see — never flip it.
+        return errorResponse(
+          "conflict",
+          "This Cloudflare account is already linked to a connection",
+          409,
+          requestId,
+        );
+      }
+    }
+
     // The pending row exists only inside this request; the state nonce is
     // never issued anywhere (token connect has no callback to redeem it).
     const connectionId = generateUuid();
