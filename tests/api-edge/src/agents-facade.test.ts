@@ -82,6 +82,24 @@ describe("api-edge agents facade", () => {
       expect(isAgentsRoute("/v1/organizations/org_abc/agents/autonomy")).toBe(true);
       expect(isAgentsRoute("/v1/organizations/org_abc/agents/dispatch")).toBe(true);
     });
+    it("matches the attention fold (saas-agents-fleet AF5)", () => {
+      expect(isAgentsRoute("/v1/organizations/org_abc/agents/attention")).toBe(true);
+    });
+    it("matches the tree-transitive cancel (saas-agents-fleet AF4)", () => {
+      expect(isAgentsRoute("/v1/organizations/org_abc/agents/sessions/as_1/cancel")).toBe(true);
+    });
+    it("matches the routine registry (saas-agents-fleet AF6)", () => {
+      expect(isAgentsRoute("/v1/organizations/org_abc/agents/routines")).toBe(true);
+      expect(isAgentsRoute("/v1/organizations/org_abc/agents/routines/rt_1")).toBe(true);
+    });
+    it("matches the records read + the profile item (saas-agents-fleet AF7)", () => {
+      expect(isAgentsRoute("/v1/organizations/org_abc/agents/records")).toBe(true);
+      expect(isAgentsRoute("/v1/organizations/org_abc/agents/profiles/agp_1")).toBe(true);
+    });
+    it("matches the budgets registry (saas-agents-fleet AF8)", () => {
+      expect(isAgentsRoute("/v1/organizations/org_abc/agents/budgets")).toBe(true);
+      expect(isAgentsRoute("/v1/organizations/org_abc/agents/budgets/bud_1")).toBe(true);
+    });
     it("matches the head-facing relay attach + input routes (AL7)", () => {
       expect(isAgentsRoute("/v1/organizations/org_abc/agents/sessions/as_1/attach")).toBe(true);
       expect(isAgentsRoute("/v1/organizations/org_abc/agents/sessions/as_1/input")).toBe(true);
@@ -215,10 +233,12 @@ describe("api-edge agents facade", () => {
     });
 
     it("405s an unsupported method", async () => {
+      // PATCH joined the allowlist with the AF6 routine registry; OPTIONS
+      // stays out — the facade never answers preflight for the worker.
       const env = createEnv();
       const path = "/v1/organizations/org_abc/agents/profiles";
       const req = new Request(`https://api-edge${path}`, {
-        method: "PATCH",
+        method: "OPTIONS",
         headers: { authorization: "Bearer tok_test" },
       });
       const res = await handleAgentsRoute(req, env as never, "req_test", path);

@@ -670,13 +670,58 @@ export const manifest: MigrationManifest = {
         "Integration-hub substrate (saas-integration-hub IH0), dormant: provider_credentials (parent-credential custody — Slack bot / Cloudflare parent / Supabase refresh tokens as write-only AES-256-GCM envelopes, one row per connection+kind, zeroized on revoke), minted_credentials (the credential-broker ledger — template/params/purpose/actor/run attribution/TTL/provider_ref, NEVER values; keyset per org+connection, partial live-mint index for the IH9 orphan sweep), and the per-provider facts tables slack_workspaces (team_id UNIQUE — the Slack tenancy keystone, the installation_id rule), cloudflare_accounts (verified parent grant + token health), supabase_orgs (org facts + cached project refs). No live behavior. Additive + idempotent.",
     },
     {
-      id: "740_slack_app_channels",
-      context: "notifications",
-      path: "740_slack_app_channels/up.sql",
+      id: "740_repo_link_one_to_one",
+      context: "state",
+      path: "740_repo_link_one_to_one/up.sql",
       checksum:
-        "283c7480378abe0ab7230105df98128d0cacff5a9f2bf24b7e467e90051aa02d",
+        "26be25efc55d014ef3d679391aa00dae70ffecd3493b0e11a68951f198da73d9",
       description:
-        "slack_app delivery channel kind (saas-integration-hub IH2): the notification_channels kind CHECK widens to admit slack_app (config_ciphertext stores a {connectionId, channelExternalId, channelName} REFERENCE, never a credential — the bot token stays in integrations-worker custody, fetched per send over the internal service binding), plus slack_group_messages — the event-group ↔ Slack message identity map behind the chat.update upgrade (root-message coordinates per (channel, group_key), severity high-water for escalation display; CASCADE on channel delete). Guarded CHECK swap + CREATE IF NOT EXISTS; idempotent as a unit.",
+        "One-to-one repo claim on the state plane (OV2 federation hardening) — a repo actively linked in one workspace cannot be linked in another until unlinked. Step 1 deterministically dedupes pre-existing double-claims (earliest created_at stays active, later rows soft-unlinked for audit; idempotent), then a partial UNIQUE index on (provider, provider_repo_id) WHERE active enforces first-claim-wins across all orgs — the twin of integrations' uq_integrations_repo_claim (380) and the backstop behind state-worker's cross-workspace 409. Enables the inbound drain's federation/auto-claim routing (GitHub deliveries land in the linked workspace, not the account org). Additive + idempotent; same-context only.",
+    },
+    {
+      id: "750_agents_fleet_tree",
+      context: "agents",
+      path: "750_agents_fleet_tree/up.sql",
+      checksum:
+        "299c262ae429ea10347a0ab466a6ce59b4a819895401678212f1883f90713445",
+      description:
+        "The delegation plane (saas-agents-fleet AF4): agent_sessions gains parent_session_id/root_session_id/depth — public_id-keyed tree columns (a tree, never a graph; existing rows backfilled as their own roots) with partial parent + root indexes for the children strip, width caps, and tree-transitive kill. The session-event kind CHECK regenerates as one named constraint (the 720 discipline) appending child_spawned/child_completed/child_failed — the parent owns its children's story as sealed relayed events; still no status/lifecycle kind. Ceiling-intersection math stays application code (packages/contracts); the applied ceiling lands on the child's sandbox JSONB. Additive + idempotent.",
+    },
+    {
+      id: "760_agents_routines",
+      context: "agents",
+      path: "760_agents_routines/up.sql",
+      checksum:
+        "c1e1d769821b672ab42ebe905f6c3d992a31f7e1261bd32c649c3884637b00b3",
+      description:
+        "Standing routines (saas-agents-fleet AF6): agents.routines — workspace-scoped trigger+binding rows (profile, run_kind, optional sealed definition_ref, cron|event trigger_config, budget-stub caps, enabled, the park latch with consecutive_failures, last_fired_at) with a live partial index for the cross-org scheduler tick; agent_sessions gains routine_id (partial index) so firings group on the fleet home and the park math reads straight off session rows. A routine only ever SPAWNS sessions — every firing re-enters the AG9 dispatch door (locked decision 3: no second execution path); success is digest material, two consecutive failures park it until a human resumes. Additive + idempotent.",
+    },
+    {
+      id: "770_agents_trust",
+      context: "agents",
+      path: "770_agents_trust/up.sql",
+      checksum:
+        "1c2964720e5a2048edeee001aa72b605a93f7a8b208d4e7d99213d5fc910e63a",
+      description:
+        "Earned autonomy (saas-agents-fleet AF7): agent_profiles gains autonomy_evidence JSONB — the ADDRESS of the last autonomy movement (direction, from/to, by, at, the server-computed record snapshot on promotion, the trigger on demotion). The record itself is never stored (a computed read over session rows + relayed events, the attention-plane epistemology); movement is asymmetric — promotion is human-acked, demotion automatic and loud — and every non-default autonomy renders with its provenance. Additive + idempotent.",
+    },
+    {
+      id: "780_agents_budgets",
+      context: "agents",
+      path: "780_agents_budgets/up.sql",
+      checksum:
+        "7b21b9c0954cfe89b5b7c9154d847f18dca7694caa58d0969173aa0798e86fb3",
+      description:
+        "Budgets as ceilings (saas-agents-fleet AF8): agents.budgets — org-scoped token ceilings at four grains (workspace 30d rolling spend · tree shared envelope · session single-run · routine per-firing; NULL-ref rows are org-wide defaults, routine rows pin a routine's public id; one ceiling per grain+ref via a COALESCE unique index) — and agent_sessions.tokens_used, the accumulated relayed spend that makes every check row arithmetic and the 80% attention marks a pure fold. Ceilings, not advisories (locked decision 6): the door refuses against an exhausted envelope; an ingest crossing becomes a graceful sealed interrupt, never a hard kill. Additive + idempotent.",
+    },
+    {
+      id: "790_slack_app_channels",
+      context: "notifications",
+      path: "790_slack_app_channels/up.sql",
+      checksum:
+        "ff8cb28166b00380490c43077ab6a29a07a73b49ea68d0b067d1775ee6923f45",
+      description:
+        "slack_app delivery channel kind (saas-integration-hub IH2): the notification_channels kind CHECK widens to admit slack_app (config_ciphertext stores a {connectionId, channelExternalId, channelName} REFERENCE, never a credential — the bot token stays in integrations-worker custody, fetched per send over the internal service binding), plus slack_group_messages — the event-group ↔ Slack message identity map behind the chat.update upgrade (root-message coordinates per (channel, group_key), severity high-water for escalation display; CASCADE on channel delete). Guarded CHECK swap + CREATE IF NOT EXISTS; idempotent as a unit. (Renumbered from 740: main took 740-780 while IH2 was in flight.)",
     },
   ],
 };

@@ -273,3 +273,187 @@ describe("provider connections (AG12)", () => {
     ).rejects.toThrow(/not found/);
   });
 });
+
+describe("delegation tree (saas-agents-fleet AF4)", () => {
+  it("a child inherits the parent's root and depth+1; a root is its own root", async () => {
+    const r = repo();
+    const p = await seedProfile(r);
+    const root = await r.createSession(scope, {
+      profileId: p.publicId,
+      runKind: "design",
+      spawnedBy: "usr_1",
+    });
+    expect(root.rootSessionId).toBe(root.publicId);
+    expect(root.depth).toBe(0);
+    expect(root.parentSessionId).toBeUndefined();
+
+    const child = await r.createSession(scope, {
+      profileId: p.publicId,
+      runKind: "implementation",
+      spawnedBy: root.publicId,
+      parentSessionId: root.publicId,
+      sandbox: { appliedCeiling: { tools: ["bash"] } },
+    });
+    expect(child.parentSessionId).toBe(root.publicId);
+    expect(child.rootSessionId).toBe(root.publicId);
+    expect(child.depth).toBe(1);
+    expect(child.sandbox.appliedCeiling).toEqual({ tools: ["bash"] });
+
+    const grand = await r.createSession(scope, {
+      profileId: p.publicId,
+      runKind: "fix",
+      spawnedBy: child.publicId,
+      parentSessionId: child.publicId,
+    });
+    expect(grand.rootSessionId).toBe(root.publicId);
+    expect(grand.depth).toBe(2);
+  });
+
+  it("refuses a child of a missing parent", async () => {
+    const r = repo();
+    const p = await seedProfile(r);
+    await expect(
+      r.createSession(scope, {
+        profileId: p.publicId,
+        runKind: "fix",
+        spawnedBy: "usr_1",
+        parentSessionId: "as_missing",
+      }),
+    ).rejects.toThrow(AgentsError);
+  });
+
+  it("listOrphanedSessions finds live children of terminal parents past the cutoff, cross-org", async () => {
+    const r = new MemoryAgentsRepository({ now: () => "2026-07-12T09:00:00.000Z" });
+    const p = await seedProfile(r);
+    const root = await r.createSession(scope, { profileId: p.publicId, runKind: "design", spawnedBy: "u" });
+    const child = await r.createSession(scope, {
+      profileId: p.publicId,
+      runKind: "implementation",
+      spawnedBy: root.publicId,
+      parentSessionId: root.publicId,
+    });
+    await r.advanceSession(scope, { publicId: root.publicId, to: "failed" });
+
+    // Cutoff before the parent's end: nothing yet.
+    expect(await r.listOrphanedSessions({ parentEndedCutoff: "2026-07-12T08:00:00.000Z", limit: 10 })).toEqual([]);
+    // Cutoff after: the live child surfaces.
+    const orphans = await r.listOrphanedSessions({ parentEndedCutoff: "2026-07-12T10:00:00.000Z", limit: 10 });
+    expect(orphans.map((s) => s.publicId)).toEqual([child.publicId]);
+    // A terminal child never surfaces.
+    await r.advanceSession(scope, { publicId: child.publicId, to: "failed" });
+    expect(await r.listOrphanedSessions({ parentEndedCutoff: "2026-07-12T10:00:00.000Z", limit: 10 })).toEqual([]);
+  });
+});
+
+describe("routines (saas-agents-fleet AF6)", () => {
+  async function seedRoutine(r: MemoryAgentsRepository) {
+    const p = await seedProfile(r);
+    return r.createRoutine(scope, {
+      name: "nightly-triage",
+      profileId: p.publicId,
+      runKind: "fix",
+      triggerKind: "cron",
+      triggerConfig: { cron: "0 7 * * *" },
+      createdBy: "usr_1",
+    });
+  }
+
+  it("creates with defaults, enforces name + trigger vocab + profile existence", async () => {
+    const r = repo();
+    const routine = await seedRoutine(r);
+    expect(routine.publicId).toMatch(/^rt_/);
+    expect(routine.enabled).toBe(true);
+    expect(routine.parked).toBe(false);
+    expect(routine.consecutiveFailures).toBe(0);
+
+    await expect(seedRoutine(r)).rejects.toThrow(AgentsError); // name conflict
+    await expect(
+      r.createRoutine(scope, {
+        name: "bad-trigger",
+        profileId: routine.profileId,
+        runKind: "fix",
+        triggerKind: "webhook" as never,
+        createdBy: "u",
+      }),
+    ).rejects.toThrow(AgentsError);
+    await expect(
+      r.createRoutine(scope, {
+        name: "no-profile",
+        profileId: "agp_missing",
+        runKind: "fix",
+        triggerKind: "cron",
+        createdBy: "u",
+      }),
+    ).rejects.toThrow(AgentsError);
+  });
+
+  it("state updates: park with reason, resume resets, last-fired mark", async () => {
+    const r = repo();
+    const routine = await seedRoutine(r);
+    await r.updateRoutineState(scope, {
+      publicId: routine.publicId,
+      parked: true,
+      parkedReason: "2 consecutive failures",
+      consecutiveFailures: 2,
+    });
+    let row = await r.getRoutine(scope, routine.publicId);
+    expect(row?.parked).toBe(true);
+    expect(row?.parkedReason).toContain("failures");
+
+    await r.updateRoutineState(scope, {
+      publicId: routine.publicId,
+      parked: false,
+      parkedReason: null,
+      consecutiveFailures: 0,
+      lastFiredAt: "2026-07-12T07:00:00.000Z",
+    });
+    row = await r.getRoutine(scope, routine.publicId);
+    expect(row?.parked).toBe(false);
+    expect(row?.parkedReason).toBeUndefined();
+    expect(row?.lastFiredAt).toBe("2026-07-12T07:00:00.000Z");
+  });
+
+  it("the live scan excludes disabled and parked routines; sessions link back", async () => {
+    const r = repo();
+    const routine = await seedRoutine(r);
+    expect((await r.listLiveRoutines(10)).map((x) => x.publicId)).toEqual([routine.publicId]);
+    await r.updateRoutineState(scope, { publicId: routine.publicId, enabled: false });
+    expect(await r.listLiveRoutines(10)).toEqual([]);
+
+    const s = await r.createSession(scope, {
+      profileId: routine.profileId,
+      runKind: "fix",
+      spawnedBy: "svc",
+      routineId: routine.publicId,
+    });
+    expect(s.routineId).toBe(routine.publicId);
+    const fired = await r.listRoutineSessions(scope, routine.publicId, 5);
+    expect(fired.map((x) => x.publicId)).toEqual([s.publicId]);
+  });
+});
+
+describe("budgets (saas-agents-fleet AF8)", () => {
+  it("upserts one ceiling per grain+ref and accumulates session spend", async () => {
+    const r = repo();
+    const first = await r.setBudget(scope, { grain: "workspace", maxTokens: 1000, createdBy: "u" });
+    const updated = await r.setBudget(scope, { grain: "workspace", maxTokens: 2000, createdBy: "u" });
+    expect(updated.publicId).toBe(first.publicId);
+    expect((await r.listBudgets(scope)).length).toBe(1);
+
+    await expect(
+      r.setBudget(scope, { grain: "nope" as never, maxTokens: 10, createdBy: "u" }),
+    ).rejects.toThrow(AgentsError);
+    await expect(
+      r.setBudget(scope, { grain: "session", maxTokens: 0, createdBy: "u" }),
+    ).rejects.toThrow(AgentsError);
+
+    const p = await seedProfile(r);
+    const s = await r.createSession(scope, { profileId: p.publicId, runKind: "fix", spawnedBy: "u" });
+    expect(s.tokensUsed).toBe(0);
+    await r.addSessionTokens(scope, s.publicId, 100);
+    const after = await r.addSessionTokens(scope, s.publicId, 50);
+    expect(after.tokensUsed).toBe(150);
+    // Negative deltas never shrink spend.
+    expect((await r.addSessionTokens(scope, s.publicId, -20)).tokensUsed).toBe(150);
+  });
+});

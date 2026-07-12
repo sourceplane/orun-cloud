@@ -117,6 +117,9 @@ export interface AgentProfile {
   harness: string;
   model: string;
   autonomyDefault: AgentAutonomyLevel;
+  /** The address of the last autonomy movement (AF7): {direction, from, to,
+   * by, at, record?|trigger?}. Absent = never moved. */
+  autonomyEvidence?: Record<string, unknown>;
   createdAt: string;
   updatedAt: string;
 }
@@ -167,6 +170,15 @@ export interface AgentSession {
   startedAt?: string;
   endedAt?: string;
   createdAt: string;
+  /** Delegation tree (saas-agents-fleet AF4): present on a child; a root is
+   * its own rootSessionId at depth 0. Public session ids throughout. */
+  parentSessionId?: string;
+  rootSessionId?: string;
+  depth?: number;
+  /** Routine provenance (AF6): the firing routine's public id (`rt_…`). */
+  routineId?: string;
+  /** Accumulated relayed spend (AF8): summed cost samples. */
+  tokensUsed?: number;
 }
 
 /**
@@ -186,6 +198,11 @@ export const AGENT_SESSION_EVENT_KINDS = [
   "artifact_produced",
   "cost_sample",
   "error",
+  // Delegation (AF4): the parent's sealed story of its children — emitted by
+  // the runtime, relayed like everything else. Still no status/lifecycle kind.
+  "child_spawned",
+  "child_completed",
+  "child_failed",
 ] as const;
 export type AgentSessionEventKind =
   (typeof AGENT_SESSION_EVENT_KINDS)[number];
@@ -246,6 +263,353 @@ export interface SandboxProvider {
   resume(snapshotId: string): Promise<SandboxRef>;
   destroy(ref: SandboxRef): Promise<void>;
   health(ref: SandboxRef): Promise<SandboxHealth>;
+}
+
+// ── The delegation plane (saas-agents-fleet AF4) ────────────
+// Sessions spawn sessions through the cloud door; the tree only narrows.
+// The intersection here is deliberately set math over sealed contracts —
+// never policy evaluation (locked decision 1: the cloud gains a door, not
+// an orchestration engine).
+
+export const DELEGATION_ERROR_CODES = {
+  /** The caller's session may not spawn (profile/type lacks delegation). */
+  spawnNotAllowed: "agent_spawn_not_allowed",
+  /** The parent is not in a spawnable (live) state. */
+  parentNotLive: "agent_parent_not_live",
+  /** depth would exceed the tree ceiling. */
+  treeDepthExceeded: "agent_tree_depth_exceeded",
+  /** live children per parent / live nodes per tree at cap. */
+  treeWidthExceeded: "agent_tree_width_exceeded",
+} as const;
+export type DelegationErrorCode =
+  (typeof DELEGATION_ERROR_CODES)[keyof typeof DELEGATION_ERROR_CODES];
+
+/** Hard tree caps (design §3.1; workspace-configurable later — F-Q2). */
+export const TREE_LIMITS = {
+  /** A root is depth 0; children depth 1; sub-orchestrators depth 2. */
+  maxDepth: 2,
+  maxLiveChildrenPerParent: 5,
+  maxLiveNodesPerTree: 10,
+} as const;
+
+/**
+ * A capability ceiling — the narrowing-only contract surface the spawn door
+ * intersects. An ABSENT key means "unrestricted at this level" (the sealed
+ * agent-type ceiling still applies runtime-side); a PRESENT key is an
+ * allowlist.
+ */
+export interface CapabilityCeiling {
+  tools?: string[];
+  mayAffect?: string[];
+  secrets?: string[];
+}
+
+const CEILING_KEYS = ["tools", "mayAffect", "secrets"] as const;
+
+function asAllowlist(v: unknown): string[] | undefined {
+  if (!Array.isArray(v)) return undefined;
+  return v.filter((x): x is string => typeof x === "string");
+}
+
+/** Read the ceiling keys out of a profile's capability JSONB, ignoring
+ * anything else the sealed contract carries. */
+export function ceilingOf(capability: Record<string, unknown> | undefined): CapabilityCeiling {
+  const out: CapabilityCeiling = {};
+  if (!capability) return out;
+  for (const key of CEILING_KEYS) {
+    const list = asAllowlist(capability[key]);
+    if (list !== undefined) out[key] = list;
+  }
+  return out;
+}
+
+/**
+ * intersectCeiling — the ONE rule of the delegation plane: a child's
+ * effective ceiling is parent ∩ child, key by key. Absent ∩ X = X (absent is
+ * unrestricted); present ∩ present = set intersection. The result is always
+ * ⊆ each input — a child can never be wider than its parent, mechanically.
+ */
+export function intersectCeiling(parent: CapabilityCeiling, child: CapabilityCeiling): CapabilityCeiling {
+  const out: CapabilityCeiling = {};
+  for (const key of CEILING_KEYS) {
+    const a = parent[key];
+    const b = child[key];
+    if (a === undefined && b === undefined) continue;
+    if (a === undefined) {
+      out[key] = [...b!];
+    } else if (b === undefined) {
+      out[key] = [...a];
+    } else {
+      const set = new Set(a);
+      out[key] = b.filter((x) => set.has(x));
+    }
+  }
+  return out;
+}
+
+// ── Budgets (saas-agents-fleet AF8) ─────────────────────────
+// Ceilings, not advisories (locked decision 6): the door refuses a spawn
+// against an exhausted envelope; an ingest crossing becomes a graceful,
+// sealed interrupt — the log is worth more than the last 2% of budget.
+
+export const BUDGET_GRAINS = ["workspace", "tree", "session", "routine"] as const;
+export type BudgetGrain = (typeof BUDGET_GRAINS)[number];
+
+/** The soft mark: crossing this fraction of a ceiling raises an attention
+ * item; crossing 1.0 interrupts (design §7). */
+export const BUDGET_SOFT_MARK = 0.8;
+
+export const BUDGET_ERROR_CODES = {
+  budgetInvalid: "agent_budget_invalid",
+  budgetNotFound: "agent_budget_not_found",
+  /** The applicable envelope is exhausted — refused at the door. */
+  budgetExhausted: "budget_exhausted",
+} as const;
+export type BudgetErrorCode = (typeof BUDGET_ERROR_CODES)[keyof typeof BUDGET_ERROR_CODES];
+
+/** A token ceiling. workspace/tree/session rows are org-wide defaults (no
+ * ref); routine rows pin one routine's public id. */
+export interface AgentBudget {
+  /** Public id, `bud_…`. */
+  id: string;
+  grain: BudgetGrain;
+  ref?: string;
+  maxTokens: number;
+  createdBy: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** PUT /agents/budgets — upsert the ceiling for a grain(+ref). */
+export interface SetBudgetRequest {
+  grain: BudgetGrain;
+  /** routine grain only: the routine's public id. */
+  ref?: string;
+  maxTokens: number;
+}
+
+// ── Track record & earned autonomy (saas-agents-fleet AF7) ──
+// The record is a COMPUTED read over session rows + relayed events — never
+// stored, never writable by an agent. Movement is asymmetric: promotion is
+// suggested by the record and applied only by a human ack (with the
+// server-computed evidence attached); demotion is automatic and loud. No
+// sequence of agent actions can widen any leash.
+
+/** A profile's track record — named rates with their numerators visible
+ * (the work-plane meter discipline: no scores, no ranking). */
+export interface AgentProfileRecord {
+  profileId: string;
+  /** Sessions considered (all-time in v1; windows ride orun AF3's fold). */
+  sessions: number;
+  byKind: Partial<Record<AgentRunKind, number>>;
+  completed: number;
+  failed: number;
+  /** completed / (completed + failed); null until any run finishes. */
+  completionRate: number | null;
+  /** Terminal sessions that produced a PR artifact. */
+  prProduced: number;
+  /** Human verdicts asked / granted (agent-answered verdicts are EXCLUDED —
+   * the record only counts human trust). */
+  verdictAsks: number;
+  verdictGrants: number;
+  grantRate: number | null;
+  /** Human steers observed (interventions). */
+  steers: number;
+  /** Tokens observed via relayed cost samples (the sampled sessions only). */
+  tokensObserved: number;
+}
+
+/** The workspace promotion bar (F-Q4 — shipped as defaults, overridable via
+ * the autonomy policy's caps.promotionBar). */
+export interface PromotionBar {
+  minSessions: number;
+  minCompletionRate: number;
+}
+
+export const PROMOTION_BAR_DEFAULTS: PromotionBar = {
+  minSessions: 20,
+  minCompletionRate: 0.85,
+};
+
+/** The promotion assessment beside a record: eligible + the suggested next
+ * rung. Suggests, never applies — the apply is a human PATCH. */
+export interface PromotionAssessment {
+  eligible: boolean;
+  bar: PromotionBar;
+  /** The rung above the profile's current level; absent at `full`. */
+  suggested?: AgentAutonomyLevel;
+}
+
+/** The next rung up the ladder; null at the top. */
+export function nextAutonomyLevel(level: AgentAutonomyLevel): AgentAutonomyLevel | null {
+  const i = AGENT_AUTONOMY_LEVELS.indexOf(level);
+  return i >= 0 && i < AGENT_AUTONOMY_LEVELS.length - 1 ? AGENT_AUTONOMY_LEVELS[i + 1]! : null;
+}
+
+/** The rung below; null at the floor (manual is never demotable further). */
+export function previousAutonomyLevel(level: AgentAutonomyLevel): AgentAutonomyLevel | null {
+  const i = AGENT_AUTONOMY_LEVELS.indexOf(level);
+  return i > 0 ? AGENT_AUTONOMY_LEVELS[i - 1]! : null;
+}
+
+/** assessPromotion — pure: does the record clear the bar, and to where? */
+export function assessPromotion(
+  record: AgentProfileRecord,
+  currentLevel: AgentAutonomyLevel,
+  bar: PromotionBar = PROMOTION_BAR_DEFAULTS,
+): PromotionAssessment {
+  const suggested = nextAutonomyLevel(currentLevel);
+  const eligible =
+    suggested !== null &&
+    record.sessions >= bar.minSessions &&
+    record.completionRate !== null &&
+    record.completionRate >= bar.minCompletionRate;
+  return { eligible, bar, ...(eligible && suggested ? { suggested } : {}) };
+}
+
+/** GET /agents/records — the per-profile record + assessment, org-wide. */
+export interface AgentRecordsEntry {
+  profileId: string;
+  autonomyDefault: AgentAutonomyLevel;
+  record: AgentProfileRecord;
+  promotion: PromotionAssessment;
+}
+
+/** PATCH /agents/profiles/:id — the human-ack autonomy movement. */
+export interface SetProfileAutonomyRequest {
+  autonomyDefault: AgentAutonomyLevel;
+}
+
+// ── Routines (saas-agents-fleet AF6) ────────────────────────
+// Standing work: a trigger + binding that SPAWNS sessions through the AG9
+// dispatch door (locked decision 3: there is no second way to start work).
+// Success is digest material; two consecutive failed firings park the
+// routine until a human resumes it.
+
+export const ROUTINE_TRIGGER_KINDS = ["cron", "event"] as const;
+export type RoutineTriggerKind = (typeof ROUTINE_TRIGGER_KINDS)[number];
+
+export const ROUTINE_ERROR_CODES = {
+  routineNotFound: "agent_routine_not_found",
+  routineConflict: "agent_routine_conflict",
+  routineInvalid: "agent_routine_invalid",
+  /** A parked/disabled routine refuses to fire until resumed/enabled. */
+  routineNotLive: "agent_routine_not_live",
+} as const;
+export type RoutineErrorCode =
+  (typeof ROUTINE_ERROR_CODES)[keyof typeof ROUTINE_ERROR_CODES];
+
+/** Consecutive failed firings before the park latch closes (design §5.3). */
+export const ROUTINE_PARK_THRESHOLD = 2;
+
+export interface AgentRoutine {
+  /** Public id, `rt_…`. */
+  id: string;
+  name: string;
+  profileId: string;
+  runKind: AgentRunKind;
+  /** Content hash of the sealed RoutineSnapshot (orun AF2), when pinned. */
+  definitionRef?: string;
+  triggerKind: RoutineTriggerKind;
+  /** cron: { cron: "0 7 * * *" } (5-field, hourly minimum); event: { lane, predicate }. */
+  triggerConfig: Record<string, unknown>;
+  caps: Record<string, unknown>;
+  enabled: boolean;
+  parked: boolean;
+  parkedReason?: string;
+  consecutiveFailures: number;
+  lastFiredAt?: string;
+  createdBy: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** POST /agents/routines */
+export interface CreateAgentRoutineRequest {
+  name: string;
+  profileId: string;
+  runKind: AgentRunKind;
+  triggerKind: RoutineTriggerKind;
+  triggerConfig?: Record<string, unknown>;
+  definitionRef?: string;
+  caps?: Record<string, unknown>;
+}
+
+/** PATCH /agents/routines/:id — standing-state changes only. Resuming a
+ * parked routine resets its failure count; the definition/trigger are
+ * immutable (delete + recreate — the sealed-definition posture). */
+export interface UpdateAgentRoutineRequest {
+  enabled?: boolean;
+  /** false = resume (only transition allowed; parking is automatic). */
+  parked?: boolean;
+}
+
+// ── The attention plane (saas-agents-fleet AF5) ─────────────
+// The needs-you fold: a computed read over facts already stored — session
+// states, budget marks, routine parks, lease health. There is no stored inbox
+// row and no dismiss verb; acting on an item removes it by making its source
+// fact false (design §4.1: attention is derived, never authored).
+
+/**
+ * The closed attention-source vocabulary. Enum-complete from day one:
+ * `budget` items appear once AF8 lands budgets, `routine_parked` once AF6
+ * lands routines — both fold to zero until then.
+ */
+export const ATTENTION_KINDS = [
+  /** A session is blocked on a human verdict (`awaiting_approval`). */
+  "verdict",
+  /** A live session/tree crossed its budget's soft mark (AF8). */
+  "budget",
+  /** A routine parked after repeated failures and needs a resume (AF6). */
+  "routine_parked",
+  /** A session failed on a task with retry budget left — re-dispatch offer. */
+  "failed_retryable",
+  /** A live session's lease lapsed but the sweep has not reclaimed it yet. */
+  "stuck",
+] as const;
+export type AttentionKind = (typeof ATTENTION_KINDS)[number];
+
+/** Rank by kind — the queue's sort order (design §4.1). Lower renders first. */
+export const ATTENTION_RANK: Record<AttentionKind, number> = {
+  verdict: 1,
+  budget: 2,
+  routine_parked: 3,
+  failed_retryable: 4,
+  stuck: 5,
+};
+
+/**
+ * One needs-you item. Every item carries its provenance — the session or
+ * routine, the work pointer, and the fact that produced it — so the fold
+ * shows its arithmetic.
+ */
+export interface AttentionItem {
+  kind: AttentionKind;
+  /** The session the item is about (`as_…`); absent on routine items. */
+  sessionId?: string;
+  /** The routine the item is about (`rt_…`) — routine_parked items (AF6). */
+  routineId?: string;
+  profileId?: string;
+  runKind?: AgentRunKind;
+  state?: AgentSessionState;
+  workRef?: string;
+  taskKey?: string;
+  /** The producing fact, human-readable ("wants to run npx wrangler deploy"). */
+  reason: string;
+  /** When the underlying fact arose (approval asked / lease lapsed / ended). */
+  at: string;
+  /** verdict items: the pending request, answerable from the fleet home. */
+  request?: { requestId: string; tool: string };
+}
+
+/** GET /v1/organizations/{orgId}/agents/attention */
+export interface AttentionSummary {
+  /** Ranked (ATTENTION_RANK asc, then oldest fact first). */
+  items: AttentionItem[];
+  /** Per-kind counts, every kind always present (zero included). */
+  counts: Record<AttentionKind, number>;
+  /** Sessions currently `running` — the fleet home's other stat numeral. */
+  running: number;
 }
 
 // ── Provider connections (AG12) ─────────────────────────────

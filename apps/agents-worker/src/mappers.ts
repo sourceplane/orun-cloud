@@ -4,10 +4,12 @@
 import type {
   AgentProfile as DbProfile,
   AgentSession as DbSession,
+  Routine as DbRoutine,
   SessionEvent as DbSessionEvent,
 } from "@saas/db/agents";
 import type {
   AgentProfile,
+  AgentRoutine,
   AgentSession,
   AgentSessionEventWire,
 } from "@saas/contracts/agents";
@@ -22,6 +24,7 @@ export function toPublicProfile(p: DbProfile): AgentProfile {
     harness: p.harness,
     model: p.model,
     autonomyDefault: p.autonomyDefault,
+    ...(p.autonomyEvidence !== undefined ? { autonomyEvidence: p.autonomyEvidence } : {}),
     createdAt: p.createdAt,
     updatedAt: p.updatedAt,
   };
@@ -45,6 +48,36 @@ export function toPublicSession(s: DbSession): AgentSession {
   if (s.snapshotId !== undefined) out.snapshotId = s.snapshotId;
   if (s.startedAt !== undefined) out.startedAt = s.startedAt;
   if (s.endedAt !== undefined) out.endedAt = s.endedAt;
+  // Delegation tree (AF4) — public-id keyed, safe to surface verbatim.
+  if (s.parentSessionId !== undefined) out.parentSessionId = s.parentSessionId;
+  out.rootSessionId = s.rootSessionId;
+  out.depth = s.depth;
+  // Routine provenance (AF6) — fleet grouping + park math.
+  if (s.routineId !== undefined) out.routineId = s.routineId;
+  // Accumulated spend (AF8) — the mock's token column, budget arithmetic.
+  out.tokensUsed = s.tokensUsed;
+  return out;
+}
+
+export function toPublicRoutine(r: DbRoutine): AgentRoutine {
+  const out: AgentRoutine = {
+    id: r.publicId,
+    name: r.name,
+    profileId: r.profileId,
+    runKind: r.runKind,
+    triggerKind: r.triggerKind,
+    triggerConfig: r.triggerConfig,
+    caps: r.caps,
+    enabled: r.enabled,
+    parked: r.parked,
+    consecutiveFailures: r.consecutiveFailures,
+    createdBy: r.createdBy,
+    createdAt: r.createdAt,
+    updatedAt: r.updatedAt,
+  };
+  if (r.definitionRef !== undefined) out.definitionRef = r.definitionRef;
+  if (r.parkedReason !== undefined) out.parkedReason = r.parkedReason;
+  if (r.lastFiredAt !== undefined) out.lastFiredAt = r.lastFiredAt;
   return out;
 }
 

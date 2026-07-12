@@ -9,16 +9,22 @@ import {
   AgentsError,
   canTransition,
   isTerminal,
+  validateBudgetInput,
   validateConnectionInput,
   validateProfileInput,
+  validateRoutineInput,
   validateSessionEvent,
   type AgentProfile,
   type AgentSession,
   type AutonomyLevel,
   type AutonomyPolicy,
+  type Budget,
+  type BudgetGrain,
   type ConnectionStatus,
   type Provider,
   type ProviderConnection,
+  type Routine,
+  type RoutineTriggerKind,
   type RunKind,
   type SessionEvent,
   type SessionState,
@@ -29,10 +35,15 @@ import type {
   AppendSessionEventInput,
   CreateConnectionInput,
   CreateProfileInput,
+  CreateRoutineInput,
   CreateSessionInput,
   ListLapsedSessionsInput,
+  ListOrphanedSessionsInput,
   SetAutonomyInput,
+  SetBudgetInput,
   SetConnectionStatusInput,
+  SetProfileAutonomyInput,
+  UpdateRoutineStateInput,
   WorkspaceScope,
 } from "./types.js";
 
@@ -63,7 +74,7 @@ function newPublicId(prefix: string): string {
 }
 
 function mapProfile(row: Row): AgentProfile {
-  return {
+  const p: AgentProfile = {
     id: String(row.id),
     publicId: String(row.public_id),
     orgId: String(row.org_id),
@@ -78,12 +89,17 @@ function mapProfile(row: Row): AgentProfile {
     createdAt: toIso(row.created_at),
     updatedAt: toIso(row.updated_at),
   };
+  if (row.autonomy_evidence != null) {
+    p.autonomyEvidence = parseJson<Record<string, unknown>>(row.autonomy_evidence, {});
+  }
+  return p;
 }
 
 function mapSession(row: Row): AgentSession {
+  const publicId = String(row.public_id);
   const s: AgentSession = {
     id: String(row.id),
-    publicId: String(row.public_id),
+    publicId,
     orgId: String(row.org_id),
     profileId: String(row.profile_id),
     runKind: String(row.run_kind) as RunKind,
@@ -91,7 +107,16 @@ function mapSession(row: Row): AgentSession {
     sandbox: parseJson<Record<string, unknown>>(row.sandbox, {}),
     spawnedBy: String(row.spawned_by),
     createdAt: toIso(row.created_at),
+    // Tree columns (AF4) are public-id keyed; pre-750 rows read as their own
+    // roots at depth 0 (the migration backfills, this is the belt).
+    rootSessionId: optStr(row.root_session_id) ?? publicId,
+    depth: typeof row.depth === "number" ? row.depth : Number(row.depth ?? 0),
+    tokensUsed: Number(row.tokens_used ?? 0),
   };
+  const parentSessionId = optStr(row.parent_session_id);
+  if (parentSessionId !== undefined) s.parentSessionId = parentSessionId;
+  const routineId = optStr(row.routine_id);
+  if (routineId !== undefined) s.routineId = routineId;
   const workRef = optStr(row.work_ref);
   if (workRef !== undefined) s.workRef = workRef;
   const taskKey = optStr(row.task_key);
@@ -131,6 +156,49 @@ function mapConnection(row: Row): ProviderConnection {
   const reason = optStr(row.status_reason);
   if (reason !== undefined) c.statusReason = reason;
   return c;
+}
+
+function mapRoutine(row: Row): Routine {
+  const r: Routine = {
+    id: String(row.id),
+    publicId: String(row.public_id),
+    orgId: String(row.org_id),
+    name: String(row.name),
+    profileId: String(row.profile_id),
+    runKind: String(row.run_kind) as RunKind,
+    triggerKind: String(row.trigger_kind) as RoutineTriggerKind,
+    triggerConfig: parseJson<Record<string, unknown>>(row.trigger_config, {}),
+    caps: parseJson<Record<string, unknown>>(row.caps, {}),
+    enabled: Boolean(row.enabled),
+    parked: Boolean(row.parked),
+    consecutiveFailures: Number(row.consecutive_failures ?? 0),
+    createdBy: String(row.created_by),
+    createdAt: toIso(row.created_at),
+    updatedAt: toIso(row.updated_at),
+  };
+  const definitionRef = optStr(row.definition_ref);
+  if (definitionRef !== undefined) r.definitionRef = definitionRef;
+  const parkedReason = optStr(row.parked_reason);
+  if (parkedReason !== undefined) r.parkedReason = parkedReason;
+  const lastFired = optIso(row.last_fired_at);
+  if (lastFired !== undefined) r.lastFiredAt = lastFired;
+  return r;
+}
+
+function mapBudget(row: Row): Budget {
+  const b: Budget = {
+    id: String(row.id),
+    publicId: String(row.public_id),
+    orgId: String(row.org_id),
+    grain: String(row.grain) as BudgetGrain,
+    maxTokens: Number(row.max_tokens),
+    createdBy: String(row.created_by),
+    createdAt: toIso(row.created_at),
+    updatedAt: toIso(row.updated_at),
+  };
+  const ref = optStr(row.ref);
+  if (ref !== undefined) b.ref = ref;
+  return b;
 }
 
 export function createAgentsRepository(sql: TransactionalSqlExecutor): AgentsRepository {
@@ -184,19 +252,44 @@ export function createAgentsRepository(sql: TransactionalSqlExecutor): AgentsRep
           throw new AgentsError("agent_profile_not_found", `profile ${input.profileId} not found`);
         }
         const profileId = String((p.rows[0] as Row).id);
+        // Delegation (AF4): resolve the parent inside the transaction so the
+        // child's root/depth can never race a parent delete.
+        let parent: { rootSessionId: string; depth: number } | null = null;
+        if (input.parentSessionId !== undefined) {
+          const pr = await tx.execute(
+            `SELECT public_id, root_session_id, depth FROM agents.agent_sessions
+             WHERE org_id = $1 AND public_id = $2`,
+            [scope.orgId, input.parentSessionId],
+          );
+          if (!pr.rows[0]) {
+            throw new AgentsError("agent_session_not_found", `parent ${input.parentSessionId} not found`);
+          }
+          const row = pr.rows[0] as Row;
+          parent = {
+            rootSessionId: optStr(row.root_session_id) ?? String(row.public_id),
+            depth: Number(row.depth ?? 0),
+          };
+        }
+        const publicId = newPublicId("as_");
         const res = await tx.execute(
           `INSERT INTO agents.agent_sessions
-             (public_id, org_id, profile_id, run_kind, state, spawned_by, work_ref, task_key)
-           VALUES ($1,$2,$3,$4,'requested',$5,$6,$7)
+             (public_id, org_id, profile_id, run_kind, state, spawned_by, work_ref, task_key,
+              sandbox, parent_session_id, root_session_id, depth, routine_id)
+           VALUES ($1,$2,$3,$4,'requested',$5,$6,$7,$8::jsonb,$9,$10,$11,$12)
            RETURNING *`,
           [
-            newPublicId("as_"),
+            publicId,
             scope.orgId,
             profileId,
             input.runKind,
             input.spawnedBy,
             input.workRef ?? null,
             input.taskKey ?? null,
+            JSON.stringify(input.sandbox ?? {}),
+            input.parentSessionId ?? null,
+            parent ? parent.rootSessionId : publicId,
+            parent ? parent.depth + 1 : 0,
+            input.routineId ?? null,
           ],
         );
         return mapSession(res.rows[0] as Row);
@@ -261,6 +354,22 @@ export function createAgentsRepository(sql: TransactionalSqlExecutor): AgentsRep
          ORDER BY created_at
          LIMIT $3`,
         [input.leaseCutoff, input.provisioningCutoff, input.limit],
+      );
+      return res.rows.map((r) => mapSession(r as Row));
+    },
+
+    async listOrphanedSessions(input: ListOrphanedSessionsInput): Promise<AgentSession[]> {
+      // Deliberately CROSS-ORG like the lease sweep: live children whose
+      // parent went terminal past grace — the tree converges (AF4 §3.2).
+      const res = await sql.execute(
+        `SELECT c.* FROM agents.agent_sessions c
+           JOIN agents.agent_sessions p ON p.public_id = c.parent_session_id
+         WHERE c.state NOT IN ('completed','failed','canceled','expired')
+           AND p.state IN ('completed','failed','canceled','expired')
+           AND COALESCE(p.ended_at, p.created_at) < $1
+         ORDER BY c.created_at
+         LIMIT $2`,
+        [input.parentEndedCutoff, input.limit],
       );
       return res.rows.map((r) => mapSession(r as Row));
     },
@@ -399,6 +508,175 @@ export function createAgentsRepository(sql: TransactionalSqlExecutor): AgentsRep
       const sk = optStr(r.spec_key);
       if (sk !== undefined) policy.specKey = sk;
       return policy;
+    },
+
+
+    async setProfileAutonomy(scope: WorkspaceScope, input: SetProfileAutonomyInput): Promise<AgentProfile> {
+      const res = await sql.execute(
+        `UPDATE agents.agent_profiles
+            SET autonomy_default = $3, autonomy_evidence = $4::jsonb, updated_at = now()
+          WHERE org_id = $1 AND (public_id = $2 OR id::text = $2)
+          RETURNING *`,
+        [scope.orgId, input.publicId, input.autonomyDefault, JSON.stringify(input.evidence)],
+      );
+      if (!res.rows[0]) {
+        throw new AgentsError("agent_profile_not_found", `profile ${input.publicId} not found`);
+      }
+      return mapProfile(res.rows[0] as Row);
+    },
+
+    // ── Budgets (saas-agents-fleet AF8) ───────────────────────
+
+    async setBudget(scope: WorkspaceScope, input: SetBudgetInput): Promise<Budget> {
+      validateBudgetInput(input);
+      const res = await sql.execute(
+        `INSERT INTO agents.budgets (public_id, org_id, grain, ref, max_tokens, created_by)
+         VALUES ($1,$2,$3,$4,$5,$6)
+         ON CONFLICT (org_id, grain, COALESCE(ref, ''))
+         DO UPDATE SET max_tokens = EXCLUDED.max_tokens, updated_at = now()
+         RETURNING *`,
+        [newPublicId("bud_"), scope.orgId, input.grain, input.ref ?? null, input.maxTokens, input.createdBy],
+      );
+      return mapBudget(res.rows[0] as Row);
+    },
+
+    async listBudgets(scope: WorkspaceScope): Promise<Budget[]> {
+      const res = await sql.execute(
+        `SELECT * FROM agents.budgets WHERE org_id = $1 ORDER BY grain, ref NULLS FIRST`,
+        [scope.orgId],
+      );
+      return res.rows.map((r) => mapBudget(r as Row));
+    },
+
+    async deleteBudget(scope: WorkspaceScope, publicId: string): Promise<boolean> {
+      const res = await sql.execute(
+        `DELETE FROM agents.budgets WHERE org_id = $1 AND public_id = $2`,
+        [scope.orgId, publicId],
+      );
+      return (res.rowCount ?? 0) > 0;
+    },
+
+    async addSessionTokens(scope: WorkspaceScope, sessionPublicId: string, delta: number): Promise<AgentSession> {
+      const res = await sql.execute(
+        `UPDATE agents.agent_sessions SET tokens_used = tokens_used + GREATEST(0, $3)
+         WHERE org_id = $1 AND public_id = $2
+         RETURNING *`,
+        [scope.orgId, sessionPublicId, Math.max(0, Math.round(delta))],
+      );
+      if (!res.rows[0]) {
+        throw new AgentsError("agent_session_not_found", `session ${sessionPublicId} not found`);
+      }
+      return mapSession(res.rows[0] as Row);
+    },
+
+    // ── Routines (saas-agents-fleet AF6) ──────────────────────
+
+    async createRoutine(scope: WorkspaceScope, input: CreateRoutineInput): Promise<Routine> {
+      validateRoutineInput(input);
+      return sql.transaction(async (tx) => {
+        const p = await tx.execute(
+          `SELECT id FROM agents.agent_profiles WHERE org_id = $1 AND (id::text = $2 OR public_id = $2)`,
+          [scope.orgId, input.profileId],
+        );
+        if (!p.rows[0]) {
+          throw new AgentsError("agent_profile_not_found", `profile ${input.profileId} not found`);
+        }
+        const res = await tx.execute(
+          `INSERT INTO agents.routines
+             (public_id, org_id, name, profile_id, run_kind, definition_ref,
+              trigger_kind, trigger_config, caps, created_by)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8::jsonb,$9::jsonb,$10)
+           RETURNING *`,
+          [
+            newPublicId("rt_"),
+            scope.orgId,
+            input.name,
+            String((p.rows[0] as Row).id),
+            input.runKind,
+            input.definitionRef ?? null,
+            input.triggerKind,
+            JSON.stringify(input.triggerConfig ?? {}),
+            JSON.stringify(input.caps ?? {}),
+            input.createdBy,
+          ],
+        );
+        return mapRoutine(res.rows[0] as Row);
+      });
+    },
+
+    async getRoutine(scope: WorkspaceScope, publicId: string): Promise<Routine | null> {
+      const res = await sql.execute(
+        `SELECT * FROM agents.routines WHERE org_id = $1 AND public_id = $2`,
+        [scope.orgId, publicId],
+      );
+      return res.rows[0] ? mapRoutine(res.rows[0] as Row) : null;
+    },
+
+    async listRoutines(scope: WorkspaceScope): Promise<Routine[]> {
+      const res = await sql.execute(
+        `SELECT * FROM agents.routines WHERE org_id = $1 ORDER BY name`,
+        [scope.orgId],
+      );
+      return res.rows.map((r) => mapRoutine(r as Row));
+    },
+
+    async updateRoutineState(scope: WorkspaceScope, input: UpdateRoutineStateInput): Promise<Routine> {
+      const res = await sql.execute(
+        `UPDATE agents.routines SET
+           enabled = COALESCE($3, enabled),
+           parked = COALESCE($4, parked),
+           parked_reason = CASE WHEN $5::boolean THEN $6 ELSE parked_reason END,
+           consecutive_failures = COALESCE($7, consecutive_failures),
+           last_fired_at = COALESCE($8, last_fired_at),
+           updated_at = now()
+         WHERE org_id = $1 AND public_id = $2
+         RETURNING *`,
+        [
+          scope.orgId,
+          input.publicId,
+          input.enabled ?? null,
+          input.parked ?? null,
+          input.parkedReason !== undefined,
+          input.parkedReason ?? null,
+          input.consecutiveFailures ?? null,
+          input.lastFiredAt ?? null,
+        ],
+      );
+      if (!res.rows[0]) {
+        throw new AgentsError("agent_routine_not_found", `routine ${input.publicId} not found`);
+      }
+      return mapRoutine(res.rows[0] as Row);
+    },
+
+    async deleteRoutine(scope: WorkspaceScope, publicId: string): Promise<boolean> {
+      const res = await sql.execute(
+        `DELETE FROM agents.routines WHERE org_id = $1 AND public_id = $2`,
+        [scope.orgId, publicId],
+      );
+      return (res.rowCount ?? 0) > 0;
+    },
+
+    async listLiveRoutines(limit: number): Promise<Routine[]> {
+      // Deliberately CROSS-ORG: the scheduler tick fires the whole fleet.
+      const res = await sql.execute(
+        `SELECT * FROM agents.routines WHERE enabled AND NOT parked ORDER BY created_at LIMIT $1`,
+        [limit],
+      );
+      return res.rows.map((r) => mapRoutine(r as Row));
+    },
+
+    async listRoutineSessions(
+      scope: WorkspaceScope,
+      routinePublicId: string,
+      limit: number,
+    ): Promise<AgentSession[]> {
+      const res = await sql.execute(
+        `SELECT * FROM agents.agent_sessions
+          WHERE org_id = $1 AND routine_id = $2
+          ORDER BY created_at DESC LIMIT $3`,
+        [scope.orgId, routinePublicId, limit],
+      );
+      return res.rows.map((r) => mapSession(r as Row));
     },
 
     // ── Provider connections (AG12) ───────────────────────────

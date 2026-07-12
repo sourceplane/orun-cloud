@@ -4,6 +4,7 @@
 
 import {
   connectionTone,
+  orderFleetRows,
   sessionLabel,
   sessionTone,
   servicePrincipalSubjectId,
@@ -60,5 +61,30 @@ describe("agents presentation model", () => {
     expect(AGENT_TYPES.map((t) => t.value)).toEqual(["implementer", "orchestrator"]);
     expect(AGENT_MODELS.length).toBeGreaterThan(0);
     expect(AGENT_MODELS.map((m) => m.value)).toContain("claude-opus-4-8");
+  });
+});
+
+describe("orderFleetRows (saas-agents-fleet AF4)", () => {
+  const s = (id: string, parentSessionId?: string) => ({ id, ...(parentSessionId ? { parentSessionId } : {}) });
+
+  it("nests children directly under their parent with increasing depth", () => {
+    const rows = orderFleetRows([s("as_root"), s("as_a", "as_root"), s("as_b", "as_root"), s("as_aa", "as_a")]);
+    expect(rows.map((r) => `${r.session.id}:${r.depth}`)).toEqual([
+      "as_root:0",
+      "as_a:1",
+      "as_aa:2",
+      "as_b:1",
+    ]);
+  });
+
+  it("a child whose parent is filtered out renders as a root — never dropped", () => {
+    const rows = orderFleetRows([s("as_orphan", "as_gone"), s("as_solo")]);
+    expect(rows.map((r) => `${r.session.id}:${r.depth}`)).toEqual(["as_orphan:0", "as_solo:0"]);
+  });
+
+  it("every session appears exactly once", () => {
+    const input = [s("as_r"), s("as_x", "as_r"), s("as_y", "as_x"), s("as_z")];
+    const rows = orderFleetRows(input);
+    expect(rows.map((r) => r.session.id).sort()).toEqual(input.map((i) => i.id).sort());
   });
 });

@@ -1,4 +1,4 @@
--- 740_slack_app_channels: the slack_app delivery channel kind (IH2).
+-- 790_slack_app_channels: the slack_app delivery channel kind (IH2).
 --
 -- Context: notifications
 -- Epic: saas-integration-hub (IH2) — ES's ChannelProvider seam gains the

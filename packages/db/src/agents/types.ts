@@ -11,9 +11,13 @@ import type {
   AgentSession,
   AutonomyLevel,
   AutonomyPolicy,
+  Budget,
+  BudgetGrain,
   ConnectionStatus,
   Provider,
   ProviderConnection,
+  Routine,
+  RoutineTriggerKind,
   RunKind,
   SessionEvent,
   SessionEventKind,
@@ -41,6 +45,14 @@ export interface CreateSessionInput {
   spawnedBy: string;
   workRef?: string;
   taskKey?: string;
+  /** Delegation (AF4): the PARENT session's public id. The child inherits the
+   * parent's root and depth+1. The spawn door supplies this from the actor's
+   * session binding — never from a request body. */
+  parentSessionId?: string;
+  /** Create-time infrastructure facts (AF4: the applied capability ceiling). */
+  sandbox?: Record<string, unknown>;
+  /** Routine provenance (AF6): the firing routine's public id. */
+  routineId?: string;
 }
 
 export interface AdvanceSessionInput {
@@ -66,6 +78,13 @@ export interface ListLapsedSessionsInput {
   leaseCutoff: string;
   /** Provisioning sessions created before this never booted — reclaim them. */
   provisioningCutoff: string;
+  limit: number;
+}
+
+export interface ListOrphanedSessionsInput {
+  /** Live children whose parent reached a terminal state before this are
+   * orphans — a tree cannot outlive its root's intent (AF4 §3.2). */
+  parentEndedCutoff: string;
   limit: number;
 }
 
@@ -99,12 +118,73 @@ export interface AgentsRepository extends ProviderConnectionsRepository {
    * sessions whose lease lapsed, plus provisioning sessions stalled past the
    * boot horizon (they never heartbeat, so they never earn a lease). */
   listLapsedSessions(input: ListLapsedSessionsInput): Promise<AgentSession[]>;
+  /** CROSS-ORG orphan query (AF4): non-terminal children whose parent went
+   * terminal past the grace window — the sweep converges the tree. */
+  listOrphanedSessions(input: ListOrphanedSessionsInput): Promise<AgentSession[]>;
 
   appendSessionEvent(scope: WorkspaceScope, input: AppendSessionEventInput): Promise<void>;
   listSessionEvents(scope: WorkspaceScope, sessionPublicId: string): Promise<SessionEvent[]>;
 
   setAutonomy(scope: WorkspaceScope, input: SetAutonomyInput): Promise<AutonomyPolicy>;
   getAutonomy(scope: WorkspaceScope, specKey?: string): Promise<AutonomyPolicy | null>;
+
+  /** Move a profile's autonomy (AF7). Evidence is the movement's address —
+   * stored verbatim, rendered wherever the level renders. */
+  setProfileAutonomy(scope: WorkspaceScope, input: SetProfileAutonomyInput): Promise<AgentProfile>;
+
+  // ── Budgets (saas-agents-fleet AF8) ───────────────────────
+  /** Upsert the ceiling for a grain(+ref). */
+  setBudget(scope: WorkspaceScope, input: SetBudgetInput): Promise<Budget>;
+  listBudgets(scope: WorkspaceScope): Promise<Budget[]>;
+  deleteBudget(scope: WorkspaceScope, publicId: string): Promise<boolean>;
+  /** Accumulate relayed spend on the session row; returns the new total. */
+  addSessionTokens(scope: WorkspaceScope, sessionPublicId: string, delta: number): Promise<AgentSession>;
+
+  // ── Routines (saas-agents-fleet AF6) ──────────────────────
+  createRoutine(scope: WorkspaceScope, input: CreateRoutineInput): Promise<Routine>;
+  getRoutine(scope: WorkspaceScope, publicId: string): Promise<Routine | null>;
+  listRoutines(scope: WorkspaceScope): Promise<Routine[]>;
+  /** Mutate the standing state: enable/disable, park/resume (resume resets
+   * the failure count), the last-fired mark, the failure counter. */
+  updateRoutineState(scope: WorkspaceScope, input: UpdateRoutineStateInput): Promise<Routine>;
+  deleteRoutine(scope: WorkspaceScope, publicId: string): Promise<boolean>;
+  /** CROSS-ORG scan for the scheduler tick: enabled, unparked routines. */
+  listLiveRoutines(limit: number): Promise<Routine[]>;
+  /** The most recent sessions a routine fired, newest first (park math). */
+  listRoutineSessions(scope: WorkspaceScope, routinePublicId: string, limit: number): Promise<AgentSession[]>;
+}
+
+export interface CreateRoutineInput {
+  name: string;
+  profileId: string;
+  runKind: RunKind;
+  triggerKind: RoutineTriggerKind;
+  triggerConfig?: Record<string, unknown>;
+  definitionRef?: string;
+  caps?: Record<string, unknown>;
+  createdBy: string;
+}
+
+export interface SetBudgetInput {
+  grain: BudgetGrain;
+  ref?: string;
+  maxTokens: number;
+  createdBy: string;
+}
+
+export interface SetProfileAutonomyInput {
+  publicId: string;
+  autonomyDefault: AutonomyLevel;
+  evidence: Record<string, unknown>;
+}
+
+export interface UpdateRoutineStateInput {
+  publicId: string;
+  enabled?: boolean;
+  parked?: boolean;
+  parkedReason?: string | null;
+  consecutiveFailures?: number;
+  lastFiredAt?: string;
 }
 
 // ── Provider connections (AG12) ─────────────────────────────

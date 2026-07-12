@@ -114,3 +114,10 @@ the same public surfaces a human uses.
   session page as a full head (steer/approve/stream), and terminal↔console
   handoff. It absorbs the "remaining AG6 slice" (DO relay + SSE) and AG10's
   cost-sample meters; pairs `orun/specs/orun-agents-live/` (AL0–AL5).
+- **[`saas-agents-fleet/`](../saas-agents-fleet/) (AF4–AF9)** — the third
+  movement: the workforce plane over AG + AL. Delegation trees behind a
+  narrowing spawn door, routines re-entering AG9's one dispatch door (and
+  absorbing the AG9 remainder — the ES1 lane consumer and retry-budget
+  park-and-comment land there, generalized), the fleet attention plane,
+  track-record-earned autonomy, and budget ceilings over AG10's meters.
+  Pairs `orun/specs/orun-agents-fleet/` (AF0–AF3).

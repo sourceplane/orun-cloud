@@ -13,6 +13,8 @@ import {
 } from "@saas/contracts/integrations";
 import { createIntegrationsRepository } from "@saas/db/integrations";
 import { createEventsRepository } from "@saas/db/events";
+import { createStateRepository } from "@saas/db/state";
+import { createMembershipRepository } from "@saas/db/membership";
 import { createSqlExecutor } from "@saas/db/hyperdrive";
 import type { Uuid } from "@saas/db/ids";
 import type { SqlExecutor } from "@saas/db/hyperdrive";
@@ -174,6 +176,8 @@ export async function handleReplayDelivery(
         executor,
         repo,
         events: createEventsRepository(executor),
+        state: createStateRepository(executor),
+        membership: createMembershipRepository(executor),
         now: () => new Date(),
       },
       delivery.value,

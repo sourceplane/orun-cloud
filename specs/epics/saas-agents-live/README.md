@@ -99,3 +99,9 @@ rendered three ways, sealed once.
   conventions the console head follows.
 - **`saas-product-experience`** — the notification and deep-link grammar AL8
   plugs into.
+- **[`saas-agents-fleet/`](../saas-agents-fleet/) (AF4–AF9)** — the successor
+  epic for the workforce plane: delegation trees over the sessions this epic
+  made drivable (child events ride these same relays), the fleet home as a
+  derived attention plane (generalizing AL7's attention badge), routines,
+  earned autonomy, and budgets (extending AL9's meters into ceilings). Pairs
+  `orun/specs/orun-agents-fleet/` (AF0–AF3).

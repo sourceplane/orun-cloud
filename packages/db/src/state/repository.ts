@@ -67,6 +67,13 @@ function isUniqueViolation(err: unknown): boolean {
   );
 }
 
+/** The Postgres constraint name behind a unique violation, when available. */
+function uniqueViolationConstraint(err: unknown): string | null {
+  if (!isUniqueViolation(err)) return null;
+  const c = (err as { constraint?: unknown }).constraint;
+  return typeof c === "string" ? c : null;
+}
+
 function isForeignKeyViolation(err: unknown): boolean {
   return (
     typeof err === "object" &&
@@ -1745,7 +1752,15 @@ export function createStateRepository(executor: SqlExecutor): StateRepository {
         return { ok: true, value: mapWorkspaceLink(result.rows[0]!) };
       } catch (err) {
         if (isUniqueViolation(err)) {
-          return { ok: false, error: { kind: "conflict", entity: "workspace_link" } };
+          // Distinguish the cross-workspace one-to-one repo claim (650: another
+          // org's ACTIVE link already holds this rename-stable provider repo)
+          // from the per-(org, remote) idempotency unique (220) — mirrors how
+          // integrations.createRepoLink separates 'repo_claim' from 'repo_link'.
+          const entity =
+            uniqueViolationConstraint(err) === "uq_state_workspace_link_provider_repo"
+              ? "provider_repo_claim"
+              : "workspace_link";
+          return { ok: false, error: { kind: "conflict", entity } };
         }
         return safeError("Failed to create workspace link");
       }

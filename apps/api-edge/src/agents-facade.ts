@@ -10,10 +10,16 @@ import { resolveActor } from "./resolve-actor.js";
 // (/v1/internal/*) are never forwarded here — the in-sandbox runtime reaches
 // the DO relay over its own session credential (a later AG6 slice).
 const ORG_AGENTS_PROFILES_RE = /^\/v1\/organizations\/[^/]+\/agents\/profiles$/;
+// Earned autonomy (saas-agents-fleet AF7): the profile item (autonomy PATCH,
+// human-acked) and the org-wide track-record read.
+const ORG_AGENTS_PROFILE_RE = /^\/v1\/organizations\/[^/]+\/agents\/profiles\/[^/]+$/;
+const ORG_AGENTS_RECORDS_RE = /^\/v1\/organizations\/[^/]+\/agents\/records$/;
 const ORG_AGENTS_SESSIONS_RE = /^\/v1\/organizations\/[^/]+\/agents\/sessions$/;
 const ORG_AGENTS_SESSION_RE = /^\/v1\/organizations\/[^/]+\/agents\/sessions\/[^/]+$/;
 const ORG_AGENTS_SESSION_EVENTS_RE = /^\/v1\/organizations\/[^/]+\/agents\/sessions\/[^/]+\/events$/;
 const ORG_AGENTS_SESSION_PROVISION_RE = /^\/v1\/organizations\/[^/]+\/agents\/sessions\/[^/]+\/provision$/;
+// Tree-transitive kill (saas-agents-fleet AF4).
+const ORG_AGENTS_SESSION_CANCEL_RE = /^\/v1\/organizations\/[^/]+\/agents\/sessions\/[^/]+\/cancel$/;
 // Runtime dial-home (AG6): heartbeat + lease-gated token refresh; event
 // ingest rides the events route (POST). Authenticated by the agent-session
 // bearer like everything else through this facade.
@@ -30,6 +36,14 @@ const ORG_AGENTS_SESSION_TOKEN_RE = /^\/v1\/organizations\/[^/]+\/agents\/sessio
 const ORG_AGENTS_SESSION_ATTACH_RE = /^\/v1\/organizations\/[^/]+\/agents\/sessions\/[^/]+\/attach$/;
 const ORG_AGENTS_SESSION_INPUT_RE = /^\/v1\/organizations\/[^/]+\/agents\/sessions\/[^/]+\/input$/;
 const ORG_AGENTS_AUTONOMY_RE = /^\/v1\/organizations\/[^/]+\/agents\/autonomy$/;
+// The needs-you fold (saas-agents-fleet AF5): the fleet home's attention queue.
+const ORG_AGENTS_ATTENTION_RE = /^\/v1\/organizations\/[^/]+\/agents\/attention$/;
+// Standing routines (saas-agents-fleet AF6): registry CRUD + resume.
+const ORG_AGENTS_ROUTINES_RE = /^\/v1\/organizations\/[^/]+\/agents\/routines$/;
+const ORG_AGENTS_ROUTINE_RE = /^\/v1\/organizations\/[^/]+\/agents\/routines\/[^/]+$/;
+// Budgets (saas-agents-fleet AF8): the ceilings registry.
+const ORG_AGENTS_BUDGETS_RE = /^\/v1\/organizations\/[^/]+\/agents\/budgets$/;
+const ORG_AGENTS_BUDGET_RE = /^\/v1\/organizations\/[^/]+\/agents\/budgets\/[^/]+$/;
 const ORG_AGENTS_DISPATCH_RE = /^\/v1\/organizations\/[^/]+\/agents\/dispatch$/;
 const ORG_AGENTS_PROVIDERS_RE = /^\/v1\/organizations\/[^/]+\/agents\/providers$/;
 const ORG_AGENTS_PROVIDER_RE = /^\/v1\/organizations\/[^/]+\/agents\/providers\/[^/]+$/;
@@ -40,10 +54,13 @@ const FORWARDED_HEADERS = ["content-type", "x-request-id", "traceparent", "idemp
 export function isAgentsRoute(pathname: string): boolean {
   return (
     ORG_AGENTS_PROFILES_RE.test(pathname) ||
+    ORG_AGENTS_PROFILE_RE.test(pathname) ||
+    ORG_AGENTS_RECORDS_RE.test(pathname) ||
     ORG_AGENTS_SESSIONS_RE.test(pathname) ||
     ORG_AGENTS_SESSION_RE.test(pathname) ||
     ORG_AGENTS_SESSION_EVENTS_RE.test(pathname) ||
     ORG_AGENTS_SESSION_PROVISION_RE.test(pathname) ||
+    ORG_AGENTS_SESSION_CANCEL_RE.test(pathname) ||
     ORG_AGENTS_SESSION_HEARTBEAT_RE.test(pathname) ||
     ORG_AGENTS_SESSION_TOKEN_RE.test(pathname) ||
     ORG_AGENTS_SESSION_ATTACH_RE.test(pathname) ||
@@ -52,6 +69,11 @@ export function isAgentsRoute(pathname: string): boolean {
     ORG_AGENTS_PROVIDER_RE.test(pathname) ||
     ORG_AGENTS_PROVIDER_VERIFY_RE.test(pathname) ||
     ORG_AGENTS_AUTONOMY_RE.test(pathname) ||
+    ORG_AGENTS_ATTENTION_RE.test(pathname) ||
+    ORG_AGENTS_ROUTINES_RE.test(pathname) ||
+    ORG_AGENTS_ROUTINE_RE.test(pathname) ||
+    ORG_AGENTS_BUDGETS_RE.test(pathname) ||
+    ORG_AGENTS_BUDGET_RE.test(pathname) ||
     ORG_AGENTS_DISPATCH_RE.test(pathname)
   );
 }
@@ -62,7 +84,7 @@ export async function handleAgentsRoute(
   requestId: string,
   pathname: string,
 ): Promise<Response> {
-  const allowedMethods = ["GET", "POST", "PUT", "DELETE"];
+  const allowedMethods = ["GET", "POST", "PUT", "PATCH", "DELETE"];
   if (!allowedMethods.includes(request.method)) {
     return errorResponse("unsupported", "Method not allowed", 405, requestId);
   }
@@ -102,7 +124,7 @@ export async function handleAgentsRoute(
 
     try {
       const fetchInit: RequestInit = { method: request.method, headers };
-      if (request.method === "POST" || request.method === "PUT") {
+      if (request.method === "POST" || request.method === "PUT" || request.method === "PATCH") {
         fetchInit.body = request.body;
       }
       const downstream = await env.AGENTS_WORKER.fetch(target.toString(), fetchInit);

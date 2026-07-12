@@ -80,4 +80,9 @@
 710_work_v4_snapshots
 720_work_events_kind_check_repair
 730_integration_hub_foundation
-740_slack_app_channels
+740_repo_link_one_to_one
+750_agents_fleet_tree
+760_agents_routines
+770_agents_trust
+780_agents_budgets
+790_slack_app_channels

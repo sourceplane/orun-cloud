@@ -270,6 +270,31 @@ export async function handleCreateWorkspaceLink(
   const owned = !deps?.executor;
   try {
     const repo = createStateRepository(executor);
+
+    // ── One-to-one repo claim (740): a repo actively linked in another org's
+    //    workspace cannot be linked here until unlinked there — first claim
+    //    wins, matching the drain's federation semantics. Friendly pre-flight;
+    //    the partial unique index uq_state_workspace_link_provider_repo is the
+    //    race-proof backstop (its violation maps to the same 409 below). The
+    //    message stays generic — never reveal WHICH org holds the claim
+    //    (cross-tenant metadata). Same-org links fall through to the existing
+    //    idempotent re-link behavior. ──
+    if (providerIdentity.provider && providerIdentity.providerRepoId) {
+      const claims = await repo.listActiveWorkspaceLinksForProviderRepo(
+        providerIdentity.provider,
+        providerIdentity.providerRepoId,
+      );
+      if (claims.ok && claims.value.some((l) => l.orgId !== orgId)) {
+        return errorResponse(
+          "conflict",
+          "This repository is already linked to another workspace. Unlink it there first.",
+          409,
+          requestId,
+          { reason: "repository_linked_to_another_workspace" },
+        );
+      }
+    }
+
     const linkId = generateUuid();
     const created = await repo.createWorkspaceLink({
       id: linkId,
@@ -288,7 +313,21 @@ export async function handleCreateWorkspaceLink(
         const all = await repo.listActiveWorkspaceLinksForRemote(normalized);
         const match =
           all.ok && all.value.find((l) => l.orgId === orgId && l.remoteUrl === normalized);
-        if (!match) return errorResponse("conflict", "Workspace already linked", 409, requestId);
+        if (!match) {
+          // Lost the one-to-one claim race to another workspace (the unique
+          // index caught what the pre-flight above could not) — same generic
+          // 409 as the pre-flight, never revealing the claiming org.
+          if (created.error.entity === "provider_repo_claim") {
+            return errorResponse(
+              "conflict",
+              "This repository is already linked to another workspace. Unlink it there first.",
+              409,
+              requestId,
+              { reason: "repository_linked_to_another_workspace" },
+            );
+          }
+          return errorResponse("conflict", "Workspace already linked", 409, requestId);
+        }
         link = match;
       } else {
         return errorResponse("internal_error", "Service unavailable", 503, requestId);

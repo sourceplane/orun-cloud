@@ -16,7 +16,17 @@ import {
   type InboundDelivery,
   type IntegrationConnection,
   type IntegrationsRepository,
+  type RepoLink,
 } from "@saas/db/integrations";
+import {
+  createStateRepository,
+  type StateRepository,
+  type WorkspaceLink,
+} from "@saas/db/state";
+import {
+  createMembershipRepository,
+  type MembershipRepository,
+} from "@saas/db/membership";
 import { createEventsRepository, type EventsRepository } from "@saas/db/events";
 import { insertWorkObservation, workObservationsFromScm } from "@saas/db/work";
 import type { SqlExecutor } from "@saas/db/hyperdrive";
@@ -53,6 +63,15 @@ interface ProcessCtx {
   executor: SqlExecutor;
   repo: IntegrationsRepository;
   events: EventsRepository;
+  /**
+   * Federation reader over state.workspace_links (OV2): when a delivery's repo
+   * has no integrations.repo_links claim, the drain resolves the owning
+   * workspace by rename-stable (provider, provider_repo_id) — a same-DB read
+   * through packages/db, like the events/work reads above.
+   */
+  state: Pick<StateRepository, "listActiveWorkspaceLinksForProviderRepo">;
+  /** Parent-org reader backing the IT10 tenant-safety guard on federation. */
+  membership: Pick<MembershipRepository, "getOrganizationById">;
   now: () => Date;
 }
 
@@ -342,24 +361,135 @@ export async function processDelivery(
   // is owned by a workspace whose org differs from the account. Single-claim
   // (IT2) guarantees ≤1 link, so the delivery attributes to exactly one owning
   // workspace. The normalized event is emitted to the LINK's org with its
-  // projectId + environment; an unlinked repo emits account-org-scoped only
+  // projectId + environment. When no integrations claim exists, federate to
+  // state.workspace_links (OV2: adding a repo to a workspace binds it) and
+  // auto-claim; a repo linked in neither plane emits account-org-scoped only
   // (fail closed — never leaks into a workspace). design §5.
   const link = await ctx.repo.findActiveRepoLinkByConnectionAndRepo(
     asUuid(connection.value.id),
     normalized.repo.externalId,
   );
-  const targets: Array<{ orgId: string; projectId: string | null; environment: string | null }> =
+  const resolved =
     link.ok && link.value
+      ? link.value
+      : await federateWorkspaceLink(ctx, delivery, connection.value, normalized.repo);
+  const targets: Array<{ orgId: string; projectId: string | null; environment: string | null }> =
+    resolved
       ? [
           {
-            orgId: link.value.orgId,
-            projectId: link.value.projectId,
-            environment: resolveEnvironment(link.value.branchEnvMap, normalized.payload),
+            orgId: resolved.orgId,
+            projectId: resolved.projectId,
+            environment: resolveEnvironment(resolved.branchEnvMap, normalized.payload),
           },
         ]
       : [{ orgId: connection.value.orgId, projectId: null, environment: null }];
 
   return emitScmEvents(ctx, delivery, connection.value, normalized, targets);
+}
+
+/**
+ * IT10 tenant-safety guard: may `link`'s org use the delivering connection?
+ * Yes when the org OWNS the connection, or when the connection is
+ * `account`-scoped and the org is a child workspace of the owning Account
+ * (membership parent_org_id) that is admitted under the connection's share
+ * mode. This is the DB-level twin of resolveUsableConnection
+ * (connection-access.ts) — same relations, read directly instead of via the
+ * membership worker. Fails closed: any miss or repo error means "not usable".
+ * Without this, a hostile tenant could squat a provider_repo_id in
+ * state.workspace_links and siphon another tenant's events.
+ */
+async function workspaceLinkUsableByConnection(
+  ctx: ProcessCtx,
+  connection: IntegrationConnection,
+  link: WorkspaceLink,
+): Promise<boolean> {
+  if (link.orgId === connection.orgId) return true;
+  // Read-up: only `account`-scoped connections are shareable (IT7).
+  if (connection.scope !== "account") return false;
+  const org = await ctx.membership.getOrganizationById(link.orgId);
+  if (!org.ok || org.value.parentOrgId !== connection.orgId) return false;
+  // Admission covers both share modes in one fail-closed query: 'auto' admits
+  // every child; 'granted' requires an active grant (D7).
+  const admitted = await ctx.repo.isWorkspaceAdmitted(asUuid(connection.id), asUuid(link.orgId));
+  return admitted.ok && admitted.value;
+}
+
+/**
+ * Federation + auto-claim (OV2 → IT2): the repo has no integrations.repo_links
+ * claim, so look for the workspace that bound it via the state plane
+ * (`orun cloud link` / OV2) on the rename-stable (provider, provider_repo_id).
+ * Exactly ONE usable active workspace link → materialize the claim as an
+ * integrations.repo_links row (self-healing: the first delivery after deploy
+ * claims it) and route there. Zero usable links → null (account-org fallback).
+ * More than one (pre-650 dirty data) → fail closed to the fallback rather than
+ * guess a workspace. Never throws — every path degrades to the fallback.
+ */
+async function federateWorkspaceLink(
+  ctx: ProcessCtx,
+  delivery: InboundDelivery,
+  connection: IntegrationConnection,
+  repo: { externalId: string; fullName: string },
+): Promise<RepoLink | null> {
+  try {
+    const links = await ctx.state.listActiveWorkspaceLinksForProviderRepo(
+      "github",
+      repo.externalId,
+    );
+    if (!links.ok || links.value.length === 0) return null;
+
+    const usable: WorkspaceLink[] = [];
+    for (const candidate of links.value) {
+      if (await workspaceLinkUsableByConnection(ctx, connection, candidate)) {
+        usable.push(candidate);
+      }
+    }
+    if (usable.length === 0) return null;
+    if (usable.length > 1) {
+      // Ambiguous double-claim (pre-650 data the dedupe has not reached yet):
+      // never guess a workspace — fall back to the account org and surface the
+      // ambiguity for operators.
+      console.warn(
+        JSON.stringify({
+          level: "warn",
+          scope: "integrations.drain.federation",
+          reason: "ambiguous_workspace_links",
+          deliveryId: delivery.id,
+          repoExternalId: repo.externalId,
+          connectionId: connection.id,
+          linkCount: usable.length,
+        }),
+      );
+      return null;
+    }
+
+    const workspace = usable[0]!;
+    const created = await ctx.repo.createRepoLink({
+      id: generateUuid(),
+      orgId: asUuid(workspace.orgId),
+      projectId: asUuid(workspace.projectId),
+      connectionId: asUuid(connection.id),
+      repoExternalId: repo.externalId,
+      repoFullName: repo.fullName,
+      defaultBranch: null,
+      branchEnvMap: {},
+      createdBy: null,
+    });
+    if (created.ok) return created.value;
+    if (created.error.kind === "conflict") {
+      // Lost the IT2 single-claim race (uq_integrations_repo_claim) — re-read
+      // and route to the winner.
+      const winner = await ctx.repo.findActiveRepoLinkByConnectionAndRepo(
+        asUuid(connection.id),
+        repo.externalId,
+      );
+      return winner.ok ? winner.value : null;
+    }
+    return null;
+  } catch {
+    // Federation is best-effort routing enrichment; the account-org fallback
+    // preserves the drain's never-throw failure discipline.
+    return null;
+  }
 }
 
 /** Branch the event refers to, for environment resolution. */
@@ -473,6 +603,8 @@ export async function drainInboundDeliveries(
     executor,
     repo: createIntegrationsRepository(executor),
     events: createEventsRepository(executor),
+    state: createStateRepository(executor),
+    membership: createMembershipRepository(executor),
     now: opts?.now ?? (() => new Date()),
   };
   const summary: DrainSummary = { processed: 0, emitted: 0, skipped: 0, retried: 0, failed: 0 };

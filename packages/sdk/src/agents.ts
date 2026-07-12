@@ -12,11 +12,19 @@ import type {
   AgentSession,
   AgentSessionEventWire,
   AgentSessionState,
+  AgentBudget,
   AgentProvider,
+  AgentRecordsEntry,
+  AgentRoutine,
+  AttentionSummary,
   CreateAgentProfileRequest,
+  CreateAgentRoutineRequest,
   CreateAgentSessionRequest,
   CreateProviderConnectionRequest,
   ProviderConnection,
+  SetBudgetRequest,
+  SetProfileAutonomyRequest,
+  UpdateAgentRoutineRequest,
 } from "@saas/contracts/agents";
 
 import type { Transport, RequestOptions } from "./transport.js";
@@ -96,6 +104,23 @@ export class AgentsClient {
     );
   }
 
+  /**
+   * POST /agents/sessions/:id/cancel — tree-transitive kill (AF4): cancels
+   * the session AND its delegation subtree, children first; sandboxes are
+   * destroyed best-effort (the sweep finishes stragglers). Returns the kill
+   * summary.
+   */
+  cancelSession(
+    orgId: string,
+    sessionId: string,
+    opts: RequestOptions = {},
+  ): Promise<{ sessionId: string; canceled: number; destroyed: number; skipped: number; subtree: number }> {
+    return this.transport.request(
+      { method: "POST", path: `${agentsBase(orgId)}/sessions/${encodeURIComponent(sessionId)}/cancel` },
+      opts,
+    );
+  }
+
   /** GET /agents/sessions/:id/events — the relayed session-log mirror. */
   listSessionEvents(
     orgId: string,
@@ -122,6 +147,121 @@ export class AgentsClient {
   ): Promise<{ v: number; t: string; ok?: boolean; reason?: string; ref?: string }> {
     return this.transport.request(
       { method: "POST", path: `${agentsBase(orgId)}/sessions/${encodeURIComponent(sessionId)}/input`, body: frame },
+      opts,
+    );
+  }
+
+  // ── The attention plane (saas-agents-fleet AF5) ─────────────
+
+  /**
+   * GET /agents/attention — the needs-you fold: verdicts waiting, budget
+   * marks, parked routines, retryable failures, stuck sessions. Derived on
+   * read (no stored inbox); acting on an item removes it by making its
+   * source fact false.
+   */
+  attention(orgId: string, opts: RequestOptions = {}): Promise<AttentionSummary> {
+    return this.transport.request<AttentionSummary>(
+      { method: "GET", path: `${agentsBase(orgId)}/attention` },
+      opts,
+    );
+  }
+
+  // ── Budgets (saas-agents-fleet AF8) ─────────────────────────
+
+  /** GET /agents/budgets — the ceilings registry. */
+  listBudgets(orgId: string, opts: RequestOptions = {}): Promise<AgentBudget[]> {
+    return this.transport.request<AgentBudget[]>(
+      { method: "GET", path: `${agentsBase(orgId)}/budgets` },
+      opts,
+    );
+  }
+
+  /** PUT /agents/budgets — upsert the ceiling for a grain(+ref). */
+  setBudget(orgId: string, body: SetBudgetRequest, opts: RequestOptions = {}): Promise<AgentBudget> {
+    return this.transport.request<AgentBudget>(
+      { method: "PUT", path: `${agentsBase(orgId)}/budgets`, body },
+      opts,
+    );
+  }
+
+  /** DELETE /agents/budgets/:id — lift a ceiling. */
+  deleteBudget(orgId: string, budgetId: string, opts: RequestOptions = {}): Promise<{ deleted: boolean }> {
+    return this.transport.request<{ deleted: boolean }>(
+      { method: "DELETE", path: `${agentsBase(orgId)}/budgets/${encodeURIComponent(budgetId)}` },
+      opts,
+    );
+  }
+
+  // ── Track record & earned autonomy (saas-agents-fleet AF7) ──
+
+  /** GET /agents/records — every profile's computed track record + the
+   * promotion assessment (suggests, never applies). */
+  records(orgId: string, opts: RequestOptions = {}): Promise<AgentRecordsEntry[]> {
+    return this.transport.request<AgentRecordsEntry[]>(
+      { method: "GET", path: `${agentsBase(orgId)}/records` },
+      opts,
+    );
+  }
+
+  /** PATCH /agents/profiles/:id — the human-ack autonomy movement. Upward
+   * movement stores the server-computed record as evidence; agent
+   * identities are refused structurally (no self-promotion path). */
+  setProfileAutonomy(
+    orgId: string,
+    profileId: string,
+    body: SetProfileAutonomyRequest,
+    opts: RequestOptions = {},
+  ): Promise<AgentProfile> {
+    return this.transport.request<AgentProfile>(
+      { method: "PATCH", path: `${agentsBase(orgId)}/profiles/${encodeURIComponent(profileId)}`, body },
+      opts,
+    );
+  }
+
+  // ── Routines (saas-agents-fleet AF6) ────────────────────────
+
+  /** GET /agents/routines — the standing-work registry. */
+  listRoutines(orgId: string, opts: RequestOptions = {}): Promise<AgentRoutine[]> {
+    return this.transport.request<AgentRoutine[]>(
+      { method: "GET", path: `${agentsBase(orgId)}/routines` },
+      opts,
+    );
+  }
+
+  /** POST /agents/routines — cron triggers are validated to the hourly floor. */
+  createRoutine(
+    orgId: string,
+    body: CreateAgentRoutineRequest,
+    opts: RequestOptions = {},
+  ): Promise<AgentRoutine> {
+    return this.transport.request<AgentRoutine>(
+      { method: "POST", path: `${agentsBase(orgId)}/routines`, body },
+      opts,
+    );
+  }
+
+  /** PATCH /agents/routines/:id — enable/disable, or resume a parked routine
+   * (`parked: false`; parking itself is automatic). */
+  updateRoutine(
+    orgId: string,
+    routineId: string,
+    body: UpdateAgentRoutineRequest,
+    opts: RequestOptions = {},
+  ): Promise<AgentRoutine> {
+    return this.transport.request<AgentRoutine>(
+      { method: "PATCH", path: `${agentsBase(orgId)}/routines/${encodeURIComponent(routineId)}`, body },
+      opts,
+    );
+  }
+
+  /** DELETE /agents/routines/:id */
+  deleteRoutine(
+    orgId: string,
+    routineId: string,
+    opts: RequestOptions = {},
+  ): Promise<{ deleted: boolean }> {
+    return this.transport.request<{ deleted: boolean }>(
+      { method: "DELETE", path: `${agentsBase(orgId)}/routines/${encodeURIComponent(routineId)}` },
       opts,
     );
   }

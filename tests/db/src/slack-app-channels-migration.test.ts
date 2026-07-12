@@ -12,16 +12,16 @@ import type { SqlExecutor, SqlExecutorResult, SqlRow } from "@saas/db/hyperdrive
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const MIGRATIONS_ROOT = resolve(__dirname, "../../..", "packages/db/src/migrations");
 
-describe("740_slack_app_channels migration", () => {
-  const entry = manifest.migrations.find((m) => m.id === "740_slack_app_channels");
+describe("790_slack_app_channels migration", () => {
+  const entry = manifest.migrations.find((m) => m.id === "790_slack_app_channels");
   const sql = entry ? readFileSync(resolve(MIGRATIONS_ROOT, entry.path), "utf-8") : "";
 
-  it("exists in manifest with context notifications, ordered after 730, checksum intact", () => {
+  it("exists in manifest with context notifications, ordered after 780, checksum intact", () => {
     expect(entry).toBeDefined();
     expect(entry!.context).toBe("notifications");
     const ids = manifest.migrations.map((m) => m.id);
-    expect(ids.indexOf("740_slack_app_channels")).toBeGreaterThan(
-      ids.indexOf("730_integration_hub_foundation"),
+    expect(ids.indexOf("790_slack_app_channels")).toBeGreaterThan(
+      ids.indexOf("780_agents_budgets"),
     );
     expect(createHash("sha256").update(sql).digest("hex")).toBe(entry!.checksum);
   });

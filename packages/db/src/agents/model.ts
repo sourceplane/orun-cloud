@@ -62,7 +62,10 @@ export type RunKind = (typeof RUN_KINDS)[number];
 export const AUTONOMY_LEVELS = ["manual", "assist", "auto-dispatch", "full"] as const;
 export type AutonomyLevel = (typeof AUTONOMY_LEVELS)[number];
 
-/** The closed session-event vocabulary — no status/lifecycle kind exists. */
+/** The closed session-event vocabulary — no status/lifecycle kind exists.
+ * The child_* kinds (saas-agents-fleet AF4) are the parent's sealed story of
+ * its delegation tree, emitted by the runtime and relayed like everything
+ * else — they narrate infrastructure facts, never work progress. */
 export const SESSION_EVENT_KINDS = [
   "state_changed",
   "harness_event",
@@ -75,6 +78,9 @@ export const SESSION_EVENT_KINDS = [
   "artifact_produced",
   "cost_sample",
   "error",
+  "child_spawned",
+  "child_completed",
+  "child_failed",
 ] as const;
 export type SessionEventKind = (typeof SESSION_EVENT_KINDS)[number];
 
@@ -102,6 +108,9 @@ export interface AgentProfile {
   model: string;
   autonomyDefault: AutonomyLevel;
   capability: Record<string, unknown>;
+  /** The address of the last autonomy movement (AF7): direction, from/to,
+   * by, at, evidence. Absent = the level was never moved. */
+  autonomyEvidence?: Record<string, unknown>;
   createdAt: string;
   updatedAt: string;
 }
@@ -123,6 +132,15 @@ export interface AgentSession {
   startedAt?: string;
   endedAt?: string;
   createdAt: string;
+  /** Delegation tree (saas-agents-fleet AF4) — public-id keyed, a tree never
+   * a graph. A root is its own rootSessionId at depth 0. */
+  parentSessionId?: string;
+  rootSessionId: string;
+  depth: number;
+  /** Routine provenance (AF6): the firing routine's public id, when fired. */
+  routineId?: string;
+  /** Accumulated relayed spend (AF8) — summed cost samples, row arithmetic. */
+  tokensUsed: number;
 }
 
 export interface SessionEvent {
@@ -177,6 +195,79 @@ export function validateSessionEvent(e: { seq: number; kind: string }): void {
   if (!isSessionEventKind(e.kind)) {
     // A status/lifecycle kind is unrepresentable — the honesty invariant.
     throw new AgentsError("agent_session_event_invalid", `event kind ${JSON.stringify(e.kind)} not in the closed vocabulary`);
+  }
+}
+
+// ── Routines (saas-agents-fleet AF6) ────────────────────────
+
+export const ROUTINE_TRIGGER_KINDS = ["cron", "event"] as const;
+export type RoutineTriggerKind = (typeof ROUTINE_TRIGGER_KINDS)[number];
+
+/**
+ * A standing routine: trigger + binding configuration. A routine only ever
+ * SPAWNS sessions (every firing re-enters the dispatch door); the only
+ * execution state here is the park latch and the last-fired mark.
+ */
+export interface Routine {
+  id: string;
+  publicId: string;
+  orgId: string;
+  name: string;
+  profileId: string;
+  runKind: RunKind;
+  /** Content hash of the sealed RoutineSnapshot (orun AF2), when pinned. */
+  definitionRef?: string;
+  triggerKind: RoutineTriggerKind;
+  /** cron: { cron: "0 7 * * *" }; event: { lane, predicate } (ES1). */
+  triggerConfig: Record<string, unknown>;
+  /** Budget stub until AF8 binds real ceilings. */
+  caps: Record<string, unknown>;
+  enabled: boolean;
+  parked: boolean;
+  parkedReason?: string;
+  consecutiveFailures: number;
+  lastFiredAt?: string;
+  createdBy: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+const ROUTINE_NAME_RE = /^[a-z0-9][a-z0-9-]*$/;
+
+export function validateRoutineInput(input: { name: string; triggerKind: string }): void {
+  if (!ROUTINE_NAME_RE.test(input.name)) {
+    throw new AgentsError("agent_routine_invalid", `routine name ${JSON.stringify(input.name)} invalid`);
+  }
+  if (!(ROUTINE_TRIGGER_KINDS as readonly string[]).includes(input.triggerKind)) {
+    throw new AgentsError("agent_routine_invalid", `trigger ${JSON.stringify(input.triggerKind)} not cron|event`);
+  }
+}
+
+// ── Budgets (saas-agents-fleet AF8) ─────────────────────────
+
+export const BUDGET_GRAINS = ["workspace", "tree", "session", "routine"] as const;
+export type BudgetGrain = (typeof BUDGET_GRAINS)[number];
+
+/** A token ceiling. workspace/tree/session rows are org-wide defaults
+ * (ref undefined); routine rows pin one routine's public id. */
+export interface Budget {
+  id: string;
+  publicId: string;
+  orgId: string;
+  grain: BudgetGrain;
+  ref?: string;
+  maxTokens: number;
+  createdBy: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export function validateBudgetInput(input: { grain: string; maxTokens: number }): void {
+  if (!(BUDGET_GRAINS as readonly string[]).includes(input.grain)) {
+    throw new AgentsError("agent_budget_invalid", `grain ${JSON.stringify(input.grain)} invalid`);
+  }
+  if (!Number.isFinite(input.maxTokens) || input.maxTokens <= 0) {
+    throw new AgentsError("agent_budget_invalid", "maxTokens must be a positive number");
   }
 }
 
