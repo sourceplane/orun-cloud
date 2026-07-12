@@ -14,6 +14,8 @@ const ORG_AGENTS_SESSIONS_RE = /^\/v1\/organizations\/[^/]+\/agents\/sessions$/;
 const ORG_AGENTS_SESSION_RE = /^\/v1\/organizations\/[^/]+\/agents\/sessions\/[^/]+$/;
 const ORG_AGENTS_SESSION_EVENTS_RE = /^\/v1\/organizations\/[^/]+\/agents\/sessions\/[^/]+\/events$/;
 const ORG_AGENTS_SESSION_PROVISION_RE = /^\/v1\/organizations\/[^/]+\/agents\/sessions\/[^/]+\/provision$/;
+// Tree-transitive kill (saas-agents-fleet AF4).
+const ORG_AGENTS_SESSION_CANCEL_RE = /^\/v1\/organizations\/[^/]+\/agents\/sessions\/[^/]+\/cancel$/;
 // Runtime dial-home (AG6): heartbeat + lease-gated token refresh; event
 // ingest rides the events route (POST). Authenticated by the agent-session
 // bearer like everything else through this facade.
@@ -46,6 +48,7 @@ export function isAgentsRoute(pathname: string): boolean {
     ORG_AGENTS_SESSION_RE.test(pathname) ||
     ORG_AGENTS_SESSION_EVENTS_RE.test(pathname) ||
     ORG_AGENTS_SESSION_PROVISION_RE.test(pathname) ||
+    ORG_AGENTS_SESSION_CANCEL_RE.test(pathname) ||
     ORG_AGENTS_SESSION_HEARTBEAT_RE.test(pathname) ||
     ORG_AGENTS_SESSION_TOKEN_RE.test(pathname) ||
     ORG_AGENTS_SESSION_ATTACH_RE.test(pathname) ||

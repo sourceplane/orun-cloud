@@ -167,6 +167,11 @@ export interface AgentSession {
   startedAt?: string;
   endedAt?: string;
   createdAt: string;
+  /** Delegation tree (saas-agents-fleet AF4): present on a child; a root is
+   * its own rootSessionId at depth 0. Public session ids throughout. */
+  parentSessionId?: string;
+  rootSessionId?: string;
+  depth?: number;
 }
 
 /**
@@ -186,6 +191,11 @@ export const AGENT_SESSION_EVENT_KINDS = [
   "artifact_produced",
   "cost_sample",
   "error",
+  // Delegation (AF4): the parent's sealed story of its children — emitted by
+  // the runtime, relayed like everything else. Still no status/lifecycle kind.
+  "child_spawned",
+  "child_completed",
+  "child_failed",
 ] as const;
 export type AgentSessionEventKind =
   (typeof AGENT_SESSION_EVENT_KINDS)[number];
@@ -246,6 +256,88 @@ export interface SandboxProvider {
   resume(snapshotId: string): Promise<SandboxRef>;
   destroy(ref: SandboxRef): Promise<void>;
   health(ref: SandboxRef): Promise<SandboxHealth>;
+}
+
+// ── The delegation plane (saas-agents-fleet AF4) ────────────
+// Sessions spawn sessions through the cloud door; the tree only narrows.
+// The intersection here is deliberately set math over sealed contracts —
+// never policy evaluation (locked decision 1: the cloud gains a door, not
+// an orchestration engine).
+
+export const DELEGATION_ERROR_CODES = {
+  /** The caller's session may not spawn (profile/type lacks delegation). */
+  spawnNotAllowed: "agent_spawn_not_allowed",
+  /** The parent is not in a spawnable (live) state. */
+  parentNotLive: "agent_parent_not_live",
+  /** depth would exceed the tree ceiling. */
+  treeDepthExceeded: "agent_tree_depth_exceeded",
+  /** live children per parent / live nodes per tree at cap. */
+  treeWidthExceeded: "agent_tree_width_exceeded",
+} as const;
+export type DelegationErrorCode =
+  (typeof DELEGATION_ERROR_CODES)[keyof typeof DELEGATION_ERROR_CODES];
+
+/** Hard tree caps (design §3.1; workspace-configurable later — F-Q2). */
+export const TREE_LIMITS = {
+  /** A root is depth 0; children depth 1; sub-orchestrators depth 2. */
+  maxDepth: 2,
+  maxLiveChildrenPerParent: 5,
+  maxLiveNodesPerTree: 10,
+} as const;
+
+/**
+ * A capability ceiling — the narrowing-only contract surface the spawn door
+ * intersects. An ABSENT key means "unrestricted at this level" (the sealed
+ * agent-type ceiling still applies runtime-side); a PRESENT key is an
+ * allowlist.
+ */
+export interface CapabilityCeiling {
+  tools?: string[];
+  mayAffect?: string[];
+  secrets?: string[];
+}
+
+const CEILING_KEYS = ["tools", "mayAffect", "secrets"] as const;
+
+function asAllowlist(v: unknown): string[] | undefined {
+  if (!Array.isArray(v)) return undefined;
+  return v.filter((x): x is string => typeof x === "string");
+}
+
+/** Read the ceiling keys out of a profile's capability JSONB, ignoring
+ * anything else the sealed contract carries. */
+export function ceilingOf(capability: Record<string, unknown> | undefined): CapabilityCeiling {
+  const out: CapabilityCeiling = {};
+  if (!capability) return out;
+  for (const key of CEILING_KEYS) {
+    const list = asAllowlist(capability[key]);
+    if (list !== undefined) out[key] = list;
+  }
+  return out;
+}
+
+/**
+ * intersectCeiling — the ONE rule of the delegation plane: a child's
+ * effective ceiling is parent ∩ child, key by key. Absent ∩ X = X (absent is
+ * unrestricted); present ∩ present = set intersection. The result is always
+ * ⊆ each input — a child can never be wider than its parent, mechanically.
+ */
+export function intersectCeiling(parent: CapabilityCeiling, child: CapabilityCeiling): CapabilityCeiling {
+  const out: CapabilityCeiling = {};
+  for (const key of CEILING_KEYS) {
+    const a = parent[key];
+    const b = child[key];
+    if (a === undefined && b === undefined) continue;
+    if (a === undefined) {
+      out[key] = [...b!];
+    } else if (b === undefined) {
+      out[key] = [...a];
+    } else {
+      const set = new Set(a);
+      out[key] = b.filter((x) => set.has(x));
+    }
+  }
+  return out;
 }
 
 // ── The attention plane (saas-agents-fleet AF5) ─────────────

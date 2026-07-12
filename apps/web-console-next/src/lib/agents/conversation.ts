@@ -125,6 +125,36 @@ export function foldConversation(events: ConversationEvent[]): Conversation {
       case "error":
         items.push({ key, kind: "note", text: `Error: ${str(p, "text")}` });
         break;
+      // Delegation (saas-agents-fleet AF4): the parent's sealed story of its
+      // children. Verdict-shaped judge results ride child_completed.
+      case "child_spawned": {
+        const goal = str(p, "goal");
+        items.push({
+          key,
+          kind: "note",
+          text: `Spawned ${str(p, "sessionId") || "child"}${goal ? ` — ${goal}` : ""}`,
+        });
+        break;
+      }
+      case "child_completed": {
+        const verdict = str(p, "verdict");
+        const summary = str(p, "summary");
+        items.push({
+          key,
+          kind: "note",
+          text: `Child ${str(p, "sessionId") || "session"} completed${verdict ? ` — verdict: ${verdict}` : ""}${summary ? ` — ${summary}` : ""}`,
+          detail: str(p, "sessionId"),
+        });
+        break;
+      }
+      case "child_failed":
+        items.push({
+          key,
+          kind: "note",
+          text: `Child ${str(p, "sessionId") || "session"} failed${str(p, "reason") ? ` — ${str(p, "reason")}` : ""}`,
+          detail: str(p, "sessionId"),
+        });
+        break;
       // Unknown kinds are ignored (forward compatibility).
     }
   }

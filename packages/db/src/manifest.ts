@@ -678,5 +678,14 @@ export const manifest: MigrationManifest = {
       description:
         "One-to-one repo claim on the state plane (OV2 federation hardening) — a repo actively linked in one workspace cannot be linked in another until unlinked. Step 1 deterministically dedupes pre-existing double-claims (earliest created_at stays active, later rows soft-unlinked for audit; idempotent), then a partial UNIQUE index on (provider, provider_repo_id) WHERE active enforces first-claim-wins across all orgs — the twin of integrations' uq_integrations_repo_claim (380) and the backstop behind state-worker's cross-workspace 409. Enables the inbound drain's federation/auto-claim routing (GitHub deliveries land in the linked workspace, not the account org). Additive + idempotent; same-context only.",
     },
+    {
+      id: "750_agents_fleet_tree",
+      context: "agents",
+      path: "750_agents_fleet_tree/up.sql",
+      checksum:
+        "299c262ae429ea10347a0ab466a6ce59b4a819895401678212f1883f90713445",
+      description:
+        "The delegation plane (saas-agents-fleet AF4): agent_sessions gains parent_session_id/root_session_id/depth — public_id-keyed tree columns (a tree, never a graph; existing rows backfilled as their own roots) with partial parent + root indexes for the children strip, width caps, and tree-transitive kill. The session-event kind CHECK regenerates as one named constraint (the 720 discipline) appending child_spawned/child_completed/child_failed — the parent owns its children's story as sealed relayed events; still no status/lifecycle kind. Ceiling-intersection math stays application code (packages/contracts); the applied ceiling lands on the child's sandbox JSONB. Additive + idempotent.",
+    },
   ],
 };

@@ -61,6 +61,9 @@ export const qk = {
   orgAgentSession: (orgId: string, sessionId: string) => ["orgAgentSession", orgId, sessionId] as const,
   orgAgentSessionEvents: (orgId: string, sessionId: string) =>
     ["orgAgentSessionEvents", orgId, sessionId] as const,
+  /** Delegation tree (saas-agents-fleet AF4): the children strip. */
+  orgAgentSessionChildren: (orgId: string, sessionId: string) =>
+    ["orgAgentSessionChildren", orgId, sessionId] as const,
   /** BYO provider connections (AG12): Daytona + Anthropic cards. */
   orgAgentProviders: (orgId: string) => ["orgAgentProviders", orgId] as const,
   accountRuns: (orgId: string) => ["accountRuns", orgId] as const,

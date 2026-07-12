@@ -97,6 +97,23 @@ export class AgentsClient {
     );
   }
 
+  /**
+   * POST /agents/sessions/:id/cancel — tree-transitive kill (AF4): cancels
+   * the session AND its delegation subtree, children first; sandboxes are
+   * destroyed best-effort (the sweep finishes stragglers). Returns the kill
+   * summary.
+   */
+  cancelSession(
+    orgId: string,
+    sessionId: string,
+    opts: RequestOptions = {},
+  ): Promise<{ sessionId: string; canceled: number; destroyed: number; skipped: number; subtree: number }> {
+    return this.transport.request(
+      { method: "POST", path: `${agentsBase(orgId)}/sessions/${encodeURIComponent(sessionId)}/cancel` },
+      opts,
+    );
+  }
+
   /** GET /agents/sessions/:id/events — the relayed session-log mirror. */
   listSessionEvents(
     orgId: string,

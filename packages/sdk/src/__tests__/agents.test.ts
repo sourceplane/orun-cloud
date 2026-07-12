@@ -43,6 +43,14 @@ describe("agents resource", () => {
     expect(calls[3]!.url).toContain("/agents/sessions/as_1/events");
   });
 
+  it("cancels a session tree-transitively (saas-agents-fleet AF4)", async () => {
+    const { fetch: f, calls } = captureFetch({ sessionId: "as_1", canceled: 3, destroyed: 2, skipped: 0, subtree: 3 });
+    const c = client(f);
+    await c.agents.cancelSession("org_x", "as_1");
+    expect(calls[0]!.url).toContain("/v1/organizations/org_x/agents/sessions/as_1/cancel");
+    expect(calls[0]!.init.method).toBe("POST");
+  });
+
   it("reads the needs-you fold (saas-agents-fleet AF5)", async () => {
     const { fetch: f, calls } = captureFetch({ items: [], counts: {}, running: 0 });
     const c = client(f);

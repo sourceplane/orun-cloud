@@ -62,7 +62,10 @@ export type RunKind = (typeof RUN_KINDS)[number];
 export const AUTONOMY_LEVELS = ["manual", "assist", "auto-dispatch", "full"] as const;
 export type AutonomyLevel = (typeof AUTONOMY_LEVELS)[number];
 
-/** The closed session-event vocabulary — no status/lifecycle kind exists. */
+/** The closed session-event vocabulary — no status/lifecycle kind exists.
+ * The child_* kinds (saas-agents-fleet AF4) are the parent's sealed story of
+ * its delegation tree, emitted by the runtime and relayed like everything
+ * else — they narrate infrastructure facts, never work progress. */
 export const SESSION_EVENT_KINDS = [
   "state_changed",
   "harness_event",
@@ -75,6 +78,9 @@ export const SESSION_EVENT_KINDS = [
   "artifact_produced",
   "cost_sample",
   "error",
+  "child_spawned",
+  "child_completed",
+  "child_failed",
 ] as const;
 export type SessionEventKind = (typeof SESSION_EVENT_KINDS)[number];
 
@@ -123,6 +129,11 @@ export interface AgentSession {
   startedAt?: string;
   endedAt?: string;
   createdAt: string;
+  /** Delegation tree (saas-agents-fleet AF4) — public-id keyed, a tree never
+   * a graph. A root is its own rootSessionId at depth 0. */
+  parentSessionId?: string;
+  rootSessionId: string;
+  depth: number;
 }
 
 export interface SessionEvent {

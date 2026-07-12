@@ -25,6 +25,7 @@ import type {
   CreateProfileInput,
   CreateSessionInput,
   ListLapsedSessionsInput,
+  ListOrphanedSessionsInput,
   SetAutonomyInput,
   SetConnectionStatusInput,
   WorkspaceScope,
@@ -104,16 +105,28 @@ export class MemoryAgentsRepository implements AgentsRepository {
     if (!profile) {
       throw new AgentsError("agent_profile_not_found", `profile ${input.profileId} not found`);
     }
+    // Delegation (AF4): a child inherits its parent's root and depth+1.
+    let parent: AgentSession | undefined;
+    if (input.parentSessionId !== undefined) {
+      parent = s.sessions.find((x) => x.publicId === input.parentSessionId);
+      if (!parent) {
+        throw new AgentsError("agent_session_not_found", `parent ${input.parentSessionId} not found`);
+      }
+    }
+    const publicId = this.id("as_");
     const session: AgentSession = {
       id: this.id("id_"),
-      publicId: this.id("as_"),
+      publicId,
       orgId: scope.orgId,
       profileId: profile.id,
       runKind: input.runKind,
       state: "requested",
       spawnedBy: input.spawnedBy,
-      sandbox: {},
+      sandbox: input.sandbox ?? {},
       createdAt: this.now(),
+      rootSessionId: parent ? parent.rootSessionId : publicId,
+      depth: parent ? parent.depth + 1 : 0,
+      ...(parent ? { parentSessionId: parent.publicId } : {}),
       ...(input.workRef !== undefined ? { workRef: input.workRef } : {}),
       ...(input.taskKey !== undefined ? { taskKey: input.taskKey } : {}),
     };
@@ -158,6 +171,19 @@ export class MemoryAgentsRepository implements AgentsRepository {
           session.leaseExpiresAt < input.leaseCutoff;
         const stalled = session.state === "provisioning" && session.createdAt < input.provisioningCutoff;
         if (lapsed || stalled) out.push(session);
+      }
+    }
+    return out.sort((a, b) => a.createdAt.localeCompare(b.createdAt)).slice(0, input.limit);
+  }
+
+  async listOrphanedSessions(input: ListOrphanedSessionsInput): Promise<AgentSession[]> {
+    const out: AgentSession[] = [];
+    for (const s of this.byOrg.values()) {
+      for (const session of s.sessions) {
+        if (isTerminal(session.state) || session.parentSessionId === undefined) continue;
+        const parent = s.sessions.find((x) => x.publicId === session.parentSessionId);
+        if (!parent || !isTerminal(parent.state)) continue;
+        if ((parent.endedAt ?? parent.createdAt) < input.parentEndedCutoff) out.push(session);
       }
     }
     return out.sort((a, b) => a.createdAt.localeCompare(b.createdAt)).slice(0, input.limit);
