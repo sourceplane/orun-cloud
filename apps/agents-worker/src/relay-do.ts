@@ -18,6 +18,7 @@
 import { DurableObject } from "cloudflare:workers";
 import {
   type AttachFrame,
+  ATTACH_ACK_REASONS,
   decodeFrame,
   encodeSSE,
   isHeadInputFrame,
@@ -152,12 +153,16 @@ export class SessionRelay extends DurableObject<RelayDOEnv> {
   }
 }
 
-/** withTimeout resolves a promise or a terminal ack after ms (a head's POST
- * must not hang past the Workers request budget). */
+/** withTimeout resolves a promise or a NO-CONSUMER ack after ms (a head's POST
+ * must not hang past the Workers request budget). The timeout means the input
+ * was queued but nothing drained it in time — the session is alive, so the
+ * reason is `no_consumer`, NOT `terminal` (which would imply a dead session and
+ * has misled debugging). A genuinely terminal session is answered immediately
+ * by enqueueInput's own `terminal` ack, not here. */
 async function withTimeout(p: Promise<AttachFrame>, ms: number): Promise<AttachFrame> {
   let timer: ReturnType<typeof setTimeout> | undefined;
   const timeout = new Promise<AttachFrame>((resolve) => {
-    timer = setTimeout(() => resolve({ v: 1, t: "ack", ok: false, reason: "terminal" }), ms);
+    timer = setTimeout(() => resolve({ v: 1, t: "ack", ok: false, reason: ATTACH_ACK_REASONS.noConsumer }), ms);
   });
   try {
     return await Promise.race([p, timeout]);

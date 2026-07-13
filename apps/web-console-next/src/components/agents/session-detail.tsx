@@ -31,6 +31,24 @@ function modelLabel(model: string): string {
   return AGENT_MODELS.find((m) => m.value === model)?.label ?? model;
 }
 
+/** Translate a relay ack reason into a human, actionable line. The wire reasons
+ * ("no_consumer", "terminal") are honest but meaningless to a person; a steer
+ * that failed needs to tell the user what to do next. Your message is always
+ * kept, so every branch says so. */
+function steerFailureMessage(reason?: string): string {
+  switch (reason) {
+    case "no_consumer":
+      // Queued but nothing drained it — the runtime isn't reading input yet.
+      return "The agent isn't listening yet — it may still be starting up. Your message was kept; try again in a moment.";
+    case "terminal":
+      return "This session has ended, so steering is no longer possible. Your message was kept.";
+    case "not_pending":
+      return "That request is no longer waiting on you. Your message was kept.";
+    default:
+      return "Couldn't deliver your message to the agent. It was kept — try again.";
+  }
+}
+
 /** A right-rail section: kicker + content. */
 function RailSection({ title, children }: { title: string; children: React.ReactNode }) {
   return (
@@ -186,9 +204,10 @@ export function SessionDetail({
         refSeq.current += 1;
         const ack = await client.agents.sendInput(orgId, sessionId, { v: 1, ref: `c-${refSeq.current}`, ...frame });
         if (ack.ok === false) {
-          // The relay couldn't deliver it to the running agent (queue full,
-          // agent not draining, session sealing). Fail loud — never eat it.
-          setInputError(`Not delivered: ${ack.reason ?? "the agent isn't consuming input"}. Your message was kept — try again.`);
+          // The relay couldn't deliver it to the running agent. Fail loud —
+          // never eat it — and translate the wire reason into something a
+          // person can act on (not the raw "no_consumer"/"terminal" token).
+          setInputError(steerFailureMessage(ack.reason));
           return false;
         }
         reloadEvents();

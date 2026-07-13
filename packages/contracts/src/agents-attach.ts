@@ -46,6 +46,11 @@ export const ATTACH_ACK_REASONS = {
   notPending: "not_pending",
   terminal: "terminal",
   lagged: "lagged",
+  // The input was queued but no body drained it before the head's POST timed
+  // out — the session is ALIVE, nothing consumed it. Distinct from `terminal`
+  // (a genuinely sealed session) so the head can tell "agent not listening yet"
+  // apart from "session is over".
+  noConsumer: "no_consumer",
 } as const;
 
 /** Protocol error codes. */
