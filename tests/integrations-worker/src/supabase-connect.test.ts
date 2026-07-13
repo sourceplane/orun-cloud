@@ -687,10 +687,16 @@ describe("GET /ingress/supabase/oauth", () => {
 
     const res = await handleSupabaseOauthCallback(
       callbackRequest({ code: "c0de", state }),
-      createEnv(), "req_1", { executor, fetchImpl: api.fetchImpl },
+      createEnv({ CONSOLE_BASE_URL: "https://app.orun.test" }), "req_1",
+      { executor, fetchImpl: api.fetchImpl },
     );
     expect(res.status).toBe(200);
-    expect(await res.text()).toContain("Supabase connected");
+    const page = await res.text();
+    expect(page).toContain("Supabase connected");
+    // The success page returns the user to Orun (close popup, else redirect to
+    // the console) so they are never stranded on the callback tab.
+    expect(page).toContain('window.location.replace("https://app.orun.test")');
+    expect(page).toContain("window.close()");
 
     // The verifier custody row was read once and DELETED (consumed).
     const deleteIdx = queries.findIndex((q) =>

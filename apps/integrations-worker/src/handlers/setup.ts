@@ -34,8 +34,32 @@ function escapeHtml(s: string): string {
 
 /** Shared by the GitHub setup and Slack OAuth callbacks — the popup's only
  *  job is to tell the human what happened and close itself. */
-export function popupPage(kind: "success" | "error", title: string, message: string): Response {
+/**
+ * The OAuth/install callback result page (Slack/Supabase/GitHub).
+ *
+ * When `redirectUrl` is supplied (success, and CONSOLE_BASE_URL is configured)
+ * the page RETURNS THE USER TO ORUN: it first tries to close itself (the normal
+ * popup/poll flow — the console opener polls the connection into its Connected
+ * list), and if that is blocked or this was a full-page redirect rather than a
+ * script-opened popup, it navigates to the console so the user is never
+ * stranded on a dead "you can close this window" tab. Without a redirectUrl
+ * (errors, or unconfigured console base) it keeps the close-only behavior.
+ */
+export function popupPage(
+  kind: "success" | "error",
+  title: string,
+  message: string,
+  redirectUrl?: string,
+): Response {
   const tone = kind === "success" ? "#16a34a" : "#dc2626";
+  const safeRedirect = kind === "success" && redirectUrl && /^https?:\/\//.test(redirectUrl) ? redirectUrl : null;
+  const tail = safeRedirect ? " Returning you to Orun…" : " You can close this window.";
+  // Close a script-opened popup; otherwise (close blocked / full-page flow)
+  // fall back to navigating to Orun. `replace` avoids leaving the callback in
+  // history. JSON.stringify safely embeds the URL as a JS string literal.
+  const script = safeRedirect
+    ? `<script>(function(){try{window.close()}catch(e){}setTimeout(function(){window.location.replace(${JSON.stringify(safeRedirect)})},1200)})()</script>`
+    : `<script>setTimeout(function(){window.close()},2500)</script>`;
   const html = `<!doctype html>
 <html><head><meta charset="utf-8"><title>${escapeHtml(title)}</title>
 <style>
@@ -47,8 +71,8 @@ export function popupPage(kind: "success" | "error", title: string, message: str
   p{font-size:.875rem;color:#a1a1aa;margin:0}
 </style></head>
 <body><div class="card"><div class="dot"></div>
-<h1>${escapeHtml(title)}</h1><p>${escapeHtml(message)} You can close this window.</p></div>
-<script>setTimeout(function(){window.close()},2500)</script>
+<h1>${escapeHtml(title)}</h1><p>${escapeHtml(message)}${tail}</p></div>
+${script}
 </body></html>`;
   return new Response(html, {
     status: kind === "success" ? 200 : 400,

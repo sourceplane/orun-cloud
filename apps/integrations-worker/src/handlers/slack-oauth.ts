@@ -255,7 +255,8 @@ export async function handleSlackOauthCallback(
         return popupPage(
           "success",
           "Reconnected",
-          "Slack access was re-authorized. You can close this window.",
+          "Slack access was re-authorized.",
+          env.CONSOLE_BASE_URL,
         );
       }
       if (own.ok) {
@@ -371,6 +372,7 @@ export async function handleSlackOauthCallback(
       "success",
       "Slack connected",
       `The workspace${grant.teamName ? ` ${grant.teamName}` : ""} is now linked.`,
+      env.CONSOLE_BASE_URL,
     );
   } catch {
     return popupPage("error", "Something went wrong", "Try connecting again from the console.");
