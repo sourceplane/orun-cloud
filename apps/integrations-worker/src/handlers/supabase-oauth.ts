@@ -263,7 +263,8 @@ export async function handleSupabaseOauthCallback(
         return popupPage(
           "success",
           "Reconnected",
-          "Supabase access was re-authorized. You can close this window.",
+          "Supabase access was re-authorized.",
+          env.CONSOLE_BASE_URL,
         );
       }
       if (!own.ok) {
@@ -368,6 +369,7 @@ export async function handleSupabaseOauthCallback(
       "success",
       "Supabase connected",
       `The organization${org.orgName ? ` ${org.orgName}` : ""} is now linked.`,
+      env.CONSOLE_BASE_URL,
     );
   } catch {
     return popupPage("error", "Something went wrong", "Try connecting again from the console.");
