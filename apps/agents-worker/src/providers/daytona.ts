@@ -126,6 +126,24 @@ export function createDaytonaProvider(cfg: DaytonaConfig): SandboxProvider {
       });
     },
 
+    async execCapture(ref: SandboxRef, cmd: string[]): Promise<{ stdout: string; exitCode: number }> {
+      // The plain process/execute endpoint is SYNCHRONOUS (a ~10s budget) and
+      // returns the command's combined output + exit code — used to probe the
+      // resolved orun version. No env (none needed for a version check). A
+      // cold-pull install may exceed the budget; the caller treats any failure
+      // as `unknown` and never blocks the spawn.
+      const id = encodeURIComponent(ref.id);
+      await waitForStarted(ref.id);
+      const res = await call("POST", `/toolbox/${id}/toolbox/process/execute`, {
+        command: cmd.map(shellQuote).join(" "),
+      });
+      // Redaction posture holds: this output is a version string we log, never
+      // the provider's account body. Parse defensively across field names.
+      const body = (await res.json()) as { exitCode?: number; result?: string; output?: string; stdout?: string };
+      const stdout = (body.result ?? body.output ?? body.stdout ?? "").toString().trim();
+      return { stdout, exitCode: typeof body.exitCode === "number" ? body.exitCode : 0 };
+    },
+
     async snapshot(ref: SandboxRef): Promise<string> {
       // Suspend = provider stop; the sandbox id doubles as the resume handle.
       await call("POST", `/sandbox/${encodeURIComponent(ref.id)}/stop`);

@@ -259,6 +259,10 @@ export interface SandboxProvider {
   create(spec: SandboxSpec): Promise<SandboxRef>;
   /** Start the session bootstrap (or any command) in the sandbox. */
   exec(ref: SandboxRef, cmd: string[], opts?: { env?: Record<string, string> }): Promise<void>;
+  /** Run a short command SYNCHRONOUSLY and return its output — used to probe
+   * the resolved orun version into the provision trace. Optional: adapters that
+   * cannot capture output (or dev fixtures) omit it and the probe is skipped. */
+  execCapture?(ref: SandboxRef, cmd: string[]): Promise<{ stdout: string; exitCode: number }>;
   snapshot(ref: SandboxRef): Promise<string>;
   resume(snapshotId: string): Promise<SandboxRef>;
   destroy(ref: SandboxRef): Promise<void>;
