@@ -59,6 +59,43 @@ function prNumber(url: string): string {
 
 const LIVE_POLL_MS = 5_000;
 
+/** Minutes a session may sit pre-dial-home before the notice names it a likely
+ * stall — well before the ~30-min provisioning-stall sweep reclaims it. */
+const PROVISION_WARN_MIN = 5;
+
+/**
+ * The pre-dial-home notice (requested + provisioning). Before AL: the page went
+ * silent the moment state left `requested` — the longer a boot hung, the less
+ * the UI said. This keeps a live banner up through `provisioning`, counts the
+ * minutes, and past PROVISION_WARN_MIN names the likely stall (the sandbox
+ * booted but the runtime never dialed home) instead of leaving a mystery until
+ * the sweep. Re-renders on the session poll, so the clock advances on its own.
+ */
+function ProvisioningNotice({ state, since }: { state: string; since: string }) {
+  const startedMs = new Date(since).getTime();
+  const elapsedMin = Number.isFinite(startedMs) ? Math.max(0, Math.floor((Date.now() - startedMs) / 60_000)) : 0;
+  const stalled = elapsedMin >= PROVISION_WARN_MIN;
+  const elapsedLabel = elapsedMin < 1 ? "just now" : `${elapsedMin}m`;
+
+  const message = stalled
+    ? `Still ${state} after ${elapsedLabel}. The sandbox was created but the runtime has not dialed home — it may be failing to start. A stalled session is reclaimed automatically ~30m after spawn.`
+    : state === "requested"
+      ? "Waiting to provision the sandbox on your connected compute — the run starts once the box dials home."
+      : `Provisioning the sandbox and starting the runtime · ${elapsedLabel} — the run starts once it dials home.`;
+
+  return (
+    <div
+      className={
+        stalled
+          ? "mt-4 rounded-lg border border-amber-500/50 bg-amber-500/5 px-3 py-2 text-[12.5px] text-amber-700 dark:text-amber-300"
+          : "mt-4 rounded-lg border border-border/60 px-3 py-2 text-[12.5px] text-muted-foreground"
+      }
+    >
+      {message}
+    </div>
+  );
+}
+
 /** ContinueInTerminal renders the copy-the-attach-command handoff — the same
  * session, driven from a terminal head (interchangeable with this console
  * head). */
@@ -266,11 +303,8 @@ export function SessionDetail({
           {/* Handoff (AL8): continue this session in the terminal. */}
           {live ? <ContinueInTerminal sessionId={s.id} /> : null}
 
-          {s.state === "requested" ? (
-            <div className="mt-4 rounded-lg border border-border/60 px-3 py-2 text-[12.5px] text-muted-foreground">
-              Waiting to provision the sandbox on your connected compute — the run starts once the
-              box dials home.
-            </div>
+          {s.state === "requested" || s.state === "provisioning" ? (
+            <ProvisioningNotice state={s.state} since={s.createdAt} />
           ) : null}
 
           {/* The children strip (AF4 §2.2): the delegation tree at a glance. */}
@@ -308,6 +342,11 @@ export function SessionDetail({
               onApprove={onApprove}
               onDeny={onDeny}
               interacting={interacting}
+              emptyHint={
+                live
+                  ? "The runtime relays its session log here once the sandbox dials home."
+                  : "This session ended without relaying a session log."
+              }
             />
           )}
 

@@ -16,6 +16,7 @@ export function ConversationView({
   onApprove,
   onDeny,
   interacting,
+  emptyHint,
 }: {
   events: ConversationEvent[];
   /** The live activity line (streamed deltas / cost); overrides the fold's. */
@@ -24,6 +25,9 @@ export function ConversationView({
   onDeny?: (a: PendingApproval) => void;
   /** True while a verdict/steer is in flight (disables the buttons). */
   interacting?: boolean;
+  /** Empty-state line — the caller varies it by state (a terminal session
+   * that never relayed a log reads differently than one still dialing home). */
+  emptyHint?: string;
 }) {
   const convo = React.useMemo(() => foldConversation(events), [events]);
   const activityLine = activity ?? convo.activity;
@@ -132,7 +136,9 @@ export function ConversationView({
       ) : null}
 
       {convo.items.length === 0 ? (
-        <StatusText tone="neutral">The runtime relays its session log here once the sandbox dials home.</StatusText>
+        <StatusText tone="neutral">
+          {emptyHint ?? "The runtime relays its session log here once the sandbox dials home."}
+        </StatusText>
       ) : null}
     </div>
   );
