@@ -35,6 +35,12 @@ const ORG_AGENTS_SESSION_TOKEN_RE = /^\/v1\/organizations\/[^/]+\/agents\/sessio
 // bearer, so the DO/body attribute inputs to the authenticated console user.
 const ORG_AGENTS_SESSION_ATTACH_RE = /^\/v1\/organizations\/[^/]+\/agents\/sessions\/[^/]+\/attach$/;
 const ORG_AGENTS_SESSION_INPUT_RE = /^\/v1\/organizations\/[^/]+\/agents\/sessions\/[^/]+\/input$/;
+// Body-facing relay routes (#466): the in-sandbox runtime's live wire — delta
+// fan-out + the steer return-queue. Authenticated by the agent-session bearer
+// like heartbeat/events; the worker applies the three-way session gate.
+const ORG_AGENTS_SESSION_STREAM_RE = /^\/v1\/organizations\/[^/]+\/agents\/sessions\/[^/]+\/stream$/;
+const ORG_AGENTS_SESSION_INPUTS_RE = /^\/v1\/organizations\/[^/]+\/agents\/sessions\/[^/]+\/inputs$/;
+const ORG_AGENTS_SESSION_INPUTS_ACK_RE = /^\/v1\/organizations\/[^/]+\/agents\/sessions\/[^/]+\/inputs\/ack$/;
 const ORG_AGENTS_AUTONOMY_RE = /^\/v1\/organizations\/[^/]+\/agents\/autonomy$/;
 // The needs-you fold (saas-agents-fleet AF5): the fleet home's attention queue.
 const ORG_AGENTS_ATTENTION_RE = /^\/v1\/organizations\/[^/]+\/agents\/attention$/;
@@ -65,6 +71,9 @@ export function isAgentsRoute(pathname: string): boolean {
     ORG_AGENTS_SESSION_TOKEN_RE.test(pathname) ||
     ORG_AGENTS_SESSION_ATTACH_RE.test(pathname) ||
     ORG_AGENTS_SESSION_INPUT_RE.test(pathname) ||
+    ORG_AGENTS_SESSION_STREAM_RE.test(pathname) ||
+    ORG_AGENTS_SESSION_INPUTS_RE.test(pathname) ||
+    ORG_AGENTS_SESSION_INPUTS_ACK_RE.test(pathname) ||
     ORG_AGENTS_PROVIDERS_RE.test(pathname) ||
     ORG_AGENTS_PROVIDER_RE.test(pathname) ||
     ORG_AGENTS_PROVIDER_VERIFY_RE.test(pathname) ||

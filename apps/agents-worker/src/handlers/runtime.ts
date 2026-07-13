@@ -41,7 +41,7 @@ interface SessionGate {
  * The session-actor gate: service principal + principal match + session-bound
  * token. Returns a Response (the refusal) or the session.
  */
-async function gateSessionActor(
+export async function gateSessionActor(
   deps: AgentsDeps,
   orgId: string,
   sessionId: string,
