@@ -32,19 +32,39 @@ async function json(res: Response): Promise<{ data?: unknown; error?: { code: st
   return (await res.json()) as { data?: unknown; error?: { code: string; message?: string } };
 }
 
+/** Capture console.warn lines (the [agents-provision] trace) without the jest
+ * global (this suite runs under experimental-vm-modules). */
+function captureWarn(): { get(): string[]; restore(): void } {
+  const orig = console.warn;
+  const lines: string[] = [];
+  console.warn = (...args: unknown[]) => {
+    lines.push(args.map((a) => String(a)).join(" "));
+  };
+  return { get: () => lines, restore: () => void (console.warn = orig) };
+}
+
 interface ProviderLog {
   created: SandboxSpec[];
   execs: Array<{ ref: SandboxRef; cmd: string[]; env?: Record<string, string> }>;
+  captures: string[][];
   destroyed: string[];
 }
 
-function stubProvider(log: ProviderLog, overrides?: { failCreate?: boolean; failExec?: boolean }): SandboxProvider {
+function stubProvider(
+  log: ProviderLog,
+  overrides?: { failCreate?: boolean; failExec?: boolean; captureVersion?: string; captureThrows?: boolean },
+): SandboxProvider {
   return {
     id: "daytona",
     async create(spec) {
       if (overrides?.failCreate) throw new Error("503 from provider");
       log.created.push(spec);
       return { id: "sb_1", provider: "daytona" };
+    },
+    async execCapture(_ref, cmd) {
+      log.captures.push(cmd);
+      if (overrides?.captureThrows) throw new Error("execute timed out");
+      return { stdout: overrides?.captureVersion ?? "orun 2.30.0", exitCode: 0 };
     },
     async exec(ref, cmd, opts) {
       if (overrides?.failExec) throw new Error("exec refused");
@@ -90,10 +110,10 @@ async function fixture(overrides?: {
   factory?: SandboxFactory;
   minter?: SessionTokenMinter;
   connections?: Array<{ provider: "daytona" | "anthropic"; name?: string; verified?: boolean; config?: Record<string, unknown> }>;
-  providerOverrides?: { failCreate?: boolean; failExec?: boolean };
+  providerOverrides?: { failCreate?: boolean; failExec?: boolean; captureVersion?: string; captureThrows?: boolean };
 }): Promise<Fixture> {
   const repo = new MemoryAgentsRepository();
-  const log: ProviderLog = { created: [], execs: [], destroyed: [] };
+  const log: ProviderLog = { created: [], execs: [], captures: [], destroyed: [] };
   const scope = { orgId: ORG_UUID };
 
   const profile = await repo.createProfile(scope, {
@@ -195,6 +215,45 @@ describe("agents-worker session provisioning (AG5)", () => {
     // The recorded sandbox carries the provider ref, never key material.
     const stored = await f.repo.getSession({ orgId: ORG_UUID }, f.sessionId);
     expect(stored?.sandbox).toEqual({ provider: "daytona", id: "sb_1", connection: expect.stringMatching(/^apc_/) });
+  });
+
+  it("ALWAYS installs orun — no `command -v orun` short-circuit that a stale image could satisfy", async () => {
+    const f = await fixture();
+    await route(req("POST", provisionPath(f.sessionId)), env, f.deps);
+    const script = f.log.execs[0]!.cmd[2]!;
+    // The regression this locks: the short-circuit let a baked orun skip the
+    // install, so shipped fixes never ran. Install must be unconditional.
+    expect(script).not.toContain("command -v orun");
+    expect(script).toMatch(/curl -fsSL \S+install\.sh \| sh/);
+  });
+
+  it("probes the resolved orun version into the trace before serve", async () => {
+    const lines = captureWarn();
+    try {
+      const f = await fixture({ providerOverrides: { captureVersion: "orun 2.30.0\n" } });
+      await route(req("POST", provisionPath(f.sessionId)), env, f.deps);
+      // The version probe ran (a synchronous execCapture) before the serve exec.
+      expect(f.log.captures.length).toBe(1);
+      expect(f.log.captures[0]!.slice(0, 2)).toEqual(["sh", "-lc"]);
+      const line = lines.get().find((l) => l.includes("step=orun.version"));
+      expect(line).toContain("version=orun 2.30.0");
+    } finally {
+      lines.restore();
+    }
+  });
+
+  it("a version-probe failure never blocks the spawn — logs probe_failed and still provisions", async () => {
+    const lines = captureWarn();
+    try {
+      const f = await fixture({ providerOverrides: { captureThrows: true } });
+      const res = await route(req("POST", provisionPath(f.sessionId)), env, f.deps);
+      expect(res.status).toBe(200); // boot proceeds
+      expect(f.log.execs.length).toBe(1); // serve still exec'd
+      const line = lines.get().find((l) => l.includes("step=orun.version"));
+      expect(line).toContain("version=probe_failed");
+    } finally {
+      lines.restore();
+    }
   });
 
   it("honors connection config: snapshot + ttl flow into the spec", async () => {

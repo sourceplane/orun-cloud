@@ -62,16 +62,40 @@ const DEFAULT_EGRESS = [
  * CLOUD_API/RUN_KIND/TASK_KEY) and the session bearer from ORUN_SESSION_TOKEN
  * on the exec env.
  */
+const ORUN_INSTALL_URL = "https://raw.githubusercontent.com/sourceplane/orun/main/install.sh";
+
 function bootstrapScript(): string {
   return [
     "set -u",
-    // The binary rides the image OR gets installed here — never assumed.
-    "command -v orun >/dev/null 2>&1 || curl -fsSL https://raw.githubusercontent.com/sourceplane/orun/main/install.sh | sh || { echo 'orun install failed' >&2; exit 1; }",
     'export PATH="$HOME/.local/bin:$PATH"',
+    // ALWAYS install the released binary — never `command -v orun ||` short-
+    // circuit. A stale orun baked into a Daytona snapshot used to satisfy that
+    // guard, so the install was SKIPPED and the box ran an old binary: relay /
+    // pump fixes shipped release after release and never actually ran (the
+    // heartbeat "worked" only because it predated the breakage). install.sh is
+    // idempotent; running it every boot guarantees the sandbox runs what's
+    // released. (#466 follow-up.)
+    `curl -fsSL ${ORUN_INSTALL_URL} | sh || { echo 'orun install failed' >&2; exit 1; }`,
+    // Loud: record which binary actually ended up here (the diagnostic whose
+    // absence cost three release cycles). Echoed to the sandbox log; the
+    // control plane also probes it into the provision trace (versionProbe).
+    'echo "orun-resolved-version: $(orun --version 2>/dev/null || echo unknown)" >&2',
     // Hand off to the runtime. serve reads ORUN_SESSION_ID/ORG_ID/CLOUD_API/
     // TASK_KEY from the env and the bearer from ORUN_SESSION_TOKEN; it
     // heartbeats, rotates the token, streams events, and serves the relay.
     "exec orun agent serve",
+  ].join("\n");
+}
+
+/** A synchronous install + `orun --version` the control plane runs BEFORE serve
+ * so the resolved binary version lands in the provision trace — no more
+ * inferring "which orun is running" from behavior. Best-effort: a cold-pull
+ * timeout or a probe failure logs `unknown` and never blocks the spawn. */
+function versionProbeScript(): string {
+  return [
+    'export PATH="$HOME/.local/bin:$PATH"',
+    `curl -fsSL ${ORUN_INSTALL_URL} | sh >/dev/null 2>&1 || true`,
+    "orun --version 2>/dev/null || echo unknown",
   ].join("\n");
 }
 
@@ -184,6 +208,22 @@ export async function handleProvisionSession(
     logBoot(session.publicId, orgPublic, "create.start", "provider=daytona");
     const ref = await provider.create(spec);
     logBoot(session.publicId, orgPublic, "create.ok", `provider=daytona sandbox=${ref.id}`);
+
+    // Probe the resolved orun version into the trace BEFORE serve — every run
+    // now records which binary it actually runs, so a stale-baked image can
+    // never again masquerade as a shipped fix. Best-effort: a probe failure or
+    // cold-pull timeout logs `probe_failed`/`unknown` and never blocks the boot
+    // (the bootstrap force-installs regardless).
+    if (provider.execCapture) {
+      try {
+        const probe = await provider.execCapture(ref, ["sh", "-lc", versionProbeScript()]);
+        const version = (probe.stdout.split("\n").filter(Boolean).pop() ?? "unknown").slice(0, 80);
+        logBoot(session.publicId, orgPublic, "orun.version", `provider=daytona sandbox=${ref.id} version=${version}`);
+      } catch {
+        logBoot(session.publicId, orgPublic, "orun.version", `provider=daytona sandbox=${ref.id} version=probe_failed`);
+      }
+    }
+
     step = "exec";
     try {
       // Secrets ride the exec env only (design §10.4): TTL'd with the

@@ -97,6 +97,25 @@ describe("daytona sandbox adapter", () => {
     expect(exec.command).toBe("export ANTHROPIC_API_KEY=sk-ant-secret; orun agent serve");
   });
 
+  it("execCapture runs the SYNC process/execute endpoint and returns stdout + exit code", async () => {
+    const { fetchImpl, calls } = fakeFetch((url, init) => {
+      if ((init.method ?? "GET") === "GET") return Response.json({ id: "sb_1", state: "started" });
+      if (url.endsWith("/toolbox/sb_1/toolbox/process/execute")) {
+        return Response.json({ exitCode: 0, result: "orun 2.30.0\n" });
+      }
+      return Response.json({});
+    });
+    const p = createDaytonaProvider({ apiKey: "k", fetchImpl });
+    const out = await p.execCapture!({ id: "sb_1", provider: "daytona" }, ["sh", "-lc", "orun --version"]);
+
+    expect(out).toEqual({ stdout: "orun 2.30.0", exitCode: 0 });
+    // Uses the synchronous execute endpoint (NOT the runAsync session api).
+    const exec = calls.find((c) => c.url.endsWith("/process/execute"))!;
+    expect(exec.method).toBe("POST");
+    expect((exec.body as { command: string }).command).toBe("sh -lc 'orun --version'");
+    expect(exec.headers.authorization).toBe("Bearer k");
+  });
+
   it("waits for the sandbox to start before any toolbox call", async () => {
     let polls = 0;
     const { fetchImpl, calls } = fakeFetch((_url, init) => {
