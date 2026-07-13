@@ -212,6 +212,8 @@ describe("assemble projection from documents (SS6)", () => {
     // classified as secrets so the secrets-live pipeline delivers them; the
     // worker therefore has no separate config projection.
     expect(Object.keys(w(secrets, "integrations-worker")).sort()).toEqual([
+      "CLOUDFLARE_OAUTH_CLIENT_ID",
+      "CLOUDFLARE_OAUTH_CLIENT_SECRET",
       "GITHUB_APP_CLIENT_ID",
       "GITHUB_APP_CLIENT_SECRET",
       "GITHUB_APP_ID",

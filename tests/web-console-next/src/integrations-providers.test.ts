@@ -25,7 +25,7 @@ describe("integration providers catalog", () => {
     const byId = new Map(INTEGRATION_PROVIDERS.map((p) => [p.id, p]));
     expect(byId.get("github")).toMatchObject({ archetype: "source-control", connectKind: "install" });
     expect(byId.get("slack")).toMatchObject({ archetype: "messaging", connectKind: "oauth" });
-    expect(byId.get("cloudflare")).toMatchObject({ archetype: "infrastructure", connectKind: "token" });
+    expect(byId.get("cloudflare")).toMatchObject({ archetype: "infrastructure", connectKind: "oauth" });
     expect(byId.get("supabase")).toMatchObject({ archetype: "infrastructure", connectKind: "oauth" });
     expect(byId.get("discord")?.archetype).toBe("messaging");
     expect(byId.get("aws")?.archetype).toBe("infrastructure");
@@ -45,8 +45,8 @@ describe("integration providers catalog", () => {
     expect(providerById("gitlab")).toBeNull();
   });
 
-  it("describes the broker providers honestly (token paste / OAuth + short-lived mints)", () => {
-    expect(providerById("cloudflare")?.description).toMatch(/parent API token/i);
+  it("describes the broker providers honestly (OAuth + short-lived mints)", () => {
+    expect(providerById("cloudflare")?.description).toMatch(/OAuth/i);
     expect(providerById("cloudflare")?.description).toMatch(/short-lived/i);
     expect(providerById("supabase")?.description).toMatch(/OAuth/i);
     expect(providerById("supabase")?.description).toMatch(/short-lived/i);

@@ -750,5 +750,14 @@ export const manifest: MigrationManifest = {
       description:
         "Brokered-secret metadata discriminator (saas-integration-hub IH7): config.secret_metadata gains source ('static'|'brokered') plus display-only binding facts (binding_provider, binding_connection_id, binding_template) so list/chain reads render broker provenance without touching the envelope — the authoritative binding pointer rides the existing version envelope. Guard CHECKs keep binding facts all-or-nothing with the discriminator and forbid brokered personal overlays; a partial org index backs the entitlement count. Additive + idempotent.",
     },
+    {
+      id: "830_cloudflare_oauth",
+      context: "integrations",
+      path: "830_cloudflare_oauth/up.sql",
+      checksum:
+        "6a24a352e1958f272724d2a6ecdbbc6b3dd8248f013b914baf4a2cd0aff0c3d9",
+      description:
+        "Cloudflare OAuth custody support (saas-integration-hub IH5, risks D3): the provider_credentials kind CHECK widens to admit cloudflare_refresh_token (the durable OAuth grant, twin of supabase_refresh_token) and cloudflare_pkce_verifier (the server-side PKCE code_verifier, deleted the moment the exchange consumes it). Cloudflare shipped OAuth clients for the API, so the connect posture upgrades from token-paste to connectKind 'oauth' (PKCE) like Supabase; token-paste (cloudflare_parent_token) stays as the configured fallback. Guarded CHECK swap (auto-named inline constraint, the 720 lesson); idempotent.",
+    },
   ],
 };

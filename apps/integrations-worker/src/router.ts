@@ -25,6 +25,10 @@ import {
   SUPABASE_OAUTH_CALLBACK_PATH,
 } from "./handlers/supabase-oauth.js";
 import {
+  handleCloudflareOauthCallback,
+  CLOUDFLARE_OAUTH_CALLBACK_PATH,
+} from "./handlers/cloudflare-oauth.js";
+import {
   handleSlackCommandsIngest,
   handleSlackEventsIngest,
   handleSlackInteractivityIngest,
@@ -160,6 +164,14 @@ export async function route(request: Request, env: Env): Promise<Response> {
   if (pathname === SUPABASE_OAUTH_CALLBACK_PATH) {
     if (request.method !== "GET") return methodNotAllowed(requestId);
     return handleSupabaseOauthCallback(request, env, requestId);
+  }
+
+  // Cloudflare OAuth-callback ingress (IH5, risks D3): the oauth-kind twin of
+  // the token-paste connect — signed single-use state + PKCE, same fail-closed
+  // rule as Supabase (no verifier, nothing to exchange).
+  if (pathname === CLOUDFLARE_OAUTH_CALLBACK_PATH) {
+    if (request.method !== "GET") return methodNotAllowed(requestId);
+    return handleCloudflareOauthCallback(request, env, requestId);
   }
 
   // Inbound webhook ingress: authenticated by HMAC over the raw body, never

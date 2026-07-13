@@ -68,10 +68,10 @@ export const INTEGRATION_PROVIDERS: readonly IntegrationProvider[] = [
     id: "cloudflare",
     name: "Cloudflare",
     description:
-      "Paste a scoped parent API token once; plans mint short-lived child tokens for Workers, Pages, DNS, and R2.",
+      "Connect your Cloudflare account over OAuth; plans mint short-lived, scoped child tokens for Workers, Pages, DNS, and R2 on demand.",
     status: "available",
     archetype: "infrastructure",
-    connectKind: "token",
+    connectKind: "oauth",
     icon: "Cloud",
   },
   {

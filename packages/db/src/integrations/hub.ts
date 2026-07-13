@@ -25,6 +25,8 @@ import type {
 export type ProviderCredentialKind =
   | "slack_bot_token"
   | "cloudflare_parent_token"
+  | "cloudflare_refresh_token"
+  | "cloudflare_pkce_verifier"
   | "supabase_refresh_token"
   | "supabase_access_token_cache"
   | "supabase_pkce_verifier";

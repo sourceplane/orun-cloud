@@ -1,20 +1,33 @@
 // Cloudflare adapter (saas-integration-hub IH5) — the credential-broker
-// archetype, live. connectKind "token": the customer pastes an
-// account-scoped parent API token once (risks D3 — Cloudflare offers no
-// general OAuth for its API); the worker verifies it, discovers the
-// account, and the paste is never re-shown. Mints are child account-owned
-// tokens: template-shaped policies, expires_on = now + clamped TTL, named
-// `orun/{org}/{template}/{mintId}` so the IH9 orphan sweep can reconcile.
+// archetype, live. Two connect postures share ONE mint model (scoped child
+// account-owned tokens: template-shaped policies, expires_on = now + clamped
+// TTL, named `orun/{org}/{template}/{mintId}` for the IH9 orphan sweep):
 //
-// Custody rule: the pasted parent token is the single durable credential and
-// lives ONLY as a provider_credentials envelope; everything minted from it
-// is short-lived, scoped-down, ledgered, and revocable. The adapter never
-// holds it — the broker handler decrypts custody per call and passes it as
-// ParentCredentialContext.
+//   connectKind "token"  — the customer pastes an account-scoped parent API
+//     token once; the worker verifies it, discovers the account, the paste is
+//     never re-shown. The durable credential is the pasted parent token.
+//   connectKind "oauth"  — Cloudflare shipped OAuth clients for the API
+//     (risks D3 resolved), so when an OAuth client is registered for the
+//     environment the connect posture upgrades to OAuth 2 (PKCE), exactly like
+//     Supabase (IH6). The durable credential is the OAuth REFRESH token; each
+//     mint derives a short-lived access token from it (`grant_type=
+//     refresh_token`) and uses THAT as the API bearer for the child-token
+//     create — the access token is never stored durable.
+//
+// Custody rule (both postures): the durable credential (pasted parent token OR
+// OAuth refresh token) lives ONLY as a provider_credentials envelope;
+// everything minted from it is short-lived, scoped-down, ledgered, and
+// revocable. The adapter never holds it — the broker handler decrypts custody
+// per call and passes it as ParentCredentialContext. Where Cloudflare rotates
+// the refresh token on use, the adapter surfaces the rotated token via
+// `rotatedParentCredential` so the broker re-envelopes custody (a dropped
+// rotation surfaces as parent_grant_insufficient on the NEXT mint — an IH9
+// health concern, not data loss, the same tolerance as Supabase).
 
 import type { IntegrationScopeTemplate } from "@saas/contracts/integrations";
 import type { FetchLike } from "../github-app.js";
 import type {
+  CloudflareOauthCredentials,
   CredentialBrokerCapability,
   IntegrationProvider,
   MintCredentialOutcome,
@@ -22,6 +35,12 @@ import type {
 } from "./types.js";
 
 const API_BASE = "https://api.cloudflare.com/client/v4";
+
+// Cloudflare's OAuth-client authorization server (risks D3). The authorize
+// screen lives on the dashboard; the token endpoint is the API host. These
+// must match the redirect URL configured on the OAuth client.
+const OAUTH_AUTHORIZE_URL = "https://dash.cloudflare.com/oauth2/auth";
+const OAUTH_TOKEN_URL = "https://dash.cloudflare.com/oauth2/token";
 
 /** Default mint TTL (risks D5): 15 minutes; hard ceiling one hour. */
 export const CLOUDFLARE_DEFAULT_TTL_SECONDS = 15 * 60;
@@ -208,6 +227,140 @@ export async function getCloudflareTokenPolicies(
   }
 }
 
+// ── OAuth connect (connectKind "oauth", risks D3) ───────────
+
+/**
+ * The PKCE authorize URL carrying our signed single-use state. The
+ * `cloudflare_account ↔ org_id` keystone rides this state, never inference —
+ * the same discipline as Supabase (IH6).
+ */
+export function buildCloudflareAuthorizeUrl(input: {
+  clientId: string;
+  state: string;
+  redirectUri: string;
+  codeChallenge?: string;
+}): string {
+  const url = new URL(OAUTH_AUTHORIZE_URL);
+  url.searchParams.set("client_id", input.clientId);
+  url.searchParams.set("redirect_uri", input.redirectUri);
+  url.searchParams.set("response_type", "code");
+  url.searchParams.set("state", input.state);
+  if (input.codeChallenge) {
+    url.searchParams.set("code_challenge", input.codeChallenge);
+    url.searchParams.set("code_challenge_method", "S256");
+  }
+  return url.toString();
+}
+
+/** Verified grant from the PKCE code exchange. The refresh token is
+ *  custody-envelope material ONLY; the access token is short-lived. */
+export interface CloudflareOauthGrant {
+  accessToken: string;
+  refreshToken: string;
+  expiresIn: number;
+}
+
+function parseCloudflareTokenResponse(
+  payload: Record<string, unknown>,
+): CloudflareOauthGrant | null {
+  const accessToken = payload.access_token;
+  const refreshToken = payload.refresh_token;
+  const expiresIn = payload.expires_in;
+  if (
+    typeof accessToken !== "string" ||
+    !accessToken ||
+    typeof refreshToken !== "string" ||
+    !refreshToken ||
+    typeof expiresIn !== "number" ||
+    !Number.isFinite(expiresIn) ||
+    expiresIn <= 0
+  ) {
+    return null;
+  }
+  return { accessToken, refreshToken, expiresIn };
+}
+
+/**
+ * Exchange the callback's code for the token pair (`POST` the OAuth token
+ * endpoint, PKCE: the code_verifier must match the challenge the authorize
+ * URL carried). Null on any failure — callers fail closed.
+ */
+export async function exchangeCloudflareOauthCode(
+  credentials: CloudflareOauthCredentials,
+  input: { code: string; redirectUri: string; codeVerifier: string },
+  fetchImpl: FetchLike = fetch,
+): Promise<CloudflareOauthGrant | null> {
+  const body = new URLSearchParams({
+    grant_type: "authorization_code",
+    client_id: credentials.clientId,
+    client_secret: credentials.clientSecret,
+    code: input.code,
+    redirect_uri: input.redirectUri,
+    code_verifier: input.codeVerifier,
+  });
+  try {
+    const response = await fetchImpl(OAUTH_TOKEN_URL, {
+      method: "POST",
+      headers: { "content-type": "application/x-www-form-urlencoded" },
+      body: body.toString(),
+    });
+    if (!response.ok) return null;
+    return parseCloudflareTokenResponse((await response.json()) as Record<string, unknown>);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Derive a fresh short-lived access token from the refresh token
+ * (`grant_type=refresh_token`). Cloudflare MAY rotate the refresh token on
+ * use — the returned `refreshToken` is the rotated one (falling back to the
+ * input when the response omits it) and MUST replace custody when it differs.
+ * Null = the provider refused (the grant was revoked provider-side) — callers
+ * fail closed.
+ */
+export async function refreshCloudflareAccess(
+  credentials: CloudflareOauthCredentials,
+  refreshToken: string,
+  fetchImpl: FetchLike = fetch,
+): Promise<CloudflareOauthGrant | null> {
+  const body = new URLSearchParams({
+    grant_type: "refresh_token",
+    client_id: credentials.clientId,
+    client_secret: credentials.clientSecret,
+    refresh_token: refreshToken,
+  });
+  let payload: Record<string, unknown>;
+  try {
+    const response = await fetchImpl(OAUTH_TOKEN_URL, {
+      method: "POST",
+      headers: { "content-type": "application/x-www-form-urlencoded" },
+      body: body.toString(),
+    });
+    if (!response.ok) return null;
+    payload = (await response.json()) as Record<string, unknown>;
+  } catch {
+    return null;
+  }
+  const accessToken = payload.access_token;
+  const expiresIn = payload.expires_in;
+  if (
+    typeof accessToken !== "string" ||
+    !accessToken ||
+    typeof expiresIn !== "number" ||
+    !Number.isFinite(expiresIn) ||
+    expiresIn <= 0
+  ) {
+    return null;
+  }
+  const rotated = payload.refresh_token;
+  return {
+    accessToken,
+    refreshToken: typeof rotated === "string" && rotated ? rotated : refreshToken,
+    expiresIn,
+  };
+}
+
 /** Permission-group NAMES per template. Resolved to ids at mint time via the
  *  parent token's own permission-group listing — never hardcoded ids. A name
  *  the account cannot see is a `parent_grant_insufficient` (deny-by-default:
@@ -334,7 +487,42 @@ async function mintCloudflareToken(
   }
 }
 
-export function createCloudflareProvider(fetchImpl: FetchLike = fetch): IntegrationProvider {
+/** Fail-fast template/param validation that must run BEFORE any OAuth refresh —
+ *  a refresh may rotate (consume) the parent, so a doomed mint must be refused
+ *  before spending it. Returns a failure outcome, or null when the request is
+ *  shaped correctly. Mirrors the checks mintCloudflareToken makes internally. */
+function precheckMintInput(
+  template: string,
+  params: Record<string, unknown>,
+  accountExternalId: string | null,
+): MintCredentialOutcome | null {
+  if (!CLOUDFLARE_SCOPE_TEMPLATES.some((t) => t.id === template)) {
+    return { ok: false, reason: "template_unknown" };
+  }
+  if (!TEMPLATE_PERMISSION_GROUPS[template]) {
+    return { ok: false, reason: "template_unknown" };
+  }
+  if (!accountExternalId) {
+    return { ok: false, reason: "provider_error", detail: "no account anchor" };
+  }
+  if (templateResources(template, params, accountExternalId) === null) {
+    return { ok: false, reason: "provider_error", detail: "dns-edit requires zoneIds (32-hex ids)" };
+  }
+  return null;
+}
+
+/**
+ * Create the Cloudflare adapter. When `oauthCredentials` is supplied the
+ * environment has a registered OAuth client (risks D3), so the adapter is
+ * OAuth-kind: connect runs PKCE and the durable custody credential is the
+ * OAuth refresh token. Without it the adapter is token-paste kind (the pasted
+ * parent token is the durable credential). Both postures mint the SAME scoped
+ * child tokens — only the API bearer's source differs.
+ */
+export function createCloudflareProvider(
+  fetchImpl: FetchLike = fetch,
+  oauthCredentials?: CloudflareOauthCredentials,
+): IntegrationProvider {
   const broker: CredentialBrokerCapability = {
     scopeTemplates() {
       return CLOUDFLARE_SCOPE_TEMPLATES;
@@ -345,24 +533,74 @@ export function createCloudflareProvider(fetchImpl: FetchLike = fetch): Integrat
       if (!input.parent) {
         return { ok: false, reason: "provider_error", detail: "parent credential missing" };
       }
-      return mintCloudflareToken(
+
+      // Token-paste posture: the parent credential IS the API bearer.
+      if (!oauthCredentials) {
+        return mintCloudflareToken(
+          {
+            template: input.template,
+            params: input.params,
+            ttlSeconds: input.ttlSeconds,
+            nowMs: input.nowMs,
+            parent: input.parent,
+            mintRef: input.mintRef ?? "orun/unnamed-mint",
+          },
+          fetchImpl,
+        );
+      }
+
+      // OAuth posture: the parent credential is the REFRESH token. Validate the
+      // request BEFORE the refresh (which may rotate/consume the parent), then
+      // derive a short-lived access token and use it as the API bearer.
+      const precheck = precheckMintInput(input.template, input.params, input.parent.externalRef);
+      if (precheck) return precheck;
+
+      const refreshed = await refreshCloudflareAccess(
+        oauthCredentials,
+        input.parent.credential,
+        fetchImpl,
+      );
+      if (!refreshed) {
+        // A refused refresh means the grant was revoked provider-side — the
+        // parent can no longer cover ANY template.
+        return { ok: false, reason: "parent_grant_insufficient", detail: "refresh refused" };
+      }
+
+      const outcome = await mintCloudflareToken(
         {
           template: input.template,
           params: input.params,
           ttlSeconds: input.ttlSeconds,
           nowMs: input.nowMs,
-          parent: input.parent,
+          // The freshly-derived access token is the API bearer; the account
+          // anchor rides through from custody.
+          parent: { credential: refreshed.accessToken, externalRef: input.parent.externalRef },
           mintRef: input.mintRef ?? "orun/unnamed-mint",
         },
         fetchImpl,
       );
+
+      // Surface a rotated refresh token so the broker re-envelopes custody.
+      if (outcome.ok && refreshed.refreshToken !== input.parent.credential) {
+        outcome.value.rotatedParentCredential = refreshed.refreshToken;
+      }
+      return outcome;
     },
     async revokeCredential(providerRef, _nowMs, parent): Promise<boolean> {
       if (!parent?.externalRef) return false;
+      // Child tokens are account-owned; deleting them needs an account-scoped
+      // API bearer. Token-paste hands one directly; OAuth must derive one from
+      // the refresh token first (best-effort — TTL is the backstop).
+      let apiToken = parent.credential;
+      if (oauthCredentials) {
+        const refreshed = await refreshCloudflareAccess(oauthCredentials, parent.credential, fetchImpl);
+        if (!refreshed) return false;
+        apiToken = refreshed.accessToken;
+      }
       try {
         const response = await fetchImpl(
           `${API_BASE}/accounts/${parent.externalRef}/tokens/${providerRef}`,
-          { method: "DELETE", headers: { authorization: `Bearer ${parent.credential}` } },
+          { method: "DELETE", headers: { authorization: `Bearer ${apiToken}` } },
         );
         return response.ok;
       } catch {
@@ -374,9 +612,22 @@ export function createCloudflareProvider(fetchImpl: FetchLike = fetch): Integrat
   return {
     id: "cloudflare",
     displayName: "Cloudflare",
-    connectKind: "token",
+    connectKind: oauthCredentials ? "oauth" : "token",
     capabilities: ["connect", "credential-broker"],
 
     broker,
+
+    ...(oauthCredentials
+      ? {
+          buildAuthorizeUrl(input) {
+            return buildCloudflareAuthorizeUrl({
+              clientId: oauthCredentials.clientId,
+              state: input.state,
+              redirectUri: input.redirectUri,
+              ...(input.codeChallenge ? { codeChallenge: input.codeChallenge } : {}),
+            });
+          },
+        }
+      : {}),
   };
 }

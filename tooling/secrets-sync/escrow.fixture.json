@@ -22,6 +22,8 @@
       "SECRET_KEK": "fixture-config-kek-stage"
     },
     "integrations-worker": {
+      "CLOUDFLARE_OAUTH_CLIENT_ID": "fixture-integrations-cloudflare-oauth-client-id-stage",
+      "CLOUDFLARE_OAUTH_CLIENT_SECRET": "fixture-integrations-cloudflare-oauth-client-secret-stage",
       "GITHUB_APP_ID": "fixture-integrations-gh-app-id-stage",
       "GITHUB_APP_SLUG": "fixture-integrations-gh-app-slug-stage",
       "GITHUB_APP_CLIENT_ID": "fixture-integrations-gh-app-client-id-stage",
@@ -59,6 +61,8 @@
       "SECRET_KEK": "fixture-config-kek-prod"
     },
     "integrations-worker": {
+      "CLOUDFLARE_OAUTH_CLIENT_ID": "fixture-integrations-cloudflare-oauth-client-id-prod",
+      "CLOUDFLARE_OAUTH_CLIENT_SECRET": "fixture-integrations-cloudflare-oauth-client-secret-prod",
       "GITHUB_APP_ID": "fixture-integrations-gh-app-id-prod",
       "GITHUB_APP_SLUG": "fixture-integrations-gh-app-slug-prod",
       "GITHUB_APP_CLIENT_ID": "fixture-integrations-gh-app-client-id-prod",

@@ -101,6 +101,18 @@
       "consumers": [
         "integrations-worker"
       ]
+    },
+    "cloudflare-oauth": {
+      "doc": "integrations/cloudflare-oauth/<env>",
+      "$comment": "Per-environment Cloudflare OAuth client credentials (IH5, risks D3 resolved: Cloudflare shipped OAuth clients for the API), escrow-managed alongside the GitHub/Slack/Supabase apps. ACTIVE: the console presents Cloudflare as an OAuth connect, so the OAuth client is registered per environment and integrations/cloudflare-oauth/<env> is seeded; secrets-live requires + delivers these to integrations-worker. When absent the adapter still falls back to the token-paste posture.",
+      "config": [],
+      "secret": [
+        "CLOUDFLARE_OAUTH_CLIENT_ID",
+        "CLOUDFLARE_OAUTH_CLIENT_SECRET"
+      ],
+      "consumers": [
+        "integrations-worker"
+      ]
     }
   },
   "platform": {
