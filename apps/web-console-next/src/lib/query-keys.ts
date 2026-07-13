@@ -65,8 +65,15 @@ export const qk = {
   orgWorkDesigns: (orgId: string, initiative: string) => ["orgWorkDesigns", orgId, initiative] as const,
   orgWorkDesign: (orgId: string, key: string) => ["orgWorkDesign", orgId, key] as const,
   orgWorkTimeline: (orgId: string, key: string) => ["orgWorkTimeline", orgId, key] as const,
-  /** Agents surface (saas-agents AG7): hosted sessions + profiles. */
+  /** Agents surface (saas-agents AG7): the fleet-home composite (sessions +
+   * profiles + attention + routines + records). Owned by the workbench — do
+   * NOT reuse this key for a bare list, or a soft-nav cache hit hands a
+   * consumer the wrong shape. */
   orgAgents: (orgId: string) => ["orgAgents", orgId] as const,
+  /** Just the agent-profile list (AgentProfile[]) — the shape the session
+   * detail + spawn dialog read. Kept distinct from `orgAgents` so its cache
+   * entry is always the array, never the composite object. */
+  orgAgentProfiles: (orgId: string) => ["orgAgentProfiles", orgId] as const,
   orgAgentSession: (orgId: string, sessionId: string) => ["orgAgentSession", orgId, sessionId] as const,
   orgAgentSessionEvents: (orgId: string, sessionId: string) =>
     ["orgAgentSessionEvents", orgId, sessionId] as const,

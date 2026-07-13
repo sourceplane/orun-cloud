@@ -22,6 +22,20 @@ function orgPublicId(orgUuid: string): string {
   return `org_${uuidToHex(orgUuid)}`;
 }
 
+/**
+ * Boot-path trace (matching the `[agents-sweep] …` style in index.ts, which
+ * likewise emits operational telemetry on console.warn). Every pre-dial-home
+ * step is otherwise invisible — a 100%-failing spawn surfaces nothing — so we
+ * log the step, the ids, the provider, and (on failure) the redacted reason.
+ * NEVER a key, token, or provider body: `extra` is caller-curated non-secret
+ * detail only.
+ */
+function logBoot(sessionPublicId: string, orgPublic: string, step: string, extra = ""): void {
+  console.warn(
+    `[agents-provision] session=${sessionPublicId} org=${orgPublic} step=${step}${extra ? ` ${extra}` : ""}`,
+  );
+}
+
 /** Egress the sandbox may reach by default (design §2): the platform, the
  * model provider, the git host, package registries. Extensions are
  * per-profile, audited. */
@@ -163,8 +177,14 @@ export async function handleProvisionSession(
     return errorResponse("internal_error", "Session credential mint failed", 502, requestId);
   }
 
+  // The step reached when a throw lands, so the failure log names WHERE the
+  // boot died (create vs exec) — the pre-dial-home blind spot the audit hit.
+  let step = "create";
   try {
+    logBoot(session.publicId, orgPublic, "create.start", "provider=daytona");
     const ref = await provider.create(spec);
+    logBoot(session.publicId, orgPublic, "create.ok", `provider=daytona sandbox=${ref.id}`);
+    step = "exec";
     try {
       // Secrets ride the exec env only (design §10.4): TTL'd with the
       // process, never in the manifest, never surviving suspend.
@@ -176,6 +196,8 @@ export async function handleProvisionSession(
       await provider.destroy(ref).catch(() => {});
       throw e;
     }
+    logBoot(session.publicId, orgPublic, "exec.ok", `provider=daytona sandbox=${ref.id}`);
+    step = "advance";
     const updated = await deps.repo.advanceSession(
       { orgId },
       {
@@ -184,6 +206,9 @@ export async function handleProvisionSession(
         sandbox: { provider: "daytona", id: ref.id, connection: daytona.publicId },
       },
     );
+    // The box is up and the bootstrap is running; the session now waits on the
+    // runtime's first heartbeat to flip provisioning → running (see runtime.ts).
+    logBoot(session.publicId, orgPublic, "provisioning", `provider=daytona sandbox=${ref.id} awaiting=heartbeat`);
     // AG10 §8: one agents.sessions_started per boot. Fire-and-forget — a
     // lost sample is a reconciliation problem, never a failed spawn.
     void deps.usage?.record(
@@ -197,6 +222,9 @@ export async function handleProvisionSession(
     return successResponse(toPublicSession(updated), requestId);
   } catch (e) {
     const reason = e instanceof Error ? e.message : "provider failure";
+    // The reason is already redacted at the provider seam (status code only);
+    // logging it names the failing step so the next 400/404 is diagnosable.
+    logBoot(session.publicId, orgPublic, `${step}.failed`, `provider=daytona reason=${reason}`);
     await deps.repo.advanceSession(
       { orgId },
       {

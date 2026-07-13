@@ -106,7 +106,7 @@ export function SessionDetail({
   );
   // Profiles back the INFRASTRUCTURE rail (type/harness/model/autonomy); a
   // failure degrades to the raw profile id, never blanks the page.
-  const profiles = useApiQuery(qk.orgAgents(orgId), () =>
+  const profiles = useApiQuery(qk.orgAgentProfiles(orgId), () =>
     wrap(async () => client.agents.listProfiles(orgId).catch(() => [] as AgentProfile[])),
   );
   // The children strip (AF4): direct children of this session, live state
