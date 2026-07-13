@@ -79,8 +79,7 @@
     },
     "slack-app": {
       "doc": "integrations/slack-app/<env>",
-      "$comment": "Per-environment Slack App credentials (IH1 connect flow + IH3 signed-request verification). Documented in the escrow instance-parameter surface alongside the GitHub App's, but marked deferred (IH risks D1): the Slack App is not yet registered per environment, so secrets-live must NOT require these until an operator seeds integrations/slack-app/<env> and clears `deferred`.",
-      "deferred": true,
+      "$comment": "Per-environment Slack App credentials (IH1 connect flow + IH3 signed-request verification), escrow-managed alongside the GitHub App's. ACTIVE: the Slack App is registered per environment and integrations/slack-app/<env> is seeded, so secrets-live requires + delivers these to integrations-worker.",
       "config": [],
       "secret": [
         "SLACK_APP_CLIENT_ID",
