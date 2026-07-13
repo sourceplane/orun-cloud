@@ -243,19 +243,33 @@ describe("assemble projection from documents (SS6)", () => {
     );
   });
 
-  it("tolerates an absent slack-app document (deferred until the App is registered, IH9/D1)", () => {
-    // slack-app is a per-integration-deferred doc: its absence must NOT hard
-    // fail secrets-live before the per-environment Slack App exists. GitHub
-    // (non-deferred) still assembles; the Slack keys are simply not projected.
+  it("tolerates an absent supabase-oauth document (deferred until the app is registered, D4)", () => {
+    // supabase-oauth is a per-integration-deferred doc: its absence must NOT
+    // hard fail secrets-live before the per-environment Supabase OAuth app
+    // exists. The other docs still assemble; the Supabase keys are simply not
+    // projected.
     const fixture = readJson(integrationsFixturePath) as Record<string, Record<string, unknown>>;
     const stage = fixture["stage"];
     if (!stage) throw new Error("fixture missing stage");
-    delete stage["slack-app"];
+    delete stage["supabase-oauth"];
     const { result, secrets } = assembleStage(tmpFile(fixture));
     expect(result.status).toBe(0);
     const worker = w(secrets, "integrations-worker");
     expect(worker["GITHUB_APP_ID"]).toBeDefined();
-    expect(worker["SLACK_APP_CLIENT_ID"]).toBeUndefined();
+    expect(worker["SUPABASE_OAUTH_CLIENT_ID"]).toBeUndefined();
+  });
+
+  it("fails closed when the now-active slack-app document is absent (IH1 enabled)", () => {
+    // slack-app is no longer deferred: with the Slack App registered and its
+    // secrets required, a missing document must hard fail rather than silently
+    // deploy integrations-worker without Slack credentials.
+    const fixture = readJson(integrationsFixturePath) as Record<string, Record<string, unknown>>;
+    const stage = fixture["stage"];
+    if (!stage) throw new Error("fixture missing stage");
+    delete stage["slack-app"];
+    const { result } = assembleStage(tmpFile(fixture));
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain("slack-app.json not fetched");
   });
 
   it("fails closed when an integration document is absent", () => {
