@@ -53,6 +53,14 @@ spec:
     owner: sourceplane
     repo: orun-cloud
 
+    # SS2: manifest key for the secrets-live escrow sync (saas-secrets-sync).
+    # Without this the deploy lane never runs secrets-live for this component,
+    # so the platform SECRET_ENCRYPTION_KEY (which encrypts slack_app / webhook
+    # channel references at rest — handlers/channels.ts) is never delivered and
+    # every channel create/reveal 503s "Channel encryption not configured".
+    # notifications-worker is a declared consumer of SECRET_ENCRYPTION_KEY in
+    # secrets.manifest.json (IH9); this opts the component into receiving it.
+    secretsWorker: notifications-worker
     turboFilter: "@saas/notifications-worker"
     wranglerConfig: wrangler.jsonc
     wranglerTemplate: wrangler.template.jsonc
@@ -77,3 +85,9 @@ spec:
 # ci: redeploy with live Hyperdrive wiring (BF6b convergence)
 # ci: bootstrap deploy without service bindings (binding-cycle seed)
 # ci: restore service bindings after binding-cycle seed
+# ci: enroll in secrets-live (secretsWorker) + redeploy to deliver
+# SECRET_ENCRYPTION_KEY — the slack_app channel picker worked (policy fix #457)
+# but channel CREATE 503'd "Channel encryption not configured" because this
+# worker never received the platform encryption key from the escrow (it lacked
+# the secretsWorker param, so its deploy skipped secrets-live). This marker
+# forces the first secrets-live run now that the param is set.
