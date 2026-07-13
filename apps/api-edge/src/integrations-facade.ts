@@ -35,6 +35,13 @@ const SLACK_OAUTH_PATH = "/ingress/slack/oauth";
 // rate-limited.
 const SUPABASE_OAUTH_PATH = "/ingress/supabase/oauth";
 
+// Public Cloudflare OAuth-callback ingress (IH5, risks D3): Cloudflare shipped
+// OAuth clients for the API, so the connect posture upgrades from token-paste
+// to OAuth 2 (PKCE). Same posture as the Supabase OAuth path — no bearer,
+// authenticated by the signed single-use state (plus PKCE) integrations-worker
+// verifies. Allowlist-routed, GET only, rate-limited.
+const CLOUDFLARE_OAUTH_PATH = "/ingress/cloudflare/oauth";
+
 // Public Slack inbound ingress (IH3, design §4.3): Slack POSTs signed
 // requests here — Events API (JSON), slash commands and interactivity
 // (form-encoded). Same posture as the GitHub webhook: the edge does NOT
@@ -78,6 +85,7 @@ export function isIntegrationsIngressRoute(pathname: string): boolean {
     pathname === GITHUB_WEBHOOK_PATH ||
     pathname === SLACK_OAUTH_PATH ||
     pathname === SUPABASE_OAUTH_PATH ||
+    pathname === CLOUDFLARE_OAUTH_PATH ||
     SLACK_INBOUND_PATHS.has(pathname)
   );
 }

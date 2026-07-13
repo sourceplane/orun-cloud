@@ -122,9 +122,13 @@ function policiesResponse(policies: unknown[]): Response {
 }
 
 function baseResponder(custody: Record<string, unknown>): SqlResponder {
-  return (text) => {
+  return (text, params) => {
     if (text.includes("FROM integrations.cloudflare_accounts t")) return [accountRow()];
-    if (text.includes("FROM integrations.provider_credentials")) return [custody];
+    // Honor the `kind = $2` filter so the OAuth-refresh probe (which runs
+    // first) misses and readParentCredential falls through to the parent token.
+    if (text.includes("FROM integrations.provider_credentials")) {
+      return params[1] === custody.kind ? [custody] : [];
+    }
     if (text.includes("INSERT INTO integrations.cloudflare_accounts")) return [accountRow()];
     if (text.includes("UPDATE integrations.connections")) return [connectionRow()];
     if (text.includes("WITH inserted_event")) return [EVENT_ROW];
@@ -258,6 +262,7 @@ describe("runCloudflareHealth", () => {
         ];
       }
       if (text.includes("FROM integrations.provider_credentials")) {
+        if (params[1] !== "cloudflare_parent_token") return [];
         return params[0] === CONNECTION_UUID ? [custody1] : [custody2];
       }
       if (text.includes("INSERT INTO integrations.cloudflare_accounts")) return [accountRow()];
@@ -316,6 +321,7 @@ describe("runCloudflareHealth", () => {
         ];
       }
       if (text.includes("FROM integrations.provider_credentials")) {
+        if (params[1] !== "cloudflare_parent_token") return [];
         return params[0] === CONNECTION_UUID ? [custody1] : [custody2];
       }
       if (text.includes("UPDATE integrations.connections")) throw new Error("db blip");

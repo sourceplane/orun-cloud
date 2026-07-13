@@ -49,10 +49,17 @@ export function getConfiguredProvider(
       };
     }
     case "cloudflare": {
-      // No platform credential exists for Cloudflare (the customer's pasted
-      // parent token is the only credential — risks D3). Custody requires the
-      // envelope key; the adapter stays dormant without it.
+      // Custody requires the envelope key in BOTH postures; the adapter stays
+      // dormant without it.
       if (!env.SECRET_ENCRYPTION_KEY) return null;
+      // Prefer OAuth (risks D3 resolved: Cloudflare shipped OAuth clients) when
+      // an OAuth client is registered for the environment; otherwise fall back
+      // to the token-paste posture (the customer's pasted parent token).
+      const clientId = env.CLOUDFLARE_OAUTH_CLIENT_ID;
+      const clientSecret = env.CLOUDFLARE_OAUTH_CLIENT_SECRET;
+      if (clientId && clientSecret) {
+        return { provider: createCloudflareProvider(fetchImpl, { clientId, clientSecret }) };
+      }
       return { provider: createCloudflareProvider(fetchImpl) };
     }
     case "supabase": {

@@ -16,38 +16,57 @@ import type { ParentCredentialContext } from "./providers/types.js";
 import { createEncryptionAdapter, type CiphertextEnvelope } from "./encryption.js";
 import { generateUuid } from "./ids.js";
 
-/** Providers whose mints derive from a parent credential in custody. */
-export const PARENT_CREDENTIAL_KINDS: Record<string, ProviderCredentialKind> = {
-  cloudflare: "cloudflare_parent_token",
-  supabase: "supabase_refresh_token",
+/**
+ * Providers whose mints derive from a parent credential in custody, and the
+ * candidate custody kinds to try IN ORDER. Cloudflare has two postures (risks
+ * D3): the OAuth refresh token (preferred) or the pasted parent token —
+ * `readParentCredential` returns whichever exists for the connection, plus the
+ * kind it resolved so a rotation can re-envelope the SAME kind.
+ */
+export const PARENT_CREDENTIAL_KIND_CANDIDATES: Record<string, readonly ProviderCredentialKind[]> = {
+  cloudflare: ["cloudflare_refresh_token", "cloudflare_parent_token"],
+  supabase: ["supabase_refresh_token"],
 };
+
+/** A decrypted parent credential plus the custody kind it was read from (so
+ *  the caller re-envelopes a rotation into the SAME kind). Structurally a
+ *  ParentCredentialContext, so it passes straight to broker calls. */
+export interface ResolvedParentCredential extends ParentCredentialContext {
+  kind: ProviderCredentialKind;
+}
 
 /** Decrypt the connection's parent credential for one broker call. Returns
  *  undefined when the provider needs none; null when it needs one and custody
- *  cannot supply it (missing row / unreadable envelope). */
+ *  cannot supply it (no candidate row / unreadable envelope). */
 export async function readParentCredential(
   env: Env,
   executor: SqlExecutor,
   connectionUuid: Uuid,
   providerId: string,
-): Promise<ParentCredentialContext | null | undefined> {
-  const kind = PARENT_CREDENTIAL_KINDS[providerId];
-  if (!kind) return undefined;
+): Promise<ResolvedParentCredential | null | undefined> {
+  const candidates = PARENT_CREDENTIAL_KIND_CANDIDATES[providerId];
+  if (!candidates) return undefined;
   const encryption = await createEncryptionAdapter(env.SECRET_ENCRYPTION_KEY);
   if (!encryption) return null;
   const hub = createIntegrationHubRepository(executor);
-  const credential = await hub.getProviderCredential(connectionUuid, kind);
-  if (!credential.ok) return null;
-  try {
-    return {
-      credential: await encryption.decrypt(
-        JSON.parse(credential.value.ciphertext) as CiphertextEnvelope,
-      ),
-      externalRef: credential.value.externalRef,
-    };
-  } catch {
-    return null;
+  for (const kind of candidates) {
+    const credential = await hub.getProviderCredential(connectionUuid, kind);
+    if (!credential.ok) continue;
+    try {
+      return {
+        credential: await encryption.decrypt(
+          JSON.parse(credential.value.ciphertext) as CiphertextEnvelope,
+        ),
+        externalRef: credential.value.externalRef,
+        kind,
+      };
+    } catch {
+      // Unreadable envelope for a present row — fail closed rather than fall
+      // through to a different posture's stale row.
+      return null;
+    }
   }
+  return null;
 }
 
 /** Rotation re-envelope (IH6/IH9): encrypt + upsert a rotated/refreshed

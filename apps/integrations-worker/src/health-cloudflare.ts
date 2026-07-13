@@ -25,9 +25,10 @@ import { asUuid } from "@saas/db/ids";
 import type { FetchLike } from "./github-app.js";
 import {
   getCloudflareTokenPolicies,
+  refreshCloudflareAccess,
   verifyCloudflareParentToken,
 } from "./providers/cloudflare.js";
-import { readParentCredential } from "./custody.js";
+import { readParentCredential, reEnvelopeParentCredential } from "./custody.js";
 import { generateRequestId, generateUuid, orgPublicId } from "./ids.js";
 
 export interface CloudflareHealthSummary {
@@ -94,8 +95,92 @@ export async function runCloudflareHealth(
       try {
         const connectionUuid = asUuid(row.connectionId);
         const parent = await readParentCredential(env, executor, connectionUuid, "cloudflare");
-        // Missing/unreadable custody or an unverifiable / non-active token:
-        // the parent is dead — nothing can be minted from this connection.
+
+        // OAuth posture (cloudflare_refresh_token): refresh-liveness, mirroring
+        // the Supabase health cron — a refused refresh means the grant was
+        // revoked provider-side. There is no `/user/tokens/verify` path for a
+        // refresh token, and no parent expiry to surface.
+        if (parent && parent.kind === "cloudflare_refresh_token") {
+          const oauth =
+            env.CLOUDFLARE_OAUTH_CLIENT_ID && env.CLOUDFLARE_OAUTH_CLIENT_SECRET
+              ? {
+                  clientId: env.CLOUDFLARE_OAUTH_CLIENT_ID,
+                  clientSecret: env.CLOUDFLARE_OAUTH_CLIENT_SECRET,
+                }
+              : null;
+          if (!oauth) {
+            // Custody says OAuth but the env lost the client — OUR problem, not
+            // evidence the grant died. Count a failure, don't suspend.
+            summary.failures++;
+            continue;
+          }
+          const grant = await refreshCloudflareAccess(oauth, parent.credential, fetchImpl);
+          if (!grant) {
+            const upserted = await hub.upsertCloudflareAccount(
+              factsUpsert(row, { tokenStatus: "invalid", parentExpiresAt: null }),
+            );
+            const suspended = await integrations.updateConnectionStatus(
+              asUuid(row.orgId),
+              connectionUuid,
+              "suspended",
+            );
+            const emitted = await events.appendEventWithAudit({
+              event: {
+                id: generateUuid(),
+                type: INTEGRATION_EVENT_TYPES.SUSPENDED,
+                version: 1,
+                source: "integrations-worker",
+                occurredAt: now,
+                actorType: "system",
+                actorId: "integrations-worker",
+                orgId: row.orgId,
+                subjectKind: "integration_connection",
+                subjectId: row.connectionId,
+                subjectName: null,
+                requestId: generateRequestId(),
+                payload: {
+                  provider: "cloudflare",
+                  orgId: orgPublicId(row.orgId),
+                  reason: "refresh_failed",
+                },
+              },
+              audit: {
+                id: generateUuid(),
+                category: "integrations",
+                description:
+                  "Cloudflare OAuth refresh token refused provider-side — connection suspended (re-auth required)",
+              },
+            });
+            summary.invalid++;
+            if (!upserted.ok || !suspended.ok || !emitted.ok) summary.failures++;
+            continue;
+          }
+          // The refresh MAY have rotated the parent — re-envelope FIRST, before
+          // any other call can fail (a dropped rotation strands the connection).
+          if (grant.refreshToken !== parent.credential) {
+            const reEnveloped = await reEnvelopeParentCredential(
+              env,
+              executor,
+              connectionUuid,
+              "cloudflare_refresh_token",
+              grant.refreshToken,
+              parent.externalRef,
+            );
+            if (!reEnveloped) {
+              summary.failures++;
+              continue;
+            }
+          }
+          const upserted = await hub.upsertCloudflareAccount(
+            factsUpsert(row, { tokenStatus: "active", parentExpiresAt: null }),
+          );
+          if (!upserted.ok) summary.failures++;
+          continue;
+        }
+
+        // Token-paste posture: missing/unreadable custody or an unverifiable /
+        // non-active token means the parent is dead — nothing can be minted
+        // from this connection.
         const verified = parent ? await verifyCloudflareParentToken(parent.credential, fetchImpl) : null;
         if (!verified || verified.status !== "active") {
           const upserted = await hub.upsertCloudflareAccount(

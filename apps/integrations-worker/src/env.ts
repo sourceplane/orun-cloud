@@ -50,7 +50,12 @@ export interface Env {
   // Supabase OAuth app per environment (IH risks D4). Dormant until set.
   SUPABASE_OAUTH_CLIENT_ID?: string;
   SUPABASE_OAUTH_CLIENT_SECRET?: string;
-  // Cloudflare needs no platform credential: the customer's pasted parent
-  // token is the only credential (IH risks D3); custody uses
-  // SECRET_ENCRYPTION_KEY above.
+  // Cloudflare OAuth client per environment (IH risks D3 — Cloudflare shipped
+  // OAuth clients for the API). When both are set the Cloudflare connect
+  // posture upgrades from token-paste to OAuth 2 (PKCE), exactly like Supabase;
+  // the durable custody credential becomes the OAuth refresh token. Unset =
+  // the adapter falls back to token-paste (custody still uses
+  // SECRET_ENCRYPTION_KEY above).
+  CLOUDFLARE_OAUTH_CLIENT_ID?: string;
+  CLOUDFLARE_OAUTH_CLIENT_SECRET?: string;
 }

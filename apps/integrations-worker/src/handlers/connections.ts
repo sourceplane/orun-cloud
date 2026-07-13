@@ -139,7 +139,10 @@ const CONNECT_PROVIDERS = {
     planMessage: "Cloudflare integration is not included in your current plan",
     notConfiguredMessage: "Credential custody is not configured for this environment",
     gate: "cloudflare_custody",
-    oauthCallbackPath: null,
+    // Used only when an OAuth client is registered (connectKind "oauth", risks
+    // D3); the token-paste posture ignores it and returns an active connection
+    // in-request without any callback.
+    oauthCallbackPath: "/ingress/cloudflare/oauth",
   },
   supabase: {
     displayName: "Supabase",
@@ -156,6 +159,17 @@ export type ConnectableProviderId = keyof typeof CONNECT_PROVIDERS;
 export function isConnectableProvider(value: string): value is ConnectableProviderId {
   return value in CONNECT_PROVIDERS;
 }
+
+/** OAuth-kind providers that carry a server-side PKCE verifier between the
+ *  authorize redirect and the callback, and the custody kind it rides under
+ *  (Slack is oauth but PKCE-less, so it is absent). Cloudflare only reaches
+ *  this map when it is OAuth-kind — the token-paste posture returns earlier. */
+const PKCE_VERIFIER_KIND: Partial<
+  Record<ConnectableProviderId, "supabase_pkce_verifier" | "cloudflare_pkce_verifier">
+> = {
+  supabase: "supabase_pkce_verifier",
+  cloudflare: "cloudflare_pkce_verifier",
+};
 
 export async function handleConnectIntegration(
   request: Request,
@@ -266,15 +280,19 @@ export async function handleConnectIntegration(
     );
   }
 
-  // PKCE (IH6 Supabase): the verifier must live server-side in custody
-  // between the authorize redirect and the callback, so custody (the envelope
-  // key) is a hard gate — checked BEFORE the pending connection is created.
+  // PKCE (IH6 Supabase, IH5 Cloudflare OAuth): the verifier must live
+  // server-side in custody between the authorize redirect and the callback, so
+  // custody (the envelope key) is a hard gate — checked BEFORE the pending
+  // connection is created. Only reached for the PKCE providers; a token-paste
+  // Cloudflare returned above, and Slack (oauth, PKCE-less) is absent from the
+  // map.
+  const pkceKind = PKCE_VERIFIER_KIND[providerId];
   let pkce: {
     verifier: string;
     challenge: string;
     encryption: NonNullable<Awaited<ReturnType<typeof createEncryptionAdapter>>>;
   } | null = null;
-  if (providerId === "supabase") {
+  if (pkceKind) {
     const encryption = await createEncryptionAdapter(env.SECRET_ENCRYPTION_KEY);
     if (!encryption) {
       return errorResponse("precondition_failed", wiring.notConfiguredMessage, 412, requestId, {
@@ -319,13 +337,13 @@ export async function handleConnectIntegration(
     // PKCE custody (IH6): the verifier rides the custody table as its own
     // kind, bound to the just-created pending connection; the callback reads
     // it once, deletes it, and hands it to the code exchange.
-    if (pkce) {
+    if (pkce && pkceKind) {
       const hub = createIntegrationHubRepository(executor);
       const envelope = await pkce.encryption.encrypt(pkce.verifier);
       const stored = await hub.upsertProviderCredential({
         id: generateUuid(),
         connectionId: asUuid(connectionId),
-        kind: "supabase_pkce_verifier",
+        kind: pkceKind,
         ciphertext: JSON.stringify(envelope),
       });
       if (!stored.ok) {

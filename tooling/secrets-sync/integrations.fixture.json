@@ -39,6 +39,10 @@
       "SUPABASE_OAUTH_CLIENT_ID": "fixture-supabase-oauth-client-id-stage",
       "SUPABASE_OAUTH_CLIENT_SECRET": "fixture-supabase-oauth-client-secret-stage"
     },
+    "cloudflare-oauth": {
+      "CLOUDFLARE_OAUTH_CLIENT_ID": "fixture-cloudflare-oauth-client-id-stage",
+      "CLOUDFLARE_OAUTH_CLIENT_SECRET": "fixture-cloudflare-oauth-client-secret-stage"
+    },
     "platform": {
       "SECRET_ENCRYPTION_KEY": "fixture-encryption-key-stage",
       "SECRET_KEK": "fixture-kek-stage",
@@ -86,6 +90,10 @@
     "supabase-oauth": {
       "SUPABASE_OAUTH_CLIENT_ID": "fixture-supabase-oauth-client-id-prod",
       "SUPABASE_OAUTH_CLIENT_SECRET": "fixture-supabase-oauth-client-secret-prod"
+    },
+    "cloudflare-oauth": {
+      "CLOUDFLARE_OAUTH_CLIENT_ID": "fixture-cloudflare-oauth-client-id-prod",
+      "CLOUDFLARE_OAUTH_CLIENT_SECRET": "fixture-cloudflare-oauth-client-secret-prod"
     },
     "platform": {
       "SECRET_ENCRYPTION_KEY": "fixture-encryption-key-prod",

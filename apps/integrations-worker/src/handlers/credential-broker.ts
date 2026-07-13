@@ -65,7 +65,6 @@ import { encodeCursor, parsePageParams } from "../pagination.js";
 import { getConfiguredProvider } from "../providers/registry.js";
 import { getCapability, type IntegrationProvider } from "../providers/types.js";
 import {
-  PARENT_CREDENTIAL_KINDS,
   readParentCredential,
   reEnvelopeParentCredential,
 } from "../custody.js";
@@ -389,19 +388,20 @@ async function executeMintCore(
     return { ok: false, failure: { kind: "mint_failed", reason: outcome.reason } };
   }
 
-  // Rotating parents (IH6 Supabase): the mint consumed the parent and the
-  // provider handed back a NEW one — re-envelope custody BEFORE the ledger
-  // insert so the rotation is never dropped on a later failure. Best-effort:
-  // a re-envelope failure logs nothing sensitive and does NOT fail the mint;
-  // a lost rotation surfaces as parent_grant_insufficient on the NEXT mint —
-  // an IH9 health concern, not a data-loss one.
-  const rotationKind = PARENT_CREDENTIAL_KINDS[connection.provider];
-  if (outcome.value.rotatedParentCredential && rotationKind && parent) {
+  // Rotating parents (IH6 Supabase, IH5 Cloudflare OAuth): the mint consumed
+  // the parent and the provider handed back a NEW one — re-envelope custody
+  // BEFORE the ledger insert so the rotation is never dropped on a later
+  // failure. The rotation replaces the SAME custody kind the parent was read
+  // from (parent.kind). Best-effort: a re-envelope failure logs nothing
+  // sensitive and does NOT fail the mint; a lost rotation surfaces as
+  // parent_grant_insufficient on the NEXT mint — an IH9 health concern, not a
+  // data-loss one.
+  if (outcome.value.rotatedParentCredential && parent?.kind) {
     await reEnvelopeParentCredential(
       env,
       executor,
       asUuid(connection.id),
-      rotationKind,
+      parent.kind,
       outcome.value.rotatedParentCredential,
       // Keep the custody row anchored to the same provider-side ref.
       parent.externalRef,

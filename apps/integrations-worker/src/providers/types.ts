@@ -227,3 +227,11 @@ export interface SupabaseOauthCredentials {
   clientId: string;
   clientSecret: string;
 }
+
+/** Cloudflare OAuth client per-environment credentials (IH risks D3). Present
+ *  only when the environment has registered an OAuth client; without it the
+ *  Cloudflare adapter falls back to the token-paste connect posture. */
+export interface CloudflareOauthCredentials {
+  clientId: string;
+  clientSecret: string;
+}
