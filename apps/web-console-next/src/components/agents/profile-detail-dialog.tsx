@@ -21,7 +21,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Kicker, Pill, StatusText } from "@/components/ui/northwind";
+import { Kicker, Pill } from "@/components/ui/northwind";
 import { AGENT_MODELS, AGENT_TYPES } from "@/lib/agents/model";
 
 function modelLabel(model: string): string {
@@ -119,11 +119,11 @@ export function ProfileDetailDialog({
 
           <div>
             <Kicker className="mb-1.5">Prompt &amp; tools</Kicker>
-            <StatusText tone="neutral" className="text-[12px] leading-relaxed">
+            <p className="text-[12px] leading-relaxed text-muted-foreground">
               The prompt and tool contract live in the sealed orun agent type
               (<span className="font-mono">agents/{profile.agentType}.md</span>); this profile can only
               narrow that ceiling. They are not projected to the console, so audit them at the agent type.
-            </StatusText>
+            </p>
           </div>
 
           <div className="text-[11px] text-muted-foreground">

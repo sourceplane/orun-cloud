@@ -70,6 +70,11 @@ export function AgentsWorkbench({ orgId, orgSlug }: { orgId: string; orgSlug: st
   const running = data?.attention.running ?? 0;
   const verdicts = data?.attention.counts.verdict ?? 0;
   const active = data?.sessions.filter((s) => !isTerminalSessionState(s.state)) ?? [];
+  // Sessions booting but not yet dialed home: they sit in ACTIVE SESSIONS but
+  // count as neither running nor a verdict, so a header of only "running" reads
+  // "0" while a box is provisioning. Surface them so the header never goes
+  // silent on a live-but-not-yet-running fleet.
+  const provisioning = active.filter((s) => s.state === "requested" || s.state === "provisioning").length;
   const recent = data?.sessions.filter((s) => isTerminalSessionState(s.state)) ?? [];
 
   return (
@@ -80,6 +85,9 @@ export function AgentsWorkbench({ orgId, orgSlug }: { orgId: string; orgSlug: st
         actions={
           <div className="flex items-center gap-4">
             <HeaderStat value={String(running)} caption="running" />
+            {provisioning > 0 ? (
+              <HeaderStat value={String(provisioning)} caption="provisioning" tone="info" />
+            ) : null}
             <HeaderStat
               value={String(verdicts)}
               caption="need a verdict"
