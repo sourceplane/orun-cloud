@@ -9,6 +9,13 @@
 import type { AgentsDeps } from "./deps.js";
 import type { ActorContext } from "./router.js";
 import type { AgentSession, ProviderConnection } from "@saas/db/agents";
+import { uuidToHex } from "@saas/db/ids";
+
+/** Sessions carry the org UUID; logs use the public `org_<hex>` id (matching
+ * the provision + runtime trace) so a boot can be followed across workers. */
+function orgPublicId(orgUuid: string): string {
+  return `org_${uuidToHex(orgUuid)}`;
+}
 
 /** Lease horizon: a session is reclaimed this long after its lease lapses
  * (one grace beat past the 15-min heartbeat chain). */
@@ -73,6 +80,14 @@ export async function sweepLapsedSessions(
 
   const summary: SweepSummary = { examined: lapsed.length, reclaimed: 0, destroyed: 0, destroyErrors: 0, orphaned: 0 };
   for (const session of lapsed) {
+    // Name WHY each session was reclaimed: a `provisioning` session lapsing
+    // means the runtime never dialed home (boot died before the first
+    // heartbeat — the audit's blind spot); an active state means a live lease
+    // simply expired. Without this, every reclaim looked identical as
+    // `lease_lost`. NEVER key material — ids + state + sandbox handle only.
+    console.warn(
+      `[agents-sweep] reclaim session=${session.publicId} org=${orgPublicId(session.orgId)} priorState=${session.state} cause=${session.state === "provisioning" ? "never_booted" : "lease_lapsed"} sandbox=${typeof session.sandbox.id === "string" ? session.sandbox.id : "none"}`,
+    );
     try {
       if (await destroySandbox(deps, session, requestId)) summary.destroyed++;
     } catch {

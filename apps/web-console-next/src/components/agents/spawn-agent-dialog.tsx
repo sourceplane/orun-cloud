@@ -50,15 +50,11 @@ export function SpawnAgentDialog({
   const orgSlug = params?.orgSlug ?? "";
 
   const profiles = useApiQuery(
-    qk.orgAgents(orgId),
-    () =>
-      wrap(async () => ({
-        sessions: await client.agents.listSessions(orgId),
-        profiles: await client.agents.listProfiles(orgId),
-      })),
+    qk.orgAgentProfiles(orgId),
+    () => wrap(async () => client.agents.listProfiles(orgId)),
     { enabled: open },
   );
-  const profileRows = profiles.data?.profiles ?? [];
+  const profileRows = profiles.data ?? [];
 
   const [profileId, setProfileId] = React.useState<string | null>(null);
   const [provision, setProvision] = React.useState(true);

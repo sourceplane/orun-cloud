@@ -61,10 +61,14 @@ export function QuickSpawnCard({
 
   return (
     <div className="mb-8 rounded-xl border bg-card px-6 pb-4 pt-5">
-      {/* The composer prompt line — the mock's "describe the run" affordance.
-          A full Work-attach picker rides AG8; today it spawns interactive. */}
+      {/* One-click spawn of an INTERACTIVE session as the default profile —
+          there is no pre-spawn prompt field (createSession takes only a
+          profile + run kind), so the run is steered live from the session view
+          once the sandbox dials home. Task-scoped design/implementation runs
+          are born on the Work surface (SpawnAgentDialog), not here. */}
       <p className="text-[14px] text-muted-foreground">
-        Describe the run — or attach a Work task and its approved spec becomes the prompt.
+        Spawn an interactive session as this profile, then steer it live from the session view.
+        Task-scoped design and implementation runs start from a Work item.
       </p>
       <div className="mt-4 flex flex-wrap items-center gap-2">
         <span className="inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-[12.5px]">

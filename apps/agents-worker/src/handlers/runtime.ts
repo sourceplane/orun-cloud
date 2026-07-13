@@ -74,13 +74,21 @@ export async function handleSessionHeartbeat(
 
   const lease = new Date(now().getTime() + LEASE_TTL_MS).toISOString();
   try {
-    const updated =
-      session.state === "provisioning"
-        ? await deps.repo.advanceSession(
-            { orgId },
-            { publicId: session.publicId, to: "running", leaseExpiresAt: lease },
-          )
-        : await deps.repo.touchSessionLease({ orgId }, session.publicId, lease);
+    if (session.state === "provisioning") {
+      const updated = await deps.repo.advanceSession(
+        { orgId },
+        { publicId: session.publicId, to: "running", leaseExpiresAt: lease },
+      );
+      // The dial-home succeeded: the in-sandbox runtime reached this door and
+      // the box is live. This is the positive counterpart to the provision
+      // trace + the sweep's `never_booted` reclaim — it's how you see a boot
+      // finally cross the line (matching the `[agents-…]` log style).
+      console.warn(
+        `[agents-runtime] session=${session.publicId} org=${orgPublicId(orgId)} step=running (first heartbeat)`,
+      );
+      return successResponse(toPublicSession(updated), requestId);
+    }
+    const updated = await deps.repo.touchSessionLease({ orgId }, session.publicId, lease);
     return successResponse(toPublicSession(updated), requestId);
   } catch (e) {
     if (e instanceof AgentsError) {

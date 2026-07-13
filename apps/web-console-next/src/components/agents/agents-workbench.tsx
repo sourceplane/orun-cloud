@@ -33,6 +33,7 @@ import { QuickSpawnCard } from "@/components/agents/quick-spawn-card";
 import { RoutinesCard } from "@/components/agents/routines-card";
 import { ProviderConnections } from "@/components/agents/provider-connections";
 import { CreateProfileDialog } from "@/components/agents/create-profile-dialog";
+import { ProfileDetailDialog } from "@/components/agents/profile-detail-dialog";
 
 export function AgentsWorkbench({ orgId, orgSlug }: { orgId: string; orgSlug: string }) {
   const { client } = useSession();
@@ -266,6 +267,7 @@ function ProfileRow({
   const { client } = useSession();
   const [busy, setBusy] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
+  const [detailOpen, setDetailOpen] = React.useState(false);
   const record = entry?.record;
   const promotion = entry?.promotion;
   const evidence = profile.autonomyEvidence as
@@ -289,10 +291,17 @@ function ProfileRow({
   }, [client, orgId, profile.id, promotion, onChanged]);
 
   return (
+    <>
     <ListRow>
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2">
-          <span className="text-[13px] font-medium">{profile.name}</span>
+          <button
+            type="button"
+            onClick={() => setDetailOpen(true)}
+            className="text-[13px] font-medium hover:underline underline-offset-2"
+          >
+            {profile.name}
+          </button>
           <Pill tone="neutral">{profile.agentType}</Pill>
           {promotion?.eligible && promotion.suggested ? (
             <Pill tone="info">promotion suggested</Pill>
@@ -326,5 +335,7 @@ function ProfileRow({
         ) : null}
       </div>
     </ListRow>
+    <ProfileDetailDialog profile={profile} open={detailOpen} onOpenChange={setDetailOpen} />
+    </>
   );
 }
