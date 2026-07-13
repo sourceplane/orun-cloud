@@ -263,6 +263,22 @@ describe("handleCreateChannel (slack_app)", () => {
     expect(res.status).toBe(422);
   });
 
+  it("accepts a #-prefixed channel label (the console auto-fills #<channel>)", async () => {
+    // Regression: NAME_RE required a leading word char, so the picker's default
+    // name `#alerts` 422'd on create.
+    const { repo, created } = fakeChannelsRepo();
+    const res = await handleCreateChannel(
+      requestOf(slackAppBody({ name: "#alerts" })),
+      createEnv({ INTEGRATIONS_WORKER: credentialsBinding({ ok: true, botToken: "xoxb-t", teamId: "T" }) }),
+      REQ,
+      ACTOR,
+      ORG_PUBLIC,
+      { channelsRepo: repo },
+    );
+    expect(res.status).toBe(201);
+    expect(created).toHaveLength(1);
+  });
+
   it("refuses a connection the org cannot use (412 with the read's reason)", async () => {
     const { repo, created } = fakeChannelsRepo();
     const res = await handleCreateChannel(

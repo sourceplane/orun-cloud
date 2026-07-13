@@ -21,7 +21,11 @@ import { channelPublicId, generateChannelId, orgPublicId, parseChannelPublicId, 
 export const FEATURE_NOTIFICATIONS_SLACK = "feature.notifications.slack";
 export const LIMIT_NOTIFICATION_CHANNELS = "limit.notification_channels";
 
-const NAME_RE = /^[\w][\w .:/-]{0,118}[\w)]?$/;
+// Display label. Allows a leading (and inline) `#` so a Slack-style channel
+// label like "#alerts" validates — the console auto-fills the notification
+// channel name as `#<slack-channel>` when a channel is picked, and users
+// naturally type the `#` form.
+const NAME_RE = /^[#\w][\w #.:/-]{0,118}[\w)]?$/;
 const SLACK_WEBHOOK_RE = /^https:\/\/hooks\.slack\.com\/services\/[A-Za-z0-9/_-]+$/;
 // slack_app references (IH2): the public connection id + Slack channel id the
 // picker returned. Shapes only — usability of the connection is re-verified
