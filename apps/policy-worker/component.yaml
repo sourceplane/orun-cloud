@@ -112,3 +112,14 @@ spec:
 # was absent from the stale ALL_KNOWN_ACTIONS). This marker republishes the
 # current bundle, unblocking the whole agent control-plane surface in one
 # deploy.
+# ci: redeploy with the saas-integration-hub bundle. SIXTH occurrence of the
+# same failure mode: the IH epic added organization.integration.messaging.manage
+# (Slack channel picker / messaging admin, IH2/IH3) and
+# organization.integration.credential.issue (credential broker + brokered
+# secrets, IH4-IH7) to the role maps and ALL_KNOWN_ACTIONS in
+# `packages/policy-engine`, but touched nothing under this component's `path` —
+# so `orun plan --changed` never scheduled the deploy profile and prod kept
+# serving the pre-IH bundle. Every messaging.manage check denied for owners
+# (the console "Add Slack channel" picker surfaced "Not found" 404; the broker
+# mint / brokered-secret bind would deny the same way). This marker republishes
+# the current bundle, unblocking the Slack channel picker + broker surface.

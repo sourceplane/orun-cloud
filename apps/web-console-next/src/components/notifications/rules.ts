@@ -34,6 +34,47 @@ export const RULE_TARGET_KINDS: ReadonlyArray<{ value: NotificationRuleTargetKin
   { value: "slack_channel", label: "Slack channel" },
 ];
 
+/** The notification-channel fields the rule builder needs to pick a target. */
+export interface SelectableChannel {
+  id: string;
+  name: string;
+  kind: string;
+}
+
+/**
+ * Slack-deliverable notification channels a rule can target, in list order.
+ * BOTH kinds route through the `slack_channel` target and are referenced by the
+ * channel's `chan_` id — the workspace-bot (`slack_app`, IH2) exactly as the
+ * legacy incoming-webhook. Kept as a shared, tested predicate so the builder
+ * picker can never again silently drop a live channel kind.
+ */
+export const SLACK_CHANNEL_KINDS: ReadonlySet<string> = new Set([
+  "slack_incoming_webhook",
+  "slack_app",
+]);
+
+export function selectableSlackChannels<T extends { kind: string }>(
+  channels: readonly T[],
+): T[] {
+  return channels.filter((c) => SLACK_CHANNEL_KINDS.has(c.kind));
+}
+
+/**
+ * Option label for the channel picker. When a workspace has both a
+ * workspace-bot channel and a webhook channel, the delivery mechanism is
+ * disambiguated inline (e.g. "#alerts · Workspace bot") so they're not two
+ * identical rows.
+ */
+export function slackChannelOptionLabel(channel: { name: string; kind: string }): string {
+  const suffix =
+    channel.kind === "slack_app"
+      ? "Workspace bot"
+      : channel.kind === "slack_incoming_webhook"
+        ? "Webhook"
+        : null;
+  return suffix ? `${channel.name} · ${suffix}` : channel.name;
+}
+
 /** Default throttle: at most 10 deliveries per 5-minute window. */
 export const DEFAULT_THROTTLE_WINDOW_SECONDS = 300;
 export const DEFAULT_THROTTLE_MAX = 10;
@@ -252,12 +293,24 @@ export function attrValueToString(value: unknown): string {
   return String(value);
 }
 
-/** Short human summary of a rule's targets ("email: ops@x", "slack: #alerts"). */
-export function summarizeTargets(rule: PublicNotificationRule): string {
+/**
+ * Short human summary of a rule's targets ("email: ops@x", "slack: #alerts").
+ * A `slack_channel` target's `ref` is an opaque `chan_` id; pass the org's
+ * channels to resolve it to the channel name (falls back to the id when the
+ * channel is unknown — e.g. deleted).
+ */
+export function summarizeTargets(
+  rule: PublicNotificationRule,
+  channels?: ReadonlyArray<{ id: string; name: string }>,
+): string {
   const targets = rule.targets ?? [];
   if (targets.length === 0) return "No targets";
+  const nameById = new Map((channels ?? []).map((c) => [c.id, c.name]));
   return targets
-    .map((t) => `${t.kind === "slack_channel" ? "slack" : t.kind}: ${t.ref}`)
+    .map((t) => {
+      if (t.kind === "slack_channel") return `slack: ${nameById.get(t.ref) ?? t.ref}`;
+      return `${t.kind}: ${t.ref}`;
+    })
     .join(", ");
 }
 

@@ -65,6 +65,8 @@ const ORG_ROLE_PERMISSIONS: Record<OrganizationRole, readonly string[]> = {
     "organization.integration.connect",
     "organization.integration.manage",
     "organization.integration.token.issue",
+    "organization.integration.messaging.manage",
+    "organization.integration.credential.issue",
     "project.repo_link.write",
     "state.run.read",
     "state.run.write",
@@ -152,6 +154,8 @@ const ORG_ROLE_PERMISSIONS: Record<OrganizationRole, readonly string[]> = {
     "organization.integration.connect",
     "organization.integration.manage",
     "organization.integration.token.issue",
+    "organization.integration.messaging.manage",
+    "organization.integration.credential.issue",
     "project.repo_link.write",
     "state.run.read",
     "state.run.write",
@@ -417,6 +421,12 @@ const ALL_KNOWN_ACTIONS: ReadonlySet<string> = new Set([
   "organization.integration.connect",
   "organization.integration.manage",
   "organization.integration.token.issue",
+  // saas-integration-hub §7: messaging administration (Slack channel picker +
+  // notification actions, IH2/IH3) and the credential broker / brokered-secret
+  // issuance (IH4–IH7). Enforced by handlers since those milestones; granted to
+  // owner + admin here (the fix for the channel picker 404 / broker denials).
+  "organization.integration.messaging.manage",
+  "organization.integration.credential.issue",
   "project.repo_link.write",
   // saas-orun-platform OP0 — state plane (deny-by-default; org-scoped like the
   // organization.integration.* actions). No live route consumes these yet.

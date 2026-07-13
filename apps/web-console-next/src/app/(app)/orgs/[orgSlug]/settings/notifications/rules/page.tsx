@@ -137,7 +137,7 @@ function Inner({ orgId }: { orgId: string }) {
                   <span aria-hidden>·</span>
                   <span>≥ {rule.minSeverity}</span>
                   <span aria-hidden>·</span>
-                  <span>{summarizeTargets(rule)}</span>
+                  <span>{summarizeTargets(rule, channels.data ?? [])}</span>
                   <span aria-hidden>·</span>
                   <span>throttle {summarizeThrottle(rule)}</span>
                 </div>

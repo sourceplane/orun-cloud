@@ -5,6 +5,9 @@ import {
   ruleFormToCreateRequest,
   ruleFormToUpdateRequest,
   ruleToFormValues,
+  selectableSlackChannels,
+  slackChannelOptionLabel,
+  summarizeTargets,
   summarizeThrottle,
   type RuleFormValues,
 } from "@web-console-next/components/notifications/rules";
@@ -134,5 +137,75 @@ describe("summarizeThrottle", () => {
     expect(summarizeThrottle({ throttleMax: 10, throttleWindowSeconds: 300 })).toBe("10 / 5m");
     expect(summarizeThrottle({ throttleMax: 3, throttleWindowSeconds: 3600 })).toBe("3 / 1h");
     expect(summarizeThrottle({ throttleMax: 1, throttleWindowSeconds: 45 })).toBe("1 / 45s");
+  });
+});
+
+describe("selectableSlackChannels (the rule target picker)", () => {
+  const channels = [
+    { id: "chan_a", name: "#alerts", kind: "slack_app" },
+    { id: "chan_b", name: "#ops", kind: "slack_incoming_webhook" },
+    { id: "chan_c", name: "pager", kind: "email" },
+  ];
+
+  it("includes BOTH the workspace-bot and webhook Slack kinds (regression: bot channels were dropped)", () => {
+    expect(selectableSlackChannels(channels).map((c) => c.id)).toEqual(["chan_a", "chan_b"]);
+  });
+
+  it("surfaces a connected workspace's slack_app channel as a target", () => {
+    // The exact reported break: a user connects Slack, adds a workspace-bot
+    // channel, and it must appear in the rule picker.
+    const onlyBot = [{ id: "chan_a", name: "#alerts", kind: "slack_app" }];
+    expect(selectableSlackChannels(onlyBot)).toHaveLength(1);
+  });
+
+  it("excludes non-Slack kinds", () => {
+    expect(selectableSlackChannels([{ id: "chan_c", name: "x", kind: "email" }])).toEqual([]);
+  });
+
+  it("labels the delivery mechanism so bot and webhook rows are distinguishable", () => {
+    expect(slackChannelOptionLabel({ name: "#alerts", kind: "slack_app" })).toBe("#alerts · Workspace bot");
+    expect(slackChannelOptionLabel({ name: "#ops", kind: "slack_incoming_webhook" })).toBe("#ops · Webhook");
+  });
+});
+
+describe("summarizeTargets", () => {
+  function ruleWith(targets: PublicNotificationRule["targets"]): PublicNotificationRule {
+    return {
+      id: "rule_1",
+      orgId: "org_1",
+      projectId: null,
+      name: "r",
+      eventTypes: ["*"],
+      minSeverity: "warning",
+      sources: null,
+      attributeFilters: null,
+      throttleWindowSeconds: 300,
+      throttleMax: 10,
+      enabled: true,
+      targets,
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+    } as unknown as PublicNotificationRule;
+  }
+
+  it("resolves a slack_channel ref to the channel name when channels are supplied", () => {
+    const rule = ruleWith([
+      { id: "t1", kind: "slack_channel", ref: "chan_a", enabled: true, createdAt: "2026-01-01T00:00:00.000Z" },
+    ]);
+    expect(summarizeTargets(rule, [{ id: "chan_a", name: "#alerts" }])).toBe("slack: #alerts");
+  });
+
+  it("falls back to the raw id for an unknown (e.g. deleted) channel", () => {
+    const rule = ruleWith([
+      { id: "t1", kind: "slack_channel", ref: "chan_gone", enabled: true, createdAt: "2026-01-01T00:00:00.000Z" },
+    ]);
+    expect(summarizeTargets(rule, [])).toBe("slack: chan_gone");
+  });
+
+  it("renders email targets verbatim", () => {
+    const rule = ruleWith([
+      { id: "t1", kind: "email", ref: "ops@x.com", enabled: true, createdAt: "2026-01-01T00:00:00.000Z" },
+    ]);
+    expect(summarizeTargets(rule)).toBe("email: ops@x.com");
   });
 });

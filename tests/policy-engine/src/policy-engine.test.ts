@@ -711,6 +711,35 @@ describe("authorize", () => {
       expect(result.derivedScope.projectId).toBe("prj_1");
     });
   });
+
+  // saas-integration-hub §7: these two actions were added to the contracts and
+  // enforced by handlers (Slack channel picker; credential broker / brokered
+  // secrets) but were never granted here — so every caller was denied
+  // `unknown_action` (the channel-picker "Not found" 404). Regression lock.
+  describe("saas-integration-hub messaging + broker actions", () => {
+    for (const action of [
+      "organization.integration.messaging.manage",
+      "organization.integration.credential.issue",
+    ]) {
+      it(`is a known action (not denied as unknown_action): ${action}`, () => {
+        const result = authorize(authReq(action, "org_1", [orgFact("viewer", "org_1")]));
+        expect(result.reason).not.toBe("unknown_action");
+      });
+      it(`owner is allowed ${action}`, () => {
+        const result = authorize(authReq(action, "org_1", [orgFact("owner", "org_1")]));
+        expect(result.allow).toBe(true);
+        expect(result.reason).toBe("org_owner");
+      });
+      it(`admin is allowed ${action}`, () => {
+        const result = authorize(authReq(action, "org_1", [orgFact("admin", "org_1")]));
+        expect(result.allow).toBe(true);
+      });
+      it(`builder is denied ${action} (administrative, not granted to builder)`, () => {
+        const result = authorize(authReq(action, "org_1", [orgFact("builder", "org_1")]));
+        expect(result.allow).toBe(false);
+      });
+    }
+  });
 });
 
 describe("listEffectivePermissions", () => {
@@ -735,7 +764,9 @@ describe("listEffectivePermissions", () => {
     // + 6 saas-agents-fleet/live organization.agent.* actions
     //   (session.spawn, session.interact, routine.read, routine.write,
     //    budget.read, budget.write).
-    expect(allowed.length).toBe(77);
+    // + 2 saas-integration-hub §7 actions (integration.messaging.manage,
+    //   integration.credential.issue).
+    expect(allowed.length).toBe(79);
   });
 
   it("returns limited permissions for viewer", () => {
