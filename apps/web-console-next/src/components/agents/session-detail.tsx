@@ -179,16 +179,23 @@ export function SessionDetail({
   const refSeq = React.useRef(0);
 
   const sendFrame = React.useCallback(
-    async (frame: Record<string, unknown>) => {
+    async (frame: Record<string, unknown>): Promise<boolean> => {
       setInteracting(true);
       setInputError(null);
       try {
         refSeq.current += 1;
         const ack = await client.agents.sendInput(orgId, sessionId, { v: 1, ref: `c-${refSeq.current}`, ...frame });
-        if (ack.ok === false) setInputError(`Input rejected: ${ack.reason ?? "unknown"}`);
+        if (ack.ok === false) {
+          // The relay couldn't deliver it to the running agent (queue full,
+          // agent not draining, session sealing). Fail loud — never eat it.
+          setInputError(`Not delivered: ${ack.reason ?? "the agent isn't consuming input"}. Your message was kept — try again.`);
+          return false;
+        }
         reloadEvents();
+        return true;
       } catch (err) {
-        setInputError(err instanceof Error ? err.message : "Failed to send");
+        setInputError(err instanceof Error ? `${err.message} — your message was kept.` : "Failed to send — your message was kept.");
+        return false;
       } finally {
         setInteracting(false);
       }
@@ -196,11 +203,13 @@ export function SessionDetail({
     [client, orgId, sessionId, reloadEvents],
   );
 
-  const onSteer = React.useCallback(() => {
+  const onSteer = React.useCallback(async () => {
     const text = composer.trim();
     if (!text) return;
-    setComposer("");
-    void sendFrame({ t: "steer", text });
+    // Clear the box ONLY on confirmed delivery. A correction that can't reach
+    // the agent must not silently vanish — that's the worst failure for a
+    // steer box (the AL7 silent-eat bug).
+    if (await sendFrame({ t: "steer", text })) setComposer("");
   }, [composer, sendFrame]);
 
   const onApprove = React.useCallback(

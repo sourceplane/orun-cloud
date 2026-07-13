@@ -15,7 +15,13 @@ import { handleHealth } from "./handlers/health.js";
 import { handleCreateProfile, handleListProfiles } from "./handlers/profiles.js";
 import { handleCreateSession, handleGetSession, handleListSessions } from "./handlers/sessions.js";
 import { handleListSessionEvents } from "./handlers/events.js";
-import { handleAttach, handleHeadInput } from "./handlers/relay.js";
+import {
+  handleAttach,
+  handleHeadInput,
+  handleRelayAck,
+  handleRelayPollInputs,
+  handleRelayStream,
+} from "./handlers/relay.js";
 import { handleProvisionSession } from "./handlers/provision.js";
 import {
   handleIngestSessionEvent,
@@ -96,6 +102,12 @@ const SESSION_TOKEN_RE = /^\/v1\/organizations\/([^/]+)\/agents\/sessions\/([^/]
 // Head-facing relay routes (saas-agents-live AL6): SSE feed + input.
 const SESSION_ATTACH_RE = /^\/v1\/organizations\/([^/]+)\/agents\/sessions\/([^/]+)\/attach$/;
 const SESSION_INPUT_RE = /^\/v1\/organizations\/([^/]+)\/agents\/sessions\/([^/]+)\/input$/;
+// Body-facing relay routes (#466): the in-sandbox runtime's live wire — a
+// wire-only delta fan-out and the head→body steer return-queue (long-poll +
+// ack). Session-actor gated like heartbeat/events.
+const SESSION_STREAM_RE = /^\/v1\/organizations\/([^/]+)\/agents\/sessions\/([^/]+)\/stream$/;
+const SESSION_INPUTS_RE = /^\/v1\/organizations\/([^/]+)\/agents\/sessions\/([^/]+)\/inputs$/;
+const SESSION_INPUTS_ACK_RE = /^\/v1\/organizations\/([^/]+)\/agents\/sessions\/([^/]+)\/inputs\/ack$/;
 const AUTONOMY_RE = /^\/v1\/organizations\/([^/]+)\/agents\/autonomy$/;
 // The needs-you fold (saas-agents-fleet AF5): a derived read, no storage.
 const ATTENTION_RE = /^\/v1\/organizations\/([^/]+)\/agents\/attention$/;
@@ -136,6 +148,9 @@ export async function route(request: Request, env: Env, injectedDeps?: AgentsDep
       SESSION_TOKEN_RE.test(url.pathname) ||
       SESSION_ATTACH_RE.test(url.pathname) ||
       SESSION_INPUT_RE.test(url.pathname) ||
+      SESSION_STREAM_RE.test(url.pathname) ||
+      SESSION_INPUTS_RE.test(url.pathname) ||
+      SESSION_INPUTS_ACK_RE.test(url.pathname) ||
       PROVIDERS_RE.test(url.pathname) ||
       PROVIDER_RE.test(url.pathname) ||
       PROVIDER_VERIFY_RE.test(url.pathname) ||
@@ -358,6 +373,38 @@ async function dispatch(
     if (!orgId) return notFound(requestId, url.pathname);
     const sessionId = m[2]!;
     if (request.method === "POST") return handleHeadInput(request, env, deps, orgId, sessionId, actor, requestId);
+    return methodNotAllowed(requestId);
+  }
+
+  // Body-facing relay: the runtime's steer return-queue ack (checked before
+  // /inputs — both anchored, so order is belt-and-suspenders).
+  m = SESSION_INPUTS_ACK_RE.exec(url.pathname);
+  if (m) {
+    const orgId = parseOrgPublicId(m[1]!);
+    if (!orgId) return notFound(requestId, url.pathname);
+    const sessionId = m[2]!;
+    if (request.method === "POST") return handleRelayAck(request, deps, env, orgId, sessionId, actor, requestId);
+    return methodNotAllowed(requestId);
+  }
+
+  m = SESSION_INPUTS_RE.exec(url.pathname);
+  if (m) {
+    const orgId = parseOrgPublicId(m[1]!);
+    if (!orgId) return notFound(requestId, url.pathname);
+    const sessionId = m[2]!;
+    if (request.method === "GET") {
+      const cursor = Number(url.searchParams.get("cursor") ?? "0");
+      return handleRelayPollInputs(deps, env, orgId, sessionId, actor, requestId, cursor);
+    }
+    return methodNotAllowed(requestId);
+  }
+
+  m = SESSION_STREAM_RE.exec(url.pathname);
+  if (m) {
+    const orgId = parseOrgPublicId(m[1]!);
+    if (!orgId) return notFound(requestId, url.pathname);
+    const sessionId = m[2]!;
+    if (request.method === "POST") return handleRelayStream(request, deps, env, orgId, sessionId, actor, requestId);
     return methodNotAllowed(requestId);
   }
 
