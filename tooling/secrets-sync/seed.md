@@ -21,7 +21,7 @@ secrets share one **platform** document.
 | `…/integrations/cloudflare-email/<env>` | `NOTIFICATIONS_PROVIDER`, `EMAIL_FROM_ADDRESS`, `EMAIL_FROM_NAME` (no secret) |
 | `…/integrations/github-app/<env>` | GitHub App config + secrets — **deferred** until the App is registered (`saas-integrations` D1) |
 | `…/integrations/slack-app/<env>` | `SLACK_APP_CLIENT_ID`, `SLACK_APP_CLIENT_SECRET`, `SLACK_APP_SIGNING_SECRET` — **active** (Slack App registered per environment, IH1/IH3); required + delivered by secrets-live |
-| `…/integrations/supabase-oauth/<env>` | `SUPABASE_OAUTH_CLIENT_ID`, `SUPABASE_OAUTH_CLIENT_SECRET` — **deferred** until the Supabase OAuth app is registered per environment (IH risks D4); clear the `supabase-oauth` doc's `deferred` flag when seeding |
+| `…/integrations/supabase-oauth/<env>` | `SUPABASE_OAUTH_CLIENT_ID`, `SUPABASE_OAUTH_CLIENT_SECRET` — **active** (Supabase OAuth app registered per environment, IH6); required + delivered by secrets-live |
 | `…/platform-secrets/<env>` | `SECRET_ENCRYPTION_KEY`, `SECRET_KEK`, `OAUTH_STATE_SECRET`, `CLI_JWT_SIGNING_KEY`, `INTEGRATIONS_STATE_SECRET` |
 
 **Critical:** `SECRET_ENCRYPTION_KEY` encrypts data at rest — escrow the value

@@ -76,3 +76,4 @@ spec:
 # ci: redeploy with live Hyperdrive wiring (BF6b convergence)
 # ci: SS3 prod secrets seeded — redeploy to sync runtime secrets (secrets-live)
 # ci: slack-app escrow doc activated (#455) — redeploy to sync the Slack runtime secrets (secrets-live)
+# ci: supabase-oauth escrow doc activated — redeploy to sync the Supabase runtime secrets (secrets-live)

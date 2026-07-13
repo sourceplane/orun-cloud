@@ -39,7 +39,7 @@ interface IntegrationSpec {
   config: string[];
   secret: string[];
   consumers: string[];
-  deferred?: string;
+  deferred?: boolean;
 }
 interface IntegrationsManifest {
   environments: string[];
@@ -243,33 +243,44 @@ describe("assemble projection from documents (SS6)", () => {
     );
   });
 
-  it("tolerates an absent supabase-oauth document (deferred until the app is registered, D4)", () => {
-    // supabase-oauth is a per-integration-deferred doc: its absence must NOT
-    // hard fail secrets-live before the per-environment Supabase OAuth app
-    // exists. The other docs still assemble; the Supabase keys are simply not
-    // projected.
-    const fixture = readJson(integrationsFixturePath) as Record<string, Record<string, unknown>>;
-    const stage = fixture["stage"];
-    if (!stage) throw new Error("fixture missing stage");
-    delete stage["supabase-oauth"];
-    const { result, secrets } = assembleStage(tmpFile(fixture));
-    expect(result.status).toBe(0);
-    const worker = w(secrets, "integrations-worker");
-    expect(worker["GITHUB_APP_ID"]).toBeDefined();
-    expect(worker["SUPABASE_OAUTH_CLIENT_ID"]).toBeUndefined();
-  });
+  it.each(["slack-app", "supabase-oauth"])(
+    "fails closed when the now-active %s document is absent (app registered → required)",
+    (doc) => {
+      // Both provider apps are registered and their secrets are required, so a
+      // missing document must hard fail rather than silently deploy
+      // integrations-worker without the credentials.
+      const fixture = readJson(integrationsFixturePath) as Record<string, Record<string, unknown>>;
+      const stage = fixture["stage"];
+      if (!stage) throw new Error("fixture missing stage");
+      delete stage[doc];
+      const { result } = assembleStage(tmpFile(fixture));
+      expect(result.status).toBe(1);
+      expect(result.stderr).toContain(`${doc}.json not fetched`);
+    },
+  );
 
-  it("fails closed when the now-active slack-app document is absent (IH1 enabled)", () => {
-    // slack-app is no longer deferred: with the Slack App registered and its
-    // secrets required, a missing document must hard fail rather than silently
-    // deploy integrations-worker without Slack credentials.
+  it("still tolerates an absent doc marked deferred in the manifest (per-integration deferral mechanism)", () => {
+    // No live doc is deferred anymore (both provider apps are activated), but
+    // the mechanism must keep working for the next dormant provider: a doc with
+    // `"deferred": true` whose escrow document is absent is skipped, not a
+    // violation. Proven against a synthetic manifest + fixture.
+    const manifest = JSON.parse(JSON.stringify(im)) as IntegrationsManifest;
+    manifest.integrations["supabase-oauth"]!.deferred = true; // assemble.mjs checks === true
+    const manifestFile = tmpFile(manifest);
+
     const fixture = readJson(integrationsFixturePath) as Record<string, Record<string, unknown>>;
-    const stage = fixture["stage"];
-    if (!stage) throw new Error("fixture missing stage");
-    delete stage["slack-app"];
-    const { result } = assembleStage(tmpFile(fixture));
-    expect(result.status).toBe(1);
-    expect(result.stderr).toContain("slack-app.json not fetched");
+    delete fixture["stage"]!["supabase-oauth"]; // deferred + absent → tolerated
+    const fixtureFile = tmpFile(fixture);
+
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "as-def-"));
+    const result = run([
+      "--env", "stage", "--manifest", manifestFile, "--fixture", fixtureFile,
+      "--out-secrets", path.join(dir, "s.json"), "--out-config", path.join(dir, "c.json"),
+    ]);
+    expect(result.status).toBe(0);
+    const secrets = readJson(path.join(dir, "s.json")) as Record<string, Record<string, string>>;
+    expect(secrets["integrations-worker"]?.["GITHUB_APP_ID"]).toBeDefined();
+    expect(secrets["integrations-worker"]?.["SUPABASE_OAUTH_CLIENT_ID"]).toBeUndefined();
   });
 
   it("fails closed when an integration document is absent", () => {
