@@ -35,6 +35,8 @@ import {
   ruleFormToCreateRequest,
   ruleFormToUpdateRequest,
   ruleToFormValues,
+  selectableSlackChannels,
+  slackChannelOptionLabel,
   type RuleAttrFilterRow,
   type RuleFormValues,
 } from "@/components/notifications/rules";
@@ -116,7 +118,10 @@ export function RuleBuilderDialog({
     onSaved();
   };
 
-  const slackChannels = channels.filter((c) => c.kind === "slack_incoming_webhook");
+  // Every Slack-deliverable channel is a valid rule target — the workspace-bot
+  // (slack_app, IH2) exactly as the incoming-webhook. This previously filtered
+  // to webhooks only, so a connected workspace's bot channel never appeared.
+  const slackChannels = selectableSlackChannels(channels);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -293,7 +298,7 @@ export function RuleBuilderDialog({
                     <SelectContent>
                       {slackChannels.map((c) => (
                         <SelectItem key={c.id} value={c.id}>
-                          {c.name}
+                          {slackChannelOptionLabel(c)}
                         </SelectItem>
                       ))}
                     </SelectContent>
