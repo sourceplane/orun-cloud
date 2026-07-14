@@ -37,6 +37,7 @@ function w(map: Record<string, Record<string, string>>, name: string): Record<st
 
 interface IntegrationSpec {
   config: string[];
+  optionalConfig?: string[];
   secret: string[];
   consumers: string[];
   deferred?: boolean;
@@ -283,6 +284,33 @@ describe("assemble projection from documents (SS6)", () => {
     const secrets = readJson(path.join(dir, "s.json")) as Record<string, Record<string, string>>;
     expect(secrets["integrations-worker"]?.["GITHUB_APP_ID"]).toBeDefined();
     expect(secrets["integrations-worker"]?.["SUPABASE_OAUTH_CLIENT_ID"]).toBeUndefined();
+  });
+
+  it("delivers an optionalConfig key when the doc carries it, tolerates it when absent", () => {
+    // CLOUDFLARE_OAUTH_SCOPE is optionalConfig: present → projected to the
+    // worker's config; absent → not projected and NOT a violation (the worker
+    // has a code default). Proven both ways off the real manifest.
+    const withKey = readJson(integrationsFixturePath) as Record<string, Record<string, Record<string, string>>>;
+    withKey["stage"]!["cloudflare-oauth"]!["CLOUDFLARE_OAUTH_SCOPE"] = "account:read user:read";
+    const present = assembleStage(tmpFile(withKey));
+    expect(present.result.status).toBe(0);
+    expect(present.config["integrations-worker"]?.["CLOUDFLARE_OAUTH_SCOPE"]).toBe(
+      "account:read user:read",
+    );
+
+    // The unmodified fixture omits the key — assembly still succeeds and simply
+    // does not carry it.
+    const absent = assembleStage(integrationsFixturePath);
+    expect(absent.result.status).toBe(0);
+    expect(absent.config["integrations-worker"]?.["CLOUDFLARE_OAUTH_SCOPE"]).toBeUndefined();
+  });
+
+  it("declares CLOUDFLARE_OAUTH_SCOPE as optionalConfig, not required config", () => {
+    // Guards the seeded-doc contract: adding it to `config` would hard-fail
+    // every already-seeded cloudflare-oauth doc that lacks the key.
+    const cf = im.integrations["cloudflare-oauth"]!;
+    expect(cf.optionalConfig ?? []).toContain("CLOUDFLARE_OAUTH_SCOPE");
+    expect(cf.config).not.toContain("CLOUDFLARE_OAUTH_SCOPE");
   });
 
   it("fails closed when an integration document is absent", () => {

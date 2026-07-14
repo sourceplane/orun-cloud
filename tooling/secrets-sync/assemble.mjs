@@ -205,6 +205,16 @@ for (const [name, spec] of Object.entries(integrations)) {
       violations.push(`${env}/${name}: config ${key} missing or empty`);
     else for (const w of consumersActive) ensure(workerConfig, w)[key] = value;
   }
+  // optionalConfig: non-secret config the worker has a code default for. Unlike
+  // `config`, an absent/empty value is NOT a violation — it is simply not
+  // delivered (the worker falls back to its default). Lets an operator override
+  // a tunable (e.g. CLOUDFLARE_OAUTH_SCOPE) via escrow without forcing every
+  // already-seeded doc to carry the key.
+  for (const key of spec.optionalConfig ?? []) {
+    const value = doc[key];
+    if (typeof value === "string" && value.length > 0)
+      for (const w of consumersActive) ensure(workerConfig, w)[key] = value;
+  }
   for (const key of spec.secret ?? []) {
     const value = doc[key];
     if (typeof value !== "string" || value.length === 0)

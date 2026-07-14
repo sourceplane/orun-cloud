@@ -42,6 +42,43 @@ const API_BASE = "https://api.cloudflare.com/client/v4";
 const OAUTH_AUTHORIZE_URL = "https://dash.cloudflare.com/oauth2/auth";
 const OAUTH_TOKEN_URL = "https://dash.cloudflare.com/oauth2/token";
 
+/** Requesting a refresh token requires this scope; Cloudflare returns only an
+ *  access token without it, and Orun's exchange fails closed with no refresh
+ *  token to escrow. The adapter always ensures it is present. */
+const OAUTH_OFFLINE_ACCESS_SCOPE = "offline_access";
+
+/**
+ * Fallback scope when `CLOUDFLARE_OAUTH_SCOPE` is unset — the two scopes we can
+ * assume valid (they resolve the account anchor and identity). This is enough
+ * to complete consent and obtain the refresh token, but NOT to mint child
+ * tokens: the OAuth access token is the API bearer for `POST /accounts/:id/
+ * tokens`, which additionally needs the account's "API Tokens Write" scope.
+ * That scope's exact string is per-client (self-managed clients name scopes
+ * after API-token permissions, not wrangler's colon-form), so operators set the
+ * real, complete list via `CLOUDFLARE_OAUTH_SCOPE`. The requested scopes must be
+ * a subset of what the OAuth client was registered with.
+ */
+export const CLOUDFLARE_DEFAULT_OAUTH_SCOPE = "account:read user:read";
+
+/**
+ * Normalize a requested scope string into the exact `scope` value to send:
+ * trim, collapse whitespace, drop duplicates, and guarantee `offline_access`
+ * is present (appended last so the ordering stays stable for tests). Falsy or
+ * blank input falls back to the minimal mint-only default.
+ */
+export function resolveCloudflareOauthScope(requested?: string): string {
+  const base = requested && requested.trim() ? requested : CLOUDFLARE_DEFAULT_OAUTH_SCOPE;
+  const seen = new Set<string>();
+  const scopes: string[] = [];
+  for (const token of base.split(/\s+/)) {
+    if (!token || token === OAUTH_OFFLINE_ACCESS_SCOPE || seen.has(token)) continue;
+    seen.add(token);
+    scopes.push(token);
+  }
+  scopes.push(OAUTH_OFFLINE_ACCESS_SCOPE);
+  return scopes.join(" ");
+}
+
 /** Default mint TTL (risks D5): 15 minutes; hard ceiling one hour. */
 export const CLOUDFLARE_DEFAULT_TTL_SECONDS = 15 * 60;
 export const CLOUDFLARE_MAX_TTL_SECONDS = 60 * 60;
@@ -239,11 +276,15 @@ export function buildCloudflareAuthorizeUrl(input: {
   state: string;
   redirectUri: string;
   codeChallenge?: string;
+  /** Requested scopes; normalized via `resolveCloudflareOauthScope` (which
+   *  guarantees `offline_access`). Cloudflare rejects a scope-less request. */
+  scope?: string;
 }): string {
   const url = new URL(OAUTH_AUTHORIZE_URL);
   url.searchParams.set("client_id", input.clientId);
   url.searchParams.set("redirect_uri", input.redirectUri);
   url.searchParams.set("response_type", "code");
+  url.searchParams.set("scope", resolveCloudflareOauthScope(input.scope));
   url.searchParams.set("state", input.state);
   if (input.codeChallenge) {
     url.searchParams.set("code_challenge", input.codeChallenge);
@@ -625,6 +666,7 @@ export function createCloudflareProvider(
               state: input.state,
               redirectUri: input.redirectUri,
               ...(input.codeChallenge ? { codeChallenge: input.codeChallenge } : {}),
+              ...(oauthCredentials.scope ? { scope: oauthCredentials.scope } : {}),
             });
           },
         }

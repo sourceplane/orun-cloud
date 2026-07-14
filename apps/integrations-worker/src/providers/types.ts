@@ -234,4 +234,11 @@ export interface SupabaseOauthCredentials {
 export interface CloudflareOauthCredentials {
   clientId: string;
   clientSecret: string;
+  /** Whitespace-separated OAuth scope list to request at consent. Cloudflare
+   *  requires an explicit scope (no default) and only returns a refresh token
+   *  when `offline_access` is present — the adapter always ensures it is. The
+   *  requested scopes must be a subset of what the client was registered with.
+   *  Sourced from `CLOUDFLARE_OAUTH_SCOPE` (escrow config); unset → the adapter
+   *  requests its minimal mint-only default. */
+  scope?: string;
 }

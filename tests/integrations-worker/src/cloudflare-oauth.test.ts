@@ -9,9 +9,11 @@ import { handleConnectIntegration } from "@integrations-worker/handlers/connecti
 import { handleCloudflareOauthCallback } from "@integrations-worker/handlers/cloudflare-oauth";
 import {
   buildCloudflareAuthorizeUrl,
+  CLOUDFLARE_DEFAULT_OAUTH_SCOPE,
   createCloudflareProvider,
   exchangeCloudflareOauthCode,
   refreshCloudflareAccess,
+  resolveCloudflareOauthScope,
 } from "@integrations-worker/providers/cloudflare";
 import { getConfiguredProvider } from "@integrations-worker/providers/registry";
 import { computeCodeChallenge } from "@integrations-worker/pkce";
@@ -242,6 +244,63 @@ describe("cloudflare OAuth adapter (IH5 / D3)", () => {
     expect(url.searchParams.get("state")).toBe("signed-state");
     expect(url.searchParams.get("code_challenge")).toBe("the-challenge");
     expect(url.searchParams.get("code_challenge_method")).toBe("S256");
+    // A scope-less authorize request is what made Cloudflare's consent page die
+    // with "unexpected error during authorization" — the URL MUST carry a scope,
+    // and it MUST include offline_access (else no refresh token comes back).
+    const scope = url.searchParams.get("scope");
+    expect(scope).toBeTruthy();
+    expect(scope!.split(" ")).toContain("offline_access");
+  });
+
+  it("sends the requested scope verbatim, always ensuring offline_access", () => {
+    const url = new URL(
+      buildCloudflareAuthorizeUrl({
+        clientId: "cf-cid",
+        state: "s",
+        redirectUri: `${REDIRECT_BASE}/ingress/cloudflare/oauth`,
+        scope: "account:read com.cloudflare.api.account.api-tokens.write",
+      }),
+    );
+    expect(url.searchParams.get("scope")).toBe(
+      "account:read com.cloudflare.api.account.api-tokens.write offline_access",
+    );
+  });
+
+  it("falls back to the mint-only default scope when none is requested", () => {
+    const url = new URL(
+      buildCloudflareAuthorizeUrl({
+        clientId: "cf-cid",
+        state: "s",
+        redirectUri: `${REDIRECT_BASE}/ingress/cloudflare/oauth`,
+      }),
+    );
+    expect(url.searchParams.get("scope")).toBe(`${CLOUDFLARE_DEFAULT_OAUTH_SCOPE} offline_access`);
+  });
+
+  describe("resolveCloudflareOauthScope", () => {
+    it("appends offline_access exactly once, even if already requested", () => {
+      expect(resolveCloudflareOauthScope("account:read offline_access")).toBe(
+        "account:read offline_access",
+      );
+      expect(resolveCloudflareOauthScope("offline_access account:read")).toBe(
+        "account:read offline_access",
+      );
+    });
+
+    it("collapses whitespace and de-duplicates scopes deterministically", () => {
+      expect(resolveCloudflareOauthScope("  account:read   user:read  account:read ")).toBe(
+        "account:read user:read offline_access",
+      );
+    });
+
+    it("uses the default for blank/undefined input, still with offline_access", () => {
+      expect(resolveCloudflareOauthScope()).toBe(`${CLOUDFLARE_DEFAULT_OAUTH_SCOPE} offline_access`);
+      expect(resolveCloudflareOauthScope("   ")).toBe(`${CLOUDFLARE_DEFAULT_OAUTH_SCOPE} offline_access`);
+    });
+
+    it("keeps the default itself free of a duplicated offline_access", () => {
+      expect(CLOUDFLARE_DEFAULT_OAUTH_SCOPE.split(/\s+/)).not.toContain("offline_access");
+    });
   });
 
   it("exchanges the code form-encoded with the verifier; validates the pair", async () => {
@@ -280,6 +339,22 @@ describe("cloudflare OAuth adapter (IH5 / D3)", () => {
     await expect(
       refreshCloudflareAccess(CREDS, "cf-refresh-OLD", cloudflareApi({ refreshFails: true }).fetchImpl),
     ).resolves.toBeNull();
+  });
+
+  it("threads the credential's configured scope into the provider authorize URL", () => {
+    const provider = createCloudflareProvider(cloudflareApi().fetchImpl, {
+      ...CREDS,
+      scope: "account:read com.cloudflare.api.account.api-tokens.write",
+    });
+    const url = new URL(
+      provider.buildAuthorizeUrl!({
+        state: "s",
+        redirectUri: `${REDIRECT_BASE}/ingress/cloudflare/oauth`,
+      }),
+    );
+    expect(url.searchParams.get("scope")).toBe(
+      "account:read com.cloudflare.api.account.api-tokens.write offline_access",
+    );
   });
 
   it("mints a child token from a REFRESHED access token, surfacing the rotated parent", async () => {

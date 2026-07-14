@@ -58,7 +58,13 @@ export function getConfiguredProvider(
       const clientId = env.CLOUDFLARE_OAUTH_CLIENT_ID;
       const clientSecret = env.CLOUDFLARE_OAUTH_CLIENT_SECRET;
       if (clientId && clientSecret) {
-        return { provider: createCloudflareProvider(fetchImpl, { clientId, clientSecret }) };
+        return {
+          provider: createCloudflareProvider(fetchImpl, {
+            clientId,
+            clientSecret,
+            ...(env.CLOUDFLARE_OAUTH_SCOPE ? { scope: env.CLOUDFLARE_OAUTH_SCOPE } : {}),
+          }),
+        };
       }
       return { provider: createCloudflareProvider(fetchImpl) };
     }

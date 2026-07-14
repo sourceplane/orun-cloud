@@ -104,8 +104,11 @@
     },
     "cloudflare-oauth": {
       "doc": "integrations/cloudflare-oauth/<env>",
-      "$comment": "Per-environment Cloudflare OAuth client credentials (IH5, risks D3 resolved: Cloudflare shipped OAuth clients for the API), escrow-managed alongside the GitHub/Slack/Supabase apps. ACTIVE: the console presents Cloudflare as an OAuth connect, so the OAuth client is registered per environment and integrations/cloudflare-oauth/<env> is seeded; secrets-live requires + delivers these to integrations-worker. When absent the adapter still falls back to the token-paste posture.",
+      "$comment": "Per-environment Cloudflare OAuth client credentials (IH5, risks D3 resolved: Cloudflare shipped OAuth clients for the API), escrow-managed alongside the GitHub/Slack/Supabase apps. ACTIVE: the console presents Cloudflare as an OAuth connect, so the OAuth client is registered per environment and integrations/cloudflare-oauth/<env> is seeded; secrets-live requires + delivers these to integrations-worker. When absent the adapter still falls back to the token-paste posture. CLOUDFLARE_OAUTH_SCOPE is optionalConfig: the whitespace-separated scope list requested at consent (must be a subset of the client's registered scopes; the adapter always appends offline_access). Unset → the adapter's account:read+user:read default, enough for consent + refresh but not child-token minting — set it to the client's real scope names (including account 'API Tokens Write') to enable minting.",
       "config": [],
+      "optionalConfig": [
+        "CLOUDFLARE_OAUTH_SCOPE"
+      ],
       "secret": [
         "CLOUDFLARE_OAUTH_CLIENT_ID",
         "CLOUDFLARE_OAUTH_CLIENT_SECRET"
