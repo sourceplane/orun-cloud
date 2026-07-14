@@ -58,4 +58,11 @@ export interface Env {
   // SECRET_ENCRYPTION_KEY above).
   CLOUDFLARE_OAUTH_CLIENT_ID?: string;
   CLOUDFLARE_OAUTH_CLIENT_SECRET?: string;
+  // Whitespace-separated OAuth scope list requested at the Cloudflare consent
+  // screen. Cloudflare rejects a scope-less authorize request ("unexpected
+  // error during authorization") and only returns a refresh token when
+  // `offline_access` is requested — the adapter always appends it. Unset = the
+  // adapter's minimal mint-only default. Must be a subset of the scopes the
+  // OAuth client was registered with.
+  CLOUDFLARE_OAUTH_SCOPE?: string;
 }
