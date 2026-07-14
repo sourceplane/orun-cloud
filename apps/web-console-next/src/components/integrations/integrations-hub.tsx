@@ -61,6 +61,7 @@ import {
 } from "@/components/integrations/connections";
 import {
   availableProviders,
+  popupConnectMethod,
   providerById,
   roadmapProviders,
   type ProviderId,
@@ -137,8 +138,10 @@ export function IntegrationsHub({ orgId, orgSlug }: { orgId: string; orgSlug: st
   }, [connectingActive, connectingProvider, toast]);
 
   // Dispatch on the registry's connectKind: install/oauth share the popup +
-  // poll machinery; token (Cloudflare) opens the paste modal instead — the
-  // returned connection is already active, so no poll.
+  // poll machinery; token-kind opens the paste modal instead — the returned
+  // connection is already active, so no poll. Cloudflare now advertises
+  // connectKind:"oauth" (an OAuth client is configured for the env), so it
+  // takes the popup path; the paste modal remains its token-paste fallback.
   const connect = React.useCallback(
     async (providerId: ProviderId) => {
       const provider = providerById(providerId);
@@ -148,13 +151,22 @@ export function IntegrationsHub({ orgId, orgSlug }: { orgId: string; orgSlug: st
         setCloudflareOpen(true);
         return;
       }
-      const r = await wrap(() =>
-        provider.id === "slack"
-          ? client.integrations.connectSlack(orgId)
-          : provider.id === "supabase"
-            ? client.integrations.connectSupabase(orgId)
-            : client.integrations.connectGithub(orgId),
-      );
+      // The connect call per provider (install/oauth all return an installUrl
+      // for the popup/poll flow). Driven by the tested `popupConnectMethod`
+      // map so a provider can never silently fall through to GitHub again
+      // (Cloudflare OAuth passes no body — the worker returns its installUrl).
+      const r = await wrap(() => {
+        switch (popupConnectMethod(provider.id)) {
+          case "connectSlack":
+            return client.integrations.connectSlack(orgId);
+          case "connectSupabase":
+            return client.integrations.connectSupabase(orgId);
+          case "connectCloudflare":
+            return client.integrations.connectCloudflare(orgId);
+          case "connectGithub":
+            return client.integrations.connectGithub(orgId);
+        }
+      });
       if (!r.ok) {
         if (r.status === 412) {
           setGateError(r.error);

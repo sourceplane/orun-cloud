@@ -1,6 +1,7 @@
 import {
   availableProviders,
   INTEGRATION_PROVIDERS,
+  popupConnectMethod,
   providerById,
   roadmapProviders,
 } from "@web-console-next/components/integrations/providers";
@@ -50,5 +51,37 @@ describe("integration providers catalog", () => {
     expect(providerById("cloudflare")?.description).toMatch(/short-lived/i);
     expect(providerById("supabase")?.description).toMatch(/OAuth/i);
     expect(providerById("supabase")?.description).toMatch(/short-lived/i);
+  });
+});
+
+describe("popupConnectMethod — connect dispatch mapping", () => {
+  it("routes each named provider to its own IntegrationsClient method", () => {
+    expect(popupConnectMethod("slack")).toBe("connectSlack");
+    expect(popupConnectMethod("supabase")).toBe("connectSupabase");
+    expect(popupConnectMethod("cloudflare")).toBe("connectCloudflare");
+    expect(popupConnectMethod("github")).toBe("connectGithub");
+  });
+
+  it("maps Cloudflare to connectCloudflare, not connectGithub (OAuth-Cloudflare regression)", () => {
+    // #463 flipped cloudflare to connectKind:"oauth"; the old inline ternary
+    // then fell through to connectGithub, redirecting Connect Cloudflare to the
+    // GitHub install page. This mapping is the guard against that recurrence.
+    expect(popupConnectMethod("cloudflare")).toBe("connectCloudflare");
+    expect(popupConnectMethod("cloudflare")).not.toBe("connectGithub");
+  });
+
+  it("keeps roadmap providers on connectGithub without an accidental branch", () => {
+    // discord/aws are display-only ghosts; they never start a real popup connect,
+    // but the closed union must still map somewhere deterministic.
+    expect(popupConnectMethod("discord")).toBe("connectGithub");
+    expect(popupConnectMethod("aws")).toBe("connectGithub");
+  });
+
+  it("assigns every catalog provider a dispatch target (no silent fall-through)", () => {
+    for (const p of INTEGRATION_PROVIDERS) {
+      expect(popupConnectMethod(p.id)).toMatch(
+        /^connect(Github|Slack|Supabase|Cloudflare)$/,
+      );
+    }
   });
 });
