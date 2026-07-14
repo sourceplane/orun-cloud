@@ -117,3 +117,29 @@ export function availableProviders(): IntegrationProvider[] {
 export function providerById(id: string): IntegrationProvider | null {
   return INTEGRATION_PROVIDERS.find((p) => p.id === id) ?? null;
 }
+
+/** The IntegrationsClient method the hub's popup/poll connect uses for an
+ *  install/oauth-kind provider (token-kind opens the paste modal instead and
+ *  never reaches this). Kept as a tested pure map because the previous inline
+ *  ternary silently fell through to `connectGithub` for any provider it didn't
+ *  name — which is exactly how OAuth-Cloudflare redirected to GitHub. */
+export type PopupConnectMethod =
+  | "connectGithub"
+  | "connectSlack"
+  | "connectSupabase"
+  | "connectCloudflare";
+
+export function popupConnectMethod(providerId: ProviderId): PopupConnectMethod {
+  switch (providerId) {
+    case "slack":
+      return "connectSlack";
+    case "supabase":
+      return "connectSupabase";
+    case "cloudflare":
+      return "connectCloudflare";
+    case "github":
+    case "discord":
+    case "aws":
+      return "connectGithub";
+  }
+}

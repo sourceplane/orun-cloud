@@ -133,13 +133,17 @@ export class IntegrationsClient {
   /**
    * POST /v1/organizations/:orgId/integrations/cloudflare/connect
    *
-   * Token-kind connect (IH5): pass the pasted parent token; the returned
-   * connection is already active — no popup, no polling. The token is
-   * write-only from this call onward.
+   * Two postures (IH5 / risks D3), chosen server-side by whether the
+   * environment has a Cloudflare OAuth client configured:
+   *  - OAuth (preferred when configured): call with NO body; the response
+   *    carries an `installUrl` for the popup/poll flow, exactly like Slack /
+   *    Supabase.
+   *  - Token-paste (fallback): pass `{ parentToken }`; the connection comes
+   *    back already active — no popup, no polling. The token is write-only.
    */
   connectCloudflare(
     orgId: string,
-    body: ConnectIntegrationRequest & { parentToken: string },
+    body: ConnectIntegrationRequest = {},
     opts: RequestOptions = {},
   ): Promise<ConnectIntegrationResponse> {
     return this.transport.request<ConnectIntegrationResponse>(
