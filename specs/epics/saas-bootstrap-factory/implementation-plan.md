@@ -276,6 +276,16 @@ missing (that is its purpose).
 
 ## Phase D — The factory
 
+> **Superseded — the engine moved to the orun binary.** BF11/BF12/BF14 (the
+> Blueprint/Instance contracts, the instantiator, and the upgrade path) are now
+> **one orun feature** in `orun/specs/orun-scaffolding/` (milestones SCF3–SCF7:
+> a single `kind: Blueprint` language + engine covering a component, a repo, or
+> several baselines). The sections below are **retained as the record of what
+> *this repo* must supply to that engine** — i.e. the content of this repo's
+> `blueprint.yaml`, its copied-vs-consumed decisions, and its declared hooks
+> (orun **SCF7**). BF10 (consume the OCI stack) and BF13 (the acme rehearsal)
+> stay here; they *feed* and *consume* orun's engine respectively.
+
 ### BF10 — Consume the published OCI stack
 
 **Why now.** The composition stack is published to GHCR (`publish-stack`) but
@@ -300,6 +310,12 @@ point of a golden-path stack — is therefore unproven.
 (likely already in place — CI logs into GHCR today).
 
 ### BF11 — Blueprint + Instance contracts
+
+> ↗️ **MOVED → orun `SCF3–SCF5`.** The `kind: Blueprint` contract (`inputs`,
+> `sources`, `modules` with `template|copy|consume`) is owned by orun, not this
+> repo. What remains here (folded into **SCF7**): decide copied-vs-consumed per
+> module and author them into this repo's `blueprint.yaml`. Text below is kept
+> as the source of those decisions.
 
 **Why now.** With BF2–BF6 done, the per-instance surface is small and
 enumerable. Freeze it as a typed contract before building the tool — the same
@@ -332,6 +348,13 @@ exactly one module's `bind`.
 **Human help.** None.
 
 ### BF12 — Instantiator v1
+
+> ↗️ **MOVED → orun `SCF5–SCF6`.** `orun instantiate` + `.orun/provenance.lock`
+> + the idempotence gate are the orun binary's, reusing its DAG and object
+> store (retiring `tooling/fork/components.mjs`). The package-scope rename map
+> becomes a Blueprint `bind`/`overlays` declaration (orun **SCF7**). Text below
+> is kept as the specification of this repo's rename map + idempotence
+> expectation.
 
 **Why now.** All prior milestones shrank the rendered surface to:
 `intent.yaml`, per-component env/parameter values, wrangler template identity
@@ -394,6 +417,11 @@ human-help register exactly — no surprises.
 - Plan-apply approvals throughout (`requireApproval: true`).
 
 ### BF14 — Upgrade path + conformance suite
+
+> ↗️ **`factory upgrade` MOVED → orun `SCF6`** (`orun … upgrade`: re-render
+> against the provenance lock + 3-way merge, native to the object store). The
+> **conformance pack stays here** — it is a repo `turbo-package` test component,
+> not engine work. Text below is kept for the conformance-pack scope.
 
 **Why now.** Without an upgrade story every instance is a permanent fork and
 the "factory" claim dies in six months. Without conformance, instances drift
