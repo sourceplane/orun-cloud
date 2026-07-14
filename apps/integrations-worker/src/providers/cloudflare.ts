@@ -48,17 +48,23 @@ const OAUTH_TOKEN_URL = "https://dash.cloudflare.com/oauth2/token";
 const OAUTH_OFFLINE_ACCESS_SCOPE = "offline_access";
 
 /**
- * Fallback scope when `CLOUDFLARE_OAUTH_SCOPE` is unset — the two scopes we can
- * assume valid (they resolve the account anchor and identity). This is enough
- * to complete consent and obtain the refresh token, but NOT to mint child
- * tokens: the OAuth access token is the API bearer for `POST /accounts/:id/
- * tokens`, which additionally needs the account's "API Tokens Write" scope.
- * That scope's exact string is per-client (self-managed clients name scopes
- * after API-token permissions, not wrangler's colon-form), so operators set the
- * real, complete list via `CLOUDFLARE_OAUTH_SCOPE`. The requested scopes must be
- * a subset of what the OAuth client was registered with.
+ * Fallback scope when `CLOUDFLARE_OAUTH_SCOPE` is unset: just `offline_access`.
+ *
+ * Cloudflare's OAuth server (OIDC discovery) advertises only `openid`, `offline`,
+ * and `offline_access` as globally-supported scopes; the API-permission scopes a
+ * self-managed client can grant are attached to the CLIENT at creation (the
+ * scopes selected in the dashboard), not enumerated here. Crucially, they are
+ * NOT wrangler's first-party colon-form — requesting `account:read` returns
+ * `invalid_scope: the OAuth 2.0 Client is not allowed to request scope
+ * 'account:read'`. So the safe, always-valid default requests only
+ * `offline_access` (to obtain the refresh token); the access token then carries
+ * whatever API permissions the client was configured with. If a deployment's
+ * client instead requires resource scopes to be named explicitly, the operator
+ * sets them (in the client's own dot-form, e.g. `workers-platform.read`) via
+ * `CLOUDFLARE_OAUTH_SCOPE`. resolveCloudflareOauthScope always re-appends
+ * offline_access regardless.
  */
-export const CLOUDFLARE_DEFAULT_OAUTH_SCOPE = "account:read user:read";
+export const CLOUDFLARE_DEFAULT_OAUTH_SCOPE = OAUTH_OFFLINE_ACCESS_SCOPE;
 
 /**
  * Normalize a requested scope string into the exact `scope` value to send:

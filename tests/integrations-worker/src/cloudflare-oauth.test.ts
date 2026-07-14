@@ -252,21 +252,24 @@ describe("cloudflare OAuth adapter (IH5 / D3)", () => {
     expect(scope!.split(" ")).toContain("offline_access");
   });
 
-  it("sends the requested scope verbatim, always ensuring offline_access", () => {
+  it("sends operator-supplied resource scopes verbatim, always ensuring offline_access", () => {
     const url = new URL(
       buildCloudflareAuthorizeUrl({
         clientId: "cf-cid",
         state: "s",
         redirectUri: `${REDIRECT_BASE}/ingress/cloudflare/oauth`,
-        scope: "account:read com.cloudflare.api.account.api-tokens.write",
+        scope: "workers-platform.read account.read",
       }),
     );
     expect(url.searchParams.get("scope")).toBe(
-      "account:read com.cloudflare.api.account.api-tokens.write offline_access",
+      "workers-platform.read account.read offline_access",
     );
   });
 
-  it("falls back to the mint-only default scope when none is requested", () => {
+  it("defaults to just offline_access when none is requested (self-managed client grants API perms)", () => {
+    // `account:read` (wrangler's first-party colon-form) is rejected by
+    // self-managed clients with invalid_scope; the always-valid default requests
+    // only offline_access, and the access token inherits the client's own scopes.
     const url = new URL(
       buildCloudflareAuthorizeUrl({
         clientId: "cf-cid",
@@ -274,32 +277,29 @@ describe("cloudflare OAuth adapter (IH5 / D3)", () => {
         redirectUri: `${REDIRECT_BASE}/ingress/cloudflare/oauth`,
       }),
     );
-    expect(url.searchParams.get("scope")).toBe(`${CLOUDFLARE_DEFAULT_OAUTH_SCOPE} offline_access`);
+    expect(url.searchParams.get("scope")).toBe("offline_access");
+    expect(CLOUDFLARE_DEFAULT_OAUTH_SCOPE).toBe("offline_access");
   });
 
   describe("resolveCloudflareOauthScope", () => {
     it("appends offline_access exactly once, even if already requested", () => {
-      expect(resolveCloudflareOauthScope("account:read offline_access")).toBe(
-        "account:read offline_access",
+      expect(resolveCloudflareOauthScope("workers-platform.read offline_access")).toBe(
+        "workers-platform.read offline_access",
       );
-      expect(resolveCloudflareOauthScope("offline_access account:read")).toBe(
-        "account:read offline_access",
+      expect(resolveCloudflareOauthScope("offline_access workers-platform.read")).toBe(
+        "workers-platform.read offline_access",
       );
     });
 
     it("collapses whitespace and de-duplicates scopes deterministically", () => {
-      expect(resolveCloudflareOauthScope("  account:read   user:read  account:read ")).toBe(
-        "account:read user:read offline_access",
+      expect(resolveCloudflareOauthScope("  account.read   user.read  account.read ")).toBe(
+        "account.read user.read offline_access",
       );
     });
 
-    it("uses the default for blank/undefined input, still with offline_access", () => {
-      expect(resolveCloudflareOauthScope()).toBe(`${CLOUDFLARE_DEFAULT_OAUTH_SCOPE} offline_access`);
-      expect(resolveCloudflareOauthScope("   ")).toBe(`${CLOUDFLARE_DEFAULT_OAUTH_SCOPE} offline_access`);
-    });
-
-    it("keeps the default itself free of a duplicated offline_access", () => {
-      expect(CLOUDFLARE_DEFAULT_OAUTH_SCOPE.split(/\s+/)).not.toContain("offline_access");
+    it("uses the offline_access default for blank/undefined input", () => {
+      expect(resolveCloudflareOauthScope()).toBe("offline_access");
+      expect(resolveCloudflareOauthScope("   ")).toBe("offline_access");
     });
   });
 
