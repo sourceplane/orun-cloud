@@ -566,6 +566,48 @@ describe("ConfigRepository — Secret Metadata", () => {
     if (!result.ok) expect(result.error.kind).toBe("not_found");
   });
 
+  it("repoints a brokered secret: bumps version, swaps binding columns + pointer, appends a version (Feature 7)", async () => {
+    const repointed = {
+      ...SAMPLE_SECRET_ROW,
+      version: 4,
+      source: "brokered",
+      binding_provider: "supabase",
+      binding_connection_id: "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
+      binding_template: "management-access",
+    };
+    const { executor, queries } = createFakeExecutor({ rows: [repointed] });
+    const repo = createConfigRepository(executor);
+    const result = await repo.repointBrokeredSecret("org-001", "sec-001", CREATED_BY, {
+      provider: "supabase",
+      connectionUuid: "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb" as never,
+      template: "management-access",
+      pointerEnvelope: '{"v":"brokered"}',
+    });
+    expect(result.ok).toBe(true);
+    // One atomic statement, scoped to an ACTIVE BROKERED head only.
+    expect(queries).toHaveLength(1);
+    expect(queries[0]!.text).toContain("version = version + 1");
+    expect(queries[0]!.text).toContain("source = 'brokered'");
+    expect(queries[0]!.text).toContain("binding_connection_id = $5");
+    expect(queries[0]!.text).toContain("ciphertext_envelope = $7");
+    expect(queries[0]!.text).toContain("INSERT INTO config.secret_versions");
+    expect(queries[0]!.params[3]).toBe("supabase");
+    expect(queries[0]!.params[6]).toBe('{"v":"brokered"}');
+  });
+
+  it("returns not_found when repointing a non-brokered or missing head", async () => {
+    const { executor } = createFakeExecutor({ rows: [], rowCount: 0 });
+    const repo = createConfigRepository(executor);
+    const result = await repo.repointBrokeredSecret("org-001", "nope", CREATED_BY, {
+      provider: "supabase",
+      connectionUuid: "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb" as never,
+      template: "management-access",
+      pointerEnvelope: "{}",
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.kind).toBe("not_found");
+  });
+
   it("lists secret metadata with project scope requiring orgId + projectId", async () => {
     const { executor, queries } = createFakeExecutor({ rows: [] });
     const repo = createConfigRepository(executor);

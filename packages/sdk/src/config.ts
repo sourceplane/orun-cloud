@@ -16,6 +16,7 @@ import type {
   ListSettingsResponse,
   PutSecretPolicyRequest,
   PutSecretPolicyResponse,
+  RepointBrokeredSecretRequest,
   RevealSecretRequest,
   RevealSecretResponse,
   RevokeSecretMetadataResponse,
@@ -229,6 +230,29 @@ export class ConfigClient {
       {
         method: "DELETE",
         path: `${scopeBase(scope)}/secrets/${encodeURIComponent(secretId)}`,
+      },
+      opts,
+    );
+  }
+
+  /**
+   * PATCH <scope>/config/secrets/:secretId — repoint a brokered secret's
+   * binding to a different connection (brokered-orphan-safety, Feature 7): the
+   * recovery path for an orphaned head. Requires both `secret.write` and the
+   * broker's `organization.integration.credential.issue`; the new connection is
+   * re-validated before the pointer moves. No value is ever touched.
+   */
+  repointBrokeredSecret(
+    scope: ConfigScope,
+    secretId: string,
+    body: RepointBrokeredSecretRequest,
+    opts: RequestOptions = {},
+  ): Promise<CreateSecretMetadataResponse> {
+    return this.transport.request<CreateSecretMetadataResponse>(
+      {
+        method: "PATCH",
+        path: `${scopeBase(scope)}/secrets/${encodeURIComponent(secretId)}`,
+        body,
       },
       opts,
     );

@@ -13,6 +13,7 @@ import { handleCreateSecret } from "./handlers/create-secret.js";
 import { handleRotateSecret } from "./handlers/rotate-secret.js";
 import { handleRevealSecret } from "./handlers/reveal-secret.js";
 import { handleRevokeSecret } from "./handlers/revoke-secret.js";
+import { handleRepointSecret } from "./handlers/repoint-secret.js";
 import { handleImportSecrets } from "./handlers/import-secrets.js";
 import { handleSecretKeyStatus } from "./handlers/secret-key-status.js";
 import { handleListSecretChain } from "./handlers/list-secret-chain.js";
@@ -674,10 +675,15 @@ export async function route(request: Request, env: Env): Promise<Response> {
         return handleListSecretVersions(request, env, requestId, actor, matchedSecretItem.scope, matchedSecretItem.secretId);
       }
       if (matchedSecretItem.action === "revoke") {
-        if (request.method !== "DELETE") {
-          return methodNotAllowed(requestId);
+        // The bare secret-item path carries two verbs: DELETE revokes,
+        // PATCH repoints a brokered binding (brokered-orphan-safety, Feature 7).
+        if (request.method === "DELETE") {
+          return handleRevokeSecret(request, env, requestId, actor, matchedSecretItem.scope, matchedSecretItem.secretId);
         }
-        return handleRevokeSecret(request, env, requestId, actor, matchedSecretItem.scope, matchedSecretItem.secretId);
+        if (request.method === "PATCH") {
+          return handleRepointSecret(request, env, requestId, actor, matchedSecretItem.scope, matchedSecretItem.secretId);
+        }
+        return methodNotAllowed(requestId);
       }
     }
 

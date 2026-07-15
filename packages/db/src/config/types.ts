@@ -444,6 +444,20 @@ export interface ConfigRepository {
    * config.secret_versions — one atomic statement.
    */
   rotateSecretMetadata(orgId: string, secretId: string, createdBy: Uuid, ciphertextEnvelope?: string): Promise<ConfigResult<SecretMetadata>>;
+  /**
+   * Repoint a brokered secret's binding to a different connection
+   * (brokered-orphan-safety, Feature 7) — the recovery path for an orphaned
+   * head. Like rotate it is append-not-overwrite: bumps the head version,
+   * swaps the binding_* columns + the pointer envelope, and appends the new
+   * `(secret_id, version)` row. Matches ONLY an active brokered head — a
+   * static or missing head returns `not_found`.
+   */
+  repointBrokeredSecret(
+    orgId: string,
+    secretId: string,
+    createdBy: Uuid,
+    binding: { provider: string; connectionUuid: Uuid; template: string; pointerEnvelope: string },
+  ): Promise<ConfigResult<SecretMetadata>>;
   revokeSecretMetadata(orgId: string, secretId: string): Promise<ConfigResult<SecretMetadata>>;
   /** Brokered-secret entitlement gate (IH7): live brokered bindings in the org. */
   countBrokeredSecrets(orgId: string): Promise<ConfigResult<number>>;

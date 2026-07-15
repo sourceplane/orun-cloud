@@ -269,6 +269,21 @@ export interface CreateSecretMetadataResponse {
   secret: PublicSecretMetadata;
 }
 
+/**
+ * Repoint a brokered secret's binding to a different connection
+ * (brokered-orphan-safety, Feature 7) — the recovery path for an orphaned head.
+ * PATCH .../config/secrets/{id}. `template` is optional: when omitted the
+ * secret's existing template is reused (the common "same grant, live
+ * connection" move). Value-shaped rotate/reveal never apply to a brokered head.
+ */
+export interface RepointBrokeredSecretRequest {
+  binding: {
+    connectionId: string;
+    template?: string;
+    params?: Record<string, unknown>;
+  };
+}
+
 /** Write-only secret rotation with a replacement value. */
 export interface RotateSecretRequest {
   /** Write-only replacement secret value. Encrypted before persistence; never returned. */
