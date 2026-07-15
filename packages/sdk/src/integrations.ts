@@ -371,16 +371,25 @@ export class IntegrationsClient {
     );
   }
 
-  /** DELETE /v1/organizations/:orgId/integrations/:connectionId */
+  /**
+   * DELETE /v1/organizations/:orgId/integrations/:connectionId
+   *
+   * By default the revoke is BLOCKED (409 connection_in_use) when active
+   * brokered secrets still bind to the connection (brokered-orphan-safety,
+   * Feature 2). Pass `{ force: true }` to revoke anyway, orphaning those
+   * secrets — the response then echoes the orphaned set.
+   */
   revoke(
     orgId: string,
     connectionId: string,
+    params: { force?: boolean } = {},
     opts: RequestOptions = {},
   ): Promise<RevokeIntegrationResponse> {
     return this.transport.request<RevokeIntegrationResponse>(
       {
         method: "DELETE",
         path: `/v1/organizations/${encodeURIComponent(orgId)}/integrations/${encodeURIComponent(connectionId)}`,
+        ...(params.force ? { query: { force: "true" } } : {}),
       },
       opts,
     );

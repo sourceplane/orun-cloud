@@ -190,3 +190,55 @@ export function uninstallDisclosure(
     ? "This connection serves the whole account. Revoking it uninstalls the GitHub App for this account and stops events and token issuance for every workspace's linked repositories."
     : "The platform stops receiving events for this installation and any linked repositories stop updating. This also uninstalls the App from GitHub when possible.";
 }
+
+// ---------------------------------------------------------------------------
+// Revoke referential guard (brokered-orphan-safety, Feature 2)
+// ---------------------------------------------------------------------------
+
+/** One brokered secret blocking a connection revoke, as echoed by the 409. */
+export interface RevokeBlocker {
+  id: string;
+  secretKey: string;
+  scope: string;
+}
+
+/** Structural subset of `ApiErrorBody` — kept local so this stays React-free. */
+export interface RevokeErrorLike {
+  reason?: string | undefined;
+  details?: Record<string, unknown> | undefined;
+}
+
+/**
+ * Extract the blocking brokered secrets from a revoke failure. Returns the
+ * blocker list ONLY for the referential-guard 409 (`connection_in_use`) —
+ * every other error returns null so the caller falls back to a generic toast.
+ * Defensive about a malformed `details.blockers` payload (drops bad entries).
+ */
+export function parseRevokeBlockers(error: RevokeErrorLike): RevokeBlocker[] | null {
+  if (error.reason !== "connection_in_use") return null;
+  const raw = error.details?.["blockers"];
+  if (!Array.isArray(raw)) return [];
+  const blockers: RevokeBlocker[] = [];
+  for (const item of raw) {
+    if (item && typeof item === "object") {
+      const rec = item as Record<string, unknown>;
+      if (typeof rec.id === "string" && typeof rec.secretKey === "string") {
+        blockers.push({
+          id: rec.id,
+          secretKey: rec.secretKey,
+          scope: typeof rec.scope === "string" ? rec.scope : "",
+        });
+      }
+    }
+  }
+  return blockers;
+}
+
+/**
+ * Whether a revoke failure is the fail-closed reference-check-unavailable case
+ * (the platform could not confirm the connection is unused, so a non-forced
+ * revoke was refused). The console offers the same force path as for blockers.
+ */
+export function isReferenceCheckUnavailable(error: RevokeErrorLike): boolean {
+  return error.reason === "reference_check_unavailable";
+}

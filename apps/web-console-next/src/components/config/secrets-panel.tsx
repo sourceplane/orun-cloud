@@ -50,6 +50,8 @@ import {
   brokerConnections,
   brokeredCreateErrorMessage,
   deriveBrokerRow,
+  orphanView,
+  orphanedSecrets,
   validateBindingForm,
   type CreateSecretMode,
 } from "./bind-secret-flow";
@@ -138,6 +140,14 @@ export function SecretsPanel({ scope, scopeKey }: { scope: ConfigScope; scopeKey
     toast({ kind: "success", title: "Secret revoked" });
     secrets.reload();
   };
+
+  // brokered-orphan-safety (Feature 1): the orphaned brokered rows drive a
+  // dedicated attention banner — these WILL fail to resolve at plan/run time
+  // until repointed to a live connection or revoked.
+  const orphaned = React.useMemo(
+    () => (secrets.data ? orphanedSecrets(secrets.data) : []),
+    [secrets.data],
+  );
 
   // The most overdue secret drives the attention banner (Rotate now).
   const overdue = React.useMemo(() => {
@@ -319,6 +329,9 @@ export function SecretsPanel({ scope, scopeKey }: { scope: ConfigScope; scopeKey
                 // Brokered rows (IH8) lead with their binding provenance; no
                 // value-shaped action (rotate/reveal) applies to them.
                 const broker = deriveBrokerRow(s);
+                // brokered-orphan-safety (Feature 1): the derived orphan health
+                // for this row (null for static / unstamped rows).
+                const orphan = orphanView(s);
                 const used = broker
                   ? broker.label
                   : (s.displayName ?? (s.servesFrom ? `serves from ${s.servesFrom}` : null));
@@ -328,6 +341,7 @@ export function SecretsPanel({ scope, scopeKey }: { scope: ConfigScope; scopeKey
                     className={cn(
                       "grid min-w-[720px] items-center gap-3 border-t border-border/50 px-[22px] py-[13px] first:border-t-0",
                       rot.due && "bg-warning-wash",
+                      orphan?.orphaned && "bg-destructive-soft/40",
                     )}
                     style={{ gridTemplateColumns: GRID_COLS }}
                   >
@@ -338,6 +352,12 @@ export function SecretsPanel({ scope, scopeKey }: { scope: ConfigScope; scopeKey
                         {broker ? (
                           <Badge variant="info" className="shrink-0 text-[10.5px]">
                             brokered
+                          </Badge>
+                        ) : null}
+                        {orphan?.orphaned ? (
+                          <Badge variant="destructive" className="shrink-0 gap-1 text-[10.5px]" title={orphan.reason}>
+                            <TriangleAlert className="h-3 w-3" strokeWidth={2} />
+                            orphaned
                           </Badge>
                         ) : null}
                       </span>
@@ -437,6 +457,32 @@ export function SecretsPanel({ scope, scopeKey }: { scope: ConfigScope; scopeKey
               })}
             </div>
           </div>
+
+          {orphaned.length > 0 ? (
+            <AttentionBanner
+              tone="error"
+              action={
+                <Button asChild size="sm" variant="outline">
+                  <a href={`/orgs/${orgSlug}/integrations`}>Review connections</a>
+                </Button>
+              }
+            >
+              {orphaned.length === 1 ? (
+                <>
+                  <span className="font-mono text-[12px]">{orphaned[0]!.secretKey}</span> is orphaned — its
+                  integration connection is no longer active, so it will fail to resolve at plan and run time.
+                  Repoint it to a live connection or revoke it.
+                </>
+              ) : (
+                <>
+                  <span className="font-medium">{orphaned.length} brokered secrets</span> are orphaned — their
+                  integration connections are no longer active, so they will fail to resolve at plan and run
+                  time: <span className="font-mono text-[12px]">{orphaned.map((s) => s.secretKey).join(", ")}</span>.
+                  Repoint each to a live connection or revoke it.
+                </>
+              )}
+            </AttentionBanner>
+          ) : null}
 
           {overdue ? (
             <AttentionBanner
