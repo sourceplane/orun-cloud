@@ -48,23 +48,28 @@ const OAUTH_TOKEN_URL = "https://dash.cloudflare.com/oauth2/token";
 const OAUTH_OFFLINE_ACCESS_SCOPE = "offline_access";
 
 /**
- * Fallback scope when `CLOUDFLARE_OAUTH_SCOPE` is unset: just `offline_access`.
+ * Fallback scope when `CLOUDFLARE_OAUTH_SCOPE` is unset.
  *
- * Cloudflare's OAuth server (OIDC discovery) advertises only `openid`, `offline`,
- * and `offline_access` as globally-supported scopes; the API-permission scopes a
- * self-managed client can grant are attached to the CLIENT at creation (the
- * scopes selected in the dashboard), not enumerated here. Crucially, they are
- * NOT wrangler's first-party colon-form — requesting `account:read` returns
- * `invalid_scope: the OAuth 2.0 Client is not allowed to request scope
- * 'account:read'`. So the safe, always-valid default requests only
- * `offline_access` (to obtain the refresh token); the access token then carries
- * whatever API permissions the client was configured with. If a deployment's
- * client instead requires resource scopes to be named explicitly, the operator
- * sets them (in the client's own dot-form, e.g. `workers-platform.read`) via
- * `CLOUDFLARE_OAUTH_SCOPE`. resolveCloudflareOauthScope always re-appends
- * offline_access regardless.
+ * Cloudflare self-managed clients grant the access token ONLY the scopes the
+ * authorize request asks for (the token does NOT auto-inherit the client's full
+ * scope set — a request of only `offline_access` yields "0 total permissions"
+ * on the consent screen and then fails the authorization). And the scope strings
+ * are the client's own dot-form (`account-settings.read`), NOT wrangler's
+ * colon-form (`account:read` → invalid_scope). The protocol scopes `openid`/
+ * `offline_access` are auto-managed by Cloudflare from the client's grant_types
+ * (add `refresh_token` to the client to get `offline_access`), so we never send
+ * them in `scopes` at creation — but we DO request `offline_access` here to
+ * obtain the refresh token.
+ *
+ * So the default requests the minimum for a working connection: `account-
+ * settings.read` + `memberships.read` (enough for `GET /accounts` account
+ * discovery, and ≥1 permission so consent is non-empty) plus `offline_access`
+ * (re-appended by resolveCloudflareOauthScope). Deployments broaden this to the
+ * resource scopes their plans need — in the client's dot-form — via
+ * `CLOUDFLARE_OAUTH_SCOPE`; the brokered access token carries exactly what is
+ * requested here.
  */
-export const CLOUDFLARE_DEFAULT_OAUTH_SCOPE = OAUTH_OFFLINE_ACCESS_SCOPE;
+export const CLOUDFLARE_DEFAULT_OAUTH_SCOPE = "account-settings.read memberships.read";
 
 /**
  * Normalize a requested scope string into the exact `scope` value to send:
