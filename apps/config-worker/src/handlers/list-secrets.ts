@@ -9,6 +9,7 @@ import { errorResponse, listResponse, validationError, withTimings } from "../ht
 import { uuidFromPublicId } from "@saas/db";
 import { createTimings } from "@saas/contracts/timing";
 import { toPublicSecretMetadata } from "../mappers.js";
+import { stampOrphaned, bindingLookup } from "../orphan-stamp.js";
 import { parsePageParams, encodeCursor } from "../pagination.js";
 import type { PolicyResource } from "@saas/contracts/policy";
 
@@ -97,7 +98,12 @@ export async function handleListSecrets(
       return withTimings(errorResponse("internal_error", "Service unavailable", 503, requestId), requestId, route, timings);
     }
 
-    const secrets = result.value.items.map(toPublicSecretMetadata);
+    const mapped = result.value.items.map(toPublicSecretMetadata);
+    // brokered-orphan-safety (Feature 1): stamp orphan health from live
+    // connection status. Fail-soft — a stamping outage leaves rows unstamped.
+    const secrets = env.INTEGRATIONS_WORKER
+      ? await stampOrphaned(mapped, bindingLookup(env.INTEGRATIONS_WORKER, requestId))
+      : mapped;
     const nextCursor = result.value.nextCursor
       ? encodeCursor(result.value.nextCursor.createdAt, result.value.nextCursor.id)
       : null;
