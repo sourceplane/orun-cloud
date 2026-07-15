@@ -289,6 +289,13 @@ export interface GetIntegrationResponse {
 /** DELETE /v1/organizations/{orgId}/integrations/{connectionId} */
 export interface RevokeIntegrationResponse {
   revoked: true;
+  /**
+   * brokered-orphan-safety (Feature 2): brokered secrets orphaned by a forced
+   * revoke (`?force=true`) — echoed so the caller/console can surface the
+   * casualties. Absent on a normal revoke (which is blocked while references
+   * exist) and on an idempotent re-revoke.
+   */
+  orphaned?: Array<{ id: string; secretKey: string; scope: string }>;
 }
 
 // ── Admission grants & share mode (IT8b) ────────────────────

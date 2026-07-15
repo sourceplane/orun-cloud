@@ -546,6 +546,24 @@ export function createConfigRepository(executor: SqlExecutor): ConfigRepository 
       }
     },
 
+    // brokered-orphan-safety (Feature 2): the reverse lookup a connection revoke
+    // needs — every ACTIVE brokered secret still pointing at a connection. Scope
+    // spans all orgs/projects/envs sharing the connection (binding_connection_id
+    // stores the public int_ id).
+    async listActiveBrokeredSecretsByConnection(connectionId: string): Promise<ConfigResult<SecretMetadata[]>> {
+      try {
+        const result = await executor.execute<Record<string, unknown>>(
+          `SELECT ${SECRET_METADATA_SAFE_COLUMNS} FROM config.secret_metadata
+           WHERE binding_connection_id = $1 AND source = 'brokered' AND status = 'active'
+           ORDER BY created_at ASC`,
+          [connectionId],
+        );
+        return { ok: true, value: result.rows.map((r) => mapSecretMetadata(r)) };
+      } catch {
+        return safeError("Failed to list brokered secrets by connection");
+      }
+    },
+
     async rotateSecretMetadata(orgId: string, secretId: string, createdBy: Uuid, ciphertextEnvelope?: string): Promise<ConfigResult<SecretMetadata>> {
       try {
         // Append, never overwrite (SM1): the head cache is refreshed and the new

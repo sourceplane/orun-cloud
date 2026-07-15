@@ -438,7 +438,7 @@ export async function route(request: Request, env: Env): Promise<Response> {
       case "PATCH":
         return handleUpdateConnection(request, env, requestId, actor, orgId, asUuid(connectionUuid));
       case "DELETE":
-        return handleRevokeIntegration(env, requestId, actor, orgId, asUuid(connectionUuid));
+        return handleRevokeIntegration(request, env, requestId, actor, orgId, asUuid(connectionUuid));
       default:
         return methodNotAllowed(requestId);
     }

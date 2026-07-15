@@ -423,6 +423,11 @@ export interface ConfigRepository {
    * viewer's own personal rows; without it every personal row is excluded.
    */
   listSecretMetadata(scope: ResolveScope, params: PageQueryParams, viewerSubjectId?: string): Promise<ConfigResult<PagedResult<SecretMetadata>>>;
+  /**
+   * brokered-orphan-safety: every ACTIVE brokered secret bound to a connection
+   * (public int_ id) — the reverse lookup a connection-revoke guard uses.
+   */
+  listActiveBrokeredSecretsByConnection(connectionId: string): Promise<ConfigResult<SecretMetadata[]>>;
   getSecretMetadata(orgId: string, secretId: string): Promise<ConfigResult<SecretMetadata>>;
   /**
    * Point lookup of a single live secret head by its exact scope tuple + key

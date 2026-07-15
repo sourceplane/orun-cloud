@@ -4,6 +4,14 @@ export interface Env {
   POLICY_WORKER?: Fetcher;
   BILLING_WORKER?: Fetcher;
   PROJECTS_WORKER?: Fetcher;
+  /**
+   * config-worker binding (brokered-orphan-safety, Feature 2): the reverse of
+   * the existing config→integrations mint edge. Used ONLY by the connection
+   * revoke guard to look up active brokered secrets before revoking. Optional —
+   * a missing binding fails the reference check closed (a non-forced revoke is
+   * refused rather than orphaning blind).
+   */
+  CONFIG_WORKER?: Fetcher;
   ENVIRONMENT: string;
 
   // ── Per-environment secrets (wrangler secret put; never vars) ──
