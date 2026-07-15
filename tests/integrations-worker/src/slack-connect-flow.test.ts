@@ -692,9 +692,10 @@ describe("DELETE .../integrations/{id} — slack", () => {
       return [{ id: "x" }];
     });
 
-    const res = await handleRevokeIntegration(env, "req_1", ACTOR, ORG_ID, asUuid(CONNECTION_UUID), {
+    const res = await handleRevokeIntegration(new Request("http://x"), env, "req_1", ACTOR, ORG_ID, asUuid(CONNECTION_UUID), {
       executor,
       fetchImpl,
+      brokeredRefs: async () => ({ ok: true, refs: [] }),
     });
     expect(res.status).toBe(200);
 

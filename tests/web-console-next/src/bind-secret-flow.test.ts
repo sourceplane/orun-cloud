@@ -3,6 +3,8 @@ import {
   brokeredCreateErrorMessage,
   deriveBrokerRow,
   isBrokerCapableProvider,
+  orphanView,
+  orphanedSecrets,
   validateBindingForm,
   CONNECTION_ID_PATTERN,
   type BindTemplateLike,
@@ -131,6 +133,52 @@ describe("deriveBrokerRow", () => {
 
   it("is defensive about a brokered row missing its binding facts", () => {
     expect(deriveBrokerRow({ source: "brokered" })).toBeNull();
+  });
+});
+
+describe("orphanView", () => {
+  it("returns null for static rows", () => {
+    expect(orphanView({ source: "static" })).toBeNull();
+    expect(orphanView({})).toBeNull();
+  });
+
+  it("returns null for a brokered row the server did not stamp (health unknown)", () => {
+    // No orphaned / bindingStatus present → the status lookup was unreachable;
+    // never asserted orphaned on doubt.
+    expect(orphanView({ source: "brokered" })).toBeNull();
+  });
+
+  it("marks an orphaned brokered row with its status and a run-time-failure reason", () => {
+    const v = orphanView({ source: "brokered", orphaned: true, bindingStatus: "revoked" });
+    expect(v).not.toBeNull();
+    expect(v!.orphaned).toBe(true);
+    expect(v!.label).toBe("orphaned");
+    expect(v!.bindingStatus).toBe("revoked");
+    expect(v!.reason).toContain("revoked");
+    expect(v!.reason).toMatch(/fail to resolve/i);
+  });
+
+  it("special-cases a missing connection (bindingStatus unknown)", () => {
+    const v = orphanView({ source: "brokered", orphaned: true, bindingStatus: "unknown" });
+    expect(v!.reason).toMatch(/no longer exists/i);
+  });
+
+  it("reports a healthy brokered row without asserting orphaned", () => {
+    const v = orphanView({ source: "brokered", orphaned: false, bindingStatus: "active" });
+    expect(v!.orphaned).toBe(false);
+    expect(v!.label).toBe("active");
+  });
+});
+
+describe("orphanedSecrets", () => {
+  it("keeps only the orphaned brokered rows", () => {
+    const rows = [
+      { secretKey: "A", source: "brokered" as const, orphaned: true, bindingStatus: "revoked" as const },
+      { secretKey: "B", source: "brokered" as const, orphaned: false, bindingStatus: "active" as const },
+      { secretKey: "C", source: "static" as const },
+      { secretKey: "D", source: "brokered" as const }, // unstamped — health unknown
+    ];
+    expect(orphanedSecrets(rows).map((r) => r.secretKey)).toEqual(["A"]);
   });
 });
 

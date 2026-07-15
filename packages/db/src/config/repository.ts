@@ -546,6 +546,24 @@ export function createConfigRepository(executor: SqlExecutor): ConfigRepository 
       }
     },
 
+    // brokered-orphan-safety (Feature 2): the reverse lookup a connection revoke
+    // needs — every ACTIVE brokered secret still pointing at a connection. Scope
+    // spans all orgs/projects/envs sharing the connection (binding_connection_id
+    // stores the public int_ id).
+    async listActiveBrokeredSecretsByConnection(connectionId: string): Promise<ConfigResult<SecretMetadata[]>> {
+      try {
+        const result = await executor.execute<Record<string, unknown>>(
+          `SELECT ${SECRET_METADATA_SAFE_COLUMNS} FROM config.secret_metadata
+           WHERE binding_connection_id = $1 AND source = 'brokered' AND status = 'active'
+           ORDER BY created_at ASC`,
+          [connectionId],
+        );
+        return { ok: true, value: result.rows.map((r) => mapSecretMetadata(r)) };
+      } catch {
+        return safeError("Failed to list brokered secrets by connection");
+      }
+    },
+
     async rotateSecretMetadata(orgId: string, secretId: string, createdBy: Uuid, ciphertextEnvelope?: string): Promise<ConfigResult<SecretMetadata>> {
       try {
         // Append, never overwrite (SM1): the head cache is refreshed and the new
@@ -578,6 +596,51 @@ export function createConfigRepository(executor: SqlExecutor): ConfigRepository 
         return { ok: true, value: mapSecretMetadata(result.rows[0]!) };
       } catch {
         return safeError("Failed to rotate secret metadata");
+      }
+    },
+
+    async repointBrokeredSecret(
+      orgId: string,
+      secretId: string,
+      createdBy: Uuid,
+      binding: { provider: string; connectionUuid: Uuid; template: string; pointerEnvelope: string },
+    ): Promise<ConfigResult<SecretMetadata>> {
+      try {
+        // Append, never overwrite (mirrors rotate): bump the head, swap the
+        // binding_* columns + pointer envelope, and land the new version row —
+        // one atomic statement. The `source = 'brokered'` predicate makes this
+        // a no-op (→ not_found) for a static head, so a caller can never turn a
+        // stored-value secret into a broker pointer through this path.
+        const sql = `WITH head AS (
+           UPDATE config.secret_metadata
+           SET version = version + 1,
+               updated_at = now(),
+               binding_provider = $4,
+               binding_connection_id = $5,
+               binding_template = $6,
+               ciphertext_envelope = $7
+           WHERE org_id = $1 AND id = $2 AND status = 'active' AND source = 'brokered'
+           RETURNING *
+         ), version_append AS (
+           INSERT INTO config.secret_versions (secret_id, version, ciphertext_envelope, created_by)
+           SELECT id, version, ciphertext_envelope, $3 FROM head
+         )
+         SELECT ${SECRET_METADATA_SAFE_COLUMNS} FROM head`;
+        const result = await executor.execute<Record<string, unknown>>(sql, [
+          orgId,
+          secretId,
+          createdBy,
+          binding.provider,
+          binding.connectionUuid,
+          binding.template,
+          binding.pointerEnvelope,
+        ]);
+        if (result.rowCount === 0) {
+          return { ok: false, error: { kind: "not_found" } };
+        }
+        return { ok: true, value: mapSecretMetadata(result.rows[0]!) };
+      } catch {
+        return safeError("Failed to repoint brokered secret");
       }
     },
 

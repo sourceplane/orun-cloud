@@ -437,7 +437,10 @@ describe("connection revoke fan-out", () => {
       if (text.includes("FROM integrations.github_installations")) return [];
       return [{ id: "x" }];
     });
-    const res = await handleRevokeIntegration(env, "req_1", ACTOR, ORG_ID, CONNECTION_ID, { executor });
+    const res = await handleRevokeIntegration(new Request("http://x"), env, "req_1", ACTOR, ORG_ID, CONNECTION_ID, {
+      executor,
+      brokeredRefs: async () => ({ ok: true, refs: [] }),
+    });
     expect(res.status).toBe(200);
     expect(
       queries.some(

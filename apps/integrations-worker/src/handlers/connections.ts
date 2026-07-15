@@ -28,7 +28,9 @@ import {
   toPublicConnection,
   toPublicConnectionWithSelection,
 } from "../mappers.js";
-import { generateUuid, orgPublicId, parseOrgPublicId } from "../ids.js";
+import { connectionPublicId, generateUuid, orgPublicId, parseOrgPublicId } from "../ids.js";
+import { classifyRevoke } from "../revoke-guard.js";
+import { fetchBrokeredSecretsByConnection, type BrokeredRefsResult } from "../config-client.js";
 import { asUuid, uuidFromPublicId } from "@saas/db/ids";
 import { encodeCursor, parsePageParams } from "../pagination.js";
 import { getConfiguredProvider } from "../providers/registry.js";
@@ -62,6 +64,9 @@ function providerDisplayName(provider: string): string {
 export interface HandlerDeps {
   executor?: SqlExecutor;
   fetchImpl?: FetchLike;
+  /** brokered-orphan-safety (Feature 2): inject the reference lookup in tests;
+   *  production wires fetchBrokeredSecretsByConnection over CONFIG_WORKER. */
+  brokeredRefs?: (connectionPublicId: string) => Promise<BrokeredRefsResult>;
 }
 
 function resolveExecutor(env: Env, deps?: HandlerDeps): { executor: SqlExecutor; owned: boolean } {
@@ -504,6 +509,7 @@ export async function handleGetIntegration(
 // ── Revoke ──────────────────────────────────────────────────
 
 export async function handleRevokeIntegration(
+  request: Request,
   env: Env,
   requestId: string,
   actor: ActorContext,
@@ -532,6 +538,40 @@ export async function handleRevokeIntegration(
       const payload: RevokeIntegrationResponse = { revoked: true };
       return successResponse(payload, requestId);
     }
+
+    // ── brokered-orphan-safety (Feature 2): referential revoke guard ──
+    // A connection with live brokered secrets cannot be revoked unless forced —
+    // forcing orphans those secrets (they stop minting immediately), which we
+    // make an explicit, echoed, audited choice rather than a silent break.
+    const force = new URL(request.url).searchParams.get("force") === "true";
+    const connPublicId = connectionPublicId(connectionId);
+    const refsResult: BrokeredRefsResult = deps?.brokeredRefs
+      ? await deps.brokeredRefs(connPublicId)
+      : env.CONFIG_WORKER
+        ? await fetchBrokeredSecretsByConnection(env.CONFIG_WORKER, connPublicId, requestId)
+        : { ok: false };
+    if (!refsResult.ok && !force) {
+      // Fail closed: we could not confirm whether secrets broker from this
+      // connection, so we do not orphan blind. `force` overrides for recovery.
+      return errorResponse(
+        "precondition_failed",
+        "Could not verify brokered secrets for this connection — retry, or force to override",
+        412,
+        requestId,
+        { reason: "reference_check_unavailable" },
+      );
+    }
+    const decision = classifyRevoke(refsResult.ok ? refsResult.refs : [], { force });
+    if (!decision.allow) {
+      return errorResponse(
+        "conflict",
+        "This connection still has active brokered secrets",
+        409,
+        requestId,
+        { reason: "connection_in_use", blockers: decision.blockers },
+      );
+    }
+    const orphaned = decision.orphans;
 
     const updated = await repo.updateConnectionStatus(orgId, connectionId, "revoked");
     if (!updated.ok) {
@@ -613,6 +653,9 @@ export async function handleRevokeIntegration(
           payload: {
             provider: existing.value.provider,
             externalAccountLogin: existing.value.externalAccountLogin,
+            // brokered-orphan-safety: forced revokes record how many brokered
+            // secrets they orphaned (0 unless --force was used with references).
+            orphanedSecretCount: orphaned.length,
           },
         },
         audit: {
@@ -625,7 +668,8 @@ export async function handleRevokeIntegration(
       // Best-effort: audit emission never fails the revoke.
     }
 
-    const payload: RevokeIntegrationResponse = { revoked: true };
+    const payload: RevokeIntegrationResponse =
+      orphaned.length > 0 ? { revoked: true, orphaned } : { revoked: true };
     return successResponse(payload, requestId);
   } catch {
     return errorResponse("internal_error", "Service unavailable", 503, requestId);

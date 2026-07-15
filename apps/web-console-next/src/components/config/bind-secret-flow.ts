@@ -154,6 +154,57 @@ export function deriveBrokerRow(
 }
 
 // ---------------------------------------------------------------------------
+// Orphan health (brokered-orphan-safety, Feature 1)
+// ---------------------------------------------------------------------------
+
+/** Display projection of a brokered row's derived orphan health. */
+export interface OrphanView {
+  /** The connection can no longer mint — the row will fail to resolve. */
+  orphaned: boolean;
+  /** The derived binding status the server stamped ("revoked", "suspended", …). */
+  bindingStatus: NonNullable<PublicSecretMetadata["bindingStatus"]>;
+  /** Pill label: "orphaned" when orphaned, else the binding status. */
+  label: string;
+  /** One-line explanation for a tooltip / banner. */
+  reason: string;
+}
+
+/**
+ * Derive the orphan-health view for a secrets-table row. Returns null for
+ * static rows and for brokered rows the server did NOT stamp (health unknown —
+ * the status lookup was unreachable; we never assert orphaned on doubt). A
+ * healthy brokered row (`orphaned === false`) returns a view too, so the caller
+ * can choose to render an "active" affordance or nothing.
+ */
+export function orphanView(
+  meta: Pick<PublicSecretMetadata, "source" | "orphaned" | "bindingStatus">,
+): OrphanView | null {
+  if (meta.source !== "brokered") return null;
+  // Unstamped: the health lookup was unreachable. Do not assert orphaned.
+  if (meta.orphaned === undefined && meta.bindingStatus === undefined) return null;
+  const bindingStatus = meta.bindingStatus ?? "unknown";
+  const orphaned = meta.orphaned === true;
+  const reason = orphaned
+    ? bindingStatus === "unknown"
+      ? "Its integration connection no longer exists — this secret will fail to resolve at plan and run time."
+      : `Its integration connection is ${bindingStatus} — this secret will fail to resolve at plan and run time.`
+    : "Its integration connection is active.";
+  return {
+    orphaned,
+    bindingStatus,
+    label: orphaned ? "orphaned" : bindingStatus,
+    reason,
+  };
+}
+
+/** Filter a list to the orphaned brokered rows, for the attention banner. */
+export function orphanedSecrets<T extends Pick<PublicSecretMetadata, "source" | "orphaned" | "bindingStatus">>(
+  secrets: readonly T[],
+): T[] {
+  return secrets.filter((s) => orphanView(s)?.orphaned === true);
+}
+
+// ---------------------------------------------------------------------------
 // 412 messaging for createBrokeredSecret
 // ---------------------------------------------------------------------------
 

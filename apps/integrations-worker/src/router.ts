@@ -42,6 +42,7 @@ import {
   handleValidateBrokerBinding,
 } from "./handlers/credential-broker.js";
 import { handleSlackCredentialsInternal } from "./handlers/slack-credentials-internal.js";
+import { handleInternalConnectionStatuses } from "./handlers/internal-connection-status.js";
 import {
   handleCreateConnectionGrant,
   handleListConnectionGrants,
@@ -130,6 +131,7 @@ const GITHUB_WRITEBACK_PATH = "/internal/github/writeback";
 const SLACK_CREDENTIALS_PATH = "/internal/slack/credentials";
 const BROKER_MINT_PATH = "/internal/credentials/mint";
 const BROKER_VALIDATE_BINDING_PATH = "/internal/credentials/validate-binding";
+const CONNECTION_STATUS_PATH = "/internal/connections/status";
 const SLACK_EVENTS_PATH = "/ingress/slack/events";
 const SLACK_COMMANDS_PATH = "/ingress/slack/commands";
 const SLACK_INTERACTIVITY_PATH = "/ingress/slack/interactivity";
@@ -242,6 +244,20 @@ export async function route(request: Request, env: Env): Promise<Response> {
     return pathname === BROKER_MINT_PATH
       ? handleInternalMintCredential(request, env, requestId)
       : handleValidateBrokerBinding(request, env, requestId);
+  }
+
+  // Internal batch connection-status read (brokered-orphan-safety, Feature 1):
+  // config-worker stamps brokered secrets' orphan health from the live
+  // connection status. Service-binding-only, metadata-only (status enum).
+  if (pathname === CONNECTION_STATUS_PATH) {
+    if (request.method !== "POST") return methodNotAllowed(requestId);
+    if (!isAllowedInternalCaller(request.headers.get(INTERNAL_CALLER_HEADER))) {
+      return errorResponse("unauthorized", "Internal service-binding required", 403, requestId);
+    }
+    if (!env.PLATFORM_DB) {
+      return errorResponse("internal_error", "Database not configured", 503, requestId);
+    }
+    return handleInternalConnectionStatuses(request, env, requestId);
   }
 
   // Everything below is the authenticated org surface.
@@ -438,7 +454,7 @@ export async function route(request: Request, env: Env): Promise<Response> {
       case "PATCH":
         return handleUpdateConnection(request, env, requestId, actor, orgId, asUuid(connectionUuid));
       case "DELETE":
-        return handleRevokeIntegration(env, requestId, actor, orgId, asUuid(connectionUuid));
+        return handleRevokeIntegration(request, env, requestId, actor, orgId, asUuid(connectionUuid));
       default:
         return methodNotAllowed(requestId);
     }

@@ -13,6 +13,7 @@ import { handleCreateSecret } from "./handlers/create-secret.js";
 import { handleRotateSecret } from "./handlers/rotate-secret.js";
 import { handleRevealSecret } from "./handlers/reveal-secret.js";
 import { handleRevokeSecret } from "./handlers/revoke-secret.js";
+import { handleRepointSecret } from "./handlers/repoint-secret.js";
 import { handleImportSecrets } from "./handlers/import-secrets.js";
 import { handleSecretKeyStatus } from "./handlers/secret-key-status.js";
 import { handleListSecretChain } from "./handlers/list-secret-chain.js";
@@ -23,6 +24,7 @@ import { handleListSecretPolicies } from "./handlers/list-secret-policies.js";
 import { handleRecordSecretSync } from "./handlers/record-secret-sync.js";
 import { handleListSecretSyncs } from "./handlers/list-secret-syncs.js";
 import { handleInternalResolveSecrets } from "./handlers/internal-resolve-secrets.js";
+import { handleInternalSecretsByConnection } from "./handlers/internal-secrets-by-connection.js";
 import { handleProviderKeyStore, handleProviderKeyResolve } from "./handlers/internal-provider-keys.js";
 import { errorResponse, notFound, methodNotAllowed } from "./http.js";
 import { generateRequestId, parseOrgPublicId, parseProjectPublicId, parseEnvironmentPublicId, parseSettingPublicId, parseFeatureFlagPublicId, parseSecretMetadataPublicId } from "./ids.js";
@@ -112,6 +114,7 @@ const PRJ_SECRET_POLICIES_EVALUATE_RE = /^\/v1\/organizations\/([^/]+)\/projects
 // service binding. NOT exposed through api-edge (no /v1/internal/* forwarding),
 // and does NOT require a user bearer: it trusts the calling worker.
 const INTERNAL_SECRETS_RESOLVE_PATH = "/v1/internal/config/secrets/resolve";
+const INTERNAL_SECRETS_BY_CONNECTION_PATH = "/v1/internal/config/secrets/by-connection";
 // Provider-key custody (saas-agents AG12): service-binding-only, restricted to
 // the reserved agents/providers/* namespace inside the handlers.
 const INTERNAL_PROVIDER_KEYS_STORE_PATH = "/v1/internal/config/provider-keys/store";
@@ -544,6 +547,16 @@ export async function route(request: Request, env: Env): Promise<Response> {
       return handleInternalResolveSecrets(request, env, requestId, internalActor);
     }
 
+    // brokered-orphan-safety (Feature 2): reverse lookup for the connection
+    // revoke guard. Service-binding-only (not edge-routed), metadata-only, and
+    // a system referential read — no user actor required.
+    if (url.pathname === INTERNAL_SECRETS_BY_CONNECTION_PATH) {
+      if (request.method !== "POST") {
+        return methodNotAllowed(requestId);
+      }
+      return handleInternalSecretsByConnection(request, env, requestId);
+    }
+
     // Provider-key custody (AG12): same trust posture as the resolve above —
     // the calling worker (agents-worker) has already authorized the actor;
     // the handlers additionally hard-restrict to the reserved namespace.
@@ -662,10 +675,15 @@ export async function route(request: Request, env: Env): Promise<Response> {
         return handleListSecretVersions(request, env, requestId, actor, matchedSecretItem.scope, matchedSecretItem.secretId);
       }
       if (matchedSecretItem.action === "revoke") {
-        if (request.method !== "DELETE") {
-          return methodNotAllowed(requestId);
+        // The bare secret-item path carries two verbs: DELETE revokes,
+        // PATCH repoints a brokered binding (brokered-orphan-safety, Feature 7).
+        if (request.method === "DELETE") {
+          return handleRevokeSecret(request, env, requestId, actor, matchedSecretItem.scope, matchedSecretItem.secretId);
         }
-        return handleRevokeSecret(request, env, requestId, actor, matchedSecretItem.scope, matchedSecretItem.secretId);
+        if (request.method === "PATCH") {
+          return handleRepointSecret(request, env, requestId, actor, matchedSecretItem.scope, matchedSecretItem.secretId);
+        }
+        return methodNotAllowed(requestId);
       }
     }
 

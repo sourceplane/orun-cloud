@@ -40,9 +40,20 @@ import {
   connectionScopeMeta,
   connectionShareModeMeta,
   connectionStatusMeta,
+  isReferenceCheckUnavailable,
+  parseRevokeBlockers,
   reauthAffordance,
   uninstallDisclosure,
+  type RevokeBlocker,
 } from "@/components/integrations/connections";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { archetypeForProvider, SCOPE_TEMPLATE_CATALOG } from "@/components/integrations/archetype";
 import { ConnectionAdmission } from "@/components/integrations/connection-admission";
 import { MintLedger } from "@/components/integrations/mint-ledger";
@@ -87,6 +98,12 @@ export function ConnectionDetail({
   });
 
   const [revokeOpen, setRevokeOpen] = React.useState(false);
+  // brokered-orphan-safety (Feature 2): the referential guard blocks a revoke
+  // while active brokered secrets still bind to this connection. On a 409 we
+  // switch from the plain confirm to a blocked dialog that names the secrets
+  // and offers the explicit force path (which orphans them).
+  const [blocked, setBlocked] = React.useState<{ blockers: RevokeBlocker[]; unavailable: boolean } | null>(null);
+  const [forcing, setForcing] = React.useState(false);
 
   if (conn.loading) {
     return (
@@ -157,10 +174,41 @@ export function ConnectionDetail({
   const revoke = async () => {
     const r = await wrap(() => client.integrations.revoke(orgId, connection.id));
     if (!r.ok) {
+      // Referential guard (Feature 2): brokered secrets still bind here, or the
+      // reference check could not run. Both are fixable — surface the blocked
+      // dialog with the force path rather than a dead-end toast.
+      const blockers = parseRevokeBlockers(r.error);
+      const unavailable = isReferenceCheckUnavailable(r.error);
+      if (blockers !== null || unavailable) {
+        setRevokeOpen(false);
+        setBlocked({ blockers: blockers ?? [], unavailable });
+        return;
+      }
       toast({ kind: "error", title: "Revoke failed", description: r.error.message });
       return;
     }
     toast({ kind: "success", title: "Connection revoked" });
+    router.push(hubHref);
+  };
+
+  // Force-revoke: proceed despite the blockers, orphaning the brokered secrets.
+  const forceRevoke = async () => {
+    setForcing(true);
+    const r = await wrap(() => client.integrations.revoke(orgId, connection.id, { force: true }));
+    setForcing(false);
+    if (!r.ok) {
+      toast({ kind: "error", title: "Revoke failed", description: r.error.message });
+      return;
+    }
+    const orphanedCount = r.data.orphaned?.length ?? 0;
+    setBlocked(null);
+    toast({
+      kind: "success",
+      title: "Connection revoked",
+      ...(orphanedCount > 0
+        ? { description: `${orphanedCount} brokered secret${orphanedCount === 1 ? "" : "s"} orphaned — repoint or revoke them.` }
+        : {}),
+    });
     router.push(hubHref);
   };
 
@@ -338,6 +386,42 @@ export function ConnectionDetail({
             confirmLabel="Revoke connection"
             onConfirm={revoke}
           />
+
+          {/* Referential guard (Feature 2): brokered secrets still bind here. */}
+          <Dialog open={blocked !== null} onOpenChange={(o) => !o && setBlocked(null)}>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Can&apos;t revoke — secrets still depend on this connection</DialogTitle>
+                <DialogDescription>
+                  {blocked?.unavailable
+                    ? "The platform couldn't confirm which brokered secrets depend on this connection, so the revoke was refused. You can force it, but any brokered secret bound here will be orphaned and fail to resolve."
+                    : "These brokered secrets mint their value from this connection. Revoking it now would orphan them — they'd fail to resolve at plan and run time. Repoint or revoke them first, or force the revoke to orphan them."}
+                </DialogDescription>
+              </DialogHeader>
+
+              {blocked && blocked.blockers.length > 0 ? (
+                <ul className="max-h-56 space-y-1.5 overflow-y-auto rounded-md border bg-muted/40 p-3">
+                  {blocked.blockers.map((b) => (
+                    <li key={b.id} className="flex items-center justify-between gap-3 text-xs">
+                      <span className="truncate font-mono">{b.secretKey}</span>
+                      {b.scope ? <span className="shrink-0 text-muted-foreground">{b.scope}</span> : null}
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
+
+              <DialogFooter>
+                <Button variant="ghost" onClick={() => setBlocked(null)}>
+                  Cancel
+                </Button>
+                <Button variant="destructive" loading={forcing} onClick={() => void forceRevoke()}>
+                  {blocked && blocked.blockers.length > 0
+                    ? `Force revoke — orphan ${blocked.blockers.length} secret${blocked.blockers.length === 1 ? "" : "s"}`
+                    : "Force revoke anyway"}
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
         </>
       ) : null}
     </Screen>

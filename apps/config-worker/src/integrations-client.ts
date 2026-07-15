@@ -19,6 +19,7 @@ import {
 
 const VALIDATE_URL = "https://integrations.internal/internal/credentials/validate-binding";
 const MINT_URL = "https://integrations.internal/internal/credentials/mint";
+const CONNECTION_STATUS_URL = "https://integrations.internal/internal/connections/status";
 
 function headers(requestId: string): Record<string, string> {
   return {
@@ -75,6 +76,42 @@ export async function validateBrokerBinding(
     return { ok: false, status: 503, reason: "unavailable" };
   }
   return { ok: true, provider: data.provider, maxTtlSeconds: data.maxTtlSeconds };
+}
+
+export type ConnectionStatusesResult =
+  | { ok: true; statuses: Record<string, string> }
+  | { ok: false };
+
+/**
+ * POST /internal/connections/status — batch connection health for orphan
+ * stamping (brokered-orphan-safety, Feature 1). Fail-soft: any network/parse
+ * error or non-200 returns `{ ok: false }` so the caller shows "health unknown"
+ * rather than asserting orphaned.
+ */
+export async function fetchConnectionStatuses(
+  binding: Fetcher,
+  connectionIds: string[],
+  requestId: string,
+): Promise<ConnectionStatusesResult> {
+  if (connectionIds.length === 0) return { ok: true, statuses: {} };
+  let response: Response;
+  let parsed: unknown;
+  try {
+    response = await binding.fetch(CONNECTION_STATUS_URL, {
+      method: "POST",
+      headers: headers(requestId),
+      body: JSON.stringify({ connectionIds }),
+    });
+    parsed = await response.json();
+  } catch {
+    return { ok: false };
+  }
+  if (response.status !== 200) return { ok: false };
+  const data =
+    parsed && typeof parsed === "object" && "data" in parsed
+      ? ((parsed as { data: unknown }).data as { statuses?: Record<string, string> } | null)
+      : null;
+  return { ok: true, statuses: data?.statuses ?? {} };
 }
 
 export type BrokeredMintOutcome =

@@ -515,22 +515,89 @@ describe("DELETE .../integrations/{id}", () => {
       return [{ id: "x" }];
     });
 
-    const first = await handleRevokeIntegration(env, "req_1", ACTOR, ORG_ID, asUuid(CONNECTION_UUID), {
+    const first = await handleRevokeIntegration(new Request("http://x"), env, "req_1", ACTOR, ORG_ID, asUuid(CONNECTION_UUID), {
       executor,
+      brokeredRefs: async () => ({ ok: true, refs: [] }),
     });
     expect(first.status).toBe(200);
     expect(queries.some((q) => q.text.includes("DELETE FROM integrations.installation_tokens"))).toBe(true);
 
-    const second = await handleRevokeIntegration(env, "req_2", ACTOR, ORG_ID, asUuid(CONNECTION_UUID), {
+    const second = await handleRevokeIntegration(new Request("http://x"), env, "req_2", ACTOR, ORG_ID, asUuid(CONNECTION_UUID), {
       executor,
+      brokeredRefs: async () => ({ ok: true, refs: [] }),
     });
     expect(second.status).toBe(200); // idempotent — already revoked
+  });
+
+  it("blocks revoke (409) when active brokered secrets reference the connection", async () => {
+    const env = createEnv();
+    const { executor } = fakeExecutor((text) => {
+      if (text.includes("SELECT * FROM integrations.connections")) {
+        return [pendingRow({ status: "active", external_account_login: "acme" })];
+      }
+      return [{ id: "x" }];
+    });
+    const res = await handleRevokeIntegration(new Request("http://x"), env, "req_1", ACTOR, ORG_ID, asUuid(CONNECTION_UUID), {
+      executor,
+      brokeredRefs: async () => ({
+        ok: true,
+        refs: [{ id: "sec_1", secretKey: "SUPABASE_ACCESS_TOKEN", scope: "project" }],
+      }),
+    });
+    expect(res.status).toBe(409);
+    const body = (await res.json()) as { error?: { details?: { reason?: string; blockers?: unknown[] } } };
+    expect(body.error?.details?.reason).toBe("connection_in_use");
+    expect(body.error?.details?.blockers).toHaveLength(1);
+  });
+
+  it("refuses (412) when the reference check is unavailable and not forced", async () => {
+    const env = createEnv();
+    const { executor } = fakeExecutor((text) => {
+      if (text.includes("SELECT * FROM integrations.connections")) {
+        return [pendingRow({ status: "active", external_account_login: "acme" })];
+      }
+      return [{ id: "x" }];
+    });
+    const res = await handleRevokeIntegration(new Request("http://x"), env, "req_1", ACTOR, ORG_ID, asUuid(CONNECTION_UUID), {
+      executor,
+      brokeredRefs: async () => ({ ok: false }),
+    });
+    expect(res.status).toBe(412);
+    const body = (await res.json()) as { error?: { details?: { reason?: string } } };
+    expect(body.error?.details?.reason).toBe("reference_check_unavailable");
+  });
+
+  it("force-revokes and echoes the orphaned secrets", async () => {
+    const env = createEnv();
+    let status = "active";
+    const { executor } = fakeExecutor((text) => {
+      if (text.includes("SELECT * FROM integrations.connections")) {
+        return [pendingRow({ status, external_account_login: "acme" })];
+      }
+      if (text.includes("SET status = $3")) {
+        status = "revoked";
+        return [pendingRow({ status: "revoked", revoked_at: NOW.toISOString() })];
+      }
+      if (text.includes("SELECT * FROM integrations.github_installations")) return [];
+      return [{ id: "x" }];
+    });
+    const res = await handleRevokeIntegration(new Request("http://x?force=true"), env, "req_1", ACTOR, ORG_ID, asUuid(CONNECTION_UUID), {
+      executor,
+      brokeredRefs: async () => ({
+        ok: true,
+        refs: [{ id: "sec_1", secretKey: "SUPABASE_ACCESS_TOKEN", scope: "project" }],
+      }),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { data?: { orphaned?: unknown[] } };
+    expect(body.data?.orphaned).toHaveLength(1);
   });
 
   it("404s for a connection in another org", async () => {
     const env = createEnv();
     const { executor } = fakeExecutor(() => []);
     const res = await handleRevokeIntegration(
+      new Request("http://x"),
       env,
       "req_1",
       ACTOR,

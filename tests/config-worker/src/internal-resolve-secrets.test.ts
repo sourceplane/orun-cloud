@@ -335,6 +335,51 @@ describe("internal resolve — brokered head (IH7)", () => {
     expect(capture.events[0]!.event.payload.reason).toBe("binding_unavailable");
   });
 
+  it("maps a not-active connection to binding_orphaned (brokered-orphan-safety, run-time)", async () => {
+    const capture: Captured = { events: [], decryptCalls: 0, touchCalls: 0 };
+    const res = await handleInternalResolveSecrets(
+      req(baseBody()),
+      ENV,
+      "req_orphan",
+      ACTOR,
+      makeDeps({
+        capture,
+        envelope: POINTER,
+        // The broker refuses because the connection is no longer active — the
+        // exact signal that the brokered head is orphaned.
+        mint: async () => ({ ok: false, status: 412, reason: "connection_inactive" }),
+      }),
+    );
+    expect(res.status).toBe(412);
+    const json = (await res.json()) as { error: { code: string; message: string; details: { key: string; reason: string; connectionId: string } } };
+    expect(json.error.code).toBe("precondition_failed");
+    expect(json.error.details.reason).toBe("binding_orphaned");
+    expect(json.error.message).toMatch(/orphaned/i);
+    expect(json.error.details.connectionId).toBe(CONNECTION_PUBLIC);
+    // Same fail-closed posture: no decrypt, a secret.denied audit naming the reason.
+    expect(capture.decryptCalls).toBe(0);
+    expect(capture.events[0]!.event.type).toBe("secret.denied");
+    expect(capture.events[0]!.event.payload.reason).toBe("binding_orphaned");
+  });
+
+  it("a missing connection also maps to binding_orphaned", async () => {
+    const capture: Captured = { events: [], decryptCalls: 0, touchCalls: 0 };
+    const res = await handleInternalResolveSecrets(
+      req(baseBody()),
+      ENV,
+      "req_orphan2",
+      ACTOR,
+      makeDeps({
+        capture,
+        envelope: POINTER,
+        mint: async () => ({ ok: false, status: 404, reason: "connection_not_found" }),
+      }),
+    );
+    expect(res.status).toBe(412);
+    const json = (await res.json()) as { error: { details: { reason: string } } };
+    expect(json.error.details.reason).toBe("binding_orphaned");
+  });
+
   it("static heads are unaffected: no mint call, pre-IH7 provenance shape", async () => {
     const capture: Captured = { events: [], decryptCalls: 0, touchCalls: 0 };
     let mintCalls = 0;

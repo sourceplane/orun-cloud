@@ -165,6 +165,23 @@ export interface PublicSecretMetadata {
     connectionId: string;
     template: string;
   };
+  /**
+   * Health of the brokered binding's connection (brokered-orphan-safety).
+   * Present only when source === "brokered": a derived projection of the
+   * integration connection's lifecycle, computed at read time (never stored,
+   * so it can never drift the way `status` did). `unknown` means the
+   * connection status could not be read — shown as "health unknown", never as
+   * healthy.
+   */
+  bindingStatus?: "active" | "pending" | "suspended" | "revoked" | "unknown";
+  /**
+   * `true` when this brokered secret can no longer mint a value because its
+   * integration connection is not `active` (revoked / suspended / pending /
+   * missing) — an "orphaned" secret. Derived from `bindingStatus`; surfaces
+   * identically in the console, `orun secrets` listings, and plan/run resolve.
+   * Omitted for static secrets and healthy brokered secrets.
+   */
+  orphaned?: boolean;
   createdAt: string;
   updatedAt: string;
 }
@@ -250,6 +267,21 @@ export interface CreateBrokeredSecretRequest {
 
 export interface CreateSecretMetadataResponse {
   secret: PublicSecretMetadata;
+}
+
+/**
+ * Repoint a brokered secret's binding to a different connection
+ * (brokered-orphan-safety, Feature 7) — the recovery path for an orphaned head.
+ * PATCH .../config/secrets/{id}. `template` is optional: when omitted the
+ * secret's existing template is reused (the common "same grant, live
+ * connection" move). Value-shaped rotate/reveal never apply to a brokered head.
+ */
+export interface RepointBrokeredSecretRequest {
+  binding: {
+    connectionId: string;
+    template?: string;
+    params?: Record<string, unknown>;
+  };
 }
 
 /** Write-only secret rotation with a replacement value. */

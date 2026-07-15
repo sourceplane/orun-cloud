@@ -2,6 +2,8 @@ import {
   connectionDisplayName,
   connectionStatusMeta,
   hasPendingConnection,
+  isReferenceCheckUnavailable,
+  parseRevokeBlockers,
   reauthAffordance,
   uninstallDisclosure,
   visibleConnections,
@@ -129,5 +131,46 @@ describe("integrations connections view-model", () => {
         expect(reauthAffordance(connection({ provider: "slack", status }))).toBeNull();
       }
     });
+  });
+});
+
+describe("parseRevokeBlockers (Feature 2 referential guard)", () => {
+  it("returns null for errors that are not the connection_in_use guard", () => {
+    expect(parseRevokeBlockers({ reason: "forbidden" })).toBeNull();
+    expect(parseRevokeBlockers({})).toBeNull();
+  });
+
+  it("extracts the blocking secrets from a 409 connection_in_use", () => {
+    const blockers = parseRevokeBlockers({
+      reason: "connection_in_use",
+      details: {
+        blockers: [
+          { id: "sec_1", secretKey: "SUPABASE_API", scope: "project" },
+          { id: "sec_2", secretKey: "CF_TOKEN", scope: "environment (prod)" },
+        ],
+      },
+    });
+    expect(blockers).toEqual([
+      { id: "sec_1", secretKey: "SUPABASE_API", scope: "project" },
+      { id: "sec_2", secretKey: "CF_TOKEN", scope: "environment (prod)" },
+    ]);
+  });
+
+  it("returns an empty list (not null) when connection_in_use carries no blockers array", () => {
+    expect(parseRevokeBlockers({ reason: "connection_in_use" })).toEqual([]);
+    expect(parseRevokeBlockers({ reason: "connection_in_use", details: { blockers: "nope" } })).toEqual([]);
+  });
+
+  it("drops malformed blocker entries defensively", () => {
+    const blockers = parseRevokeBlockers({
+      reason: "connection_in_use",
+      details: { blockers: [{ id: "sec_ok", secretKey: "OK" }, { id: 5 }, null, "x"] },
+    });
+    expect(blockers).toEqual([{ id: "sec_ok", secretKey: "OK", scope: "" }]);
+  });
+
+  it("recognises the fail-closed reference-check-unavailable case", () => {
+    expect(isReferenceCheckUnavailable({ reason: "reference_check_unavailable" })).toBe(true);
+    expect(isReferenceCheckUnavailable({ reason: "connection_in_use" })).toBe(false);
   });
 });

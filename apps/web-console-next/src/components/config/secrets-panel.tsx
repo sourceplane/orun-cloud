@@ -50,6 +50,8 @@ import {
   brokerConnections,
   brokeredCreateErrorMessage,
   deriveBrokerRow,
+  orphanView,
+  orphanedSecrets,
   validateBindingForm,
   type CreateSecretMode,
 } from "./bind-secret-flow";
@@ -94,6 +96,7 @@ export function SecretsPanel({ scope, scopeKey }: { scope: ConfigScope; scopeKey
   const [createOpen, setCreateOpen] = React.useState(false);
   const [createMode, setCreateMode] = React.useState<CreateSecretMode>("value");
   const [rotating, setRotating] = React.useState<PublicSecretMetadata | null>(null);
+  const [repointing, setRepointing] = React.useState<PublicSecretMetadata | null>(null);
   const [revoking, setRevoking] = React.useState<PublicSecretMetadata | null>(null);
   const [versionsFor, setVersionsFor] = React.useState<PublicSecretMetadata | null>(null);
   const [syncsFor, setSyncsFor] = React.useState<PublicSecretMetadata | null>(null);
@@ -138,6 +141,14 @@ export function SecretsPanel({ scope, scopeKey }: { scope: ConfigScope; scopeKey
     toast({ kind: "success", title: "Secret revoked" });
     secrets.reload();
   };
+
+  // brokered-orphan-safety (Feature 1): the orphaned brokered rows drive a
+  // dedicated attention banner — these WILL fail to resolve at plan/run time
+  // until repointed to a live connection or revoked.
+  const orphaned = React.useMemo(
+    () => (secrets.data ? orphanedSecrets(secrets.data) : []),
+    [secrets.data],
+  );
 
   // The most overdue secret drives the attention banner (Rotate now).
   const overdue = React.useMemo(() => {
@@ -281,6 +292,18 @@ export function SecretsPanel({ scope, scopeKey }: { scope: ConfigScope; scopeKey
         onConfirm={() => (revoking ? revoke(revoking.id) : undefined)}
       />
 
+      <RepointSecretDialog
+        scope={scope}
+        orgId={orgId}
+        secret={repointing}
+        onClose={() => setRepointing(null)}
+        onRepointed={() => {
+          setRepointing(null);
+          toast({ kind: "success", title: "Binding repointed", description: "The secret now mints from the new connection." });
+          secrets.reload();
+        }}
+      />
+
       <VersionsSheet scope={scope} secret={versionsFor} onClose={() => setVersionsFor(null)} />
       <SyncsSheet scope={scope} secret={syncsFor} onClose={() => setSyncsFor(null)} />
       <RevealDialog scope={scope} secret={revealFor} onClose={() => setRevealFor(null)} />
@@ -319,6 +342,9 @@ export function SecretsPanel({ scope, scopeKey }: { scope: ConfigScope; scopeKey
                 // Brokered rows (IH8) lead with their binding provenance; no
                 // value-shaped action (rotate/reveal) applies to them.
                 const broker = deriveBrokerRow(s);
+                // brokered-orphan-safety (Feature 1): the derived orphan health
+                // for this row (null for static / unstamped rows).
+                const orphan = orphanView(s);
                 const used = broker
                   ? broker.label
                   : (s.displayName ?? (s.servesFrom ? `serves from ${s.servesFrom}` : null));
@@ -328,6 +354,7 @@ export function SecretsPanel({ scope, scopeKey }: { scope: ConfigScope; scopeKey
                     className={cn(
                       "grid min-w-[720px] items-center gap-3 border-t border-border/50 px-[22px] py-[13px] first:border-t-0",
                       rot.due && "bg-warning-wash",
+                      orphan?.orphaned && "bg-destructive-soft/40",
                     )}
                     style={{ gridTemplateColumns: GRID_COLS }}
                   >
@@ -338,6 +365,12 @@ export function SecretsPanel({ scope, scopeKey }: { scope: ConfigScope; scopeKey
                         {broker ? (
                           <Badge variant="info" className="shrink-0 text-[10.5px]">
                             brokered
+                          </Badge>
+                        ) : null}
+                        {orphan?.orphaned ? (
+                          <Badge variant="destructive" className="shrink-0 gap-1 text-[10.5px]" title={orphan.reason}>
+                            <TriangleAlert className="h-3 w-3" strokeWidth={2} />
+                            orphaned
                           </Badge>
                         ) : null}
                       </span>
@@ -426,6 +459,13 @@ export function SecretsPanel({ scope, scopeKey }: { scope: ConfigScope; scopeKey
                           {!broker ? (
                             <DropdownMenuItem onSelect={() => setRotating(s)}>Rotate</DropdownMenuItem>
                           ) : null}
+                          {/* Brokered rows can be repointed to a live connection —
+                              the recovery path for an orphaned binding (Feature 7). */}
+                          {broker ? (
+                            <DropdownMenuItem onSelect={() => setRepointing(s)}>
+                              <Waypoints className="mr-2 h-4 w-4" /> Repoint binding
+                            </DropdownMenuItem>
+                          ) : null}
                           <DropdownMenuItem onSelect={() => setRevoking(s)} className="text-destructive">
                             Revoke
                           </DropdownMenuItem>
@@ -437,6 +477,32 @@ export function SecretsPanel({ scope, scopeKey }: { scope: ConfigScope; scopeKey
               })}
             </div>
           </div>
+
+          {orphaned.length > 0 ? (
+            <AttentionBanner
+              tone="error"
+              action={
+                <Button asChild size="sm" variant="outline">
+                  <a href={`/orgs/${orgSlug}/integrations`}>Review connections</a>
+                </Button>
+              }
+            >
+              {orphaned.length === 1 ? (
+                <>
+                  <span className="font-mono text-[12px]">{orphaned[0]!.secretKey}</span> is orphaned — its
+                  integration connection is no longer active, so it will fail to resolve at plan and run time.
+                  Repoint it to a live connection or revoke it.
+                </>
+              ) : (
+                <>
+                  <span className="font-medium">{orphaned.length} brokered secrets</span> are orphaned — their
+                  integration connections are no longer active, so they will fail to resolve at plan and run
+                  time: <span className="font-mono text-[12px]">{orphaned.map((s) => s.secretKey).join(", ")}</span>.
+                  Repoint each to a live connection or revoke it.
+                </>
+              )}
+            </AttentionBanner>
+          ) : null}
 
           {overdue ? (
             <AttentionBanner
@@ -663,6 +729,139 @@ function BindSecretForm({
         </Button>
       </div>
     </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Repoint a brokered binding (brokered-orphan-safety, Feature 7)
+// ---------------------------------------------------------------------------
+
+/**
+ * The recovery path for an orphaned (or simply mis-pointed) brokered secret:
+ * move its binding to a different LIVE connection of the same provider. The
+ * template is preserved — only the connection changes. On repoint the backend
+ * re-validates the target and mints from it thereafter.
+ */
+function RepointSecretDialog({
+  scope,
+  orgId,
+  secret,
+  onClose,
+  onRepointed,
+}: {
+  scope: ConfigScope;
+  orgId: string;
+  secret: PublicSecretMetadata | null;
+  onClose: () => void;
+  onRepointed: () => void;
+}) {
+  const { client } = useSession();
+  const open = secret !== null;
+  const broker = secret ? deriveBrokerRow(secret) : null;
+
+  const integrations = useApiQuery(
+    qk.integrations(orgId),
+    () => wrap(async () => (await client.integrations.list(orgId)).connections),
+    { enabled: open },
+  );
+  // Candidates: live, broker-capable connections of the SAME provider, minus the
+  // connection the secret is already (orphaned) bound to.
+  const candidates = React.useMemo(() => {
+    const all = brokerConnections<PublicConnection>(integrations.data ?? []);
+    return all.filter((c) => c.provider === broker?.provider && c.id !== broker?.connectionId);
+  }, [integrations.data, broker?.provider, broker?.connectionId]);
+
+  const [connectionId, setConnectionId] = React.useState("");
+  const [busy, setBusy] = React.useState(false);
+  const [error, setError] = React.useState<{ message: string; requestId: string | null } | null>(null);
+
+  // Reset the picker each time the dialog opens for a new secret.
+  React.useEffect(() => {
+    if (open) {
+      setConnectionId("");
+      setError(null);
+      setBusy(false);
+    }
+  }, [open, secret?.id]);
+
+  const submit = async () => {
+    if (!secret || !connectionId) {
+      setError({ message: "Pick a connection to repoint to.", requestId: null });
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    const r = await wrap(() =>
+      client.config.repointBrokeredSecret(scope, secret.id, { binding: { connectionId } }),
+    );
+    setBusy(false);
+    if (!r.ok) {
+      setError({ message: r.error.message, requestId: r.error.requestId ?? null });
+      return;
+    }
+    onRepointed();
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Repoint binding</DialogTitle>
+          <DialogDescription className="font-mono text-xs">{secret?.secretKey}</DialogDescription>
+        </DialogHeader>
+
+        {broker ? (
+          <p className="text-xs text-muted-foreground">
+            Currently bound to a {broker.provider} connection via <span className="font-mono">{broker.template}</span>.
+            Pick another live {broker.provider} connection to mint from — the template is preserved.
+          </p>
+        ) : null}
+
+        {integrations.loading ? (
+          <p className="text-sm text-muted-foreground">Loading connections…</p>
+        ) : candidates.length === 0 ? (
+          <p className="text-sm text-muted-foreground">
+            No other live {broker?.provider} connection is available. Connect one from the Integrations hub, then
+            repoint here.
+          </p>
+        ) : (
+          <label className="block space-y-1.5 text-sm font-medium">
+            New connection
+            <select
+              value={connectionId}
+              onChange={(e) => setConnectionId(e.target.value)}
+              className="mt-1.5 h-9 w-full rounded-md border bg-card px-2 text-sm font-normal"
+            >
+              <option value="">Select a connection…</option>
+              {candidates.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.provider}
+                  {c.displayName ? ` — ${c.displayName}` : c.externalAccountLogin ? ` — ${c.externalAccountLogin}` : ""}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
+
+        {error ? (
+          <div className="rounded-md border border-destructive/40 bg-destructive-soft p-3 text-xs text-destructive">
+            <div>{error.message}</div>
+            {error.requestId ? (
+              <div className="mt-1 font-mono text-[11px] opacity-80">requestId: {error.requestId}</div>
+            ) : null}
+          </div>
+        ) : null}
+
+        <div className="flex justify-end gap-2 pt-1">
+          <Button type="button" variant="ghost" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button type="button" loading={busy} disabled={candidates.length === 0} onClick={() => void submit()}>
+            Repoint
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
   );
 }
 

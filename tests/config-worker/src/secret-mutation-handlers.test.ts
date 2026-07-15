@@ -724,10 +724,13 @@ describe("config-worker router - secret mutations", () => {
     expect(res.status).toBe(405);
   });
 
-  it("returns 405 for PATCH on secret item route", async () => {
+  it("routes PATCH on the secret item route to repoint (brokered-orphan-safety, Feature 7)", async () => {
+    // PATCH is now a live verb (repoint a brokered binding), not method-not-
+    // allowed. An empty body reaches the repoint handler and fails validation
+    // (400), proving the route resolved rather than returning 405.
     const req = routerRequest(`/v1/organizations/${TEST_ORG_PUBLIC}/config/secrets/${SECRET_PUBLIC}`, "PATCH");
     const res = await route(req, {} as Env);
-    expect(res.status).toBe(405);
+    expect(res.status).toBe(400);
   });
 
   it("returns 405 for GET on rotate route", async () => {
