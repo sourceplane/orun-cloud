@@ -246,6 +246,7 @@ export class MemoryWorkRepository implements WorkRepository {
       at: input.at ?? this.now(),
       payload: {
         title: input.title,
+        description: input.description,
         labels: input.labels,
         docRef: input.docRef,
         initiative: input.initiative,
@@ -909,6 +910,15 @@ export class MemoryWorkRepository implements WorkRepository {
   }
 
   async cancel(scope: WorkspaceScope, input: CancelInput): Promise<CommitOutcome> {
+    // Initiatives are envelope-only — no rung, no intent to fold a cancel
+    // onto. Mirror the SQL repo: reject rather than append a no-op event.
+    const { initiatives } = buildEnvelopes(scope.orgId, this.logs(scope).events);
+    if (initiatives.some((i) => i.key === input.key)) {
+      throw new WorkError(
+        "invalid",
+        "an initiative has no lifecycle to cancel — edit its envelope, or retire its epics",
+      );
+    }
     return this.simpleEvent(scope, input.key, "canceled", input.actor, input.at, {});
   }
 

@@ -279,14 +279,29 @@ export function CreateWorkItemDialog({
   );
 }
 
-/** Minimal envelope edit (title; +description for initiatives) — intent
- *  only. Reused by task rows, spec headers, and initiative rows. */
+/** An initiative option for the epic→initiative filing picker. */
+export type InitiativeOption = { key: string; title: string };
+
+/** Envelope edit — intent only; nothing here can move a rung (V4-4). One
+ *  dialog covers every authored pixel a kind exposes: title always, then the
+ *  optional fields the caller opts into (description for initiatives; owner /
+ *  target / success criteria as "the only authored pixels" of an initiative;
+ *  target + initiative filing for an epic). Reused by task rename, the spec
+ *  header, the initiative page, and the epic page. */
 export function EditWorkItemDialog({
   orgId,
   itemKey,
   currentTitle,
   currentDescription,
+  currentOwner,
+  currentTargetDate,
+  currentSuccessCriteria,
+  currentInitiative,
   withDescription,
+  withOwner,
+  withTargetDate,
+  withSuccessCriteria,
+  initiativeOptions,
   open,
   onOpenChange,
   onSaved,
@@ -295,7 +310,16 @@ export function EditWorkItemDialog({
   itemKey: string;
   currentTitle: string;
   currentDescription?: string | undefined;
+  currentOwner?: string | undefined;
+  currentTargetDate?: string | undefined;
+  currentSuccessCriteria?: string[] | undefined;
+  currentInitiative?: string | undefined;
   withDescription?: boolean | undefined;
+  withOwner?: boolean | undefined;
+  withTargetDate?: boolean | undefined;
+  withSuccessCriteria?: boolean | undefined;
+  /** When present, renders an epic→initiative filing picker (empty = unfiled). */
+  initiativeOptions?: InitiativeOption[] | undefined;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onSaved: () => void;
@@ -303,24 +327,57 @@ export function EditWorkItemDialog({
   const { client } = useSession();
   const [title, setTitle] = React.useState(currentTitle);
   const [description, setDescription] = React.useState(currentDescription ?? "");
+  const [owner, setOwner] = React.useState(currentOwner ?? "");
+  const [targetDate, setTargetDate] = React.useState(currentTargetDate ?? "");
+  const [criteria, setCriteria] = React.useState((currentSuccessCriteria ?? []).join("\n"));
+  const [initiative, setInitiative] = React.useState(currentInitiative ?? "");
   const [busy, setBusy] = React.useState(false);
   const [verdict, setVerdict] = React.useState<string | null>(null);
+  const withInitiative = initiativeOptions !== undefined;
 
+  // Re-seed from the item's current envelope only on the closed→open edge, so
+  // a background summary refresh (which hands us new prop identities) never
+  // resets fields the user is mid-edit on.
+  const wasOpen = React.useRef(false);
   React.useEffect(() => {
-    if (open) {
+    if (open && !wasOpen.current) {
       setTitle(currentTitle);
       setDescription(currentDescription ?? "");
+      setOwner(currentOwner ?? "");
+      setTargetDate(currentTargetDate ?? "");
+      setCriteria((currentSuccessCriteria ?? []).join("\n"));
+      setInitiative(currentInitiative ?? "");
       setVerdict(null);
     }
-  }, [open, currentTitle, currentDescription]);
+    wasOpen.current = open;
+  }, [
+    open,
+    currentTitle,
+    currentDescription,
+    currentOwner,
+    currentTargetDate,
+    currentSuccessCriteria,
+    currentInitiative,
+  ]);
 
   const save = async () => {
     setBusy(true);
     setVerdict(null);
     try {
+      // Each field is sent only when the caller opted into it, so an omitted
+      // field never clobbers state the dialog isn't editing. A cleared
+      // owner/target sends null (unfile/clear); a cleared filing sends null.
+      const criteriaList = criteria
+        .split("\n")
+        .map((c) => c.trim())
+        .filter((c) => c.length > 0);
       await client.work.editItem(orgId, itemKey, {
         title: title.trim() || undefined,
-        description: withDescription ? description.trim() || undefined : undefined,
+        ...(withDescription ? { description: description.trim() } : {}),
+        ...(withOwner ? { owner: owner.trim() || null } : {}),
+        ...(withTargetDate ? { targetDate: targetDate || null } : {}),
+        ...(withSuccessCriteria ? { successCriteria: criteriaList } : {}),
+        ...(withInitiative ? { initiative: initiative || null } : {}),
       });
       onOpenChange(false);
       onSaved();
@@ -361,6 +418,63 @@ export function EditWorkItemDialog({
                 onChange={(e) => setDescription(e.target.value)}
                 rows={3}
               />
+            </div>
+          ) : null}
+          {withInitiative ? (
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="work-edit-initiative">Initiative</Label>
+              <select
+                id="work-edit-initiative"
+                value={initiative}
+                onChange={(e) => setInitiative(e.target.value)}
+                className="h-9 rounded-md border border-input bg-background px-2 text-[13px]"
+              >
+                <option value="">Unfiled (no initiative)</option>
+                {initiativeOptions!.map((i) => (
+                  <option key={i.key} value={i.key}>
+                    {i.title} ({i.key})
+                  </option>
+                ))}
+              </select>
+            </div>
+          ) : null}
+          {withOwner || withTargetDate ? (
+            <div className="flex flex-wrap gap-3">
+              {withOwner ? (
+                <div className="flex min-w-[10rem] flex-1 flex-col gap-1.5">
+                  <Label htmlFor="work-edit-owner">Owner</Label>
+                  <Input
+                    id="work-edit-owner"
+                    value={owner}
+                    onChange={(e) => setOwner(e.target.value)}
+                    placeholder="usr_… or a name"
+                  />
+                </div>
+              ) : null}
+              {withTargetDate ? (
+                <div className="flex flex-col gap-1.5">
+                  <Label htmlFor="work-edit-target">Target date</Label>
+                  <Input
+                    id="work-edit-target"
+                    type="date"
+                    value={targetDate}
+                    onChange={(e) => setTargetDate(e.target.value)}
+                  />
+                </div>
+              ) : null}
+            </div>
+          ) : null}
+          {withSuccessCriteria ? (
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="work-edit-criteria">Success criteria</Label>
+              <Textarea
+                id="work-edit-criteria"
+                value={criteria}
+                onChange={(e) => setCriteria(e.target.value)}
+                placeholder={"One per line — what “done” means for the objective."}
+                rows={3}
+              />
+              <p className="text-[11.5px] text-muted-foreground">One per line. Blank lines are dropped.</p>
             </div>
           ) : null}
           {verdict ? <p className="text-[12px] text-destructive">verdict: {verdict}</p> : null}

@@ -48,9 +48,39 @@ describe("initiatives (the third item kind — envelope-only)", () => {
   it("edits title/description through the one mutator (item_edited)", async () => {
     const repo = new MemoryWorkRepository(clock);
     await repo.createInitiative(SCOPE, { slug: "plat", title: "Plat", actor: USER });
-    await repo.editItem(SCOPE, { key: "plat", title: "Platform", actor: USER });
+    await repo.editItem(SCOPE, {
+      key: "plat",
+      title: "Platform",
+      description: "The quarter's spine.",
+      actor: USER,
+    });
     const { initiatives } = repo.envelopes(SCOPE);
     expect(initiatives[0]!.title).toBe("Platform");
+    expect(initiatives[0]!.description).toBe("The quarter's spine.");
+  });
+
+  it("edits the v4 authored pixels (owner/target/criteria) — the fold reads them", async () => {
+    const repo = new MemoryWorkRepository(clock);
+    await repo.createInitiative(SCOPE, { slug: "plat", title: "Plat", actor: USER });
+    await repo.editItem(SCOPE, {
+      key: "plat",
+      owner: "usr_pm",
+      targetDate: "2026-09-30",
+      successCriteria: ["p95 < 200ms", "zero Sev1s"],
+      actor: USER,
+    });
+    const { initiatives } = repo.envelopes(SCOPE);
+    expect(initiatives[0]!.owner).toBe("usr_pm");
+    expect(initiatives[0]!.targetDate).toBe("2026-09-30");
+    expect(initiatives[0]!.successCriteria).toEqual(["p95 < 200ms", "zero Sev1s"]);
+  });
+
+  it("refuses to cancel an initiative — it has no lifecycle to retire", async () => {
+    const repo = new MemoryWorkRepository(clock);
+    await repo.createInitiative(SCOPE, { slug: "plat", title: "Plat", actor: USER });
+    await expect(repo.cancel(SCOPE, { key: "plat", actor: USER })).rejects.toMatchObject({
+      code: "invalid",
+    });
   });
 });
 

@@ -163,3 +163,51 @@ describe("the WH6 import sequence through the real SQL", () => {
     expect(brief.canonical.length).toBeGreaterThan(0);
   });
 });
+
+describe("editItem + cancel through the real SQL (the envelope-edit gap)", () => {
+  const edScope: WorkspaceScope = { orgId: "22222222-2222-2222-2222-222222222222" };
+
+  it("persists description AND the v4 pixels onto the initiatives row", async () => {
+    await repo.createInitiative(edScope, { slug: "growth", title: "Growth", actor: human });
+    await repo.editItem(edScope, {
+      key: "growth",
+      title: "Growth H2",
+      description: "The half's revenue spine.",
+      owner: "usr_pm",
+      targetDate: "2026-12-31",
+      successCriteria: ["NRR > 120%"],
+      actor: human,
+    });
+    const row = await sql.execute(
+      `SELECT title, description, owner, target_date, success_criteria
+         FROM work.initiatives WHERE org_id = $1 AND key = $2`,
+      [edScope.orgId, "growth"],
+    );
+    expect(row.rows[0]!.title).toBe("Growth H2");
+    expect(row.rows[0]!.description).toBe("The half's revenue spine.");
+    expect(row.rows[0]!.owner).toBe("usr_pm");
+    // A partial edit (title only) must not clobber the description just set.
+    await repo.editItem(edScope, { key: "growth", title: "Growth H2 (locked)", actor: human });
+    const after = await sql.execute(
+      `SELECT description FROM work.initiatives WHERE org_id = $1 AND key = $2`,
+      [edScope.orgId, "growth"],
+    );
+    expect(after.rows[0]!.description).toBe("The half's revenue spine.");
+  });
+
+  it("cancels an epic (a lifecycle-bearing item) but refuses an initiative", async () => {
+    await repo.createSpec(edScope, { slug: "retire-me", title: "Retire me", actor: human });
+    const out = await repo.cancel(edScope, { key: "retire-me", actor: human });
+    expect(out.key).toBe("retire-me");
+    const ev = await sql.execute(
+      `SELECT count(*)::int AS n FROM work.events
+         WHERE org_id = $1 AND subject = $2 AND kind = 'canceled'`,
+      [edScope.orgId, "retire-me"],
+    );
+    expect(Number(ev.rows[0]!.n)).toBe(1);
+
+    await expect(repo.cancel(edScope, { key: "growth", actor: human })).rejects.toMatchObject({
+      code: "invalid",
+    });
+  });
+});

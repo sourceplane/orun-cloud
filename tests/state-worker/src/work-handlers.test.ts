@@ -12,6 +12,7 @@ import {
   handleCreateWorkInitiative,
   handleCreateWorkSpec,
   handleEditWorkItem,
+  handleCancelWorkItem,
   handleGetWorkDoc,
   handleIngestWorkObservation,
   handleCreateWorkTask,
@@ -254,6 +255,62 @@ describe("PM0 authoring (initiatives + cloud documents)", () => {
     const summary = await handleWorkSummary(get("/x"), env, "r", USER, asUuid(ORG), { repo });
     const body = (await summary.json()) as { data: { tasks: Array<{ key: string; title: string }> } };
     expect(body.data.tasks.find((t) => t.key === key)!.title).toBe("renamed");
+  });
+
+  it("passes description + the v4 pixels through the edit route (not just title/labels)", async () => {
+    const repo = new MemoryWorkRepository(fixedClock);
+    const env = createEnv();
+    await handleCreateWorkInitiative(post("/x", { slug: "plat", title: "Plat" }), env, "r", USER, asUuid(ORG), {
+      repo,
+    });
+    const res = await handleEditWorkItem(
+      post("/x", {
+        description: "the spine",
+        owner: "usr_pm",
+        targetDate: "2026-09-30",
+        successCriteria: ["p95 < 200ms"],
+      }),
+      env,
+      "r",
+      USER,
+      asUuid(ORG),
+      "plat",
+      { repo },
+    );
+    expect(res.status).toBe(200);
+    const summary = await handleWorkSummary(get("/x"), env, "r", USER, asUuid(ORG), { repo });
+    const body = (await summary.json()) as {
+      data: {
+        initiatives: Array<{
+          key: string;
+          description?: string;
+          owner?: string;
+          targetDate?: string;
+          successCriteria?: string[];
+        }>;
+      };
+    };
+    const init = body.data.initiatives.find((i) => i.key === "plat")!;
+    expect(init.description).toBe("the spine");
+    expect(init.owner).toBe("usr_pm");
+    expect(init.targetDate).toBe("2026-09-30");
+    expect(init.successCriteria).toEqual(["p95 < 200ms"]);
+  });
+
+  it("retires an epic through the items/cancel route, but refuses an initiative (422 verdict)", async () => {
+    const repo = new MemoryWorkRepository(fixedClock);
+    const env = createEnv();
+    await handleCreateWorkSpec(post("/x", { slug: "retire-me", title: "Retire me" }), env, "r", USER, asUuid(ORG), {
+      repo,
+    });
+    const ok = await handleCancelWorkItem(post("/x", {}), env, "r", USER, asUuid(ORG), "retire-me", { repo });
+    expect(ok.status).toBe(200);
+
+    await handleCreateWorkInitiative(post("/x", { slug: "plat", title: "Plat" }), env, "r", USER, asUuid(ORG), {
+      repo,
+    });
+    const rejected = await handleCancelWorkItem(post("/x", {}), env, "r", USER, asUuid(ORG), "plat", { repo });
+    expect(rejected.status).toBe(422);
   });
 
   it("re-import never overwrites a cloud doc chain (V3-5: it skips, the chain survives)", async () => {

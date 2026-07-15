@@ -257,6 +257,17 @@ export class WorkClient {
     return this.taskAction(orgId, key, "cancel", {}, opts);
   }
 
+  /** Retire any item that carries a lifecycle — a task's rung or an epic's
+   *  intent — through the kind-agnostic items path. Cancel is the model's
+   *  native "delete": a terminal, attributed, append-only state, never a row
+   *  removal. Rejected (422 verdict) for initiatives, which have no lifecycle. */
+  cancelItem(orgId: string, key: string, opts: RequestOptions = {}): Promise<WorkMutationResponse> {
+    return this.transport.request<WorkMutationResponse>(
+      { method: "POST", path: `${workBase(orgId)}/items/${encodeURIComponent(key)}/cancel`, body: {} },
+      opts,
+    );
+  }
+
   // ── Board intent (v3 PM2): pure intent verbs — none can move a rung ───────
 
   /** Add ({label}) or remove ({label, remove:true}) a free-form label. */

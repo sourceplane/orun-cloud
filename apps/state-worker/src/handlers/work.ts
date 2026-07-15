@@ -555,15 +555,64 @@ export async function handleEditWorkItem(
   const authz = await authorizeOrg(env, requestId, actor, orgId, WORK_POLICY_ACTIONS.WORK_WRITE);
   if (!authz.ok) return authz.response;
   const body = await parseBody<EditWorkItemRequest>(request);
-  if (!body || (body.title === undefined && body.description === undefined && body.labels === undefined)) {
+  if (
+    !body ||
+    (body.title === undefined &&
+      body.description === undefined &&
+      body.labels === undefined &&
+      body.initiative === undefined &&
+      body.targetDate === undefined &&
+      body.owner === undefined &&
+      body.successCriteria === undefined)
+  ) {
     return validationError(requestId, { title: ["at least one field required"] });
   }
   const { repo, owned } = repoOf(env, deps);
   try {
     const out = await repo.editItem(
       { orgId },
-      { key, title: body.title, labels: body.labels, actor: workActorOf(actor) },
+      {
+        key,
+        title: body.title,
+        description: body.description,
+        labels: body.labels,
+        initiative: body.initiative,
+        targetDate: body.targetDate,
+        owner: body.owner,
+        successCriteria: body.successCriteria,
+        actor: workActorOf(actor),
+      },
     );
+    const payload: WorkMutationResponse = { key: out.key, seq: out.event.seq };
+    return successResponse(payload, requestId);
+  } catch (err) {
+    if (err instanceof WorkError) return workErrorResponse(err, requestId);
+    return errorResponse("internal_error", "Service unavailable", 503, requestId);
+  } finally {
+    await dispose(owned);
+  }
+}
+
+// Retire (cancel) any item that carries a lifecycle — a task's rung, an
+// epic's or design's intent. This is the model's native "delete": a terminal,
+// attributed, append-only state, never a row removal. The repo rejects
+// initiatives (envelope-only, no lifecycle). The task-scoped
+// /tasks/{key}/cancel route stays for back-compat; this items path is the
+// kind-agnostic surface epics use.
+export async function handleCancelWorkItem(
+  request: Request,
+  env: Env,
+  requestId: string,
+  actor: ActorContext,
+  orgId: Uuid,
+  key: string,
+  deps?: WorkHandlerDeps,
+): Promise<Response> {
+  const authz = await authorizeOrg(env, requestId, actor, orgId, WORK_POLICY_ACTIONS.WORK_WRITE);
+  if (!authz.ok) return authz.response;
+  const { repo, owned } = repoOf(env, deps);
+  try {
+    const out = await repo.cancel({ orgId }, { key, actor: workActorOf(actor) });
     const payload: WorkMutationResponse = { key: out.key, seq: out.event.seq };
     return successResponse(payload, requestId);
   } catch (err) {

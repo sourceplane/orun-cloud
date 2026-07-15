@@ -28,11 +28,13 @@ import { qk, useApiQuery } from "@/lib/query";
 import { useSession } from "@/lib/session";
 import { targetLabel } from "@/lib/work/home";
 import { HealthChip, IntentChip, shortDigest } from "@/components/work/hierarchy-chips";
+import { EditWorkItemDialog } from "@/components/work/create-work-item-dialog";
 
 export function InitiativeDetail({ orgId, initiativeKey }: { orgId: string; initiativeKey: string }) {
   const { client } = useSession();
   const params = useParams<{ orgSlug?: string }>();
   const orgSlug = params?.orgSlug ?? "";
+  const [editOpen, setEditOpen] = React.useState(false);
 
   const rollups = useApiQuery(qk.orgWorkRollups(orgId, initiativeKey), () =>
     wrap(async () => client.work.rollups(orgId, initiativeKey)),
@@ -89,6 +91,15 @@ export function InitiativeDetail({ orgId, initiativeKey }: { orgId: string; init
               {initiative?.title ?? initiativeKey}
             </h1>
             <HealthChip health={data.health} evidence={data.evidence} pinned={data.pinnedHealth} />
+            {initiative ? (
+              <button
+                type="button"
+                onClick={() => setEditOpen(true)}
+                className="rounded-md px-2 py-1 text-[12px] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+              >
+                Edit
+              </button>
+            ) : null}
           </div>
           <p className="mt-2 max-w-[560px] text-[13.5px] leading-normal text-muted-foreground">
             {initiative?.description ??
@@ -205,6 +216,28 @@ export function InitiativeDetail({ orgId, initiativeKey }: { orgId: string; init
           </div>
         </aside>
       </div>
+
+      {initiative ? (
+        <EditWorkItemDialog
+          orgId={orgId}
+          itemKey={initiativeKey}
+          currentTitle={initiative.title}
+          currentDescription={initiative.description}
+          currentOwner={initiative.owner}
+          currentTargetDate={initiative.targetDate}
+          currentSuccessCriteria={initiative.successCriteria}
+          withDescription
+          withOwner
+          withTargetDate
+          withSuccessCriteria
+          open={editOpen}
+          onOpenChange={setEditOpen}
+          onSaved={() => {
+            summary.reload();
+            rollups.reload();
+          }}
+        />
+      ) : null}
     </Screen>
   );
 }

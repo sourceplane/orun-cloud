@@ -56,9 +56,26 @@ export function TaskPeek({
   const [renameOpen, setRenameOpen] = React.useState(false);
   const [threadOpen, setThreadOpen] = React.useState(false);
   const [docOpen, setDocOpen] = React.useState(false);
+  const [cancelConfirm, setCancelConfirm] = React.useState(false);
   const panelRef = React.useRef<HTMLDivElement>(null);
 
   const lc = task.lifecycle;
+  const canceled = lc.rung === "canceled";
+
+  const cancelTask = async () => {
+    setBusy(true);
+    setVerdict(null);
+    try {
+      await client.work.cancelItem(orgId, task.key);
+      setCancelConfirm(false);
+      onMutated();
+    } catch (err) {
+      const e = err as { message?: string };
+      setVerdict(e.message ?? "rejected");
+    } finally {
+      setBusy(false);
+    }
+  };
 
   // Esc closes (unless a sheet/dialog stacked above owns the key); `p`
   // focuses the rung ladder so ↑↓ + Enter can pin without the mouse (WV5).
@@ -262,7 +279,30 @@ export function TaskPeek({
         <Button variant="outline" size="sm" onClick={() => setThreadOpen(true)}>
           Thread
         </Button>
-        <kbd className="ml-auto rounded border bg-muted px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">
+        {!canceled ? (
+          cancelConfirm ? (
+            <span className="ml-auto flex items-center gap-1.5">
+              <span className="text-[11px] text-muted-foreground">Cancel this task?</span>
+              <Button variant="outline" size="sm" loading={busy} onClick={() => void cancelTask()}>
+                Confirm
+              </Button>
+              <Button variant="ghost" size="sm" onClick={() => setCancelConfirm(false)}>
+                Keep
+              </Button>
+            </span>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setCancelConfirm(true)}
+              className="ml-auto rounded-md px-2 py-1 text-[11.5px] text-muted-foreground transition-colors hover:bg-warning-wash hover:text-[hsl(var(--warning-ink))]"
+            >
+              Cancel task
+            </button>
+          )
+        ) : (
+          <span className="ml-auto text-[11px] text-muted-foreground">canceled · in the log</span>
+        )}
+        <kbd className="rounded border bg-muted px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">
           esc
         </kbd>
       </div>
