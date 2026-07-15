@@ -278,10 +278,25 @@ export async function handleInternalResolveSecrets(
         if (!outcome.ok) {
           // Fail the WHOLE resolve fail-closed — the same posture as a policy
           // deny. The typed error names the connection, never a value.
-          await auditDenied(eventsRepo, genId, now, body, subject, ref.key, "binding_unavailable", decisionId, head, requestId);
-          return errorResponse("precondition_failed", "Brokered secret binding unavailable", 412, requestId, {
+          //
+          // brokered-orphan-safety (Feature 1, run-time surface): when the mint
+          // failed because the connection is no longer active (revoked /
+          // suspended / gone), the head is ORPHANED — its binding points at a
+          // connection that can no longer mint. Surface that precisely as
+          // `binding_orphaned` (the broker's `connection_inactive` /
+          // `connection_not_found`) so the run log and plan say *why* the key
+          // could not resolve, rather than a generic "unavailable". Every other
+          // mint failure keeps the generic `binding_unavailable`.
+          const orphaned =
+            outcome.reason === "connection_inactive" || outcome.reason === "connection_not_found";
+          const reason = orphaned ? "binding_orphaned" : "binding_unavailable";
+          const message = orphaned
+            ? "Brokered secret is orphaned — its integration connection is no longer active"
+            : "Brokered secret binding unavailable";
+          await auditDenied(eventsRepo, genId, now, body, subject, ref.key, reason, decisionId, head, requestId);
+          return errorResponse("precondition_failed", message, 412, requestId, {
             key: ref.key,
-            reason: "binding_unavailable",
+            reason,
             connectionId: pointer.provider.connectionId,
             decisionId,
           });
