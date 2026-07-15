@@ -68,6 +68,7 @@ export interface CreateTaskInput {
 export interface EditItemInput {
   key: string;
   title?: string | undefined;
+  description?: string | undefined; // initiatives only (the envelope's body)
   labels?: Record<string, string> | undefined;
   docRef?: string | undefined;
   // v4 properties (design §1.7) — pure intent, edited via item_edited.

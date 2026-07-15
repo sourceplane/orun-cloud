@@ -25,6 +25,7 @@ import {
   Pill,
   Screen,
 } from "@/components/ui/northwind";
+import { Button } from "@/components/ui/button";
 import {
   AgentAvatar,
   MilestoneRail,
@@ -41,6 +42,7 @@ import { targetLabel } from "@/lib/work/home";
 import { SpecDocSheet } from "@/components/work/spec-doc-sheet";
 import { IntentChip, shortDigest } from "@/components/work/hierarchy-chips";
 import { TaskPeek } from "@/components/work/work-task-peek";
+import { EditWorkItemDialog, type InitiativeOption } from "@/components/work/create-work-item-dialog";
 
 export function EpicDetail({ orgId, epicKey }: { orgId: string; epicKey: string }) {
   const { client } = useSession();
@@ -49,11 +51,16 @@ export function EpicDetail({ orgId, epicKey }: { orgId: string; epicKey: string 
 
   const summary = useApiQuery(qk.orgWork(orgId), () => wrap(async () => client.work.summary(orgId)));
   const [docOpen, setDocOpen] = React.useState(false);
+  const [editOpen, setEditOpen] = React.useState(false);
   const [verdict, setVerdict] = React.useState<string | null>(null);
   const [peekKey, setPeekKey] = React.useState<string | null>(null);
 
   const data = summary.data;
   const epic: WorkSpecView | undefined = data?.specs.find((s) => s.key === epicKey);
+  const initiativeOptions: InitiativeOption[] = React.useMemo(
+    () => (data?.initiatives ?? []).map((i) => ({ key: i.key, title: i.title })),
+    [data?.initiatives],
+  );
   const tasks = React.useMemo(
     () => (data?.tasks ?? []).filter((t) => t.spec === epicKey),
     [data?.tasks, epicKey],
@@ -109,6 +116,15 @@ export function EpicDetail({ orgId, epicKey }: { orgId: string; epicKey: string 
               {epic.title}
             </h1>
             <IntentChip intent={epic.intent} />
+            {epic.intent?.state !== "canceled" ? (
+              <button
+                type="button"
+                onClick={() => setEditOpen(true)}
+                className="rounded-md px-2 py-1 text-[12px] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+              >
+                Edit
+              </button>
+            ) : null}
           </div>
           <p className="mt-2 max-w-[560px] text-[13.5px] leading-normal text-muted-foreground">
             The reviewable, executable unit. Approval covers the document and the milestone ladder;
@@ -217,8 +233,33 @@ export function EpicDetail({ orgId, epicKey }: { orgId: string; epicKey: string 
           </div>
 
           <WorkingOnIt tasks={tasks} />
+
+          {epic.intent?.state !== "canceled" ? (
+            <div className="border-t border-border/70 pt-3.5">
+              <Kicker className="mb-2">Danger zone</Kicker>
+              <RetireEpicButton
+                orgId={orgId}
+                epicKey={epicKey}
+                onRetired={summary.reload}
+                onVerdict={setVerdict}
+              />
+            </div>
+          ) : null}
         </aside>
       </div>
+
+      <EditWorkItemDialog
+        orgId={orgId}
+        itemKey={epicKey}
+        currentTitle={epic.title}
+        currentTargetDate={epic.targetDate}
+        currentInitiative={epic.initiative}
+        withTargetDate
+        initiativeOptions={initiativeOptions}
+        open={editOpen}
+        onOpenChange={setEditOpen}
+        onSaved={summary.reload}
+      />
 
       <SpecDocSheet
         orgId={orgId}
@@ -247,6 +288,70 @@ function RailRow({ label, children }: { label: string; children: React.ReactNode
     <div className="flex items-center justify-between gap-3">
       <span className="text-muted-foreground">{label}</span>
       <span className="min-w-0 truncate text-right">{children}</span>
+    </div>
+  );
+}
+
+/** Retire an epic — cancel is the model's native "delete": a terminal,
+ *  attributed, append-only intent, never a row removal (§ append-only). It is
+ *  effectively permanent, so it asks once before it writes. */
+function RetireEpicButton({
+  orgId,
+  epicKey,
+  onRetired,
+  onVerdict,
+}: {
+  orgId: string;
+  epicKey: string;
+  onRetired: () => void;
+  onVerdict: (v: string | null) => void;
+}) {
+  const { client } = useSession();
+  const [confirming, setConfirming] = React.useState(false);
+  const [busy, setBusy] = React.useState(false);
+
+  if (!confirming) {
+    return (
+      <div>
+        <Button variant="outline" size="sm" onClick={() => setConfirming(true)}>
+          Retire epic
+        </Button>
+        <p className="mt-1.5 text-[11px] leading-relaxed text-muted-foreground">
+          Moves the epic to <span className="font-medium">Canceled</span>. Nothing is deleted — the record
+          and its history stay; agents stop picking up its work.
+        </p>
+      </div>
+    );
+  }
+  return (
+    <div className="flex flex-col gap-2">
+      <p className="text-[12px] leading-snug text-[hsl(var(--warning-ink))]">
+        Retire this epic? This is terminal — it cannot be un-canceled.
+      </p>
+      <div className="flex gap-2">
+        <Button
+          variant="destructive"
+          size="sm"
+          loading={busy}
+          onClick={() => {
+            setBusy(true);
+            onVerdict(null);
+            void client.work
+              .cancelItem(orgId, epicKey)
+              .then(() => {
+                setConfirming(false);
+                onRetired();
+              })
+              .catch((err: { message?: string }) => onVerdict(err.message ?? "The mutator rejected that."))
+              .finally(() => setBusy(false));
+          }}
+        >
+          Retire
+        </Button>
+        <Button variant="ghost" size="sm" disabled={busy} onClick={() => setConfirming(false)}>
+          Keep
+        </Button>
+      </div>
     </div>
   );
 }

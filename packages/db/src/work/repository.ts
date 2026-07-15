@@ -674,6 +674,7 @@ export function createWorkRepository(
           at: input.at ?? now(),
           payload: {
             title: input.title,
+            description: input.description,
             labels: input.labels,
             docRef: input.docRef,
             initiative: input.initiative,
@@ -714,14 +715,16 @@ export function createWorkRepository(
         await tx.execute(
           `UPDATE work.initiatives SET
              title = COALESCE($3, title),
-             owner = CASE WHEN $4 THEN $5 ELSE owner END,
-             target_date = CASE WHEN $6 THEN $7::date ELSE target_date END,
-             success_criteria = COALESCE($8::jsonb, success_criteria)
+             description = COALESCE($4, description),
+             owner = CASE WHEN $5 THEN $6 ELSE owner END,
+             target_date = CASE WHEN $7 THEN $8::date ELSE target_date END,
+             success_criteria = COALESCE($9::jsonb, success_criteria)
            WHERE org_id = $1 AND key = $2`,
           [
             scope.orgId,
             input.key,
             input.title ?? null,
+            input.description ?? null,
             input.owner !== undefined,
             input.owner ?? null,
             input.targetDate !== undefined,
@@ -1568,6 +1571,23 @@ export function createWorkRepository(
       });
     },
     async cancel(scope, input: CancelInput) {
+      // Cancel is the model's native "delete": a terminal, attributed,
+      // append-only rung/intent — never a row removal. Initiatives are
+      // envelope-only (no rung, no intent), so there is nothing to fold a
+      // cancel onto; reject rather than log a silent no-op event.
+      const isInitiative = await sql.transaction(async (tx) => {
+        const res = await tx.execute(
+          `SELECT 1 FROM work.initiatives WHERE org_id = $1 AND key = $2 LIMIT 1`,
+          [scope.orgId, input.key],
+        );
+        return res.rowCount > 0;
+      });
+      if (isInitiative) {
+        throw new WorkError(
+          "invalid",
+          "an initiative has no lifecycle to cancel — edit its envelope, or retire its epics",
+        );
+      }
       return simpleMutation(scope, input.key, "canceled", input.actor, input.at, {});
     },
 
