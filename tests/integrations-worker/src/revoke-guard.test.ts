@@ -1,13 +1,12 @@
-import { describe, expect, it } from "vitest";
-
-import { classifyRevoke, type BrokeredSecretRef } from "../src/revoke-guard.js";
+// Connection-revoke referential guard (brokered-orphan-safety, Feature 2).
+import { classifyRevoke, type BrokeredSecretRef } from "@integrations-worker/revoke-guard";
 
 const refs: BrokeredSecretRef[] = [
   { id: "sec_1", secretKey: "SUPABASE_ACCESS_TOKEN", scope: "project" },
   { id: "sec_2", secretKey: "SUPABASE_ACCESS_TOKEN-PROD", scope: "environment (prod)" },
 ];
 
-describe("classifyRevoke (brokered-orphan-safety)", () => {
+describe("classifyRevoke", () => {
   it("allows revoke when no brokered secrets reference the connection", () => {
     expect(classifyRevoke([], { force: false })).toEqual({
       allow: true,

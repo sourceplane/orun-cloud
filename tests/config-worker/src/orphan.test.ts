@@ -1,8 +1,7 @@
-import { describe, expect, it } from "vitest";
+// Brokered-orphan derivation (brokered-orphan-safety, Feature 1).
+import { deriveOrphan } from "@config-worker/orphan";
 
-import { deriveOrphan } from "../src/orphan.js";
-
-describe("deriveOrphan (brokered-orphan-safety)", () => {
+describe("deriveOrphan", () => {
   it("never orphans a static secret, whatever the connection status", () => {
     for (const s of ["active", "revoked", "suspended", "pending", "unknown", null, undefined] as const) {
       const v = deriveOrphan("static", s);
@@ -39,13 +38,11 @@ describe("deriveOrphan (brokered-orphan-safety)", () => {
   });
 
   it("never treats an unreadable/missing connection as healthy", () => {
-    // status could not be read
     expect(deriveOrphan("brokered", "unknown")).toEqual({
       orphaned: true,
       bindingStatus: "unknown",
       reason: "connection_unknown",
     });
-    // connection row is gone entirely
     expect(deriveOrphan("brokered", null).orphaned).toBe(true);
     expect(deriveOrphan("brokered", null).reason).toBe("connection_missing");
     expect(deriveOrphan("brokered", undefined).orphaned).toBe(true);
