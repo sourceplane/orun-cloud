@@ -266,10 +266,11 @@ describe("cloudflare OAuth adapter (IH5 / D3)", () => {
     );
   });
 
-  it("defaults to just offline_access when none is requested (self-managed client grants API perms)", () => {
-    // `account:read` (wrangler's first-party colon-form) is rejected by
-    // self-managed clients with invalid_scope; the always-valid default requests
-    // only offline_access, and the access token inherits the client's own scopes.
+  it("defaults to account discovery scopes + offline_access when none is requested", () => {
+    // A self-managed client grants the token ONLY the requested scopes, and a
+    // request of only offline_access yields "0 permissions" and fails consent.
+    // So the default requests account-settings.read + memberships.read (account
+    // discovery, ≥1 permission) in the client's dot-form, plus offline_access.
     const url = new URL(
       buildCloudflareAuthorizeUrl({
         clientId: "cf-cid",
@@ -277,8 +278,10 @@ describe("cloudflare OAuth adapter (IH5 / D3)", () => {
         redirectUri: `${REDIRECT_BASE}/ingress/cloudflare/oauth`,
       }),
     );
-    expect(url.searchParams.get("scope")).toBe("offline_access");
-    expect(CLOUDFLARE_DEFAULT_OAUTH_SCOPE).toBe("offline_access");
+    expect(url.searchParams.get("scope")).toBe(
+      "account-settings.read memberships.read offline_access",
+    );
+    expect(CLOUDFLARE_DEFAULT_OAUTH_SCOPE).toBe("account-settings.read memberships.read");
   });
 
   describe("resolveCloudflareOauthScope", () => {
@@ -298,8 +301,12 @@ describe("cloudflare OAuth adapter (IH5 / D3)", () => {
     });
 
     it("uses the offline_access default for blank/undefined input", () => {
-      expect(resolveCloudflareOauthScope()).toBe("offline_access");
-      expect(resolveCloudflareOauthScope("   ")).toBe("offline_access");
+      expect(resolveCloudflareOauthScope()).toBe(
+        "account-settings.read memberships.read offline_access",
+      );
+      expect(resolveCloudflareOauthScope("   ")).toBe(
+        "account-settings.read memberships.read offline_access",
+      );
     });
   });
 
