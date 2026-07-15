@@ -1,6 +1,7 @@
 # Sub-epic: brokered-orphan-safety
 
-**Status:** Draft (design + decision cores landed; surface wiring staged)
+**Status:** Shipped — all phases landed (design, decision cores, guard, read
+path, run-time reason, console/CLI surfaces, and repoint), each unit-tested.
 **Parent:** `saas-integration-hub` (IH7 brokered credentials)
 **Owner(s):** config-worker (secrets), integrations-worker (connections), console, `orun` CLI (plan/run + `orun secrets`)
 
@@ -134,10 +135,19 @@ the existing mint edge; no request cycle).
   orphaned) and `connection.revoke.blocked` / `connection.revoke.forced`
   (count + blocker count) — so orphaning is measurable, not anecdotal.
 
-## Rollout (phased, each independently shippable)
-1. **Contract + `deriveOrphan` + `classifyRevoke`** (this change) — API shape and
-   the two decision cores, unit-tested.
-2. **Feature 2 guard** — reference endpoint + binding + revoke guard + `force`.
-3. **Feature 1 read path** — batch status endpoint + list/get/chain stamping.
-4. **Surfaces** — console pill/banner + `orun secrets`/`plan`/`run` copy.
-5. **Repoint** — `PATCH` binding + console flow.
+## Rollout (phased, each independently shippable) — all shipped
+1. ✅ **Contract + `deriveOrphan` + `classifyRevoke`** — API shape and the two
+   decision cores, unit-tested.
+2. ✅ **Feature 2 guard** — reference endpoint (`/v1/internal/config/secrets/
+   by-connection`) + revoke guard + `?force`; a connection with active brokered
+   secrets returns `409 connection_in_use` (blockers echoed) unless forced.
+3. ✅ **Feature 1 read path** — batch status endpoint
+   (`/internal/connections/status`) + list-path orphan stamping (fail-soft to
+   "health unknown" when the lookup is unreachable).
+4. ✅ **Run-time reason** — a brokered mint that fails because the connection is
+   inactive/gone resolves to a precise `binding_orphaned` (was
+   `binding_unavailable`), so run logs and the resolve audit say *why*.
+5. ✅ **Surfaces** — console orphaned pill + attention banner + revoke-blocked
+   dialog (with force); `orun secrets list` HEALTH column + orphan warning.
+6. ✅ **Repoint** — `PATCH .../config/secrets/{id}` (dual-policy, re-validated)
+   + console "Repoint binding" action.
