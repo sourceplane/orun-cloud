@@ -98,7 +98,7 @@ describe("AN3: the heartbeat arms the object's lease timer", () => {
           armed.push({ orgId, lease });
         },
       }),
-    } as unknown as Env["SESSION_RELAY"];
+    } as unknown as Env["ATTACH_RELAY"];
     const env = { ENVIRONMENT: "test", ATTACH_RELAY: ns } as Env;
     const res = await route(
       new Request(`https://agents-worker/v1/organizations/${ORG}/agents/sessions/${s.publicId}/heartbeat`, {
@@ -128,7 +128,7 @@ describe("AN3: the heartbeat arms the object's lease timer", () => {
           throw new Error("DO unreachable");
         },
       }),
-    } as unknown as Env["SESSION_RELAY"];
+    } as unknown as Env["ATTACH_RELAY"];
     const env = { ENVIRONMENT: "test", ATTACH_RELAY: ns } as Env;
     const res = await route(
       new Request(`https://agents-worker/v1/organizations/${ORG}/agents/sessions/${s.publicId}/heartbeat`, {
@@ -169,7 +169,7 @@ describe("AN3: body routes ride typed RPC on the SDK class", () => {
           return { v: 1, t: "ack", ref: "c-1", ok: true };
         },
       }),
-    } as unknown as Env["SESSION_RELAY"];
+    } as unknown as Env["ATTACH_RELAY"];
     const env = { ENVIRONMENT: "test", ATTACH_RELAY: ns } as Env;
     const deps = makeDeps(repo);
     const hdrs = {

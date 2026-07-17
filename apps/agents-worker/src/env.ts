@@ -18,20 +18,12 @@ export interface Env {
   BILLING_WORKER?: Fetcher;
   /** Metering worker — usage emission (AG10). */
   METERING_WORKER?: Fetcher;
-  /** Per-session attach relay Durable Object (saas-agents-live AL6): one DO
-   * per session, the SSE fan-out + input return-queue. The DRAINING class of
-   * the AN1 re-platform (saas-agents-native, lock 7): sessions created before
-   * RELAY_CUTOVER_AT stay here until lease + retention expire; the binding is
-   * deleted one release after the cutover. */
-  SESSION_RELAY?: DurableObjectNamespace;
-  /** The SDK relay (saas-agents-native AN1): `AttachRelay extends Agent` —
-   * WS head attach with hibernation, SSE + long-poll retained as fallback,
-   * RelayCore verbatim. New sessions route here when bound. */
+  /** The per-session attach relay (saas-agents-native AN1): `AttachRelay
+   * extends Agent` — WS head attach with hibernation, SSE + long-poll retained
+   * as fallback, RelayCore verbatim. Every session lives here; the pre-AN1
+   * `SessionRelay` KV class and its `RELAY_CUTOVER_AT` gate were decommissioned
+   * once the cutover completed (lock 7). Optional = dormant when unbound. */
   ATTACH_RELAY?: DurableObjectNamespace;
-  /** Session-epoch cutover instant (ISO 8601): sessions created before it
-   * drain on SESSION_RELAY, at/after it land on ATTACH_RELAY. Unset with both
-   * classes bound ⇒ everything routes to ATTACH_RELAY (fresh environments). */
-  RELAY_CUTOVER_AT?: string;
   /** Deploy environment name ("dev" | "stage" | "prod" | "local"). */
   ENVIRONMENT: string;
 }

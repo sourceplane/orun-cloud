@@ -262,22 +262,23 @@ describe("the door + the graceful interrupt", () => {
     const s = await spentSession(repo, p.publicId, 0);
     await repo.setBudget(SCOPE, { grain: "session", maxTokens: 100, createdBy: "u" });
 
-    // A fake per-session DO namespace capturing /input posts. The ingest also
-    // mirrors event batches to the DO (AN1 — the live tail); only the
-    // interrupt enqueue is under test here, so /events traffic is ignored.
+    // A fake per-session SDK relay DO capturing headInput() calls. The ingest
+    // also mirrors event batches via ingestEvents (AN1 — the live tail); only
+    // the interrupt enqueue is under test here, so that traffic is a no-op.
     const inputs: string[] = [];
     const fakeNs = {
       idFromName: (name: string) => ({ name }),
       get: () => ({
-        async fetch(request: Request) {
-          if (new URL(request.url).pathname === "/input") {
-            inputs.push(await request.text());
-          }
-          return Response.json({ v: 1, t: "ack", ok: true });
+        async headInput(frame: unknown) {
+          inputs.push(JSON.stringify(frame));
+          return { v: 1, t: "ack", ok: true };
+        },
+        async ingestEvents(frames: unknown[]) {
+          return frames.length;
         },
       }),
-    } as unknown as Env["SESSION_RELAY"];
-    const envWithRelay = { ...env, SESSION_RELAY: fakeNs } as Env;
+    } as unknown as Env["ATTACH_RELAY"];
+    const envWithRelay = { ...env, ATTACH_RELAY: fakeNs } as Env;
 
     const ingest = (seq: number, tokens: number) =>
       route(

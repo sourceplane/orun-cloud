@@ -84,8 +84,8 @@ export async function handleSessionHeartbeat(
   // backstop catches it.
   const armLease = async () => {
     try {
-      const peer = env ? relayPeerFor(env, sessionId, gate.session.createdAt) : null;
-      if (peer?.kind === "rpc") await peer.rpc.armLease(orgId, lease);
+      const peer = env ? relayPeerFor(env, sessionId) : null;
+      if (peer) await peer.rpc.armLease(orgId, lease);
     } catch {
       // The cron backstop owns the miss.
     }
@@ -173,7 +173,7 @@ export async function handleIngestSessionEvent(
   // effort: a mirror failure never fails an ingest (the console still reads
   // the DB; a head re-attach replays from the mirror's next success).
   try {
-    const peer = env ? relayPeerFor(env, sessionId, gate.session.createdAt) : null;
+    const peer = env ? relayPeerFor(env, sessionId) : null;
     if (peer) {
       const frames = events.map((raw) => {
         const e = raw as Record<string, unknown>;
@@ -185,17 +185,7 @@ export async function handleIngestSessionEvent(
           typeof e.ref === "string" ? e.ref : undefined,
         );
       });
-      if (peer.kind === "rpc") {
-        await peer.rpc.ingestEvents(frames);
-      } else {
-        await peer.stub.fetch(
-          new Request("https://relay/events", {
-            method: "POST",
-            headers: { "content-type": "application/json" },
-            body: JSON.stringify(frames),
-          }),
-        );
-      }
+      await peer.rpc.ingestEvents(frames);
     }
   } catch {
     // Mirror is a projection; the sealed log already has the events.
@@ -227,7 +217,7 @@ export async function handleIngestSessionEvent(
         deps.repo.listSessions({ orgId }),
       ]);
       const crossing = envelopeCrossings(budgets, sessions, updated, prev);
-      const bpeer = crossing && env ? relayPeerFor(env, sessionId, gate.session.createdAt) : null;
+      const bpeer = crossing && env ? relayPeerFor(env, sessionId) : null;
       if (crossing && bpeer) {
         const interrupt = {
           v: 1,
@@ -235,20 +225,7 @@ export async function handleIngestSessionEvent(
           ref: `budget-${sessionId}-${crossing.grain}`,
           reason: `budget_exhausted: ${crossing.grain} ceiling ${crossing.limit} tokens (used ${crossing.used})`,
         };
-        if (bpeer.kind === "rpc") {
-          await bpeer.rpc.headInput(interrupt, "agents-worker-budget");
-        } else {
-          await bpeer.stub.fetch(
-            new Request("https://relay/input", {
-              method: "POST",
-              headers: {
-                "content-type": "application/json",
-                "x-actor-principal": "agents-worker-budget",
-              },
-              body: JSON.stringify(interrupt),
-            }),
-          );
-        }
+        await bpeer.rpc.headInput(interrupt, "agents-worker-budget");
       }
     }
   } catch {
