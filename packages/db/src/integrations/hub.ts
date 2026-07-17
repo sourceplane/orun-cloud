@@ -227,6 +227,11 @@ export interface IntegrationHubRepository {
     connectionId: Uuid,
     kind: ProviderCredentialKind,
   ): Promise<IntegrationsResult<{ deleted: number }>>;
+  /** Custody summaries for the connection detail (SI6): every custody row
+   *  WITHOUT its ciphertext — safe to project through the public surface. */
+  listProviderCredentialSummaries(
+    connectionId: Uuid,
+  ): Promise<IntegrationsResult<Array<Omit<ProviderCredential, "ciphertext">>>>;
 
   // Minted-credential ledger
   insertMintedCredential(
@@ -511,6 +516,34 @@ export function createIntegrationHubRepository(executor: SqlExecutor): Integrati
         return { ok: true, value: { deleted: result.rowCount ?? 0 } };
       } catch (err) {
         return safeError(`provider credential delete failed: ${String(err)}`);
+      }
+    },
+
+    async listProviderCredentialSummaries(connectionId) {
+      try {
+        // Ciphertext DELIBERATELY not selected — this projection feeds the
+        // public connection-detail surface (write-only custody rule).
+        const result = await executor.execute(
+          `SELECT id, connection_id, kind, credential_class, scopes, external_ref,
+                  expires_at, rotated_at, created_at, updated_at
+           FROM integrations.provider_credentials
+           WHERE connection_id = $1
+           ORDER BY kind ASC`,
+          [connectionId],
+        );
+        return {
+          ok: true,
+          value: result.rows.map((row) => {
+            const mapped = mapProviderCredential({ ...row, ciphertext: "" });
+            const summary: Omit<ProviderCredential, "ciphertext"> & { ciphertext?: string } = {
+              ...mapped,
+            };
+            delete summary.ciphertext;
+            return summary;
+          }),
+        };
+      } catch (err) {
+        return safeError(`provider credential summary list failed: ${String(err)}`);
       }
     },
 

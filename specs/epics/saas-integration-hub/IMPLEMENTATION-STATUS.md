@@ -60,3 +60,37 @@ rails; implementation started 2026-07-09.
     flags; `mint_` public-id helpers.
   - **Spec 17** amended (capability vocabulary, custody rules, messaging
     events, hub data ownership, internal seams).
+
+## service-identity-bootstrap (SI1–SI6) — Shipped
+
+Sub-epic `sub-epics/service-identity-bootstrap/` ("OAuth establishes trust,
+service identities operate"), landed as #490 → #495 + the SI6 console PR:
+
+- **SI1** — migration `840_service_identity_custody` (custody kinds
+  `cloudflare_service_token` / `supabase_project_secret`,
+  `credential_class` identity|infrastructure backfilled from kind, ledger
+  `parent_kind`), candidate-order flip with dual-read, `provision`
+  capability seam, `PublicMintedCredential.parentKind`.
+- **SI2** — the Cloudflare OAuth callback provisions the account-owned
+  `orun/{org}/service` token (template-union + token-administration grant,
+  no provider expiry) and never stores the refresh token; mint/revoke
+  posture dispatches on custody kind; connection revoke deletes the
+  identity provider-side.
+- **SI3** — hourly backfill sweep upgrades existing refresh-custody
+  connections under the mint lock (rotate-safe, probe-before-swap,
+  idempotent), emitting `integration.connection.upgraded`.
+- **SI4** — Supabase per-project service-role keys custodied as one
+  encrypted map (captured at connect, reconciled hourly); custody-served
+  template class + `project-service-key` (zero management-API calls on the
+  resolve path). Decision SI-D2: `db-migrate`/`functions-deploy` stay
+  management-plane.
+- **SI5** — `cloudflare_refresh_token` removed from mint candidates
+  (structural deprecation); lifecycle surfaces read it explicitly; the
+  callback's refresh fallback replaced by fail-closed guidance;
+  grant-insufficient connections suspend with `service_identity_required`;
+  daily in-place service-token rotation; orphan-sweep never-touch invariant
+  for `orun/{org}/service` pinned by test.
+- **SI6** — connection detail carries a metadata-only custody summary
+  (`GetIntegrationResponse.custody`: class, user-tie, rotation age, safe
+  scopes); the mint ledger names the authorizing custody class; hub cards
+  state the provision-then-discard contract.

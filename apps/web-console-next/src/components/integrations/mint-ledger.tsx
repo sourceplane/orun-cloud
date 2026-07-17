@@ -130,7 +130,21 @@ export function MintLedger({
                   const revocable = status.label === "Active" && mint.revokeStatus === "pending";
                   return (
                     <TableRow key={mint.id}>
-                      <TableCell className="font-mono text-xs">{mint.template}</TableCell>
+                      <TableCell className="font-mono text-xs">
+                        {mint.template}
+                        {/* SI6: which custody class authorized the mint — a
+                            user-derived parent is the deprecation tail. */}
+                        {mint.parentKind ? (
+                          <span
+                            className="mt-0.5 block text-[10.5px] text-muted-foreground"
+                            title={`Authorized by custody: ${mint.parentKind}`}
+                          >
+                            {mint.parentKind.endsWith("refresh_token")
+                              ? "via user-derived token (deprecated)"
+                              : "via service identity"}
+                          </span>
+                        ) : null}
+                      </TableCell>
                       <TableCell>
                         <Badge variant={purpose.variant}>{purpose.label}</Badge>
                       </TableCell>
