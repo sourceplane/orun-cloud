@@ -158,3 +158,72 @@ describe("AN4: chat routes", () => {
     expect(res.status).toBe(503);
   });
 });
+
+// ── AN6: the memory plane routes ────────────────────────────────────────────
+
+import type { MemoryEntry, MemoryRpc } from "@chat-worker/memory";
+
+describe("AN6: memory routes", () => {
+  const memBase = `/v1/organizations/${ORG}/agents/memory`;
+
+  function fakeMemoryNs(): { ns: NonNullable<Env["WORKSPACE_MEMORY"]>; entries: MemoryEntry[] } {
+    const entries: MemoryEntry[] = [
+      { id: "mem_1", content: "staging deploys need EU region", source: "chat:ch_1", author: "usr_a", createdAt: "2026-07-01T00:00:00Z" },
+    ];
+    const ns = {
+      idFromName: (name: string) => ({ name }),
+      get: () =>
+        ({
+          async remember(e) {
+            const full = { id: "mem_x", ...e };
+            entries.push(full);
+            return full;
+          },
+          async listEntries() {
+            return [...entries];
+          },
+          async updateEntry(id, content) {
+            const e = entries.find((x) => x.id === id);
+            if (!e) return null;
+            e.content = content;
+            return e;
+          },
+          async deleteEntry(id) {
+            const i = entries.findIndex((x) => x.id === id);
+            if (i < 0) return false;
+            entries.splice(i, 1);
+            return true;
+          },
+        }) satisfies MemoryRpc,
+    } as unknown as NonNullable<Env["WORKSPACE_MEMORY"]>;
+    return { ns, entries };
+  }
+
+  it("gates the memory plane with the chat grant (deny-by-default)", async () => {
+    const env = { ENVIRONMENT: "test", WORKSPACE_MEMORY: fakeMemoryNs().ns } as Env;
+    expect((await route(req(memBase), env, makeDeps(false))).status).toBe(403);
+    expect((await route(req(`${memBase}/mem_1`, { method: "DELETE" }), env, makeDeps(false))).status).toBe(403);
+  });
+
+  it("lists, edits, and deletes provenanced entries", async () => {
+    const { ns, entries } = fakeMemoryNs();
+    const env = { ENVIRONMENT: "test", WORKSPACE_MEMORY: ns } as Env;
+    const deps = makeDeps();
+
+    const list = await route(req(memBase), env, deps);
+    expect(list.status).toBe(200);
+    const rows = ((await list.json()) as { data: MemoryEntry[] }).data;
+    expect(rows[0]!.source).toBe("chat:ch_1");
+
+    const edit = await route(req(`${memBase}/mem_1`, { method: "PATCH", body: { content: "staging deploys need US region" } }), env, deps);
+    expect(edit.status).toBe(200);
+    expect(entries[0]!.content).toBe("staging deploys need US region");
+
+    const del = await route(req(`${memBase}/mem_1`, { method: "DELETE" }), env, deps);
+    expect(del.status).toBe(200);
+    expect(entries).toHaveLength(0);
+
+    const delAgain = await route(req(`${memBase}/mem_1`, { method: "DELETE" }), env, deps);
+    expect(delAgain.status).toBe(404);
+  });
+});

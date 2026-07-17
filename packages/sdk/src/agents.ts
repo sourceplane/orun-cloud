@@ -48,6 +48,15 @@ export interface AgentChatMessage {
   error?: boolean;
 }
 
+/** One provenanced workspace-memory entry (saas-agents-native AN6). */
+export interface AgentMemoryEntry {
+  id: string;
+  content: string;
+  source: string;
+  author: string;
+  createdAt: string;
+}
+
 export interface AgentChatDetail {
   id: string;
   title: string;
@@ -322,6 +331,32 @@ export class AgentsClient {
   verifyProvider(orgId: string, connectionId: string, opts: RequestOptions = {}): Promise<ProviderConnection> {
     return this.transport.request<ProviderConnection>(
       { method: "POST", path: `${agentsBase(orgId)}/providers/${encodeURIComponent(connectionId)}/verify` },
+      opts,
+    );
+  }
+
+  // ── Workspace memory (saas-agents-native AN6) ───────────────
+
+  /** GET /agents/memory — the provenanced workspace memory plane. */
+  listMemory(orgId: string, opts: RequestOptions = {}): Promise<AgentMemoryEntry[]> {
+    return this.transport.request<AgentMemoryEntry[]>(
+      { method: "GET", path: `${agentsBase(orgId)}/memory` },
+      opts,
+    );
+  }
+
+  /** PATCH /agents/memory/:id — edit an entry's content. */
+  updateMemory(orgId: string, id: string, content: string, opts: RequestOptions = {}): Promise<AgentMemoryEntry> {
+    return this.transport.request<AgentMemoryEntry>(
+      { method: "PATCH", path: `${agentsBase(orgId)}/memory/${encodeURIComponent(id)}`, body: { content } },
+      opts,
+    );
+  }
+
+  /** DELETE /agents/memory/:id — forget. */
+  deleteMemory(orgId: string, id: string, opts: RequestOptions = {}): Promise<{ deleted: boolean }> {
+    return this.transport.request<{ deleted: boolean }>(
+      { method: "DELETE", path: `${agentsBase(orgId)}/memory/${encodeURIComponent(id)}` },
       opts,
     );
   }

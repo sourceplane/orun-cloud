@@ -149,6 +149,7 @@ export {
   type AgentChatSummary,
   type AgentChatMessage,
   type AgentChatDetail,
+  type AgentMemoryEntry,
 } from "./agents.js";
 export { BillingClient } from "./billing.js";
 export {

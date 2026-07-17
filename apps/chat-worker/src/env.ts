@@ -20,6 +20,9 @@ export interface Env {
   WORKSPACE_AGENT?: DurableObjectNamespace;
   /** Per-workspace thread registry DO (ChatIndex, named ws:<orgId>). */
   CHAT_INDEX?: DurableObjectNamespace;
+  /** Per-workspace memory DO (WorkspaceMemory, named wsmem:<orgId>) — the
+   * AN6 provenanced memory plane. */
+  WORKSPACE_MEMORY?: DurableObjectNamespace;
   /** Deploy environment name. */
   ENVIRONMENT: string;
 }
