@@ -20,6 +20,7 @@ import { createOwnerToolExecutor } from "./tools.js";
 import { withSessionVerbs } from "./session-verbs.js";
 import { formatMemoryForSystem, withMemoryTool, type MemoryEntry, type MemoryRpc } from "./memory.js";
 import { uuidToHex } from "@saas/db/ids";
+import { OrunCloud } from "@saas/sdk";
 
 export class WorkspaceAgent extends Agent<Env> {
   static override options = { hibernate: true, sendIdentityOnConnect: false };
@@ -121,11 +122,53 @@ export class WorkspaceAgent extends Agent<Env> {
       ? withMemoryTool(tools, memory, { author: principal, source: `chat:${chatId}`, now: () => new Date() })
       : tools;
 
-    return this.thread.runTurn(text, principal, {
+    const startedAt = Date.now();
+    const result = await this.thread.runTurn(text, principal, {
       resolveModel,
       tools: toolsWithMemory,
       system: workspaceSystemPrompt(orgId) + formatMemoryForSystem(memoryEntries),
     });
+
+    // AN7 — the trust plane's visibility half. Per-turn trace (admin plane
+    // reads worker logs): never content, only shape. Metering: the chat
+    // loop's tokens land as `agents.chat_tokens` through the PUBLIC usage
+    // ingest with the owner's credential (BYO key — the meter is visibility
+    // and budget substrate, not billing). Fire-and-forget: a lost sample is
+    // a reconciliation problem, never a failed turn.
+    const orgPublic = `org_${uuidToHex(orgId)}`;
+    console.warn(
+      `[chat-turn] chat=${chatId} org=${orgPublic} ok=${result.ok}${result.reason ? ` reason=${result.reason}` : ""} tools=${result.toolCalls ?? 0} tokens=${result.tokens ?? 0} ms=${Date.now() - startedAt}`,
+    );
+    if (result.ok && (result.tokens ?? 0) > 0) {
+      try {
+        const sdk = new OrunCloud({
+          baseUrl,
+          auth: { kind: "bearer", token: ownerToken },
+          ...(edgeFetch ? { fetch: edgeFetch } : {}),
+        });
+        void sdk.metering
+          .recordUsage(orgPublic, {
+            metric: "agents.chat_tokens",
+            quantity: result.tokens ?? 0,
+            metadata: { chatId },
+            idempotencyKey: `chat_turn_${crypto.randomUUID()}`,
+          })
+          .catch(() => {});
+      } catch {
+        // Metering never blocks the voice.
+      }
+    }
+    return result;
+  }
+
+  /** destroyThread (AN7 hardening): deletion is complete — the DO's storage
+   * IS the thread; after this there is nothing to export. */
+  async destroyThread(orgId: string): Promise<void> {
+    await this.ensureLoaded();
+    this.thread.assertOrg(orgId);
+    await this.ctx.storage.deleteAll();
+    this.loaded = false;
+    this.thread = new ChatThread(this.ctx.storage as unknown as ChatStorage);
   }
 
   // ── The read plane (WS heads: replay → live) ─────────────────────────────

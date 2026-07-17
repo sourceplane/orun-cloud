@@ -36,10 +36,14 @@ export function anthropicModel(apiKey: string, fetchFn?: typeof fetch): ModelCli
           blocks.push({ type: "tool_use", id: b.id, name: b.name, input: b.input as Record<string, unknown> });
         }
       }
+      const usage = {
+        inputTokens: message.usage.input_tokens + (message.usage.cache_read_input_tokens ?? 0) + (message.usage.cache_creation_input_tokens ?? 0),
+        outputTokens: message.usage.output_tokens,
+      };
       const stop = message.stop_reason;
       const stopReason: ModelTurnResult["stopReason"] =
         stop === "tool_use" ? "tool_use" : stop === "max_tokens" ? "max_tokens" : stop === "refusal" ? "refusal" : "end_turn";
-      return { blocks, stopReason };
+      return { blocks, stopReason, usage };
     },
   };
 }

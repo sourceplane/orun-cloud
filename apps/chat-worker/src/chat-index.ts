@@ -28,6 +28,11 @@ export class ChatIndex extends Agent<Env> {
     this.sql`UPDATE chats SET last_at = ${lastAt} WHERE id = ${chatId}`;
   }
 
+  async removeChat(chatId: string): Promise<void> {
+    this.ensureTable();
+    this.sql`DELETE FROM chats WHERE id = ${chatId}`;
+  }
+
   async listChats(): Promise<ChatSummary[]> {
     this.ensureTable();
     const rows = this.sql<{ id: string; title: string; created_at: string; last_at: string }>`

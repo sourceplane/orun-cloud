@@ -21,7 +21,7 @@ orun runtime in a sandbox. The AG constitution is narrowed, never repealed:
 
 | Field | Value |
 |-------|-------|
-| Status | **Draft** — authored, ready for review; open decisions in `risks-and-open-questions.md` |
+| Status | **Shipped (v1)** — AN0–AN7 merged 2026-07-17; as-built truth + recorded tails in `IMPLEMENTATION-STATUS.md` |
 | Cluster | **AN** (agents native — cross-repo; **orun owns the WebSocket attach binding (AN0)**, this repo owns the **SDK relay + console socket + lifecycle + Workspace Agent + memory + trust planes (AN1–AN7)** — paired spec `orun/specs/orun-agents-native/`) |
 | Owner(s) | `apps/agents-worker` (AN1–AN3: the relay re-platform + lifecycle) · `apps/chat-worker` (**new**, AN4–AN6: the Workspace Agent DO) · `apps/api-edge` (WS pass-through, chat facade) · `apps/web-console-next` (AN2 socket head, AN4 chat surface) · `packages/contracts` (chat + memory vocabularies) · `apps/metering-worker` (AN7) · `packages/mcp` (consumed, not changed) |
 | Target branch | `claude/orun-cloudflare-architecture-da6uad` (design PR), then `main` (PRs merged incrementally) |
@@ -88,7 +88,7 @@ execution path the AG9 door didn't already gate.
 | AN4 | The Workspace Agent — the voice: `WorkspaceAgent` DO per chat thread in new `apps/chat-worker`; AI SDK loop on the workspace's own key; durable conversation, resumable streaming; read-only platform-MCP toolset; console Chat surface | ✅ Shipped |
 | AN5 | The Workspace Agent — the hands: `session.spawn/steer/watch` verbs re-entering the AG9 dispatch door with the chat owner's credential; the agent attaches to child relays as an attributed standing head; approval cards bridge into chat (human-answered); terminal/console handoff affordances | ✅ Shipped (v1 — standing head + write set deferred, see status) |
 | AN6 | Memory + the proactive plane: per-workspace memory (facts · preferences · catalog context) with provenance, inspectable and editable in console; scheduled briefs/digests via `schedule`; routines may target the agent (a firing = an attributed chat turn through the same gates) | ✅ Shipped (memory; proactive plane deferred to the agent-principal tail, see status) |
-| AN7 | Trust — evals · meters · guardrails: fixture eval harness for the chat loop (tool-choice + refusal + injection suites); `agents.chat_tokens` metering + budget-envelope extension; chat-agent tool ladder; observability; GA hardening | 🗓️ Planned |
+| AN7 | Trust — evals · meters · guardrails: fixture eval harness for the chat loop (tool-choice + refusal + injection suites); `agents.chat_tokens` metering + budget-envelope extension; chat-agent tool ladder; observability; GA hardening | ✅ Shipped (v1 — see status for tails) |
 
 ## Scope boundary
 
