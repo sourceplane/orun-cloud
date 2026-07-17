@@ -329,3 +329,92 @@ describe("agents facade: the body wire + WS upgrade (AN0/AN2)", () => {
     expect(agents.calls[0]!.url).not.toContain("access_token");
   });
 });
+
+// ── AN4 (saas-agents-native): the Workspace Agent chat facade ───────────────
+
+describe("agents facade: the chat plane (AN4)", () => {
+  const chatBase = "/v1/organizations/org_abc/agents/chats";
+
+  it("recognizes the chat routes", () => {
+    expect(isAgentsRoute(chatBase)).toBe(true);
+    expect(isAgentsRoute(`${chatBase}/ch_1`)).toBe(true);
+    expect(isAgentsRoute(`${chatBase}/ch_1/turn`)).toBe(true);
+  });
+
+  it("routes chat traffic to CHAT_WORKER, not AGENTS_WORKER", async () => {
+    const chat = createFakeFetcher(Response.json({ data: [] }));
+    const agents = createFakeFetcher(Response.json({ data: [] }));
+    const env = createEnv({ CHAT_WORKER: chat.fetcher, AGENTS_WORKER: agents.fetcher });
+    const res = await handleAgentsRoute(
+      new Request(`https://api.example.com${chatBase}`, { headers: { authorization: "Bearer tok" } }),
+      env as never,
+      "req_chat1",
+      chatBase,
+    );
+    expect(res.status).toBe(200);
+    expect(chat.calls).toHaveLength(1);
+    expect(agents.calls).toHaveLength(0);
+  });
+
+  it("forwards the owner bearer ONLY on the turn route", async () => {
+    const seen: { url: string; owner: string | null }[] = [];
+    const chat = {
+      fetch(input: string | Request | URL, init?: RequestInit): Promise<Response> {
+        const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
+        const headers = new Headers(init?.headers);
+        seen.push({ url, owner: headers.get("x-owner-bearer") });
+        return Promise.resolve(Response.json({ data: { accepted: true } }));
+      },
+      connect() {
+        throw new Error("not implemented");
+      },
+    } as unknown as Fetcher;
+    const env = createEnv({ CHAT_WORKER: chat });
+
+    await handleAgentsRoute(
+      new Request(`https://api.example.com${chatBase}/ch_1/turn`, {
+        method: "POST",
+        headers: { authorization: "Bearer tok-owner", "content-type": "application/json" },
+        body: JSON.stringify({ text: "hi" }),
+      }),
+      env as never,
+      "req_chat2",
+      `${chatBase}/ch_1/turn`,
+    );
+    await handleAgentsRoute(
+      new Request(`https://api.example.com${chatBase}/ch_1`, { headers: { authorization: "Bearer tok-owner" } }),
+      env as never,
+      "req_chat3",
+      `${chatBase}/ch_1`,
+    );
+    expect(seen).toHaveLength(2);
+    expect(seen[0]!.owner).toBe("tok-owner"); // the turn route carries it
+    expect(seen[1]!.owner).toBeNull(); // nothing else does
+  });
+
+  it("accepts the query bearer on the chat WS upgrade (browser socket)", async () => {
+    const captured: Request[] = [];
+    const chat = {
+      fetch(input: Request | string | URL): Promise<Response> {
+        const req = input instanceof Request ? input : new Request(String(input));
+        captured.push(req);
+        return Promise.resolve(new Response(null, { status: 200 }));
+      },
+      connect() {
+        throw new Error("not implemented");
+      },
+    } as unknown as Fetcher;
+    const env = createEnv({ CHAT_WORKER: chat });
+    const res = await handleAgentsRoute(
+      new Request(`https://api.example.com${chatBase}/ch_1?from=-1&access_token=tok-browser`, {
+        headers: { upgrade: "websocket" },
+      }),
+      env as never,
+      "req_chat4",
+      `${chatBase}/ch_1`,
+    );
+    expect(res.status).toBe(200);
+    expect(captured[0]!.url).not.toContain("access_token");
+    expect(captured[0]!.headers.get("x-actor-subject-id")).toBe("usr_abc123");
+  });
+});

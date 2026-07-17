@@ -78,6 +78,10 @@
           "service": "agents-worker-stage"
         },
         {
+          "binding": "CHAT_WORKER",
+          "service": "chat-worker-stage"
+        },
+        {
           "binding": "WEBHOOKS_WORKER",
           "service": "webhooks-worker-stage"
         },
@@ -152,6 +156,10 @@
         {
           "binding": "AGENTS_WORKER",
           "service": "agents-worker-prod"
+        },
+        {
+          "binding": "CHAT_WORKER",
+          "service": "chat-worker-prod"
         },
         {
           "binding": "WEBHOOKS_WORKER",

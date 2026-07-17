@@ -1,0 +1,67 @@
+// Rendered to wrangler.jsonc by tooling/wire/render.mjs (BF6 deploy-time wiring).
+//
+// chat-worker (saas-agents-native AN4): the Workspace Agent — a durable
+// conversational orchestrator, deliberately UNPRIVILEGED (design §5.1): no
+// DB, no provisioning, no dispatch. Its two narrow seams are POLICY_WORKER
+// (deny-by-default authz — a gate, not a capability) and CONFIG_WORKER
+// (provider-key custody at turn time, the AG5 path — the key never lands in
+// DO state). Everything else it does re-enters api-edge as a client with the
+// chat owner's credential.
+{
+  "name": "chat-worker",
+  "compatibility_date": "2025-05-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "main": "src/index.ts",
+  "minify": false,
+  "vars": {
+    "ENVIRONMENT": "local"
+  },
+  "durable_objects": {
+    "bindings": [
+      { "name": "WORKSPACE_AGENT", "class_name": "WorkspaceAgent" },
+      { "name": "CHAT_INDEX", "class_name": "ChatIndex" }
+    ]
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["WorkspaceAgent", "ChatIndex"] }],
+  "env": {
+    "dev": {
+      "vars": { "ENVIRONMENT": "dev" },
+      "durable_objects": {
+        "bindings": [
+          { "name": "WORKSPACE_AGENT", "class_name": "WorkspaceAgent" },
+          { "name": "CHAT_INDEX", "class_name": "ChatIndex" }
+        ]
+      }
+    },
+    "stage": {
+      "workers_dev": false,
+      "vars": { "ENVIRONMENT": "stage", "API_EDGE_URL": "https://api-edge-stage.oruncloud.workers.dev" },
+      "durable_objects": {
+        "bindings": [
+          { "name": "WORKSPACE_AGENT", "class_name": "WorkspaceAgent" },
+          { "name": "CHAT_INDEX", "class_name": "ChatIndex" }
+        ]
+      },
+      "services": [
+        { "binding": "POLICY_WORKER", "service": "policy-worker-stage" },
+        { "binding": "CONFIG_WORKER", "service": "config-worker-stage" },
+        { "binding": "API_EDGE", "service": "api-edge-stage" }
+      ]
+    },
+    "prod": {
+      "workers_dev": false,
+      "vars": { "ENVIRONMENT": "prod", "API_EDGE_URL": "https://api-edge-prod.oruncloud.workers.dev" },
+      "durable_objects": {
+        "bindings": [
+          { "name": "WORKSPACE_AGENT", "class_name": "WorkspaceAgent" },
+          { "name": "CHAT_INDEX", "class_name": "ChatIndex" }
+        ]
+      },
+      "services": [
+        { "binding": "POLICY_WORKER", "service": "policy-worker-prod" },
+        { "binding": "CONFIG_WORKER", "service": "config-worker-prod" },
+        { "binding": "API_EDGE", "service": "api-edge-prod" }
+      ]
+    }
+  }
+}

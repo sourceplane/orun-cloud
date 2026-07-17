@@ -1,0 +1,52 @@
+{
+  "extends": "../../tooling/tsconfig/base.json",
+  "compilerOptions": {
+    "allowSyntheticDefaultImports": true,
+    "composite": false,
+    "incremental": false,
+    "declaration": false,
+    "declarationMap": false,
+    "baseUrl": ".",
+    "paths": {
+      "@saas/contracts": [
+        "../../packages/contracts/src/index.ts"
+      ],
+      "@saas/contracts/*": [
+        "../../packages/contracts/src/*.ts"
+      ],
+      "@saas/mcp": [
+        "../../packages/mcp/src/index.ts"
+      ],
+      "@saas/sdk": [
+        "../../packages/sdk/src/index.ts"
+      ],
+      "@saas/db/*": [
+        "../../packages/db/src/*/index.ts"
+      ],
+      "@chat-worker/*": [
+        "../../apps/chat-worker/src/*.ts"
+      ]
+    },
+    "types": [
+      "jest",
+      "node"
+    ],
+    "lib": [
+      "ES2022",
+      "DOM",
+      "DOM.Iterable"
+    ]
+  },
+  "include": [
+    "src/**/*.ts",
+    "../../apps/chat-worker/src/**/*.ts"
+  ],
+  "exclude": [
+    "node_modules",
+    "dist",
+    "../../apps/chat-worker/src/workspace-agent.ts",
+    "../../apps/chat-worker/src/chat-index.ts",
+    "../../apps/chat-worker/src/index.ts",
+    "../../apps/chat-worker/src/model.ts"
+  ]
+}

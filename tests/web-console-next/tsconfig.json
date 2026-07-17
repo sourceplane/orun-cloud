@@ -1,17 +1,31 @@
 {
   "extends": "../../tooling/tsconfig/base.json",
   "compilerOptions": {
-    "lib": ["ES2022", "DOM"],
+    "lib": [
+      "ES2022",
+      "DOM"
+    ],
     "jsx": "react-jsx",
     "composite": false,
     "incremental": false,
     "declaration": false,
     "declarationMap": false,
     "paths": {
-      "@/*": ["../../apps/web-console-next/src/*"],
-      "@web-console-next/*": ["../../apps/web-console-next/src/*"],
-      "@saas/contracts": ["../../packages/contracts/src/index.ts"],
-      "@saas/contracts/*": ["../../packages/contracts/src/*.ts"]
+      "@/*": [
+        "../../apps/web-console-next/src/*"
+      ],
+      "@web-console-next/*": [
+        "../../apps/web-console-next/src/*"
+      ],
+      "@saas/contracts": [
+        "../../packages/contracts/src/index.ts"
+      ],
+      "@saas/contracts/*": [
+        "../../packages/contracts/src/*.ts"
+      ],
+      "@saas/sdk": [
+        "../../packages/sdk/src/index.ts"
+      ]
     }
   },
   "include": [
@@ -21,5 +35,8 @@
     "../../apps/web-console-next/src/components/webhooks/endpoint-crud.ts",
     "../../apps/web-console-next/src/components/webhooks/delivery-history.ts"
   ],
-  "exclude": ["node_modules", "dist"]
+  "exclude": [
+    "node_modules",
+    "dist"
+  ]
 }

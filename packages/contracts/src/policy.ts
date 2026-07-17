@@ -165,6 +165,10 @@ export const ORGANIZATION_ACTIONS = [
   // from read: watching a session and driving it are different grants, and
   // approval authority is the sharpest permission in the agents plane.
   "organization.agent.session.interact",
+  // Converse with the Workspace Agent (saas-agents-native AN4). Deny-by-
+  // default like everything else; distinct from session grants — the chat
+  // brain reads the workspace and routes to gated doors, it never executes.
+  "organization.agent.chat",
   "organization.agent.profile.read",
   "organization.agent.profile.write",
   "organization.agent.autonomy.read",
