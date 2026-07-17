@@ -44,6 +44,17 @@ const ORG_AGENTS_SESSION_INPUTS_ACK_RE = /^\/v1\/organizations\/[^/]+\/agents\/s
 // The body wire (orun-agents-native AN0): the runtime's one-socket binding,
 // authenticated by the agent-session bearer like the other body routes.
 const ORG_AGENTS_SESSION_WIRE_RE = /^\/v1\/organizations\/[^/]+\/agents\/sessions\/[^/]+\/wire$/;
+// The Workspace Agent chat plane (saas-agents-native AN4) — routed to the
+// UNPRIVILEGED chat-worker, not agents-worker. The turn route forwards the
+// caller's raw bearer as x-owner-bearer (this route only): the chat brain's
+// tool calls and custody re-enter public surfaces AS the owner.
+const ORG_AGENTS_CHATS_RE = /^\/v1\/organizations\/[^/]+\/agents\/chats$/;
+const ORG_AGENTS_CHAT_RE = /^\/v1\/organizations\/[^/]+\/agents\/chats\/[^/]+$/;
+const ORG_AGENTS_CHAT_TURN_RE = /^\/v1\/organizations\/[^/]+\/agents\/chats\/[^/]+\/turn$/;
+
+export function isChatRoute(pathname: string): boolean {
+  return ORG_AGENTS_CHATS_RE.test(pathname) || ORG_AGENTS_CHAT_RE.test(pathname) || ORG_AGENTS_CHAT_TURN_RE.test(pathname);
+}
 const ORG_AGENTS_AUTONOMY_RE = /^\/v1\/organizations\/[^/]+\/agents\/autonomy$/;
 // The needs-you fold (saas-agents-fleet AF5): the fleet home's attention queue.
 const ORG_AGENTS_ATTENTION_RE = /^\/v1\/organizations\/[^/]+\/agents\/attention$/;
@@ -78,6 +89,7 @@ export function isAgentsRoute(pathname: string): boolean {
     ORG_AGENTS_SESSION_INPUTS_RE.test(pathname) ||
     ORG_AGENTS_SESSION_INPUTS_ACK_RE.test(pathname) ||
     ORG_AGENTS_SESSION_WIRE_RE.test(pathname) ||
+    isChatRoute(pathname) ||
     ORG_AGENTS_PROVIDERS_RE.test(pathname) ||
     ORG_AGENTS_PROVIDER_RE.test(pathname) ||
     ORG_AGENTS_PROVIDER_VERIFY_RE.test(pathname) ||
@@ -97,7 +109,7 @@ export function isAgentsRoute(pathname: string): boolean {
  * synthesized into the Authorization header BEFORE actor resolution and
  * STRIPPED before forwarding (it must never reach logs or the worker). */
 function allowsQueryToken(pathname: string): boolean {
-  return ORG_AGENTS_SESSION_ATTACH_RE.test(pathname);
+  return ORG_AGENTS_SESSION_ATTACH_RE.test(pathname) || ORG_AGENTS_CHAT_RE.test(pathname);
 }
 
 /**
@@ -113,7 +125,8 @@ async function handleAgentsUpgrade(
   requestId: string,
   pathname: string,
 ): Promise<Response> {
-  if (!env.IDENTITY_WORKER || !env.AGENTS_WORKER) {
+  const downstreamWorker = isChatRoute(pathname) ? env.CHAT_WORKER : env.AGENTS_WORKER;
+  if (!env.IDENTITY_WORKER || !downstreamWorker) {
     return errorResponse("internal_error", "Service unavailable", 503, requestId);
   }
   const url = new URL(request.url);
@@ -140,7 +153,7 @@ async function handleAgentsUpgrade(
     fwd.headers.set("x-actor-agent-session-id", sessionResult.agentSessionId);
   }
   try {
-    return await env.AGENTS_WORKER.fetch(fwd);
+    return await downstreamWorker.fetch(fwd);
   } catch {
     return errorResponse("internal_error", "Agents service unavailable", 503, requestId);
   }
@@ -165,7 +178,8 @@ export async function handleAgentsRoute(
     if (!env.IDENTITY_WORKER) {
       return errorResponse("internal_error", "Authentication service unavailable", 503, requestId);
     }
-    if (!env.AGENTS_WORKER) {
+    const downstreamWorker = isChatRoute(pathname) ? env.CHAT_WORKER : env.AGENTS_WORKER;
+    if (!downstreamWorker) {
       return errorResponse("internal_error", "Agents service unavailable", 503, requestId);
     }
 
@@ -201,6 +215,16 @@ export async function handleAgentsRoute(
       if (value) headers.set(name, value);
     }
 
+    // The chat turn route carries the owner's bearer downstream (AN4 lock 4:
+    // the Workspace Agent acts as a CLIENT of public surfaces with the chat
+    // owner's credential). This is the only route that forwards it, it is
+    // never logged, and the chat DO never stores it.
+    if (ORG_AGENTS_CHAT_TURN_RE.test(pathname)) {
+      const auth = request.headers.get("authorization");
+      const raw = auth ? /^Bearer\s+(\S+)$/i.exec(auth)?.[1] : undefined;
+      if (raw) headers.set("x-owner-bearer", raw);
+    }
+
     const url = new URL(request.url);
     url.searchParams.delete("access_token"); // never forwarded, never logged
     const target = new URL(pathname + url.search, "https://agents.internal");
@@ -210,7 +234,7 @@ export async function handleAgentsRoute(
       if (request.method === "POST" || request.method === "PUT" || request.method === "PATCH") {
         fetchInit.body = request.body;
       }
-      const downstream = await env.AGENTS_WORKER.fetch(target.toString(), fetchInit);
+      const downstream = await downstreamWorker.fetch(target.toString(), fetchInit);
       return new Response(downstream.body, {
         status: downstream.status,
         headers: downstream.headers,

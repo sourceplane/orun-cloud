@@ -766,7 +766,8 @@ describe("listEffectivePermissions", () => {
     //    budget.read, budget.write).
     // + 2 saas-integration-hub §7 actions (integration.messaging.manage,
     //   integration.credential.issue).
-    expect(allowed.length).toBe(79);
+    // + 1 saas-agents-native AN4 action (organization.agent.chat).
+    expect(allowed.length).toBe(80);
   });
 
   it("returns limited permissions for viewer", () => {

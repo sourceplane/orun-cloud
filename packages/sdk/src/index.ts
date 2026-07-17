@@ -144,6 +144,12 @@ export {
   type DeliveryAttemptsPage,
 } from "./webhooks.js";
 export { MeteringClient } from "./metering.js";
+export {
+  AgentsClient,
+  type AgentChatSummary,
+  type AgentChatMessage,
+  type AgentChatDetail,
+} from "./agents.js";
 export { BillingClient } from "./billing.js";
 export {
   EventsClient,

@@ -98,6 +98,7 @@ const ORG_ROLE_PERMISSIONS: Record<OrganizationRole, readonly string[]> = {
     "organization.agent.session.create",
     "organization.agent.session.spawn",
     "organization.agent.session.interact",
+    "organization.agent.chat",
     "organization.agent.profile.read",
     "organization.agent.profile.write",
     "organization.agent.autonomy.read",
@@ -187,6 +188,7 @@ const ORG_ROLE_PERMISSIONS: Record<OrganizationRole, readonly string[]> = {
     "organization.agent.session.create",
     "organization.agent.session.spawn",
     "organization.agent.session.interact",
+    "organization.agent.chat",
     "organization.agent.profile.read",
     "organization.agent.profile.write",
     "organization.agent.autonomy.read",
@@ -235,6 +237,7 @@ const ORG_ROLE_PERMISSIONS: Record<OrganizationRole, readonly string[]> = {
     "organization.agent.session.create",
     "organization.agent.session.spawn",
     "organization.agent.session.interact",
+    "organization.agent.chat",
     "organization.agent.profile.read",
     "organization.agent.profile.write",
     "organization.agent.autonomy.read",
@@ -480,6 +483,7 @@ const ALL_KNOWN_ACTIONS: ReadonlySet<string> = new Set([
   // distinct privilege from watching it (read); the tree-kill + fleet verdict
   // ride it too.
   "organization.agent.session.interact",
+    "organization.agent.chat",
   // saas-agents-fleet — the workforce plane (workspace-scoped): delegation
   // (an agent-session principal spawns children), standing routines, and
   // budget ceilings.

@@ -11,6 +11,8 @@ export interface Env {
   NOTIFICATIONS_WORKER?: Fetcher;
   INTEGRATIONS_WORKER?: Fetcher;
   AGENTS_WORKER?: Fetcher;
+  /** chat-worker — the Workspace Agent plane (saas-agents-native AN4). */
+  CHAT_WORKER?: Fetcher;
   STATE_WORKER?: Fetcher;
   // Optional KV binding backing the Stripe-style idempotency replay store
   // (Task 0095). Absent on `dev` (no live worker) and absent on the older

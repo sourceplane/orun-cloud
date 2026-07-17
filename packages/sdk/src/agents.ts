@@ -29,6 +29,32 @@ import type {
 
 import type { Transport, RequestOptions } from "./transport.js";
 
+/** A Workspace Agent chat thread summary (saas-agents-native AN4). */
+export interface AgentChatSummary {
+  id: string;
+  title: string;
+  createdAt: string;
+  lastAt?: string;
+}
+
+/** One durable chat message as the thread renders it. */
+export interface AgentChatMessage {
+  seq: number;
+  role: "user" | "assistant" | "tool";
+  text: string;
+  at: string;
+  tool?: { name: string; phase: "call" | "result"; summary: string; isError?: boolean };
+  principal?: string;
+  error?: boolean;
+}
+
+export interface AgentChatDetail {
+  id: string;
+  title: string;
+  createdAt: string;
+  messages: AgentChatMessage[];
+}
+
 function agentsBase(orgId: string): string {
   return `/v1/organizations/${encodeURIComponent(orgId)}/agents`;
 }
@@ -296,6 +322,46 @@ export class AgentsClient {
   verifyProvider(orgId: string, connectionId: string, opts: RequestOptions = {}): Promise<ProviderConnection> {
     return this.transport.request<ProviderConnection>(
       { method: "POST", path: `${agentsBase(orgId)}/providers/${encodeURIComponent(connectionId)}/verify` },
+      opts,
+    );
+  }
+
+  // ── Workspace Agent chat (saas-agents-native AN4) ───────────
+
+  /** GET /agents/chats — the workspace's thread list. */
+  listChats(orgId: string, opts: RequestOptions = {}): Promise<AgentChatSummary[]> {
+    return this.transport.request<AgentChatSummary[]>(
+      { method: "GET", path: `${agentsBase(orgId)}/chats` },
+      opts,
+    );
+  }
+
+  /** POST /agents/chats — start a thread with the Workspace Agent. */
+  createChat(orgId: string, body: { title?: string } = {}, opts: RequestOptions = {}): Promise<AgentChatSummary> {
+    return this.transport.request<AgentChatSummary>(
+      { method: "POST", path: `${agentsBase(orgId)}/chats`, body },
+      opts,
+    );
+  }
+
+  /** GET /agents/chats/:id — thread metadata + durable message history. */
+  getChat(orgId: string, chatId: string, opts: RequestOptions = {}): Promise<AgentChatDetail> {
+    return this.transport.request<AgentChatDetail>(
+      { method: "GET", path: `${agentsBase(orgId)}/chats/${encodeURIComponent(chatId)}` },
+      opts,
+    );
+  }
+
+  /** POST /agents/chats/:id/turn — one user turn (202; streaming rides the
+   * chat socket). */
+  sendChatTurn(
+    orgId: string,
+    chatId: string,
+    text: string,
+    opts: RequestOptions = {},
+  ): Promise<{ accepted: boolean; ok: boolean; reason?: string }> {
+    return this.transport.request<{ accepted: boolean; ok: boolean; reason?: string }>(
+      { method: "POST", path: `${agentsBase(orgId)}/chats/${encodeURIComponent(chatId)}/turn`, body: { text } },
       opts,
     );
   }
