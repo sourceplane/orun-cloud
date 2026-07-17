@@ -290,9 +290,14 @@ export async function handleInternalResolveSecrets(
           const orphaned =
             outcome.reason === "connection_inactive" || outcome.reason === "connection_not_found";
           const reason = orphaned ? "binding_orphaned" : "binding_unavailable";
+          // Both messages NAME the key and the connection: the resolve is
+          // fail-closed on the first failing key, so a run log that only says
+          // "a binding is unavailable" leaves the operator guessing which of
+          // several brokered keys to fix. Names and typed slugs only — never a
+          // value.
           const message = orphaned
-            ? "Brokered secret is orphaned — its integration connection is no longer active"
-            : `Brokered secret binding unavailable (broker: ${outcome.reason})`;
+            ? `Brokered secret ${ref.key} is orphaned — its integration connection ${pointer.provider.connectionId} is no longer active (broker: ${outcome.reason})`
+            : `Brokered secret ${ref.key} binding unavailable — connection ${pointer.provider.connectionId} (broker: ${outcome.reason})`;
           await auditDenied(eventsRepo, genId, now, body, subject, ref.key, reason, decisionId, head, requestId);
           // `brokerReason` carries the broker's own typed failure slug
           // (not_configured / limit_reached / parent_credential_missing /
