@@ -81,9 +81,9 @@ execution path the AG9 door didn't already gate.
 
 | ID | Milestone | Status |
 |----|-----------|--------|
-| AN0 | *(orun)* Attach binding v2: the body's relay dial-out collapses POST + long-poll into one outbound WebSocket (P§6.3's reserved swap); HTTP binding retained as fallback; frames unchanged | 🗓️ Planned |
+| AN0 | *(orun)* Attach binding v2: the body's chatty legs (input long-poll → push; deltas + acks → inline) ride one outbound WebSocket (P§6.3's reserved swap); the durable `/events` batch keeps its confirmed HTTP carriage (amended decision 1a, orun spec); HTTP binding retained as fallback; frames unchanged | ✅ Shipped |
 | AN1 | The relay on the SDK: `AttachRelay extends Agent` (SQLite class + migration), WS head attach via `onConnect`/`onMessage`, body routes + SSE fallback in `onRequest`, hibernation; `RelayCore` verbatim; fixture conformance | ✅ Shipped |
-| AN2 | The console on the socket: the session head moves from SSE-pending-poll to the SDK socket (reconnect = cursor resume), presence and deltas live; the 5s poll dies for good | 🗓️ Planned |
+| AN2 | The console on the socket: the session head moves from SSE-pending-poll to the attach socket (reconnect = cursor resume), presence and deltas live; the 5s poll dies for good; the body-wire door (AN0's cloud counterpart) lands | ✅ Shipped |
 | AN3 | Lifecycle in the object: lease-lapse + retention GC as `this.schedule()` timers reset by heartbeat; the global cron demoted to backstop; the DO's internal HTTP surface becomes typed RPC | 🗓️ Planned |
 | AN4 | The Workspace Agent — the voice: `WorkspaceAgent` DO per chat thread in new `apps/chat-worker`; AI SDK loop on the workspace's own key; durable conversation, resumable streaming; read-only platform-MCP toolset; console Chat surface | 🗓️ Planned |
 | AN5 | The Workspace Agent — the hands: `session.spawn/steer/watch` verbs re-entering the AG9 dispatch door with the chat owner's credential; the agent attaches to child relays as an attributed standing head; approval cards bridge into chat (human-answered); terminal/console handoff affordances | 🗓️ Planned |

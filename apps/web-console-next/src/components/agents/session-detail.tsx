@@ -3,8 +3,8 @@
 // Session detail (saas-agents AG7): infrastructure facts + the relayed event
 // feed. The feed is the control-plane MIRROR of the runtime's session log —
 // the sealed AgentSessionSnapshot in orun's object graph stays the system of
-// record. Polls while the session is live; the DO/SSE live tail replaces the
-// poll in a later slice.
+// record. Live tail rides the attach socket (saas-agents-native AN2): WS to
+// the api-edge facade, SSE fallback, cursor resume — the 5s poll is gone.
 
 import * as React from "react";
 import Link from "next/link";
@@ -26,6 +26,7 @@ import { AGENT_MODELS, sessionLabel, sessionTone } from "@/lib/agents/model";
 import { compactTokens } from "@/lib/agents/attention";
 import { ConversationView } from "@/components/agents/conversation-view";
 import type { ConversationEvent, PendingApproval } from "@/lib/agents/conversation";
+import { useAttachSocket } from "@/lib/agents/attach-socket";
 
 function modelLabel(model: string): string {
   return AGENT_MODELS.find((m) => m.value === model)?.label ?? model;
@@ -74,8 +75,6 @@ function prNumber(url: string): string {
   const m = url.match(/\/pull\/(\d+)/) ?? url.match(/\/pulls\/(\d+)/);
   return m ? `#${m[1]}` : "PR ↗";
 }
-
-const LIVE_POLL_MS = 5_000;
 
 /** Minutes a session may sit pre-dial-home before the notice names it a likely
  * stall — well before the ~30-min provisioning-stall sweep reclaims it. */
@@ -152,7 +151,7 @@ export function SessionDetail({
   orgSlug: string;
   sessionId: string;
 }) {
-  const { client } = useSession();
+  const { client, target, token } = useSession();
   const session = useApiQuery(qk.orgAgentSession(orgId, sessionId), () =>
     wrap(async () => client.agents.getSession(orgId, sessionId)),
   );
@@ -174,19 +173,22 @@ export function SessionDetail({
     }),
   );
 
-  // Poll while live; stop on terminal states. (The SSE live tail over the DO
-  // relay replaces the poll when the api-edge attach stream lands — AL8.)
+  // The live tail (AN2): the attach socket streams the relayed frames —
+  // events fold straight into the conversation below, deltas render as the
+  // in-progress line, presence fills the Heads rail. The poll is deleted, not
+  // demoted (WS with server-side SSE fallback is the whole transport story).
   const live = session.data ? !isTerminalSessionState(session.data.state) : false;
   const reloadSession = session.reload;
   const reloadEvents = events.reload;
+  const tail = useAttachSocket({ target: target.url, token, orgId, sessionId, live });
+
+  // A relayed state change (or the terminal bye) refreshes the session row —
+  // the pill, the artifacts rail, and `live` itself follow the DB truth.
+  const tailState = tail.sessionState;
+  const tailEnded = tail.ended;
   React.useEffect(() => {
-    if (!live) return;
-    const t = setInterval(() => {
-      reloadSession();
-      reloadEvents();
-    }, LIVE_POLL_MS);
-    return () => clearInterval(t);
-  }, [live, reloadSession, reloadEvents]);
+    if (tailState || tailEnded) reloadSession();
+  }, [tailState, tailEnded, reloadSession]);
 
   // ── Interactivity (AL7): steer + answer approvals over the relay input
   // route. A fresh ref per send correlates the ack; on success we reload the
@@ -274,6 +276,15 @@ export function SessionDetail({
     );
   }
   const s = session.data;
+  // The conversation = the durable DB read (initial load) + everything the
+  // socket folded past it, deduped by seq. A reconnect replays from the
+  // cursor, so the union is gapless without ever re-fetching the log.
+  const dbEvents = (events.data ?? []) as ConversationEvent[];
+  const maxDbSeq = dbEvents.reduce((m, e) => Math.max(m, (e as { seq?: number }).seq ?? -1), -1);
+  const mergedEvents = [
+    ...dbEvents,
+    ...tail.events.filter((e) => e.seq > maxDbSeq),
+  ] as ConversationEvent[];
   const profile = (profiles.data ?? []).find((p) => p.id === s.profileId);
   const startedLabel = s.startedAt
     ? new Date(s.startedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
@@ -361,12 +372,15 @@ export function SessionDetail({
             </>
           ) : null}
 
-          <Kicker className="mb-2.5 mt-6">Conversation{live ? " · live" : ""}</Kicker>
+          <Kicker className="mb-2.5 mt-6">
+            Conversation
+            {live ? (tail.transport === "off" ? " · live" : ` · live (${tail.transport})`) : ""}
+          </Kicker>
           {events.loading && !events.data ? (
             <Skeleton className="h-48 w-full rounded-xl" />
           ) : (
             <ConversationView
-              events={(events.data ?? []) as ConversationEvent[]}
+              events={mergedEvents}
               onApprove={onApprove}
               onDeny={onDeny}
               interacting={interacting}
@@ -377,6 +391,15 @@ export function SessionDetail({
               }
             />
           )}
+
+          {/* The in-progress turn's token stream (wire-only): superseded by
+              the turn's durable message the moment it lands. */}
+          {live && tail.streaming ? (
+            <p className="mt-2 whitespace-pre-wrap text-[13px] italic text-muted-foreground">
+              {tail.streaming}
+              <span className="animate-pulse">▍</span>
+            </p>
+          ) : null}
 
           {/* Composer — always-on while the session is live. */}
           {live ? (
@@ -466,6 +489,15 @@ export function SessionDetail({
           ) : null}
 
           <RailSection title="Heads">
+            {tail.heads.length > 0 ? (
+              <div className="mb-2 flex flex-wrap gap-1.5">
+                {tail.heads.map((h, i) => (
+                  <Pill key={`${h.principal}-${h.surface}-${i}`} tone="neutral">
+                    {h.principal} · {h.surface}
+                  </Pill>
+                ))}
+              </div>
+            ) : null}
             <p className="text-[11.5px] leading-relaxed text-muted-foreground">
               Console and terminal drive the same session — the sealed session log is the system of
               record.

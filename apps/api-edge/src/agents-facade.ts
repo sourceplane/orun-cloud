@@ -41,6 +41,9 @@ const ORG_AGENTS_SESSION_INPUT_RE = /^\/v1\/organizations\/[^/]+\/agents\/sessio
 const ORG_AGENTS_SESSION_STREAM_RE = /^\/v1\/organizations\/[^/]+\/agents\/sessions\/[^/]+\/stream$/;
 const ORG_AGENTS_SESSION_INPUTS_RE = /^\/v1\/organizations\/[^/]+\/agents\/sessions\/[^/]+\/inputs$/;
 const ORG_AGENTS_SESSION_INPUTS_ACK_RE = /^\/v1\/organizations\/[^/]+\/agents\/sessions\/[^/]+\/inputs\/ack$/;
+// The body wire (orun-agents-native AN0): the runtime's one-socket binding,
+// authenticated by the agent-session bearer like the other body routes.
+const ORG_AGENTS_SESSION_WIRE_RE = /^\/v1\/organizations\/[^/]+\/agents\/sessions\/[^/]+\/wire$/;
 const ORG_AGENTS_AUTONOMY_RE = /^\/v1\/organizations\/[^/]+\/agents\/autonomy$/;
 // The needs-you fold (saas-agents-fleet AF5): the fleet home's attention queue.
 const ORG_AGENTS_ATTENTION_RE = /^\/v1\/organizations\/[^/]+\/agents\/attention$/;
@@ -74,6 +77,7 @@ export function isAgentsRoute(pathname: string): boolean {
     ORG_AGENTS_SESSION_STREAM_RE.test(pathname) ||
     ORG_AGENTS_SESSION_INPUTS_RE.test(pathname) ||
     ORG_AGENTS_SESSION_INPUTS_ACK_RE.test(pathname) ||
+    ORG_AGENTS_SESSION_WIRE_RE.test(pathname) ||
     ORG_AGENTS_PROVIDERS_RE.test(pathname) ||
     ORG_AGENTS_PROVIDER_RE.test(pathname) ||
     ORG_AGENTS_PROVIDER_VERIFY_RE.test(pathname) ||
@@ -87,6 +91,61 @@ export function isAgentsRoute(pathname: string): boolean {
   );
 }
 
+/** True for routes a browser head reaches with transports that cannot set an
+ * Authorization header (WebSocket, EventSource): the attach feed only. On
+ * these routes an `access_token` query parameter is accepted as the bearer —
+ * synthesized into the Authorization header BEFORE actor resolution and
+ * STRIPPED before forwarding (it must never reach logs or the worker). */
+function allowsQueryToken(pathname: string): boolean {
+  return ORG_AGENTS_SESSION_ATTACH_RE.test(pathname);
+}
+
+/**
+ * handleAgentsUpgrade forwards a WebSocket upgrade (saas-agents-native
+ * AN0/AN2: the body wire + the console socket) straight through to the
+ * agents-worker with the resolved actor stamped — no idempotency layer, no
+ * body handling, the upgrade Response returned untouched so the runtime can
+ * complete the handshake end-to-end.
+ */
+async function handleAgentsUpgrade(
+  request: Request,
+  env: Env,
+  requestId: string,
+  pathname: string,
+): Promise<Response> {
+  if (!env.IDENTITY_WORKER || !env.AGENTS_WORKER) {
+    return errorResponse("internal_error", "Service unavailable", 503, requestId);
+  }
+  const url = new URL(request.url);
+  let authed = request;
+  if (!request.headers.get("authorization") && allowsQueryToken(pathname)) {
+    const qt = url.searchParams.get("access_token");
+    if (qt) {
+      authed = new Request(request);
+      authed.headers.set("authorization", `Bearer ${qt}`);
+    }
+  }
+  const sessionResult = await resolveActor(authed, env, requestId);
+  if ("error" in sessionResult) return sessionResult.error;
+
+  url.searchParams.delete("access_token");
+  const target = new URL(pathname + url.search, "https://agents.internal");
+  const fwd = new Request(target.toString(), request);
+  fwd.headers.delete("authorization");
+  fwd.headers.set("x-request-id", requestId);
+  fwd.headers.set("x-actor-subject-id", sessionResult.subjectId);
+  fwd.headers.set("x-actor-subject-type", sessionResult.subjectType);
+  fwd.headers.set("x-actor-email", sessionResult.email);
+  if (sessionResult.agentSessionId) {
+    fwd.headers.set("x-actor-agent-session-id", sessionResult.agentSessionId);
+  }
+  try {
+    return await env.AGENTS_WORKER.fetch(fwd);
+  } catch {
+    return errorResponse("internal_error", "Agents service unavailable", 503, requestId);
+  }
+}
+
 export async function handleAgentsRoute(
   request: Request,
   env: Env,
@@ -98,6 +157,10 @@ export async function handleAgentsRoute(
     return errorResponse("unsupported", "Method not allowed", 405, requestId);
   }
 
+  if (request.headers.get("upgrade")?.toLowerCase() === "websocket") {
+    return handleAgentsUpgrade(request, env, requestId, pathname);
+  }
+
   return replayOrExecute(request, requestId, env, "agents", async () => {
     if (!env.IDENTITY_WORKER) {
       return errorResponse("internal_error", "Authentication service unavailable", 503, requestId);
@@ -106,7 +169,17 @@ export async function handleAgentsRoute(
       return errorResponse("internal_error", "Agents service unavailable", 503, requestId);
     }
 
-    const sessionResult = await resolveActor(request, env, requestId);
+    // EventSource (the SSE fallback head) cannot set headers either — the
+    // attach route accepts the query bearer on plain GETs too, same rules.
+    let authed = request;
+    if (!request.headers.get("authorization") && allowsQueryToken(pathname)) {
+      const qt = new URL(request.url).searchParams.get("access_token");
+      if (qt) {
+        authed = new Request(request);
+        authed.headers.set("authorization", `Bearer ${qt}`);
+      }
+    }
+    const sessionResult = await resolveActor(authed, env, requestId);
     if ("error" in sessionResult) {
       return sessionResult.error;
     }
@@ -129,6 +202,7 @@ export async function handleAgentsRoute(
     }
 
     const url = new URL(request.url);
+    url.searchParams.delete("access_token"); // never forwarded, never logged
     const target = new URL(pathname + url.search, "https://agents.internal");
 
     try {
