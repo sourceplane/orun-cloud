@@ -81,6 +81,7 @@ export function buildDeps(env: Env): AgentsDeps {
       return createDaytonaProvider({
         apiKey,
         ...(typeof config.apiUrl === "string" && config.apiUrl ? { apiUrl: config.apiUrl } : {}),
+        ...(typeof config.proxyUrl === "string" && config.proxyUrl ? { proxyUrl: config.proxyUrl } : {}),
         ...(typeof config.target === "string" && config.target ? { target: config.target } : {}),
       });
     },

@@ -15,11 +15,19 @@
 import type { SandboxHealth, SandboxProvider, SandboxRef, SandboxSpec } from "@saas/contracts/agents";
 
 export const DEFAULT_DAYTONA_API = "https://app.daytona.io/api";
+/** The toolbox proxy is a SEPARATE host from the management API: sandbox CRUD
+ * lives at `app.daytona.io/api`, but in-sandbox process/session calls are
+ * proxied through `proxy.app.daytona.io/toolbox/{id}/process/…` (same Bearer
+ * key). Self-hosted deployments override via the connection's `proxyUrl`. */
+export const DEFAULT_DAYTONA_PROXY = "https://proxy.app.daytona.io";
 
 export interface DaytonaConfig {
   apiKey: string;
   /** Override for self-hosted / regional Daytona (connection config.apiUrl). */
   apiUrl?: string;
+  /** Override for the toolbox proxy host (connection config.proxyUrl). Defaults
+   * to the SaaS proxy; self-hosted Daytona must set this. */
+  proxyUrl?: string;
   /** Daytona target/region (connection config.target), when the account sets one. */
   target?: string;
   /** Injectable for tests; defaults to global fetch. */
@@ -56,19 +64,22 @@ interface DaytonaSandbox {
 
 export function createDaytonaProvider(cfg: DaytonaConfig): SandboxProvider {
   const base = (cfg.apiUrl ?? DEFAULT_DAYTONA_API).replace(/\/$/, "");
+  const proxyBase = (cfg.proxyUrl ?? DEFAULT_DAYTONA_PROXY).replace(/\/$/, "");
   const fetchImpl = cfg.fetchImpl ?? fetch;
   const sleep = cfg.sleepImpl ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
 
-  async function call(
+  async function request(
+    baseUrl: string,
     method: string,
     path: string,
     body?: unknown,
     opts?: { allow?: number[]; retryUntilReady?: boolean },
   ): Promise<Response> {
+    const label = path.split("/")[1] ?? "";
     for (let attempt = 0; ; attempt++) {
       let res: Response;
       try {
-        res = await fetchImpl(`${base}${path}`, {
+        res = await fetchImpl(`${baseUrl}${path}`, {
           method,
           headers: {
             authorization: `Bearer ${cfg.apiKey}`,
@@ -77,7 +88,7 @@ export function createDaytonaProvider(cfg: DaytonaConfig): SandboxProvider {
           ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
         });
       } catch {
-        throw new Error(`daytona ${method} ${path.split("/")[1] ?? ""}: provider unreachable`);
+        throw new Error(`daytona ${method} ${label}: provider unreachable`);
       }
       if (res.ok || opts?.allow?.includes(res.status)) return res;
       // A toolbox call can 404 while the daemon is still registering its edge
@@ -87,9 +98,23 @@ export function createDaytonaProvider(cfg: DaytonaConfig): SandboxProvider {
         continue;
       }
       // Redact: status only — never echo the provider body.
-      throw new Error(`daytona ${method} ${path.split("/")[1] ?? ""}: ${res.status} from provider`);
+      throw new Error(`daytona ${method} ${label}: ${res.status} from provider`);
     }
   }
+
+  /** Sandbox management (CRUD, state) — the `app.daytona.io/api` host. */
+  const call = (method: string, path: string, body?: unknown, opts?: { allow?: number[]; retryUntilReady?: boolean }) =>
+    request(base, method, path, body, opts);
+
+  /** In-sandbox process calls — the SEPARATE `proxy.app.daytona.io` host, a
+   * single `/toolbox/{id}/process/…` prefix (no doubled segment). */
+  const toolbox = (
+    method: string,
+    id: string,
+    subPath: string,
+    body?: unknown,
+    opts?: { allow?: number[]; retryUntilReady?: boolean },
+  ) => request(proxyBase, method, `/toolbox/${id}/process${subPath}`, body, opts);
 
   /** Wait for the sandbox itself to reach `started` (creating/pulling_snapshot
    * → started). Necessary before any toolbox call; the toolbox daemon's own
@@ -139,16 +164,13 @@ export function createDaytonaProvider(cfg: DaytonaConfig): SandboxProvider {
       // Idempotent: a resume re-exec finds the session already there (409). This
       // is the first real toolbox call, so it carries the readiness retry — it
       // absorbs the daemon-registration window that `started` doesn't cover.
-      await call("POST", `/toolbox/${id}/toolbox/process/session`, { sessionId: EXEC_SESSION }, {
-        allow: [409],
-        retryUntilReady: true,
-      });
+      await toolbox("POST", id, "/session", { sessionId: EXEC_SESSION }, { allow: [409], retryUntilReady: true });
       const exports = opts?.env
         ? `export ${Object.entries(opts.env)
             .map(([k, v]) => `${k}=${shellQuote(v)}`)
             .join(" ")}; `
         : "";
-      await call("POST", `/toolbox/${id}/toolbox/process/session/${EXEC_SESSION}/exec`, {
+      await toolbox("POST", id, `/session/${EXEC_SESSION}/exec`, {
         command: exports + cmd.map(shellQuote).join(" "),
         runAsync: true,
       });
@@ -162,12 +184,7 @@ export function createDaytonaProvider(cfg: DaytonaConfig): SandboxProvider {
       // as `unknown` and never blocks the spawn.
       const id = encodeURIComponent(ref.id);
       await waitForStarted(ref.id);
-      const res = await call(
-        "POST",
-        `/toolbox/${id}/toolbox/process/execute`,
-        { command: cmd.map(shellQuote).join(" ") },
-        { retryUntilReady: true },
-      );
+      const res = await toolbox("POST", id, "/execute", { command: cmd.map(shellQuote).join(" ") }, { retryUntilReady: true });
       // Redaction posture holds: this output is a version string we log, never
       // the provider's account body. Parse defensively across field names.
       const body = (await res.json()) as { exitCode?: number; result?: string; output?: string; stdout?: string };

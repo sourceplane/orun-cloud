@@ -3,7 +3,7 @@
 // Bearer auth, redacted failures, secret env only on exec, ttl → provider
 // reclaim intervals.
 
-import { createDaytonaProvider, DEFAULT_DAYTONA_API } from "@agents-worker/providers/daytona";
+import { createDaytonaProvider, DEFAULT_DAYTONA_API, DEFAULT_DAYTONA_PROXY } from "@agents-worker/providers/daytona";
 import type { SandboxSpec } from "@saas/contracts/agents";
 
 interface Call {
@@ -62,6 +62,33 @@ describe("daytona sandbox adapter", () => {
     expect("snapshot" in (calls[0]!.body as Record<string, unknown>)).toBe(false);
   });
 
+  it("splits hosts: management CRUD on the api host, toolbox calls on the proxy host", async () => {
+    const { fetchImpl, calls } = fakeFetch();
+    const p = createDaytonaProvider({ apiKey: "k", fetchImpl });
+    await p.exec({ id: "sb_9", provider: "daytona" }, ["true"]);
+    const mgmt = calls.filter((c) => c.url.startsWith(DEFAULT_DAYTONA_API));
+    const tb = calls.filter((c) => c.url.startsWith(DEFAULT_DAYTONA_PROXY));
+    // The GET state poll is management; the session create + exec are toolbox.
+    expect(mgmt.every((c) => c.url.includes("/sandbox/"))).toBe(true);
+    expect(tb.length).toBeGreaterThan(0);
+    expect(tb.every((c) => c.url.includes("/process/") && !c.url.includes("/toolbox/sb_9/toolbox/"))).toBe(true);
+    // No toolbox call ever hits the management host (the old, 404-ing shape).
+    expect(mgmt.some((c) => c.url.includes("/process/"))).toBe(false);
+  });
+
+  it("honors a self-hosted proxyUrl override for toolbox calls", async () => {
+    const { fetchImpl, calls } = fakeFetch();
+    const p = createDaytonaProvider({
+      apiKey: "k",
+      apiUrl: "https://daytona.internal/api",
+      proxyUrl: "https://proxy.daytona.internal",
+      fetchImpl,
+    });
+    await p.exec({ id: "sb_2", provider: "daytona" }, ["true"]);
+    expect(calls[0]!.url).toBe("https://daytona.internal/api/sandbox/sb_2"); // GET state (mgmt)
+    expect(calls[1]!.url).toBe("https://proxy.daytona.internal/toolbox/sb_2/process/session");
+  });
+
   it("respects a custom apiUrl and target from the connection config", async () => {
     const { fetchImpl, calls } = fakeFetch();
     const p = createDaytonaProvider({
@@ -76,18 +103,20 @@ describe("daytona sandbox adapter", () => {
   });
 
   it("execs through a toolbox SESSION: wait-for-started → create session → runAsync exec", async () => {
-    // The regression this locks: the exec path is /toolbox/{id}/toolbox/…
-    // (doubled segment — the flat path 404s), and the long-running channel is
-    // the session api with runAsync (plain process/execute is sync, ~10s cap).
+    // The regression this locks: management CRUD is the app.daytona.io/api host,
+    // but the in-sandbox toolbox calls hit the SEPARATE proxy.app.daytona.io host
+    // with a SINGLE /toolbox/{id}/process/… prefix (a doubled `toolbox` segment,
+    // or the management host, 404s). The long-running channel is the session api
+    // with runAsync (plain process/execute is sync, ~10s cap).
     const { fetchImpl, calls } = fakeFetch();
     const p = createDaytonaProvider({ apiKey: "k", fetchImpl });
     await p.exec({ id: "sb_1", provider: "daytona" }, ["orun", "agent", "serve"], {
       env: { ANTHROPIC_API_KEY: "sk-ant-secret" },
     });
-    expect(calls.map((c) => `${c.method} ${c.url.slice(DEFAULT_DAYTONA_API.length)}`)).toEqual([
-      "GET /sandbox/sb_1",
-      "POST /toolbox/sb_1/toolbox/process/session",
-      "POST /toolbox/sb_1/toolbox/process/session/orun-agent/exec",
+    expect(calls.map((c) => `${c.method} ${c.url}`)).toEqual([
+      `GET ${DEFAULT_DAYTONA_API}/sandbox/sb_1`,
+      `POST ${DEFAULT_DAYTONA_PROXY}/toolbox/sb_1/process/session`,
+      `POST ${DEFAULT_DAYTONA_PROXY}/toolbox/sb_1/process/session/orun-agent/exec`,
     ]);
     expect((calls[1]!.body as { sessionId: string }).sessionId).toBe("orun-agent");
     const exec = calls[2]!.body as { command: string; runAsync: boolean };
@@ -97,10 +126,10 @@ describe("daytona sandbox adapter", () => {
     expect(exec.command).toBe("export ANTHROPIC_API_KEY=sk-ant-secret; orun agent serve");
   });
 
-  it("execCapture runs the SYNC process/execute endpoint and returns stdout + exit code", async () => {
+  it("execCapture runs the SYNC process/execute endpoint on the proxy host and returns stdout + exit code", async () => {
     const { fetchImpl, calls } = fakeFetch((url, init) => {
       if ((init.method ?? "GET") === "GET") return Response.json({ id: "sb_1", state: "started" });
-      if (url.endsWith("/toolbox/sb_1/toolbox/process/execute")) {
+      if (url === `${DEFAULT_DAYTONA_PROXY}/toolbox/sb_1/process/execute`) {
         return Response.json({ exitCode: 0, result: "orun 2.30.0\n" });
       }
       return Response.json({});
