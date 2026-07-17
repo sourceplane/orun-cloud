@@ -111,6 +111,11 @@ export interface ParentCredentialContext {
   credential: string;
   /** Provider-side anchor from the custody row (e.g. Cloudflare account id). */
   externalRef: string | null;
+  /** Custody kind the credential was read from (SI2). Adapters with more
+   *  than one custody posture (Cloudflare: service/parent token vs refresh
+   *  token) dispatch on THIS — never on environment configuration — so an
+   *  upgraded connection can never re-enter the deprecated refresh flow. */
+  kind?: string;
 }
 
 export interface MintCredentialInput {
@@ -152,8 +157,12 @@ export interface ProvisionedServiceIdentity {
   /** Custody kind the credential must be stored under
    *  (e.g. "cloudflare_service_token"). */
   kind: string;
-  /** Provider-side id of the identity (verify/rotate/revoke anchor). */
+  /** Custody anchor for the row's external_ref — the same anchor mints use
+   *  (Cloudflare: the ACCOUNT external id, not the token id). */
   externalRef: string | null;
+  /** Provider-side id of the identity itself (verify/rotate/revoke anchor;
+   *  Cloudflare: the created token's id — recorded in provider facts). */
+  providerRef: string | null;
   /** Provider-side expiry, when the identity has one (null = durable). */
   expiresAt: Date | null;
   /** Verified grant at provisioning time (safe metadata, not the secret). */
@@ -189,13 +198,20 @@ export interface ProvisionCapability {
     identityRef: string;
     nowMs: number;
   }): Promise<ProvisionOutcome>;
-  /** Scheduled re-issue of the identity's secret material — no human. */
+  /** Scheduled re-issue of the identity's secret material — no human.
+   *  `providerRef` is the identity's own provider-side id (from facts). */
   rotateServiceIdentity(input: {
     current: ParentCredentialContext;
+    providerRef: string;
     nowMs: number;
   }): Promise<ProvisionOutcome>;
-  /** Best-effort provider-side delete on connection revoke. */
-  revokeServiceIdentity(current: ParentCredentialContext, nowMs: number): Promise<boolean>;
+  /** Best-effort provider-side delete on connection revoke — killing the
+   *  identity also kills every outstanding child minted from it. */
+  revokeServiceIdentity(
+    current: ParentCredentialContext,
+    providerRef: string,
+    nowMs: number,
+  ): Promise<boolean>;
 }
 
 /** Channel discovery for the messaging archetype (IH2). Message DELIVERY is
