@@ -17,6 +17,8 @@ import { ChatThread, type ChatMeta, type ChatStorage, type ModelClient } from ".
 import { anthropicModel, workspaceSystemPrompt } from "./model.js";
 import { createConfigResolver, resolveAnthropicKey, type ProviderConnectionLite } from "./custody.js";
 import { createOwnerToolExecutor } from "./tools.js";
+import { withSessionVerbs } from "./session-verbs.js";
+import { uuidToHex } from "@saas/db/ids";
 
 export class WorkspaceAgent extends Agent<Env> {
   static override options = { hibernate: true, sendIdentityOnConnect: false };
@@ -84,11 +86,21 @@ export class WorkspaceAgent extends Agent<Env> {
       return key ? anthropicModel(key, edgeFetch ? undefined : undefined) : null;
     };
 
-    const tools = createOwnerToolExecutor({
-      baseUrl,
-      ownerToken,
-      ...(edgeFetch ? { fetchFn: edgeFetch } : {}),
-    });
+    // The hands (AN5): session verbs beside the read-only platform tools —
+    // spawn/steer/interrupt/watch, all owner-credentialed public re-entry.
+    const tools = withSessionVerbs(
+      createOwnerToolExecutor({
+        baseUrl,
+        ownerToken,
+        ...(edgeFetch ? { fetchFn: edgeFetch } : {}),
+      }),
+      {
+        baseUrl,
+        ownerToken,
+        http: { fetch: (edgeFetch ?? fetch) as (input: string, init?: RequestInit) => Promise<Response> },
+        orgPublicId: `org_${uuidToHex(orgId)}`,
+      },
+    );
 
     return this.thread.runTurn(text, principal, {
       resolveModel,
