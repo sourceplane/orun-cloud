@@ -612,10 +612,39 @@ export async function handleRevokeIntegration(
       if (existing.value.provider === "github") return;
       // Custody zeroize (design §3) for every custody-holding provider, plus
       // Slack's best-effort provider-side `auth.revoke` (decrypt-then-revoke
-      // before the envelope rows are deleted). Cloudflare's parent token is
-      // the CUSTOMER'S credential — never revoked provider-side, only
-      // forgotten. Nothing here blocks the platform revoke.
+      // before the envelope rows are deleted). Cloudflare's PASTED parent
+      // token is the CUSTOMER'S credential — never revoked provider-side,
+      // only forgotten; the PROVISIONED service token (SI2) is OURS and is
+      // deleted provider-side, which also kills every outstanding child.
+      // Nothing here blocks the platform revoke.
       const hub = createIntegrationHubRepository(executor);
+      if (existing.value.provider === "cloudflare") {
+        const credential = await hub.getProviderCredential(connectionId, "cloudflare_service_token");
+        if (credential.ok) {
+          const configured = getConfiguredProvider(env, "cloudflare", deps?.fetchImpl);
+          const encryption = await createEncryptionAdapter(env.SECRET_ENCRYPTION_KEY);
+          const facts = await hub.getCloudflareAccountByConnectionId(connectionId);
+          const tokenRef = facts.ok ? facts.value.parentTokenRef : null;
+          if (configured?.provider.provision && encryption && tokenRef) {
+            try {
+              const envelope = JSON.parse(credential.value.ciphertext) as CiphertextEnvelope;
+              const token = await encryption.decrypt(envelope);
+              await configured.provider.provision.revokeServiceIdentity(
+                {
+                  credential: token,
+                  externalRef: credential.value.externalRef,
+                  kind: "cloudflare_service_token",
+                },
+                tokenRef,
+                Date.now(),
+              );
+            } catch {
+              // Unreadable envelope or provider error — the zeroize below
+              // still runs; the IH9 sweep reconciles the provider side.
+            }
+          }
+        }
+      }
       if (existing.value.provider === "slack") {
         const credential = await hub.getProviderCredential(connectionId, "slack_bot_token");
         if (credential.ok) {

@@ -32,6 +32,8 @@ import type {
   IntegrationProvider,
   MintCredentialOutcome,
   ParentCredentialContext,
+  ProvisionCapability,
+  ProvisionOutcome,
 } from "./types.js";
 
 const API_BASE = "https://api.cloudflare.com/client/v4";
@@ -539,6 +541,177 @@ async function mintCloudflareToken(
   }
 }
 
+// ── Service-identity provisioning (SI2, sub-epics/service-identity-bootstrap) ──
+
+/** The permission the service identity needs ON TOP of the template union so
+ *  it can mint child tokens and roll its own value — the paste-posture
+ *  "Account API Tokens: Edit" requirement, provisioned instead of asked for. */
+const SERVICE_IDENTITY_ADMIN_GROUP = "Account API Tokens Write";
+
+/** Every permission-group NAME the service identity must carry: the union of
+ *  the template catalog (so `template ⊆ parent grant` holds for all published
+ *  templates) plus token administration. */
+export function serviceIdentityPermissionGroups(): readonly string[] {
+  const names = new Set<string>([SERVICE_IDENTITY_ADMIN_GROUP]);
+  for (const groups of Object.values(TEMPLATE_PERMISSION_GROUPS)) {
+    for (const name of groups) names.add(name);
+  }
+  return [...names];
+}
+
+/**
+ * Create the durable ACCOUNT-OWNED service token from a bootstrap bearer (the
+ * OAuth access token): resolve the required permission-group names against
+ * what the bootstrap grant can see (deny-by-default — a missing name is
+ * `bootstrap_grant_insufficient`, the SI-D1 guided-paste branch, NEVER a
+ * partial identity), then `POST /accounts/{id}/tokens` with NO expiry (the
+ * platform rotates it on schedule) and verify the result.
+ */
+export async function provisionCloudflareServiceIdentity(
+  input: {
+    bootstrapCredential: string;
+    externalRef: string | null;
+    identityRef: string;
+    nowMs: number;
+  },
+  fetchImpl: FetchLike = fetch,
+): Promise<ProvisionOutcome> {
+  const accountId = input.externalRef;
+  if (!accountId) return { ok: false, reason: "provider_error", detail: "no account anchor" };
+
+  let byName: Map<string, string>;
+  try {
+    const response = await fetchImpl(`${API_BASE}/user/tokens/permission_groups`, {
+      method: "GET",
+      headers: { authorization: `Bearer ${input.bootstrapCredential}` },
+    });
+    if (!response.ok) {
+      // The bootstrap bearer cannot even enumerate groups — treat as an
+      // insufficient grant (fall back to refresh custody), not an outage.
+      return response.status === 401 || response.status === 403
+        ? { ok: false, reason: "bootstrap_grant_insufficient", detail: `permission_groups http_${response.status}` }
+        : { ok: false, reason: "provider_error", detail: `permission_groups http_${response.status}` };
+    }
+    const body = (await response.json()) as {
+      success?: boolean;
+      result?: Array<{ id?: unknown; name?: unknown }>;
+    };
+    if (body.success !== true || !Array.isArray(body.result)) {
+      return { ok: false, reason: "provider_error", detail: "permission_groups unavailable" };
+    }
+    byName = new Map(
+      body.result
+        .filter((g): g is { id: string; name: string } => typeof g.id === "string" && typeof g.name === "string")
+        .map((g) => [g.name, g.id]),
+    );
+  } catch {
+    return { ok: false, reason: "provider_error", detail: "permission_groups network_error" };
+  }
+
+  const required = serviceIdentityPermissionGroups();
+  const missing = required.filter((name) => !byName.has(name));
+  if (missing.length > 0) {
+    return {
+      ok: false,
+      reason: "bootstrap_grant_insufficient",
+      detail: `missing: ${missing.join(", ")}`.slice(0, 200),
+    };
+  }
+
+  try {
+    const response = await fetchImpl(`${API_BASE}/accounts/${accountId}/tokens`, {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${input.bootstrapCredential}`,
+        "content-type": "application/json",
+      },
+      // Deliberately NO expires_on: the identity is durable and rotated by
+      // the platform (SI5 cron), never re-consented by a human.
+      body: JSON.stringify({
+        name: input.identityRef,
+        policies: [
+          {
+            effect: "allow",
+            resources: { [`com.cloudflare.api.account.${accountId}`]: "*" },
+            permission_groups: required.map((name) => ({ id: byName.get(name)! })),
+          },
+        ],
+      }),
+    });
+    const body = (await response.json()) as {
+      success?: boolean;
+      result?: { id?: unknown; value?: unknown };
+      errors?: Array<{ message?: unknown }>;
+    };
+    if (!response.ok || body.success !== true || typeof body.result?.value !== "string") {
+      const detail = String(body.errors?.[0]?.message ?? `http_${response.status}`).slice(0, 120);
+      return response.status === 403
+        ? { ok: false, reason: "bootstrap_grant_insufficient", detail }
+        : { ok: false, reason: "provider_error", detail };
+    }
+    return {
+      ok: true,
+      value: {
+        credential: body.result.value,
+        kind: "cloudflare_service_token",
+        // Custody anchors on the ACCOUNT (the mint path's bearer anchor);
+        // the token's own id goes to provider facts for verify/rotate/revoke.
+        externalRef: accountId,
+        providerRef: typeof body.result.id === "string" ? body.result.id : null,
+        expiresAt: null,
+        scopes: required as unknown[],
+      },
+    };
+  } catch {
+    return { ok: false, reason: "provider_error", detail: "provision network_error" };
+  }
+}
+
+/** Roll the service token's secret value in place
+ *  (`PUT /accounts/{id}/tokens/{tokenId}/value`) using the CURRENT value as
+ *  the bearer — scheduled rotation, no human, same token id. */
+export async function rotateCloudflareServiceIdentity(
+  input: { current: ParentCredentialContext; providerRef: string; nowMs: number },
+  fetchImpl: FetchLike = fetch,
+): Promise<ProvisionOutcome> {
+  const accountId = input.current.externalRef;
+  if (!accountId) return { ok: false, reason: "provider_error", detail: "no account anchor" };
+  try {
+    const response = await fetchImpl(
+      `${API_BASE}/accounts/${accountId}/tokens/${input.providerRef}/value`,
+      {
+        method: "PUT",
+        headers: {
+          authorization: `Bearer ${input.current.credential}`,
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({}),
+      },
+    );
+    const body = (await response.json()) as {
+      success?: boolean;
+      result?: unknown;
+      errors?: Array<{ message?: unknown }>;
+    };
+    if (!response.ok || body.success !== true || typeof body.result !== "string") {
+      const detail = String(body.errors?.[0]?.message ?? `http_${response.status}`).slice(0, 120);
+      return { ok: false, reason: "provider_error", detail };
+    }
+    return {
+      ok: true,
+      value: {
+        credential: body.result,
+        kind: "cloudflare_service_token",
+        externalRef: accountId,
+        providerRef: input.providerRef,
+        expiresAt: null,
+      },
+    };
+  } catch {
+    return { ok: false, reason: "provider_error", detail: "rotate network_error" };
+  }
+}
+
 /** Fail-fast template/param validation that must run BEFORE any OAuth refresh —
  *  a refresh may rotate (consume) the parent, so a doomed mint must be refused
  *  before spending it. Returns a failure outcome, or null when the request is
@@ -586,8 +759,16 @@ export function createCloudflareProvider(
         return { ok: false, reason: "provider_error", detail: "parent credential missing" };
       }
 
-      // Token-paste posture: the parent credential IS the API bearer.
-      if (!oauthCredentials) {
+      // Posture dispatch is PER CREDENTIAL KIND (SI2), never per environment:
+      // a provisioned service token and a pasted parent token ARE the API
+      // bearer; only the deprecated refresh-token custody enters the refresh
+      // flow. An un-kinded parent (legacy callers/tests) keeps the historic
+      // environment-driven behavior.
+      const directBearer =
+        input.parent.kind === "cloudflare_service_token" ||
+        input.parent.kind === "cloudflare_parent_token" ||
+        (!oauthCredentials && input.parent.kind === undefined);
+      if (directBearer) {
         return mintCloudflareToken(
           {
             template: input.template,
@@ -599,6 +780,11 @@ export function createCloudflareProvider(
           },
           fetchImpl,
         );
+      }
+      if (!oauthCredentials) {
+        // A refresh-token custody row without an OAuth client cannot be
+        // exercised — surface as the parent being unusable.
+        return { ok: false, reason: "parent_grant_insufficient", detail: "no oauth client for refresh custody" };
       }
 
       // OAuth posture: the parent credential is the REFRESH token. Validate the
@@ -641,10 +827,15 @@ export function createCloudflareProvider(
     async revokeCredential(providerRef, _nowMs, parent): Promise<boolean> {
       if (!parent?.externalRef) return false;
       // Child tokens are account-owned; deleting them needs an account-scoped
-      // API bearer. Token-paste hands one directly; OAuth must derive one from
-      // the refresh token first (best-effort — TTL is the backstop).
+      // API bearer. Service/parent tokens hand one directly (kind dispatch,
+      // SI2); only refresh custody must derive one first (best-effort — TTL
+      // is the backstop).
       let apiToken = parent.credential;
-      if (oauthCredentials) {
+      const isRefresh =
+        parent.kind === "cloudflare_refresh_token" ||
+        (parent.kind === undefined && Boolean(oauthCredentials));
+      if (isRefresh) {
+        if (!oauthCredentials) return false;
         const refreshed = await refreshCloudflareAccess(oauthCredentials, parent.credential, fetchImpl);
         if (!refreshed) return false;
         apiToken = refreshed.accessToken;
@@ -661,6 +852,30 @@ export function createCloudflareProvider(
     },
   };
 
+  // Service-identity lifecycle (SI2): the bootstrap bearer provisions the
+  // durable account-owned token; rotation rolls it in place; revoke deletes
+  // it provider-side (which also kills every outstanding child).
+  const provision: ProvisionCapability = {
+    provisionServiceIdentity(input) {
+      return provisionCloudflareServiceIdentity(input, fetchImpl);
+    },
+    rotateServiceIdentity(input) {
+      return rotateCloudflareServiceIdentity(input, fetchImpl);
+    },
+    async revokeServiceIdentity(current, providerRef) {
+      if (!current.externalRef) return false;
+      try {
+        const response = await fetchImpl(
+          `${API_BASE}/accounts/${current.externalRef}/tokens/${providerRef}`,
+          { method: "DELETE", headers: { authorization: `Bearer ${current.credential}` } },
+        );
+        return response.ok;
+      } catch {
+        return false;
+      }
+    },
+  };
+
   return {
     id: "cloudflare",
     displayName: "Cloudflare",
@@ -668,6 +883,7 @@ export function createCloudflareProvider(
     capabilities: ["connect", "credential-broker"],
 
     broker,
+    provision,
 
     ...(oauthCredentials
       ? {
