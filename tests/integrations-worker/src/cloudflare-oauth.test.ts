@@ -320,6 +320,37 @@ describe("cloudflare OAuth adapter (IH5 / D3)", () => {
       );
     });
 
+    it("dispatches provider callback errors by code (the invalid_scope incident)", async () => {
+      const api = cloudflareApi();
+      const { executor, queries } = fakeExecutor(() => []);
+      const invalidScope = await handleCloudflareOauthCallback(
+        new Request(
+          "https://worker.test/ingress/cloudflare/oauth?error=invalid_scope&error_description=The+requested+scope+is+invalid:+dns.write",
+        ),
+        createEnv(),
+        "req_1",
+        { executor, fetchImpl: api.fetchImpl },
+      );
+      const invalidScopeHtml = await invalidScope.text();
+      // The failing scope is NAMED (Cloudflare's own description) plus the
+      // config remediation — never mislabeled as a user cancellation.
+      expect(invalidScopeHtml).toContain("Requested scopes were refused");
+      expect(invalidScopeHtml).toContain("dns.write");
+      expect(invalidScopeHtml).toContain("CLOUDFLARE_OAUTH_SCOPE");
+      expect(invalidScopeHtml).not.toContain("cancelled");
+
+      const denied = await handleCloudflareOauthCallback(
+        new Request("https://worker.test/ingress/cloudflare/oauth?error=access_denied"),
+        createEnv(),
+        "req_1",
+        { executor, fetchImpl: api.fetchImpl },
+      );
+      expect(await denied.text()).toContain("cancelled");
+      // Provider-error callbacks write nothing and call nothing.
+      expect(queries).toHaveLength(0);
+      expect(api.calls).toHaveLength(0);
+    });
+
     it("uses the provisioning default (+offline_access) for blank/undefined input", () => {
       expect(resolveCloudflareOauthScope()).toBe(
         `${CLOUDFLARE_DEFAULT_OAUTH_SCOPE} offline_access`,

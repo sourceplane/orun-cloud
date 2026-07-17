@@ -62,8 +62,11 @@ const OAUTH_OFFLINE_ACCESS_SCOPE = "offline_access";
  */
 export const OAUTH_SCOPE_BY_PERMISSION_GROUP: Record<string, string> = {
   "Account API Tokens Write": "account-api-tokens.write",
-  "Workers Scripts Write": "workers-scripts.write",
-  "Workers KV Storage Write": "workers-kv-storage.write",
+  // Cloudflare's own docs use `workers-platform.read` as the scope example —
+  // the scope catalog groups the Workers family (scripts, KV) coarser than
+  // permission groups do.
+  "Workers Scripts Write": "workers-platform.write",
+  "Workers KV Storage Write": "workers-platform.write",
   "Pages Write": "pages.write",
   "DNS Write": "dns.write",
   "Workers R2 Storage Write": "workers-r2-storage.write",

@@ -176,13 +176,38 @@ export async function handleCloudflareOauthCallback(
   const state = url.searchParams.get("state");
   const providerError = url.searchParams.get("error");
 
-  // The user declined the Cloudflare consent screen — nothing was granted, the
-  // pending connection simply expires with its state.
+  // Provider-reported failure BEFORE any grant. Dispatch on the OAuth error
+  // code instead of labeling everything "cancelled" (the live invalid_scope
+  // incident hid the real cause): an invalid_scope means the requested scope
+  // list does not match the client's registered scopes / Cloudflare's scope
+  // catalog — an OPERATOR problem with a config remediation, not a user
+  // decision. error_description is Cloudflare's own text (safe metadata —
+  // scope names, never credentials); render it truncated + sanitized so the
+  // failing scope is named instead of guessed.
   if (providerError) {
+    const description = (url.searchParams.get("error_description") ?? "")
+      .replace(/[^\w .,:;'"()+/-]/g, " ")
+      .slice(0, 300)
+      .trim();
+    if (providerError === "invalid_scope") {
+      return popupPage(
+        "error",
+        "Requested scopes were refused",
+        `Cloudflare rejected the requested OAuth scopes${description ? `: ${description}` : ""}. ` +
+          "Check the exact scope names on the OAuth client's edit screen (or GET /client/v4/oauth/scopes) and set CLOUDFLARE_OAUTH_SCOPE to the matching dot-form list — or connect by pasting an account API token instead.",
+      );
+    }
+    if (providerError === "access_denied") {
+      return popupPage(
+        "error",
+        "Connection not completed",
+        "Cloudflare reported the authorization was cancelled.",
+      );
+    }
     return popupPage(
       "error",
       "Connection not completed",
-      "Cloudflare reported the authorization was cancelled.",
+      `Cloudflare refused the authorization (${providerError.replace(/[^\w-]/g, "").slice(0, 40)})${description ? `: ${description}` : "."}`,
     );
   }
   if (!code) {
