@@ -147,7 +147,12 @@ export function IntegrationsHub({ orgId, orgSlug }: { orgId: string; orgSlug: st
       const provider = providerById(providerId);
       if (!provider || provider.status !== "available") return;
       setGateError(null);
-      if (provider.connectKind === "token") {
+      // Cloudflare always goes through its connect modal (SI-D1 remediation):
+      // the modal offers BOTH the OAuth authorize (which provisions Orun's
+      // service identity) and the token-paste path — some OAuth grants cannot
+      // create account API tokens, and the paste posture must stay reachable
+      // even in an OAuth-configured environment.
+      if (provider.connectKind === "token" || provider.id === "cloudflare") {
         setCloudflareOpen(true);
         return;
       }
@@ -187,6 +192,29 @@ export function IntegrationsHub({ orgId, orgSlug }: { orgId: string; orgSlug: st
     },
     [client, orgId, list, toast],
   );
+
+  // The Cloudflare OAuth authorize path (popup + poll), invoked from the
+  // connect modal's primary action when the environment has an OAuth client.
+  const startCloudflareOauth = React.useCallback(async () => {
+    setCloudflareOpen(false);
+    const r = await wrap(() => client.integrations.connectCloudflare(orgId));
+    if (!r.ok) {
+      if (r.status === 412) {
+        setGateError(r.error);
+      } else {
+        toast({ kind: "error", title: "Could not start the connection", description: r.error.message });
+      }
+      return;
+    }
+    pollUntil.current = Date.now() + POLL_BUDGET_MS;
+    setConnectingProvider("cloudflare");
+    list.reload();
+    const { installUrl } = r.data;
+    const popup = window.open(installUrl, "cloudflare-connect", "width=1020,height=780");
+    if (!popup && installUrl) {
+      window.location.assign(installUrl);
+    }
+  }, [client, orgId, list, toast]);
 
   // Cmd-K deep link: `?connect=<provider>` triggers the same connect dispatch
   // once the list has loaded (so the available/unconnected check is real),
@@ -385,6 +413,9 @@ export function IntegrationsHub({ orgId, orgSlug }: { orgId: string; orgSlug: st
         onOpenChange={setCloudflareOpen}
         onConnected={() => list.reload()}
         onGateError={(error) => setGateError(error)}
+        {...(providerById("cloudflare")?.connectKind === "oauth"
+          ? { onOauth: () => void startCloudflareOauth() }
+          : {})}
       />
     </Screen>
   );

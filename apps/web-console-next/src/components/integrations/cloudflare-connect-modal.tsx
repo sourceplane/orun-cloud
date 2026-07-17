@@ -58,6 +58,7 @@ export function CloudflareConnectModal({
   onOpenChange,
   onConnected,
   onGateError,
+  onOauth,
 }: {
   orgId: string;
   open: boolean;
@@ -66,6 +67,13 @@ export function CloudflareConnectModal({
   onConnected: () => void;
   /** Entitlement 412s ride the hub's PreconditionInsight path. */
   onGateError: (error: ApiErrorBody) => void;
+  /**
+   * SI-D1: present when the environment has a Cloudflare OAuth client —
+   * renders the authorize path as the primary method (Orun provisions its
+   * own service identity). The paste form stays below it because some OAuth
+   * grants cannot create account API tokens.
+   */
+  onOauth?: () => void;
 }) {
   const { client } = useSession();
   const { toast } = useToast();
@@ -133,11 +141,33 @@ export function CloudflareConnectModal({
             Connect Cloudflare
           </DialogTitle>
           <DialogDescription>
-            Paste an account-scoped parent API token once. Orun verifies it with Cloudflare before
-            anything is saved, then mints short-lived child tokens from it — the parent is never
-            shown again.
+            {onOauth
+              ? "Authorize once and Orun provisions its own service token in your account — your login is discarded. If your Cloudflare user can't manage account API tokens, paste one instead."
+              : "Paste an account-scoped parent API token once. Orun verifies it with Cloudflare before anything is saved, then mints short-lived child tokens from it — the parent is never shown again."}
           </DialogDescription>
         </DialogHeader>
+
+        {onOauth ? (
+          <>
+            <div className="flex flex-wrap items-center justify-between gap-3 rounded-[10px] border border-border px-4 py-3.5">
+              <div className="min-w-0">
+                <div className="text-[12.5px] font-semibold">Authorize with Cloudflare</div>
+                <p className="mt-0.5 text-xs text-muted-foreground">
+                  Requires a Cloudflare user who can manage account API tokens — Orun creates a
+                  dedicated service token and never keeps your session.
+                </p>
+              </div>
+              <Button type="button" className="shrink-0" onClick={onOauth}>
+                Authorize
+              </Button>
+            </div>
+            <div className="flex items-center gap-3 text-[11px] font-semibold uppercase tracking-[.07em] text-muted-foreground">
+              <span className="h-px flex-1 bg-border" aria-hidden />
+              or paste a token
+              <span className="h-px flex-1 bg-border" aria-hidden />
+            </div>
+          </>
+        ) : null}
 
         <div className="rounded-[10px] border border-border bg-muted/50 px-4 py-3.5">
           <div className="text-[11px] font-semibold uppercase tracking-[.07em] text-muted-foreground">
