@@ -28,7 +28,11 @@ import {
   refreshCloudflareAccess,
   verifyCloudflareParentToken,
 } from "./providers/cloudflare.js";
-import { readParentCredential, reEnvelopeParentCredential } from "./custody.js";
+import {
+  readParentCredential,
+  readParentCredentialOfKind,
+  reEnvelopeParentCredential,
+} from "./custody.js";
 import { generateRequestId, generateUuid, orgPublicId } from "./ids.js";
 
 export interface CloudflareHealthSummary {
@@ -94,7 +98,13 @@ export async function runCloudflareHealth(
       summary.checked++;
       try {
         const connectionUuid = asUuid(row.connectionId);
-        const parent = await readParentCredential(env, executor, connectionUuid, "cloudflare");
+        // SI5: the mint candidate list no longer exposes refresh custody —
+        // read it EXPLICITLY so an un-backfilled connection is health-checked
+        // as refresh-liveness (and left for the SI3 backfill), never
+        // mis-suspended as "parent token invalid".
+        const parent =
+          (await readParentCredential(env, executor, connectionUuid, "cloudflare")) ??
+          (await readParentCredentialOfKind(env, executor, connectionUuid, "cloudflare_refresh_token"));
 
         // OAuth posture (cloudflare_refresh_token): refresh-liveness, mirroring
         // the Supabase health cron — a refused refresh means the grant was

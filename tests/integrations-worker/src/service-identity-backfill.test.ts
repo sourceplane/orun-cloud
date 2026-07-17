@@ -13,7 +13,9 @@
 
 import {
   runServiceIdentityBackfill,
+  runServiceIdentityRotation,
   SERVICE_IDENTITY_BACKFILL_LIMIT,
+  SERVICE_IDENTITY_ROTATION_DAYS,
 } from "@integrations-worker/service-identity-backfill";
 import { serviceIdentityPermissionGroups } from "@integrations-worker/providers/cloudflare";
 import { createEncryptionAdapter, type CiphertextEnvelope } from "@integrations-worker/encryption";
@@ -122,6 +124,8 @@ function harness(custodyByKind: Record<string, Record<string, unknown>>): Harnes
       } else if (text.includes("INSERT INTO integrations.cloudflare_accounts")) {
         factsUpserts.push(p);
         rows = [sweepRow({ parent_token_ref: p[4] })];
+      } else if (text.includes("SET status")) {
+        rows = [{ id: CONNECTION_UUID, org_id: ORG_UUID, provider: "cloudflare", status: "suspended" }];
       } else if (text.includes("WITH inserted_event")) {
         rows = [{ _event: { id: "evt", payload: {} }, _audit: { id: "aud", payload: {} } }];
       }
@@ -166,6 +170,9 @@ function cloudflareApi(overrides?: {
         success: true,
         result: { id: "svc-token-id", status: overrides?.probeStatus ?? "active", expires_on: null },
       });
+    }
+    if (input.includes("/tokens/svc-token-id/value") && (init?.method ?? "GET") === "PUT") {
+      return Response.json({ success: true, result: "cf-service-ROLLED" });
     }
     if (input.includes(`/accounts/${ACCOUNT_ID}/tokens`) && (init?.method ?? "GET") === "POST") {
       return Response.json({ success: true, result: { id: "svc-token-id", value: "cf-service-SECRET" } });
@@ -218,7 +225,7 @@ describe("runServiceIdentityBackfill (SI3)", () => {
     expect(eventJson).not.toContain("cf-refresh-NEW");
   });
 
-  it("counts grantInsufficient and keeps (re-enveloped) refresh custody when the grant cannot self-provision", async () => {
+  it("suspends (service_identity_required) and keeps re-enveloped refresh custody when the grant cannot self-provision", async () => {
     const custody = { cloudflare_refresh_token: await custodyRow("cloudflare_refresh_token", "cf-refresh-OLD") };
     const h = harness(custody);
     const api = cloudflareApi({ groups: ALL_GROUPS.slice(0, 2) });
@@ -238,6 +245,79 @@ describe("runServiceIdentityBackfill (SI3)", () => {
     ).toBe("cf-refresh-NEW");
     expect(h.custodyDeletes).toEqual([]);
     expect(api.calls.some((c) => c.method === "POST" && c.url.includes("/tokens"))).toBe(false);
+
+    // SI5: minting is structurally off for this connection, so "active"
+    // would be a lie — it is suspended with the typed re-connect reason.
+    expect(h.queries.some((q) => q.text.includes("SET status"))).toBe(true);
+    const eventJson = JSON.stringify(
+      h.queries.filter((q) => q.text.includes("WITH inserted_event")).map((q) => q.params),
+    );
+    expect(eventJson).toContain("service_identity_required");
+  });
+
+  it("rotation: rolls a service token older than the window in place, under the lock", async () => {
+    const old = new Date(NOW.getTime() - (SERVICE_IDENTITY_ROTATION_DAYS + 1) * 24 * 60 * 60 * 1000);
+    const custodyMap = {
+      cloudflare_service_token: {
+        ...(await custodyRow("cloudflare_service_token", "cf-service-SECRET")),
+        created_at: old.toISOString(),
+        rotated_at: null,
+      },
+    };
+    const h = harness(custodyMap);
+    // Rotation lists via the sweep join; the facts row must carry the token id.
+    const api = cloudflareApi();
+    const held: string[] = [];
+    const withTokenRef: SqlExecutor = {
+      async execute(text: string, params?: unknown[]) {
+        if (text.includes("FROM integrations.cloudflare_accounts t")) {
+          return { rows: [sweepRow({ parent_token_ref: "svc-token-id" })] as never[], rowCount: 1 };
+        }
+        return h.executor.execute(text, params);
+      },
+    };
+
+    const summary = await runServiceIdentityRotation(ENV, withTokenRef, {
+      fetchImpl: api.fetchImpl,
+      now: NOW,
+      mintLock: serializingLock(held),
+    });
+    expect(summary).toEqual({ scanned: 1, rotated: 1, failures: 0 });
+    expect(held).toEqual([CONNECTION_UUID]);
+
+    // The roll used the current value as bearer, in place (same token id).
+    const roll = api.calls.find((c) => c.method === "PUT")!;
+    expect(roll.url).toContain("/tokens/svc-token-id/value");
+    expect(roll.auth).toBe("Bearer cf-service-SECRET");
+    // The rolled value was re-enveloped into the SAME kind.
+    const insert = h.custodyInserts.find((p) => p[2] === "cloudflare_service_token")!;
+    const adapter = (await createEncryptionAdapter(KEY))!;
+    expect(await adapter.decrypt(JSON.parse(insert[4] as string) as CiphertextEnvelope)).toBe(
+      "cf-service-ROLLED",
+    );
+  });
+
+  it("rotation: skips young material", async () => {
+    const custodyMap = {
+      cloudflare_service_token: await custodyRow("cloudflare_service_token", "cf-service-SECRET"),
+    };
+    const h = harness(custodyMap);
+    const api = cloudflareApi();
+    const withTokenRef: SqlExecutor = {
+      async execute(text: string, params?: unknown[]) {
+        if (text.includes("FROM integrations.cloudflare_accounts t")) {
+          return { rows: [sweepRow({ parent_token_ref: "svc-token-id" })] as never[], rowCount: 1 };
+        }
+        return h.executor.execute(text, params);
+      },
+    };
+    const summary = await runServiceIdentityRotation(ENV, withTokenRef, {
+      fetchImpl: api.fetchImpl,
+      now: NOW,
+      mintLock: serializingLock([]),
+    });
+    expect(summary).toEqual({ scanned: 1, rotated: 0, failures: 0 });
+    expect(api.calls.filter((c) => c.method === "PUT")).toEqual([]);
   });
 
   it("deletes the provisioned token and keeps refresh custody when the probe refuses it", async () => {

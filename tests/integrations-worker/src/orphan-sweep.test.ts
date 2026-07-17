@@ -167,6 +167,10 @@ describe("runOrphanSweep", () => {
           { id: "tok-expired", name: mintName(MINT_EXPIRED_UUID), status: "active" },
           { id: "tok-foreign", name: "customer-made-token", status: "active" },
           { id: "tok-foreign2", name: "orun/not-a-mint", status: "active" },
+          // SI5 invariant: the durable service identity is named
+          // `orun/{org}/service` — it must NEVER parse as a mint and NEVER
+          // be revoked by the sweep.
+          { id: "svc-token-id", name: `orun/${orgPublicId(ORG_UUID)}/service`, status: "active" },
         ]);
       }
       if (init?.method === "DELETE" && url.includes("/accounts/cf-acct-1/tokens/")) {
@@ -187,6 +191,8 @@ describe("runOrphanSweep", () => {
     expect(deletes.some((u) => u.endsWith("/tokens/tok-expired"))).toBe(true);
     expect(deletes.some((u) => u.includes("tok-foreign"))).toBe(false);
     expect(deletes.some((u) => u.includes("tok-live"))).toBe(false);
+    // The service identity survives every sweep (SI5).
+    expect(deletes.some((u) => u.includes("svc-token-id"))).toBe(false);
     // The revoke ran under the decrypted parent token.
     expect(calls.some((c) => c.method === "DELETE")).toBe(true);
 
