@@ -281,9 +281,34 @@ export interface ListIntegrationsResponse {
   nextCursor: IntegrationsCursor | null;
 }
 
+/**
+ * Safe custody summary for the connection detail (service-identity-bootstrap
+ * SI6) — METADATA ONLY, never ciphertext or values. One entry per durable
+ * custody row; transient bootstrap material (PKCE verifiers, token caches)
+ * is never surfaced.
+ */
+export interface PublicConnectionCustody {
+  /** Custody kind, e.g. "cloudflare_service_token". */
+  kind: string;
+  /** SI1 classes: infrastructure = org-owned operating credential;
+   *  identity = user-derived (deprecated custody, pending upgrade). */
+  credentialClass: "identity" | "infrastructure";
+  /** True when the credential derives from a person's OAuth session — the
+   *  console renders the user-tie warning on this. */
+  userDerived: boolean;
+  /** Last platform rotation (null = never rotated since capture). */
+  rotatedAt: string | null;
+  createdAt: string;
+  /** Safe scope metadata (e.g. Supabase project refs with custodied keys —
+   *  never the keys). */
+  scopes: unknown[] | Record<string, unknown> | null;
+}
+
 /** GET /v1/organizations/{orgId}/integrations/{connectionId} */
 export interface GetIntegrationResponse {
   connection: PublicConnection;
+  /** Custody summary (SI6) — present for custody-holding providers. */
+  custody?: PublicConnectionCustody[];
 }
 
 /** DELETE /v1/organizations/{orgId}/integrations/{connectionId} */

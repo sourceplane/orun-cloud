@@ -58,7 +58,7 @@ export const INTEGRATION_PROVIDERS: readonly IntegrationProvider[] = [
     id: "supabase",
     name: "Supabase",
     description:
-      "Connect your Supabase organization over OAuth; plans mint short-lived Management API access tokens on demand.",
+      "Connect your Supabase organization once — project service keys are custodied org-owned, and runs resolve them without touching anyone's login.",
     status: "available",
     archetype: "infrastructure",
     connectKind: "oauth",
@@ -68,7 +68,7 @@ export const INTEGRATION_PROVIDERS: readonly IntegrationProvider[] = [
     id: "cloudflare",
     name: "Cloudflare",
     description:
-      "Connect your Cloudflare account over OAuth; plans mint short-lived, scoped child tokens for Workers, Pages, DNS, and R2 on demand.",
+      "Authorize once — Orun provisions its own service identity in your account (your login is discarded), then plans mint short-lived, scoped child tokens for Workers, Pages, DNS, and R2 on demand.",
     status: "available",
     archetype: "infrastructure",
     connectKind: "oauth",

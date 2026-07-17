@@ -1,8 +1,12 @@
 # Service-identity bootstrap: OAuth establishes trust, service identities operate
 
-**Status:** Draft — proposal. Redirects the broker's custody model; supersedes
-the "refresh token as durable custody" posture for Cloudflare and narrows it
-for Supabase. Milestones SI1–SI6 below.
+**Status:** Shipped — SI1–SI6 landed (#490, #492, #493, #494, #495, SI6 PR).
+Redirects the broker's custody model; supersedes the "refresh token as
+durable custody" posture for Cloudflare and narrows it for Supabase (SI-D2).
+Cloudflare mints can no longer be authorized by a user-derived credential,
+structurally; new OAuth connects always end in a provisioned service
+identity; rotation is a daily cron; the Supabase project plane serves from
+org-owned custody via the custody-served `project-service-key` template.
 
 ## Problem
 

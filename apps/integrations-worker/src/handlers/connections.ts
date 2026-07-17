@@ -499,8 +499,35 @@ export async function handleGetIntegration(
       repositorySelection = installation.value.repositorySelection;
     }
 
+    // Custody summary (SI6): metadata-only projection of the connection's
+    // durable custody — credential class, rotation age, safe scopes. The
+    // console renders the org-owned vs user-derived distinction from this.
+    // Transient bootstrap material (PKCE verifiers, caches) never surfaces.
+    let custody: GetIntegrationResponse["custody"];
+    const hub = createIntegrationHubRepository(executor);
+    const summaries = await hub.listProviderCredentialSummaries(connectionId);
+    if (summaries.ok && summaries.value.length > 0) {
+      const TRANSIENT_KINDS = new Set([
+        "cloudflare_pkce_verifier",
+        "supabase_pkce_verifier",
+        "supabase_access_token_cache",
+      ]);
+      const rows = summaries.value.filter((s) => !TRANSIENT_KINDS.has(s.kind));
+      if (rows.length > 0) {
+        custody = rows.map((s) => ({
+          kind: s.kind,
+          credentialClass: s.credentialClass,
+          userDerived: s.credentialClass === "identity",
+          rotatedAt: s.rotatedAt ? s.rotatedAt.toISOString() : null,
+          createdAt: s.createdAt.toISOString(),
+          scopes: s.scopes,
+        }));
+      }
+    }
+
     const payload: GetIntegrationResponse = {
       connection: toPublicConnectionWithSelection(result.value, repositorySelection),
+      ...(custody ? { custody } : {}),
     };
     return successResponse(payload, requestId);
   } catch {

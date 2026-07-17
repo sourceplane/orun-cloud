@@ -24,7 +24,10 @@ import {
   Plug,
   type LucideIcon,
 } from "lucide-react";
-import type { PublicConnection } from "@saas/contracts/integrations";
+import type {
+  GetIntegrationResponse,
+  PublicConnectionCustody,
+} from "@saas/contracts/integrations";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -91,8 +94,8 @@ export function ConnectionDetail({
   // alongside so the load-error card can show the requestId (design §6:
   // "error with requestId").
   const lastLoadError = React.useRef<{ error: ApiErrorBody; status: number } | null>(null);
-  const conn = useApiQuery<PublicConnection>(qk.integration(orgId, connectionId), async () => {
-    const r = await wrap(async () => (await client.integrations.get(orgId, connectionId)).connection);
+  const conn = useApiQuery<GetIntegrationResponse>(qk.integration(orgId, connectionId), async () => {
+    const r = await wrap(async () => client.integrations.get(orgId, connectionId));
     lastLoadError.current = r.ok ? null : { error: r.error, status: r.status };
     return r;
   });
@@ -152,8 +155,9 @@ export function ConnectionDetail({
     );
   }
 
-  const connection = conn.data;
+  const connection = conn.data?.connection;
   if (!connection) return null;
+  const custody = conn.data?.custody ?? [];
 
   const archetype = archetypeForProvider(connection.provider);
   const providerName = connectionProviderName(connection);
@@ -281,6 +285,13 @@ export function ConnectionDetail({
         <>
           <Kicker className="mb-2.5 mt-8">Channels in use</Kicker>
           <SlackChannels orgId={orgId} connectionId={connection.id} enabled={isActive} />
+        </>
+      ) : null}
+
+      {archetype === "infrastructure" && custody.length > 0 ? (
+        <>
+          <Kicker className="mb-2.5 mt-8">Credential custody</Kicker>
+          <CustodySummary custody={custody} />
         </>
       ) : null}
 
@@ -495,6 +506,68 @@ function SlackChannels({
 }
 
 // ---------------------------------------------------------------------------
+// Custody summary (service-identity-bootstrap SI6): what the platform holds
+// for this connection — org-owned service identities vs deprecated
+// user-derived custody — with rotation age. Metadata only; values never
+// reach this surface.
+// ---------------------------------------------------------------------------
+
+const CUSTODY_KIND_LABELS: Record<string, string> = {
+  cloudflare_service_token: "Cloudflare service identity",
+  cloudflare_parent_token: "Cloudflare account API token (pasted)",
+  cloudflare_refresh_token: "Cloudflare OAuth refresh token",
+  supabase_refresh_token: "Supabase management session",
+  supabase_project_secret: "Supabase project service keys",
+  slack_bot_token: "Slack bot token",
+};
+
+function CustodySummary({ custody }: { custody: PublicConnectionCustody[] }) {
+  return (
+    <div className="overflow-hidden rounded-xl border bg-card">
+      <ul className="divide-y divide-border/50">
+        {custody.map((row) => {
+          const projectRefs =
+            row.kind === "supabase_project_secret" && Array.isArray(row.scopes)
+              ? row.scopes.filter((s): s is string => typeof s === "string")
+              : null;
+          return (
+            <li key={row.kind} className="flex flex-wrap items-center justify-between gap-3 px-5 py-3.5">
+              <div className="min-w-0">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-[12.5px] font-semibold">
+                    {CUSTODY_KIND_LABELS[row.kind] ?? row.kind}
+                  </span>
+                  {row.userDerived ? (
+                    <Pill tone="warning" dot>
+                      User-derived — deprecated
+                    </Pill>
+                  ) : (
+                    <Pill tone="success" dot>
+                      Organization-owned
+                    </Pill>
+                  )}
+                </div>
+                <div className="mt-[3px] text-[11.5px] text-muted-foreground">
+                  {row.userDerived
+                    ? "Tied to the authorizing person's login. It will be upgraded to a provisioned service identity automatically, or re-connect to upgrade now."
+                    : "Provisioned for Orun and owned by the organization — no person's login is involved."}
+                  {projectRefs ? ` Keys custodied for ${projectRefs.length} project${projectRefs.length === 1 ? "" : "s"}.` : ""}
+                </div>
+              </div>
+              <div className="shrink-0 text-right text-[11px] text-muted-foreground">
+                {row.rotatedAt ? (
+                  <>rotated {new Date(row.rotatedAt).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}</>
+                ) : (
+                  <>captured {new Date(row.createdAt).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}</>
+                )}
+              </div>
+            </li>
+          );
+        })}
+      </ul>
+    </div>
+  );
+}
 
 /** 10.5px caps outline mini-pill (scope / sharing provenance) — hub twin. */
 function MiniPill({ children }: { children: React.ReactNode }) {

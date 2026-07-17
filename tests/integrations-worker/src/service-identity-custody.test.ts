@@ -13,6 +13,7 @@ import {
   readParentCredentialOfKind,
   PARENT_CREDENTIAL_KIND_CANDIDATES,
 } from "@integrations-worker/custody";
+import { handleGetIntegration } from "@integrations-worker/handlers/connections";
 import type { Env } from "@integrations-worker/env";
 import {
   createIntegrationHubRepository,
@@ -165,5 +166,87 @@ describe("SI1 credential classes", () => {
     expect(identityUpsert.ok).toBe(true);
     if (identityUpsert.ok) expect(identityUpsert.value.credentialClass).toBe("identity");
     expect(queries[1]!.params[3]).toBe("identity");
+  });
+});
+
+// ── SI6: metadata-only custody summary on the connection detail ──
+
+describe("GET …/integrations/{id} custody summary (SI6)", () => {
+  const ORG_UUID = "11111111-1111-4111-8111-111111111111";
+  const jsonFetcher = (body: unknown) =>
+    ({
+      fetch: () => Promise.resolve(Response.json(body)),
+      connect() {
+        throw new Error("not implemented");
+      },
+    }) as unknown as Fetcher;
+  const env = {
+    SECRET_ENCRYPTION_KEY: KEY,
+    PLATFORM_DB: { connectionString: "postgres://fake" },
+    MEMBERSHIP_WORKER: jsonFetcher({
+      data: {
+        memberships: [
+          { kind: "role_assignment", role: "admin", scope: { kind: "organization", orgId: ORG_UUID } },
+        ],
+      },
+    }),
+    POLICY_WORKER: jsonFetcher({ data: { allow: true, reason: "org_admin" } }),
+  } as unknown as Env;
+  const ACTOR = { subjectId: "usr_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", subjectType: "user" };
+
+  it("projects custody metadata (class, user-tie, rotation) — never ciphertext, filtering transient kinds", async () => {
+    const { executor } = fakeExecutor((text) => {
+      if (text.includes("FROM integrations.connections")) {
+        return [{
+          id: CONNECTION_UUID, org_id: ORG_UUID, provider: "cloudflare", status: "active",
+          scope: "account", share_mode: "auto", display_name: "CF", created_by: "usr_abc",
+          created_at: NOW.toISOString(), updated_at: NOW.toISOString(),
+        }];
+      }
+      if (text.includes("FROM integrations.provider_credentials")) {
+        // The summary SELECT never asks for ciphertext.
+        expect(text).not.toContain("ciphertext");
+        return [
+          {
+            id: "c1", connection_id: CONNECTION_UUID, kind: "cloudflare_service_token",
+            credential_class: "infrastructure", scopes: JSON.stringify(["Workers Scripts Write"]),
+            external_ref: "acc-1", rotated_at: NOW.toISOString(), created_at: NOW.toISOString(),
+            updated_at: NOW.toISOString(),
+          },
+          {
+            id: "c2", connection_id: CONNECTION_UUID, kind: "cloudflare_refresh_token",
+            credential_class: "identity", scopes: null, external_ref: "acc-1",
+            rotated_at: null, created_at: NOW.toISOString(), updated_at: NOW.toISOString(),
+          },
+          {
+            id: "c3", connection_id: CONNECTION_UUID, kind: "cloudflare_pkce_verifier",
+            credential_class: "identity", scopes: null, external_ref: null,
+            rotated_at: null, created_at: NOW.toISOString(), updated_at: NOW.toISOString(),
+          },
+        ];
+      }
+      return [];
+    });
+    const res = await handleGetIntegration(
+      env, "req_1", ACTOR, asUuid(ORG_UUID), CONNECTION_ID, { executor },
+    );
+    expect(res.status).toBe(200);
+    const data = ((await res.json()) as { data: { custody?: Array<Record<string, unknown>> } }).data;
+    expect(data.custody).toHaveLength(2); // the PKCE verifier never surfaces
+    const [service, refresh] = data.custody!;
+    expect(service).toMatchObject({
+      kind: "cloudflare_service_token",
+      credentialClass: "infrastructure",
+      userDerived: false,
+    });
+    expect(typeof service!.rotatedAt).toBe("string");
+    expect(refresh).toMatchObject({
+      kind: "cloudflare_refresh_token",
+      credentialClass: "identity",
+      userDerived: true,
+      rotatedAt: null,
+    });
+    // The payload carries no secret material fields at all.
+    expect(JSON.stringify(data)).not.toContain("ciphertext");
   });
 });
