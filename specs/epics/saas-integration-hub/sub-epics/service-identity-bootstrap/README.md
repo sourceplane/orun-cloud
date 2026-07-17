@@ -120,7 +120,17 @@ Consequences:
   provider-side (which kills all outstanding children of it) then zeroizes
   custody — a strictly stronger guarantee than today's refresh-token revoke.
 
-**Gate (decision SI-D1).** The bootstrap requires the OAuth-minted access
+**Gate (decision SI-D1) — RESOLVED 2026-07-17.** Verified against the live
+OAuth scope catalog (`GET /client/v4/oauth/scopes`, 300+ scopes): Cloudflare
+exposes **no token-administration scope** to OAuth clients — an OAuth grant
+structurally cannot create account API tokens, regardless of the authorizing
+user's role or the client's registration. **Token-paste IS the Cloudflare
+bootstrap**; the connect surfaces are paste-first (`connectKind: "token"`),
+and the OAuth affordances re-enable automatically via
+`CLOUDFLARE_OAUTH_CAN_PROVISION` if Cloudflare ever ships the scope. The
+original gate text follows for the record.
+
+ The bootstrap requires the OAuth-minted access
 token to be allowed to create account-owned tokens carrying `"Account API
 Tokens Write"` — i.e. the granted scope set must cover token administration.
 If Cloudflare's OAuth scope catalog cannot express that, the callback

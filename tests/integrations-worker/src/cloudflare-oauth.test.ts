@@ -10,6 +10,7 @@ import { handleCloudflareOauthCallback } from "@integrations-worker/handlers/clo
 import {
   buildCloudflareAuthorizeUrl,
   CLOUDFLARE_DEFAULT_OAUTH_SCOPE,
+  CLOUDFLARE_OAUTH_CAN_PROVISION,
   createCloudflareProvider,
   exchangeCloudflareOauthCode,
   OAUTH_SCOPE_BY_PERMISSION_GROUP,
@@ -18,7 +19,6 @@ import {
   serviceIdentityPermissionGroups,
 } from "@integrations-worker/providers/cloudflare";
 import { getConfiguredProvider } from "@integrations-worker/providers/registry";
-import { computeCodeChallenge } from "@integrations-worker/pkce";
 import { createEncryptionAdapter, type CiphertextEnvelope } from "@integrations-worker/encryption";
 import { signConnectState, CONNECT_STATE_TTL_MS } from "@integrations-worker/state";
 import type { Env } from "@integrations-worker/env";
@@ -275,13 +275,15 @@ describe("cloudflare OAuth adapter (IH5 / D3)", () => {
     );
   });
 
-  it("defaults to the FULL provisioning scope set when none is requested", () => {
-    // A self-managed client grants the token ONLY the requested scopes — the
-    // live SI-D1 incident: a 2-permission consent made an account OWNER's
-    // grant unable to create tokens. So the default requests account
-    // discovery PLUS the dot-form twin of every service-identity permission
-    // group, so an unset CLOUDFLARE_OAUTH_SCOPE yields a consent whose grant
-    // can actually provision.
+  it("defaults to the catalog-verified scope set; provisioning is structurally impossible (SI-D1 resolved)", () => {
+    // Verified against the live catalog (GET /client/v4/oauth/scopes,
+    // 2026-07-17): no token-administration scope exists, so no OAuth grant
+    // can ever create the service token — CLOUDFLARE_OAUTH_CAN_PROVISION is
+    // the flag the connect surfaces key off, and it flips automatically if
+    // the map ever gains a scope for "Account API Tokens Write".
+    expect(CLOUDFLARE_OAUTH_CAN_PROVISION).toBe(false);
+    expect(OAUTH_SCOPE_BY_PERMISSION_GROUP["Account API Tokens Write"]).toBeNull();
+
     const url = new URL(
       buildCloudflareAuthorizeUrl({
         clientId: "cf-cid",
@@ -290,17 +292,29 @@ describe("cloudflare OAuth adapter (IH5 / D3)", () => {
       }),
     );
     const scopes = url.searchParams.get("scope")!.split(" ");
-    expect(scopes).toContain("account-settings.read");
-    expect(scopes).toContain("memberships.read");
-    expect(scopes).toContain("account-api-tokens.write");
-    expect(scopes[scopes.length - 1]).toBe("offline_access");
+    // Catalog-verified names only — the derived-but-nonexistent ids
+    // (pages.write, workers-r2-storage.write, account-api-tokens.write) are
+    // what caused the live invalid_scope redirect.
+    expect(scopes).toEqual([
+      "account-settings.read",
+      "memberships.read",
+      "workers-scripts.write",
+      "workers-kv-storage.write",
+      "page.write",
+      "dns.write",
+      "workers-r2.write",
+      "offline_access",
+    ]);
 
-    // Every permission group the provisioner requires has its scope twin in
-    // the default — the map and the group union can never drift apart.
+    // Every permission group the provisioner requires is an EXPLICIT map key
+    // (scope twin or a decided null) — the map and the group union can never
+    // drift apart silently.
     for (const group of serviceIdentityPermissionGroups()) {
+      expect(Object.keys(OAUTH_SCOPE_BY_PERMISSION_GROUP)).toContain(group);
       const scope = OAUTH_SCOPE_BY_PERMISSION_GROUP[group];
-      expect(scope).toBeTruthy();
-      expect(CLOUDFLARE_DEFAULT_OAUTH_SCOPE.split(" ")).toContain(scope!);
+      if (scope !== null) {
+        expect(CLOUDFLARE_DEFAULT_OAUTH_SCOPE.split(" ")).toContain(scope);
+      }
     }
   });
 
@@ -524,42 +538,21 @@ describe("POST …/integrations/cloudflare/connect (oauth posture)", () => {
     });
   }
 
-  it("creates a pending connection, envelopes the PKCE verifier, returns the authorize URL", async () => {
+  it("ALWAYS takes the token path — OAuth cannot bootstrap Cloudflare (SI-D1 resolved)", async () => {
+    // Even with an OAuth client fully configured, a Cloudflare connect never
+    // starts an OAuth round: the scope catalog has no token-administration
+    // scope, so the authorize flow could only ever dead-end at provisioning.
+    // Without a pasted parentToken the token path answers with its typed
+    // validation — and NOTHING was written (no pending connection, no PKCE).
     const env = createEnv();
-    let custodyInsert: unknown[] = [];
-    const { executor } = fakeExecutor((text, params) => {
-      if (text.includes("INSERT INTO integrations.connections")) {
-        return [pendingRow({ id: params[0] as string })];
-      }
-      if (text.includes("INSERT INTO integrations.provider_credentials")) {
-        custodyInsert = params;
-        return [{
-          id: "pkce-row", connection_id: params[1], kind: params[2], credential_class: params[3], ciphertext: params[4],
-          created_at: NOW.toISOString(), updated_at: NOW.toISOString(),
-        }];
-      }
-      return [];
-    });
+    const { executor, queries } = fakeExecutor(() => []);
 
     const res = await handleConnectIntegration(connectRequest(), env, "req_1", ACTOR, ORG_ID, "cloudflare", { executor });
-    expect(res.status).toBe(201);
-    const data = (await json(res)).data as Record<string, unknown>;
-    expect((data.connection as Record<string, unknown>).provider).toBe("cloudflare");
-
-    const authorizeUrl = new URL(data.installUrl as string);
-    expect(authorizeUrl.origin + authorizeUrl.pathname).toBe("https://dash.cloudflare.com/oauth2/auth");
-    expect(authorizeUrl.searchParams.get("client_id")).toBe("cf-cid");
-    expect(authorizeUrl.searchParams.get("redirect_uri")).toBe(`${REDIRECT_BASE}/ingress/cloudflare/oauth`);
-    expect(authorizeUrl.searchParams.get("code_challenge_method")).toBe("S256");
-    const challenge = authorizeUrl.searchParams.get("code_challenge");
-    expect(challenge).toMatch(/^[A-Za-z0-9_-]{43}$/);
-
-    // The enveloped verifier rides under the Cloudflare-specific PKCE kind and
-    // decrypts back to something that hashes to the challenge.
-    expect(custodyInsert[2]).toBe("cloudflare_pkce_verifier");
-    const adapter = (await createEncryptionAdapter(KEY))!;
-    const verifier = await adapter.decrypt(JSON.parse(custodyInsert[4] as string) as CiphertextEnvelope);
-    await expect(computeCodeChallenge(verifier)).resolves.toBe(challenge);
+    expect(res.status).toBe(422);
+    const error = (await json(res)).error as Record<string, unknown>;
+    expect(JSON.stringify(error)).toContain("parentToken");
+    expect(queries.some((q) => q.text.includes("INSERT INTO integrations.connections"))).toBe(false);
+    expect(JSON.stringify(queries.map((q) => q.params))).not.toContain("cloudflare_pkce_verifier");
   });
 
   it("gates on the CLOUDFLARE entitlement key", async () => {

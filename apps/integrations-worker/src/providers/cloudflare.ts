@@ -60,18 +60,28 @@ const OAUTH_OFFLINE_ACCESS_SCOPE = "offline_access";
  * makes provisioning fail `bootstrap_grant_insufficient` even for an account
  * owner.
  */
-export const OAUTH_SCOPE_BY_PERMISSION_GROUP: Record<string, string> = {
-  "Account API Tokens Write": "account-api-tokens.write",
-  // Cloudflare's own docs use `workers-platform.read` as the scope example —
-  // the scope catalog groups the Workers family (scripts, KV) coarser than
-  // permission groups do.
-  "Workers Scripts Write": "workers-platform.write",
-  "Workers KV Storage Write": "workers-platform.write",
-  "Pages Write": "pages.write",
+export const OAUTH_SCOPE_BY_PERMISSION_GROUP: Record<string, string | null> = {
+  // VERIFIED against the live OAuth scope catalog (GET /client/v4/oauth/scopes,
+  // 2026-07-17): the catalog has NO token-administration scope AT ALL — an
+  // OAuth grant structurally cannot create API tokens, which is the final
+  // SI-D1 answer: token-paste is Cloudflare's bootstrap; OAuth cannot be.
+  "Account API Tokens Write": null,
+  "Workers Scripts Write": "workers-scripts.write",
+  "Workers KV Storage Write": "workers-kv-storage.write",
+  "Pages Write": "page.write",
   "DNS Write": "dns.write",
-  "Workers R2 Storage Write": "workers-r2-storage.write",
+  "Workers R2 Storage Write": "workers-r2.write",
   "Account Settings Read": "account-settings.read",
 };
+
+/** Whether a Cloudflare OAuth grant could ever provision the service
+ *  identity: true only if EVERY required permission group has a scope twin
+ *  in the catalog. False today (no token-administration scope exists) — the
+ *  connect surfaces must offer token-paste as the bootstrap, and this flag
+ *  flips the OAuth affordances back on if Cloudflare ever ships the scope. */
+export const CLOUDFLARE_OAUTH_CAN_PROVISION = Object.values(
+  OAUTH_SCOPE_BY_PERMISSION_GROUP,
+).every((scope) => scope !== null);
 
 /**
  * Fallback scope when `CLOUDFLARE_OAUTH_SCOPE` is unset.
@@ -93,7 +103,11 @@ export const OAUTH_SCOPE_BY_PERMISSION_GROUP: Record<string, string> = {
  * remains the per-environment override to narrow (or correct) the request.
  */
 export const CLOUDFLARE_DEFAULT_OAUTH_SCOPE = [
-  ...new Set(["account-settings.read", "memberships.read", ...Object.values(OAUTH_SCOPE_BY_PERMISSION_GROUP)]),
+  ...new Set([
+    "account-settings.read",
+    "memberships.read",
+    ...Object.values(OAUTH_SCOPE_BY_PERMISSION_GROUP).filter((s): s is string => s !== null),
+  ]),
 ].join(" ");
 
 /**
