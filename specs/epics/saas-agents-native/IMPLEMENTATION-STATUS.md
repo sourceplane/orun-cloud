@@ -1,6 +1,6 @@
 # saas-agents-native — Implementation status (as-built)
 
-Status: **Complete (v1)** — epic authored and shipped 2026-07-17, AN0–AN7 merged (PRs #481–#487 here, orun #541/#542). Recorded tails: the chat-agent PRINCIPAL (unlocks AN5's standing head + AN6's proactive plane/scheduled briefs/routine targeting), work-plane write tools (unlocks AN5's write set), AF9 budget-envelope folding of `agents.chat_tokens`, live-model quality evals + staging verification (need credentials), and the KV `SessionRelay` class deletion one release post-cutover (lock 7).
+Status: **Complete (v1)** — epic authored and shipped 2026-07-17, AN0–AN7 merged (PRs #481–#488 here, orun #541/#542). Recorded tails: the chat-agent PRINCIPAL (unlocks AN5's standing head + AN6's proactive plane/scheduled briefs/routine targeting), work-plane write tools (unlocks AN5's write set), AF9 budget-envelope folding of `agents.chat_tokens`, live-model quality evals + staging verification (need credentials), and the KV `SessionRelay` class deletion one release post-cutover (lock 7).
 
 | Milestone | Status | As-built notes |
 |-----------|--------|----------------|
