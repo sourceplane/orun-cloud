@@ -8,7 +8,11 @@
 //     identity-class; durable operating custody is infrastructure-class.
 //   * Custody upserts stamp credential_class.
 
-import { readParentCredential, PARENT_CREDENTIAL_KIND_CANDIDATES } from "@integrations-worker/custody";
+import {
+  readParentCredential,
+  readParentCredentialOfKind,
+  PARENT_CREDENTIAL_KIND_CANDIDATES,
+} from "@integrations-worker/custody";
 import type { Env } from "@integrations-worker/env";
 import {
   createIntegrationHubRepository,
@@ -59,12 +63,11 @@ async function custodyRow(kind: ProviderCredentialKind, plaintext: string) {
   };
 }
 
-describe("SI1 custody candidate order (dual-read)", () => {
-  it("declares service identity → parent token → deprecated refresh for cloudflare", () => {
+describe("SI1/SI5 custody candidate order", () => {
+  it("declares service identity → parent token — the deprecated refresh token is structurally absent (SI5)", () => {
     expect(PARENT_CREDENTIAL_KIND_CANDIDATES.cloudflare).toEqual([
       "cloudflare_service_token",
       "cloudflare_parent_token",
-      "cloudflare_refresh_token",
     ]);
   });
 
@@ -85,7 +88,7 @@ describe("SI1 custody candidate order (dual-read)", () => {
     expect(parent!.credential).toBe("svc-token");
   });
 
-  it("falls back to the refresh token ONLY when no service/parent custody exists (un-migrated connection)", async () => {
+  it("a refresh-only connection mints NOTHING via candidates (SI5) — lifecycle surfaces read the kind explicitly", async () => {
     const refreshOnly = await custodyRow("cloudflare_refresh_token", "refresh-token");
     const reads: string[] = [];
     const { executor } = fakeExecutor((text, params) => {
@@ -93,15 +96,20 @@ describe("SI1 custody candidate order (dual-read)", () => {
       reads.push(String(params[1]));
       return String(params[1]) === "cloudflare_refresh_token" ? [refreshOnly] : [];
     });
+    // The mint path cannot see user-derived custody at all.
     const parent = await readParentCredential(ENV, executor, CONNECTION_ID, "cloudflare");
-    expect(parent!.kind).toBe("cloudflare_refresh_token");
-    expect(parent!.credential).toBe("refresh-token");
-    // The dual-read probed the preferred kinds first.
-    expect(reads).toEqual([
-      "cloudflare_service_token",
-      "cloudflare_parent_token",
+    expect(parent).toBeNull();
+    expect(reads).toEqual(["cloudflare_service_token", "cloudflare_parent_token"]);
+
+    // The backfill/health surfaces still can — explicitly, by kind.
+    const explicit = await readParentCredentialOfKind(
+      ENV,
+      executor,
+      CONNECTION_ID,
       "cloudflare_refresh_token",
-    ]);
+    );
+    expect(explicit!.kind).toBe("cloudflare_refresh_token");
+    expect(explicit!.credential).toBe("refresh-token");
   });
 });
 

@@ -14,6 +14,7 @@ import {
   exchangeCloudflareOauthCode,
   refreshCloudflareAccess,
   resolveCloudflareOauthScope,
+  serviceIdentityPermissionGroups,
 } from "@integrations-worker/providers/cloudflare";
 import { getConfiguredProvider } from "@integrations-worker/providers/registry";
 import { computeCodeChallenge } from "@integrations-worker/pkce";
@@ -161,20 +162,27 @@ function cloudflareApi(overrides?: {
       });
     }
     if (input.includes("/user/tokens/permission_groups")) {
+      // The FULL union the SI2 service identity needs, so the OAuth connect
+      // provisions successfully in these tests.
       return Response.json({
         success: true,
-        result: [
-          { id: "pg-1", name: "Workers Scripts Write" },
-          { id: "pg-2", name: "Workers KV Storage Write" },
-          { id: "pg-3", name: "Account Settings Read" },
-        ],
+        result: serviceIdentityPermissionGroups().map((name, i) => ({ id: `pg-${i}`, name })),
+      });
+    }
+    if (input.includes("/user/tokens/verify")) {
+      return Response.json({
+        success: true,
+        result: { id: "svc-token-id", status: "active", expires_on: null },
       });
     }
     if (input.includes(`/accounts/${ACCOUNT_ID}/tokens`) && (init?.method ?? "GET") === "POST") {
       if (overrides?.createStatus) {
         return Response.json({ success: false, errors: [{ message: "denied" }] }, { status: overrides.createStatus });
       }
-      return Response.json({ success: true, result: { id: "child-token-id", value: "cf-child-SECRET" } });
+      const name = String((JSON.parse(String(init?.body)) as { name?: string }).name ?? "");
+      return name.endsWith("/service")
+        ? Response.json({ success: true, result: { id: "svc-token-id", value: "cf-service-SECRET" } })
+        : Response.json({ success: true, result: { id: "child-token-id", value: "cf-child-SECRET" } });
     }
     return new Response("not found", { status: 404 });
   };
@@ -569,7 +577,7 @@ describe("GET /ingress/cloudflare/oauth", () => {
     expect(api.calls).toHaveLength(0);
   });
 
-  it("activates: verifier consumed, refresh-token custody, account facts, event", async () => {
+  it("activates: verifier consumed, SERVICE-TOKEN custody (SI5 — refresh never stored), account facts, event", async () => {
     const verifier = "pkce-verifier-under-test-aaaaaaaaaaaaaaaaaaa";
     const api = cloudflareApi();
     const state = await mintState();
@@ -626,18 +634,22 @@ describe("GET /ingress/cloudflare/oauth", () => {
     expect(exchangeParams.get("code_verifier")).toBe(verifier);
     expect(exchangeParams.get("redirect_uri")).toBe(`${REDIRECT_BASE}/ingress/cloudflare/oauth`);
 
-    // Custody: the REFRESH token (never the access token) as a real envelope,
-    // anchored to the Cloudflare account id.
-    expect(credentialInsert[2]).toBe("cloudflare_refresh_token");
+    // Custody: the PROVISIONED service token (SI2/SI5 — neither the refresh
+    // nor the access token is ever stored), anchored to the account id.
+    expect(credentialInsert[2]).toBe("cloudflare_service_token");
     expect(credentialInsert[6]).toBe(ACCOUNT_ID);
     const adapter = (await createEncryptionAdapter(KEY))!;
     const ciphertext = credentialInsert[4] as string;
-    expect(ciphertext).not.toContain("cf-refresh-OLD");
-    expect(await adapter.decrypt(JSON.parse(ciphertext) as CiphertextEnvelope)).toBe("cf-refresh-OLD");
+    expect(ciphertext).not.toContain("cf-service-SECRET");
+    expect(await adapter.decrypt(JSON.parse(ciphertext) as CiphertextEnvelope)).toBe("cf-service-SECRET");
+    const everything = JSON.stringify(queries.map((q) => q.params));
+    expect(everything).not.toContain("cf-refresh-OLD");
 
-    // Account facts bound to the connection from OUR state.
+    // Account facts bound to the connection from OUR state, carrying the
+    // service token's provider-side id.
     expect(factsInsert[1]).toBe(CONNECTION_UUID);
     expect(factsInsert[2]).toBe(ACCOUNT_ID);
+    expect(factsInsert[4]).toBe("svc-token-id");
 
     // Activation used the org + connection from the state.
     const activate = queries.find((q) => q.text.includes("SET status = 'active'"))!;

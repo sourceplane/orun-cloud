@@ -9,12 +9,19 @@ import { runExpirySweep } from "./expiry-sweep.js";
 import { runCloudflareHealth } from "./health-cloudflare.js";
 import { runSupabaseHealth } from "./health-supabase.js";
 import { runOrphanSweep } from "./orphan-sweep.js";
-import { runServiceIdentityBackfill } from "./service-identity-backfill.js";
+import {
+  runServiceIdentityBackfill,
+  runServiceIdentityRotation,
+} from "./service-identity-backfill.js";
 import { createSqlExecutor } from "@saas/db/hyperdrive";
 
 /** Daily off-peak slot for the orphan reconcile sweep (IH9) — the same gate
  *  style as events-worker's RETENTION_SWEEP_UTC_HOUR. */
 const ORPHAN_SWEEP_UTC_HOUR = 4;
+
+/** Daily off-peak slot for the SI5 service-token rotation ("rotation is a
+ *  cron, not a consent") — offset from the orphan sweep's hour. */
+const SERVICE_IDENTITY_ROTATION_UTC_HOUR = 5;
 
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
@@ -98,6 +105,21 @@ export default {
           }
         } catch (err) {
           console.error(`[scheduled] service-identity-backfill failed: ${String(err)}`);
+        }
+      }
+
+      // Phase 4c — service-token rotation (SI5): daily, off-peak. Rolls
+      // service-identity values older than the rotation window in place.
+      if (utcHour === SERVICE_IDENTITY_ROTATION_UTC_HOUR && utcMinute === 0) {
+        try {
+          const rot = await runServiceIdentityRotation(env, executor, { now: scheduledAt });
+          if (rot.scanned > 0 || rot.failures > 0) {
+            console.warn(
+              `[scheduled] service-identity-rotation: ${rot.scanned} scanned, ${rot.rotated} rotated, ${rot.failures} failures`,
+            );
+          }
+        } catch (err) {
+          console.error(`[scheduled] service-identity-rotation failed: ${String(err)}`);
         }
       }
 

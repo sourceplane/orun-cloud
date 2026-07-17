@@ -20,15 +20,17 @@ import { generateUuid } from "./ids.js";
  * Providers whose mints derive from a parent credential in custody, and the
  * candidate custody kinds to try IN ORDER. Service identities first (SI1,
  * sub-epics/service-identity-bootstrap): the provisioned account-owned
- * service token, then the pasted parent token, then — dual-read during the
- * SI3 rollout — the deprecated user-derived refresh token. A connection that
- * has been upgraded (or freshly provisioned) never touches its refresh
- * custody again; an un-migrated connection behaves exactly as before.
- * `readParentCredential` returns whichever exists for the connection, plus
- * the kind it resolved so a rotation can re-envelope the SAME kind.
+ * service token, then the pasted parent token.
+ *
+ * SI5: `cloudflare_refresh_token` is DELIBERATELY absent — a user-derived
+ * parent can no longer authorize a Cloudflare mint, structurally. A
+ * connection still on refresh custody mints nothing (typed
+ * `parent_credential_missing`) until the SI3 backfill upgrades it or the
+ * admin re-connects; the health cron and the backfill read that custody
+ * explicitly via `readParentCredentialOfKind`, never through this list.
  */
 export const PARENT_CREDENTIAL_KIND_CANDIDATES: Record<string, readonly ProviderCredentialKind[]> = {
-  cloudflare: ["cloudflare_service_token", "cloudflare_parent_token", "cloudflare_refresh_token"],
+  cloudflare: ["cloudflare_service_token", "cloudflare_parent_token"],
   supabase: ["supabase_refresh_token"],
 };
 
@@ -74,6 +76,38 @@ export async function readParentCredential(
     }
   }
   return null;
+}
+
+/**
+ * Explicit single-kind custody read (SI5): for lifecycle surfaces (health
+ * liveness, the SI3 backfill) that must still SEE deprecated custody kinds
+ * the mint candidate list no longer exposes. Same decrypt discipline as
+ * `readParentCredential`; null = no readable row of that kind.
+ */
+export async function readParentCredentialOfKind(
+  env: Env,
+  executor: SqlExecutor,
+  connectionUuid: Uuid,
+  kind: ProviderCredentialKind,
+): Promise<ResolvedParentCredential | null> {
+  const encryption = await createEncryptionAdapter(env.SECRET_ENCRYPTION_KEY);
+  if (!encryption) return null;
+  const credential = await createIntegrationHubRepository(executor).getProviderCredential(
+    connectionUuid,
+    kind,
+  );
+  if (!credential.ok) return null;
+  try {
+    return {
+      credential: await encryption.decrypt(
+        JSON.parse(credential.value.ciphertext) as CiphertextEnvelope,
+      ),
+      externalRef: credential.value.externalRef,
+      kind: credential.value.kind,
+    };
+  } catch {
+    return null;
+  }
 }
 
 export type CustodyServedRead =

@@ -445,28 +445,23 @@ describe("GET /ingress/cloudflare/oauth establishes service-identity custody (SI
     expect(eventJson).toContain("service_token");
   });
 
-  it("falls back to refresh custody when the bootstrap grant cannot create tokens (SI-D1)", async () => {
+  it("fails closed with GUIDANCE when the bootstrap grant cannot create tokens (SI5 — no refresh fallback)", async () => {
     const api = cloudflareApi({ groups: ALL_GROUPS.slice(0, 3) });
     const h = await callbackHarness();
     const res = await handleCloudflareOauthCallback(
       callbackRequest({ code: "c0de", state: await mintState() }),
       createEnv(), "req_1", { executor: h.executor, fetchImpl: api.fetchImpl },
     );
-    expect(res.status).toBe(200);
+    // The connect FAILS — user-derived custody is never written (SI5), and
+    // the popup names the remediation instead of a generic error.
+    expect(res.status).toBe(400);
+    const page = await res.text();
+    expect(page).toContain("cannot create API tokens");
+    expect(page).toContain("pasting an account API token");
 
-    expect(h.custodyInserts).toHaveLength(1);
-    const insert = h.custodyInserts[0]!;
-    expect(insert[2]).toBe("cloudflare_refresh_token");
-    expect(insert[3]).toBe("identity");
-    const adapter = (await createEncryptionAdapter(KEY))!;
-    expect(await adapter.decrypt(JSON.parse(insert[4] as string) as CiphertextEnvelope)).toBe(
-      "cf-refresh-OLD",
-    );
-    // No service token exists; facts carry no token ref.
-    expect(h.factsInserts[0]![4]).toBeNull();
-    const eventJson = JSON.stringify(
-      h.queries.filter((q) => q.text.includes("WITH inserted_event")).map((q) => q.params),
-    );
-    expect(eventJson).toContain("refresh_token");
+    expect(h.custodyInserts).toHaveLength(0);
+    expect(h.factsInserts).toHaveLength(0);
+    // The connection was never activated.
+    expect(h.queries.some((q) => q.text.includes("SET status = 'active'"))).toBe(false);
   });
 });

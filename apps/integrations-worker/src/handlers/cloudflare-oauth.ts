@@ -59,23 +59,29 @@ export interface CloudflareOauthDeps {
   fetchImpl?: FetchLike;
 }
 
-/** The custody a callback established: which kind is at rest, and (service
- *  posture) the provisioned token's provider-side id for the facts row. */
+/** The custody a callback established: the provisioned token's provider-side
+ *  id for the facts row. */
 interface EstablishedCustody {
-  kind: "cloudflare_service_token" | "cloudflare_refresh_token";
+  kind: "cloudflare_service_token";
   providerTokenRef: string | null;
 }
 
+type CustodyFailureReason = "bootstrap_grant_insufficient" | "provider_error" | "custody_error";
+
+type EstablishCustodyResult =
+  | { ok: true; custody: EstablishedCustody }
+  | { ok: false; reason: CustodyFailureReason };
+
 /**
- * SI2 — "OAuth establishes trust, service identities operate": try to
- * provision the durable ACCOUNT-OWNED service token from the bootstrap
- * access token; on success custody holds ONLY the service token (any refresh
- * custody on the connection is deleted — identity credentials must not
- * outlive provisioning, and the refresh token is never stored). When the
- * bootstrap grant cannot create tokens (SI-D1's fallback branch) or the
- * provider errors, fall back to the shipped refresh-token custody so the
- * connection still works — SI5 tightens this.
- * Returns null when neither custody could be established (caller fails).
+ * SI2/SI5 — "OAuth establishes trust, service identities operate": provision
+ * the durable ACCOUNT-OWNED service token from the bootstrap access token;
+ * custody holds ONLY the service token (any refresh custody on the
+ * connection is deleted — identity credentials must not outlive
+ * provisioning, and the refresh token is never stored). SI5 removed the
+ * refresh-custody fallback: a bootstrap grant that cannot create tokens
+ * fails the connect with GUIDANCE (grant token administration, or use the
+ * token-paste posture) instead of silently downgrading to user-derived
+ * custody.
  */
 async function establishCloudflareCustody(
   hub: IntegrationHubRepository,
@@ -85,7 +91,7 @@ async function establishCloudflareCustody(
   grant: CloudflareOauthGrant,
   accountExternalId: string,
   fetchImpl?: FetchLike,
-): Promise<EstablishedCustody | null> {
+): Promise<EstablishCustodyResult> {
   const provisioned = await provisionCloudflareServiceIdentity(
     {
       bootstrapCredential: grant.accessToken,
@@ -95,40 +101,51 @@ async function establishCloudflareCustody(
     },
     fetchImpl,
   );
-  if (provisioned.ok) {
-    const envelope = await encryption.encrypt(provisioned.value.credential);
-    const stored = await hub.upsertProviderCredential({
-      id: generateUuid(),
-      connectionId,
-      kind: "cloudflare_service_token",
-      ciphertext: JSON.stringify(envelope),
-      scopes: provisioned.value.scopes ?? null,
-      externalRef: accountExternalId,
-    });
-    if (stored.ok) {
-      // Identity credentials must not outlive provisioning: drop any refresh
-      // custody (re-auth of an un-migrated connection upgrades it here). The
-      // OAuth tokens themselves were never stored.
-      await hub.deleteProviderCredential(connectionId, "cloudflare_refresh_token");
-      return {
-        kind: "cloudflare_service_token",
-        providerTokenRef: provisioned.value.providerRef,
-      };
-    }
-    // Envelope landed nowhere — fall through to refresh custody rather than
-    // strand the connection (the provisioned token is orphaned provider-side;
-    // the IH9 sweep reconciles `orun/{org}/service` names).
+  if (!provisioned.ok) {
+    return {
+      ok: false,
+      reason: provisioned.reason === "bootstrap_grant_insufficient" ? "bootstrap_grant_insufficient" : "provider_error",
+    };
   }
-
-  const envelope = await encryption.encrypt(grant.refreshToken);
+  const envelope = await encryption.encrypt(provisioned.value.credential);
   const stored = await hub.upsertProviderCredential({
     id: generateUuid(),
     connectionId,
-    kind: "cloudflare_refresh_token",
+    kind: "cloudflare_service_token",
     ciphertext: JSON.stringify(envelope),
+    scopes: provisioned.value.scopes ?? null,
     externalRef: accountExternalId,
   });
-  return stored.ok ? { kind: "cloudflare_refresh_token", providerTokenRef: null } : null;
+  if (!stored.ok) {
+    // The provisioned token is orphaned provider-side; the IH9 sweep and the
+    // next provisioning attempt converge `orun/{org}/service` names.
+    return { ok: false, reason: "custody_error" };
+  }
+  // Identity credentials must not outlive provisioning: drop any refresh
+  // custody (re-auth of an un-migrated connection upgrades it here). The
+  // OAuth tokens themselves were never stored.
+  await hub.deleteProviderCredential(connectionId, "cloudflare_refresh_token");
+  return {
+    ok: true,
+    custody: { kind: "cloudflare_service_token", providerTokenRef: provisioned.value.providerRef },
+  };
+}
+
+/** SI5: the connect-failure popup for a failed service-identity bootstrap —
+ *  names the remediation instead of a generic error. */
+function custodyFailurePopup(reason: CustodyFailureReason): Response {
+  if (reason === "bootstrap_grant_insufficient") {
+    return popupPage(
+      "error",
+      "Authorization cannot create API tokens",
+      "Orun connects by provisioning its own service token in your Cloudflare account, but this authorization cannot create account API tokens. Re-authorize with a user that can manage account API tokens, or connect by pasting an account API token instead.",
+    );
+  }
+  return popupPage(
+    "error",
+    "Connection not completed",
+    "Cloudflare did not accept the service-token provisioning. Try connecting again.",
+  );
 }
 
 export async function handleCloudflareOauthCallback(
@@ -282,7 +299,7 @@ export async function handleCloudflareOauthCallback(
       const boundId = asUuid(existing.value.connectionId);
       const own = await repo.getConnection(asUuid(connection.orgId), boundId);
       if (own.ok && own.value.status !== "revoked") {
-        const custody = await establishCloudflareCustody(
+        const established = await establishCloudflareCustody(
           hub,
           encryption,
           boundId,
@@ -291,9 +308,10 @@ export async function handleCloudflareOauthCallback(
           account.accountExternalId,
           deps?.fetchImpl,
         );
-        if (!custody) {
-          return popupPage("error", "Connection not completed", LINK_FAILED_MESSAGE);
+        if (!established.ok) {
+          return custodyFailurePopup(established.reason);
         }
+        const custody = established.custody;
         await hub.upsertCloudflareAccount({
           id: generateUuid(),
           connectionId: boundId,
@@ -359,10 +377,9 @@ export async function handleCloudflareOauthCallback(
 
     // Custody first (design §3): by the time the connection is visible as
     // active, its durable credential is already at rest as an encrypted
-    // envelope — the provisioned SERVICE TOKEN (SI2) where the bootstrap
-    // grant allows, else the refresh token (SI-D1 fallback). The short-lived
-    // access token is never stored durable.
-    const custody = await establishCloudflareCustody(
+    // envelope — the provisioned SERVICE TOKEN (SI2/SI5; the refresh token
+    // is never stored). The short-lived access token is never stored durable.
+    const established = await establishCloudflareCustody(
       hub,
       encryption,
       asUuid(connection.id),
@@ -371,9 +388,10 @@ export async function handleCloudflareOauthCallback(
       account.accountExternalId,
       deps?.fetchImpl,
     );
-    if (!custody) {
-      return popupPage("error", "Connection not completed", LINK_FAILED_MESSAGE);
+    if (!established.ok) {
+      return custodyFailurePopup(established.reason);
     }
+    const custody = established.custody;
 
     const facts = await hub.upsertCloudflareAccount({
       id: generateUuid(),

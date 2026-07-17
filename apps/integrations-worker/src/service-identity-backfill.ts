@@ -25,6 +25,7 @@ import type { Env } from "./env.js";
 import { INTEGRATION_EVENT_TYPES } from "@saas/contracts/integrations";
 import {
   createIntegrationHubRepository,
+  createIntegrationsRepository,
   type CloudflareAccount,
 } from "@saas/db/integrations";
 import { createEventsRepository } from "@saas/db/events";
@@ -34,9 +35,14 @@ import type { FetchLike } from "./github-app.js";
 import {
   provisionCloudflareServiceIdentity,
   refreshCloudflareAccess,
+  rotateCloudflareServiceIdentity,
   verifyCloudflareParentToken,
 } from "./providers/cloudflare.js";
-import { readParentCredential, reEnvelopeParentCredential } from "./custody.js";
+import {
+  readParentCredential,
+  readParentCredentialOfKind,
+  reEnvelopeParentCredential,
+} from "./custody.js";
 import { connectionMintLockRunner, type MintLockRunner } from "./mint-lock.js";
 import { createEncryptionAdapter } from "./encryption.js";
 import { generateRequestId, generateUuid, orgPublicId } from "./ids.js";
@@ -122,15 +128,23 @@ async function upgradeConnection(
   // mint path holds, so an in-flight mint can't read the refresh token we
   // are about to retire (or rotate it after our read).
   const section = await runLocked(String(row.connectionId), async (): Promise<UpgradeOutcome> => {
-    const parent = await readParentCredential(env, executor, connectionUuid, "cloudflare");
-    if (!parent) return "failures";
-    if (parent.kind !== "cloudflare_refresh_token") {
-      // Already on infrastructure custody. Converge the crashed-between-
-      // swap-and-delete case: a lingering refresh row is identity-class
-      // material that must not outlive the upgrade.
+    // Infrastructure custody present → nothing to upgrade. Converge the
+    // crashed-between-swap-and-delete case: a lingering refresh row is
+    // identity-class material that must not outlive the upgrade.
+    const infrastructure = await readParentCredential(env, executor, connectionUuid, "cloudflare");
+    if (infrastructure) {
       await hub.deleteProviderCredential(connectionUuid, "cloudflare_refresh_token");
       return "alreadyMigrated";
     }
+    // SI5: refresh custody is no longer a mint candidate — the backfill (a
+    // lifecycle surface) reads it explicitly.
+    const parent = await readParentCredentialOfKind(
+      env,
+      executor,
+      connectionUuid,
+      "cloudflare_refresh_token",
+    );
+    if (!parent) return "failures";
 
     // Refresh once — the ONLY use of the user-derived credential in this
     // sweep. Re-envelope a rotation immediately: every exit below this point
@@ -210,6 +224,53 @@ async function upgradeConnection(
   if (!section.ok) return "failures"; // Lock wait exhausted — next run retries.
   const outcome = section.value;
 
+  // SI5: a grant that cannot self-provision leaves the connection unable to
+  // mint (refresh custody is no longer a candidate) — an "active" status
+  // would be a lie. Suspend with a typed reason; the console's re-connect
+  // CTA (re-authorize with token administration, or token paste) rides it.
+  if (outcome === "grantInsufficient") {
+    try {
+      const integrations = createIntegrationsRepository(executor);
+      const suspended = await integrations.updateConnectionStatus(
+        asUuid(row.orgId),
+        connectionUuid,
+        "suspended",
+      );
+      if (suspended.ok) {
+        const events = createEventsRepository(executor);
+        await events.appendEventWithAudit({
+          event: {
+            id: generateUuid(),
+            type: INTEGRATION_EVENT_TYPES.SUSPENDED,
+            version: 1,
+            source: "integrations-worker",
+            occurredAt: now,
+            actorType: "system",
+            actorId: "integrations-worker",
+            orgId: row.orgId,
+            subjectKind: "integration_connection",
+            subjectId: row.connectionId!,
+            subjectName: null,
+            requestId: generateRequestId(),
+            payload: {
+              provider: "cloudflare",
+              orgId: orgPublicId(row.orgId),
+              reason: "service_identity_required",
+            },
+          },
+          audit: {
+            id: generateUuid(),
+            category: "integrations",
+            description:
+              "Cloudflare connection suspended: the OAuth grant cannot provision a service identity (re-connect with token administration, or paste an account API token)",
+          },
+        });
+      }
+    } catch {
+      // Best-effort; the next sweep re-suspends.
+    }
+  }
+
   if (outcome === "upgraded") {
     try {
       const events = createEventsRepository(executor);
@@ -246,6 +307,96 @@ async function upgradeConnection(
     }
   }
   return outcome;
+}
+
+// ── Scheduled rotation (SI5) ────────────────────────────────
+
+export interface ServiceIdentityRotationSummary {
+  scanned: number;
+  rotated: number;
+  failures: number;
+}
+
+/** Rotate service tokens whose secret material is older than this. */
+export const SERVICE_IDENTITY_ROTATION_DAYS = 30;
+
+/** Bounded connections per run — the sweep is daily. */
+export const SERVICE_IDENTITY_ROTATION_LIMIT = 25;
+
+/**
+ * Scheduled service-token rotation (SI5): "rotation is a cron, not a
+ * consent." Per active Cloudflare connection on service custody whose value
+ * is older than SERVICE_IDENTITY_ROTATION_DAYS, roll the token value in
+ * place (same provider-side id) under the connection mint lock and
+ * re-envelope. Failure leaves the current (still valid) value in custody —
+ * the next daily run retries.
+ */
+export async function runServiceIdentityRotation(
+  env: Env,
+  executor: SqlExecutor,
+  opts?: { fetchImpl?: FetchLike; now?: Date; limit?: number; mintLock?: MintLockRunner },
+): Promise<ServiceIdentityRotationSummary> {
+  const summary: ServiceIdentityRotationSummary = { scanned: 0, rotated: 0, failures: 0 };
+  const now = opts?.now ?? new Date();
+  const fetchImpl = opts?.fetchImpl ?? fetch;
+  const limit = opts?.limit ?? SERVICE_IDENTITY_ROTATION_LIMIT;
+  const runLocked = opts?.mintLock ?? connectionMintLockRunner(env.MINT_LOCKS);
+  const maxAgeMs = SERVICE_IDENTITY_ROTATION_DAYS * 24 * 60 * 60 * 1000;
+
+  try {
+    const hub = createIntegrationHubRepository(executor);
+    const listed = await hub.listCloudflareAccountsForSweep(limit);
+    if (!listed.ok) {
+      summary.failures++;
+      return summary;
+    }
+
+    for (const row of listed.value) {
+      if (!row.connectionId || row.connectionStatus !== "active" || !row.parentTokenRef) continue;
+      try {
+        const connectionUuid = asUuid(row.connectionId);
+        const custody = await hub.getProviderCredential(connectionUuid, "cloudflare_service_token");
+        if (!custody.ok) continue; // paste/legacy posture — nothing to rotate
+        summary.scanned++;
+        const materialAge =
+          now.getTime() - (custody.value.rotatedAt ?? custody.value.createdAt).getTime();
+        if (materialAge < maxAgeMs) continue;
+
+        const tokenRef = row.parentTokenRef;
+        const section = await runLocked(String(row.connectionId), async (): Promise<boolean> => {
+          const parent = await readParentCredentialOfKind(
+            env,
+            executor,
+            connectionUuid,
+            "cloudflare_service_token",
+          );
+          if (!parent) return false;
+          const rotated = await rotateCloudflareServiceIdentity(
+            { current: parent, providerRef: tokenRef, nowMs: now.getTime() },
+            fetchImpl,
+          );
+          if (!rotated.ok) return false;
+          // Re-envelope INSIDE the lock: no mint may read the retired value
+          // after the provider has already invalidated it.
+          return reEnvelopeParentCredential(
+            env,
+            executor,
+            connectionUuid,
+            "cloudflare_service_token",
+            rotated.value.credential,
+            parent.externalRef,
+          );
+        });
+        if (section.ok && section.value) summary.rotated++;
+        else summary.failures++;
+      } catch {
+        summary.failures++;
+      }
+    }
+  } catch {
+    summary.failures++;
+  }
+  return summary;
 }
 
 /** Best-effort cleanup of a provisioned-but-unswapped token (its own value is
