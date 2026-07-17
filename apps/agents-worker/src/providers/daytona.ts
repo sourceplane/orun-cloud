@@ -36,6 +36,16 @@ const EXEC_SESSION = "orun-agent";
 const STARTED_POLL_MS = 2000;
 const STARTED_POLL_MAX = 30;
 
+/** Toolbox readiness: Daytona flips the SANDBOX to `started` a beat before the
+ * in-sandbox toolbox daemon registers its edge route, so the first
+ * `/toolbox/…` call 404s for a short window (worse on a cold snapshot pull).
+ * `started` is necessary but not sufficient — retry those calls on 404 until
+ * the daemon answers, bounded by the same ~60s budget as the start poll,
+ * instead of failing the whole spawn on the first miss. A 404 means the
+ * request never reached a live daemon, so retrying a POST is side-effect-safe. */
+const TOOLBOX_READY_POLL_MS = 2000;
+const TOOLBOX_READY_POLL_MAX = 30;
+
 /** States that will never reach `started` — fail fast instead of timing out. */
 const DEAD_STATES = new Set(["error", "build_failed", "destroyed", "destroying"]);
 
@@ -49,28 +59,41 @@ export function createDaytonaProvider(cfg: DaytonaConfig): SandboxProvider {
   const fetchImpl = cfg.fetchImpl ?? fetch;
   const sleep = cfg.sleepImpl ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
 
-  async function call(method: string, path: string, body?: unknown, allow?: number[]): Promise<Response> {
-    let res: Response;
-    try {
-      res = await fetchImpl(`${base}${path}`, {
-        method,
-        headers: {
-          authorization: `Bearer ${cfg.apiKey}`,
-          ...(body !== undefined ? { "content-type": "application/json" } : {}),
-        },
-        ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
-      });
-    } catch {
-      throw new Error(`daytona ${method} ${path.split("/")[1] ?? ""}: provider unreachable`);
-    }
-    if (!res.ok && !allow?.includes(res.status)) {
+  async function call(
+    method: string,
+    path: string,
+    body?: unknown,
+    opts?: { allow?: number[]; retryUntilReady?: boolean },
+  ): Promise<Response> {
+    for (let attempt = 0; ; attempt++) {
+      let res: Response;
+      try {
+        res = await fetchImpl(`${base}${path}`, {
+          method,
+          headers: {
+            authorization: `Bearer ${cfg.apiKey}`,
+            ...(body !== undefined ? { "content-type": "application/json" } : {}),
+          },
+          ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
+        });
+      } catch {
+        throw new Error(`daytona ${method} ${path.split("/")[1] ?? ""}: provider unreachable`);
+      }
+      if (res.ok || opts?.allow?.includes(res.status)) return res;
+      // A toolbox call can 404 while the daemon is still registering its edge
+      // route (see TOOLBOX_READY_* above): wait it out rather than fail the spawn.
+      if (res.status === 404 && opts?.retryUntilReady && attempt < TOOLBOX_READY_POLL_MAX) {
+        await sleep(TOOLBOX_READY_POLL_MS);
+        continue;
+      }
       // Redact: status only — never echo the provider body.
       throw new Error(`daytona ${method} ${path.split("/")[1] ?? ""}: ${res.status} from provider`);
     }
-    return res;
   }
 
-  /** Toolbox calls 404 until the sandbox is up — wait out the boot. */
+  /** Wait for the sandbox itself to reach `started` (creating/pulling_snapshot
+   * → started). Necessary before any toolbox call; the toolbox daemon's own
+   * registration lag is absorbed separately by the readiness retry in `call`. */
   async function waitForStarted(id: string): Promise<void> {
     for (let i = 0; i < STARTED_POLL_MAX; i++) {
       const res = await call("GET", `/sandbox/${encodeURIComponent(id)}`);
@@ -113,8 +136,13 @@ export function createDaytonaProvider(cfg: DaytonaConfig): SandboxProvider {
       // session lives in the in-sandbox toolbox daemon and dies with the box.
       const id = encodeURIComponent(ref.id);
       await waitForStarted(ref.id);
-      // Idempotent: a resume re-exec finds the session already there (409).
-      await call("POST", `/toolbox/${id}/toolbox/process/session`, { sessionId: EXEC_SESSION }, [409]);
+      // Idempotent: a resume re-exec finds the session already there (409). This
+      // is the first real toolbox call, so it carries the readiness retry — it
+      // absorbs the daemon-registration window that `started` doesn't cover.
+      await call("POST", `/toolbox/${id}/toolbox/process/session`, { sessionId: EXEC_SESSION }, {
+        allow: [409],
+        retryUntilReady: true,
+      });
       const exports = opts?.env
         ? `export ${Object.entries(opts.env)
             .map(([k, v]) => `${k}=${shellQuote(v)}`)
@@ -134,9 +162,12 @@ export function createDaytonaProvider(cfg: DaytonaConfig): SandboxProvider {
       // as `unknown` and never blocks the spawn.
       const id = encodeURIComponent(ref.id);
       await waitForStarted(ref.id);
-      const res = await call("POST", `/toolbox/${id}/toolbox/process/execute`, {
-        command: cmd.map(shellQuote).join(" "),
-      });
+      const res = await call(
+        "POST",
+        `/toolbox/${id}/toolbox/process/execute`,
+        { command: cmd.map(shellQuote).join(" ") },
+        { retryUntilReady: true },
+      );
       // Redaction posture holds: this output is a version string we log, never
       // the provider's account body. Parse defensively across field names.
       const body = (await res.json()) as { exitCode?: number; result?: string; output?: string; stdout?: string };
