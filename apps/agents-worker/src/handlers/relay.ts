@@ -22,11 +22,11 @@ import type { AgentsDeps } from "../deps.js";
 import type { ActorContext } from "../router.js";
 import { errorResponse } from "../http.js";
 import { gateSessionActor } from "./runtime.js";
-import { chooseRelayNamespace, relayPeerFor, relayStubFor } from "../relay-epoch.js";
+import { relayPeerFor, relayStubFor } from "../relay-epoch.js";
 
 /** relayStub resolves the per-session DO instance, or null when unbound. */
-function relayStub(env: Env, sessionId: string, sessionCreatedAt?: string): DurableObjectStub | null {
-  return relayStubFor(env, sessionId, sessionCreatedAt);
+function relayStub(env: Env, sessionId: string): DurableObjectStub | null {
+  return relayStubFor(env, sessionId);
 }
 
 /** forward maps a worker request to the DO's internal HTTP surface. */
@@ -65,17 +65,14 @@ export async function handleAttach(
   }
   const session = await deps.repo.getSession({ orgId }, sessionId);
   if (!session) return errorResponse("not_found", "Session not found", 404, requestId);
-  const stub = relayStub(env, sessionId, session.createdAt);
+  const stub = relayStub(env, sessionId);
   if (!stub) return errorResponse("unavailable", "Relay not configured", 503, requestId);
   const principal = actor.subjectId || "unknown";
   const qs = `from=${from}&surface=${encodeURIComponent(surface)}&principal=${encodeURIComponent(principal)}`;
 
   if (request.headers.get("upgrade")?.toLowerCase() === "websocket") {
-    // WS binding: only the SDK class speaks it; a draining KV-class session
-    // keeps the SSE feed (the client falls back — AN lock 2's posture).
-    if (chooseRelayNamespace(env, session.createdAt) !== env.ATTACH_RELAY || !env.ATTACH_RELAY) {
-      return errorResponse("upgrade_unavailable", "WebSocket attach not available for this session", 426, requestId);
-    }
+    // WS binding: the SDK relay speaks attach-v1 frames both directions. The
+    // upgrade is forwarded through the stub untouched.
     return stub.fetch(new Request(`https://relay/attach?${qs}`, request));
   }
 
@@ -98,20 +95,11 @@ export async function handleHeadInput(
   }
   const session = await deps.repo.getSession({ orgId }, sessionId);
   if (!session) return errorResponse("not_found", "Session not found", 404, requestId);
-  const peer = relayPeerFor(env, sessionId, session.createdAt);
+  const peer = relayPeerFor(env, sessionId);
   if (!peer) return errorResponse("unavailable", "Relay not configured", 503, requestId);
   const principal = actor.subjectId || "unknown";
-  if (peer.kind === "rpc") {
-    const frame = (await request.json()) as Record<string, unknown>;
-    return Response.json(await peer.rpc.headInput(frame, principal));
-  }
-  return forward(peer.stub, "POST", "/input", {
-    body: await request.text(),
-    headers: {
-      "content-type": "application/json",
-      "x-actor-principal": principal,
-    },
-  });
+  const frame = (await request.json()) as Record<string, unknown>;
+  return Response.json(await peer.rpc.headInput(frame, principal));
 }
 
 // ── Body-facing (the in-sandbox runtime) ────────────────────
@@ -139,10 +127,7 @@ export async function handleBodyWire(
   if (request.headers.get("upgrade")?.toLowerCase() !== "websocket") {
     return errorResponse("upgrade_required", "The wire is WebSocket-only", 426, requestId);
   }
-  if (chooseRelayNamespace(env, gate.session.createdAt) !== env.ATTACH_RELAY || !env.ATTACH_RELAY) {
-    return errorResponse("upgrade_unavailable", "Wire not available for this session", 426, requestId);
-  }
-  const stub = relayStub(env, sessionId, gate.session.createdAt);
+  const stub = relayStub(env, sessionId);
   if (!stub) return errorResponse("unavailable", "Relay not configured", 503, requestId);
   return stub.fetch(new Request("https://relay/wire", request));
 }
@@ -158,16 +143,10 @@ export async function handleRelayStream(
 ): Promise<Response> {
   const gate = await gateSessionActor(deps, orgId, sessionId, actor, requestId);
   if (gate instanceof Response) return gate;
-  const peer = relayPeerFor(env, sessionId, gate.session.createdAt);
+  const peer = relayPeerFor(env, sessionId);
   if (!peer) return errorResponse("unavailable", "Relay not configured", 503, requestId);
-  if (peer.kind === "rpc") {
-    await peer.rpc.streamDelta(await request.json());
-    return Response.json({ ok: true });
-  }
-  return forward(peer.stub, "POST", "/stream", {
-    body: await request.text(),
-    headers: { "content-type": "application/json" },
-  });
+  await peer.rpc.streamDelta(await request.json());
+  return Response.json({ ok: true });
 }
 
 export async function handleRelayPollInputs(
@@ -181,12 +160,9 @@ export async function handleRelayPollInputs(
 ): Promise<Response> {
   const gate = await gateSessionActor(deps, orgId, sessionId, actor, requestId);
   if (gate instanceof Response) return gate;
-  const peer = relayPeerFor(env, sessionId, gate.session.createdAt);
+  const peer = relayPeerFor(env, sessionId);
   if (!peer) return errorResponse("unavailable", "Relay not configured", 503, requestId);
-  if (peer.kind === "rpc") {
-    return Response.json(await peer.rpc.pollInputs(cursor));
-  }
-  return forward(peer.stub, "GET", `/inputs?cursor=${cursor}`);
+  return Response.json(await peer.rpc.pollInputs(cursor));
 }
 
 export async function handleRelayAck(
@@ -200,14 +176,8 @@ export async function handleRelayAck(
 ): Promise<Response> {
   const gate = await gateSessionActor(deps, orgId, sessionId, actor, requestId);
   if (gate instanceof Response) return gate;
-  const peer = relayPeerFor(env, sessionId, gate.session.createdAt);
+  const peer = relayPeerFor(env, sessionId);
   if (!peer) return errorResponse("unavailable", "Relay not configured", 503, requestId);
-  if (peer.kind === "rpc") {
-    await peer.rpc.ackInput(await request.json());
-    return Response.json({ ok: true });
-  }
-  return forward(peer.stub, "POST", "/inputs/ack", {
-    body: await request.text(),
-    headers: { "content-type": "application/json" },
-  });
+  await peer.rpc.ackInput(await request.json());
+  return Response.json({ ok: true });
 }

@@ -12,13 +12,12 @@ import { buildDeps, ready } from "./deps.js";
 import { sweepLapsedSessions } from "./sweep.js";
 import { routineTick } from "./tick.js";
 
-// The per-session attach relay DOs. Exported so the Workers runtime can
-// instantiate the classes named in wrangler's durable_objects bindings:
+// The per-session attach relay DO. Exported so the Workers runtime can
+// instantiate the class named in wrangler's durable_objects binding:
 // `AttachRelay` (saas-agents-native AN1 — the SDK relay, WS + hibernation)
-// carries new sessions; `SessionRelay` (saas-agents-live AL6) drains old ones
-// and is deleted one release after the cutover (AN lock 7).
+// carries every session. The pre-AN1 `SessionRelay` KV class was
+// decommissioned once the cutover completed (AN lock 7).
 export { AttachRelay } from "./attach-relay.js";
-export { SessionRelay } from "./relay-do.js";
 
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
@@ -29,7 +28,7 @@ export default {
   // each session's relay DO now arms its own lease-lapse timer (reset by
   // every heartbeat) and reports itself for reclaim, so this scan is expected
   // to find nothing. A nonzero find is a warn-level signal — a DO that never
-  // woke, or a pre-AN1 session draining on the KV class. Plus the routine
+  // woke. Plus the routine
   // scheduler tick (fleet AF6). Skips silently when the worker is unbound.
   async scheduled(_controller: ScheduledController, env: Env, ctx: ExecutionContext): Promise<void> {
     if (!ready(env)) return;

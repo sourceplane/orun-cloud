@@ -1,8 +1,10 @@
-// Body-facing relay route tests (#466): the in-sandbox runtime's live wire —
-// POST /stream (delta fan-out), GET /inputs (steer return-queue poll), POST
-// /inputs/ack. The pinned invariants: (1) the SAME three-way session gate as
-// heartbeat/events (a leaked session id must not open the input queue), and
-// (2) the route reaches the per-session DO when the gate passes.
+// Body-facing relay route tests (#466, updated for the AN lock-7 cutover): the
+// in-sandbox runtime's live wire — POST /stream (delta fan-out), GET /inputs
+// (steer return-queue poll), POST /inputs/ack. The pinned invariants: (1) the
+// SAME three-way session gate as heartbeat/events (a leaked session id must not
+// open the input queue), and (2) the route reaches the per-session SDK relay DO
+// via typed RPC when the gate passes. The old KV `SessionRelay` class and its
+// HTTP forward are decommissioned — every session is on `AttachRelay`.
 
 import { route } from "@agents-worker/router";
 import type { AgentsDeps } from "@agents-worker/deps";
@@ -13,14 +15,53 @@ const ORG = "org_b281a9a0f43d463e9c83d6b6597ab2d2";
 const ORG_UUID = "b281a9a0-f43d-463e-9c83-d6b6597ab2d2";
 const baseEnv: Env = { ENVIRONMENT: "test" };
 
+interface RpcCall {
+  method: string;
+  arg: unknown;
+}
+
+/** A minimal `AttachRelay` DO namespace double speaking typed RPC: records each
+ * method call and returns a canned poll body. */
+function mockRpcNs(
+  calls: RpcCall[],
+  pollBody: { items: unknown[]; cursor: number } = { items: [], cursor: 0 },
+): NonNullable<Env["ATTACH_RELAY"]> {
+  return {
+    idFromName: (name: string) => ({ name }),
+    get: () => ({
+      async streamDelta(frame: unknown) {
+        calls.push({ method: "streamDelta", arg: frame });
+      },
+      async pollInputs(cursor: number) {
+        calls.push({ method: "pollInputs", arg: cursor });
+        return pollBody;
+      },
+      async ackInput(ack: unknown) {
+        calls.push({ method: "ackInput", arg: ack });
+      },
+      async headInput(frame: unknown, principal: string) {
+        calls.push({ method: "headInput", arg: { frame, principal } });
+        return { ok: true };
+      },
+      async ingestEvents(frames: unknown[]) {
+        calls.push({ method: "ingestEvents", arg: frames });
+        return frames.length;
+      },
+      async armLease() {
+        /* no-op */
+      },
+    }),
+  } as unknown as NonNullable<Env["ATTACH_RELAY"]>;
+}
+
 interface Captured {
   url: string;
   method: string;
 }
 
-/** A minimal SESSION_RELAY DO namespace double: records the forwarded request
- * and returns a canned relay response. */
-function mockRelay(capture: Captured[], body: unknown = { items: [], cursor: 0 }): NonNullable<Env["SESSION_RELAY"]> {
+/** A fetch-style `AttachRelay` double for the upgrade/SSE paths (attach forwards
+ * a live Request through `stub.fetch`, not RPC). */
+function mockFetchNs(capture: Captured[], body: unknown = { ok: true }): NonNullable<Env["ATTACH_RELAY"]> {
   return {
     idFromName: (name: string) => ({ name }),
     get: () => ({
@@ -29,7 +70,7 @@ function mockRelay(capture: Captured[], body: unknown = { items: [], cursor: 0 }
         return Response.json(body);
       },
     }),
-  } as unknown as NonNullable<Env["SESSION_RELAY"]>;
+  } as unknown as NonNullable<Env["ATTACH_RELAY"]>;
 }
 
 interface Fixture {
@@ -101,7 +142,7 @@ describe("agents-worker body-facing relay routes (#466)", () => {
 
   it("gates every relay route three ways: type, principal, session binding", async () => {
     const f = await fixture();
-    const env = { ...baseEnv, SESSION_RELAY: mockRelay([]) };
+    const env = { ...baseEnv, ATTACH_RELAY: mockRpcNs([]) };
     for (const r of routes) {
       const asUser = await route(relayReq(f, r.method, r.suffix, { subjectType: "user", body: r.body }), env, f.deps);
       expect(asUser.status).toBe(403);
@@ -130,89 +171,64 @@ describe("agents-worker body-facing relay routes (#466)", () => {
     const f = await fixture();
     for (const r of routes) {
       const res = await route(relayReq(f, r.method, r.suffix, { body: r.body }), baseEnv, f.deps);
-      expect(res.status).toBe(503); // reached the forward — route is wired + gated
+      expect(res.status).toBe(503); // reached the peer resolve — route is wired + gated
     }
   });
 
-  it("forwards a steer-queue poll to the per-session DO with the cursor", async () => {
+  it("polls the steer queue on the SDK class via pollInputs(cursor)", async () => {
     const f = await fixture();
-    const capture: Captured[] = [];
-    const env = { ...baseEnv, SESSION_RELAY: mockRelay(capture, { items: [{ t: "input" }], cursor: 7 }) };
+    const calls: RpcCall[] = [];
+    const env = { ...baseEnv, ATTACH_RELAY: mockRpcNs(calls, { items: [{ t: "input" }], cursor: 7 }) };
     const res = await route(
-      new Request(
-        `https://agents-worker/v1/organizations/${ORG}/agents/sessions/${f.sessionId}/inputs?cursor=4`,
-        { method: "GET", headers: { "x-actor-subject-id": "sp_1", "x-actor-subject-type": "service_principal", "x-actor-agent-session-id": f.sessionId } },
-      ),
+      new Request(`https://agents-worker/v1/organizations/${ORG}/agents/sessions/${f.sessionId}/inputs?cursor=4`, {
+        method: "GET",
+        headers: {
+          "x-actor-subject-id": "sp_1",
+          "x-actor-subject-type": "service_principal",
+          "x-actor-agent-session-id": f.sessionId,
+        },
+      }),
       env,
       f.deps,
     );
     expect(res.status).toBe(200);
-    expect(capture[0]!.method).toBe("GET");
-    expect(capture[0]!.url).toBe("/inputs?cursor=4");
+    expect(calls).toEqual([{ method: "pollInputs", arg: 4 }]);
     expect(((await res.json()) as { cursor: number }).cursor).toBe(7);
   });
 
-  it("forwards a delta to /stream and an ack to /inputs/ack", async () => {
+  it("streams a delta via streamDelta() and acks via ackInput()", async () => {
     const f = await fixture();
-    const capture: Captured[] = [];
-    const env = { ...baseEnv, SESSION_RELAY: mockRelay(capture, { ok: true }) };
+    const calls: RpcCall[] = [];
+    const env = { ...baseEnv, ATTACH_RELAY: mockRpcNs(calls) };
     await route(relayReq(f, "POST", "stream", { body: { t: "delta", text: "x" } }), env, f.deps);
     await route(relayReq(f, "POST", "inputs/ack", { body: { t: "ack", ref: "c-1", ok: true } }), env, f.deps);
-    expect(capture.map((c) => `${c.method} ${c.url}`)).toEqual(["POST /stream", "POST /inputs/ack"]);
+    expect(calls.map((c) => c.method)).toEqual(["streamDelta", "ackInput"]);
+    expect(calls[0]!.arg).toEqual({ t: "delta", text: "x" });
+    expect(calls[1]!.arg).toEqual({ t: "ack", ref: "c-1", ok: true });
   });
 
   it("405s the wrong method on each relay route", async () => {
     const f = await fixture();
-    const env = { ...baseEnv, SESSION_RELAY: mockRelay([]) };
+    const env = { ...baseEnv, ATTACH_RELAY: mockRpcNs([]) };
     expect((await route(relayReq(f, "GET", "stream"), env, f.deps)).status).toBe(405);
     expect((await route(relayReq(f, "POST", "inputs"), env, f.deps)).status).toBe(405);
     expect((await route(relayReq(f, "GET", "inputs/ack"), env, f.deps)).status).toBe(405);
   });
 });
 
-// ── AN1 (saas-agents-native): session-epoch routing + the WS door ──────────
+// ── AN1/lock 7: the relay namespace resolves to the SDK class ───────────────
 
-import { chooseRelayNamespace } from "@agents-worker/relay-epoch";
+import { relayNamespace } from "@agents-worker/relay-epoch";
 
-function mockNamespace(capture: Captured[], body: unknown = { ok: true }, label = "ns"): NonNullable<Env["SESSION_RELAY"]> {
-  return {
-    label,
-    idFromName: (name: string) => ({ name }),
-    get: () => ({
-      fetch: async (req: Request) => {
-        capture.push({ url: new URL(req.url).pathname + new URL(req.url).search, method: req.method });
-        return Response.json(body);
-      },
-    }),
-  } as unknown as NonNullable<Env["SESSION_RELAY"]>;
-}
+describe("relay namespace resolution (SDK-only after the lock-7 cutover)", () => {
+  const newNs = mockFetchNs([]);
 
-describe("AN1: session-epoch relay routing (lock 7)", () => {
-  const oldNs = mockNamespace([], {}, "old");
-  const newNs = mockNamespace([], {}, "new");
-
-  it("routes everything to the SDK class when no cutover is set", () => {
-    const env: Env = { ...baseEnv, SESSION_RELAY: oldNs, ATTACH_RELAY: newNs };
-    expect(chooseRelayNamespace(env, "2026-01-01T00:00:00Z")).toBe(newNs);
-    expect(chooseRelayNamespace(env)).toBe(newNs);
+  it("resolves to the ATTACH_RELAY SDK class when bound", () => {
+    expect(relayNamespace({ ...baseEnv, ATTACH_RELAY: newNs })).toBe(newNs);
   });
 
-  it("drains pre-cutover sessions on the old class, lands new ones on the SDK class", () => {
-    const env: Env = {
-      ...baseEnv,
-      SESSION_RELAY: oldNs,
-      ATTACH_RELAY: newNs,
-      RELAY_CUTOVER_AT: "2026-07-01T00:00:00Z",
-    };
-    expect(chooseRelayNamespace(env, "2026-06-30T23:59:59Z")).toBe(oldNs);
-    expect(chooseRelayNamespace(env, "2026-07-01T00:00:00Z")).toBe(newNs);
-    expect(chooseRelayNamespace(env, "2026-07-15T12:00:00Z")).toBe(newNs);
-  });
-
-  it("falls back to whichever single class is bound", () => {
-    expect(chooseRelayNamespace({ ...baseEnv, SESSION_RELAY: oldNs })).toBe(oldNs);
-    expect(chooseRelayNamespace({ ...baseEnv, ATTACH_RELAY: newNs })).toBe(newNs);
-    expect(chooseRelayNamespace({ ...baseEnv })).toBeNull();
+  it("is null (dormant) when unbound — no legacy class to fall back to", () => {
+    expect(relayNamespace({ ...baseEnv })).toBeNull();
   });
 });
 
@@ -232,35 +248,32 @@ describe("AN1: the attach door (WS upgrade + SSE fallback)", () => {
   it("forwards a WS upgrade to the SDK class with the edge-stamped principal on the URL", async () => {
     const f = await fixture();
     const capture: Captured[] = [];
-    const env: Env = { ...baseEnv, ATTACH_RELAY: mockNamespace(capture) };
+    const env: Env = { ...baseEnv, ATTACH_RELAY: mockFetchNs(capture) };
     const res = await route(headReq(f, { upgrade: true }), env, f.deps);
     expect(res.status).toBe(200);
     expect(capture).toHaveLength(1);
     expect(capture[0]!.url).toBe("/attach?from=-1&surface=console&principal=usr_alice");
   });
 
-  it("refuses the upgrade (426) when the session drains on the KV class — the client falls back to SSE", async () => {
+  it("serves a plain GET its SSE feed from the SDK class", async () => {
     const f = await fixture();
     const capture: Captured[] = [];
-    const env: Env = {
-      ...baseEnv,
-      SESSION_RELAY: mockNamespace(capture),
-      ATTACH_RELAY: mockNamespace(capture),
-      RELAY_CUTOVER_AT: "2099-01-01T00:00:00Z", // every session pre-dates it
-    };
-    const res = await route(headReq(f, { upgrade: true }), env, f.deps);
-    expect(res.status).toBe(426);
-    expect(capture).toHaveLength(0);
-
-    // The same session's plain GET still gets its SSE feed from the old class.
-    const sse = await route(headReq(f), env, f.deps);
-    expect(sse.status).toBe(200);
+    const env: Env = { ...baseEnv, ATTACH_RELAY: mockFetchNs(capture) };
+    const res = await route(headReq(f), env, f.deps);
+    expect(res.status).toBe(200);
     expect(capture).toHaveLength(1);
+    expect(capture[0]!.url).toBe("/attach?from=-1&surface=console&principal=usr_alice");
+  });
+
+  it("503s the attach when the relay is unbound (dormant posture)", async () => {
+    const f = await fixture();
+    const res = await route(headReq(f, { upgrade: true }), baseEnv, f.deps);
+    expect(res.status).toBe(503);
   });
 
   it("404s an attach to a session that does not exist (no phantom DO)", async () => {
     const f = await fixture();
-    const env: Env = { ...baseEnv, ATTACH_RELAY: mockNamespace([]) };
+    const env: Env = { ...baseEnv, ATTACH_RELAY: mockFetchNs([]) };
     const res = await route(headReq(f, { sessionId: "as_missing" }), env, f.deps);
     expect(res.status).toBe(404);
   });
@@ -269,17 +282,8 @@ describe("AN1: the attach door (WS upgrade + SSE fallback)", () => {
 describe("AN1/AN3: the ingest mirror (typed RPC on the SDK class)", () => {
   it("mirrors an accepted event batch to the relay DO via ingestEvents()", async () => {
     const f = await fixture();
-    const batches: unknown[] = [];
-    const ns = {
-      idFromName: (name: string) => ({ name }),
-      get: () => ({
-        ingestEvents: async (frames: unknown[]) => {
-          batches.push(frames);
-          return frames.length;
-        },
-      }),
-    } as unknown as NonNullable<Env["SESSION_RELAY"]>;
-    const env: Env = { ...baseEnv, ATTACH_RELAY: ns };
+    const calls: RpcCall[] = [];
+    const env: Env = { ...baseEnv, ATTACH_RELAY: mockRpcNs(calls) };
 
     const res = await route(
       relayReq(f, "POST", "events", {
@@ -289,24 +293,11 @@ describe("AN1/AN3: the ingest mirror (typed RPC on the SDK class)", () => {
       f.deps,
     );
     expect(res.status).toBe(200);
-    expect(batches).toHaveLength(1);
-    expect(batches[0]).toEqual([
+    const ingest = calls.filter((c) => c.method === "ingestEvents");
+    expect(ingest).toHaveLength(1);
+    expect(ingest[0]!.arg).toEqual([
       { v: 1, t: "event", seq: 0, kind: "message_agent", at: "2026-07-17T00:00:00Z", payload: { text: "hi" } },
     ]);
-  });
-
-  it("a draining KV-class session still mirrors over the HTTP forward", async () => {
-    const f = await fixture();
-    const capture: Captured[] = [];
-    const env: Env = {
-      ...baseEnv,
-      SESSION_RELAY: mockNamespace(capture, { accepted: 1 }),
-      ATTACH_RELAY: mockNamespace([], {}),
-      RELAY_CUTOVER_AT: "2099-01-01T00:00:00Z", // every session pre-dates it
-    };
-    const res = await route(relayReq(f, "POST", "events", { body: [{ seq: 0, kind: "message_agent" }] }), env, f.deps);
-    expect(res.status).toBe(200);
-    expect(capture.map((c) => `${c.method} ${c.url}`)).toEqual(["POST /events"]);
   });
 
   it("a mirror failure never fails the ingest", async () => {
@@ -318,7 +309,7 @@ describe("AN1/AN3: the ingest mirror (typed RPC on the SDK class)", () => {
           throw new Error("relay down");
         },
       }),
-    } as unknown as NonNullable<Env["SESSION_RELAY"]>;
+    } as unknown as NonNullable<Env["ATTACH_RELAY"]>;
     const env: Env = { ...baseEnv, ATTACH_RELAY: ns };
     const res = await route(relayReq(f, "POST", "events", { body: [{ seq: 0, kind: "message_agent" }] }), env, f.deps);
     expect(res.status).toBe(200);
