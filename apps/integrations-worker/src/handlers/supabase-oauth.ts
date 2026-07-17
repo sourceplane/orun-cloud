@@ -39,10 +39,52 @@ import { getConfiguredProvider } from "../providers/registry.js";
 import {
   discoverSupabaseOrg,
   exchangeSupabaseOauthCode,
+  fetchSupabaseProjectServiceKeys,
   listSupabaseProjects,
 } from "../providers/supabase.js";
 import { hashStateNonce, verifyConnectState } from "../state.js";
 import { popupPage } from "./setup.js";
+import type { IntegrationHubRepository } from "@saas/db/integrations";
+import type { Uuid } from "@saas/db/ids";
+
+/**
+ * SI4: envelope the per-project service-role keys as one custody row
+ * (`supabase_project_secret`, an encrypted JSON map keyed by project ref) —
+ * the org-owned infrastructure credential the `project-service-key`
+ * custody-served template mints from. Best-effort: a failed read leaves any
+ * existing custody untouched (never overwrite good keys with nothing).
+ */
+async function captureProjectServiceKeys(
+  hub: IntegrationHubRepository,
+  encryption: EncryptionAdapter,
+  connectionId: Uuid,
+  supabaseOrgId: string,
+  accessToken: string,
+  projects: Array<{ ref: string; name: string | null }> | null,
+  fetchImpl?: FetchLike,
+): Promise<void> {
+  try {
+    if (!projects || projects.length === 0) return;
+    const keys = await fetchSupabaseProjectServiceKeys(
+      accessToken,
+      projects.map((p) => p.ref),
+      fetchImpl,
+    );
+    if (!keys) return;
+    const envelope = await encryption.encrypt(JSON.stringify(keys));
+    await hub.upsertProviderCredential({
+      id: generateUuid(),
+      connectionId,
+      kind: "supabase_project_secret",
+      ciphertext: JSON.stringify(envelope),
+      // Safe metadata: WHICH projects have custodied keys, never the keys.
+      scopes: Object.keys(keys),
+      externalRef: supabaseOrgId,
+    });
+  } catch {
+    // Best-effort; the health cron reconciles.
+  }
+}
 
 export const SUPABASE_OAUTH_CALLBACK_PATH = "/ingress/supabase/oauth";
 
@@ -222,6 +264,15 @@ export async function handleSupabaseOauthCallback(
           orgName: org.orgName,
           projects: refreshedProjects,
         });
+        await captureProjectServiceKeys(
+          hub,
+          encryption,
+          boundId,
+          org.supabaseOrgId,
+          grant.accessToken,
+          refreshedProjects,
+          deps?.fetchImpl,
+        );
         if (own.value.status !== "active") {
           const reactivated = await repo.updateConnectionStatus(
             asUuid(connection.orgId),
@@ -312,6 +363,20 @@ export async function handleSupabaseOauthCallback(
         "This Supabase organization is already linked to a connection.",
       );
     }
+
+    // SI4: capture the per-project service-role keys as ORG-OWNED custody
+    // (one encrypted JSON map) so the `project-service-key` template serves
+    // without any user-derived token on the resolve path. Best-effort — the
+    // hourly health cron reconciles what connect could not read.
+    await captureProjectServiceKeys(
+      hub,
+      encryption,
+      asUuid(connection.id),
+      org.supabaseOrgId,
+      grant.accessToken,
+      projects,
+      deps?.fetchImpl,
+    );
 
     const activated = await repo.activateConnection(
       asUuid(connection.orgId),

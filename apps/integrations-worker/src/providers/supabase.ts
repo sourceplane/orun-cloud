@@ -62,6 +62,19 @@ export const SUPABASE_SCOPE_TEMPLATES: readonly IntegrationScopeTemplate[] = [
     params: ["projectRef"],
     maxTtlSeconds: SUPABASE_MAX_TTL_SECONDS,
   },
+  {
+    id: "project-service-key",
+    provider: "supabase",
+    version: 1,
+    displayName: "Project service-role key",
+    description:
+      "The project's service-role API key (projectRef param required), served from org-owned custody captured at connect — no user-derived token and no Management API call on the resolve path. The key itself is long-lived (TTL bounds this issuance's ledger row, not the key); revoke by rotating the key in Supabase.",
+    params: ["projectRef"],
+    maxTtlSeconds: SUPABASE_MAX_TTL_SECONDS,
+    // SI4: custody-served — the broker reads the enveloped per-project key
+    // map instead of minting against the management plane.
+    custodyKind: "supabase_project_secret",
+  },
 ] as const;
 
 /**
@@ -240,6 +253,39 @@ export async function listSupabaseProjects(
   } catch {
     return null;
   }
+}
+
+/**
+ * Per-project service-role keys (SI4): `GET /v1/projects/{ref}/api-keys`
+ * for each ref, keeping the `service_role` entry. Best-effort per project —
+ * a ref whose keys cannot be read is simply absent from the map. Null when
+ * NO ref could be read (callers keep existing custody rather than
+ * overwriting it with an empty map).
+ */
+export async function fetchSupabaseProjectServiceKeys(
+  accessToken: string,
+  projectRefs: readonly string[],
+  fetchImpl: FetchLike = fetch,
+): Promise<Record<string, string> | null> {
+  const keys: Record<string, string> = {};
+  for (const ref of projectRefs.slice(0, SUPABASE_MAX_PROJECTS)) {
+    try {
+      const response = await fetchImpl(`${API_BASE}/v1/projects/${ref}/api-keys`, {
+        method: "GET",
+        headers: { authorization: `Bearer ${accessToken}` },
+      });
+      if (!response.ok) continue;
+      const body = (await response.json()) as Array<{ name?: unknown; api_key?: unknown }>;
+      if (!Array.isArray(body)) continue;
+      const serviceRole = body.find((k) => k.name === "service_role");
+      if (typeof serviceRole?.api_key === "string" && serviceRole.api_key) {
+        keys[ref] = serviceRole.api_key;
+      }
+    } catch {
+      // Best-effort per project.
+    }
+  }
+  return Object.keys(keys).length > 0 ? keys : null;
 }
 
 export function createSupabaseProvider(

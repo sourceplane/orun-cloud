@@ -65,10 +65,12 @@ import { encodeCursor, parsePageParams } from "../pagination.js";
 import { getConfiguredProvider } from "../providers/registry.js";
 import { getCapability, type IntegrationProvider } from "../providers/types.js";
 import {
+  readCustodyServedCredential,
   readParentCredential,
   reEnvelopeParentCredential,
   type ResolvedParentCredential,
 } from "../custody.js";
+import type { ProviderCredentialKind } from "@saas/db/integrations";
 import { connectionMintLockRunner, type MintLockRunner } from "../mint-lock.js";
 import type { MintCredentialOutcome } from "../providers/types.js";
 
@@ -351,6 +353,89 @@ async function executeMintCore(
   // credential carries its ledger identity provider-side (IH9 reconcile).
   const mintId = generateUuid();
   const nowMs = Date.now();
+
+  // ── Custody-served templates (SI4) ──────────────────────────
+  // The value is an org-owned infrastructure credential captured at connect
+  // (e.g. a Supabase project service key) — read it from custody instead of
+  // minting against the provider. No provider call, no parent-token spend,
+  // no mint lock (the read is static); everything else (rate limit above,
+  // ledger-before-reveal, events below the section) is identical.
+  if (template.custodyKind) {
+    const selector =
+      typeof params.projectRef === "string" && params.projectRef ? params.projectRef : undefined;
+    if (template.params.includes("projectRef") && !selector) {
+      return { ok: false, failure: { kind: "mint_failed", reason: `${templateId} requires projectRef` } };
+    }
+    const served = await readCustodyServedCredential(
+      env,
+      executor,
+      asUuid(connection.id),
+      template.custodyKind as ProviderCredentialKind,
+      selector,
+    );
+    if (!served.ok) {
+      return served.reason === "custody_missing"
+        ? { ok: false, failure: { kind: "parent_credential_missing" } }
+        : // The connection is live but custody has no entry for this project —
+          // the reconcile cron hasn't captured it (or the project is gone).
+          { ok: false, failure: { kind: "mint_failed", reason: "parent_grant_insufficient" } };
+    }
+    const inserted = await hub.insertMintedCredential({
+      id: mintId,
+      orgId,
+      connectionId: asUuid(connection.id),
+      provider: connection.provider,
+      template: templateId,
+      params: Object.keys(params).length > 0 ? params : null,
+      purpose: attribution.purpose,
+      parentKind: template.custodyKind as ProviderCredentialKind,
+      requestedBy: attribution.requestedBy,
+      runId: attribution.runId ?? null,
+      jobId: attribution.jobId ?? null,
+      ttlSeconds,
+      providerRef: null,
+      expiresAt: new Date(nowMs + ttlSeconds * 1000),
+    });
+    if (!inserted.ok) {
+      return { ok: false, failure: { kind: "service_error" } };
+    }
+    try {
+      const events = createEventsRepository(executor);
+      await events.appendEventWithAudit({
+        event: {
+          id: generateUuid(),
+          type: INTEGRATION_EVENT_TYPES.CREDENTIAL_ISSUED,
+          version: 1,
+          source: "integrations-worker",
+          occurredAt: new Date(),
+          actorType: attribution.actorType,
+          actorId: attribution.actorId,
+          orgId,
+          subjectKind: "integration_connection",
+          subjectId: connection.id,
+          requestId,
+          payload: {
+            provider: connection.provider,
+            template: templateId,
+            params,
+            ttlSeconds,
+            mintId: mintedCredentialPublicId(mintId),
+            expiresAt: inserted.value.expiresAt.toISOString(),
+            purpose: attribution.purpose,
+            ...(attribution.runId ? { runId: attribution.runId } : {}),
+          },
+        },
+        audit: {
+          id: generateUuid(),
+          category: "integrations",
+          description: `Credential minted: ${connection.provider}/${templateId} (custody-served)`,
+        },
+      });
+    } catch {
+      // Audit emission is best-effort; the mint is already ledgered.
+    }
+    return { ok: true, credential: { value: served.value }, mint: inserted.value };
+  }
 
   // ── Custody critical section, serialized PER CONNECTION (IH6). ──
   // read-parent → provider mint → rotation re-envelope is a read-modify-write
