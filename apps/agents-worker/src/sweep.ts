@@ -66,6 +66,51 @@ export async function destroySandbox(
   return true;
 }
 
+/**
+ * reclaimSession — reclaim ONE lapsed session: best-effort sandbox destroy
+ * (over-destroy on ambiguity), then the `failed(lease_lost)` terminal.
+ * Shared by the backstop cron sweep and the per-session lease timer
+ * (saas-agents-native AN3 — the relay DO reports its own lapse; this shared
+ * path is where the control plane actually decides and destroys).
+ */
+export async function reclaimSession(
+  deps: AgentsDeps,
+  session: AgentSession,
+  requestId: string,
+  cause: string,
+): Promise<{ destroyed: boolean; destroyError: boolean; reclaimed: boolean }> {
+  // Name WHY each session was reclaimed: a `provisioning` session lapsing
+  // means the runtime never dialed home (boot died before the first
+  // heartbeat — the audit's blind spot); an active state means a live lease
+  // simply expired. NEVER key material — ids + state + sandbox handle only.
+  console.warn(
+    `[agents-sweep] reclaim session=${session.publicId} org=${orgPublicId(session.orgId)} priorState=${session.state} cause=${cause} sandbox=${typeof session.sandbox.id === "string" ? session.sandbox.id : "none"}`,
+  );
+  const out = { destroyed: false, destroyError: false, reclaimed: false };
+  try {
+    if (await destroySandbox(deps, session, requestId)) out.destroyed = true;
+  } catch {
+    // Over-destroy posture: the box may already be gone (provider TTL
+    // reclaim), the account disconnected, or the key rotated. Reclaim anyway.
+    out.destroyError = true;
+  }
+  try {
+    await deps.repo.advanceSession(
+      { orgId: session.orgId },
+      {
+        publicId: session.publicId,
+        to: "failed",
+        sandbox: { ...session.sandbox, error: "lease_lost" },
+      },
+    );
+    out.reclaimed = true;
+  } catch {
+    // A racing transition (the runtime completed in the same tick) is fine —
+    // the session reached a terminal state either way.
+  }
+  return out;
+}
+
 export async function sweepLapsedSessions(
   deps: AgentsDeps,
   requestId: string,
@@ -80,35 +125,15 @@ export async function sweepLapsedSessions(
 
   const summary: SweepSummary = { examined: lapsed.length, reclaimed: 0, destroyed: 0, destroyErrors: 0, orphaned: 0 };
   for (const session of lapsed) {
-    // Name WHY each session was reclaimed: a `provisioning` session lapsing
-    // means the runtime never dialed home (boot died before the first
-    // heartbeat — the audit's blind spot); an active state means a live lease
-    // simply expired. Without this, every reclaim looked identical as
-    // `lease_lost`. NEVER key material — ids + state + sandbox handle only.
-    console.warn(
-      `[agents-sweep] reclaim session=${session.publicId} org=${orgPublicId(session.orgId)} priorState=${session.state} cause=${session.state === "provisioning" ? "never_booted" : "lease_lapsed"} sandbox=${typeof session.sandbox.id === "string" ? session.sandbox.id : "none"}`,
+    const r = await reclaimSession(
+      deps,
+      session,
+      requestId,
+      session.state === "provisioning" ? "never_booted" : "lease_lapsed",
     );
-    try {
-      if (await destroySandbox(deps, session, requestId)) summary.destroyed++;
-    } catch {
-      // Over-destroy posture: the box may already be gone (provider TTL
-      // reclaim), the account disconnected, or the key rotated. Reclaim anyway.
-      summary.destroyErrors++;
-    }
-    try {
-      await deps.repo.advanceSession(
-        { orgId: session.orgId },
-        {
-          publicId: session.publicId,
-          to: "failed",
-          sandbox: { ...session.sandbox, error: "lease_lost" },
-        },
-      );
-      summary.reclaimed++;
-    } catch {
-      // A racing transition (the runtime completed in the same tick) is fine —
-      // the session reached a terminal state either way.
-    }
+    if (r.destroyed) summary.destroyed++;
+    if (r.destroyError) summary.destroyErrors++;
+    if (r.reclaimed) summary.reclaimed++;
   }
 
   // The orphan pass (AF4 §3.2): a tree cannot outlive its root's intent. A

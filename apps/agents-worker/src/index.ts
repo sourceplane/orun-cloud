@@ -25,11 +25,12 @@ export default {
     return route(request, env);
   },
 
-  // The lease sweep (design §4.3) + the routine scheduler tick (fleet AF6):
-  // every beat reclaims lapsed sessions/orphans and fires due routines
-  // through the dispatch gates. Skips silently when the worker is unbound
-  // (the AG5 dormant posture deploys everywhere; the cron only bites where
-  // wired).
+  // The lease sweep — DEMOTED to backstop auditor (saas-agents-native AN3):
+  // each session's relay DO now arms its own lease-lapse timer (reset by
+  // every heartbeat) and reports itself for reclaim, so this scan is expected
+  // to find nothing. A nonzero find is a warn-level signal — a DO that never
+  // woke, or a pre-AN1 session draining on the KV class. Plus the routine
+  // scheduler tick (fleet AF6). Skips silently when the worker is unbound.
   async scheduled(_controller: ScheduledController, env: Env, ctx: ExecutionContext): Promise<void> {
     if (!ready(env)) return;
     const deps = buildDeps(env);
@@ -39,7 +40,7 @@ export default {
           const summary = await sweepLapsedSessions(deps, `sweep_${Date.now()}`);
           if (summary.examined > 0) {
             console.warn(
-              `[agents-sweep] examined=${summary.examined} reclaimed=${summary.reclaimed} destroyed=${summary.destroyed} destroyErrors=${summary.destroyErrors} orphaned=${summary.orphaned}`,
+              `[agents-sweep] BACKSTOP FINDING (the per-session timers should have caught these): examined=${summary.examined} reclaimed=${summary.reclaimed} destroyed=${summary.destroyed} destroyErrors=${summary.destroyErrors} orphaned=${summary.orphaned}`,
             );
           }
           const tick = await routineTick(deps, `tick_${Date.now()}`);
