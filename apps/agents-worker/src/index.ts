@@ -12,9 +12,12 @@ import { buildDeps, ready } from "./deps.js";
 import { sweepLapsedSessions } from "./sweep.js";
 import { routineTick } from "./tick.js";
 
-// The per-session attach relay DO (saas-agents-live AL6). Exported so the
-// Workers runtime can instantiate the class named in wrangler's
-// durable_objects binding.
+// The per-session attach relay DOs. Exported so the Workers runtime can
+// instantiate the classes named in wrangler's durable_objects bindings:
+// `AttachRelay` (saas-agents-native AN1 — the SDK relay, WS + hibernation)
+// carries new sessions; `SessionRelay` (saas-agents-live AL6) drains old ones
+// and is deleted one release after the cutover (AN lock 7).
+export { AttachRelay } from "./attach-relay.js";
 export { SessionRelay } from "./relay-do.js";
 
 export default {

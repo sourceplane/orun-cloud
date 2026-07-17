@@ -20,6 +20,7 @@
   },
   "dependencies": {
     "@saas/contracts": "workspace:*",
-    "@saas/db": "workspace:*"
+    "@saas/db": "workspace:*",
+    "agents": "^0.17.4"
   }
 }

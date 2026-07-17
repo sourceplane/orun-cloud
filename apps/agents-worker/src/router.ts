@@ -362,7 +362,7 @@ async function dispatch(
     if (request.method === "GET") {
       const from = Number(url.searchParams.get("from") ?? "-1");
       const surface = url.searchParams.get("surface") || "console";
-      return handleAttach(env, deps, orgId, sessionId, actor, requestId, from, surface);
+      return handleAttach(request, env, deps, orgId, sessionId, actor, requestId, from, surface);
     }
     return methodNotAllowed(requestId);
   }

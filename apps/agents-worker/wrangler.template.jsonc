@@ -17,17 +17,29 @@
   // The per-session attach relay (saas-agents-live AL6): one SQLite-backed DO
   // per session. DO bindings are NOT inherited by named environments, so the
   // block is repeated per env; the migration is top-level.
+  // AN1 (saas-agents-native): ATTACH_RELAY is the SDK relay carrying new
+  // sessions; SESSION_RELAY drains pre-cutover sessions and is deleted one
+  // release after the cutover (lock 7).
   "durable_objects": {
-    "bindings": [{ "name": "SESSION_RELAY", "class_name": "SessionRelay" }]
+    "bindings": [
+      { "name": "SESSION_RELAY", "class_name": "SessionRelay" },
+      { "name": "ATTACH_RELAY", "class_name": "AttachRelay" }
+    ]
   },
-  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["SessionRelay"] }],
+  "migrations": [
+    { "tag": "v1", "new_sqlite_classes": ["SessionRelay"] },
+    { "tag": "v2", "new_sqlite_classes": ["AttachRelay"] }
+  ],
   "env": {
     "dev": {
       "vars": {
         "ENVIRONMENT": "dev"
       },
       "durable_objects": {
-        "bindings": [{ "name": "SESSION_RELAY", "class_name": "SessionRelay" }]
+        "bindings": [
+          { "name": "SESSION_RELAY", "class_name": "SessionRelay" },
+          { "name": "ATTACH_RELAY", "class_name": "AttachRelay" }
+        ]
       }
     },
     "stage": {
@@ -36,7 +48,10 @@
         "ENVIRONMENT": "stage"
       },
       "durable_objects": {
-        "bindings": [{ "name": "SESSION_RELAY", "class_name": "SessionRelay" }]
+        "bindings": [
+          { "name": "SESSION_RELAY", "class_name": "SessionRelay" },
+          { "name": "ATTACH_RELAY", "class_name": "AttachRelay" }
+        ]
       },
       // Lease sweep (design §4.3): reclaim lapsed sessions + destroy sandboxes.
       "triggers": {
@@ -81,7 +96,10 @@
         "ENVIRONMENT": "prod"
       },
       "durable_objects": {
-        "bindings": [{ "name": "SESSION_RELAY", "class_name": "SessionRelay" }]
+        "bindings": [
+          { "name": "SESSION_RELAY", "class_name": "SessionRelay" },
+          { "name": "ATTACH_RELAY", "class_name": "AttachRelay" }
+        ]
       },
       "triggers": {
         "crons": ["*/5 * * * *"]

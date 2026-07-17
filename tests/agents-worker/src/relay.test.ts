@@ -169,3 +169,146 @@ describe("agents-worker body-facing relay routes (#466)", () => {
     expect((await route(relayReq(f, "GET", "inputs/ack"), env, f.deps)).status).toBe(405);
   });
 });
+
+// ── AN1 (saas-agents-native): session-epoch routing + the WS door ──────────
+
+import { chooseRelayNamespace } from "@agents-worker/relay-epoch";
+
+function mockNamespace(capture: Captured[], body: unknown = { ok: true }, label = "ns"): NonNullable<Env["SESSION_RELAY"]> {
+  return {
+    label,
+    idFromName: (name: string) => ({ name }),
+    get: () => ({
+      fetch: async (req: Request) => {
+        capture.push({ url: new URL(req.url).pathname + new URL(req.url).search, method: req.method });
+        return Response.json(body);
+      },
+    }),
+  } as unknown as NonNullable<Env["SESSION_RELAY"]>;
+}
+
+describe("AN1: session-epoch relay routing (lock 7)", () => {
+  const oldNs = mockNamespace([], {}, "old");
+  const newNs = mockNamespace([], {}, "new");
+
+  it("routes everything to the SDK class when no cutover is set", () => {
+    const env: Env = { ...baseEnv, SESSION_RELAY: oldNs, ATTACH_RELAY: newNs };
+    expect(chooseRelayNamespace(env, "2026-01-01T00:00:00Z")).toBe(newNs);
+    expect(chooseRelayNamespace(env)).toBe(newNs);
+  });
+
+  it("drains pre-cutover sessions on the old class, lands new ones on the SDK class", () => {
+    const env: Env = {
+      ...baseEnv,
+      SESSION_RELAY: oldNs,
+      ATTACH_RELAY: newNs,
+      RELAY_CUTOVER_AT: "2026-07-01T00:00:00Z",
+    };
+    expect(chooseRelayNamespace(env, "2026-06-30T23:59:59Z")).toBe(oldNs);
+    expect(chooseRelayNamespace(env, "2026-07-01T00:00:00Z")).toBe(newNs);
+    expect(chooseRelayNamespace(env, "2026-07-15T12:00:00Z")).toBe(newNs);
+  });
+
+  it("falls back to whichever single class is bound", () => {
+    expect(chooseRelayNamespace({ ...baseEnv, SESSION_RELAY: oldNs })).toBe(oldNs);
+    expect(chooseRelayNamespace({ ...baseEnv, ATTACH_RELAY: newNs })).toBe(newNs);
+    expect(chooseRelayNamespace({ ...baseEnv })).toBeNull();
+  });
+});
+
+describe("AN1: the attach door (WS upgrade + SSE fallback)", () => {
+  function headReq(f: Fixture, opts?: { upgrade?: boolean; sessionId?: string }): Request {
+    const headers: Record<string, string> = {
+      "x-actor-subject-id": "usr_alice",
+      "x-actor-subject-type": "user",
+    };
+    if (opts?.upgrade) headers["upgrade"] = "websocket";
+    return new Request(
+      `https://agents-worker/v1/organizations/${ORG}/agents/sessions/${opts?.sessionId ?? f.sessionId}/attach?from=-1&surface=console`,
+      { method: "GET", headers },
+    );
+  }
+
+  it("forwards a WS upgrade to the SDK class with the edge-stamped principal on the URL", async () => {
+    const f = await fixture();
+    const capture: Captured[] = [];
+    const env: Env = { ...baseEnv, ATTACH_RELAY: mockNamespace(capture) };
+    const res = await route(headReq(f, { upgrade: true }), env, f.deps);
+    expect(res.status).toBe(200);
+    expect(capture).toHaveLength(1);
+    expect(capture[0]!.url).toBe("/attach?from=-1&surface=console&principal=usr_alice");
+  });
+
+  it("refuses the upgrade (426) when the session drains on the KV class — the client falls back to SSE", async () => {
+    const f = await fixture();
+    const capture: Captured[] = [];
+    const env: Env = {
+      ...baseEnv,
+      SESSION_RELAY: mockNamespace(capture),
+      ATTACH_RELAY: mockNamespace(capture),
+      RELAY_CUTOVER_AT: "2099-01-01T00:00:00Z", // every session pre-dates it
+    };
+    const res = await route(headReq(f, { upgrade: true }), env, f.deps);
+    expect(res.status).toBe(426);
+    expect(capture).toHaveLength(0);
+
+    // The same session's plain GET still gets its SSE feed from the old class.
+    const sse = await route(headReq(f), env, f.deps);
+    expect(sse.status).toBe(200);
+    expect(capture).toHaveLength(1);
+  });
+
+  it("404s an attach to a session that does not exist (no phantom DO)", async () => {
+    const f = await fixture();
+    const env: Env = { ...baseEnv, ATTACH_RELAY: mockNamespace([]) };
+    const res = await route(headReq(f, { sessionId: "as_missing" }), env, f.deps);
+    expect(res.status).toBe(404);
+  });
+});
+
+describe("AN1: the ingest mirror (the AL6 remainder, closed)", () => {
+  it("mirrors an accepted event batch to the relay DO as attach-v1 frames", async () => {
+    const f = await fixture();
+    const capture: Captured[] = [];
+    const bodies: unknown[] = [];
+    const ns = {
+      idFromName: (name: string) => ({ name }),
+      get: () => ({
+        fetch: async (req: Request) => {
+          capture.push({ url: new URL(req.url).pathname, method: req.method });
+          bodies.push(await req.json());
+          return Response.json({ accepted: 1 });
+        },
+      }),
+    } as unknown as NonNullable<Env["SESSION_RELAY"]>;
+    const env: Env = { ...baseEnv, ATTACH_RELAY: ns };
+
+    const res = await route(
+      relayReq(f, "POST", "events", {
+        body: [{ seq: 0, kind: "message_agent", payload: { text: "hi" }, at: "2026-07-17T00:00:00Z" }],
+      }),
+      env,
+      f.deps,
+    );
+    expect(res.status).toBe(200);
+    expect(capture.map((c) => `${c.method} ${c.url}`)).toEqual(["POST /events"]);
+    expect(bodies[0]).toEqual([
+      { v: 1, t: "event", seq: 0, kind: "message_agent", at: "2026-07-17T00:00:00Z", payload: { text: "hi" } },
+    ]);
+  });
+
+  it("a mirror failure never fails the ingest", async () => {
+    const f = await fixture();
+    const ns = {
+      idFromName: (name: string) => ({ name }),
+      get: () => ({
+        fetch: async () => {
+          throw new Error("relay down");
+        },
+      }),
+    } as unknown as NonNullable<Env["SESSION_RELAY"]>;
+    const env: Env = { ...baseEnv, ATTACH_RELAY: ns };
+    const res = await route(relayReq(f, "POST", "events", { body: [{ seq: 0, kind: "message_agent" }] }), env, f.deps);
+    expect(res.status).toBe(200);
+  });
+});

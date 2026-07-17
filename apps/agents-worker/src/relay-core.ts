@@ -169,6 +169,24 @@ export class RelayCore {
   }
 
   /**
+   * rejoin re-registers a head whose transport survived a DO eviction (a
+   * hibernated WebSocket, saas-agents-native AN1). The socket never dropped,
+   * so the head gets NO hello/replay/live — it is already live; frames could
+   * only have arrived on a wake, and every wake re-registers before ingest.
+   * The one AN addition to this class; everything AL6 sealed is untouched.
+   */
+  rejoin(sink: HeadSink): void {
+    if (this.closed) {
+      sink.send(byeFrame(ATTACH_ACK_REASONS.terminal));
+      sink.close();
+      return;
+    }
+    if (this.heads.has(sink.id)) return;
+    this.heads.set(sink.id, sink);
+    this.announcePresence();
+  }
+
+  /**
    * enqueueInput accepts a head→body input frame (steer/verdict/interrupt/end)
    * for the body's long-poll. Returns the ack once the body resolves it (or a
    * terminal ack immediately if the session is over). The DO awaits this to

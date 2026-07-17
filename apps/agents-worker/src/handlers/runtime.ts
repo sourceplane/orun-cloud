@@ -20,6 +20,8 @@ import type { ActorContext } from "../router.js";
 import type { AgentSession } from "@saas/db/agents";
 import { AgentsError, isTerminal } from "@saas/db/agents";
 import { envelopeCrossings } from "../budget.js";
+import { relayStubFor } from "../relay-epoch.js";
+import { eventFrame } from "@saas/contracts/agents-attach";
 import { errorResponse, notFound, successResponse, validationError } from "../http.js";
 import { toPublicSession } from "../mappers.js";
 import { uuidToHex } from "@saas/db/ids";
@@ -147,6 +149,37 @@ export async function handleIngestSessionEvent(
     throw e;
   }
 
+  // Live-tail mirror (saas-agents-native AN1, closing the AL6 remainder):
+  // the durable batch fans out to the session's relay DO as attach-v1 event
+  // frames, so attached heads see events the moment they land — the DB write
+  // above stays the system of record; the DO ingest dedupes by seq. Best
+  // effort: a mirror failure never fails an ingest (the console still reads
+  // the DB; a head re-attach replays from the mirror's next success).
+  try {
+    const stub = env ? relayStubFor(env, sessionId, gate.session.createdAt) : null;
+    if (stub) {
+      const frames = events.map((raw) => {
+        const e = raw as Record<string, unknown>;
+        return eventFrame(
+          e.seq as number,
+          e.kind as string,
+          typeof e.at === "string" ? e.at : "",
+          typeof e.payload === "object" && e.payload !== null ? (e.payload as Record<string, unknown>) : undefined,
+          typeof e.ref === "string" ? e.ref : undefined,
+        );
+      });
+      await stub.fetch(
+        new Request("https://relay/events", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(frames),
+        }),
+      );
+    }
+  } catch {
+    // Mirror is a projection; the sealed log already has the events.
+  }
+
   // Metering (saas-agents-live AL9, closing AG10's remainder): tokens from
   // cost samples, minutes on the terminal transition. Fire-and-forget — a
   // lost sample is a reconciliation problem, never a failed ingest.
@@ -173,9 +206,9 @@ export async function handleIngestSessionEvent(
         deps.repo.listSessions({ orgId }),
       ]);
       const crossing = envelopeCrossings(budgets, sessions, updated, prev);
-      if (crossing && env?.SESSION_RELAY) {
-        const stub = env.SESSION_RELAY.get(env.SESSION_RELAY.idFromName(sessionId));
-        await stub.fetch(
+      const bstub = crossing && env ? relayStubFor(env, sessionId, gate.session.createdAt) : null;
+      if (crossing && bstub) {
+        await bstub.fetch(
           new Request("https://relay/input", {
             method: "POST",
             headers: {
