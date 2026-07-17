@@ -68,10 +68,13 @@ export const INTEGRATION_PROVIDERS: readonly IntegrationProvider[] = [
     id: "cloudflare",
     name: "Cloudflare",
     description:
-      "Authorize once — Orun provisions its own service identity in your account (your login is discarded), then plans mint short-lived, scoped child tokens for Workers, Pages, DNS, and R2 on demand.",
+      "Paste an account API token once — it becomes Orun's org-owned service identity (no tie to anyone's login), and plans mint short-lived, scoped child tokens for Workers, Pages, DNS, and R2 on demand.",
     status: "available",
     archetype: "infrastructure",
-    connectKind: "oauth",
+    // SI-D1 resolved (2026-07-17): Cloudflare's OAuth scope catalog has no
+    // token-administration scope, so an OAuth grant can never provision the
+    // service identity — token-paste IS the Cloudflare bootstrap.
+    connectKind: "token",
     icon: "Cloud",
   },
   {

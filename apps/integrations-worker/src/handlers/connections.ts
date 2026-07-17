@@ -38,6 +38,7 @@ import { getConfiguredProvider } from "../providers/registry.js";
 import { createEncryptionAdapter, type CiphertextEnvelope } from "../encryption.js";
 import { revokeLiveMintsForConnection } from "./credential-broker.js";
 import { handleCloudflareTokenConnect } from "./cloudflare-connect.js";
+import { CLOUDFLARE_OAUTH_CAN_PROVISION } from "../providers/cloudflare.js";
 import { computeCodeChallenge, generateCodeVerifier } from "../pkce.js";
 import {
   CONNECT_STATE_TTL_MS,
@@ -279,15 +280,16 @@ export async function handleConnectIntegration(
   // Token-kind connect (IH5): no state round-trip, no popup — verify the
   // paste, store custody, activate, all in this request.
   //
-  // SI-D1 remediation: a pasted parentToken in the request ALWAYS takes the
-  // token path for Cloudflare, even when the environment is OAuth-kind. Some
-  // OAuth grants cannot create account API tokens (Cloudflare does not expose
-  // token administration to OAuth clients), and the provisioning failure
-  // popup directs the admin to the paste posture — which must therefore be
-  // reachable regardless of the configured connect kind.
+  // SI-D1 RESOLVED (verified against the live OAuth scope catalog,
+  // 2026-07-17): Cloudflare's catalog has no token-administration scope, so
+  // an OAuth grant can NEVER create the service token — OAuth cannot
+  // bootstrap this provider. Cloudflare connects therefore always take the
+  // token path regardless of whether an OAuth client is configured; the
+  // gate flips back automatically via CLOUDFLARE_OAUTH_CAN_PROVISION if
+  // Cloudflare ever ships the scope.
   if (
     provider.connectKind === "token" ||
-    (providerId === "cloudflare" && typeof parentToken === "string" && parentToken)
+    (providerId === "cloudflare" && !CLOUDFLARE_OAUTH_CAN_PROVISION)
   ) {
     return handleCloudflareTokenConnect(
       env,

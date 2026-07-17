@@ -26,7 +26,9 @@ describe("integration providers catalog", () => {
     const byId = new Map(INTEGRATION_PROVIDERS.map((p) => [p.id, p]));
     expect(byId.get("github")).toMatchObject({ archetype: "source-control", connectKind: "install" });
     expect(byId.get("slack")).toMatchObject({ archetype: "messaging", connectKind: "oauth" });
-    expect(byId.get("cloudflare")).toMatchObject({ archetype: "infrastructure", connectKind: "oauth" });
+    // SI-D1 resolved: Cloudflare's OAuth scope catalog has no
+    // token-administration scope, so paste is the bootstrap.
+    expect(byId.get("cloudflare")).toMatchObject({ archetype: "infrastructure", connectKind: "token" });
     expect(byId.get("supabase")).toMatchObject({ archetype: "infrastructure", connectKind: "oauth" });
     expect(byId.get("discord")?.archetype).toBe("messaging");
     expect(byId.get("aws")?.archetype).toBe("infrastructure");
@@ -50,7 +52,7 @@ describe("integration providers catalog", () => {
     // The cards state the service-identity contract: authorize once, Orun
     // provisions/custodies its own credential, the human's login is not kept.
     expect(providerById("cloudflare")?.description).toMatch(/service identity/i);
-    expect(providerById("cloudflare")?.description).toMatch(/login is discarded/i);
+    expect(providerById("cloudflare")?.description).toMatch(/no tie to anyone's login/i);
     expect(providerById("cloudflare")?.description).toMatch(/short-lived/i);
     expect(providerById("supabase")?.description).toMatch(/org-owned/i);
     expect(providerById("supabase")?.description).toMatch(/without touching anyone's login/i);
