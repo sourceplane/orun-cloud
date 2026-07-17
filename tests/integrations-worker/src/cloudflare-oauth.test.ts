@@ -12,6 +12,7 @@ import {
   CLOUDFLARE_DEFAULT_OAUTH_SCOPE,
   createCloudflareProvider,
   exchangeCloudflareOauthCode,
+  OAUTH_SCOPE_BY_PERMISSION_GROUP,
   refreshCloudflareAccess,
   resolveCloudflareOauthScope,
   serviceIdentityPermissionGroups,
@@ -274,11 +275,13 @@ describe("cloudflare OAuth adapter (IH5 / D3)", () => {
     );
   });
 
-  it("defaults to account discovery scopes + offline_access when none is requested", () => {
-    // A self-managed client grants the token ONLY the requested scopes, and a
-    // request of only offline_access yields "0 permissions" and fails consent.
-    // So the default requests account-settings.read + memberships.read (account
-    // discovery, ≥1 permission) in the client's dot-form, plus offline_access.
+  it("defaults to the FULL provisioning scope set when none is requested", () => {
+    // A self-managed client grants the token ONLY the requested scopes — the
+    // live SI-D1 incident: a 2-permission consent made an account OWNER's
+    // grant unable to create tokens. So the default requests account
+    // discovery PLUS the dot-form twin of every service-identity permission
+    // group, so an unset CLOUDFLARE_OAUTH_SCOPE yields a consent whose grant
+    // can actually provision.
     const url = new URL(
       buildCloudflareAuthorizeUrl({
         clientId: "cf-cid",
@@ -286,10 +289,19 @@ describe("cloudflare OAuth adapter (IH5 / D3)", () => {
         redirectUri: `${REDIRECT_BASE}/ingress/cloudflare/oauth`,
       }),
     );
-    expect(url.searchParams.get("scope")).toBe(
-      "account-settings.read memberships.read offline_access",
-    );
-    expect(CLOUDFLARE_DEFAULT_OAUTH_SCOPE).toBe("account-settings.read memberships.read");
+    const scopes = url.searchParams.get("scope")!.split(" ");
+    expect(scopes).toContain("account-settings.read");
+    expect(scopes).toContain("memberships.read");
+    expect(scopes).toContain("account-api-tokens.write");
+    expect(scopes[scopes.length - 1]).toBe("offline_access");
+
+    // Every permission group the provisioner requires has its scope twin in
+    // the default — the map and the group union can never drift apart.
+    for (const group of serviceIdentityPermissionGroups()) {
+      const scope = OAUTH_SCOPE_BY_PERMISSION_GROUP[group];
+      expect(scope).toBeTruthy();
+      expect(CLOUDFLARE_DEFAULT_OAUTH_SCOPE.split(" ")).toContain(scope!);
+    }
   });
 
   describe("resolveCloudflareOauthScope", () => {
@@ -308,12 +320,12 @@ describe("cloudflare OAuth adapter (IH5 / D3)", () => {
       );
     });
 
-    it("uses the offline_access default for blank/undefined input", () => {
+    it("uses the provisioning default (+offline_access) for blank/undefined input", () => {
       expect(resolveCloudflareOauthScope()).toBe(
-        "account-settings.read memberships.read offline_access",
+        `${CLOUDFLARE_DEFAULT_OAUTH_SCOPE} offline_access`,
       );
       expect(resolveCloudflareOauthScope("   ")).toBe(
-        "account-settings.read memberships.read offline_access",
+        `${CLOUDFLARE_DEFAULT_OAUTH_SCOPE} offline_access`,
       );
     });
   });
