@@ -142,6 +142,62 @@ export interface CredentialBrokerCapability {
   ): Promise<boolean>;
 }
 
+// ── Service-identity provisioning (SI, sub-epics/service-identity-bootstrap) ──
+
+/** A provisioned provider-side service identity: the durable, org-owned
+ *  operating credential that replaces user-derived OAuth custody. */
+export interface ProvisionedServiceIdentity {
+  /** The credential value to envelope into custody. Never logged. */
+  credential: string;
+  /** Custody kind the credential must be stored under
+   *  (e.g. "cloudflare_service_token"). */
+  kind: string;
+  /** Provider-side id of the identity (verify/rotate/revoke anchor). */
+  externalRef: string | null;
+  /** Provider-side expiry, when the identity has one (null = durable). */
+  expiresAt: Date | null;
+  /** Verified grant at provisioning time (safe metadata, not the secret). */
+  scopes?: unknown[] | null;
+}
+
+export type ProvisionOutcome =
+  | { ok: true; value: ProvisionedServiceIdentity }
+  | {
+      ok: false;
+      /** Stable machine-readable reason. `bootstrap_grant_insufficient` =
+       *  the bootstrap credential cannot create a service identity (SI-D1's
+       *  guided-paste fallback branch); `provider_error` = transport/API. */
+      reason: "not_implemented" | "bootstrap_grant_insufficient" | "provider_error";
+      detail?: string;
+    };
+
+/**
+ * Service-identity lifecycle (SI2+): OAuth establishes trust once, then the
+ * adapter provisions a provider-owned identity the platform operates with.
+ * The BOOTSTRAP credential (an OAuth access token, a management session) is
+ * handed in per call and must never be persisted by the adapter; the caller
+ * deletes identity-class custody once provisioning succeeds.
+ */
+export interface ProvisionCapability {
+  /** Create the provider-side service identity from a bootstrap credential. */
+  provisionServiceIdentity(input: {
+    /** Decrypted bootstrap credential (identity-class). Never logged. */
+    bootstrapCredential: string;
+    /** Provider-side anchor (e.g. Cloudflare account external id). */
+    externalRef: string | null;
+    /** Provider-side display name, `orun/{org}/service`. */
+    identityRef: string;
+    nowMs: number;
+  }): Promise<ProvisionOutcome>;
+  /** Scheduled re-issue of the identity's secret material — no human. */
+  rotateServiceIdentity(input: {
+    current: ParentCredentialContext;
+    nowMs: number;
+  }): Promise<ProvisionOutcome>;
+  /** Best-effort provider-side delete on connection revoke. */
+  revokeServiceIdentity(current: ParentCredentialContext, nowMs: number): Promise<boolean>;
+}
+
 /** Channel discovery for the messaging archetype (IH2). Message DELIVERY is
  *  deliberately NOT here — it stays behind the ES ChannelProvider seam in
  *  notifications-worker (design §4.2, the custody/delivery split). The
@@ -169,6 +225,9 @@ export interface IntegrationProvider {
   inbound?: InboundCapability;
   broker?: CredentialBrokerCapability;
   messaging?: MessagingCapability;
+  /** Service-identity lifecycle (SI2+); dormant until an adapter implements
+   *  it. Not surfaced in `capabilities` until it goes live per provider. */
+  provision?: ProvisionCapability;
 
   // ── Connect (IG1) — install-kind legacy surface ───────────
   // These remain the live GitHub connect path; the token connect kind lands
@@ -200,7 +259,7 @@ export interface IntegrationProvider {
 }
 
 /** Narrow an adapter to a capability, or null (typed 4xx at the handler). */
-export function getCapability<K extends "inbound" | "broker" | "messaging">(
+export function getCapability<K extends "inbound" | "broker" | "messaging" | "provision">(
   provider: IntegrationProvider,
   capability: K,
 ): NonNullable<IntegrationProvider[K]> | null {

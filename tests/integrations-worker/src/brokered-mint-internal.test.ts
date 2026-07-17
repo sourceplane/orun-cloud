@@ -361,11 +361,13 @@ describe("POST /internal/credentials/mint", () => {
     expect(data.value).toBe("cf-child-token-SECRET");
     expect((data.mint as Record<string, unknown>).purpose).toBe("secret_resolve");
     // Ledger columns: (id, org, connection, provider, template, params,
-    // purpose, requested_by, run_id, job_id, ttl, provider_ref, expires_at).
+    // purpose, parent_kind, requested_by, run_id, job_id, ttl, provider_ref,
+    // expires_at).
     expect(ledgerInsert[6]).toBe("secret_resolve");
-    expect(ledgerInsert[7]).toBe("usr_runner");
-    expect(ledgerInsert[8]).toBe("run_1");
-    expect(ledgerInsert[9]).toBe("job_1");
+    expect(ledgerInsert[7]).toBe("cloudflare_parent_token");
+    expect(ledgerInsert[8]).toBe("usr_runner");
+    expect(ledgerInsert[9]).toBe("run_1");
+    expect(ledgerInsert[10]).toBe("job_1");
     // Events never carry the value.
     for (const q of queries.filter((q) => q.text.includes("WITH inserted_event"))) {
       expect(JSON.stringify(q.params)).not.toContain("cf-child-token-SECRET");

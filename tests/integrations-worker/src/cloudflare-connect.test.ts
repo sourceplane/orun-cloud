@@ -336,8 +336,8 @@ describe("POST …/integrations/cloudflare/connect (token paste)", () => {
       if (text.includes("INSERT INTO integrations.provider_credentials")) {
         custodyInsert = params;
         return [{
-          id: "cred", connection_id: params[1], kind: params[2], ciphertext: params[3],
-          external_ref: params[5], created_at: NOW.toISOString(), updated_at: NOW.toISOString(),
+          id: "cred", connection_id: params[1], kind: params[2], credential_class: params[3], ciphertext: params[4],
+          external_ref: params[6], created_at: NOW.toISOString(), updated_at: NOW.toISOString(),
         }];
       }
       if (text.includes("INSERT INTO integrations.cloudflare_accounts")) {
@@ -376,8 +376,8 @@ describe("POST …/integrations/cloudflare/connect (token paste)", () => {
     // Custody: the envelope decrypts back to the paste; the raw value is
     // never stored, and the account id anchors future mints.
     expect(custodyInsert[2]).toBe("cloudflare_parent_token");
-    expect(custodyInsert[5]).toBe(ACCOUNT_ID);
-    const ciphertext = custodyInsert[3] as string;
+    expect(custodyInsert[6]).toBe(ACCOUNT_ID);
+    const ciphertext = custodyInsert[4] as string;
     expect(ciphertext).not.toContain(PARENT_TOKEN);
     const adapter = (await createEncryptionAdapter(KEY))!;
     expect(await adapter.decrypt(JSON.parse(ciphertext))).toBe(PARENT_TOKEN);
@@ -448,8 +448,8 @@ describe("cloudflare token re-auth (IH9)", () => {
       if (text.includes("INSERT INTO integrations.provider_credentials")) {
         custodyInsert = params;
         return [{
-          id: "cred", connection_id: params[1], kind: params[2], ciphertext: params[3],
-          external_ref: params[5], created_at: NOW.toISOString(), updated_at: NOW.toISOString(),
+          id: "cred", connection_id: params[1], kind: params[2], credential_class: params[3], ciphertext: params[4],
+          external_ref: params[6], created_at: NOW.toISOString(), updated_at: NOW.toISOString(),
         }];
       }
       if (text.includes("INSERT INTO integrations.cloudflare_accounts")) {
@@ -594,8 +594,8 @@ describe("mint via broker core (cloudflare)", () => {
         ledgerInsert = params;
         return [{
           id: params[0], org_id: ORG_UUID, connection_id: CONNECTION_UUID, provider: "cloudflare",
-          template: "workers-deploy", purpose: "api", ttl_seconds: params[10],
-          provider_ref: params[11], minted_at: NOW.toISOString(),
+          template: "workers-deploy", purpose: "api", ttl_seconds: params[11],
+          provider_ref: params[12], minted_at: NOW.toISOString(),
           expires_at: new Date(NOW.getTime() + 900_000).toISOString(), revoke_status: "pending",
           created_at: NOW.toISOString(), updated_at: NOW.toISOString(),
         }];
@@ -621,6 +621,6 @@ describe("mint via broker core (cloudflare)", () => {
     const name = String(create!.body!.name);
     expect(name).toMatch(/^orun\/org_[0-9a-f]{32}\/workers-deploy\/mint_[0-9a-f]{32}$/);
     expect(name).toContain(`mint_${String(ledgerInsert[0]).replace(/-/g, "")}`);
-    expect(ledgerInsert[11]).toBe("child-token-id"); // provider_ref
+    expect(ledgerInsert[12]).toBe("child-token-id"); // provider_ref
   });
 });

@@ -18,13 +18,17 @@ import { generateUuid } from "./ids.js";
 
 /**
  * Providers whose mints derive from a parent credential in custody, and the
- * candidate custody kinds to try IN ORDER. Cloudflare has two postures (risks
- * D3): the OAuth refresh token (preferred) or the pasted parent token —
- * `readParentCredential` returns whichever exists for the connection, plus the
- * kind it resolved so a rotation can re-envelope the SAME kind.
+ * candidate custody kinds to try IN ORDER. Service identities first (SI1,
+ * sub-epics/service-identity-bootstrap): the provisioned account-owned
+ * service token, then the pasted parent token, then — dual-read during the
+ * SI3 rollout — the deprecated user-derived refresh token. A connection that
+ * has been upgraded (or freshly provisioned) never touches its refresh
+ * custody again; an un-migrated connection behaves exactly as before.
+ * `readParentCredential` returns whichever exists for the connection, plus
+ * the kind it resolved so a rotation can re-envelope the SAME kind.
  */
 export const PARENT_CREDENTIAL_KIND_CANDIDATES: Record<string, readonly ProviderCredentialKind[]> = {
-  cloudflare: ["cloudflare_refresh_token", "cloudflare_parent_token"],
+  cloudflare: ["cloudflare_service_token", "cloudflare_parent_token", "cloudflare_refresh_token"],
   supabase: ["supabase_refresh_token"],
 };
 
@@ -58,7 +62,10 @@ export async function readParentCredential(
           JSON.parse(credential.value.ciphertext) as CiphertextEnvelope,
         ),
         externalRef: credential.value.externalRef,
-        kind,
+        // The custody ROW is authoritative for the kind (it equals the probed
+        // candidate in production; being explicit keeps rotation re-envelope
+        // and the SI1 ledger parent_kind honest).
+        kind: credential.value.kind,
       };
     } catch {
       // Unreadable envelope for a present row — fail closed rather than fall

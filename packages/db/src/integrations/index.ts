@@ -37,6 +37,7 @@ export { createIntegrationsRepository } from "./repository.js";
 // per-provider facts. Additive module beside the IG repository.
 export type {
   ProviderCredentialKind,
+  ProviderCredentialClass,
   ProviderCredential,
   UpsertProviderCredentialInput,
   MintPurpose,
@@ -55,4 +56,4 @@ export type {
   IntegrationHubRepository,
 } from "./hub.js";
 
-export { createIntegrationHubRepository } from "./hub.js";
+export { createIntegrationHubRepository, CREDENTIAL_CLASS_BY_KIND } from "./hub.js";

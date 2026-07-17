@@ -455,13 +455,13 @@ describe("GET /ingress/slack/oauth", () => {
     );
     expect(credentialInsert).toBeDefined();
     expect(credentialInsert!.params[2]).toBe("slack_bot_token");
-    const ciphertext = credentialInsert!.params[3] as string;
+    const ciphertext = credentialInsert!.params[4] as string;
     expect(ciphertext).not.toContain("xoxb-test-token");
     const envelope = JSON.parse(ciphertext) as CiphertextEnvelope;
     expect(envelope.alg).toBe("AES-256-GCM");
     const adapter = await createEncryptionAdapter(ENCRYPTION_KEY);
     expect(await adapter!.decrypt(envelope)).toBe("xoxb-test-token");
-    expect(credentialInsert!.params[5]).toBe("T0TEAM"); // external_ref = team id
+    expect(credentialInsert!.params[6]).toBe("T0TEAM"); // external_ref = team id
 
     // Workspace facts bound to the connection from OUR state.
     const workspaceInsert = queries.find((q) =>
@@ -556,7 +556,7 @@ describe("GET /ingress/slack/oauth", () => {
       }
       if (text.includes("INSERT INTO integrations.provider_credentials")) {
         custodyInserts.push(params);
-        return [{ id: "cred", connection_id: params[1], kind: params[2], ciphertext: params[3], external_ref: params[5], created_at: NOW.toISOString(), updated_at: NOW.toISOString() }];
+        return [{ id: "cred", connection_id: params[1], kind: params[2], credential_class: params[3], ciphertext: params[4], external_ref: params[6], created_at: NOW.toISOString(), updated_at: NOW.toISOString() }];
       }
       if (text.includes("INSERT INTO integrations.slack_workspaces")) {
         return [workspaceRow({ connection_id: EXISTING_UUID })];

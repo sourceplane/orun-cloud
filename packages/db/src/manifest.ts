@@ -759,5 +759,14 @@ export const manifest: MigrationManifest = {
       description:
         "Cloudflare OAuth custody support (saas-integration-hub IH5, risks D3): the provider_credentials kind CHECK widens to admit cloudflare_refresh_token (the durable OAuth grant, twin of supabase_refresh_token) and cloudflare_pkce_verifier (the server-side PKCE code_verifier, deleted the moment the exchange consumes it). Cloudflare shipped OAuth clients for the API, so the connect posture upgrades from token-paste to connectKind 'oauth' (PKCE) like Supabase; token-paste (cloudflare_parent_token) stays as the configured fallback. Guarded CHECK swap (auto-named inline constraint, the 720 lesson); idempotent.",
     },
+    {
+      id: "840_service_identity_custody",
+      context: "integrations",
+      path: "840_service_identity_custody/up.sql",
+      checksum:
+        "f7ffbe8fa042022eb3d80310ee85d8d0a4abbeb87652c3a057b87316fa24765a",
+      description:
+        "Service-identity custody substrate (service-identity-bootstrap SI1): provider_credentials.kind admits cloudflare_service_token (the durable account-owned API token Orun provisions for itself at bootstrap, replacing the user-derived refresh token as operating custody) and supabase_project_secret (per-project secret keys enveloped as one encrypted JSON map per connection); provider_credentials.credential_class discriminates identity (bootstrap-only, deleted after provisioning) from infrastructure (durable, platform-rotated), backfilled from kind; minted_credentials.parent_kind records which custody kind authorized each mint — the SI3/SI5 deprecation metric. Guarded CHECK swaps; additive + idempotent.",
+    },
   ],
 };

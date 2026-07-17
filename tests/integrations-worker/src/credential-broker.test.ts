@@ -310,7 +310,7 @@ describe("POST …/credentials (mint)", () => {
       if (text.includes("FROM integrations.provider_credentials")) return [CUSTODY_ROW];
       if (text.includes("INSERT INTO integrations.minted_credentials")) {
         ledgerInsert = params;
-        return [mintRow({ ttl_seconds: params[10] })];
+        return [mintRow({ ttl_seconds: params[11], parent_kind: params[7] })];
       }
       return [];
     });
@@ -325,7 +325,9 @@ describe("POST …/credentials (mint)", () => {
     expect(data.mint.id).toBe(MINT_PUBLIC);
     // …the ledger + events never do.
     expect(ledgerInsert[4]).toBe("workers-deploy"); // template column
-    expect(ledgerInsert[10]).toBe(900); // ttl clamped to the template max (< 7200)
+    expect(ledgerInsert[7]).toBe("cloudflare_parent_token"); // parent_kind (SI1)
+    expect(ledgerInsert[11]).toBe(900); // ttl clamped to the template max (< 7200)
+    expect(data.mint.parentKind).toBe("cloudflare_parent_token");
     const eventInserts = queries.filter((q) => q.text.includes("WITH inserted_event"));
     expect(eventInserts.length).toBeGreaterThan(0);
     for (const q of eventInserts) {

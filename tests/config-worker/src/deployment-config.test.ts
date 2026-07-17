@@ -219,6 +219,10 @@ const ACKNOWLEDGED_BINDING_CYCLES = new Set([
   // pair. Fail-soft by design: a missing/undeployed config-worker fails the
   // reference check closed (non-forced revoke refused), never a crash.
   "integrations-worker -> config-worker", // mutual pair: config <-> integrations
+  // saas-agents-native (AN): chat-worker service-binds API_EDGE for tool
+  // execution while api-edge proxies /v1/…/chat to chat-worker — a mutual
+  // pair. Deploy the members together; fail-soft on the first convergence.
+  "api-edge -> chat-worker", // mutual pair: api-edge <-> chat-worker
 ]);
 
 describe("every wrangler service binding is a declared dependsOn edge", () => {

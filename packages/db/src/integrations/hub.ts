@@ -25,16 +25,39 @@ import type {
 export type ProviderCredentialKind =
   | "slack_bot_token"
   | "cloudflare_parent_token"
+  | "cloudflare_service_token"
   | "cloudflare_refresh_token"
   | "cloudflare_pkce_verifier"
   | "supabase_refresh_token"
   | "supabase_access_token_cache"
-  | "supabase_pkce_verifier";
+  | "supabase_pkce_verifier"
+  | "supabase_project_secret";
+
+/**
+ * Credential classes (service-identity-bootstrap SI1): identity credentials
+ * are bootstrap-only material (OAuth tokens, PKCE verifiers) that must not
+ * outlive provisioning; infrastructure credentials are the durable org-owned
+ * operating custody (service tokens, project secrets, bot tokens).
+ */
+export type ProviderCredentialClass = "identity" | "infrastructure";
+
+export const CREDENTIAL_CLASS_BY_KIND: Record<ProviderCredentialKind, ProviderCredentialClass> = {
+  slack_bot_token: "infrastructure",
+  cloudflare_parent_token: "infrastructure",
+  cloudflare_service_token: "infrastructure",
+  cloudflare_refresh_token: "identity",
+  cloudflare_pkce_verifier: "identity",
+  supabase_refresh_token: "identity",
+  supabase_access_token_cache: "identity",
+  supabase_pkce_verifier: "identity",
+  supabase_project_secret: "infrastructure",
+};
 
 export interface ProviderCredential {
   id: string;
   connectionId: string;
   kind: ProviderCredentialKind;
+  credentialClass: ProviderCredentialClass;
   /** AES-256-GCM envelope — never expose through a public API or log. */
   ciphertext: string;
   scopes: Record<string, unknown> | unknown[] | null;
@@ -67,6 +90,10 @@ export interface MintedCredential {
   template: string;
   params: Record<string, unknown> | null;
   purpose: MintPurpose;
+  /** Custody kind that authorized the mint (SI1) — null for parentless
+   *  providers and pre-SI1 rows. User-derived kinds here are the SI5
+   *  deprecation target. */
+  parentKind: ProviderCredentialKind | null;
   requestedBy: string | null;
   runId: string | null;
   jobId: string | null;
@@ -88,6 +115,7 @@ export interface InsertMintedCredentialInput {
   template: string;
   params?: Record<string, unknown> | null;
   purpose: MintPurpose;
+  parentKind?: ProviderCredentialKind | null;
   requestedBy?: string | null;
   runId?: string | null;
   jobId?: string | null;
@@ -301,10 +329,14 @@ function parseJson<T>(v: unknown): T | null {
 // ── Row mappers ─────────────────────────────────────────────
 
 function mapProviderCredential(row: Record<string, unknown>): ProviderCredential {
+  const kind = row.kind as ProviderCredentialKind;
   return {
     id: row.id as string,
     connectionId: row.connection_id as string,
-    kind: row.kind as ProviderCredentialKind,
+    kind,
+    // Pre-840 harness rows may lack the column; the kind mapping is authoritative.
+    credentialClass:
+      (row.credential_class as ProviderCredentialClass) ?? CREDENTIAL_CLASS_BY_KIND[kind] ?? "infrastructure",
     ciphertext: row.ciphertext as string,
     scopes: parseJson(row.scopes),
     externalRef: (row.external_ref as string) ?? null,
@@ -324,6 +356,7 @@ function mapMintedCredential(row: Record<string, unknown>): MintedCredential {
     template: row.template as string,
     params: parseJson(row.params),
     purpose: row.purpose as MintPurpose,
+    parentKind: (row.parent_kind as ProviderCredentialKind) ?? null,
     requestedBy: (row.requested_by as string) ?? null,
     runId: (row.run_id as string) ?? null,
     jobId: (row.job_id as string) ?? null,
@@ -411,9 +444,10 @@ export function createIntegrationHubRepository(executor: SqlExecutor): Integrati
       try {
         const result = await executor.execute(
           `INSERT INTO integrations.provider_credentials
-             (id, connection_id, kind, ciphertext, scopes, external_ref, expires_at)
-           VALUES ($1, $2, $3, $4, $5::jsonb, $6, $7)
+             (id, connection_id, kind, credential_class, ciphertext, scopes, external_ref, expires_at)
+           VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, $8)
            ON CONFLICT (connection_id, kind) DO UPDATE SET
+             credential_class = EXCLUDED.credential_class,
              ciphertext = EXCLUDED.ciphertext,
              scopes = EXCLUDED.scopes,
              external_ref = EXCLUDED.external_ref,
@@ -425,6 +459,7 @@ export function createIntegrationHubRepository(executor: SqlExecutor): Integrati
             input.id,
             input.connectionId,
             input.kind,
+            CREDENTIAL_CLASS_BY_KIND[input.kind] ?? "infrastructure",
             input.ciphertext,
             jsonOrNull(input.scopes),
             input.externalRef ?? null,
@@ -484,9 +519,9 @@ export function createIntegrationHubRepository(executor: SqlExecutor): Integrati
       try {
         const result = await executor.execute(
           `INSERT INTO integrations.minted_credentials
-             (id, org_id, connection_id, provider, template, params, purpose,
+             (id, org_id, connection_id, provider, template, params, purpose, parent_kind,
               requested_by, run_id, job_id, ttl_seconds, provider_ref, expires_at)
-           VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, $8, $9, $10, $11, $12, $13)
+           VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, $8, $9, $10, $11, $12, $13, $14)
            RETURNING *`,
           [
             input.id,
@@ -496,6 +531,7 @@ export function createIntegrationHubRepository(executor: SqlExecutor): Integrati
             input.template,
             jsonOrNull(input.params),
             input.purpose,
+            input.parentKind ?? null,
             input.requestedBy ?? null,
             input.runId ?? null,
             input.jobId ?? null,

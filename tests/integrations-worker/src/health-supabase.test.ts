@@ -195,9 +195,9 @@ describe("runSupabaseHealth", () => {
     expect(reEnvelope).toBeDefined();
     expect(reEnvelope!.params[1]).toBe(CONNECTION_UUID);
     expect(reEnvelope!.params[2]).toBe("supabase_refresh_token");
-    expect(reEnvelope!.params[5]).toBe("sb-org-ext-1");
+    expect(reEnvelope!.params[6]).toBe("sb-org-ext-1");
     const adapter = await createEncryptionAdapter(ENCRYPTION_KEY);
-    const envelope = JSON.parse(reEnvelope!.params[3] as string) as Parameters<
+    const envelope = JSON.parse(reEnvelope!.params[4] as string) as Parameters<
       NonNullable<typeof adapter>["decrypt"]
     >[0];
     await expect(adapter!.decrypt(envelope)).resolves.toBe("rotated-refresh");

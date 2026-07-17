@@ -102,6 +102,7 @@ export function toPublicMintedCredential(mint: MintedCredential): PublicMintedCr
     runId: mint.runId,
     jobId: mint.jobId,
     ttlSeconds: mint.ttlSeconds,
+    parentKind: mint.parentKind,
     mintedAt: mint.mintedAt.toISOString(),
     expiresAt: mint.expiresAt.toISOString(),
     revokedAt: mint.revokedAt ? mint.revokedAt.toISOString() : null,
@@ -449,6 +450,9 @@ async function executeMintCore(
     template: templateId,
     params: Object.keys(params).length > 0 ? params : null,
     purpose: attribution.purpose,
+    // SI1: record which custody kind authorized the mint — user-derived
+    // parent kinds here are the SI3/SI5 deprecation metric.
+    parentKind: parent?.kind ?? null,
     requestedBy: attribution.requestedBy,
     runId: attribution.runId ?? null,
     jobId: attribution.jobId ?? null,

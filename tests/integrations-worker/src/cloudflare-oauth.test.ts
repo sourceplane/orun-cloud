@@ -483,7 +483,7 @@ describe("POST …/integrations/cloudflare/connect (oauth posture)", () => {
       if (text.includes("INSERT INTO integrations.provider_credentials")) {
         custodyInsert = params;
         return [{
-          id: "pkce-row", connection_id: params[1], kind: params[2], ciphertext: params[3],
+          id: "pkce-row", connection_id: params[1], kind: params[2], credential_class: params[3], ciphertext: params[4],
           created_at: NOW.toISOString(), updated_at: NOW.toISOString(),
         }];
       }
@@ -507,7 +507,7 @@ describe("POST …/integrations/cloudflare/connect (oauth posture)", () => {
     // decrypts back to something that hashes to the challenge.
     expect(custodyInsert[2]).toBe("cloudflare_pkce_verifier");
     const adapter = (await createEncryptionAdapter(KEY))!;
-    const verifier = await adapter.decrypt(JSON.parse(custodyInsert[3] as string) as CiphertextEnvelope);
+    const verifier = await adapter.decrypt(JSON.parse(custodyInsert[4] as string) as CiphertextEnvelope);
     await expect(computeCodeChallenge(verifier)).resolves.toBe(challenge);
   });
 
@@ -585,8 +585,8 @@ describe("GET /ingress/cloudflare/oauth", () => {
       if (text.includes("INSERT INTO integrations.provider_credentials")) {
         credentialInsert = params;
         return [{
-          id: "cred-row", connection_id: CONNECTION_UUID, kind: params[2], ciphertext: params[3],
-          external_ref: params[5], created_at: NOW.toISOString(), updated_at: NOW.toISOString(),
+          id: "cred-row", connection_id: CONNECTION_UUID, kind: params[2], credential_class: params[3], ciphertext: params[4],
+          external_ref: params[6], created_at: NOW.toISOString(), updated_at: NOW.toISOString(),
         }];
       }
       if (text.includes("INSERT INTO integrations.cloudflare_accounts")) {
@@ -629,9 +629,9 @@ describe("GET /ingress/cloudflare/oauth", () => {
     // Custody: the REFRESH token (never the access token) as a real envelope,
     // anchored to the Cloudflare account id.
     expect(credentialInsert[2]).toBe("cloudflare_refresh_token");
-    expect(credentialInsert[5]).toBe(ACCOUNT_ID);
+    expect(credentialInsert[6]).toBe(ACCOUNT_ID);
     const adapter = (await createEncryptionAdapter(KEY))!;
-    const ciphertext = credentialInsert[3] as string;
+    const ciphertext = credentialInsert[4] as string;
     expect(ciphertext).not.toContain("cf-refresh-OLD");
     expect(await adapter.decrypt(JSON.parse(ciphertext) as CiphertextEnvelope)).toBe("cf-refresh-OLD");
 
