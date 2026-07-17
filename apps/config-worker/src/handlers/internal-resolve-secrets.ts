@@ -292,11 +292,18 @@ export async function handleInternalResolveSecrets(
           const reason = orphaned ? "binding_orphaned" : "binding_unavailable";
           const message = orphaned
             ? "Brokered secret is orphaned — its integration connection is no longer active"
-            : "Brokered secret binding unavailable";
+            : `Brokered secret binding unavailable (broker: ${outcome.reason})`;
           await auditDenied(eventsRepo, genId, now, body, subject, ref.key, reason, decisionId, head, requestId);
+          // `brokerReason` carries the broker's own typed failure slug
+          // (not_configured / limit_reached / parent_credential_missing /
+          // provider_error / unavailable / …) so a failed run names the exact
+          // cause instead of a generic "unavailable". Typed slugs only — never
+          // provider payloads, never a value.
           return errorResponse("precondition_failed", message, 412, requestId, {
             key: ref.key,
             reason,
+            brokerReason: outcome.reason,
+            brokerStatus: outcome.status,
             connectionId: pointer.provider.connectionId,
             decisionId,
           });

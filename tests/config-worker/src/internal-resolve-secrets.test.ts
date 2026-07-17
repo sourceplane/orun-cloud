@@ -321,9 +321,14 @@ describe("internal resolve — brokered head (IH7)", () => {
       }),
     );
     expect(res.status).toBe(412);
-    const json = (await res.json()) as { error: { code: string; details: { key: string; reason: string; connectionId: string; decisionId: string } } };
+    const json = (await res.json()) as { error: { code: string; message: string; details: { key: string; reason: string; brokerReason: string; connectionId: string; decisionId: string } } };
     expect(json.error.code).toBe("precondition_failed");
     expect(json.error.details.reason).toBe("binding_unavailable");
+    // The broker's own typed failure slug is carried through — in details for
+    // programmatic consumers AND in the message so a CLI that prints only the
+    // message still names the exact cause.
+    expect(json.error.details.brokerReason).toBe("provider_error");
+    expect(json.error.message).toContain("provider_error");
     expect(json.error.details.key).toBe("DATABASE_URL");
     expect(json.error.details.connectionId).toBe(CONNECTION_PUBLIC);
     expect(json.error.details.decisionId).toMatch(/^dec_/);
