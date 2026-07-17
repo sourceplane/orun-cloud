@@ -278,7 +278,17 @@ export async function handleConnectIntegration(
 
   // Token-kind connect (IH5): no state round-trip, no popup — verify the
   // paste, store custody, activate, all in this request.
-  if (provider.connectKind === "token") {
+  //
+  // SI-D1 remediation: a pasted parentToken in the request ALWAYS takes the
+  // token path for Cloudflare, even when the environment is OAuth-kind. Some
+  // OAuth grants cannot create account API tokens (Cloudflare does not expose
+  // token administration to OAuth clients), and the provisioning failure
+  // popup directs the admin to the paste posture — which must therefore be
+  // reachable regardless of the configured connect kind.
+  if (
+    provider.connectKind === "token" ||
+    (providerId === "cloudflare" && typeof parentToken === "string" && parentToken)
+  ) {
     return handleCloudflareTokenConnect(
       env,
       requestId,

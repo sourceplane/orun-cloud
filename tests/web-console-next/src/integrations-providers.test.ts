@@ -46,11 +46,14 @@ describe("integration providers catalog", () => {
     expect(providerById("gitlab")).toBeNull();
   });
 
-  it("describes the broker providers honestly (OAuth + short-lived mints)", () => {
-    expect(providerById("cloudflare")?.description).toMatch(/OAuth/i);
+  it("describes the broker providers honestly (service identities + org-owned custody, SI6)", () => {
+    // The cards state the service-identity contract: authorize once, Orun
+    // provisions/custodies its own credential, the human's login is not kept.
+    expect(providerById("cloudflare")?.description).toMatch(/service identity/i);
+    expect(providerById("cloudflare")?.description).toMatch(/login is discarded/i);
     expect(providerById("cloudflare")?.description).toMatch(/short-lived/i);
-    expect(providerById("supabase")?.description).toMatch(/OAuth/i);
-    expect(providerById("supabase")?.description).toMatch(/short-lived/i);
+    expect(providerById("supabase")?.description).toMatch(/org-owned/i);
+    expect(providerById("supabase")?.description).toMatch(/without touching anyone's login/i);
   });
 });
 

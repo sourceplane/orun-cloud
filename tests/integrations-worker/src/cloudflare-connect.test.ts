@@ -386,6 +386,54 @@ describe("POST …/integrations/cloudflare/connect (token paste)", () => {
     expect(factsInsert[2]).toBe(ACCOUNT_ID);
     expect(factsInsert[4]).toBe("parent-token-id");
   });
+
+  it("a pasted parentToken takes the token path even in an OAuth-configured environment (SI-D1 remediation)", async () => {
+    // Some OAuth grants cannot create account API tokens; the provisioning
+    // failure directs the admin to paste — which must be reachable while the
+    // env advertises connectKind "oauth".
+    const api = cloudflareApi();
+    let custodyInsert: unknown[] = [];
+    const { executor, queries } = fakeExecutor((text, params) => {
+      if (text.includes("INSERT INTO integrations.connections")) {
+        return [connectionRow({ id: params[0] as string })];
+      }
+      if (text.includes("INSERT INTO integrations.provider_credentials")) {
+        custodyInsert = params;
+        return [{
+          id: "cred", connection_id: params[1], kind: params[2], credential_class: params[3], ciphertext: params[4],
+          external_ref: params[6], created_at: NOW.toISOString(), updated_at: NOW.toISOString(),
+        }];
+      }
+      if (text.includes("INSERT INTO integrations.cloudflare_accounts")) {
+        return [{
+          id: "facts", connection_id: params[1], account_external_id: params[2],
+          account_name: params[3], parent_token_ref: params[4], token_status: "active",
+          created_at: NOW.toISOString(), updated_at: NOW.toISOString(),
+        }];
+      }
+      if (text.includes("SET status = 'active'")) {
+        return [connectionRow({ status: "active", connected_at: NOW.toISOString() })];
+      }
+      return [];
+    });
+
+    const res = await handleConnectIntegration(
+      connectRequest({ parentToken: PARENT_TOKEN }),
+      createEnv({
+        CLOUDFLARE_OAUTH_CLIENT_ID: "cf-cid",
+        CLOUDFLARE_OAUTH_CLIENT_SECRET: "cf-cs",
+        OAUTH_REDIRECT_BASE_URL: "https://api-edge.test",
+      }),
+      "req_1", ACTOR, ORG_ID, "cloudflare", { executor, fetchImpl: api.fetchImpl },
+    );
+    expect(res.status).toBe(201);
+    const data = ((await res.json()) as { data: Record<string, unknown> }).data;
+    expect((data.connection as Record<string, unknown>).status).toBe("active");
+    // The paste path ran: parent-token custody, no PKCE verifier, no authorize URL.
+    expect(custodyInsert[2]).toBe("cloudflare_parent_token");
+    expect(data.installUrl).toBeUndefined();
+    expect(queries.some((q) => JSON.stringify(q.params).includes("cloudflare_pkce_verifier"))).toBe(false);
+  });
 });
 
 // ── Re-auth (IH9): a paste for an already-bound account ─────
