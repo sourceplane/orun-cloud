@@ -12,6 +12,14 @@ export interface Env {
    * refused rather than orphaning blind).
    */
   CONFIG_WORKER?: Fetcher;
+  /**
+   * Per-connection mint serialization (IH6 custody): the ConnectionMintLock
+   * Durable Object namespace. One instance per connection serializes the
+   * read-parent → provider-mint → re-envelope custody window so concurrent
+   * mints can't race a rotating parent's refresh. Optional — absent (older
+   * deploys / harnesses) the mint runs unlocked, the status-quo posture.
+   */
+  MINT_LOCKS?: DurableObjectNamespace;
   ENVIRONMENT: string;
 
   // ── Per-environment secrets (wrangler secret put; never vars) ──

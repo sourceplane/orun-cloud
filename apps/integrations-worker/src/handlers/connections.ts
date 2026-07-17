@@ -30,6 +30,7 @@ import {
 } from "../mappers.js";
 import { connectionPublicId, generateUuid, orgPublicId, parseOrgPublicId } from "../ids.js";
 import { classifyRevoke } from "../revoke-guard.js";
+import { connectionMintLockRunner, type MintLockRunner } from "../mint-lock.js";
 import { fetchBrokeredSecretsByConnection, type BrokeredRefsResult } from "../config-client.js";
 import { asUuid, uuidFromPublicId } from "@saas/db/ids";
 import { encodeCursor, parsePageParams } from "../pagination.js";
@@ -67,6 +68,9 @@ export interface HandlerDeps {
   /** brokered-orphan-safety (Feature 2): inject the reference lookup in tests;
    *  production wires fetchBrokeredSecretsByConnection over CONFIG_WORKER. */
   brokeredRefs?: (connectionPublicId: string) => Promise<BrokeredRefsResult>;
+  /** IH6 custody serialization seam (tests); production wires
+   *  connectionMintLockRunner over the MINT_LOCKS Durable Object namespace. */
+  mintLock?: MintLockRunner;
 }
 
 function resolveExecutor(env: Env, deps?: HandlerDeps): { executor: SqlExecutor; owned: boolean } {
@@ -584,19 +588,28 @@ export async function handleRevokeIntegration(
     // Revoke fan-out (IH4, design §5.1): sweep the connection's live mints —
     // best-effort provider-side revoke, ledger marked either way. Never
     // blocks the platform revoke.
-    try {
-      await revokeLiveMintsForConnection(
-        env,
-        executor,
-        connectionId,
-        existing.value.provider,
-        deps?.fetchImpl,
-      );
-    } catch {
-      // TTL is the backstop.
-    }
+    //
+    // IH6 custody serialization: the mint-sweep + zeroize below runs under
+    // the SAME per-connection lock as the mint path's read→mint→re-envelope,
+    // so an in-flight mint can't re-envelope a rotated parent AFTER the
+    // zeroize (resurrecting custody for a revoked connection). Revoke is
+    // never blockable by mint traffic: a lock timeout proceeds unlocked —
+    // the status flip above already stops NEW mints, so the window is only
+    // the mints already in flight.
+    const custodySweep = async (): Promise<void> => {
+      try {
+        await revokeLiveMintsForConnection(
+          env,
+          executor,
+          connectionId,
+          existing.value.provider,
+          deps?.fetchImpl,
+        );
+      } catch {
+        // TTL is the backstop.
+      }
 
-    if (existing.value.provider !== "github") {
+      if (existing.value.provider === "github") return;
       // Custody zeroize (design §3) for every custody-holding provider, plus
       // Slack's best-effort provider-side `auth.revoke` (decrypt-then-revoke
       // before the envelope rows are deleted). Cloudflare's parent token is
@@ -620,7 +633,14 @@ export async function handleRevokeIntegration(
         }
       }
       await hub.deleteProviderCredentials(connectionId);
-    } else {
+    };
+    const runLocked = deps?.mintLock ?? connectionMintLockRunner(env.MINT_LOCKS);
+    const swept = await runLocked(String(connectionId), custodySweep);
+    if (!swept.ok) {
+      await custodySweep();
+    }
+
+    if (existing.value.provider === "github") {
       // Best-effort GitHub-side uninstall (the inverse arrives via IG2 once the
       // inbound pipeline lands). Failure here never blocks the platform revoke.
       const installation = await repo.getGithubInstallationByConnectionId(connectionId);
