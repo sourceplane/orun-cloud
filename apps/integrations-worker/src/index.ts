@@ -9,6 +9,7 @@ import { runExpirySweep } from "./expiry-sweep.js";
 import { runCloudflareHealth } from "./health-cloudflare.js";
 import { runSupabaseHealth } from "./health-supabase.js";
 import { runOrphanSweep } from "./orphan-sweep.js";
+import { runServiceIdentityBackfill } from "./service-identity-backfill.js";
 import { createSqlExecutor } from "@saas/db/hyperdrive";
 
 /** Daily off-peak slot for the orphan reconcile sweep (IH9) — the same gate
@@ -80,6 +81,23 @@ export default {
           }
         } catch (err) {
           console.error(`[scheduled] supabase-health failed: ${String(err)}`);
+        }
+      }
+
+      // Phase 4b — service-identity backfill (SI3): hourly at :30 (offset
+      // from the health phase so the two custody-touching sweeps never share
+      // a tick). Upgrades refresh-token custody to the provisioned service
+      // token; self-quiesces once no user-derived custody remains.
+      if (utcMinute === 30) {
+        try {
+          const si = await runServiceIdentityBackfill(env, executor, { now: scheduledAt });
+          if (si.scanned > 0 || si.failures > 0) {
+            console.warn(
+              `[scheduled] service-identity-backfill: ${si.scanned} scanned, ${si.upgraded} upgraded, ${si.alreadyMigrated} already migrated, ${si.grantInsufficient} grant-insufficient, ${si.failures} failures`,
+            );
+          }
+        } catch (err) {
+          console.error(`[scheduled] service-identity-backfill failed: ${String(err)}`);
         }
       }
 

@@ -726,6 +726,10 @@ export const INTEGRATION_EVENT_TYPES = {
   // Brokered secret bindings (saas-integration-hub IH7).
   SECRET_BINDING_CREATED: "integration.secret_binding.created",
   SECRET_BINDING_REMOVED: "integration.secret_binding.removed",
+  // Service-identity bootstrap (sub-epics/service-identity-bootstrap SI3):
+  // a connection's custody upgraded from a user-derived identity credential
+  // to a provider-side service identity.
+  CONNECTION_UPGRADED: "integration.connection.upgraded",
 } as const;
 
 export type IntegrationEventType =
