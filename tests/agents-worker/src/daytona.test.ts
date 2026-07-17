@@ -139,6 +139,41 @@ describe("daytona sandbox adapter", () => {
     expect(calls.filter((c) => c.method === "POST").length).toBe(2);
   });
 
+  it("retries a toolbox 404 until the daemon registers its route (started ≠ toolbox ready)", async () => {
+    // The production regression this locks: Daytona reports the sandbox
+    // `started` a beat before the in-sandbox toolbox daemon registers its edge
+    // route, so the first /toolbox POST 404s for a short window. A single 404
+    // used to fail the whole spawn ("daytona POST toolbox: 404 from provider");
+    // it must be waited out instead.
+    let sessionHits = 0;
+    const { fetchImpl, calls } = fakeFetch((url, init) => {
+      if ((init.method ?? "GET") === "GET") return Response.json({ id: "sb_1", state: "started" });
+      if (url.endsWith("/process/session")) {
+        sessionHits++;
+        if (sessionHits < 3) return new Response("not found", { status: 404 });
+      }
+      return Response.json({});
+    });
+    const slept: number[] = [];
+    const p = createDaytonaProvider({ apiKey: "k", fetchImpl, sleepImpl: async (ms) => void slept.push(ms) });
+    await p.exec({ id: "sb_1", provider: "daytona" }, ["true"]);
+    expect(sessionHits).toBe(3); // two 404s absorbed, then the daemon answered
+    expect(slept).toEqual([2000, 2000]); // start poll never slept (already started); only the two retries
+    // and the real exec still went out once the toolbox was ready
+    expect(calls.some((c) => c.url.endsWith("/process/session/orun-agent/exec"))).toBe(true);
+  });
+
+  it("bounds the toolbox-readiness retry — a daemon that never registers fails, it does not spin forever", async () => {
+    const { fetchImpl } = fakeFetch((url, init) => {
+      if ((init.method ?? "GET") === "GET") return Response.json({ id: "sb_1", state: "started" });
+      return new Response("not found", { status: 404 });
+    });
+    let slept = 0;
+    const p = createDaytonaProvider({ apiKey: "k", fetchImpl, sleepImpl: async () => void slept++ });
+    await expect(p.exec({ id: "sb_1", provider: "daytona" }, ["true"])).rejects.toThrow("404 from provider");
+    expect(slept).toBe(30); // TOOLBOX_READY_POLL_MAX bounded attempts, then it gives up
+  });
+
   it("fails fast when the sandbox lands in a dead state instead of polling out the clock", async () => {
     const { fetchImpl } = fakeFetch(() => Response.json({ id: "sb_1", state: "error" }));
     const p = createDaytonaProvider({ apiKey: "k", fetchImpl, sleepImpl: async () => {} });
