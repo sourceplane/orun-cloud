@@ -9,9 +9,12 @@ import type { Env } from "./env.js";
 import { errorResponse, methodNotAllowed, notFound, successResponse } from "./http.js";
 import type { ChatMeta } from "./chat-thread.js";
 import type { ChatSummary } from "./chat-index.js";
+import type { MemoryRpc } from "./memory.js";
 import { uuidFromPublicId } from "@saas/db/ids";
 
 const CHATS_RE = /^\/v1\/organizations\/([^/]+)\/agents\/chats$/;
+const MEMORY_RE = /^\/v1\/organizations\/([^/]+)\/agents\/memory$/;
+const MEMORY_ENTRY_RE = /^\/v1\/organizations\/([^/]+)\/agents\/memory\/([^/]+)$/;
 const CHAT_RE = /^\/v1\/organizations\/([^/]+)\/agents\/chats\/([^/]+)$/;
 const CHAT_TURN_RE = /^\/v1\/organizations\/([^/]+)\/agents\/chats\/([^/]+)\/turn$/;
 
@@ -82,6 +85,11 @@ function agentStub(env: Env, chatId: string): WorkspaceAgentRpc | null {
   return env.WORKSPACE_AGENT.get(env.WORKSPACE_AGENT.idFromName(`chat:${chatId}`)) as unknown as WorkspaceAgentRpc;
 }
 
+function memoryStub(env: Env, orgId: string): MemoryRpc | null {
+  if (!env.WORKSPACE_MEMORY) return null;
+  return env.WORKSPACE_MEMORY.get(env.WORKSPACE_MEMORY.idFromName(`wsmem:${orgId}`)) as unknown as MemoryRpc;
+}
+
 function indexStub(env: Env, orgId: string): ChatIndexRpc | null {
   if (!env.CHAT_INDEX) return null;
   return env.CHAT_INDEX.get(env.CHAT_INDEX.idFromName(`ws:${orgId}`)) as unknown as ChatIndexRpc;
@@ -97,7 +105,12 @@ export async function route(request: Request, env: Env, injectedDeps?: ChatDeps)
       return successResponse({ status: "ok", environment: env.ENVIRONMENT }, reqId);
     }
 
-    const isChats = CHATS_RE.test(url.pathname) || CHAT_RE.test(url.pathname) || CHAT_TURN_RE.test(url.pathname);
+    const isChats =
+      CHATS_RE.test(url.pathname) ||
+      CHAT_RE.test(url.pathname) ||
+      CHAT_TURN_RE.test(url.pathname) ||
+      MEMORY_RE.test(url.pathname) ||
+      MEMORY_ENTRY_RE.test(url.pathname);
     if (!isChats) return notFound(reqId, url.pathname);
 
     const actor = resolveActor(request);
@@ -130,6 +143,51 @@ export async function route(request: Request, env: Env, injectedDeps?: ChatDeps)
       const idx = indexStub(env, orgId);
       if (idx) await idx.touch(m[2]!, deps.now().toISOString()).catch(() => {});
       return successResponse({ accepted: true, ...result }, reqId, 202);
+    }
+
+    // The memory plane (AN6): list / edit / delete — no hidden memory, the
+    // console sees exactly what the briefs read. Same chat grant.
+    m = MEMORY_ENTRY_RE.exec(url.pathname);
+    if (m) {
+      const orgId = uuidFromPublicId(m[1]!, "org");
+      if (!orgId) return notFound(reqId, url.pathname);
+      if (!(await deps.authorize("organization.agent.chat", orgId, actor, reqId))) {
+        return errorResponse("forbidden", "Not authorized", 403, reqId);
+      }
+      const mem = memoryStub(env, orgId);
+      if (!mem) return errorResponse("unavailable", "Memory not configured", 503, reqId);
+      if (request.method === "PATCH") {
+        let body: { content?: string };
+        try {
+          body = (await request.json()) as { content?: string };
+        } catch {
+          return errorResponse("validation_failed", "Invalid JSON", 400, reqId);
+        }
+        const content = (body.content ?? "").trim();
+        if (!content) return errorResponse("validation_failed", "content is required", 400, reqId);
+        const updated = await mem.updateEntry(m[2]!, content);
+        if (!updated) return notFound(reqId, url.pathname);
+        return successResponse(updated, reqId);
+      }
+      if (request.method === "DELETE") {
+        const deleted = await mem.deleteEntry(m[2]!);
+        if (!deleted) return notFound(reqId, url.pathname);
+        return successResponse({ deleted: true }, reqId);
+      }
+      return methodNotAllowed(reqId);
+    }
+
+    m = MEMORY_RE.exec(url.pathname);
+    if (m) {
+      const orgId = uuidFromPublicId(m[1]!, "org");
+      if (!orgId) return notFound(reqId, url.pathname);
+      if (!(await deps.authorize("organization.agent.chat", orgId, actor, reqId))) {
+        return errorResponse("forbidden", "Not authorized", 403, reqId);
+      }
+      const mem = memoryStub(env, orgId);
+      if (!mem) return errorResponse("unavailable", "Memory not configured", 503, reqId);
+      if (request.method === "GET") return successResponse(await mem.listEntries(), reqId);
+      return methodNotAllowed(reqId);
     }
 
     m = CHAT_RE.exec(url.pathname);

@@ -9,6 +9,7 @@ import { route } from "./router.js";
 
 export { WorkspaceAgent } from "./workspace-agent.js";
 export { ChatIndex } from "./chat-index.js";
+export { WorkspaceMemory } from "./workspace-memory.js";
 
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {

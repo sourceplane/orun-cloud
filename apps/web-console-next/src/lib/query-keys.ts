@@ -75,6 +75,7 @@ export const qk = {
    * entry is always the array, never the composite object. */
   orgAgentProfiles: (orgId: string) => ["orgAgentProfiles", orgId] as const,
   orgAgentChats: (orgId: string) => ["orgAgentChats", orgId] as const,
+  orgAgentMemory: (orgId: string) => ["orgAgentMemory", orgId] as const,
   orgAgentChat: (orgId: string, chatId: string) => ["orgAgentChat", orgId, chatId] as const,
   orgAgentSession: (orgId: string, sessionId: string) => ["orgAgentSession", orgId, sessionId] as const,
   orgAgentSessionEvents: (orgId: string, sessionId: string) =>

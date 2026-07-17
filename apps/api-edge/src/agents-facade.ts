@@ -51,9 +51,18 @@ const ORG_AGENTS_SESSION_WIRE_RE = /^\/v1\/organizations\/[^/]+\/agents\/session
 const ORG_AGENTS_CHATS_RE = /^\/v1\/organizations\/[^/]+\/agents\/chats$/;
 const ORG_AGENTS_CHAT_RE = /^\/v1\/organizations\/[^/]+\/agents\/chats\/[^/]+$/;
 const ORG_AGENTS_CHAT_TURN_RE = /^\/v1\/organizations\/[^/]+\/agents\/chats\/[^/]+\/turn$/;
+// The memory plane (AN6): provenanced workspace memory, chat-worker-owned.
+const ORG_AGENTS_MEMORY_RE = /^\/v1\/organizations\/[^/]+\/agents\/memory$/;
+const ORG_AGENTS_MEMORY_ENTRY_RE = /^\/v1\/organizations\/[^/]+\/agents\/memory\/[^/]+$/;
 
 export function isChatRoute(pathname: string): boolean {
-  return ORG_AGENTS_CHATS_RE.test(pathname) || ORG_AGENTS_CHAT_RE.test(pathname) || ORG_AGENTS_CHAT_TURN_RE.test(pathname);
+  return (
+    ORG_AGENTS_CHATS_RE.test(pathname) ||
+    ORG_AGENTS_CHAT_RE.test(pathname) ||
+    ORG_AGENTS_CHAT_TURN_RE.test(pathname) ||
+    ORG_AGENTS_MEMORY_RE.test(pathname) ||
+    ORG_AGENTS_MEMORY_ENTRY_RE.test(pathname)
+  );
 }
 const ORG_AGENTS_AUTONOMY_RE = /^\/v1\/organizations\/[^/]+\/agents\/autonomy$/;
 // The needs-you fold (saas-agents-fleet AF5): the fleet home's attention queue.

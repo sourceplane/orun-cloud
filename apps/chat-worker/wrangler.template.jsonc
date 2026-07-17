@@ -19,17 +19,22 @@
   "durable_objects": {
     "bindings": [
       { "name": "WORKSPACE_AGENT", "class_name": "WorkspaceAgent" },
-      { "name": "CHAT_INDEX", "class_name": "ChatIndex" }
+      { "name": "CHAT_INDEX", "class_name": "ChatIndex" },
+      { "name": "WORKSPACE_MEMORY", "class_name": "WorkspaceMemory" }
     ]
   },
-  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["WorkspaceAgent", "ChatIndex"] }],
+  "migrations": [
+    { "tag": "v1", "new_sqlite_classes": ["WorkspaceAgent", "ChatIndex"] },
+    { "tag": "v2", "new_sqlite_classes": ["WorkspaceMemory"] }
+  ],
   "env": {
     "dev": {
       "vars": { "ENVIRONMENT": "dev" },
       "durable_objects": {
         "bindings": [
           { "name": "WORKSPACE_AGENT", "class_name": "WorkspaceAgent" },
-          { "name": "CHAT_INDEX", "class_name": "ChatIndex" }
+          { "name": "CHAT_INDEX", "class_name": "ChatIndex" },
+          { "name": "WORKSPACE_MEMORY", "class_name": "WorkspaceMemory" }
         ]
       }
     },
@@ -39,7 +44,8 @@
       "durable_objects": {
         "bindings": [
           { "name": "WORKSPACE_AGENT", "class_name": "WorkspaceAgent" },
-          { "name": "CHAT_INDEX", "class_name": "ChatIndex" }
+          { "name": "CHAT_INDEX", "class_name": "ChatIndex" },
+          { "name": "WORKSPACE_MEMORY", "class_name": "WorkspaceMemory" }
         ]
       },
       "services": [
@@ -54,7 +60,8 @@
       "durable_objects": {
         "bindings": [
           { "name": "WORKSPACE_AGENT", "class_name": "WorkspaceAgent" },
-          { "name": "CHAT_INDEX", "class_name": "ChatIndex" }
+          { "name": "CHAT_INDEX", "class_name": "ChatIndex" },
+          { "name": "WORKSPACE_MEMORY", "class_name": "WorkspaceMemory" }
         ]
       },
       "services": [

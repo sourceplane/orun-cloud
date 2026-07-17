@@ -18,6 +18,7 @@ import { anthropicModel, workspaceSystemPrompt } from "./model.js";
 import { createConfigResolver, resolveAnthropicKey, type ProviderConnectionLite } from "./custody.js";
 import { createOwnerToolExecutor } from "./tools.js";
 import { withSessionVerbs } from "./session-verbs.js";
+import { formatMemoryForSystem, withMemoryTool, type MemoryEntry, type MemoryRpc } from "./memory.js";
 import { uuidToHex } from "@saas/db/ids";
 
 export class WorkspaceAgent extends Agent<Env> {
@@ -62,6 +63,19 @@ export class WorkspaceAgent extends Agent<Env> {
     await this.ensureLoaded();
     this.thread.assertOrg(orgId);
     const env = this.env;
+    // Brief assembly (AN6): the workspace memory plane folds into the turn's
+    // system context — a remembered fact shapes every later thread.
+    const memory: MemoryRpc | null = env.WORKSPACE_MEMORY
+      ? (env.WORKSPACE_MEMORY.get(env.WORKSPACE_MEMORY.idFromName(`wsmem:${orgId}`)) as unknown as MemoryRpc)
+      : null;
+    let memoryEntries: MemoryEntry[] = [];
+    if (memory) {
+      try {
+        memoryEntries = await memory.listEntries();
+      } catch {
+        // A memory outage degrades the brief, never the turn.
+      }
+    }
     const baseUrl = env.API_EDGE_URL || "https://api-edge.internal";
     const edgeFetch: typeof fetch | undefined = env.API_EDGE
       ? (((input: RequestInfo | URL, init?: RequestInit) => env.API_EDGE!.fetch(input as never, init as never)) as typeof fetch)
@@ -102,10 +116,15 @@ export class WorkspaceAgent extends Agent<Env> {
       },
     );
 
+    const chatId = this.thread.info()?.chatId ?? "unknown";
+    const toolsWithMemory = memory
+      ? withMemoryTool(tools, memory, { author: principal, source: `chat:${chatId}`, now: () => new Date() })
+      : tools;
+
     return this.thread.runTurn(text, principal, {
       resolveModel,
-      tools,
-      system: workspaceSystemPrompt(orgId),
+      tools: toolsWithMemory,
+      system: workspaceSystemPrompt(orgId) + formatMemoryForSystem(memoryEntries),
     });
   }
 
