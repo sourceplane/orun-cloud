@@ -67,7 +67,10 @@ import { getCapability, type IntegrationProvider } from "../providers/types.js";
 import {
   readParentCredential,
   reEnvelopeParentCredential,
+  type ResolvedParentCredential,
 } from "../custody.js";
+import { connectionMintLockRunner, type MintLockRunner } from "../mint-lock.js";
+import type { MintCredentialOutcome } from "../providers/types.js";
 
 /** D5: default 15 min, hard ceiling 1h — no template may exceed it. */
 export const DEFAULT_TTL_SECONDS = 15 * 60;
@@ -81,6 +84,9 @@ export interface CredentialBrokerDeps {
   fetchImpl?: FetchLike;
   /** Test seam: bypass the registry with a prebuilt provider adapter. */
   provider?: IntegrationProvider;
+  /** Per-connection mint serialization seam (IH6 custody); production wires
+   *  connectionMintLockRunner over the MINT_LOCKS Durable Object namespace. */
+  mintLock?: MintLockRunner;
 }
 
 export function toPublicMintedCredential(mint: MintedCredential): PublicMintedCredential {
@@ -267,6 +273,7 @@ type MintCoreFailure =
   | { kind: "limit_reached"; limit: number }
   | { kind: "parent_credential_missing" }
   | { kind: "mint_failed"; reason: string }
+  | { kind: "mint_lock_timeout" }
   | { kind: "service_error" };
 
 type MintCoreResult =
@@ -339,24 +346,66 @@ async function executeMintCore(
   // TTL requested, clamped (D5): the ledger will record the ACTUAL expiry.
   const ttlSeconds = Math.min(requestedTtl, template.maxTtlSeconds, MAX_TTL_SECONDS);
 
-  // Parent custody (IH5+): decrypted for this one call, never held.
-  const parent = await readParentCredential(env, executor, asUuid(connection.id), connection.provider);
-  if (parent === null) {
-    return { ok: false, failure: { kind: "parent_credential_missing" } };
-  }
-
   // The mint id is generated BEFORE the provider call so the minted
   // credential carries its ledger identity provider-side (IH9 reconcile).
   const mintId = generateUuid();
   const nowMs = Date.now();
-  const outcome = await broker.mintCredential({
-    template: templateId,
-    params,
-    ttlSeconds,
-    nowMs,
-    ...(parent ? { parent } : {}),
-    mintRef: `orun/${orgPublicId(orgId)}/${templateId}/${mintedCredentialPublicId(mintId)}`,
+
+  // ── Custody critical section, serialized PER CONNECTION (IH6). ──
+  // read-parent → provider mint → rotation re-envelope is a read-modify-write
+  // on custody: on rotating-parent providers a concurrent mint that reads the
+  // same parent presents an already-consumed refresh token, which trips the
+  // provider's reuse detection (family revocation — sibling tokens die
+  // mid-flight). Only this window holds the lock; validation, rate limits,
+  // the ledger, and events stay outside, so the hold is ~one provider call.
+  const runLocked: MintLockRunner = deps?.mintLock ?? connectionMintLockRunner(env.MINT_LOCKS);
+  type CustodySection =
+    | { parent: ResolvedParentCredential | undefined; outcome: MintCredentialOutcome }
+    | { failure: MintCoreFailure };
+  const section = await runLocked(String(connection.id), async (): Promise<CustodySection> => {
+    // Parent custody (IH5+): decrypted for this one call, never held.
+    const parent = await readParentCredential(env, executor, asUuid(connection.id), connection.provider);
+    if (parent === null) {
+      return { failure: { kind: "parent_credential_missing" } };
+    }
+    const outcome = await broker.mintCredential({
+      template: templateId,
+      params,
+      ttlSeconds,
+      nowMs,
+      ...(parent ? { parent } : {}),
+      mintRef: `orun/${orgPublicId(orgId)}/${templateId}/${mintedCredentialPublicId(mintId)}`,
+    });
+
+    // Rotating parents (IH6 Supabase, IH5 Cloudflare OAuth): the mint consumed
+    // the parent and the provider handed back a NEW one — re-envelope custody
+    // INSIDE the lock (and before the ledger insert) so the rotation lands
+    // before any sibling's read. Best-effort: a re-envelope failure logs
+    // nothing sensitive and does NOT fail the mint; a lost rotation surfaces
+    // as parent_grant_insufficient on the NEXT mint — an IH9 health concern,
+    // not a data-loss one.
+    if (outcome.ok && outcome.value.rotatedParentCredential && parent?.kind) {
+      await reEnvelopeParentCredential(
+        env,
+        executor,
+        asUuid(connection.id),
+        parent.kind,
+        outcome.value.rotatedParentCredential,
+        // Keep the custody row anchored to the same provider-side ref.
+        parent.externalRef,
+      );
+    }
+    return { parent, outcome };
   });
+  if (!section.ok) {
+    // Wait budget exhausted under contention — typed and retryable; the
+    // resolve surface names it via brokerReason.
+    return { ok: false, failure: { kind: "mint_lock_timeout" } };
+  }
+  if ("failure" in section.value) {
+    return { ok: false, failure: section.value.failure };
+  }
+  const { parent, outcome } = section.value;
   if (!outcome.ok) {
     // Best-effort failure event — surfaced in connection health.
     try {
@@ -388,25 +437,7 @@ async function executeMintCore(
     return { ok: false, failure: { kind: "mint_failed", reason: outcome.reason } };
   }
 
-  // Rotating parents (IH6 Supabase, IH5 Cloudflare OAuth): the mint consumed
-  // the parent and the provider handed back a NEW one — re-envelope custody
-  // BEFORE the ledger insert so the rotation is never dropped on a later
-  // failure. The rotation replaces the SAME custody kind the parent was read
-  // from (parent.kind). Best-effort: a re-envelope failure logs nothing
-  // sensitive and does NOT fail the mint; a lost rotation surfaces as
-  // parent_grant_insufficient on the NEXT mint — an IH9 health concern, not a
-  // data-loss one.
-  if (outcome.value.rotatedParentCredential && parent?.kind) {
-    await reEnvelopeParentCredential(
-      env,
-      executor,
-      asUuid(connection.id),
-      parent.kind,
-      outcome.value.rotatedParentCredential,
-      // Keep the custody row anchored to the same provider-side ref.
-      parent.externalRef,
-    );
-  }
+  // (The rotation re-envelope happened INSIDE the custody lock above.)
 
   // Ledger BEFORE reveal: an unledgered credential must never leave the
   // platform. If the insert fails, best-effort revoke and refuse.
@@ -541,6 +572,16 @@ function publicMintFailureResponse(
             reason: "provider_error",
           });
       }
+    case "mint_lock_timeout":
+      // Contention on this connection's custody lock — bounded queueing, not
+      // an outage. 503 signals retryable; the reason names the cause.
+      return errorResponse(
+        "unavailable",
+        "Too many concurrent credential mints for this connection — retry shortly",
+        503,
+        requestId,
+        { reason: "mint_lock_timeout" },
+      );
     case "service_error":
       return errorResponse("internal_error", "Service unavailable", 503, requestId);
   }
@@ -593,6 +634,10 @@ function internalMintFailureResponse(failure: MintCoreFailure, requestId: string
             reason: "provider_error",
           });
       }
+    case "mint_lock_timeout":
+      return errorResponse("unavailable", "Concurrent mint contention on this connection", 503, requestId, {
+        reason: "mint_lock_timeout",
+      });
     case "service_error":
       return errorResponse("internal_error", "Service unavailable", 503, requestId, {
         reason: "unavailable",

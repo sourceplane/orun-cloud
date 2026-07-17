@@ -1,5 +1,9 @@
 import type { Env } from "./env.js";
 import { route } from "./router.js";
+
+// Per-connection mint-serialization Durable Object (IH6 custody). Re-exported
+// so the runtime can bind it (wrangler durable_objects → ConnectionMintLock).
+export { ConnectionMintLock } from "./mint-lock-do.js";
 import { drainInboundDeliveries } from "./drain.js";
 import { runExpirySweep } from "./expiry-sweep.js";
 import { runCloudflareHealth } from "./health-cloudflare.js";

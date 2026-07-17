@@ -25,10 +25,21 @@
   "triggers": {
     "crons": ["* * * * *"]
   },
+  // Per-connection mint serialization (IH6 custody): one ConnectionMintLock DO
+  // per connection serializes the read-parent → mint → re-envelope custody
+  // window. DO bindings are NOT inherited by named environments, so the block
+  // is repeated under env.dev/stage/prod; the migration is top-level.
+  "durable_objects": {
+    "bindings": [{ "name": "MINT_LOCKS", "class_name": "ConnectionMintLock" }]
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["ConnectionMintLock"] }],
   "env": {
     "dev": {
       "vars": {
         "ENVIRONMENT": "dev"
+      },
+      "durable_objects": {
+        "bindings": [{ "name": "MINT_LOCKS", "class_name": "ConnectionMintLock" }]
       }
     },
     "stage": {
@@ -58,7 +69,16 @@
           "id": "@@wiring(cloudflare-hyperdrive/stage:hyperdrive_id)@@"
         }
       ],
+      "durable_objects": {
+        "bindings": [{ "name": "MINT_LOCKS", "class_name": "ConnectionMintLock" }]
+      },
       "services": [
+        {
+          // brokered-orphan-safety (Feature 2): the revoke guard's reference
+          // check — active brokered secrets block a non-forced revoke.
+          "binding": "CONFIG_WORKER",
+          "service": "config-worker-stage"
+        },
         {
           "binding": "MEMBERSHIP_WORKER",
           "service": "membership-worker-stage"
@@ -91,7 +111,16 @@
           "id": "@@wiring(cloudflare-hyperdrive/prod:hyperdrive_id)@@"
         }
       ],
+      "durable_objects": {
+        "bindings": [{ "name": "MINT_LOCKS", "class_name": "ConnectionMintLock" }]
+      },
       "services": [
+        {
+          // brokered-orphan-safety (Feature 2): the revoke guard's reference
+          // check — active brokered secrets block a non-forced revoke.
+          "binding": "CONFIG_WORKER",
+          "service": "config-worker-prod"
+        },
         {
           "binding": "MEMBERSHIP_WORKER",
           "service": "membership-worker-prod"

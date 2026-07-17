@@ -214,6 +214,11 @@ const HAS_API_EDGE = fs.existsSync(path.join(ROOT, "apps", "api-edge", "componen
 const ACKNOWLEDGED_BINDING_CYCLES = new Set([
   "billing-worker -> membership-worker", // mutual pair: billing <-> membership
   "membership-worker -> notifications-worker", // cycle: membership -> notifications -> events -> membership
+  // brokered-orphan-safety (Feature 2): the revoke guard's reference check is
+  // the reverse of the existing config -> integrations mint edge — a mutual
+  // pair. Fail-soft by design: a missing/undeployed config-worker fails the
+  // reference check closed (non-forced revoke refused), never a crash.
+  "integrations-worker -> config-worker", // mutual pair: config <-> integrations
 ]);
 
 describe("every wrangler service binding is a declared dependsOn edge", () => {
