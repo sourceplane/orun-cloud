@@ -47,6 +47,9 @@ export interface ChatMessage {
   principal?: string;
   /** True for the honest error turn (custody/model failure — retryable). */
   error?: boolean;
+  /** Turn cost, on the closing assistant message (AN7: thread-level cost
+   * visible to the user). */
+  usage?: { inputTokens: number; outputTokens: number };
 }
 
 // ── The model seam (recorded-fixture testable) ──────────────────────────────
@@ -58,6 +61,8 @@ export type ModelBlock =
 export interface ModelTurnResult {
   blocks: ModelBlock[];
   stopReason: "end_turn" | "tool_use" | "max_tokens" | "refusal";
+  /** Loop usage (AN7 metering: agents.chat_tokens). */
+  usage?: { inputTokens: number; outputTokens: number };
 }
 
 export interface ModelRequestMessage {
@@ -107,6 +112,8 @@ export class ChatThread {
   private messages: ChatMessage[] = [];
   private heads = new Map<string, ConnectionLike>();
   private turnActive = false;
+  /** Turn-rate window (AN7 hardening): starts of turns within the window. */
+  private turnStamps: number[] = [];
 
   constructor(private storage: ChatStorage) {}
 
@@ -212,13 +219,24 @@ export class ChatThread {
       tools: ToolExecutor;
       system: string;
       now?: () => Date;
+      /** Turn-rate ceiling (AN7): max turns per window. 0 disables. */
+      rateLimit?: { maxTurns: number; windowMs: number };
     },
-  ): Promise<{ ok: boolean; reason?: string }> {
+  ): Promise<{ ok: boolean; reason?: string; tokens?: number; toolCalls?: number }> {
     if (this.turnActive) {
       return { ok: false, reason: "turn_in_progress" };
     }
-    this.turnActive = true;
     const now = deps.now ?? (() => new Date());
+    const limit = deps.rateLimit ?? { maxTurns: 20, windowMs: 5 * 60 * 1000 };
+    if (limit.maxTurns > 0) {
+      const t = now().getTime();
+      this.turnStamps = this.turnStamps.filter((x) => t - x < limit.windowMs);
+      if (this.turnStamps.length >= limit.maxTurns) {
+        return { ok: false, reason: "rate_limited" };
+      }
+      this.turnStamps.push(t);
+    }
+    this.turnActive = true;
     try {
       await this.append({ role: "user", text, at: now().toISOString(), principal });
       this.fanOut({ t: "turn", phase: "start" });
@@ -237,6 +255,9 @@ export class ChatThread {
 
       const toolSpecs = deps.tools.specs();
       const history = this.modelHistory();
+      let tokensIn = 0;
+      let tokensOut = 0;
+      let toolCalls = 0;
 
       for (let round = 0; round <= MAX_TOOL_ROUNDS; round++) {
         let result: ModelTurnResult;
@@ -257,6 +278,8 @@ export class ChatThread {
           return { ok: false, reason: "model_failed" };
         }
 
+        tokensIn += result.usage?.inputTokens ?? 0;
+        tokensOut += result.usage?.outputTokens ?? 0;
         const textOut = result.blocks
           .filter((b): b is Extract<ModelBlock, { type: "text" }> => b.type === "text")
           .map((b) => b.text)
@@ -266,20 +289,23 @@ export class ChatThread {
         );
 
         if (result.stopReason !== "tool_use" || toolUses.length === 0 || round === MAX_TOOL_ROUNDS) {
+          const usage = { inputTokens: tokensIn, outputTokens: tokensOut };
           await this.append({
             role: "assistant",
             text: textOut || (result.stopReason === "refusal" ? "I can't help with that request." : ""),
             at: now().toISOString(),
             blocks: result.blocks,
+            usage,
           });
           this.fanOut({ t: "turn", phase: "done" });
-          return { ok: true };
+          return { ok: true, tokens: tokensIn + tokensOut, toolCalls };
         }
 
         // Tool round: visible cards for every call, then results back to the
         // model in one user message (the parallel-tool-use contract).
         history.push({ role: "assistant", content: result.blocks });
         const toolResults: unknown[] = [];
+        toolCalls += toolUses.length;
         for (const call of toolUses) {
           await this.append({
             role: "tool",

@@ -47,6 +47,9 @@ function fakeAgentNs(turnResult: { ok: boolean; reason?: string } = { ok: true }
           turns.push({ orgId, text, principal, token });
           return turnResult;
         },
+        async destroyThread(_orgId: string) {
+          metas.delete(id.name);
+        },
       }) satisfies WorkspaceAgentRpc,
   } as unknown as NonNullable<Env["WORKSPACE_AGENT"]>;
   return { ns, turns, metas };
@@ -64,6 +67,10 @@ function fakeIndexNs(): { ns: NonNullable<Env["CHAT_INDEX"]>; chats: ChatSummary
         async touch(id: string, lastAt: string) {
           const c = chats.find((x) => x.id === id);
           if (c) c.lastAt = lastAt;
+        },
+        async removeChat(id: string) {
+          const i = chats.findIndex((x) => x.id === id);
+          if (i >= 0) chats.splice(i, 1);
         },
         async listChats() {
           return [...chats];
@@ -225,5 +232,39 @@ describe("AN6: memory routes", () => {
 
     const delAgain = await route(req(`${memBase}/mem_1`, { method: "DELETE" }), env, deps);
     expect(delAgain.status).toBe(404);
+  });
+});
+
+describe("AN7: thread deletion + the rate ceiling at the door", () => {
+  const base = `/v1/organizations/${ORG}/agents/chats`;
+
+  it("DELETE removes the thread and its registry row", async () => {
+    const agents = fakeAgentNs();
+    const index = fakeIndexNs();
+    const env = { ENVIRONMENT: "test", WORKSPACE_AGENT: agents.ns, CHAT_INDEX: index.ns } as Env;
+    const deps = makeDeps();
+
+    const created = await route(req(base, { method: "POST", body: { title: "temp" } }), env, deps);
+    const chat = ((await created.json()) as { data: { id: string } }).data;
+    expect(index.chats).toHaveLength(1);
+
+    const del = await route(req(`${base}/${chat.id}`, { method: "DELETE" }), env, deps);
+    expect(del.status).toBe(200);
+    expect(agents.metas.has(`chat:${chat.id}`)).toBe(false);
+    expect(index.chats).toHaveLength(0);
+
+    const gone = await route(req(`${base}/${chat.id}`), env, deps);
+    expect(gone.status).toBe(404);
+  });
+
+  it("maps rate_limited to a 429", async () => {
+    const agents = fakeAgentNs({ ok: false, reason: "rate_limited" });
+    const env = { ENVIRONMENT: "test", WORKSPACE_AGENT: agents.ns, CHAT_INDEX: fakeIndexNs().ns } as Env;
+    const res = await route(
+      req(`${base}/ch_1/turn`, { method: "POST", body: { text: "hi" }, headers: { "x-owner-bearer": "t" } }),
+      env,
+      makeDeps(),
+    );
+    expect(res.status).toBe(429);
   });
 });

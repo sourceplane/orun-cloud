@@ -387,6 +387,15 @@ export class AgentsClient {
     );
   }
 
+  /** DELETE /agents/chats/:id — delete a thread (complete: DO purge +
+   * registry removal). */
+  deleteChat(orgId: string, chatId: string, opts: RequestOptions = {}): Promise<{ deleted: boolean }> {
+    return this.transport.request<{ deleted: boolean }>(
+      { method: "DELETE", path: `${agentsBase(orgId)}/chats/${encodeURIComponent(chatId)}` },
+      opts,
+    );
+  }
+
   /** POST /agents/chats/:id/turn — one user turn (202; streaming rides the
    * chat socket). */
   sendChatTurn(

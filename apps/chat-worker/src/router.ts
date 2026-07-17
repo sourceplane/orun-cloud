@@ -28,11 +28,13 @@ export interface WorkspaceAgentRpc {
   initChat(meta: ChatMeta): Promise<void>;
   chatInfo(): Promise<ChatMeta | null>;
   history(orgId: string): Promise<unknown[]>;
-  turn(orgId: string, text: string, principal: string, ownerToken: string): Promise<{ ok: boolean; reason?: string }>;
+  turn(orgId: string, text: string, principal: string, ownerToken: string): Promise<{ ok: boolean; reason?: string; tokens?: number; toolCalls?: number }>;
+  destroyThread(orgId: string): Promise<void>;
 }
 export interface ChatIndexRpc {
   register(chat: ChatSummary): Promise<void>;
   touch(chatId: string, lastAt: string): Promise<void>;
+  removeChat(chatId: string): Promise<void>;
   listChats(): Promise<ChatSummary[]>;
 }
 
@@ -140,6 +142,9 @@ export async function route(request: Request, env: Env, injectedDeps?: ChatDeps)
       if (!result.ok && result.reason === "turn_in_progress") {
         return errorResponse("conflict", "A turn is already running in this thread", 409, reqId);
       }
+      if (!result.ok && result.reason === "rate_limited") {
+        return errorResponse("rate_limited", "This thread hit its turn rate ceiling — wait a moment", 429, reqId);
+      }
       const idx = indexStub(env, orgId);
       if (idx) await idx.touch(m[2]!, deps.now().toISOString()).catch(() => {});
       return successResponse({ accepted: true, ...result }, reqId, 202);
@@ -214,6 +219,16 @@ export async function route(request: Request, env: Env, injectedDeps?: ChatDeps)
         if (!info || info.orgId !== orgId) return notFound(reqId, url.pathname);
         const history = await stub.history(orgId);
         return successResponse({ id: info.chatId, title: info.title, createdAt: info.createdAt, messages: history }, reqId);
+      }
+      if (request.method === "DELETE") {
+        // AN7 retention/deletion: the DO's storage IS the thread — after the
+        // purge and the index removal, the thread is gone everywhere.
+        const info = await stub.chatInfo();
+        if (!info || info.orgId !== orgId) return notFound(reqId, url.pathname);
+        await stub.destroyThread(orgId);
+        const idx = indexStub(env, orgId);
+        if (idx) await idx.removeChat(m[2]!).catch(() => {});
+        return successResponse({ deleted: true }, reqId);
       }
       return methodNotAllowed(reqId);
     }
