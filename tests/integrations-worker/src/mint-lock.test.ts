@@ -242,7 +242,7 @@ async function statefulCustodyExecutor(initialPlain: string): Promise<SqlExecuto
       ];
     }
     if (text.includes("INSERT INTO integrations.provider_credentials")) {
-      ciphertext = String(params[3]); // the rotated envelope lands
+      ciphertext = String(params[4]); // the rotated envelope lands
       return [{ id: "cred" }];
     }
     if (text.includes("INSERT INTO integrations.minted_credentials")) return [mintRow()];

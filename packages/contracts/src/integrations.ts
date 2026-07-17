@@ -523,6 +523,14 @@ export interface PublicMintedCredential {
   runId: string | null;
   jobId: string | null;
   ttlSeconds: number;
+  /**
+   * Custody kind that authorized the mint (service-identity-bootstrap SI1),
+   * e.g. "cloudflare_service_token" vs the deprecated
+   * "cloudflare_refresh_token". Null for parentless providers and pre-SI1
+   * ledger rows. Lets the console and audit answer "was this credential
+   * minted from a user-derived token?".
+   */
+  parentKind: string | null;
   mintedAt: string;
   expiresAt: string;
   revokedAt: string | null;

@@ -495,7 +495,7 @@ describe("POST …/integrations/supabase/connect", () => {
       if (text.includes("INSERT INTO integrations.provider_credentials")) {
         custodyInsert = params;
         return [{
-          id: "pkce-row", connection_id: params[1], kind: params[2], ciphertext: params[3],
+          id: "pkce-row", connection_id: params[1], kind: params[2], credential_class: params[3], ciphertext: params[4],
           created_at: NOW.toISOString(), updated_at: NOW.toISOString(),
         }];
       }
@@ -523,7 +523,7 @@ describe("POST …/integrations/supabase/connect", () => {
     // challenge the authorize URL carries.
     expect(custodyInsert[2]).toBe("supabase_pkce_verifier");
     const adapter = (await createEncryptionAdapter(KEY))!;
-    const verifier = await adapter.decrypt(JSON.parse(custodyInsert[3] as string) as CiphertextEnvelope);
+    const verifier = await adapter.decrypt(JSON.parse(custodyInsert[4] as string) as CiphertextEnvelope);
     expect(verifier).toMatch(/^[A-Za-z0-9_-]{43,}$/);
     await expect(computeCodeChallenge(verifier)).resolves.toBe(challenge);
   });
@@ -665,8 +665,8 @@ describe("GET /ingress/supabase/oauth", () => {
       if (text.includes("INSERT INTO integrations.provider_credentials")) {
         credentialInsert = params;
         return [{
-          id: "cred-row", connection_id: CONNECTION_UUID, kind: params[2], ciphertext: params[3],
-          external_ref: params[5], created_at: NOW.toISOString(), updated_at: NOW.toISOString(),
+          id: "cred-row", connection_id: CONNECTION_UUID, kind: params[2], credential_class: params[3], ciphertext: params[4],
+          external_ref: params[6], created_at: NOW.toISOString(), updated_at: NOW.toISOString(),
         }];
       }
       if (text.includes("INSERT INTO integrations.supabase_orgs")) {
@@ -715,8 +715,8 @@ describe("GET /ingress/supabase/oauth", () => {
     // Custody: the REFRESH token (never the access token) as a real envelope,
     // anchored to the Supabase org id.
     expect(credentialInsert[2]).toBe("supabase_refresh_token");
-    expect(credentialInsert[5]).toBe(SUPABASE_ORG_ID);
-    const ciphertext = credentialInsert[3] as string;
+    expect(credentialInsert[6]).toBe(SUPABASE_ORG_ID);
+    const ciphertext = credentialInsert[4] as string;
     expect(ciphertext).not.toContain("sb-refresh-OLD");
     const adapter = (await createEncryptionAdapter(KEY))!;
     expect(await adapter.decrypt(JSON.parse(ciphertext) as CiphertextEnvelope)).toBe("sb-refresh-OLD");
@@ -753,7 +753,7 @@ describe("GET /ingress/supabase/oauth", () => {
       if (text.includes("SELECT * FROM integrations.provider_credentials")) return [custody];
       if (text.includes("INSERT INTO integrations.provider_credentials")) {
         return [{
-          id: "cred-row", connection_id: CONNECTION_UUID, kind: params[2], ciphertext: params[3],
+          id: "cred-row", connection_id: CONNECTION_UUID, kind: params[2], credential_class: params[3], ciphertext: params[4],
           created_at: NOW.toISOString(), updated_at: NOW.toISOString(),
         }];
       }
@@ -839,7 +839,7 @@ describe("GET /ingress/supabase/oauth — re-auth (IH9)", () => {
       }
       if (text.includes("INSERT INTO integrations.provider_credentials")) {
         custodyInserts.push(params);
-        return [{ id: "cred", connection_id: params[1], kind: params[2], ciphertext: params[3], external_ref: params[5], created_at: NOW.toISOString(), updated_at: NOW.toISOString() }];
+        return [{ id: "cred", connection_id: params[1], kind: params[2], credential_class: params[3], ciphertext: params[4], external_ref: params[6], created_at: NOW.toISOString(), updated_at: NOW.toISOString() }];
       }
       if (text.includes("INSERT INTO integrations.supabase_orgs")) {
         return [supabaseOrgRow({ connection_id: EXISTING_UUID })];
@@ -916,7 +916,7 @@ describe("GET /ingress/supabase/oauth — re-auth (IH9)", () => {
       }
       if (text.includes("INSERT INTO integrations.provider_credentials")) {
         custodyInserts.push(params);
-        return [{ id: "cred", connection_id: params[1], kind: params[2], ciphertext: params[3], external_ref: params[5], created_at: NOW.toISOString(), updated_at: NOW.toISOString() }];
+        return [{ id: "cred", connection_id: params[1], kind: params[2], credential_class: params[3], ciphertext: params[4], external_ref: params[6], created_at: NOW.toISOString(), updated_at: NOW.toISOString() }];
       }
       if (text.includes("INSERT INTO integrations.supabase_orgs")) {
         // Flip-style upsert rebinds the org to the pending (fresh) connection.
@@ -979,16 +979,16 @@ describe("mint via broker core (supabase)", () => {
       if (text.includes("INSERT INTO integrations.provider_credentials")) {
         custodyUpserts.push(params);
         return [{
-          id: params[0], connection_id: params[1], kind: params[2], ciphertext: params[3],
-          external_ref: params[5], created_at: NOW.toISOString(), updated_at: NOW.toISOString(),
+          id: params[0], connection_id: params[1], kind: params[2], credential_class: params[3], ciphertext: params[4],
+          external_ref: params[6], created_at: NOW.toISOString(), updated_at: NOW.toISOString(),
         }];
       }
       if (text.includes("INSERT INTO integrations.minted_credentials")) {
         ledgerInsert = params;
         return [{
           id: params[0], org_id: ORG_UUID, connection_id: CONNECTION_UUID, provider: "supabase",
-          template: "management-access", purpose: "api", ttl_seconds: params[10],
-          provider_ref: params[11], minted_at: NOW.toISOString(),
+          template: "management-access", purpose: "api", ttl_seconds: params[11],
+          provider_ref: params[12], minted_at: NOW.toISOString(),
           expires_at: new Date(NOW.getTime() + 900_000).toISOString(), revoke_status: "pending",
           created_at: NOW.toISOString(), updated_at: NOW.toISOString(),
         }];
@@ -1010,9 +1010,9 @@ describe("mint via broker core (supabase)", () => {
     expect(custodyUpserts).toHaveLength(1);
     const upsert = custodyUpserts[0]!;
     expect(upsert[2]).toBe("supabase_refresh_token");
-    expect(upsert[5]).toBe(SUPABASE_ORG_ID);
+    expect(upsert[6]).toBe(SUPABASE_ORG_ID);
     const adapter = (await createEncryptionAdapter(KEY))!;
-    expect(await adapter.decrypt(JSON.parse(upsert[3] as string) as CiphertextEnvelope)).toBe("sb-refresh-NEW");
+    expect(await adapter.decrypt(JSON.parse(upsert[4] as string) as CiphertextEnvelope)).toBe("sb-refresh-NEW");
 
     // Re-envelope happened BEFORE the ledger insert.
     const upsertIdx = queries.findIndex((q) => q.text.includes("INSERT INTO integrations.provider_credentials"));
@@ -1021,7 +1021,9 @@ describe("mint via broker core (supabase)", () => {
     expect(upsertIdx).toBeLessThan(ledgerIdx);
 
     // No provider-side ref exists; TTL is the backstop.
-    expect(ledgerInsert[11]).toBeNull();
+    expect(ledgerInsert[12]).toBeNull();
+    // SI1: the mint was authorized by the (deprecated) refresh custody.
+    expect(ledgerInsert[7]).toBe("supabase_refresh_token");
     // The ledger + events never carry the credential or the refresh tokens.
     const allParams = JSON.stringify(queries.map((q) => q.params));
     expect(JSON.stringify(ledgerInsert)).not.toContain("sb-access-SECRET");
