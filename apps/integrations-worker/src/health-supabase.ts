@@ -23,8 +23,13 @@ import { createEventsRepository } from "@saas/db/events";
 import type { SqlExecutor } from "@saas/db/hyperdrive";
 import { asUuid } from "@saas/db/ids";
 import type { FetchLike } from "./github-app.js";
-import { listSupabaseProjects, refreshSupabaseAccess } from "./providers/supabase.js";
+import {
+  fetchSupabaseProjectServiceKeys,
+  listSupabaseProjects,
+  refreshSupabaseAccess,
+} from "./providers/supabase.js";
 import { readParentCredential, reEnvelopeParentCredential } from "./custody.js";
+import { createEncryptionAdapter } from "./encryption.js";
 import { generateRequestId, generateUuid, orgPublicId } from "./ids.js";
 
 export interface SupabaseHealthSummary {
@@ -154,6 +159,32 @@ export async function runSupabaseHealth(
             grantedScopes: row.grantedScopes,
             projects,
           });
+
+          // SI4 reconcile: keep the org-owned per-project service-key custody
+          // (the `project-service-key` template's source) in step with the
+          // project list — new projects gain entries; a failed read never
+          // overwrites good keys. Best-effort like the facts refresh.
+          try {
+            const keys = await fetchSupabaseProjectServiceKeys(
+              grant.accessToken,
+              projects.map((p) => p.ref),
+              fetchImpl,
+            );
+            const encryption = keys ? await createEncryptionAdapter(env.SECRET_ENCRYPTION_KEY) : null;
+            if (keys && encryption) {
+              const envelope = await encryption.encrypt(JSON.stringify(keys));
+              await hub.upsertProviderCredential({
+                id: generateUuid(),
+                connectionId: connectionUuid,
+                kind: "supabase_project_secret",
+                ciphertext: JSON.stringify(envelope),
+                scopes: Object.keys(keys),
+                externalRef: row.supabaseOrgId,
+              });
+            }
+          } catch {
+            // Best-effort.
+          }
         }
         summary.refreshed++;
       } catch {

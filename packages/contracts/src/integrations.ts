@@ -496,6 +496,15 @@ export interface IntegrationScopeTemplate {
   params: readonly string[];
   /** Hard TTL ceiling for this template, seconds. */
   maxTtlSeconds: number;
+  /**
+   * Custody-served template (service-identity-bootstrap SI4): the minted
+   * value is read from THIS provider_credentials kind (an org-owned
+   * infrastructure credential custodied at connect, e.g. a Supabase project
+   * service key) instead of a live provider mint. No provider call, no
+   * parent-token spend, no mint lock on the resolve path. `params.projectRef`
+   * (when declared) selects the entry inside the custodied JSON map.
+   */
+  custodyKind?: string;
 }
 
 export type IntegrationMintPurpose = "api" | "secret_resolve";

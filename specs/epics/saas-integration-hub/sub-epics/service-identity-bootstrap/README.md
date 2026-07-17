@@ -134,17 +134,27 @@ risks, D4 discussion) — the management plane is only reachable as a user.
 So SI splits the planes instead of pretending:
 
 - **Project plane (the run-time 95%).** At bootstrap — and on a reconcile
-  cron — use the management session to enumerate projects and custody each
-  project's **secret/service-role key** as kind `supabase_project_secret`
-  (`external_ref` = project ref). These are project-owned, person-independent
-  infrastructure credentials. The `db-migrate` and `functions-deploy`
-  templates re-target to serve from the project credential — no refresh, no
-  rotation race, no user tie, no management-API availability on the resolve
-  path. (TTL semantics change class: a service-role key is not TTL-clamped by
-  the provider, so these mints return the custodied key and rely on the
-  provider's key-rotation API for the revoke story — the ledger records
-  issuance exactly as before. Where Supabase project API-key minting supports
-  scoped ephemeral keys, prefer that.)
+  cron — use the management session to enumerate projects and custody the
+  projects' **service-role keys** as kind `supabase_project_secret` (one
+  encrypted JSON map per connection, keyed by project ref; `external_ref` =
+  the Supabase org id — preserving the `(connection_id, kind)` uniqueness
+  and zeroize-on-revoke discipline). These are project-owned,
+  person-independent infrastructure credentials, served by a new
+  **custody-served template `project-service-key`** (`params: [projectRef]`)
+  — no refresh, no rotation race, no user tie, no management-API
+  availability on the resolve path. (TTL semantics change class: a
+  service-role key is not TTL-clamped by the provider, so these mints return
+  the custodied key and rely on the provider's key-rotation API for the
+  revoke story — the ledger records issuance exactly as before.)
+
+  **Decision SI-D2 (supersedes the earlier "re-target `db-migrate` /
+  `functions-deploy`" sentence):** those two templates genuinely require the
+  Management API — a service-role key cannot run DDL or deploy Edge
+  Functions — so re-targeting them would break their function. They stay on
+  the management plane (refresh-derived, labeled `user-derived`); the
+  project-plane escape from the user tie is `project-service-key`, which is
+  what run-time data-plane bindings (e.g. `SUPABASE_SERVICE_ROLE_KEY`)
+  should bind to.
 - **Management plane (the connect-time 5%).** `management-access` (project
   create, config, branches) genuinely requires a user-consented session.
   The refresh token stays — but demoted and labeled: custody row carries
@@ -186,7 +196,7 @@ Migration `840_service_identity_custody`:
 | SI1 | **Contract + custody classes.** `provision` capability on the seam; migration `840`; candidate-order flip; ledger `parent_kind` | Dual-read live; every new mint row carries `parent_kind`; no behavior change for existing connections |
 | SI2 | **Cloudflare provisioning.** OAuth callback provisions the service token (or guided paste per SI-D1); identity credentials deleted post-provision | A fresh OAuth connect ends with only `cloudflare_service_token` in custody; mints flow from it |
 | SI3 | **Backfill.** Per-connection upgrade job for active Cloudflare OAuth connections: under the mint lock — refresh once, provision service token, verify with a probe mint, swap custody, delete refresh token, emit `integration.connection.upgraded`. Failure leaves the connection exactly as it was (refresh re-enveloped); health flags it for manual re-connect | `parent_kind = cloudflare_refresh_token` count reaches zero in the ledger; refresh custody rows for Cloudflare are gone |
-| SI4 | **Supabase project credentials.** Project-key custody + reconcile cron; `db-migrate`/`functions-deploy` re-targeted; management plane labeled `user-derived` with re-bootstrap flow | Run-time resolves of project templates make zero management-API calls; console shows the user-tie only on `management-access` |
+| SI4 | **Supabase project credentials.** Project-key custody + reconcile cron; custody-served `project-service-key` template (SI-D2); management plane labeled `user-derived` with re-bootstrap flow | Run-time resolves of `project-service-key` make zero management-API calls; the user-tie is confined to the management-plane templates |
 | SI5 | **Deprecation + hardening.** Reject new Cloudflare refresh-token custody writes; drop `cloudflare_refresh_token` from candidates; scheduled `rotateServiceIdentity` cron (IH9 lane); orphan sweep extended to service tokens | A user-derived parent can no longer authorize a Cloudflare mint, structurally; rotation runbook is a no-op doc |
 | SI6 | **Console + copy.** Connect flow states the contract ("your login provisions Orun's own identity, then is discarded"); connection detail shows credential class, rotation age, and — where applicable — the user-tie warning | Hub cards reflect class; docs updated |
 

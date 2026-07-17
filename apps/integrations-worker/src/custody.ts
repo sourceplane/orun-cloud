@@ -76,6 +76,49 @@ export async function readParentCredential(
   return null;
 }
 
+export type CustodyServedRead =
+  | { ok: true; value: string }
+  | { ok: false; reason: "custody_missing" | "entry_missing" };
+
+/**
+ * Custody-served credential read (SI4): decrypt an infrastructure-class
+ * custody row and return the value a custody-served template mints. When
+ * `selector` is present the ciphertext is an encrypted JSON map (e.g.
+ * {projectRef: serviceKey}) and the selector picks the entry; without one
+ * the decrypted string IS the value. Read-only — no lock, no rotation.
+ */
+export async function readCustodyServedCredential(
+  env: Env,
+  executor: SqlExecutor,
+  connectionUuid: Uuid,
+  kind: ProviderCredentialKind,
+  selector?: string,
+): Promise<CustodyServedRead> {
+  const encryption = await createEncryptionAdapter(env.SECRET_ENCRYPTION_KEY);
+  if (!encryption) return { ok: false, reason: "custody_missing" };
+  const hub = createIntegrationHubRepository(executor);
+  const credential = await hub.getProviderCredential(connectionUuid, kind);
+  if (!credential.ok) return { ok: false, reason: "custody_missing" };
+  let plaintext: string;
+  try {
+    plaintext = await encryption.decrypt(
+      JSON.parse(credential.value.ciphertext) as CiphertextEnvelope,
+    );
+  } catch {
+    return { ok: false, reason: "custody_missing" };
+  }
+  if (selector === undefined) return { ok: true, value: plaintext };
+  try {
+    const map = JSON.parse(plaintext) as Record<string, unknown>;
+    const entry = map?.[selector];
+    return typeof entry === "string" && entry
+      ? { ok: true, value: entry }
+      : { ok: false, reason: "entry_missing" };
+  } catch {
+    return { ok: false, reason: "entry_missing" };
+  }
+}
+
 /** Rotation re-envelope (IH6/IH9): encrypt + upsert a rotated/refreshed
  *  parent. Best-effort; returns false on any failure, never throws. */
 export async function reEnvelopeParentCredential(
