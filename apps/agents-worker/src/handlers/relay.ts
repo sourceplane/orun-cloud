@@ -22,12 +22,11 @@ import type { AgentsDeps } from "../deps.js";
 import type { ActorContext } from "../router.js";
 import { errorResponse } from "../http.js";
 import { gateSessionActor } from "./runtime.js";
+import { chooseRelayNamespace, relayStubFor } from "../relay-epoch.js";
 
 /** relayStub resolves the per-session DO instance, or null when unbound. */
-function relayStub(env: Env, sessionId: string): DurableObjectStub | null {
-  if (!env.SESSION_RELAY) return null;
-  const id = env.SESSION_RELAY.idFromName(sessionId);
-  return env.SESSION_RELAY.get(id);
+function relayStub(env: Env, sessionId: string, sessionCreatedAt?: string): DurableObjectStub | null {
+  return relayStubFor(env, sessionId, sessionCreatedAt);
 }
 
 /** forward maps a worker request to the DO's internal HTTP surface. */
@@ -45,8 +44,13 @@ async function forward(
 
 // ── Head-facing ─────────────────────────────────────────────
 
-/** GET …/attach — the console/remote head SSE feed. Requires read. */
+/** GET …/attach — the console/remote head feed: a WebSocket when the client
+ * asks to upgrade (saas-agents-native AN1 — the SDK relay's socket, attach-v1
+ * frames both directions), the AL6 SSE stream otherwise. Requires read. The
+ * upgrade is forwarded through the stub untouched; the attach params +
+ * edge-stamped principal ride the forwarded URL exactly as SSE's do. */
 export async function handleAttach(
+  request: Request,
   env: Env,
   deps: AgentsDeps,
   orgId: string,
@@ -59,14 +63,23 @@ export async function handleAttach(
   if (!(await deps.authorize("organization.agent.session.read", orgId, actor, requestId))) {
     return errorResponse("forbidden", "Not authorized", 403, requestId);
   }
-  const stub = relayStub(env, sessionId);
+  const session = await deps.repo.getSession({ orgId }, sessionId);
+  if (!session) return errorResponse("not_found", "Session not found", 404, requestId);
+  const stub = relayStub(env, sessionId, session.createdAt);
   if (!stub) return errorResponse("unavailable", "Relay not configured", 503, requestId);
   const principal = actor.subjectId || "unknown";
-  return forward(
-    stub,
-    "GET",
-    `/attach?from=${from}&surface=${encodeURIComponent(surface)}&principal=${encodeURIComponent(principal)}`,
-  );
+  const qs = `from=${from}&surface=${encodeURIComponent(surface)}&principal=${encodeURIComponent(principal)}`;
+
+  if (request.headers.get("upgrade")?.toLowerCase() === "websocket") {
+    // WS binding: only the SDK class speaks it; a draining KV-class session
+    // keeps the SSE feed (the client falls back — AN lock 2's posture).
+    if (chooseRelayNamespace(env, session.createdAt) !== env.ATTACH_RELAY || !env.ATTACH_RELAY) {
+      return errorResponse("upgrade_unavailable", "WebSocket attach not available for this session", 426, requestId);
+    }
+    return stub.fetch(new Request(`https://relay/attach?${qs}`, request));
+  }
+
+  return forward(stub, "GET", `/attach?${qs}`);
 }
 
 /** POST …/input — a head steer/verdict/interrupt/end. Requires interact; the
@@ -83,7 +96,9 @@ export async function handleHeadInput(
   if (!(await deps.authorize("organization.agent.session.interact", orgId, actor, requestId))) {
     return errorResponse("forbidden", "Not authorized", 403, requestId);
   }
-  const stub = relayStub(env, sessionId);
+  const session = await deps.repo.getSession({ orgId }, sessionId);
+  if (!session) return errorResponse("not_found", "Session not found", 404, requestId);
+  const stub = relayStub(env, sessionId, session.createdAt);
   if (!stub) return errorResponse("unavailable", "Relay not configured", 503, requestId);
   const body = await request.text();
   return forward(stub, "POST", "/input", {
@@ -113,7 +128,7 @@ export async function handleRelayStream(
 ): Promise<Response> {
   const gate = await gateSessionActor(deps, orgId, sessionId, actor, requestId);
   if (gate instanceof Response) return gate;
-  const stub = relayStub(env, sessionId);
+  const stub = relayStub(env, sessionId, gate.session.createdAt);
   if (!stub) return errorResponse("unavailable", "Relay not configured", 503, requestId);
   return forward(stub, "POST", "/stream", {
     body: await request.text(),
@@ -132,7 +147,7 @@ export async function handleRelayPollInputs(
 ): Promise<Response> {
   const gate = await gateSessionActor(deps, orgId, sessionId, actor, requestId);
   if (gate instanceof Response) return gate;
-  const stub = relayStub(env, sessionId);
+  const stub = relayStub(env, sessionId, gate.session.createdAt);
   if (!stub) return errorResponse("unavailable", "Relay not configured", 503, requestId);
   return forward(stub, "GET", `/inputs?cursor=${cursor}`);
 }
@@ -148,7 +163,7 @@ export async function handleRelayAck(
 ): Promise<Response> {
   const gate = await gateSessionActor(deps, orgId, sessionId, actor, requestId);
   if (gate instanceof Response) return gate;
-  const stub = relayStub(env, sessionId);
+  const stub = relayStub(env, sessionId, gate.session.createdAt);
   if (!stub) return errorResponse("unavailable", "Relay not configured", 503, requestId);
   return forward(stub, "POST", "/inputs/ack", {
     body: await request.text(),

@@ -1,6 +1,6 @@
 # saas-agents-native — Design (the SDK relay, the Workspace Agent)
 
-Status: Draft (normative once AN1 lands)
+Status: **Normative** (AN1 landed 2026-07-17)
 
 Written against repo reality as of 2026-07-17: `apps/agents-worker` ships the
 AL6 relay as-built — a hand-rolled `DurableObject` shell (`relay-do.ts`)
