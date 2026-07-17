@@ -17,6 +17,7 @@ import { handleCreateSession, handleGetSession, handleListSessions } from "./han
 import { handleListSessionEvents } from "./handlers/events.js";
 import {
   handleAttach,
+  handleBodyWire,
   handleHeadInput,
   handleRelayAck,
   handleRelayPollInputs,
@@ -106,6 +107,9 @@ const SESSION_INPUT_RE = /^\/v1\/organizations\/([^/]+)\/agents\/sessions\/([^/]
 // wire-only delta fan-out and the head→body steer return-queue (long-poll +
 // ack). Session-actor gated like heartbeat/events.
 const SESSION_STREAM_RE = /^\/v1\/organizations\/([^/]+)\/agents\/sessions\/([^/]+)\/stream$/;
+// The body wire (orun-agents-native AN0): one WS carrying inputs down and
+// acks/deltas up. Session-actor gated like the other body routes.
+const SESSION_WIRE_RE = /^\/v1\/organizations\/([^/]+)\/agents\/sessions\/([^/]+)\/wire$/;
 const SESSION_INPUTS_RE = /^\/v1\/organizations\/([^/]+)\/agents\/sessions\/([^/]+)\/inputs$/;
 const SESSION_INPUTS_ACK_RE = /^\/v1\/organizations\/([^/]+)\/agents\/sessions\/([^/]+)\/inputs\/ack$/;
 const AUTONOMY_RE = /^\/v1\/organizations\/([^/]+)\/agents\/autonomy$/;
@@ -149,6 +153,7 @@ export async function route(request: Request, env: Env, injectedDeps?: AgentsDep
       SESSION_ATTACH_RE.test(url.pathname) ||
       SESSION_INPUT_RE.test(url.pathname) ||
       SESSION_STREAM_RE.test(url.pathname) ||
+      SESSION_WIRE_RE.test(url.pathname) ||
       SESSION_INPUTS_RE.test(url.pathname) ||
       SESSION_INPUTS_ACK_RE.test(url.pathname) ||
       PROVIDERS_RE.test(url.pathname) ||
@@ -396,6 +401,15 @@ async function dispatch(
       const cursor = Number(url.searchParams.get("cursor") ?? "0");
       return handleRelayPollInputs(deps, env, orgId, sessionId, actor, requestId, cursor);
     }
+    return methodNotAllowed(requestId);
+  }
+
+  m = SESSION_WIRE_RE.exec(url.pathname);
+  if (m) {
+    const orgId = parseOrgPublicId(m[1]!);
+    if (!orgId) return notFound(requestId, url.pathname);
+    const sessionId = m[2]!;
+    if (request.method === "GET") return handleBodyWire(request, deps, env, orgId, sessionId, actor, requestId);
     return methodNotAllowed(requestId);
   }
 

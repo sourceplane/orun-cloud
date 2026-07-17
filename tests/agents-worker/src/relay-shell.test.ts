@@ -380,3 +380,130 @@ describe("AN1: WS protocol edges", () => {
     expect(frames.map((f) => f.t)).toContain("live");
   });
 });
+
+// ── AN2: the body wire (AN0's cloud door) ──────────────────────────────────
+
+import { RelayShell } from "../../../apps/agents-worker/src/relay-shell.js";
+
+function wireURL(): URL {
+  return new URL("https://relay/wire");
+}
+
+describe("AN2: the body wire on the shell", () => {
+  it("pushes a head input to the connected wire at enqueue time, principal-stamped", async () => {
+    const shell = new RelayShell(memStorage(), { sessionId: "as_w1" });
+    await shell.load();
+    const body = fakeConn("wire-1");
+    shell.connect(body, wireURL());
+
+    const head = fakeConn("head-1");
+    shell.connect(head, attachURL(-1, "console", "usr_alice"));
+    const done = shell.message(head, encodeFrame(steerFrame("in-1", "ship it")));
+
+    // The wire got the push immediately — before any ack, before any poll.
+    const pushed = body.sent.map((m) => JSON.parse(m) as AttachFrame).find((f) => f.t === "steer");
+    expect(pushed).toBeDefined();
+    expect(pushed!.payload?.principal).toBe("usr_alice");
+
+    // The body acks over the wire; the head's blocking send resolves.
+    await shell.message(body, encodeFrame(ackFrame("in-1", true, "")));
+    await done;
+    const headAck = JSON.parse(head.sent[head.sent.length - 1]!) as AttachFrame;
+    expect(headAck.t).toBe("ack");
+    expect(headAck.ok).toBe(true);
+  });
+
+  it("re-pushes only the UNACKED backlog on a fresh wire connect", async () => {
+    const storage = memStorage();
+    const shell = new RelayShell(storage, { sessionId: "as_w2" });
+    await shell.load();
+    const head = fakeConn("head-1");
+    shell.connect(head, attachURL(-1, "console", "usr_alice"));
+
+    // Two inputs while NO wire is connected; the first gets acked over HTTP
+    // (the long-poll world), the second stays pending.
+    void shell.message(head, encodeFrame(steerFrame("in-1", "first")));
+    void shell.message(head, encodeFrame(steerFrame("in-2", "second")));
+    await shell.bodyRequest(
+      new Request("https://relay/inputs/ack", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: encodeFrame(ackFrame("in-1", true, "")),
+      }),
+    );
+
+    const body = fakeConn("wire-1");
+    shell.connect(body, wireURL());
+    const pushed = body.sent.map((m) => JSON.parse(m) as AttachFrame).filter((f) => f.t === "steer");
+    expect(pushed.map((f) => f.ref)).toEqual(["in-2"]); // in-1 acked, not re-pushed
+  });
+
+  it("persists the acked set across hibernation (no duplicate re-push after eviction)", async () => {
+    const storage = memStorage();
+    const shell1 = new RelayShell(storage, { sessionId: "as_w3" });
+    await shell1.load();
+    const head = fakeConn("head-1");
+    shell1.connect(head, attachURL(-1, "console", "usr_a"));
+    void shell1.message(head, encodeFrame(steerFrame("in-1", "x")));
+    const wire1 = fakeConn("wire-1");
+    shell1.connect(wire1, wireURL());
+    await shell1.message(wire1, encodeFrame(ackFrame("in-1", true, "")));
+
+    // Eviction: a new shell over the same storage; a fresh wire connects.
+    const shell2 = new RelayShell(storage, { sessionId: "as_w3" });
+    await shell2.load();
+    const wire2 = fakeConn("wire-2");
+    shell2.connect(wire2, wireURL());
+    expect(wire2.sent.filter((m) => m.includes('"steer"'))).toHaveLength(0);
+  });
+
+  it("a wire delta fans out to heads; a wire bye closes the relay", async () => {
+    const shell = new RelayShell(memStorage(), { sessionId: "as_w4" });
+    await shell.load();
+    const head = fakeConn("head-1");
+    shell.connect(head, attachURL(-1, "console", "usr_a"));
+    const body = fakeConn("wire-1");
+    shell.connect(body, wireURL());
+
+    await shell.message(body, encodeFrame({ v: 1, t: "delta", turn: 1, text: "strea" }));
+    expect(head.sent.some((m) => m.includes('"delta"'))).toBe(true);
+
+    await shell.message(body, encodeFrame({ v: 1, t: "bye", reason: "terminal" }));
+    const last = JSON.parse(head.sent[head.sent.length - 1]!) as AttachFrame;
+    expect(last.t).toBe("bye");
+  });
+
+  it("rejoins a hibernated wire without re-push, and inputs enqueued after the wake reach it", async () => {
+    const storage = memStorage();
+    const shell1 = new RelayShell(storage, { sessionId: "as_w5" });
+    await shell1.load();
+    const body = fakeConn("wire-1");
+    shell1.connect(body, wireURL());
+    const sentBefore = body.sent.length;
+
+    // Eviction; the socket survives; the wake rejoins it silently.
+    const shell2 = new RelayShell(storage, { sessionId: "as_w5" });
+    await shell2.load();
+    shell2.rejoin(body);
+    expect(body.sent.length).toBe(sentBefore); // no re-push, no chatter
+
+    const head = fakeConn("head-1");
+    shell2.connect(head, attachURL(-1, "console", "usr_a"));
+    void shell2.message(head, encodeFrame(steerFrame("in-9", "post-wake")));
+    expect(body.sent.some((m) => m.includes('"in-9"'))).toBe(true);
+  });
+
+  it("the long-poll still serves everything (the wire is an accelerant, not the record)", async () => {
+    const shell = new RelayShell(memStorage(), { sessionId: "as_w6" });
+    await shell.load();
+    const body = fakeConn("wire-1");
+    shell.connect(body, wireURL());
+    const head = fakeConn("head-1");
+    shell.connect(head, attachURL(-1, "console", "usr_a"));
+    void shell.message(head, encodeFrame(steerFrame("in-1", "x")));
+
+    const poll = await shell.bodyRequest(new Request("https://relay/inputs?cursor=0"));
+    const { items } = (await poll.json()) as { items: AttachFrame[] };
+    expect(items.map((f) => f.ref)).toEqual(["in-1"]);
+  });
+});

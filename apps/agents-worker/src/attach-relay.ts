@@ -14,8 +14,8 @@
 // old class. The KV-era class and binding are deleted one release later.
 
 import { Agent, type Connection, type ConnectionContext } from "agents";
-import { RelayCore, type RelaySessionInfo, type RelayStorage } from "./relay-core.js";
-import { connectHead, handleBodyRequest, handleHeadMessage, rejoinHead } from "./relay-shell.js";
+import type { RelayStorage } from "./relay-core.js";
+import { RelayShell } from "./relay-shell.js";
 
 interface RelayEnv {
   ENVIRONMENT: string;
@@ -27,55 +27,51 @@ export class AttachRelay extends Agent<RelayEnv> {
   // wire speaks attach v1 and nothing else (AN lock 2).
   static override options = { hibernate: true, sendIdentityOnConnect: false };
 
-  private core = new RelayCore(this.ctx.storage as unknown as RelayStorage, { sessionId: "" });
+  private shell = new RelayShell(this.ctx.storage as unknown as RelayStorage, { sessionId: "" });
   private loaded = false;
 
   /**
    * ensureLoaded rehydrates after any wake: reload the durable mirror, then
-   * re-register every surviving hibernated socket in the fan-out set BEFORE
-   * the wake's own work runs — an ingest that woke the DO must reach heads
-   * whose sockets outlived the eviction.
+   * re-register every surviving hibernated socket (heads into the fan-out
+   * set, body wires into the push set) BEFORE the wake's own work runs — an
+   * ingest that woke the DO must reach sockets that outlived the eviction.
    */
   private async ensureLoaded(): Promise<void> {
     if (this.loaded) return;
-    await this.core.load();
+    await this.shell.load();
     this.loaded = true;
     for (const conn of this.getConnections()) {
-      rejoinHead(this.core, conn);
+      this.shell.rejoin(conn);
     }
   }
 
-  /** WS head attach: hello → replay past `from` → live, with the attach
-   * params the (already-authorized) worker handler stamped onto the upgrade
-   * URL. Mirrors the SSE attach choreography exactly. */
+  /** WS connect: a head attach (hello → replay → live) or the body wire
+   * (unacked-input re-push), routed by the path the worker handler forwarded
+   * — both already authorized upstream. */
   override async onConnect(conn: Connection, ctx: ConnectionContext): Promise<void> {
     await this.ensureLoaded();
-    connectHead(this.core, conn, new URL(ctx.request.url));
+    this.shell.connect(conn, new URL(ctx.request.url));
   }
 
-  /** WS head inputs: steer/verdict/interrupt/end into the return queue with
-   * the connection's edge-stamped principal; the body's ack answers on the
-   * same socket. Binary messages are not part of attach v1. */
+  /** WS messages: head inputs (→ return queue + body-wire push, acked on the
+   * head's socket) or body traffic (acks/deltas/bye). Binary messages are not
+   * part of attach v1. */
   override async onMessage(conn: Connection, message: string | ArrayBuffer): Promise<void> {
     await this.ensureLoaded();
     if (typeof message !== "string") return;
-    await handleHeadMessage(this.core, conn, message);
+    await this.shell.message(conn, message);
   }
 
-  /** A closed socket leaves the presence set; the session continues. */
+  /** A closed socket leaves the presence/push set; the session continues. */
   override async onClose(conn: Connection): Promise<void> {
     await this.ensureLoaded();
-    this.core.detach(conn.id);
+    this.shell.close(conn);
   }
 
   /** The HTTP surface: body routes + the SSE fallback, byte-identical to the
    * AL6 SessionRelay (the body cannot tell which class answered). */
   override async onRequest(request: Request): Promise<Response> {
     await this.ensureLoaded();
-    return handleBodyRequest(this.core, request, async (info: RelaySessionInfo) => {
-      this.core = new RelayCore(this.ctx.storage as unknown as RelayStorage, info);
-      await this.core.load();
-      return this.core;
-    });
+    return this.shell.bodyRequest(request);
   }
 }

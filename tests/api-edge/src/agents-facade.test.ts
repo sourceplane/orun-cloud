@@ -246,3 +246,86 @@ describe("api-edge agents facade", () => {
     });
   });
 });
+
+// ── AN0/AN2 (saas-agents-native): the wire route + the upgrade pass-through ─
+
+describe("agents facade: the body wire + WS upgrade (AN0/AN2)", () => {
+  it("matches the wire route", () => {
+    expect(isAgentsRoute("/v1/organizations/org_abc/agents/sessions/as_1/wire")).toBe(true);
+  });
+
+  it("forwards a WebSocket upgrade with the actor stamped and no idempotency layer", async () => {
+    // Node cannot construct a 101; a 200 stands in for the accepted upgrade.
+    const agents = createFakeFetcher(new Response(null, { status: 200 }));
+    const env = createEnv({ AGENTS_WORKER: agents.fetcher });
+    const path = "/v1/organizations/org_abc/agents/sessions/as_1/attach";
+    const res = await handleAgentsRoute(
+      new Request(`https://api.example.com${path}?from=-1&surface=console`, {
+        headers: { authorization: "Bearer tok", upgrade: "websocket", connection: "Upgrade" },
+      }),
+      env as never,
+      "req_up1",
+      path,
+    );
+    expect(res.status).toBe(200);
+    expect(agents.calls).toHaveLength(1);
+    const fwd = agents.calls[0]!.url.includes("attach") ? agents.calls[0]! : agents.calls[0]!;
+    expect(fwd.url).toContain("/attach?from=-1&surface=console");
+  });
+
+  it("accepts the query bearer on the attach route (browser WS) and strips it before forwarding", async () => {
+    const captured: Request[] = [];
+    const agents = {
+      fetch(input: Request | string | URL): Promise<Response> {
+        const req = input instanceof Request ? input : new Request(String(input));
+        captured.push(req);
+        return Promise.resolve(new Response(null, { status: 200 }));
+      },
+      connect() {
+        throw new Error("not implemented");
+      },
+    } as unknown as Fetcher;
+    const env = createEnv({ AGENTS_WORKER: agents });
+    const path = "/v1/organizations/org_abc/agents/sessions/as_1/attach";
+    const res = await handleAgentsRoute(
+      new Request(`https://api.example.com${path}?from=-1&access_token=tok-browser`, {
+        headers: { upgrade: "websocket" },
+      }),
+      env as never,
+      "req_up2",
+      path,
+    );
+    expect(res.status).toBe(200);
+    expect(captured).toHaveLength(1);
+    expect(captured[0]!.url).not.toContain("access_token");
+    expect(captured[0]!.headers.get("authorization")).toBeNull(); // never forwarded
+    expect(captured[0]!.headers.get("x-actor-subject-id")).toBe("usr_abc123");
+  });
+
+  it("rejects the query bearer on non-attach routes (the wire authenticates with its header)", async () => {
+    const env = createEnv();
+    const path = "/v1/organizations/org_abc/agents/sessions/as_1/wire";
+    const res = await handleAgentsRoute(
+      new Request(`https://api.example.com${path}?access_token=tok`, { headers: { upgrade: "websocket" } }),
+      env as never,
+      "req_up3",
+      path,
+    );
+    expect(res.status).toBe(401);
+  });
+
+  it("accepts the query bearer on a plain attach GET (the EventSource fallback)", async () => {
+    const agents = createFakeFetcher(new Response("data: {}\n", { status: 200 }));
+    const env = createEnv({ AGENTS_WORKER: agents.fetcher });
+    const path = "/v1/organizations/org_abc/agents/sessions/as_1/attach";
+    const res = await handleAgentsRoute(
+      new Request(`https://api.example.com${path}?from=-1&access_token=tok-browser`),
+      env as never,
+      "req_sse1",
+      path,
+    );
+    expect(res.status).toBe(200);
+    expect(agents.calls).toHaveLength(1);
+    expect(agents.calls[0]!.url).not.toContain("access_token");
+  });
+});

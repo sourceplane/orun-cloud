@@ -117,6 +117,32 @@ export async function handleHeadInput(
 // sensitive as the event ingest, so it gates identically. Without this a leaked
 // session id would let any principal read the input queue or inject deltas.
 
+/** GET …/wire — the body's one-socket binding (orun AN0): head inputs pushed
+ * down, acks + deltas up, attach-v1 frames throughout. Upgrade-only, gated
+ * exactly like the other body routes, and only the SDK relay class speaks it
+ * (a draining KV-class session keeps its long-poll — the body falls back). */
+export async function handleBodyWire(
+  request: Request,
+  deps: AgentsDeps,
+  env: Env,
+  orgId: string,
+  sessionId: string,
+  actor: ActorContext,
+  requestId: string,
+): Promise<Response> {
+  const gate = await gateSessionActor(deps, orgId, sessionId, actor, requestId);
+  if (gate instanceof Response) return gate;
+  if (request.headers.get("upgrade")?.toLowerCase() !== "websocket") {
+    return errorResponse("upgrade_required", "The wire is WebSocket-only", 426, requestId);
+  }
+  if (chooseRelayNamespace(env, gate.session.createdAt) !== env.ATTACH_RELAY || !env.ATTACH_RELAY) {
+    return errorResponse("upgrade_unavailable", "Wire not available for this session", 426, requestId);
+  }
+  const stub = relayStub(env, sessionId, gate.session.createdAt);
+  if (!stub) return errorResponse("unavailable", "Relay not configured", 503, requestId);
+  return stub.fetch(new Request("https://relay/wire", request));
+}
+
 export async function handleRelayStream(
   request: Request,
   deps: AgentsDeps,
