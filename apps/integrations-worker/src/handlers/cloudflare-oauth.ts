@@ -70,7 +70,14 @@ type CustodyFailureReason = "bootstrap_grant_insufficient" | "provider_error" | 
 
 type EstablishCustodyResult =
   | { ok: true; custody: EstablishedCustody }
-  | { ok: false; reason: CustodyFailureReason };
+  | {
+      ok: false;
+      reason: CustodyFailureReason;
+      /** Provider detail — for bootstrap_grant_insufficient this names the
+       *  MISSING permission groups (safe metadata, rendered in the popup so
+       *  the admin knows exactly which scopes to grant). */
+      detail?: string;
+    };
 
 /**
  * SI2/SI5 — "OAuth establishes trust, service identities operate": provision
@@ -105,6 +112,7 @@ async function establishCloudflareCustody(
     return {
       ok: false,
       reason: provisioned.reason === "bootstrap_grant_insufficient" ? "bootstrap_grant_insufficient" : "provider_error",
+      ...(provisioned.detail ? { detail: provisioned.detail } : {}),
     };
   }
   const envelope = await encryption.encrypt(provisioned.value.credential);
@@ -132,13 +140,18 @@ async function establishCloudflareCustody(
 }
 
 /** SI5: the connect-failure popup for a failed service-identity bootstrap —
- *  names the remediation instead of a generic error. */
-function custodyFailurePopup(reason: CustodyFailureReason): Response {
+ *  names the remediation instead of a generic error, including exactly which
+ *  permissions the consented grant was missing (safe metadata: permission-
+ *  group names only, never credentials). */
+function custodyFailurePopup(reason: CustodyFailureReason, detail?: string): Response {
   if (reason === "bootstrap_grant_insufficient") {
+    const missing = detail?.startsWith("missing: ") ? detail.slice("missing: ".length) : null;
     return popupPage(
       "error",
       "Authorization cannot create API tokens",
-      "Orun connects by provisioning its own service token in your Cloudflare account, but this authorization cannot create account API tokens. Re-authorize with a user that can manage account API tokens, or connect by pasting an account API token instead.",
+      missing
+        ? `Orun connects by provisioning its own service token in your Cloudflare account, but the consented grant is missing: ${missing}. Add the matching scopes to the OAuth authorization (or the client's registration) and re-authorize, or connect by pasting an account API token instead.`
+        : "Orun connects by provisioning its own service token in your Cloudflare account, but this authorization cannot create account API tokens. Re-authorize with a user that can manage account API tokens, or connect by pasting an account API token instead.",
     );
   }
   return popupPage(
@@ -309,7 +322,7 @@ export async function handleCloudflareOauthCallback(
           deps?.fetchImpl,
         );
         if (!established.ok) {
-          return custodyFailurePopup(established.reason);
+          return custodyFailurePopup(established.reason, "detail" in established ? established.detail : undefined);
         }
         const custody = established.custody;
         await hub.upsertCloudflareAccount({
@@ -389,7 +402,7 @@ export async function handleCloudflareOauthCallback(
       deps?.fetchImpl,
     );
     if (!established.ok) {
-      return custodyFailurePopup(established.reason);
+      return custodyFailurePopup(established.reason, "detail" in established ? established.detail : undefined);
     }
     const custody = established.custody;
 

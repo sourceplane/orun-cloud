@@ -50,28 +50,48 @@ const OAUTH_TOKEN_URL = "https://dash.cloudflare.com/oauth2/token";
 const OAUTH_OFFLINE_ACCESS_SCOPE = "offline_access";
 
 /**
+ * Dot-form OAuth scope per service-identity permission group. Cloudflare's
+ * "OAuth scope names correspond to API token permission names" — observed
+ * convention: kebab-case the group name, suffix `.read`/`.write` (the shipped
+ * pair `account-settings.read`/`memberships.read` established it). The
+ * provisioning bootstrap can only SEE the permission groups its scopes
+ * grant, so the authorize request must carry the scope twin of every group
+ * `serviceIdentityPermissionGroups()` requires — a narrower consent is what
+ * makes provisioning fail `bootstrap_grant_insufficient` even for an account
+ * owner.
+ */
+export const OAUTH_SCOPE_BY_PERMISSION_GROUP: Record<string, string> = {
+  "Account API Tokens Write": "account-api-tokens.write",
+  "Workers Scripts Write": "workers-scripts.write",
+  "Workers KV Storage Write": "workers-kv-storage.write",
+  "Pages Write": "pages.write",
+  "DNS Write": "dns.write",
+  "Workers R2 Storage Write": "workers-r2-storage.write",
+  "Account Settings Read": "account-settings.read",
+};
+
+/**
  * Fallback scope when `CLOUDFLARE_OAUTH_SCOPE` is unset.
  *
  * Cloudflare self-managed clients grant the access token ONLY the scopes the
  * authorize request asks for (the token does NOT auto-inherit the client's full
- * scope set — a request of only `offline_access` yields "0 total permissions"
- * on the consent screen and then fails the authorization). And the scope strings
- * are the client's own dot-form (`account-settings.read`), NOT wrangler's
- * colon-form (`account:read` → invalid_scope). The protocol scopes `openid`/
- * `offline_access` are auto-managed by Cloudflare from the client's grant_types
- * (add `refresh_token` to the client to get `offline_access`), so we never send
- * them in `scopes` at creation — but we DO request `offline_access` here to
- * obtain the refresh token.
+ * scope set — the live SI-D1 incident: a 2-permission consent made an account
+ * OWNER's grant unable to create tokens). Scope strings are the client's own
+ * dot-form (`account-settings.read`), NOT wrangler's colon-form (`account:read`
+ * → invalid_scope). `openid`/`offline_access` are protocol scopes; we request
+ * `offline_access` to obtain the refresh token used inside the bootstrap.
  *
- * So the default requests the minimum for a working connection: `account-
- * settings.read` + `memberships.read` (enough for `GET /accounts` account
- * discovery, and ≥1 permission so consent is non-empty) plus `offline_access`
- * (re-appended by resolveCloudflareOauthScope). Deployments broaden this to the
- * resource scopes their plans need — in the client's dot-form — via
- * `CLOUDFLARE_OAUTH_SCOPE`; the brokered access token carries exactly what is
- * requested here.
+ * The default therefore requests the FULL provisioning set: account discovery
+ * (`account-settings.read` + `memberships.read`) plus the scope twin of every
+ * service-identity permission group — so an unset `CLOUDFLARE_OAUTH_SCOPE`
+ * yields a consent whose grant can actually provision. The requested scopes
+ * must be registered on the OAuth client; a client registered narrower fails
+ * the authorize redirect with `invalid_scope`, and `CLOUDFLARE_OAUTH_SCOPE`
+ * remains the per-environment override to narrow (or correct) the request.
  */
-export const CLOUDFLARE_DEFAULT_OAUTH_SCOPE = "account-settings.read memberships.read";
+export const CLOUDFLARE_DEFAULT_OAUTH_SCOPE = [
+  ...new Set(["account-settings.read", "memberships.read", ...Object.values(OAUTH_SCOPE_BY_PERMISSION_GROUP)]),
+].join(" ");
 
 /**
  * Normalize a requested scope string into the exact `scope` value to send:
