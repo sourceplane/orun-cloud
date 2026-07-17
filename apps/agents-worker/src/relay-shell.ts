@@ -370,6 +370,18 @@ export class RelayShell {
     return ackP;
   }
 
+  /** ack records a body ack (either carriage) and resolves the waiting head. */
+  async ack(ack: AttachFrame): Promise<void> {
+    await this.recordAck(ack);
+  }
+
+  /** headInput runs a head input through the wire-aware enqueue with the
+   * bounded ack wait — the one path every input door (WS head message, HTTP
+   * POST /input, typed RPC) flows through. */
+  async headInput(frame: AttachFrame, principal: string): Promise<AttachFrame> {
+    return withAckTimeout(this.enqueue(frame, principal), frame.ref || "");
+  }
+
   private async recordAck(ack: AttachFrame): Promise<void> {
     if (ack.ref) {
       this.acked.add(ack.ref);
@@ -415,8 +427,7 @@ export class RelayShell {
             return new Response("not a head input frame", { status: 400 });
           }
           const principal = request.headers.get("x-actor-principal") || "unknown";
-          const ack = await withAckTimeout(this.enqueue(frame, principal), frame.ref || "");
-          return Response.json(ack);
+          return Response.json(await this.headInput(frame, principal));
         }
         case "GET /attach":
           return sseAttach(this.core, url);

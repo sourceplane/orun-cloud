@@ -29,3 +29,36 @@ export function relayStubFor(env: Env, sessionId: string, sessionCreatedAt?: str
   if (!ns) return null;
   return ns.get(ns.idFromName(sessionId));
 }
+
+/** The SDK relay's typed RPC surface (saas-agents-native AN3): the worker
+ * calls methods, not URLs — the hand-rolled internal route table was always
+ * an RPC layer wearing a trench coat (design §4). Upgrade forwarding (WS,
+ * SSE) legitimately stays `fetch`: those move a live Request. */
+export interface AttachRelayRpc {
+  initSession(info: unknown): Promise<void>;
+  ingestEvents(frames: unknown[]): Promise<number>;
+  streamDelta(frame: unknown): Promise<void>;
+  pollInputs(cursor: number): Promise<{ items: unknown[]; cursor: number }>;
+  ackInput(ack: unknown): Promise<void>;
+  headInput(frame: unknown, principal: string): Promise<unknown>;
+  armLease(orgId: string, leaseExpiresAt: string): Promise<void>;
+}
+
+export type RelayPeer =
+  | { kind: "rpc"; rpc: AttachRelayRpc; stub: DurableObjectStub }
+  | { kind: "http"; stub: DurableObjectStub };
+
+/**
+ * relayPeerFor resolves the session's relay AND how to talk to it: typed RPC
+ * on the SDK class, the legacy HTTP forward on the draining KV class (deleted
+ * with it, lock 7).
+ */
+export function relayPeerFor(env: Env, sessionId: string, sessionCreatedAt?: string): RelayPeer | null {
+  const ns = chooseRelayNamespace(env, sessionCreatedAt);
+  if (!ns) return null;
+  const stub = ns.get(ns.idFromName(sessionId));
+  if (ns === env.ATTACH_RELAY) {
+    return { kind: "rpc", rpc: stub as unknown as AttachRelayRpc, stub };
+  }
+  return { kind: "http", stub };
+}

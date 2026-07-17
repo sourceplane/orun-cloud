@@ -336,7 +336,7 @@ async function dispatch(
     const orgId = parseOrgPublicId(m[1]!);
     if (!orgId) return notFound(requestId, url.pathname);
     const sessionId = m[2]!;
-    if (request.method === "POST") return handleSessionHeartbeat(deps, orgId, sessionId, actor, requestId);
+    if (request.method === "POST") return handleSessionHeartbeat(deps, orgId, sessionId, actor, requestId, undefined, env);
     return methodNotAllowed(requestId);
   }
 

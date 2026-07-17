@@ -22,7 +22,7 @@ import type { AgentsDeps } from "../deps.js";
 import type { ActorContext } from "../router.js";
 import { errorResponse } from "../http.js";
 import { gateSessionActor } from "./runtime.js";
-import { chooseRelayNamespace, relayStubFor } from "../relay-epoch.js";
+import { chooseRelayNamespace, relayPeerFor, relayStubFor } from "../relay-epoch.js";
 
 /** relayStub resolves the per-session DO instance, or null when unbound. */
 function relayStub(env: Env, sessionId: string, sessionCreatedAt?: string): DurableObjectStub | null {
@@ -98,14 +98,18 @@ export async function handleHeadInput(
   }
   const session = await deps.repo.getSession({ orgId }, sessionId);
   if (!session) return errorResponse("not_found", "Session not found", 404, requestId);
-  const stub = relayStub(env, sessionId, session.createdAt);
-  if (!stub) return errorResponse("unavailable", "Relay not configured", 503, requestId);
-  const body = await request.text();
-  return forward(stub, "POST", "/input", {
-    body,
+  const peer = relayPeerFor(env, sessionId, session.createdAt);
+  if (!peer) return errorResponse("unavailable", "Relay not configured", 503, requestId);
+  const principal = actor.subjectId || "unknown";
+  if (peer.kind === "rpc") {
+    const frame = (await request.json()) as Record<string, unknown>;
+    return Response.json(await peer.rpc.headInput(frame, principal));
+  }
+  return forward(peer.stub, "POST", "/input", {
+    body: await request.text(),
     headers: {
       "content-type": "application/json",
-      "x-actor-principal": actor.subjectId || "unknown",
+      "x-actor-principal": principal,
     },
   });
 }
@@ -154,9 +158,13 @@ export async function handleRelayStream(
 ): Promise<Response> {
   const gate = await gateSessionActor(deps, orgId, sessionId, actor, requestId);
   if (gate instanceof Response) return gate;
-  const stub = relayStub(env, sessionId, gate.session.createdAt);
-  if (!stub) return errorResponse("unavailable", "Relay not configured", 503, requestId);
-  return forward(stub, "POST", "/stream", {
+  const peer = relayPeerFor(env, sessionId, gate.session.createdAt);
+  if (!peer) return errorResponse("unavailable", "Relay not configured", 503, requestId);
+  if (peer.kind === "rpc") {
+    await peer.rpc.streamDelta(await request.json());
+    return Response.json({ ok: true });
+  }
+  return forward(peer.stub, "POST", "/stream", {
     body: await request.text(),
     headers: { "content-type": "application/json" },
   });
@@ -173,9 +181,12 @@ export async function handleRelayPollInputs(
 ): Promise<Response> {
   const gate = await gateSessionActor(deps, orgId, sessionId, actor, requestId);
   if (gate instanceof Response) return gate;
-  const stub = relayStub(env, sessionId, gate.session.createdAt);
-  if (!stub) return errorResponse("unavailable", "Relay not configured", 503, requestId);
-  return forward(stub, "GET", `/inputs?cursor=${cursor}`);
+  const peer = relayPeerFor(env, sessionId, gate.session.createdAt);
+  if (!peer) return errorResponse("unavailable", "Relay not configured", 503, requestId);
+  if (peer.kind === "rpc") {
+    return Response.json(await peer.rpc.pollInputs(cursor));
+  }
+  return forward(peer.stub, "GET", `/inputs?cursor=${cursor}`);
 }
 
 export async function handleRelayAck(
@@ -189,9 +200,13 @@ export async function handleRelayAck(
 ): Promise<Response> {
   const gate = await gateSessionActor(deps, orgId, sessionId, actor, requestId);
   if (gate instanceof Response) return gate;
-  const stub = relayStub(env, sessionId, gate.session.createdAt);
-  if (!stub) return errorResponse("unavailable", "Relay not configured", 503, requestId);
-  return forward(stub, "POST", "/inputs/ack", {
+  const peer = relayPeerFor(env, sessionId, gate.session.createdAt);
+  if (!peer) return errorResponse("unavailable", "Relay not configured", 503, requestId);
+  if (peer.kind === "rpc") {
+    await peer.rpc.ackInput(await request.json());
+    return Response.json({ ok: true });
+  }
+  return forward(peer.stub, "POST", "/inputs/ack", {
     body: await request.text(),
     headers: { "content-type": "application/json" },
   });

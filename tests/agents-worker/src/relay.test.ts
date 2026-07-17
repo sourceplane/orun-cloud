@@ -266,18 +266,16 @@ describe("AN1: the attach door (WS upgrade + SSE fallback)", () => {
   });
 });
 
-describe("AN1: the ingest mirror (the AL6 remainder, closed)", () => {
-  it("mirrors an accepted event batch to the relay DO as attach-v1 frames", async () => {
+describe("AN1/AN3: the ingest mirror (typed RPC on the SDK class)", () => {
+  it("mirrors an accepted event batch to the relay DO via ingestEvents()", async () => {
     const f = await fixture();
-    const capture: Captured[] = [];
-    const bodies: unknown[] = [];
+    const batches: unknown[] = [];
     const ns = {
       idFromName: (name: string) => ({ name }),
       get: () => ({
-        fetch: async (req: Request) => {
-          capture.push({ url: new URL(req.url).pathname, method: req.method });
-          bodies.push(await req.json());
-          return Response.json({ accepted: 1 });
+        ingestEvents: async (frames: unknown[]) => {
+          batches.push(frames);
+          return frames.length;
         },
       }),
     } as unknown as NonNullable<Env["SESSION_RELAY"]>;
@@ -291,10 +289,24 @@ describe("AN1: the ingest mirror (the AL6 remainder, closed)", () => {
       f.deps,
     );
     expect(res.status).toBe(200);
-    expect(capture.map((c) => `${c.method} ${c.url}`)).toEqual(["POST /events"]);
-    expect(bodies[0]).toEqual([
+    expect(batches).toHaveLength(1);
+    expect(batches[0]).toEqual([
       { v: 1, t: "event", seq: 0, kind: "message_agent", at: "2026-07-17T00:00:00Z", payload: { text: "hi" } },
     ]);
+  });
+
+  it("a draining KV-class session still mirrors over the HTTP forward", async () => {
+    const f = await fixture();
+    const capture: Captured[] = [];
+    const env: Env = {
+      ...baseEnv,
+      SESSION_RELAY: mockNamespace(capture, { accepted: 1 }),
+      ATTACH_RELAY: mockNamespace([], {}),
+      RELAY_CUTOVER_AT: "2099-01-01T00:00:00Z", // every session pre-dates it
+    };
+    const res = await route(relayReq(f, "POST", "events", { body: [{ seq: 0, kind: "message_agent" }] }), env, f.deps);
+    expect(res.status).toBe(200);
+    expect(capture.map((c) => `${c.method} ${c.url}`)).toEqual(["POST /events"]);
   });
 
   it("a mirror failure never fails the ingest", async () => {
@@ -302,7 +314,7 @@ describe("AN1: the ingest mirror (the AL6 remainder, closed)", () => {
     const ns = {
       idFromName: (name: string) => ({ name }),
       get: () => ({
-        fetch: async () => {
+        ingestEvents: async () => {
           throw new Error("relay down");
         },
       }),

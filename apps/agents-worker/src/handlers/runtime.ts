@@ -20,7 +20,7 @@ import type { ActorContext } from "../router.js";
 import type { AgentSession } from "@saas/db/agents";
 import { AgentsError, isTerminal } from "@saas/db/agents";
 import { envelopeCrossings } from "../budget.js";
-import { relayStubFor } from "../relay-epoch.js";
+import { relayPeerFor } from "../relay-epoch.js";
 import { eventFrame } from "@saas/contracts/agents-attach";
 import { errorResponse, notFound, successResponse, validationError } from "../http.js";
 import { toPublicSession } from "../mappers.js";
@@ -69,12 +69,27 @@ export async function handleSessionHeartbeat(
   actor: ActorContext,
   requestId: string,
   now: () => Date = () => new Date(),
+  env?: Env,
 ): Promise<Response> {
   const gate = await gateSessionActor(deps, orgId, sessionId, actor, requestId);
   if (gate instanceof Response) return gate;
   const { session } = gate;
 
   const lease = new Date(now().getTime() + LEASE_TTL_MS).toISOString();
+
+  // Lifecycle in the object (saas-agents-native AN3): every heartbeat re-arms
+  // the session relay's own lease-lapse timer, so a healthy session's timer
+  // never fires and a wedged one reports itself within one TTL — the global
+  // cron is the backstop, not the engine. Best-effort: a miss just means the
+  // backstop catches it.
+  const armLease = async () => {
+    try {
+      const peer = env ? relayPeerFor(env, sessionId, gate.session.createdAt) : null;
+      if (peer?.kind === "rpc") await peer.rpc.armLease(orgId, lease);
+    } catch {
+      // The cron backstop owns the miss.
+    }
+  };
   try {
     if (session.state === "provisioning") {
       const updated = await deps.repo.advanceSession(
@@ -88,9 +103,11 @@ export async function handleSessionHeartbeat(
       console.warn(
         `[agents-runtime] session=${session.publicId} org=${orgPublicId(orgId)} step=running (first heartbeat)`,
       );
+      await armLease();
       return successResponse(toPublicSession(updated), requestId);
     }
     const updated = await deps.repo.touchSessionLease({ orgId }, session.publicId, lease);
+    await armLease();
     return successResponse(toPublicSession(updated), requestId);
   } catch (e) {
     if (e instanceof AgentsError) {
@@ -156,8 +173,8 @@ export async function handleIngestSessionEvent(
   // effort: a mirror failure never fails an ingest (the console still reads
   // the DB; a head re-attach replays from the mirror's next success).
   try {
-    const stub = env ? relayStubFor(env, sessionId, gate.session.createdAt) : null;
-    if (stub) {
+    const peer = env ? relayPeerFor(env, sessionId, gate.session.createdAt) : null;
+    if (peer) {
       const frames = events.map((raw) => {
         const e = raw as Record<string, unknown>;
         return eventFrame(
@@ -168,13 +185,17 @@ export async function handleIngestSessionEvent(
           typeof e.ref === "string" ? e.ref : undefined,
         );
       });
-      await stub.fetch(
-        new Request("https://relay/events", {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify(frames),
-        }),
-      );
+      if (peer.kind === "rpc") {
+        await peer.rpc.ingestEvents(frames);
+      } else {
+        await peer.stub.fetch(
+          new Request("https://relay/events", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify(frames),
+          }),
+        );
+      }
     }
   } catch {
     // Mirror is a projection; the sealed log already has the events.
@@ -206,23 +227,28 @@ export async function handleIngestSessionEvent(
         deps.repo.listSessions({ orgId }),
       ]);
       const crossing = envelopeCrossings(budgets, sessions, updated, prev);
-      const bstub = crossing && env ? relayStubFor(env, sessionId, gate.session.createdAt) : null;
-      if (crossing && bstub) {
-        await bstub.fetch(
-          new Request("https://relay/input", {
-            method: "POST",
-            headers: {
-              "content-type": "application/json",
-              "x-actor-principal": "agents-worker-budget",
-            },
-            body: JSON.stringify({
-              v: 1,
-              t: "interrupt",
-              ref: `budget-${sessionId}-${crossing.grain}`,
-              reason: `budget_exhausted: ${crossing.grain} ceiling ${crossing.limit} tokens (used ${crossing.used})`,
+      const bpeer = crossing && env ? relayPeerFor(env, sessionId, gate.session.createdAt) : null;
+      if (crossing && bpeer) {
+        const interrupt = {
+          v: 1,
+          t: "interrupt",
+          ref: `budget-${sessionId}-${crossing.grain}`,
+          reason: `budget_exhausted: ${crossing.grain} ceiling ${crossing.limit} tokens (used ${crossing.used})`,
+        };
+        if (bpeer.kind === "rpc") {
+          await bpeer.rpc.headInput(interrupt, "agents-worker-budget");
+        } else {
+          await bpeer.stub.fetch(
+            new Request("https://relay/input", {
+              method: "POST",
+              headers: {
+                "content-type": "application/json",
+                "x-actor-principal": "agents-worker-budget",
+              },
+              body: JSON.stringify(interrupt),
             }),
-          }),
-        );
+          );
+        }
       }
     }
   } catch {
