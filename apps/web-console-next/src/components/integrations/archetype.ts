@@ -123,5 +123,13 @@ export const SCOPE_TEMPLATE_CATALOG: Record<string, ScopeTemplateInfo[]> = {
       params: ["projectRef"],
       maxTtlSeconds: HOUR_SECONDS,
     },
+    {
+      id: "project-service-key",
+      displayName: "Project service-role key",
+      description:
+        "The project's service-role API key (projectRef param required), served from org-owned custody captured at connect — no user-derived token and no Management API call on the resolve path.",
+      params: ["projectRef"],
+      maxTtlSeconds: HOUR_SECONDS,
+    },
   ],
 };

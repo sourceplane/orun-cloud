@@ -113,18 +113,24 @@ export function SecretsPanel({ scope, scopeKey }: { scope: ConfigScope; scopeKey
     };
   }, [newSecretRef]);
 
-  // Deep-link (`?bind=1`, saas-integration-hub IH8): the Cmd-K "Bind brokered
-  // secret" entry lands here with the create dialog open in binding mode. Seed
-  // once, then clear the param so a refresh doesn't reopen the dialog.
+  // Deep-link (`?bind=1[&connection=int_…]`, saas-integration-hub IH8): the
+  // Cmd-K "Bind brokered secret" entry and the connection detail page's
+  // "Create scoped credential" button both land here with the create dialog
+  // open in binding mode; `connection` pre-selects and locks that connection.
+  // Seed once, then clear the params so a refresh doesn't reopen the dialog.
+  const [bindConnectionId, setBindConnectionId] = React.useState<string | undefined>(undefined);
   const bindSeeded = React.useRef(false);
   React.useEffect(() => {
     if (bindSeeded.current) return;
     if (searchParams?.get("bind") === "1") {
       bindSeeded.current = true;
+      const conn = searchParams.get("connection");
+      if (conn) setBindConnectionId(conn);
       setCreateMode("binding");
       setCreateOpen(true);
       const next = new URLSearchParams(searchParams.toString());
       next.delete("bind");
+      next.delete("connection");
       const qs = next.toString();
       router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
     }
@@ -178,7 +184,10 @@ export function SecretsPanel({ scope, scopeKey }: { scope: ConfigScope; scopeKey
         open={createOpen}
         onOpenChange={(o) => {
           setCreateOpen(o);
-          if (!o) setCreateMode("value");
+          if (!o) {
+            setCreateMode("value");
+            setBindConnectionId(undefined);
+          }
         }}
       >
         <DialogContent>
@@ -205,7 +214,7 @@ export function SecretsPanel({ scope, scopeKey }: { scope: ConfigScope; scopeKey
               onClick={() => setCreateMode("binding")}
               className={`border-l px-2.5 py-1 text-xs ${createMode === "binding" ? "bg-card font-medium" : "text-muted-foreground"}`}
             >
-              Bind to integration
+              Scoped credential
             </button>
           </div>
 
@@ -242,11 +251,13 @@ export function SecretsPanel({ scope, scopeKey }: { scope: ConfigScope; scopeKey
               scope={scope}
               orgId={orgId}
               enabled={createOpen}
+              initialConnectionId={bindConnectionId}
               onCancel={() => setCreateOpen(false)}
               onCreated={() => {
                 setCreateOpen(false);
                 setCreateMode("value");
-                toast({ kind: "success", title: "Secret bound", description: "Minted at resolve — nothing is stored." });
+                setBindConnectionId(undefined);
+                toast({ kind: "success", title: "Scoped credential created", description: "Minted at resolve — nothing is stored." });
                 secrets.reload();
               }}
             />
@@ -539,12 +550,17 @@ function BindSecretForm({
   enabled,
   onCreated,
   onCancel,
+  initialConnectionId,
 }: {
   scope: ConfigScope;
   orgId: string;
   enabled: boolean;
   onCreated: () => void;
   onCancel: () => void;
+  /** IH8: when the create flow was launched from a connection's detail page
+   *  (`?bind=1&connection=int_…`), the connection is pre-selected and locked —
+   *  the user is binding a scoped credential to THAT connection. */
+  initialConnectionId?: string | undefined;
 }) {
   const { client } = useSession();
 
@@ -572,15 +588,29 @@ function BindSecretForm({
   const templates = selected ? (SCOPE_TEMPLATE_CATALOG[selected.provider] ?? []) : [];
   const template = templates.find((t) => t.id === templateId) ?? null;
 
-  const pickConnection = (id: string) => {
-    setConnectionId(id);
-    const conn = connections.find((c) => c.id === id);
-    const first = conn ? (SCOPE_TEMPLATE_CATALOG[conn.provider] ?? [])[0] : undefined;
-    setTemplateId(first?.id ?? "");
-    setParamInputs({});
-    setErrors({});
-    setFormError(null);
-  };
+  const pickConnection = React.useCallback(
+    (id: string) => {
+      setConnectionId(id);
+      const conn = connections.find((c) => c.id === id);
+      const first = conn ? (SCOPE_TEMPLATE_CATALOG[conn.provider] ?? [])[0] : undefined;
+      setTemplateId(first?.id ?? "");
+      setParamInputs({});
+      setErrors({});
+      setFormError(null);
+    },
+    [connections],
+  );
+
+  // Seed the locked connection once it appears in the broker-capable list.
+  const seeded = React.useRef(false);
+  React.useEffect(() => {
+    if (seeded.current || !initialConnectionId) return;
+    if (connections.some((c) => c.id === initialConnectionId)) {
+      seeded.current = true;
+      pickConnection(initialConnectionId);
+    }
+  }, [initialConnectionId, connections, pickConnection]);
+  const locked = Boolean(initialConnectionId) && selected?.id === initialConnectionId;
 
   const submit = async () => {
     const v = validateBindingForm(
@@ -633,7 +663,8 @@ function BindSecretForm({
         <select
           value={connectionId}
           onChange={(e) => pickConnection(e.target.value)}
-          className="mt-1.5 h-9 w-full rounded-md border bg-card px-2 text-sm font-normal"
+          disabled={locked}
+          className="mt-1.5 h-9 w-full rounded-md border bg-card px-2 text-sm font-normal disabled:opacity-70"
           aria-invalid={errors.connectionId ? true : undefined}
         >
           <option value="">Select a connection…</option>
@@ -644,6 +675,11 @@ function BindSecretForm({
             </option>
           ))}
         </select>
+        {locked ? (
+          <span className="block text-xs font-normal text-muted-foreground">
+            Binding a scoped credential to this connection.
+          </span>
+        ) : null}
         {errors.connectionId ? <span className="block text-xs font-normal text-destructive">{errors.connectionId}</span> : null}
       </label>
 

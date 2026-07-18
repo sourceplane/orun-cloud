@@ -7,8 +7,8 @@
 //   - messaging (Slack): workspace facts, channels the bot can post to, and
 //     the admission panel for account-shared connections.
 //   - infrastructure (Cloudflare/Supabase): account facts, the scope-template
-//     catalog ("what can be minted"), the mint ledger, and a deep link to the
-//     secrets surface for brokered bindings.
+//     catalog (the scoped credentials this connection can provide), and the
+//     "Create scoped credential" flow that binds a run-time secret to it.
 //   - source-control (GitHub): deliberately minimal — facts + a pointer to the
 //     per-project Git tab (design: "GitHub: unchanged") + admission panel.
 
@@ -59,7 +59,6 @@ import {
 } from "@/components/ui/dialog";
 import { archetypeForProvider, SCOPE_TEMPLATE_CATALOG } from "@/components/integrations/archetype";
 import { ConnectionAdmission } from "@/components/integrations/connection-admission";
-import { MintLedger } from "@/components/integrations/mint-ledger";
 
 /** Badge tone (connections.ts) → Northwind pill tone (mirrors the hub). */
 const STATUS_TONE: Record<string, Tone> = {
@@ -297,62 +296,70 @@ export function ConnectionDetail({
 
       {archetype === "infrastructure" ? (
         <>
-          <Kicker className="mb-2.5 mt-8">What can be minted</Kicker>
+          <div className="mb-2.5 mt-8 flex flex-wrap items-end justify-between gap-3">
+            <Kicker className="mb-0">Scoped credentials</Kicker>
+            {isActive ? (
+              <Button asChild size="sm" className="shrink-0">
+                <a href={`/orgs/${orgSlug}/secrets?bind=1&connection=${connection.id}`}>
+                  Create scoped credential
+                </a>
+              </Button>
+            ) : null}
+          </div>
+
+          <div className="flex items-start gap-2.5 rounded-xl border bg-card px-5 py-4">
+            <Lock className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" strokeWidth={1.8} />
+            <p className="text-xs text-muted-foreground">
+              A scoped credential is a secret bound to this connection at a workspace, project, or environment
+              scope. It has no stored value — every <span className="font-mono text-[11px]">orun</span> run
+              resolves a fresh, scoped, short-lived credential from it. Create one here or from the{" "}
+              <QuietLink href={`/orgs/${orgSlug}/secrets`}>Secrets</QuietLink> page; manage and rotate them
+              on Secrets.
+            </p>
+          </div>
+
           {templates.length === 0 ? (
-            <div className="rounded-xl border bg-card px-5 py-4 text-xs text-muted-foreground">
+            <div className="mt-3 rounded-xl border bg-card px-5 py-4 text-xs text-muted-foreground">
               No scope templates are published for this provider yet.
             </div>
           ) : (
-            <div className="overflow-hidden rounded-xl border bg-card">
-              <div className="overflow-x-auto">
-                <table className="w-full min-w-[560px] text-left text-sm">
-                  <thead>
-                    <tr className="border-b text-[11px] font-semibold uppercase tracking-[0.07em] text-muted-foreground/80">
-                      <th className="px-4 py-2.5">Template</th>
-                      <th className="px-4 py-2.5">Grants</th>
-                      <th className="px-4 py-2.5">Params</th>
-                      <th className="px-4 py-2.5">Max TTL</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {templates.map((t) => (
-                      <tr key={t.id} className="border-t border-border/50 first:border-t-0 align-top">
-                        <td className="px-4 py-2.5">
-                          <span className="block text-[12.5px] font-semibold">{t.displayName}</span>
-                          <span className="block font-mono text-[11px] text-muted-foreground">{t.id}</span>
-                        </td>
-                        <td className="px-4 py-2.5 text-xs text-muted-foreground">{t.description}</td>
-                        <td className="px-4 py-2.5 font-mono text-[11px] text-muted-foreground">
-                          {t.params.length > 0 ? t.params.join(", ") : "—"}
-                        </td>
-                        <td className="whitespace-nowrap px-4 py-2.5 text-xs text-muted-foreground">
-                          {formatTtl(t.maxTtlSeconds)}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          )}
-
-          <div className="mt-8">
-            <MintLedger orgId={orgId} connectionId={connection.id} templates={templates} canMint={isActive} />
-          </div>
-
-          <Kicker className="mb-2.5 mt-8">Brokered secrets</Kicker>
-          <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border bg-card px-5 py-4">
-            <div className="flex min-w-0 items-start gap-2.5">
-              <Lock className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" strokeWidth={1.8} />
-              <p className="text-xs text-muted-foreground">
-                Secrets bound to this connection mint their value just-in-time at resolve — nothing is stored.
-                Manage bindings from the Secrets surface.
+            <>
+              <p className="mb-2.5 mt-6 text-[11px] font-semibold uppercase tracking-[0.07em] text-muted-foreground/80">
+                Credential types this connection provides
               </p>
-            </div>
-            <Button asChild size="sm" variant="outline" className="shrink-0">
-              <a href={`/orgs/${orgSlug}/secrets`}>Open Secrets</a>
-            </Button>
-          </div>
+              <div className="overflow-hidden rounded-xl border bg-card">
+                <div className="overflow-x-auto">
+                  <table className="w-full min-w-[560px] text-left text-sm">
+                    <thead>
+                      <tr className="border-b text-[11px] font-semibold uppercase tracking-[0.07em] text-muted-foreground/80">
+                        <th className="px-4 py-2.5">Type</th>
+                        <th className="px-4 py-2.5">Grants</th>
+                        <th className="px-4 py-2.5">Params</th>
+                        <th className="px-4 py-2.5">Max TTL</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {templates.map((t) => (
+                        <tr key={t.id} className="border-t border-border/50 first:border-t-0 align-top">
+                          <td className="px-4 py-2.5">
+                            <span className="block text-[12.5px] font-semibold">{t.displayName}</span>
+                            <span className="block font-mono text-[11px] text-muted-foreground">{t.id}</span>
+                          </td>
+                          <td className="px-4 py-2.5 text-xs text-muted-foreground">{t.description}</td>
+                          <td className="px-4 py-2.5 font-mono text-[11px] text-muted-foreground">
+                            {t.params.length > 0 ? t.params.join(", ") : "—"}
+                          </td>
+                          <td className="whitespace-nowrap px-4 py-2.5 text-xs text-muted-foreground">
+                            {formatTtl(t.maxTtlSeconds)}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </>
+          )}
         </>
       ) : null}
 
