@@ -302,5 +302,16 @@ export async function handleRefreshSessionToken(
   if (!minted) {
     return errorResponse("internal_error", "Token mint failed", 502, requestId);
   }
-  return successResponse(minted, requestId, 201);
+  // The runtime's /token refresh contract (orun internal/agent/attach/
+  // heartbeat.go) parses a FLAT body — {token, expiresAt} at the TOP level —
+  // NOT the {data, meta} envelope successResponse() wraps. The runtime is the
+  // only consumer of this body (the console never reads it; api-edge proxies it
+  // verbatim), so return the minted credential flat. Enveloping it made every
+  // runtime token refresh unmarshal an empty token and log "token refresh:
+  // malformed response", falling back to the 15m boot token — so sessions lost
+  // auth on events/wire/inputs ~15m in and the console went dark.
+  return Response.json(
+    { token: minted.token, expiresAt: minted.expiresAt },
+    { status: 201, headers: { "content-type": "application/json", "x-request-id": requestId } },
+  );
 }
