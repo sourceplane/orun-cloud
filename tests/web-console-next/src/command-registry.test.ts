@@ -122,14 +122,13 @@ describe("buildBaseCommands", () => {
         expect(cmd.to).toBe(`/orgs/acme/integrations?connect=${provider}`);
       }
     }
-    const mint = byId.get("create.mint-credential")!;
-    expect(mint.group).toBe("Create");
-    if (mint.kind === "navigate") expect(mint.to).toBe("/orgs/acme/integrations");
-    expect(mint.keywords).toEqual(expect.arrayContaining(["mint", "credential", "token", "broker"]));
-    const bind = byId.get("create.bind-secret")!;
-    expect(bind.group).toBe("Create");
-    if (bind.kind === "navigate") expect(bind.to).toBe("/orgs/acme/secrets?bind=1");
-    expect(bind.keywords).toEqual(expect.arrayContaining(["bind", "broker", "secret"]));
+    // SC1: the raw "Mint credential" verb is removed; scoped-credential
+    // creation is the single Create verb, landing on the secrets bind flow.
+    expect(byId.has("create.mint-credential")).toBe(false);
+    const scoped = byId.get("create.scoped-credential")!;
+    expect(scoped.group).toBe("Create");
+    if (scoped.kind === "navigate") expect(scoped.to).toBe("/orgs/acme/secrets?bind=1");
+    expect(scoped.keywords).toEqual(expect.arrayContaining(["scoped", "credential", "bind", "broker", "secret"]));
   });
 
   it("omits the integration-hub verbs outside an org scope", () => {
@@ -137,8 +136,7 @@ describe("buildBaseCommands", () => {
     expect(ids).not.toContain("create.connect-slack");
     expect(ids).not.toContain("create.connect-cloudflare");
     expect(ids).not.toContain("create.connect-supabase");
-    expect(ids).not.toContain("create.mint-credential");
-    expect(ids).not.toContain("create.bind-secret");
+    expect(ids).not.toContain("create.scoped-credential");
   });
 
   it("adds project-scoped commands only when both org and project slugs are present", () => {

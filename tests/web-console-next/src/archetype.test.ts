@@ -75,11 +75,16 @@ describe("SCOPE_TEMPLATE_CATALOG (display mirror of the worker adapters)", () =>
       "management-access",
       "db-migrate",
       "functions-deploy",
+      // SC1: the custody-served project-service-key template — previously
+      // omitted from the console mirror (catalog drift), so it could not be
+      // bound in the UI at all.
+      "project-service-key",
     ]);
     const byId = new Map(templates.map((t) => [t.id, t]));
     expect(byId.get("management-access")!.params).toEqual([]);
     expect(byId.get("db-migrate")!.params).toEqual(["projectRef"]);
     expect(byId.get("functions-deploy")!.params).toEqual(["projectRef"]);
+    expect(byId.get("project-service-key")!.params).toEqual(["projectRef"]);
     // SUPABASE_MAX_TTL_SECONDS: one hour.
     for (const t of templates) expect(t.maxTtlSeconds).toBe(3600);
   });

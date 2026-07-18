@@ -323,10 +323,10 @@ export function buildBaseCommands(ctx: CommandContext): CommandDescriptor[] {
       navItem("create.connect-slack", "Connect Slack", `${orgBase}/integrations?connect=slack`, "MessageSquare", ["connect", "slack", "integration", "notification", "messaging"], "Create"),
       navItem("create.connect-cloudflare", "Connect Cloudflare", `${orgBase}/integrations?connect=cloudflare`, "Cloud", ["connect", "cloudflare", "integration", "token", "workers", "infrastructure"], "Create"),
       navItem("create.connect-supabase", "Connect Supabase", `${orgBase}/integrations?connect=supabase`, "Database", ["connect", "supabase", "integration", "postgres", "database", "infrastructure"], "Create"),
-      // Mint lives on a connection's detail page — the hub is the way in.
-      navItem("create.mint-credential", "Mint credential", `${orgBase}/integrations`, "KeyRound", ["mint", "credential", "token", "broker"], "Create"),
-      // `?bind=1` opens the bind-to-integration path on the secrets surface.
-      navItem("create.bind-secret", "Bind brokered secret", `${orgBase}/secrets?bind=1`, "KeyRound", ["bind", "broker", "brokered", "secret", "integration"], "Create"),
+      // `?bind=1` opens the scoped-credential (bind-to-integration) path on the
+      // secrets surface — the single create home, reachable from here and from
+      // each connection's detail page.
+      navItem("create.scoped-credential", "Create scoped credential", `${orgBase}/secrets?bind=1`, "KeyRound", ["scoped", "credential", "bind", "broker", "brokered", "secret", "integration", "token"], "Create"),
     );
   }
   if (projectBase) {
