@@ -165,7 +165,7 @@ function cloudflareApi(overrides?: {
     if (input.includes("/user/tokens/permission_groups")) {
       return Response.json({ success: true, result: overrides?.groups ?? ALL_GROUPS });
     }
-    if (input.includes("/user/tokens/verify")) {
+    if (input.includes("/tokens/verify")) {
       return Response.json({
         success: true,
         result: { id: "svc-token-id", status: overrides?.probeStatus ?? "active", expires_on: null },
@@ -211,7 +211,7 @@ describe("runServiceIdentityBackfill (SI3)", () => {
     expect(h.custodyDeletes).toContainEqual([CONNECTION_UUID, "cloudflare_refresh_token"]);
 
     // The probe ran with the NEW token before any swap.
-    const probe = api.calls.find((c) => c.url.includes("/user/tokens/verify"))!;
+    const probe = api.calls.find((c) => c.url.includes("/accounts/9a7806061c88ada191ed06f989cc3dac/tokens/verify"))!;
     expect(probe.auth).toBe("Bearer cf-service-SECRET");
 
     // Facts carry the identity's provider-side id.

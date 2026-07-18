@@ -26,7 +26,7 @@ import type { FetchLike } from "./github-app.js";
 import {
   getCloudflareTokenPolicies,
   refreshCloudflareAccess,
-  verifyCloudflareParentToken,
+  verifyCloudflareTokenEitherOwnership,
 } from "./providers/cloudflare.js";
 import {
   readParentCredential,
@@ -190,8 +190,15 @@ export async function runCloudflareHealth(
 
         // Token-paste posture: missing/unreadable custody or an unverifiable /
         // non-active token means the parent is dead — nothing can be minted
-        // from this connection.
-        const verified = parent ? await verifyCloudflareParentToken(parent.credential, fetchImpl) : null;
+        // from this connection. The paste may be user-owned OR account-owned
+        // (the latter 401s on /user/* and verifies on the account endpoint).
+        const verified = parent
+          ? await verifyCloudflareTokenEitherOwnership(
+              parent.credential,
+              row.accountExternalId,
+              fetchImpl,
+            )
+          : null;
         if (!verified || verified.status !== "active") {
           const upserted = await hub.upsertCloudflareAccount(
             factsUpsert(row, { tokenStatus: "invalid", parentExpiresAt: row.parentExpiresAt }),
@@ -255,6 +262,7 @@ export async function runCloudflareHealth(
           parent!.credential,
           verified.tokenId,
           fetchImpl,
+          row.accountExternalId,
         );
         const upserted = await hub.upsertCloudflareAccount(
           factsUpsert(row, {

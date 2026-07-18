@@ -48,6 +48,9 @@ const PARENT_TOKEN_RECIPE: ReadonlyArray<{ name: string; why: string }> = [
   { name: "Account Settings: Read", why: "account discovery and read templates" },
 ];
 
+/** Account API tokens page (deep link resolves the account after login) —
+ *  the recommended, org-owned token kind; user-owned tokens also work. */
+const CLOUDFLARE_ACCOUNT_TOKENS_URL = "https://dash.cloudflare.com/?to=/:account/api-tokens";
 const CLOUDFLARE_TOKEN_DASHBOARD_URL = "https://dash.cloudflare.com/profile/api-tokens";
 
 const INITIAL_STATE: TokenConnectState = { phase: "idle" };
@@ -174,8 +177,9 @@ export function CloudflareConnectModal({
             Token recipe
           </div>
           <p className="mt-1 text-xs leading-normal text-muted-foreground">
-            Create an <span className="font-medium text-foreground">account-scoped</span> token with
-            these permissions (templates you skip can be left off):
+            Create an <span className="font-medium text-foreground">Account API token</span>{" "}
+            (recommended — owned by the account, not a person; a user token with account scope also
+            works) with these permissions (templates you skip can be left off):
           </p>
           <ul className="mt-2 space-y-1">
             {PARENT_TOKEN_RECIPE.map((item) => (
@@ -186,15 +190,26 @@ export function CloudflareConnectModal({
               </li>
             ))}
           </ul>
-          <a
-            href={CLOUDFLARE_TOKEN_DASHBOARD_URL}
-            target="_blank"
-            rel="noreferrer"
-            className="mt-2 inline-flex items-center gap-1 text-xs font-medium text-primary underline underline-offset-2"
-          >
-            Open the Cloudflare API tokens dashboard
-            <ExternalLink className="h-3 w-3" aria-hidden />
-          </a>
+          <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1">
+            <a
+              href={CLOUDFLARE_ACCOUNT_TOKENS_URL}
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex items-center gap-1 text-xs font-medium text-primary underline underline-offset-2"
+            >
+              Open Account API Tokens
+              <ExternalLink className="h-3 w-3" aria-hidden />
+            </a>
+            <a
+              href={CLOUDFLARE_TOKEN_DASHBOARD_URL}
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex items-center gap-1 text-xs font-medium text-primary underline underline-offset-2"
+            >
+              or user API tokens
+              <ExternalLink className="h-3 w-3" aria-hidden />
+            </a>
+          </div>
         </div>
 
         <form onSubmit={(e) => void submit(e)} className="space-y-3">
