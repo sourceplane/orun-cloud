@@ -290,6 +290,18 @@ export interface RotateSecretRequest {
   value: string;
 }
 
+/**
+ * Rotate a scoped credential (brokered secret) — SC2. Unlike a static rotate
+ * there is no value: rotation rolls the connection's org-owned SOURCE
+ * credential (Cloudflare service token / Supabase project keys) and stamps
+ * `lastRotatedAt`. `rotationPolicy` (a duration like "90d") sets/updates the
+ * cadence; `rotate: false` edits the cadence only, without rolling the source.
+ */
+export interface RotateScopedCredentialRequest {
+  rotationPolicy?: string | null;
+  rotate?: boolean;
+}
+
 export interface RotateSecretMetadataResponse {
   secret: PublicSecretMetadata;
 }

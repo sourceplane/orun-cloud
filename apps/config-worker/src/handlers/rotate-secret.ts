@@ -7,19 +7,30 @@ import { createEventsRepository } from "@saas/db/events";
 import { createSqlExecutor } from "@saas/db/hyperdrive";
 import { fetchAuthorizationContext } from "../membership-client.js";
 import { authorizeViaPolicy } from "../policy-client.js";
-import { errorResponse, successResponse } from "../http.js";
+import { errorResponse, successResponse, validationError } from "../http.js";
 import { uuidFromPublicId } from "@saas/db";
 import { toPublicSecretMetadata } from "../mappers.js";
 import { scopeMatchesRequested } from "../scope-match.js";
 import type { PolicyResource } from "@saas/contracts/policy";
 import type { EncryptionAdapter } from "../encryption.js";
+import { fetchAuthorizationContext as fetchAuthContext } from "../membership-client.js";
+import { INTEGRATION_POLICY_ACTIONS } from "@saas/contracts/integrations";
+import { rotateConnectionSource, type RotateSourceResult } from "../integrations-client.js";
+import type { SecretMetadata } from "@saas/db/config";
 
 export interface RotateSecretDeps {
-  repo: Pick<ConfigRepository, "getSecretMetadata" | "rotateSecretMetadata">;
+  // touchBrokeredRotation is only reached on the brokered branch, so it stays
+  // optional here — static-rotate test fakes need not provide it.
+  repo: Pick<ConfigRepository, "getSecretMetadata" | "rotateSecretMetadata"> & {
+    touchBrokeredRotation?: ConfigRepository["touchBrokeredRotation"];
+  };
   eventsRepo?: Pick<EventsRepository, "appendEventWithAudit">;
   generateId?: () => string;
   now?: () => Date;
   encryptionAdapter?: EncryptionAdapter | null;
+  /** SC2 seam: roll the connection's source credential. Production wires
+   *  rotateConnectionSource over the INTEGRATIONS_WORKER binding. */
+  rotateSource?: (req: { orgId: string; connectionId: string }) => Promise<RotateSourceResult>;
 }
 
 /**
@@ -61,6 +72,12 @@ export async function handleRotateSecret(
 
   // Parse body if JSON content-type is sent
   let secretValue: string | null = null;
+  // SC2 (scoped credentials): a brokered secret carries no value — the body may
+  // instead set `rotationPolicy` (the cadence) and `rotate` (roll the source
+  // credential now, default true). Captured here; used only on the brokered
+  // branch after the source is known.
+  let rotationPolicy: string | null | undefined;
+  let rotateSourceNow = true;
   if (request.headers.get("content-type")?.includes("application/json")) {
     try {
       const body = await request.json();
@@ -78,6 +95,18 @@ export async function handleRotateSecret(
             return errorResponse("validation_failed", "value must be a non-empty string", 422, requestId);
           }
           secretValue = raw.value as string;
+        }
+        if ("rotationPolicy" in raw) {
+          if (raw.rotationPolicy !== null && typeof raw.rotationPolicy !== "string") {
+            return errorResponse("validation_failed", "rotationPolicy must be a string or null", 422, requestId);
+          }
+          rotationPolicy = raw.rotationPolicy as string | null;
+        }
+        if ("rotate" in raw) {
+          if (typeof raw.rotate !== "boolean") {
+            return errorResponse("validation_failed", "rotate must be a boolean", 422, requestId);
+          }
+          rotateSourceNow = raw.rotate;
         }
       }
     } catch {
@@ -130,6 +159,34 @@ export async function handleRotateSecret(
 
   const executor = deps ? null : createSqlExecutor(env.PLATFORM_DB!);
   try {
+    // SC2 dispatch: a brokered scoped credential rotates its SOURCE, not a
+    // value. Pre-read the head (a cheap metadata read, outside any tx) and
+    // branch before the static value-rotation flow.
+    const dispatchRepo = deps?.repo ?? createConfigRepository(executor!);
+    const pre = await dispatchRepo.getSecretMetadata(orgId, secretId);
+    if (pre.ok && scopeMatchesRequested(pre.value, requestedScope) && pre.value.source === "brokered") {
+      if (secretValue !== null) {
+        return errorResponse(
+          "unsupported",
+          "A scoped credential has no stored value — omit `value`; rotation rolls the connection's source credential",
+          400,
+          requestId,
+          { reason: "brokered" },
+        );
+      }
+      const touch = dispatchRepo.touchBrokeredRotation;
+      if (!touch) return errorResponse("internal_error", "Service unavailable", 503, requestId);
+      return await rotateBrokeredSecret(env, requestId, actor, pre.value, {
+        rotationPolicy,
+        rotate: rotateSourceNow,
+        repo: { touchBrokeredRotation: touch },
+        eventsRepo: deps?.eventsRepo ?? (executor ? createEventsRepository(executor) : undefined),
+        genId,
+        now,
+        rotateSource: deps?.rotateSource,
+      });
+    }
+
     if (executor && "transaction" in executor) {
       const txResult = await executor.transaction(async (txExec) => {
         const txRepo = createConfigRepository(txExec);
@@ -311,4 +368,123 @@ export async function handleRotateSecret(
   } finally {
     if (executor) await executor.dispose();
   }
+}
+
+/**
+ * SC2: rotate a scoped credential — roll the connection's source credential and
+ * stamp `last_rotated_at` (and, when provided, the cadence). Dual policy like a
+ * brokered create/repoint (secret.write AND organization.integration.credential.
+ * issue — "you cannot roll authority you could not mint"). `rotate: false` sets
+ * the cadence only, without touching the source.
+ */
+async function rotateBrokeredSecret(
+  env: Env,
+  requestId: string,
+  actor: ActorContext,
+  head: SecretMetadata,
+  opts: {
+    rotationPolicy: string | null | undefined;
+    rotate: boolean;
+    repo: Pick<ConfigRepository, "touchBrokeredRotation">;
+    eventsRepo?: Pick<EventsRepository, "appendEventWithAudit"> | undefined;
+    genId: () => string;
+    now: Date;
+    rotateSource?: ((req: { orgId: string; connectionId: string }) => Promise<RotateSourceResult>) | undefined;
+  },
+): Promise<Response> {
+  const orgId = head.orgId;
+
+  // Dual policy — identical to a brokered create/repoint. Enforced whenever the
+  // authz services are wired (absent only in the deps-injected test path).
+  if (env.MEMBERSHIP_WORKER && env.POLICY_WORKER) {
+    const contextResult = await fetchAuthContext(env.MEMBERSHIP_WORKER, actor.subjectId, actor.subjectType, orgId, requestId);
+    if (!contextResult.ok) return errorResponse("not_found", "Not found", 404, requestId);
+    const resource: PolicyResource = { kind: head.scopeKind === "organization" ? "organization" : "project", orgId };
+    if (head.projectId) resource.projectId = head.projectId;
+    const writeResult = await authorizeViaPolicy(env.POLICY_WORKER, actor.subjectId, actor.subjectType, "secret.write", resource, contextResult.memberships, requestId);
+    if (!writeResult.allow) return errorResponse("not_found", "Not found", 404, requestId);
+    const issueResult = await authorizeViaPolicy(env.POLICY_WORKER, actor.subjectId, actor.subjectType, INTEGRATION_POLICY_ACTIONS.CREDENTIAL_ISSUE, { kind: "organization", orgId }, contextResult.memberships, requestId);
+    if (!issueResult.allow) return errorResponse("not_found", "Not found", 404, requestId);
+  }
+
+  // Roll the source credential (unless the caller only edits the cadence).
+  if (opts.rotate) {
+    if (!head.bindingConnectionId) {
+      return errorResponse("unsupported", "This secret has no bound connection to rotate", 400, requestId, { reason: "not_brokered" });
+    }
+    const rotateSourceFn =
+      opts.rotateSource ??
+      (env.INTEGRATIONS_WORKER
+        ? (req: { orgId: string; connectionId: string }) => rotateConnectionSource(env.INTEGRATIONS_WORKER!, req, requestId)
+        : null);
+    if (!rotateSourceFn) return errorResponse("internal_error", "Service unavailable", 503, requestId);
+    const rotated = await rotateSourceFn({ orgId, connectionId: head.bindingConnectionId });
+    if (!rotated.ok) {
+      if (rotated.reason === "rotation_unsupported") {
+        return errorResponse(
+          "unsupported",
+          "This connection's source credential cannot be rotated (e.g. a pasted API token Orun does not own)",
+          400,
+          requestId,
+          { reason: "rotation_unsupported" },
+        );
+      }
+      if (rotated.status === 412) {
+        return errorResponse("precondition_failed", "The connection is not active", 412, requestId, { reason: rotated.reason });
+      }
+      return errorResponse("bad_gateway", "The provider refused the rotation", 502, requestId, { reason: "provider_error" });
+    }
+  }
+
+  // rotationPolicy must be a simple duration ("90d","12w","720h",…) or null.
+  if (opts.rotationPolicy && !/^[0-9]+[hdwmy]$/.test(opts.rotationPolicy)) {
+    return validationError(requestId, { rotationPolicy: ["rotationPolicy must be a duration like \"90d\", \"12w\", or \"720h\", or null"] });
+  }
+
+  const result = await opts.repo.touchBrokeredRotation(orgId, head.id, {
+    ...(opts.rotationPolicy !== undefined ? { rotationPolicy: opts.rotationPolicy } : {}),
+    stampRotation: opts.rotate,
+  });
+  if (!result.ok) {
+    return result.error.kind === "not_found"
+      ? errorResponse("not_found", "Secret not found", 404, requestId)
+      : errorResponse("internal_error", "Service unavailable", 503, requestId);
+  }
+
+  if (opts.eventsRepo) {
+    await opts.eventsRepo.appendEventWithAudit({
+      event: {
+        id: opts.genId(),
+        type: "secrets.updated",
+        version: 1,
+        source: "config-worker",
+        occurredAt: opts.now,
+        actorType: actor.subjectType,
+        actorId: actor.subjectId,
+        orgId,
+        projectId: head.projectId,
+        environmentId: head.environmentId,
+        subjectKind: "secret",
+        subjectId: head.id,
+        requestId,
+        payload: {
+          operation: opts.rotate ? "rotate-source" : "set-rotation-policy",
+          scope: head.scopeKind,
+          key: head.secretKey,
+          ...(head.bindingProvider ? { provider: head.bindingProvider } : {}),
+        },
+      },
+      audit: {
+        id: opts.genId(),
+        category: "config",
+        description: opts.rotate
+          ? `Scoped credential rotated (source rolled): ${head.secretKey}`
+          : `Scoped credential rotation policy updated: ${head.secretKey}`,
+        projectId: head.projectId,
+        environmentId: head.environmentId,
+      },
+    });
+  }
+
+  return successResponse({ secret: toPublicSecretMetadata(result.value) }, requestId);
 }

@@ -458,6 +458,19 @@ export interface ConfigRepository {
     createdBy: Uuid,
     binding: { provider: string; connectionUuid: Uuid; template: string; pointerEnvelope: string },
   ): Promise<ConfigResult<SecretMetadata>>;
+  /**
+   * Stamp a brokered secret's rotation (SC2): the scoped credential has no
+   * stored value/version to bump — rotation rolls the connection's source
+   * credential — so this ONLY sets `last_rotated_at = now()` and, when
+   * provided, `rotation_policy` (the cadence). Matches ONLY an active brokered
+   * head; a static or missing head returns `not_found`. `rotationPolicy`
+   * absent leaves the cadence unchanged; explicit `null` clears it.
+   */
+  touchBrokeredRotation(
+    orgId: string,
+    secretId: string,
+    input: { rotationPolicy?: string | null; stampRotation: boolean },
+  ): Promise<ConfigResult<SecretMetadata>>;
   revokeSecretMetadata(orgId: string, secretId: string): Promise<ConfigResult<SecretMetadata>>;
   /** Brokered-secret entitlement gate (IH7): live brokered bindings in the org. */
   countBrokeredSecrets(orgId: string): Promise<ConfigResult<number>>;

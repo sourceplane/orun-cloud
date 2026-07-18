@@ -608,6 +608,31 @@ describe("ConfigRepository — Secret Metadata", () => {
     if (!result.ok) expect(result.error.kind).toBe("not_found");
   });
 
+  it("touchBrokeredRotation stamps last_rotated_at (+ optional cadence) on an active brokered head only (SC2)", async () => {
+    const brokered = { ...SAMPLE_SECRET_ROW, source: "brokered", rotation_policy: "90d" };
+    const { executor, queries } = createFakeExecutor({ rows: [brokered] });
+    const repo = createConfigRepository(executor);
+    const result = await repo.touchBrokeredRotation("org-001", "sec-001", { rotationPolicy: "90d", stampRotation: true });
+    expect(result.ok).toBe(true);
+    // Guarded to an active brokered head; no version bump, no value touched.
+    expect(queries[0]!.text).toContain("source = 'brokered'");
+    expect(queries[0]!.text).toContain("last_rotated_at = now()");
+    expect(queries[0]!.text).toContain("rotation_policy = $3");
+    expect(queries[0]!.text).not.toContain("version = version + 1");
+    expect(queries[0]!.text).not.toContain("ciphertext");
+    expect(queries[0]!.params[2]).toBe("90d");
+  });
+
+  it("touchBrokeredRotation can set the cadence WITHOUT stamping a rotation (SC2)", async () => {
+    const brokered = { ...SAMPLE_SECRET_ROW, source: "brokered", rotation_policy: "30d" };
+    const { executor, queries } = createFakeExecutor({ rows: [brokered] });
+    const repo = createConfigRepository(executor);
+    const result = await repo.touchBrokeredRotation("org-001", "sec-001", { rotationPolicy: "30d", stampRotation: false });
+    expect(result.ok).toBe(true);
+    expect(queries[0]!.text).not.toContain("last_rotated_at = now()");
+    expect(queries[0]!.text).toContain("rotation_policy = $3");
+  });
+
   it("lists secret metadata with project scope requiring orgId + projectId", async () => {
     const { executor, queries } = createFakeExecutor({ rows: [] });
     const repo = createConfigRepository(executor);

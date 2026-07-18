@@ -22,6 +22,7 @@ import type {
   RevokeSecretMetadataResponse,
   RotateSecretMetadataResponse,
   RotateSecretRequest,
+  RotateScopedCredentialRequest,
   UpdateFeatureFlagRequest,
   UpdateFeatureFlagResponse,
   UpdateSettingRequest,
@@ -208,6 +209,29 @@ export class ConfigClient {
     scope: ConfigScope,
     secretId: string,
     body: RotateSecretRequest,
+    opts: RequestOptions = {},
+  ): Promise<RotateSecretMetadataResponse> {
+    return this.transport.request<RotateSecretMetadataResponse>(
+      {
+        method: "POST",
+        path: `${scopeBase(scope)}/secrets/${encodeURIComponent(secretId)}/rotate`,
+        body,
+      },
+      opts,
+    );
+  }
+
+  /**
+   * POST <scope>/config/secrets/:secretId/rotate — rotate a SCOPED credential
+   * (brokered secret, SC2). No value: rolls the connection's org-owned source
+   * credential and stamps lastRotatedAt; `rotationPolicy` sets the cadence,
+   * `rotate:false` edits the cadence only. Same route as the static rotate;
+   * the server dispatches by the secret's source.
+   */
+  rotateScopedCredential(
+    scope: ConfigScope,
+    secretId: string,
+    body: RotateScopedCredentialRequest = {},
     opts: RequestOptions = {},
   ): Promise<RotateSecretMetadataResponse> {
     return this.transport.request<RotateSecretMetadataResponse>(

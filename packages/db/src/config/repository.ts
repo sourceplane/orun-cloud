@@ -599,6 +599,37 @@ export function createConfigRepository(executor: SqlExecutor): ConfigRepository 
       }
     },
 
+    async touchBrokeredRotation(
+      orgId: string,
+      secretId: string,
+      input: { rotationPolicy?: string | null; stampRotation: boolean },
+    ): Promise<ConfigResult<SecretMetadata>> {
+      try {
+        // Metadata-only: a brokered secret has no stored value/version to bump
+        // (rotation rolls the connection's source), so this touches ONLY
+        // last_rotated_at and, when provided, rotation_policy. Guarded to an
+        // active brokered head so it can never touch a static value.
+        const sets: string[] = ["updated_at = now()"];
+        const params: unknown[] = [orgId, secretId];
+        if (input.stampRotation) sets.push("last_rotated_at = now()");
+        if (input.rotationPolicy !== undefined) {
+          params.push(input.rotationPolicy);
+          sets.push(`rotation_policy = $${params.length}`);
+        }
+        const sql = `UPDATE config.secret_metadata
+           SET ${sets.join(", ")}
+           WHERE org_id = $1 AND id = $2 AND status = 'active' AND source = 'brokered'
+           RETURNING ${SECRET_METADATA_SAFE_COLUMNS}`;
+        const result = await executor.execute<Record<string, unknown>>(sql, params);
+        if (result.rowCount === 0) {
+          return { ok: false, error: { kind: "not_found" } };
+        }
+        return { ok: true, value: mapSecretMetadata(result.rows[0]!) };
+      } catch {
+        return safeError("Failed to stamp brokered rotation");
+      }
+    },
+
     async repointBrokeredSecret(
       orgId: string,
       secretId: string,

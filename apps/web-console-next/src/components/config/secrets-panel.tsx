@@ -8,6 +8,7 @@ import {
   Waypoints,
   Eye,
   MoreHorizontal,
+  RefreshCw,
   ShieldAlert,
   TriangleAlert,
 } from "lucide-react";
@@ -24,6 +25,7 @@ import {
   Dialog,
   DialogContent,
   DialogDescription,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
@@ -96,6 +98,7 @@ export function SecretsPanel({ scope, scopeKey }: { scope: ConfigScope; scopeKey
   const [createOpen, setCreateOpen] = React.useState(false);
   const [createMode, setCreateMode] = React.useState<CreateSecretMode>("value");
   const [rotating, setRotating] = React.useState<PublicSecretMetadata | null>(null);
+  const [rotatingScoped, setRotatingScoped] = React.useState<PublicSecretMetadata | null>(null);
   const [repointing, setRepointing] = React.useState<PublicSecretMetadata | null>(null);
   const [revoking, setRevoking] = React.useState<PublicSecretMetadata | null>(null);
   const [versionsFor, setVersionsFor] = React.useState<PublicSecretMetadata | null>(null);
@@ -315,6 +318,23 @@ export function SecretsPanel({ scope, scopeKey }: { scope: ConfigScope; scopeKey
         }}
       />
 
+      <RotateScopedCredentialDialog
+        scope={scope}
+        secret={rotatingScoped}
+        onClose={() => setRotatingScoped(null)}
+        onDone={(rotated) => {
+          setRotatingScoped(null);
+          toast({
+            kind: "success",
+            title: rotated ? "Scoped credential rotated" : "Rotation policy updated",
+            ...(rotated
+              ? { description: "The connection's source credential was rolled; runs get a fresh value." }
+              : {}),
+          });
+          secrets.reload();
+        }}
+      />
+
       <VersionsSheet scope={scope} secret={versionsFor} onClose={() => setVersionsFor(null)} />
       <SyncsSheet scope={scope} secret={syncsFor} onClose={() => setSyncsFor(null)} />
       <RevealDialog scope={scope} secret={revealFor} onClose={() => setRevealFor(null)} />
@@ -470,6 +490,14 @@ export function SecretsPanel({ scope, scopeKey }: { scope: ConfigScope; scopeKey
                           {!broker ? (
                             <DropdownMenuItem onSelect={() => setRotating(s)}>Rotate</DropdownMenuItem>
                           ) : null}
+                          {/* SC2: a scoped credential rotates its SOURCE (the
+                              connection's org-owned credential) + carries a
+                              cadence — not a stored value. */}
+                          {broker ? (
+                            <DropdownMenuItem onSelect={() => setRotatingScoped(s)}>
+                              <RefreshCw className="mr-2 h-4 w-4" /> Rotate credential
+                            </DropdownMenuItem>
+                          ) : null}
                           {/* Brokered rows can be repointed to a live connection —
                               the recovery path for an orphaned binding (Feature 7). */}
                           {broker ? (
@@ -579,6 +607,7 @@ function BindSecretForm({
   const [paramInputs, setParamInputs] = React.useState<Record<string, string>>({});
   const [secretKey, setSecretKey] = React.useState("");
   const [displayName, setDisplayName] = React.useState("");
+  const [rotationPolicy, setRotationPolicy] = React.useState("");
   const [errors, setErrors] = React.useState<Record<string, string>>({});
   // Typed inline error (412 entitlement gates included) — never a silent toast.
   const [formError, setFormError] = React.useState<{ message: string; requestId: string | null } | null>(null);
@@ -614,7 +643,7 @@ function BindSecretForm({
 
   const submit = async () => {
     const v = validateBindingForm(
-      { secretKey, displayName, connectionId, template: templateId, params: paramInputs },
+      { secretKey, displayName, connectionId, template: templateId, params: paramInputs, rotationPolicy },
       templates,
     );
     if (!v.ok) {
@@ -736,6 +765,26 @@ function BindSecretForm({
       </label>
 
       <label className="block space-y-1.5 text-sm font-medium">
+        Rotation policy
+        <select
+          value={rotationPolicy}
+          onChange={(e) => setRotationPolicy(e.target.value)}
+          className="mt-1.5 h-9 w-full rounded-md border bg-card px-2 text-sm font-normal"
+        >
+          <option value="">No scheduled rotation</option>
+          <option value="30d">Every 30 days</option>
+          <option value="60d">Every 60 days</option>
+          <option value="90d">Every 90 days</option>
+          <option value="180d">Every 180 days</option>
+        </select>
+        <span className="block text-xs font-normal text-muted-foreground">
+          When set, Orun rolls this connection&apos;s org-owned source credential on the cadence. Every run
+          still resolves a fresh short-lived value regardless.
+        </span>
+        {errors.rotationPolicy ? <span className="block text-xs font-normal text-destructive">{errors.rotationPolicy}</span> : null}
+      </label>
+
+      <label className="block space-y-1.5 text-sm font-medium">
         Display name
         <input
           value={displayName}
@@ -778,6 +827,112 @@ function BindSecretForm({
  * template is preserved — only the connection changes. On repoint the backend
  * re-validates the target and mints from it thereafter.
  */
+/**
+ * SC2: rotate a scoped credential. A brokered secret has no stored value — it
+ * resolves a fresh short-lived credential every run — so "rotate" rolls the
+ * connection's org-owned SOURCE credential and can set a cadence. The dialog
+ * offers both: adjust the cadence, and optionally roll the source now.
+ */
+function RotateScopedCredentialDialog({
+  scope,
+  secret,
+  onClose,
+  onDone,
+}: {
+  scope: ConfigScope;
+  secret: PublicSecretMetadata | null;
+  onClose: () => void;
+  onDone: (rotated: boolean) => void;
+}) {
+  const { client } = useSession();
+  const open = secret !== null;
+  const [cadence, setCadence] = React.useState("");
+  const [rotateNow, setRotateNow] = React.useState(true);
+  const [busy, setBusy] = React.useState(false);
+  const [error, setError] = React.useState<{ message: string; requestId: string | null } | null>(null);
+
+  React.useEffect(() => {
+    if (secret) {
+      setCadence(secret.rotationPolicy ?? "");
+      setRotateNow(true);
+      setError(null);
+    }
+  }, [secret]);
+
+  if (!secret) return null;
+
+  const submit = async () => {
+    setBusy(true);
+    setError(null);
+    const r = await wrap(() =>
+      client.config.rotateScopedCredential(scope, secret.id, {
+        rotationPolicy: cadence === "" ? null : cadence,
+        rotate: rotateNow,
+      }),
+    );
+    setBusy(false);
+    if (!r.ok) {
+      setError({ message: r.error.message, requestId: r.error.requestId ?? null });
+      return;
+    }
+    onDone(rotateNow);
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Rotate scoped credential</DialogTitle>
+          <DialogDescription className="font-mono text-xs">{secret.secretKey}</DialogDescription>
+        </DialogHeader>
+
+        <p className="text-xs text-muted-foreground">
+          This secret has no stored value — every run resolves a fresh short-lived credential. Rotating rolls
+          the connection&apos;s org-owned source credential
+          {secret.binding ? <> ({secret.binding.provider})</> : null}; all scoped credentials on that
+          connection then draw from the fresh source.
+        </p>
+
+        <label className="block space-y-1.5 text-sm font-medium">
+          Rotation policy
+          <select
+            value={cadence}
+            onChange={(e) => setCadence(e.target.value)}
+            className="mt-1.5 h-9 w-full rounded-md border bg-card px-2 text-sm font-normal"
+          >
+            <option value="">No scheduled rotation</option>
+            <option value="30d">Every 30 days</option>
+            <option value="60d">Every 60 days</option>
+            <option value="90d">Every 90 days</option>
+            <option value="180d">Every 180 days</option>
+          </select>
+        </label>
+
+        <label className="flex items-center gap-2 text-sm">
+          <input type="checkbox" checked={rotateNow} onChange={(e) => setRotateNow(e.target.checked)} />
+          Roll the source credential now
+        </label>
+
+        {error ? (
+          <div className="rounded-md border border-destructive/40 bg-destructive-soft p-3 text-xs text-destructive">
+            <div>{error.message}</div>
+            {error.requestId ? <div className="mt-1 font-mono text-[11px] opacity-80">requestId: {error.requestId}</div> : null}
+          </div>
+        ) : null}
+
+        <DialogFooter>
+          <Button type="button" variant="ghost" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button type="button" loading={busy} onClick={() => void submit()}>
+            {rotateNow ? "Rotate now" : "Save policy"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 function RepointSecretDialog({
   scope,
   orgId,

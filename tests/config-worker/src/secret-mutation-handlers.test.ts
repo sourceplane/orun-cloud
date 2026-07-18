@@ -1021,8 +1021,8 @@ describe("handleCreateSecret — brokered binding (IH7)", () => {
   });
 });
 
-describe("handleRotateSecret — brokered guard (IH7)", () => {
-  it("rejects rotating a brokered head with 400 (re-bind = delete + recreate)", async () => {
+describe("handleRotateSecret — brokered guard (SC2)", () => {
+  it("rejects a VALUE rotation on a brokered head (scoped credentials have no stored value)", async () => {
     const res = await handleRotateSecret(
       makeJsonRequest({ value: "new-value" }), FAKE_ENV, "req_b11", ACTOR, ORG_SCOPE, SECRET_UUID,
       {
@@ -1031,16 +1031,83 @@ describe("handleRotateSecret — brokered guard (IH7)", () => {
           rotateSecretMetadata: () => unusedConfigFailure<SecretMetadata>(),
         },
         eventsRepo: fakeEventsRepo(),
-        // A value rotation encrypts before the head is even loaded — the fake
-        // adapter lets the request reach the brokered guard.
         encryptionAdapter: { encrypt: () => Promise.resolve({ alg: "AES-256-GCM" as const, v: 1 as const, iv: "aaa", ct: "bbb" }) },
       },
     );
     expect(res.status).toBe(400);
     const body = (await res.json()) as { error: { code: string; message: string; details: { reason: string } } };
     expect(body.error.code).toBe("unsupported");
-    expect(body.error.message).toContain("re-bind");
+    expect(body.error.message).toContain("no stored value");
     expect(body.error.details.reason).toBe("brokered");
+  });
+
+  it("rotates a scoped credential: rolls the source + stamps, no value required", async () => {
+    let touched: { rotationPolicy?: string | null; stampRotation: boolean } | null = null;
+    let rotatedConnectionId: string | null = null;
+    const head = brokeredSecret();
+    const res = await handleRotateSecret(
+      makeJsonRequest({ rotationPolicy: "90d" }), FAKE_ENV, "req_b12", ACTOR, ORG_SCOPE, SECRET_UUID,
+      {
+        repo: {
+          getSecretMetadata: () => Promise.resolve({ ok: true as const, value: head }),
+          rotateSecretMetadata: () => unusedConfigFailure<SecretMetadata>(),
+          touchBrokeredRotation: (_o, _id, input) => {
+            touched = input;
+            return Promise.resolve({ ok: true as const, value: { ...head, rotationPolicy: "90d" } });
+          },
+        },
+        eventsRepo: fakeEventsRepo(),
+        rotateSource: (req) => {
+          rotatedConnectionId = req.connectionId;
+          return Promise.resolve({ ok: true as const, rotatedAt: "2026-07-18T00:00:00Z" });
+        },
+      },
+    );
+    expect(res.status).toBe(200);
+    // The source was rolled for the bound connection, and the cadence stamped.
+    expect(rotatedConnectionId).toBe(head.bindingConnectionId);
+    expect(touched).toEqual({ rotationPolicy: "90d", stampRotation: true });
+  });
+
+  it("edits the cadence only when rotate:false — no source roll", async () => {
+    let rolled = false;
+    const head = brokeredSecret();
+    const res = await handleRotateSecret(
+      makeJsonRequest({ rotationPolicy: "30d", rotate: false }), FAKE_ENV, "req_b13", ACTOR, ORG_SCOPE, SECRET_UUID,
+      {
+        repo: {
+          getSecretMetadata: () => Promise.resolve({ ok: true as const, value: head }),
+          rotateSecretMetadata: () => unusedConfigFailure<SecretMetadata>(),
+          touchBrokeredRotation: () => Promise.resolve({ ok: true as const, value: { ...head, rotationPolicy: "30d" } }),
+        },
+        eventsRepo: fakeEventsRepo(),
+        rotateSource: () => {
+          rolled = true;
+          return Promise.resolve({ ok: true as const, rotatedAt: "x" });
+        },
+      },
+    );
+    expect(res.status).toBe(200);
+    expect(rolled).toBe(false);
+  });
+
+  it("surfaces rotation_unsupported (e.g. a pasted token Orun can't roll) as 400", async () => {
+    const head = brokeredSecret();
+    const res = await handleRotateSecret(
+      makeJsonRequest({}), FAKE_ENV, "req_b14", ACTOR, ORG_SCOPE, SECRET_UUID,
+      {
+        repo: {
+          getSecretMetadata: () => Promise.resolve({ ok: true as const, value: head }),
+          rotateSecretMetadata: () => unusedConfigFailure<SecretMetadata>(),
+          touchBrokeredRotation: () => unusedConfigFailure<SecretMetadata>(),
+        },
+        eventsRepo: fakeEventsRepo(),
+        rotateSource: () => Promise.resolve({ ok: false as const, status: 400, reason: "rotation_unsupported" }),
+      },
+    );
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { error: { details: { reason: string } } };
+    expect(body.error.details.reason).toBe("rotation_unsupported");
   });
 });
 
