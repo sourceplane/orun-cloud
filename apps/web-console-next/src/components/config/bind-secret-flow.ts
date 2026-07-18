@@ -60,7 +60,13 @@ export interface BindingFormValues {
   template: string;
   /** Raw param inputs keyed by param name. */
   params: Record<string, string>;
+  /** Optional rotation cadence for the scoped credential (SC2), e.g. "90d".
+   *  Empty / "off" means no scheduled rotation. */
+  rotationPolicy?: string;
 }
+
+/** Duration grammar the server accepts for a rotation cadence. */
+export const ROTATION_POLICY_PATTERN = /^[0-9]+[hdwmy]$/;
 
 export type BindingFormResult =
   | { ok: true; request: CreateBrokeredSecretRequest }
@@ -108,6 +114,11 @@ export function validateBindingForm(
   const displayName = form.displayName.trim();
   if (displayName.length > 128) errors.displayName = "At most 128 characters";
 
+  const rotationPolicy = (form.rotationPolicy ?? "").trim();
+  if (rotationPolicy.length > 0 && !ROTATION_POLICY_PATTERN.test(rotationPolicy)) {
+    errors.rotationPolicy = "Use a duration like 90d, 12w, or 720h";
+  }
+
   if (Object.keys(errors).length > 0) return { ok: false, errors };
 
   const request: CreateBrokeredSecretRequest = {
@@ -118,6 +129,7 @@ export function validateBindingForm(
       ...(template!.params.length > 0 ? { params } : {}),
     },
     ...(displayName.length > 0 ? { displayName } : {}),
+    ...(rotationPolicy.length > 0 ? { rotationPolicy } : {}),
   };
   return { ok: true, request };
 }

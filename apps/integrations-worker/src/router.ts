@@ -42,6 +42,7 @@ import {
   handleValidateBrokerBinding,
 } from "./handlers/credential-broker.js";
 import { handleSlackCredentialsInternal } from "./handlers/slack-credentials-internal.js";
+import { handleInternalRotateSource, ROTATE_SOURCE_PATH } from "./handlers/rotate-source.js";
 import { handleInternalConnectionStatuses } from "./handlers/internal-connection-status.js";
 import {
   handleCreateConnectionGrant,
@@ -244,6 +245,21 @@ export async function route(request: Request, env: Env): Promise<Response> {
     return pathname === BROKER_MINT_PATH
       ? handleInternalMintCredential(request, env, requestId)
       : handleValidateBrokerBinding(request, env, requestId);
+  }
+
+  // Internal scoped-credential rotation (SC2): config-worker drives a "Rotate
+  // now" (or the rotation cron) on a brokered secret by rolling the org-owned
+  // SOURCE credential the binding draws from. Service-binding-only; the
+  // rotated value never crosses back, only the timestamp.
+  if (pathname === ROTATE_SOURCE_PATH) {
+    if (request.method !== "POST") return methodNotAllowed(requestId);
+    if (!isAllowedInternalCaller(request.headers.get(INTERNAL_CALLER_HEADER))) {
+      return errorResponse("unauthorized", "Internal service-binding required", 403, requestId);
+    }
+    if (!env.PLATFORM_DB) {
+      return errorResponse("internal_error", "Database not configured", 503, requestId);
+    }
+    return handleInternalRotateSource(request, env, requestId);
   }
 
   // Internal batch connection-status read (brokered-orphan-safety, Feature 1):

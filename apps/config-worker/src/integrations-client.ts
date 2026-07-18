@@ -20,6 +20,7 @@ import {
 const VALIDATE_URL = "https://integrations.internal/internal/credentials/validate-binding";
 const MINT_URL = "https://integrations.internal/internal/credentials/mint";
 const CONNECTION_STATUS_URL = "https://integrations.internal/internal/connections/status";
+const ROTATE_SOURCE_URL = "https://integrations.internal/internal/credentials/rotate-source";
 
 function headers(requestId: string): Record<string, string> {
   return {
@@ -112,6 +113,46 @@ export async function fetchConnectionStatuses(
       ? ((parsed as { data: unknown }).data as { statuses?: Record<string, string> } | null)
       : null;
   return { ok: true, statuses: data?.statuses ?? {} };
+}
+
+export type RotateSourceResult =
+  | { ok: true; rotatedAt: string }
+  | { ok: false; status: number; reason: string };
+
+/**
+ * POST /internal/credentials/rotate-source — roll the org-owned source
+ * credential behind a brokered secret's connection (SC2). Metadata only: the
+ * rotated value never crosses back, only the timestamp. Network/parse errors
+ * fail closed as `{ ok: false, status: 503, reason: "unavailable" }`.
+ */
+export async function rotateConnectionSource(
+  binding: Fetcher,
+  req: { orgId: string; connectionId: string },
+  requestId: string,
+): Promise<RotateSourceResult> {
+  let response: Response;
+  let parsed: unknown;
+  try {
+    response = await binding.fetch(ROTATE_SOURCE_URL, {
+      method: "POST",
+      headers: headers(requestId),
+      body: JSON.stringify(req),
+    });
+    parsed = await response.json();
+  } catch {
+    return { ok: false, status: 503, reason: "unavailable" };
+  }
+  if (response.status !== 200) {
+    return { ok: false, status: response.status, reason: failureReason(parsed) };
+  }
+  const data =
+    parsed && typeof parsed === "object" && "data" in parsed
+      ? ((parsed as { data: unknown }).data as { rotatedAt?: unknown } | null)
+      : null;
+  if (!data || typeof data.rotatedAt !== "string") {
+    return { ok: false, status: 503, reason: "unavailable" };
+  }
+  return { ok: true, rotatedAt: data.rotatedAt };
 }
 
 export type BrokeredMintOutcome =

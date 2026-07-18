@@ -109,6 +109,28 @@ describe("validateBindingForm", () => {
     const r = validateBindingForm({ ...base, displayName: "x".repeat(129) }, TEMPLATES);
     expect(r.ok).toBe(false);
   });
+
+  it("carries a valid rotation cadence into the request (SC2)", () => {
+    const r = validateBindingForm({ ...base, rotationPolicy: "90d" }, TEMPLATES);
+    expect(r).toEqual({
+      ok: true,
+      request: {
+        secretKey: "CF_TOKEN",
+        binding: { connectionId: CONNECTION_ID, template: "workers-deploy" },
+        rotationPolicy: "90d",
+      },
+    });
+  });
+
+  it("omits an empty cadence and rejects a malformed one (SC2)", () => {
+    expect(validateBindingForm({ ...base, rotationPolicy: "" }, TEMPLATES)).toEqual({
+      ok: true,
+      request: { secretKey: "CF_TOKEN", binding: { connectionId: CONNECTION_ID, template: "workers-deploy" } },
+    });
+    const bad = validateBindingForm({ ...base, rotationPolicy: "soon" }, TEMPLATES);
+    expect(bad.ok).toBe(false);
+    if (!bad.ok) expect(bad.errors.rotationPolicy).toMatch(/duration/i);
+  });
 });
 
 describe("deriveBrokerRow", () => {
