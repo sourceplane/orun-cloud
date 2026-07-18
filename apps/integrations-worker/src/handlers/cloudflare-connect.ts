@@ -26,7 +26,7 @@ import { generateUuid, orgPublicId } from "../ids.js";
 import { toPublicConnection } from "../mappers.js";
 import {
   discoverCloudflareAccount,
-  verifyCloudflareParentToken,
+  verifyCloudflareTokenEitherOwnership,
 } from "../providers/cloudflare.js";
 import { CONNECT_STATE_TTL_MS, generateStateNonce, hashStateNonce } from "../state.js";
 
@@ -64,8 +64,27 @@ export async function handleCloudflareTokenConnect(
   }
 
   // Verify BEFORE any write: the paste must be a live token that can see an
-  // account. Anything else fails closed with a bounded reason.
-  const verification = await verifyCloudflareParentToken(parentToken, deps?.fetchImpl);
+  // account. Discovery runs FIRST (it works for both token ownerships and
+  // yields the account id the account-owned verify endpoint needs): a paste
+  // may be a user-owned token (`GET /user/tokens/verify`) or an
+  // ACCOUNT-OWNED one — the org-owned kind our own recipe encourages — which
+  // 401s on `/user/*` and verifies on `/accounts/{id}/tokens/verify`.
+  // Anything else fails closed with a bounded reason.
+  const account = await discoverCloudflareAccount(parentToken, deps?.fetchImpl);
+  if (!account) {
+    return errorResponse(
+      "precondition_failed",
+      "The token cannot see any Cloudflare account — check it is active, was copied in full, and includes Account Settings Read",
+      412,
+      requestId,
+      { reason: "no_account_visible" },
+    );
+  }
+  const verification = await verifyCloudflareTokenEitherOwnership(
+    parentToken,
+    account.accountExternalId,
+    deps?.fetchImpl,
+  );
   if (!verification || verification.status !== "active") {
     return errorResponse(
       "precondition_failed",
@@ -73,16 +92,6 @@ export async function handleCloudflareTokenConnect(
       412,
       requestId,
       { reason: "token_verification_failed" },
-    );
-  }
-  const account = await discoverCloudflareAccount(parentToken, deps?.fetchImpl);
-  if (!account) {
-    return errorResponse(
-      "precondition_failed",
-      "The token cannot see any Cloudflare account",
-      412,
-      requestId,
-      { reason: "no_account_visible" },
     );
   }
 

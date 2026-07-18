@@ -36,7 +36,7 @@ import {
   provisionCloudflareServiceIdentity,
   refreshCloudflareAccess,
   rotateCloudflareServiceIdentity,
-  verifyCloudflareParentToken,
+  verifyCloudflareAccountToken,
 } from "./providers/cloudflare.js";
 import {
   readParentCredential,
@@ -177,8 +177,14 @@ async function upgradeConnection(
     }
 
     // Probe-mint gate: never swap custody onto a credential the provider
-    // won't honor. A failed probe deletes the just-created token best-effort.
-    const probe = await verifyCloudflareParentToken(provisioned.value.credential, fetchImpl);
+    // won't honor. The provisioned token is ACCOUNT-OWNED, so it verifies on
+    // the account endpoint (`/user/tokens/verify` 401s for account tokens).
+    // A failed probe deletes the just-created token best-effort.
+    const probe = await verifyCloudflareAccountToken(
+      provisioned.value.credential,
+      row.accountExternalId,
+      fetchImpl,
+    );
     if (!probe || probe.status !== "active") {
       await deleteProvisionedToken(row.accountExternalId, provisioned.value, fetchImpl);
       return "failures";

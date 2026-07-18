@@ -96,6 +96,7 @@ const ACTOR = { subjectId: "usr_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", subjectType: 
 function cloudflareApi(overrides?: {
   verifyStatus?: string;
   verifyFails?: boolean;
+  accountOwned?: boolean;
   accounts?: Array<Record<string, unknown>>;
   groups?: Array<Record<string, unknown>>;
   createStatus?: number;
@@ -111,8 +112,16 @@ function cloudflareApi(overrides?: {
       body: typeof init?.body === "string" ? (JSON.parse(init.body) as Record<string, unknown>) : null,
       auth: new Headers(init?.headers).get("authorization"),
     });
-    if (input.includes("/user/tokens/verify")) {
+    if (input.includes(`/accounts/${ACCOUNT_ID}/tokens/verify`)) {
       if (overrides?.verifyFails) return Response.json({ success: false }, { status: 401 });
+      return Response.json({
+        success: true,
+        result: { id: "account-token-id", status: "active", expires_on: null },
+      });
+    }
+    if (input.includes("/user/tokens/verify")) {
+      // accountOwned: the paste is an ACCOUNT-OWNED token — /user/* 401s.
+      if (overrides?.verifyFails || overrides?.accountOwned) return Response.json({ success: false }, { status: 401 });
       return Response.json({
         success: true,
         result: { id: "parent-token-id", status: overrides?.verifyStatus ?? "active", expires_on: "2026-12-01T00:00:00Z" },
@@ -124,7 +133,21 @@ function cloudflareApi(overrides?: {
         result: overrides?.accounts ?? [{ id: ACCOUNT_ID, name: "Acme Infra" }],
       });
     }
+    if (input.includes(`/accounts/${ACCOUNT_ID}/tokens/permission_groups`)) {
+      return Response.json({
+        success: true,
+        result:
+          overrides?.groups ??
+          [
+            { id: "pg-1", name: "Workers Scripts Write" },
+            { id: "pg-2", name: "Workers KV Storage Write" },
+            { id: "pg-3", name: "Account Settings Read" },
+            { id: "pg-4", name: "DNS Write" },
+          ],
+      });
+    }
     if (input.includes("/user/tokens/permission_groups")) {
+      if (overrides?.accountOwned) return Response.json({ success: false }, { status: 401 });
       return Response.json({
         success: true,
         result:
@@ -175,6 +198,22 @@ describe("cloudflare adapter (IH5)", () => {
   it("fails closed when Cloudflare refuses the token", async () => {
     const { fetchImpl } = cloudflareApi({ verifyFails: true });
     await expect(verifyCloudflareParentToken("bad", fetchImpl)).resolves.toBeNull();
+  });
+
+  it("mints from an ACCOUNT-OWNED parent: permission groups resolve on the account endpoint", async () => {
+    const api = cloudflareApi({ accountOwned: true });
+    const provider = createCloudflareProvider(api.fetchImpl);
+    const outcome = await provider.broker!.mintCredential({
+      template: "workers-deploy",
+      params: {},
+      ttlSeconds: 900,
+      nowMs: NOW.getTime(),
+      parent: { credential: PARENT_TOKEN, externalRef: ACCOUNT_ID, kind: "cloudflare_parent_token" },
+      mintRef: "orun/org_x/workers-deploy/mint_y",
+    });
+    expect(outcome.ok).toBe(true);
+    if (outcome.ok) expect(outcome.value.credential.token).toBe("cf-child-SECRET");
+    expect(api.calls.some((c) => c.url.includes(`/accounts/${ACCOUNT_ID}/tokens/permission_groups`))).toBe(true);
   });
 
   it("mints a child token: named mintRef, clamped expiry, template policies", async () => {
@@ -434,6 +473,43 @@ describe("POST …/integrations/cloudflare/connect (token paste)", () => {
     expect(data.installUrl).toBeUndefined();
     expect(queries.some((q) => JSON.stringify(q.params).includes("cloudflare_pkce_verifier"))).toBe(false);
   });
+
+  it("accepts an ACCOUNT-OWNED paste: /user verify 401s, the account endpoint verifies", async () => {
+    // Account API tokens (the org-owned kind the recipe recommends) cannot
+    // call /user/* — the live incident: a valid account token was refused
+    // with "Cloudflare did not verify this token".
+    const api = cloudflareApi({ accountOwned: true });
+    const { executor } = fakeExecutor((text, params) => {
+      if (text.includes("INSERT INTO integrations.connections")) {
+        return [connectionRow({ id: params[0] as string })];
+      }
+      if (text.includes("INSERT INTO integrations.provider_credentials")) {
+        return [{
+          id: "cred", connection_id: params[1], kind: params[2], credential_class: params[3], ciphertext: params[4],
+          external_ref: params[6], created_at: NOW.toISOString(), updated_at: NOW.toISOString(),
+        }];
+      }
+      if (text.includes("INSERT INTO integrations.cloudflare_accounts")) {
+        return [{
+          id: "facts", connection_id: params[1], account_external_id: params[2],
+          account_name: params[3], parent_token_ref: params[4], token_status: "active",
+          created_at: NOW.toISOString(), updated_at: NOW.toISOString(),
+        }];
+      }
+      if (text.includes("SET status = 'active'")) {
+        return [connectionRow({ status: "active", connected_at: NOW.toISOString() })];
+      }
+      return [];
+    });
+    const res = await handleConnectIntegration(
+      connectRequest({ parentToken: PARENT_TOKEN }),
+      createEnv(), "req_1", ACTOR, ORG_ID, "cloudflare", { executor, fetchImpl: api.fetchImpl },
+    );
+    expect(res.status).toBe(201);
+    // The account endpoint verified after /user 401'd.
+    expect(api.calls.some((c) => c.url.includes(`/accounts/${ACCOUNT_ID}/tokens/verify`))).toBe(true);
+  });
+
 });
 
 // ── Re-auth (IH9): a paste for an already-bound account ─────
@@ -531,6 +607,7 @@ describe("cloudflare token re-auth (IH9)", () => {
       expect(JSON.stringify(q.params)).not.toContain(PARENT_TOKEN);
     }
   });
+
 
   it("re-auth of an ACTIVE connection refreshes custody without a status write", async () => {
     const api = cloudflareApi();

@@ -196,14 +196,15 @@ export interface CloudflareTokenVerification {
   expiresOn: string | null;
 }
 
-export async function verifyCloudflareParentToken(
-  parentToken: string,
-  fetchImpl: FetchLike = fetch,
+async function verifyTokenAt(
+  url: string,
+  bearer: string,
+  fetchImpl: FetchLike,
 ): Promise<CloudflareTokenVerification | null> {
   try {
-    const response = await fetchImpl(`${API_BASE}/user/tokens/verify`, {
+    const response = await fetchImpl(url, {
       method: "GET",
-      headers: { authorization: `Bearer ${parentToken}` },
+      headers: { authorization: `Bearer ${bearer}` },
     });
     if (!response.ok) return null;
     const body = (await response.json()) as {
@@ -219,6 +220,38 @@ export async function verifyCloudflareParentToken(
   } catch {
     return null;
   }
+}
+
+export async function verifyCloudflareParentToken(
+  parentToken: string,
+  fetchImpl: FetchLike = fetch,
+): Promise<CloudflareTokenVerification | null> {
+  return verifyTokenAt(`${API_BASE}/user/tokens/verify`, parentToken, fetchImpl);
+}
+
+/** ACCOUNT-OWNED tokens cannot call `/user/*` — they verify via the account
+ *  endpoint. Cloudflare has two parallel API-token surfaces (user-owned vs
+ *  account-owned); a paste may be either, and the org-owned account kind is
+ *  the better fit for the service-identity model. */
+export async function verifyCloudflareAccountToken(
+  parentToken: string,
+  accountId: string,
+  fetchImpl: FetchLike = fetch,
+): Promise<CloudflareTokenVerification | null> {
+  return verifyTokenAt(`${API_BASE}/accounts/${accountId}/tokens/verify`, parentToken, fetchImpl);
+}
+
+/** Verify a pasted token of EITHER ownership: user endpoint first (the
+ *  historical posture), then the account endpoint (account-owned tokens get
+ *  401 from `/user/*`). Callers supply the account id from discovery. */
+export async function verifyCloudflareTokenEitherOwnership(
+  parentToken: string,
+  accountId: string,
+  fetchImpl: FetchLike = fetch,
+): Promise<CloudflareTokenVerification | null> {
+  const asUserToken = await verifyCloudflareParentToken(parentToken, fetchImpl);
+  if (asUserToken) return asUserToken;
+  return verifyCloudflareAccountToken(parentToken, accountId, fetchImpl);
 }
 
 /** The account behind the parent token (`GET /accounts`) — the connection's
@@ -291,27 +324,36 @@ export async function listCloudflareAccountTokens(
 }
 
 /** Health cron (IH9): best-effort read of the parent token's own policy set
- *  (`GET /user/tokens/{id}`). Null = leave granted_policies unchanged. */
+ *  (`GET /user/tokens/{id}`, falling back to the account-scoped twin for
+ *  ACCOUNT-OWNED tokens). Null = leave granted_policies unchanged. */
 export async function getCloudflareTokenPolicies(
   parentToken: string,
   tokenId: string,
   fetchImpl: FetchLike = fetch,
+  accountId?: string | null,
 ): Promise<unknown[] | null> {
-  try {
-    const response = await fetchImpl(`${API_BASE}/user/tokens/${tokenId}`, {
-      method: "GET",
-      headers: { authorization: `Bearer ${parentToken}` },
-    });
-    if (!response.ok) return null;
-    const body = (await response.json()) as {
-      success?: boolean;
-      result?: { policies?: unknown };
-    };
-    if (body.success !== true || !Array.isArray(body.result?.policies)) return null;
-    return body.result.policies;
-  } catch {
-    return null;
+  const endpoints = [
+    `${API_BASE}/user/tokens/${tokenId}`,
+    ...(accountId ? [`${API_BASE}/accounts/${accountId}/tokens/${tokenId}`] : []),
+  ];
+  for (const endpoint of endpoints) {
+    try {
+      const response = await fetchImpl(endpoint, {
+        method: "GET",
+        headers: { authorization: `Bearer ${parentToken}` },
+      });
+      if (!response.ok) continue;
+      const body = (await response.json()) as {
+        success?: boolean;
+        result?: { policies?: unknown };
+      };
+      if (body.success !== true || !Array.isArray(body.result?.policies)) continue;
+      return body.result.policies;
+    } catch {
+      // try the next surface
+    }
   }
+  return null;
 }
 
 // ── OAuth connect (connectKind "oauth", risks D3) ───────────
@@ -503,28 +545,42 @@ async function mintCloudflareToken(
   }
 
   // Resolve the template's group NAMES against what the parent can see —
-  // the template ⊆ parent-grant check, deny-by-default.
-  let groups: Array<{ id: string; name: string }>;
-  try {
-    const response = await fetchImpl(`${API_BASE}/user/tokens/permission_groups`, {
-      method: "GET",
-      headers: { authorization: `Bearer ${input.parent.credential}` },
-    });
-    if (!response.ok) {
-      return { ok: false, reason: "provider_error", detail: `permission_groups http_${response.status}` };
+  // the template ⊆ parent-grant check, deny-by-default. The user endpoint
+  // serves user-owned bearers; ACCOUNT-OWNED tokens 401 there and answer on
+  // the account-scoped twin, so try both.
+  let groups: Array<{ id: string; name: string }> | null = null;
+  let lastDetail = "permission_groups unavailable";
+  for (const endpoint of [
+    `${API_BASE}/user/tokens/permission_groups`,
+    `${API_BASE}/accounts/${accountId}/tokens/permission_groups`,
+  ]) {
+    try {
+      const response = await fetchImpl(endpoint, {
+        method: "GET",
+        headers: { authorization: `Bearer ${input.parent.credential}` },
+      });
+      if (!response.ok) {
+        lastDetail = `permission_groups http_${response.status}`;
+        continue;
+      }
+      const body = (await response.json()) as {
+        success?: boolean;
+        result?: Array<{ id?: unknown; name?: unknown }>;
+      };
+      if (body.success !== true || !Array.isArray(body.result)) {
+        lastDetail = "permission_groups unavailable";
+        continue;
+      }
+      groups = body.result.filter(
+        (g): g is { id: string; name: string } => typeof g.id === "string" && typeof g.name === "string",
+      );
+      break;
+    } catch {
+      lastDetail = "permission_groups network_error";
     }
-    const body = (await response.json()) as {
-      success?: boolean;
-      result?: Array<{ id?: unknown; name?: unknown }>;
-    };
-    if (body.success !== true || !Array.isArray(body.result)) {
-      return { ok: false, reason: "provider_error", detail: "permission_groups unavailable" };
-    }
-    groups = body.result.filter(
-      (g): g is { id: string; name: string } => typeof g.id === "string" && typeof g.name === "string",
-    );
-  } catch {
-    return { ok: false, reason: "provider_error", detail: "permission_groups network_error" };
+  }
+  if (groups === null) {
+    return { ok: false, reason: "provider_error", detail: lastDetail };
   }
   const byName = new Map(groups.map((g) => [g.name, g.id]));
   const missing = groupNames.filter((name) => !byName.has(name));
