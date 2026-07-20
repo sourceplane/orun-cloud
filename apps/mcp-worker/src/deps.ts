@@ -14,12 +14,25 @@ export interface McpWorkerDeps {
    * read; tests inject a fresh Map for isolation.
    */
   entitlementCache: EntitlementGateCache;
+  /**
+   * Bearer pre-flight cache (token → epoch-ms the validity expires). A valid
+   * probe is remembered briefly so back-to-back messages on one connection
+   * don't each re-probe api-edge; a hard 401 is never cached (a refreshed
+   * token must retry immediately). Per-isolate, in-memory, fail-open — same
+   * posture as the entitlement cache.
+   */
+  authCache: Map<string, number>;
 }
 
-// Per-isolate cache, in-memory and fail-open like the concurrency cap
-// (design §8) — resets with the isolate, no KV/DO.
+// Per-isolate caches, in-memory and fail-open like the concurrency cap
+// (design §8) — reset with the isolate, no KV/DO.
 const sharedEntitlementCache: EntitlementGateCache = new Map();
+const sharedAuthCache = new Map<string, number>();
 
 export function buildDeps(): McpWorkerDeps {
-  return { fetch: globalThis.fetch, entitlementCache: sharedEntitlementCache };
+  return {
+    fetch: globalThis.fetch,
+    entitlementCache: sharedEntitlementCache,
+    authCache: sharedAuthCache,
+  };
 }
