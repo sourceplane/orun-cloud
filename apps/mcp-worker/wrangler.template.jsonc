@@ -4,7 +4,9 @@
 // Its only egress is the public api-edge URL below, reached via `@saas/sdk`
 // with the caller's forwarded bearer.
 //
-// Served on workers.dev for now; the `mcp.<domain>` custom hostname is an
+// Served on workers.dev (workers_dev is forced ON per env — this is the PUBLIC
+// remote transport; MCP11 leg A: the route silently defaulted off and the
+// advertised hostname 404'd). The `mcp.<domain>` custom hostname stays an
 // infra follow-up. OAUTH_AUTHORIZATION_SERVER_URL (MCP3) names the OAuth 2.1
 // authorization-server issuer (the public api-edge origin fronting
 // identity-worker) in the RFC 9728 protected-resource metadata.
@@ -14,6 +16,7 @@
   "compatibility_flags": ["nodejs_compat"],
   "main": "src/index.ts",
   "minify": false,
+  "workers_dev": true,
   "vars": {
     "ENVIRONMENT": "local",
     "API_EDGE_URL": "http://127.0.0.1:8787",
@@ -21,6 +24,7 @@
   },
   "env": {
     "dev": {
+      "workers_dev": true,
       "vars": {
         "ENVIRONMENT": "dev",
         "API_EDGE_URL": "https://api-edge-dev.oruncloud.workers.dev",
@@ -28,6 +32,7 @@
       }
     },
     "stage": {
+      "workers_dev": true,
       "vars": {
         "ENVIRONMENT": "stage",
         "API_EDGE_URL": "https://api-edge-stage.oruncloud.workers.dev",
@@ -35,6 +40,7 @@
       }
     },
     "prod": {
+      "workers_dev": true,
       "vars": {
         "ENVIRONMENT": "prod",
         "API_EDGE_URL": "https://api-edge-prod.oruncloud.workers.dev",
