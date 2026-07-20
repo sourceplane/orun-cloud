@@ -20,12 +20,14 @@
     "bindings": [
       { "name": "WORKSPACE_AGENT", "class_name": "WorkspaceAgent" },
       { "name": "CHAT_INDEX", "class_name": "ChatIndex" },
-      { "name": "WORKSPACE_MEMORY", "class_name": "WorkspaceMemory" }
+      { "name": "WORKSPACE_MEMORY", "class_name": "WorkspaceMemory" },
+      { "name": "DISPATCH_INDEX", "class_name": "DispatchIndex" }
     ]
   },
   "migrations": [
     { "tag": "v1", "new_sqlite_classes": ["WorkspaceAgent", "ChatIndex"] },
-    { "tag": "v2", "new_sqlite_classes": ["WorkspaceMemory"] }
+    { "tag": "v2", "new_sqlite_classes": ["WorkspaceMemory"] },
+    { "tag": "v3", "new_sqlite_classes": ["DispatchIndex"] }
   ],
   "env": {
     "dev": {
@@ -34,7 +36,8 @@
         "bindings": [
           { "name": "WORKSPACE_AGENT", "class_name": "WorkspaceAgent" },
           { "name": "CHAT_INDEX", "class_name": "ChatIndex" },
-          { "name": "WORKSPACE_MEMORY", "class_name": "WorkspaceMemory" }
+          { "name": "WORKSPACE_MEMORY", "class_name": "WorkspaceMemory" },
+          { "name": "DISPATCH_INDEX", "class_name": "DispatchIndex" }
         ]
       }
     },
@@ -45,7 +48,8 @@
         "bindings": [
           { "name": "WORKSPACE_AGENT", "class_name": "WorkspaceAgent" },
           { "name": "CHAT_INDEX", "class_name": "ChatIndex" },
-          { "name": "WORKSPACE_MEMORY", "class_name": "WorkspaceMemory" }
+          { "name": "WORKSPACE_MEMORY", "class_name": "WorkspaceMemory" },
+          { "name": "DISPATCH_INDEX", "class_name": "DispatchIndex" }
         ]
       },
       "services": [
@@ -61,7 +65,8 @@
         "bindings": [
           { "name": "WORKSPACE_AGENT", "class_name": "WorkspaceAgent" },
           { "name": "CHAT_INDEX", "class_name": "ChatIndex" },
-          { "name": "WORKSPACE_MEMORY", "class_name": "WorkspaceMemory" }
+          { "name": "WORKSPACE_MEMORY", "class_name": "WorkspaceMemory" },
+          { "name": "DISPATCH_INDEX", "class_name": "DispatchIndex" }
         ]
       },
       "services": [

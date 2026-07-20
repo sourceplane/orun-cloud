@@ -23,6 +23,10 @@ export interface Env {
   /** Per-workspace memory DO (WorkspaceMemory, named wsmem:<orgId>) — the
    * AN6 provenanced memory plane. */
   WORKSPACE_MEMORY?: DurableObjectNamespace;
+  /** Per-workspace dispatch shell DO (DispatchIndex, named wsdx:<orgId>) —
+   * the saas-dispatch DX1 live layer: cursor watermark + section counts +
+   * head fan-out. Holds no authorized content (DD7). */
+  DISPATCH_INDEX?: DurableObjectNamespace;
   /** Deploy environment name. */
   ENVIRONMENT: string;
 }

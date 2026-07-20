@@ -154,8 +154,9 @@ async function situationOf(res: Response): Promise<Record<string, any>> {
 }
 
 describe("dispatch facade (DX0)", () => {
-  it("matches only the situation route", () => {
+  it("matches the situation + index routes only", () => {
     expect(isDispatchRoute(PATH)).toBe(true);
+    expect(isDispatchRoute("/v1/organizations/org_abc/dispatch/index")).toBe(true);
     expect(isDispatchRoute("/v1/organizations/org_abc/dispatch")).toBe(false);
     expect(isDispatchRoute("/v1/organizations/org_abc/agents/sessions")).toBe(false);
   });
@@ -249,6 +250,36 @@ describe("dispatch facade (DX0)", () => {
     );
     expect(res.status).toBe(401);
     expect(agentsCalls.length + stateCalls.length).toBe(0);
+  });
+
+  it("forwards the index route to chat-worker with the actor stamped and the query token stripped (DX1)", async () => {
+    const chat = createRoutedFetcher({ "/dispatch/index": { cursor: "w7.7", counts: {} } });
+    const { env } = envWith({ CHAT_WORKER: chat.fetcher });
+    const indexPath = "/v1/organizations/org_abc/dispatch/index";
+    const res = await handleDispatchRoute(
+      new Request(`https://api.test${indexPath}?access_token=tok_ws`, { method: "GET" }),
+      env as never,
+      "req_t",
+      indexPath,
+    );
+    expect(res.status).toBe(200);
+    expect(chat.calls).toHaveLength(1);
+    const fwd = chat.calls[0]!;
+    expect(fwd.headers.get("x-actor-subject-id")).toBe("usr_viewer");
+    expect(fwd.headers.get("authorization")).toBeNull();
+    expect(fwd.url).not.toContain("access_token"); // never forwarded, never logged
+  });
+
+  it("503s the index route when chat-worker is unbound", async () => {
+    const { env } = envWith({ CHAT_WORKER: undefined });
+    const indexPath = "/v1/organizations/org_abc/dispatch/index";
+    const res = await handleDispatchRoute(
+      new Request(`https://api.test${indexPath}`, { method: "GET", headers: { authorization: "Bearer t" } }),
+      env as never,
+      "req_t",
+      indexPath,
+    );
+    expect(res.status).toBe(503);
   });
 
   it("405s non-GET methods", async () => {

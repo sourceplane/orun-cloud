@@ -17,6 +17,10 @@ const MEMORY_RE = /^\/v1\/organizations\/([^/]+)\/agents\/memory$/;
 const MEMORY_ENTRY_RE = /^\/v1\/organizations\/([^/]+)\/agents\/memory\/([^/]+)$/;
 const CHAT_RE = /^\/v1\/organizations\/([^/]+)\/agents\/chats\/([^/]+)$/;
 const CHAT_TURN_RE = /^\/v1\/organizations\/([^/]+)\/agents\/chats\/([^/]+)\/turn$/;
+// The Dispatch live layer (saas-dispatch DX1): WS attach (upgrade) or the
+// snapshot-first shell (plain GET). The DO holds no authorized content —
+// the same chat grant gates the wire, and heads fold with their own bearer.
+const DISPATCH_INDEX_RE = /^\/v1\/organizations\/([^/]+)\/dispatch\/index$/;
 
 interface Actor {
   subjectId: string;
@@ -97,6 +101,17 @@ function indexStub(env: Env, orgId: string): ChatIndexRpc | null {
   return env.CHAT_INDEX.get(env.CHAT_INDEX.idFromName(`ws:${orgId}`)) as unknown as ChatIndexRpc;
 }
 
+/** The DX1 dispatch-shell DO's typed RPC (worker-side view). */
+export interface DispatchIndexRpc {
+  ring(section?: string): Promise<void>;
+  shell(): Promise<{ cursor: string; counts: Record<string, number>; updatedAt: string | null }>;
+}
+
+function dispatchIndexStub(env: Env, orgId: string): DispatchIndexRpc | null {
+  if (!env.DISPATCH_INDEX) return null;
+  return env.DISPATCH_INDEX.get(env.DISPATCH_INDEX.idFromName(`wsdx:${orgId}`)) as unknown as DispatchIndexRpc;
+}
+
 export async function route(request: Request, env: Env, injectedDeps?: ChatDeps): Promise<Response> {
   const url = new URL(request.url);
   const reqId = requestId(request);
@@ -112,11 +127,30 @@ export async function route(request: Request, env: Env, injectedDeps?: ChatDeps)
       CHAT_RE.test(url.pathname) ||
       CHAT_TURN_RE.test(url.pathname) ||
       MEMORY_RE.test(url.pathname) ||
-      MEMORY_ENTRY_RE.test(url.pathname);
+      MEMORY_ENTRY_RE.test(url.pathname) ||
+      DISPATCH_INDEX_RE.test(url.pathname);
     if (!isChats) return notFound(reqId, url.pathname);
 
     const actor = resolveActor(request);
     if (!actor) return errorResponse("unauthenticated", "Authentication required", 401, reqId);
+
+    // DX1 — the dispatch live layer: WS attach or the snapshot-first shell.
+    let m0 = DISPATCH_INDEX_RE.exec(url.pathname);
+    if (m0) {
+      const orgId = uuidFromPublicId(m0[1]!, "org");
+      if (!orgId) return notFound(reqId, url.pathname);
+      if (request.method !== "GET") return methodNotAllowed(reqId);
+      if (!(await deps.authorize("organization.agent.chat", orgId, actor, reqId))) {
+        return errorResponse("forbidden", "Not authorized", 403, reqId);
+      }
+      if (!env.DISPATCH_INDEX) return errorResponse("unavailable", "Dispatch index not configured", 503, reqId);
+      if (request.headers.get("upgrade")?.toLowerCase() === "websocket") {
+        const doStub = env.DISPATCH_INDEX.get(env.DISPATCH_INDEX.idFromName(`wsdx:${orgId}`));
+        return doStub.fetch(new Request("https://dispatch/attach", request));
+      }
+      const idx = dispatchIndexStub(env, orgId)!;
+      return successResponse(await idx.shell(), reqId);
+    }
 
     let m = CHAT_TURN_RE.exec(url.pathname);
     if (m) {
@@ -147,6 +181,10 @@ export async function route(request: Request, env: Env, injectedDeps?: ChatDeps)
       }
       const idx = indexStub(env, orgId);
       if (idx) await idx.touch(m[2]!, deps.now().toISOString()).catch(() => {});
+      // DX1 doorbell: a turn may have spawned/steered a session — tell every
+      // dispatch head to refold. Coarse and fire-and-forget on purpose.
+      const dx = dispatchIndexStub(env, orgId);
+      if (dx && result.ok) await dx.ring("inFlight").catch(() => {});
       return successResponse({ accepted: true, ...result }, reqId, 202);
     }
 
