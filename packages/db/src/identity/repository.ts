@@ -11,6 +11,7 @@ import type {
   CreateCliLoginGrantInput,
   CreateCliSessionInput,
   CreateLoginChallengeInput,
+  CreateOAuthDynamicClientInput,
   CreateSecurityEventInput,
   CreateServicePrincipalInput,
   CreateSessionInput,
@@ -18,6 +19,7 @@ import type {
   IdentityRepository,
   IdentityResult,
   LoginChallenge,
+  OAuthDynamicClient,
   RotateCliSessionInput,
   SecurityEvent,
   SecurityEventPagedResult,
@@ -102,6 +104,18 @@ function mapCliLoginGrant(row: Record<string, unknown>): CliLoginGrant {
     oauthClientId: (row.oauth_client_id as string) ?? null,
     oauthRedirectUri: (row.oauth_redirect_uri as string) ?? null,
     oauthCodeChallenge: (row.oauth_code_challenge as string) ?? null,
+  };
+}
+
+function mapOAuthDynamicClient(row: Record<string, unknown>): OAuthDynamicClient {
+  const uris = typeof row.redirect_uris === "string" ? JSON.parse(row.redirect_uris) : row.redirect_uris;
+  return {
+    clientId: row.client_id as string,
+    clientName: row.client_name as string,
+    redirectUris: (Array.isArray(uris) ? uris : []) as string[],
+    createdAt: new Date(row.created_at as string),
+    lastUsedAt: row.last_used_at ? new Date(row.last_used_at as string) : null,
+    expiresAt: new Date(row.expires_at as string),
   };
 }
 
@@ -825,6 +839,91 @@ export function createIdentityRepository(executor: SqlExecutor): IdentityReposit
         return { ok: true, value: mapCliLoginGrant(result.rows[0]!) };
       } catch {
         return safeError("Failed to redeem CLI login grant");
+      }
+    },
+
+    // --- Dynamic OAuth clients (RFC 7591, saas-mcp-server MCP11 leg B) ---
+
+    async createOAuthDynamicClient(input: CreateOAuthDynamicClientInput): Promise<IdentityResult<OAuthDynamicClient>> {
+      try {
+        const result = await executor.execute<Record<string, unknown>>(
+          `INSERT INTO identity.oauth_dynamic_clients
+             (client_id, client_name, redirect_uris, created_at, expires_at)
+           VALUES ($1, $2, $3, $4, $5)
+           ON CONFLICT (client_id) DO NOTHING
+           RETURNING *`,
+          [
+            input.clientId,
+            input.clientName,
+            JSON.stringify(input.redirectUris),
+            input.createdAt.toISOString(),
+            input.expiresAt.toISOString(),
+          ],
+        );
+        if (result.rowCount === 0) {
+          return { ok: false, error: { kind: "conflict", entity: "oauth_dynamic_client" } };
+        }
+        return { ok: true, value: mapOAuthDynamicClient(result.rows[0]!) };
+      } catch (err: unknown) {
+        if (isUniqueViolation(err)) {
+          return { ok: false, error: { kind: "conflict", entity: "oauth_dynamic_client" } };
+        }
+        return safeError("Failed to create dynamic OAuth client", err);
+      }
+    },
+
+    async getOAuthDynamicClientByClientId(clientId: string): Promise<IdentityResult<OAuthDynamicClient>> {
+      try {
+        const result = await executor.execute<Record<string, unknown>>(
+          `SELECT * FROM identity.oauth_dynamic_clients WHERE client_id = $1`,
+          [clientId],
+        );
+        if (result.rowCount === 0) {
+          return { ok: false, error: { kind: "not_found" } };
+        }
+        return { ok: true, value: mapOAuthDynamicClient(result.rows[0]!) };
+      } catch {
+        return safeError("Failed to get dynamic OAuth client");
+      }
+    },
+
+    async touchOAuthDynamicClientUsed(clientId: string, usedAt: Date, expiresAt: Date): Promise<IdentityResult<OAuthDynamicClient>> {
+      try {
+        // GC-horizon refresh: expires_at only ever moves FORWARD (GREATEST
+        // guards a stale clock/racing touch from shortening the horizon).
+        const result = await executor.execute<Record<string, unknown>>(
+          `UPDATE identity.oauth_dynamic_clients
+           SET last_used_at = $2, expires_at = GREATEST(expires_at, $3)
+           WHERE client_id = $1
+           RETURNING *`,
+          [clientId, usedAt.toISOString(), expiresAt.toISOString()],
+        );
+        if (result.rowCount === 0) {
+          return { ok: false, error: { kind: "not_found" } };
+        }
+        return { ok: true, value: mapOAuthDynamicClient(result.rows[0]!) };
+      } catch {
+        return safeError("Failed to touch dynamic OAuth client");
+      }
+    },
+
+    async deleteExpiredOAuthDynamicClients(now: Date, limit: number): Promise<IdentityResult<number>> {
+      try {
+        // Bounded opportunistic GC (no scheduled sweep exists in the identity
+        // plane) — callers piggyback this on registration writes.
+        const result = await executor.execute<Record<string, unknown>>(
+          `DELETE FROM identity.oauth_dynamic_clients
+           WHERE client_id IN (
+             SELECT client_id FROM identity.oauth_dynamic_clients
+             WHERE expires_at <= $1
+             ORDER BY expires_at
+             LIMIT $2
+           )`,
+          [now.toISOString(), limit],
+        );
+        return { ok: true, value: result.rowCount };
+      } catch {
+        return safeError("Failed to delete expired dynamic OAuth clients");
       }
     },
 

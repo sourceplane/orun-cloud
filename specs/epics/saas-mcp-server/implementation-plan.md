@@ -220,7 +220,7 @@ it without transformation).
 path; the Connect page's copy-paste flow works end-to-end against a released
 orun binary (UM3).
 
-## MCP11 — Remote connectability: reachable hostname + dynamic client registration — 🗓️ In progress
+## MCP11 — Remote connectability: reachable hostname + dynamic client registration — ✅ Shipped (see IMPLEMENTATION-STATUS.md)
 
 From the 2026-07-13 field failure ("Couldn't register with orun's sign-in
 service" adding the connector in claude.ai). Two independent causes:
@@ -231,8 +231,9 @@ service" adding the connector in claude.ai). Two independent causes:
   path including `/health`, so connector discovery died at the origin.
   Fixed by forcing `workers_dev: true` at top level and per env (this is
   the PUBLIC transport; binding-free client-not-service posture unchanged).
-- **Leg B: dynamic client registration (activates D1 → Option B on its
-  documented path).** claude.ai's connector flow requires RFC 7591 DCR;
+- **Leg B (shipped with this milestone's second PR): dynamic client
+  registration (activated D1 → Option B on its documented path, 2026-07-20).**
+  claude.ai's connector flow requires RFC 7591 DCR;
   without a `registration_endpoint` it can only offer manual-client-ID
   entry. Ship: `POST /v1/auth/oauth2/register` (public via api-edge, `auth`
   rate-limit family + a dedicated tighter bucket) accepting PUBLIC clients

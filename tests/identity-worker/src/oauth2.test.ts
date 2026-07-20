@@ -313,6 +313,8 @@ describe("GET /.well-known/oauth-authorization-server (RFC 8414)", () => {
       issuer: "https://api.test",
       authorization_endpoint: "https://console.test/oauth/authorize",
       token_endpoint: "https://api.test/v1/auth/oauth2/token",
+      // MCP11 leg B: RFC 7591 DCR — claude.ai's connector flow requires this.
+      registration_endpoint: "https://api.test/v1/auth/oauth2/register",
       response_types_supported: ["code"],
       grant_types_supported: ["authorization_code", "refresh_token"],
       code_challenge_methods_supported: ["S256"],

@@ -34,6 +34,14 @@ const AUTH_ROUTES: Record<string, string> = {
   "/.well-known/oauth-authorization-server": "GET",
   "/v1/auth/oauth2/token": "POST",
   "/v1/auth/oauth2/authorize/complete": "POST",
+  // RFC 7591 dynamic client registration (saas-mcp-server MCP11 leg B).
+  // PUBLIC POST — no bearer exists yet by construction. Abuse control is the
+  // "auth" family's per-identity(IP)+per-org fixed windows (10/min per IP for
+  // anonymous callers), which already binds registration writes; the
+  // identity-worker has no in-worker limiter idiom, and inventing bespoke
+  // limiter state for one route was deliberately skipped (the ~30d unused-
+  // client GC bounds residual row accumulation).
+  "/v1/auth/oauth2/register": "POST",
 };
 
 // Console-called after user consent — requires a resolved actor, exactly like
@@ -50,6 +58,11 @@ const CLI_GRANT_GET_RE = /^\/v1\/auth\/cli\/grants\/[^/]+$/;
 const CLI_GRANT_APPROVE_RE = /^\/v1\/auth\/cli\/grants\/[^/]+\/approve$/;
 const CLI_GRANT_DENY_RE = /^\/v1\/auth\/cli\/grants\/[^/]+\/deny$/;
 const CLI_SESSION_ID_RE = /^\/v1\/auth\/cli\/sessions\/[^/]+$/;
+
+// Consent client-info read (MCP11 leg B): PUBLIC GET with a dynamic id
+// segment — the console resolves `dcr_` clients for the consent page before
+// the user is necessarily signed in on this origin. No actor injection.
+const OAUTH2_CLIENT_INFO_RE = /^\/v1\/auth\/oauth2\/client\/[^/]+$/;
 
 // Routes that require an authenticated console user (api-edge resolves the
 // bearer and injects x-actor-* headers before forwarding).
@@ -112,7 +125,8 @@ export function isAuthRoute(pathname: string): boolean {
     pathname in AUTH_ROUTES ||
     pathname in AUTH_MULTI_METHOD_ROUTES ||
     isOAuthRoute(pathname) ||
-    isCliManagedPath(pathname)
+    isCliManagedPath(pathname) ||
+    OAUTH2_CLIENT_INFO_RE.test(pathname)
   );
 }
 
@@ -126,12 +140,13 @@ export async function handleAuthRoute(
   const allowedMethods = AUTH_MULTI_METHOD_ROUTES[pathname];
   const oauth = isOAuthRoute(pathname);
   const cliManaged = isCliManagedPath(pathname);
+  const oauth2ClientInfo = OAUTH2_CLIENT_INFO_RE.test(pathname);
 
-  if (!expectedMethod && !allowedMethods && !oauth && !cliManaged) {
+  if (!expectedMethod && !allowedMethods && !oauth && !cliManaged && !oauth2ClientInfo) {
     return errorResponse("not_found", `Route not found: ${pathname}`, 404, requestId);
   }
 
-  if (oauth) {
+  if (oauth || oauth2ClientInfo) {
     if (request.method !== "GET") {
       return errorResponse("unsupported", "Method not allowed", 405, requestId);
     }

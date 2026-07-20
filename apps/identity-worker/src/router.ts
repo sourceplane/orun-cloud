@@ -28,6 +28,8 @@ import {
 import {
   handleOAuth2AuthorizationServerMetadata,
   handleOAuth2AuthorizeComplete,
+  handleOAuth2ClientInfo,
+  handleOAuth2Register,
   handleOAuth2Token,
 } from "./handlers/oauth2.js";
 import { errorResponse, notFound, methodNotAllowed } from "./http.js";
@@ -40,6 +42,7 @@ const CLI_GRANT_APPROVE_RE = /^\/v1\/auth\/cli\/grants\/[^/]+\/approve$/;
 const CLI_GRANT_DENY_RE = /^\/v1\/auth\/cli\/grants\/[^/]+\/deny$/;
 const CLI_GRANT_ID_RE = /^\/v1\/auth\/cli\/grants\/[^/]+$/;
 const CLI_SESSION_ID_RE = /^\/v1\/auth\/cli\/sessions\/[^/]+$/;
+const OAUTH2_CLIENT_INFO_RE = /^\/v1\/auth\/oauth2\/client\/[^/]+$/;
 import { generateRequestId } from "./ids.js";
 
 const REQUEST_ID_RE = /^[\w-]{1,128}$/;
@@ -137,6 +140,17 @@ export async function route(request: Request, env: Env): Promise<Response> {
     if (url.pathname === "/v1/auth/oauth2/token") {
       if (request.method !== "POST") return methodNotAllowed(requestId);
       return handleOAuth2Token(request, env, requestId);
+    }
+    // RFC 7591 dynamic client registration (MCP11 leg B; public — rate-limited
+    // at api-edge via the "auth" family; raw OAuth JSON in/out).
+    if (url.pathname === "/v1/auth/oauth2/register") {
+      if (request.method !== "POST") return methodNotAllowed(requestId);
+      return handleOAuth2Register(request, env, requestId);
+    }
+    // Public-safe client info for the console consent page (envelope JSON).
+    if (OAUTH2_CLIENT_INFO_RE.test(url.pathname)) {
+      if (request.method !== "GET") return methodNotAllowed(requestId);
+      return handleOAuth2ClientInfo(request, env, requestId);
     }
 
     // --- CLI session auth (OP1) ---

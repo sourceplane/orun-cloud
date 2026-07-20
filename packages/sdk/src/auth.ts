@@ -6,6 +6,7 @@ import type {
   LogoutResponse,
   OAuthAuthorizeCompleteRequest,
   OAuthAuthorizeCompleteResponse,
+  OAuthClientInfoResponse,
   OAuthProvidersResponse,
   ProfileResponse,
   SessionResponse,
@@ -113,6 +114,31 @@ export class AuthClient {
         method: "POST",
         path: "/v1/auth/oauth2/authorize/complete",
         body: input,
+      },
+      opts,
+    );
+  }
+
+  /**
+   * GET /v1/auth/oauth2/client/{clientId} — public-safe OAuth client info for
+   * the console consent page (saas-mcp-server MCP11 leg B). Static allow-list
+   * clients resolve too, but the console only needs this for dynamically-
+   * registered `dcr_` ids, which it must render as "Unverified app"
+   * (`client.dynamic: true`). Unknown or expired registrations → not_found.
+   *
+   * Note: the RFC 7591 registration endpoint itself (POST
+   * /v1/auth/oauth2/register) is deliberately NOT exposed here — like the
+   * token endpoint, it speaks RAW OAuth JSON (no platform envelope) and is
+   * the CLIENT's side of the protocol, not a platform API.
+   */
+  getOAuthClientInfo(
+    clientId: string,
+    opts: RequestOptions = {},
+  ): Promise<OAuthClientInfoResponse> {
+    return this.transport.request<OAuthClientInfoResponse>(
+      {
+        method: "GET",
+        path: `/v1/auth/oauth2/client/${encodeURIComponent(clientId)}`,
       },
       opts,
     );

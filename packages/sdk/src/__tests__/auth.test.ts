@@ -181,6 +181,23 @@ describe("AuthClient", () => {
     expect(out.code).toBe("ocac_abc");
   });
 
+  it("getOAuthClientInfo GETs /v1/auth/oauth2/client/{clientId} (MCP11 leg B)", async () => {
+    const body = {
+      client: {
+        clientId: "dcr_" + "a".repeat(32),
+        name: "Some Agent",
+        dynamic: true,
+        redirectUris: ["https://agent.example/cb"],
+      },
+    };
+    const { fetch, calls } = captureFetch(jsonResponse(envelope(body)));
+    const out = await client(fetch).auth.getOAuthClientInfo("dcr_" + "a".repeat(32));
+    expect(calls[0]!.url).toBe(`https://api.test/v1/auth/oauth2/client/dcr_${"a".repeat(32)}`);
+    expect(calls[0]!.init.method).toBe("GET");
+    expect(out.client.dynamic).toBe(true);
+    expect(out.client.name).toBe("Some Agent");
+  });
+
   it("getSession GETs /v1/auth/session", async () => {
     const { fetch, calls } = captureFetch(
       jsonResponse(

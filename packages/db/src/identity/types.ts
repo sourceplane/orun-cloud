@@ -320,6 +320,30 @@ export interface CreateCliLoginGrantInput {
   createdAt: Date;
 }
 
+// --- Dynamic OAuth clients (RFC 7591, saas-mcp-server MCP11 leg B) ---
+
+/** A dynamically-registered PUBLIC OAuth client (identity.oauth_dynamic_clients).
+ *  No secret exists — token_endpoint_auth_method is always "none". */
+export interface OAuthDynamicClient {
+  /** Server-minted `dcr_<hex32>` id (never a static allow-list id). */
+  clientId: string;
+  clientName: string;
+  redirectUris: string[];
+  createdAt: Date;
+  /** Stamped on token redemption; null until the client completes a flow. */
+  lastUsedAt: Date | null;
+  /** Unused-client GC horizon (~30d, refreshed on use). Expired ⇒ unknown client. */
+  expiresAt: Date;
+}
+
+export interface CreateOAuthDynamicClientInput {
+  clientId: string;
+  clientName: string;
+  redirectUris: string[];
+  createdAt: Date;
+  expiresAt: Date;
+}
+
 export interface UpdateUserProfileInput {
   /** Provide to change; omit to leave unchanged (partial update). */
   displayName?: string | null;
@@ -386,6 +410,16 @@ export interface IdentityRepository {
    */
   getSessionWithUserByTokenHash(tokenHash: string): Promise<IdentityResult<{ session: Session; user: User }>>;
   revokeSession(id: string, revokedAt: Date): Promise<IdentityResult<Session>>;
+
+  // --- Dynamic OAuth clients (RFC 7591, MCP11 leg B) ---
+  createOAuthDynamicClient(input: CreateOAuthDynamicClientInput): Promise<IdentityResult<OAuthDynamicClient>>;
+  /** Fetch by client_id. Returns the row regardless of expiry — the service
+   *  treats an expired row as an unknown client. */
+  getOAuthDynamicClientByClientId(clientId: string): Promise<IdentityResult<OAuthDynamicClient>>;
+  /** Stamp last_used_at and push expires_at forward (the GC horizon refresh). */
+  touchOAuthDynamicClientUsed(clientId: string, usedAt: Date, expiresAt: Date): Promise<IdentityResult<OAuthDynamicClient>>;
+  /** Delete up to `limit` expired rows (opportunistic GC). Returns count deleted. */
+  deleteExpiredOAuthDynamicClients(now: Date, limit: number): Promise<IdentityResult<number>>;
 
   recordSecurityEvent(input: CreateSecurityEventInput): Promise<IdentityResult<SecurityEvent>>;
   querySecurityEventsByUser(params: SecurityEventPageQueryParams): Promise<IdentityResult<SecurityEventPagedResult>>;

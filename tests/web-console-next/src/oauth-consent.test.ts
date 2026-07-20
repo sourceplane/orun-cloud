@@ -1,14 +1,19 @@
-// Console OAuth consent-page logic (saas-mcp-server MCP3) — the pure module
-// behind /oauth/authorize: authorize-request parsing against the vetted
-// client allow-list, redirect building (approve/deny), and the sessions-list
-// client label for MCP grants.
+// Console OAuth consent-page logic (saas-mcp-server MCP3 + MCP11 leg B) — the
+// pure module behind /oauth/authorize: authorize-request parsing against the
+// vetted client allow-list (static) and the dynamic `dcr_` path (RFC 7591
+// registrations resolved via the client-info read, rendered as "Unverified
+// app"), redirect building (approve/deny), and the sessions-list client label
+// for MCP grants.
 
 import {
   parseAuthorizeRequest,
   buildApproveRedirect,
   buildDenyRedirect,
+  dynamicClientRedirectAllowed,
+  consentClientPresentation,
   sessionClientLabel,
 } from "@web-console-next/lib/oauth-consent";
+import type { OAuthClientInfo } from "@saas/contracts/auth";
 
 const CHALLENGE = "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM";
 
@@ -33,7 +38,7 @@ describe("parseAuthorizeRequest", () => {
   it("accepts a standard authorize request for a vetted client", () => {
     const r = parseAuthorizeRequest(params());
     expect(r.ok).toBe(true);
-    if (!r.ok) return;
+    if (!r.ok || r.kind !== "static") throw new Error("expected a static client");
     expect(r.client.name).toBe("Claude");
     expect(r.params.clientId).toBe("claude-web");
     expect(r.params.state).toBe("xyz");
@@ -67,6 +72,73 @@ describe("parseAuthorizeRequest", () => {
   it("rejects non-code response types and a missing params object", () => {
     expect(parseAuthorizeRequest(params({ response_type: "token" })).ok).toBe(false);
     expect(parseAuthorizeRequest(null).ok).toBe(false);
+  });
+});
+
+describe("parseAuthorizeRequest — dynamic clients (MCP11 leg B)", () => {
+  const DCR_ID = "dcr_" + "a".repeat(32);
+
+  it("routes dcr_ client ids to the dynamic path (resolution deferred to the client-info read)", () => {
+    const r = parseAuthorizeRequest(
+      params({ client_id: DCR_ID, redirect_uri: "https://claude.ai/api/organizations/x/mcp/callback" }),
+    );
+    expect(r.ok).toBe(true);
+    if (!r.ok || r.kind !== "dynamic") throw new Error("expected a dynamic client");
+    expect(r.clientId).toBe(DCR_ID);
+    expect(r.params.redirectUri).toBe("https://claude.ai/api/organizations/x/mcp/callback");
+  });
+
+  it("still enforces PKCE + response_type + redirect presence for dynamic clients", () => {
+    expect(parseAuthorizeRequest(params({ client_id: DCR_ID, code_challenge_method: "plain" })).ok).toBe(false);
+    expect(parseAuthorizeRequest(params({ client_id: DCR_ID, response_type: "token" })).ok).toBe(false);
+    expect(parseAuthorizeRequest(params({ client_id: DCR_ID, redirect_uri: undefined })).ok).toBe(false);
+  });
+
+  it("a static clientId never falls through to the dynamic path", () => {
+    const r = parseAuthorizeRequest(params());
+    expect(r.ok && r.kind).toBe("static");
+  });
+
+  it("non-dcr_ unknown clients are still rejected outright", () => {
+    expect(parseAuthorizeRequest(params({ client_id: "evil" })).ok).toBe(false);
+  });
+});
+
+describe("dynamicClientRedirectAllowed", () => {
+  const client: OAuthClientInfo = {
+    clientId: "dcr_" + "b".repeat(32),
+    name: "Some Agent",
+    dynamic: true,
+    redirectUris: ["https://agent.example/cb", "http://127.0.0.1/callback"],
+  };
+
+  it("hosted URIs match exactly only", () => {
+    expect(dynamicClientRedirectAllowed(client, "https://agent.example/cb")).toBe(true);
+    expect(dynamicClientRedirectAllowed(client, "https://agent.example/cb2")).toBe(false);
+    expect(dynamicClientRedirectAllowed(client, "https://evil.example/cb")).toBe(false);
+  });
+
+  it("loopback URIs keep the RFC 8252 any-port carve-out (same matcher as static clients)", () => {
+    expect(dynamicClientRedirectAllowed(client, "http://127.0.0.1:61234/callback")).toBe(true);
+    expect(dynamicClientRedirectAllowed(client, "http://127.0.0.1:61234/other")).toBe(false);
+  });
+});
+
+describe("consentClientPresentation (Unverified app labeling)", () => {
+  it("dynamic clients ALWAYS carry the Unverified app badge", () => {
+    expect(consentClientPresentation({ name: "Some Agent", dynamic: true })).toEqual({
+      name: "Some Agent",
+      unverified: true,
+      badgeLabel: "Unverified app",
+    });
+  });
+
+  it("vetted static clients get no badge (trusted styling preserved)", () => {
+    expect(consentClientPresentation({ name: "Claude", dynamic: false })).toEqual({
+      name: "Claude",
+      unverified: false,
+      badgeLabel: null,
+    });
   });
 });
 
