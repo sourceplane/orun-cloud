@@ -19,7 +19,7 @@ responsiveness budget the whole thing is held to.
 
 | Field | Value |
 |-------|-------|
-| Status | **Proposed (design)** — no code yet; milestones DX0–DX5 below |
+| Status | **Shipped (v1)** — DX0–DX7 merged 2026-07-20 (#516–#524); as-built truth, recorded design amendments, and remaining tails in `IMPLEMENTATION-STATUS.md` |
 | Cluster | **DX** (dispatch experience — cloud-only; composes AN/AF/WP/AG/ES, changes none of them) |
 | Owner(s) | `apps/chat-worker` (DX1 the `DispatchIndex` DO; DX4 proactive) · `apps/api-edge` (DX0 the situation facade) · `apps/web-console-next` (DX2 the surface, DX3 the front-door swap) · `packages/contracts` (the situation vocabulary) · `packages/sdk` (the dispatch resource) |
 | Target branch | `claude/compassionate-wright-041n2p` (design PR), then `main` (PRs merged incrementally) |
