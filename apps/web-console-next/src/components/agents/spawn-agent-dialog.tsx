@@ -26,6 +26,7 @@ import { Label } from "@/components/ui/label";
 import { StatusText } from "@/components/ui/northwind";
 import { useToast } from "@/components/ui/toast";
 import { wrap } from "@/lib/api";
+import { interfaceTier } from "@/lib/agents/model";
 import { qk, useApiQuery } from "@/lib/query";
 import { useSession } from "@/lib/session";
 import { workRefForItem } from "@/lib/agents/model";
@@ -135,15 +136,26 @@ export function SpawnAgentDialog({
                     />
                     <span className="font-medium">{p.name}</span>
                     <span className="text-[12px] text-muted-foreground">
-                      {p.agentType} · {p.model}
+                      {p.agentType} · {p.model} · {interfaceTier(p.interface).label}
                     </span>
                   </label>
                 ))}
               </div>
             </div>
+            {(() => {
+              const chosenProfile = profileRows.find((p) => p.id === chosen);
+              const tier = interfaceTier(chosenProfile?.interface);
+              // The informed-consent line (DD10): the tier's differences are
+              // stated where the click happens, never averaged away.
+              return (
+                <StatusText tone={tier.tone} className="text-[11.5px]">
+                  {tier.label}: {tier.blurb}
+                </StatusText>
+              );
+            })()}
             <label className="flex cursor-pointer items-center gap-2 text-[13px]">
               <Checkbox checked={provision} onCheckedChange={(v) => setProvision(v === true)} />
-              Start the sandbox now (needs connected Daytona + Anthropic)
+              Start the run now (sealed runs need connected Daytona + Anthropic; managed runs need Anthropic)
             </label>
             {gateError ? (
               <StatusText tone="warning">

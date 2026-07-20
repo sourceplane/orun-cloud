@@ -23,6 +23,7 @@ export function toPublicProfile(p: DbProfile): AgentProfile {
     agentType: p.agentType,
     harness: p.harness,
     model: p.model,
+    interface: p.interface,
     autonomyDefault: p.autonomyDefault,
     ...(p.autonomyEvidence !== undefined ? { autonomyEvidence: p.autonomyEvidence } : {}),
     createdAt: p.createdAt,

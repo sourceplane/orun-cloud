@@ -18,6 +18,7 @@ import {
   type AgentSession,
   type AutonomyLevel,
   type AutonomyPolicy,
+  type DelegationInterface,
   type Budget,
   type BudgetGrain,
   type ConnectionStatus,
@@ -84,6 +85,7 @@ function mapProfile(row: Row): AgentProfile {
     agentType: String(row.agent_type),
     harness: String(row.harness),
     model: String(row.model),
+    interface: (row.interface ? String(row.interface) : "orun-sandbox") as DelegationInterface,
     autonomyDefault: String(row.autonomy_default) as AutonomyLevel,
     capability: parseJson<Record<string, unknown>>(row.capability, {}),
     createdAt: toIso(row.created_at),
@@ -207,8 +209,8 @@ export function createAgentsRepository(sql: TransactionalSqlExecutor): AgentsRep
       validateProfileInput(input);
       const res = await sql.execute(
         `INSERT INTO agents.agent_profiles
-           (public_id, org_id, name, principal_id, owner, agent_type, harness, model, autonomy_default, capability)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10::jsonb)
+           (public_id, org_id, name, principal_id, owner, agent_type, harness, model, interface, autonomy_default, capability)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11::jsonb)
          RETURNING *`,
         [
           newPublicId("agp_"),
@@ -219,6 +221,7 @@ export function createAgentsRepository(sql: TransactionalSqlExecutor): AgentsRep
           input.agentType,
           input.harness,
           input.model,
+          input.interface ?? "orun-sandbox",
           input.autonomyDefault ?? "assist",
           JSON.stringify(input.capability ?? {}),
         ],

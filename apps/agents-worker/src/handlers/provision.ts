@@ -14,6 +14,7 @@ import type { ProviderConnection, Provider } from "@saas/db/agents";
 import type { SandboxSpec } from "@saas/contracts/agents";
 import { errorResponse, notFound, successResponse } from "../http.js";
 import { toPublicSession } from "../mappers.js";
+import { ManagedAgentsError, type ManagedSpawnSpec } from "../providers/managed-agents.js";
 import { uuidToHex } from "@saas/db/ids";
 
 /** The scope orgId is the UUID (authz + DB); the runtime dials the public API,
@@ -138,7 +139,20 @@ export async function handleProvisionSession(
       requestId,
     );
   }
-  if (!deps.providerKeys || !deps.sandboxes) {
+  if (!deps.providerKeys) {
+    return errorResponse("internal_error", "Provisioning unavailable", 503, requestId);
+  }
+
+  const profile = await deps.repo.getSessionProfile({ orgId }, sessionId);
+  if (!profile) return notFound(requestId, sessionId);
+
+  // DX7 — the second executor: a profile on the anthropic-managed interface
+  // provisions a Claude Managed Agents cloud session instead of a sandbox.
+  if (profile.interface === "anthropic-managed") {
+    return provisionManaged(deps, orgId, session, profile, actor, requestId);
+  }
+
+  if (!deps.sandboxes) {
     return errorResponse("internal_error", "Provisioning unavailable", 503, requestId);
   }
 
@@ -192,8 +206,6 @@ export async function handleProvisionSession(
   // the profile's service principal, bound to this session. Its TTL chain is
   // refreshed over the lease; a lapsed lease kills a runaway sandbox's
   // credential within one TTL.
-  const profile = await deps.repo.getSessionProfile({ orgId }, sessionId);
-  if (!profile) return notFound(requestId, sessionId);
   const sessionToken = deps.sessionTokens
     ? await deps.sessionTokens.mint(profile.principalId, orgPublic, session.publicId, requestId)
     : null;
@@ -271,6 +283,131 @@ export async function handleProvisionSession(
         publicId: session.publicId,
         to: "failed",
         sandbox: { provider: "daytona", error: reason },
+      },
+    );
+    return errorResponse("provider_verification_failed", `Provisioning failed: ${reason}`, 502, requestId);
+  }
+}
+
+// ── DX7: the anthropic-managed executor (saas-dispatch design §10) ──────────
+
+/** The definition-time tool allowlist a managed run gets. The managed
+ * runtime has NO verdict channel, so narrowing at agent-definition time is
+ * the only enforcement — a profile without an explicit ceiling cannot ride
+ * this interface (the no-ask rule, structural). */
+function managedToolAllowlist(capability: Record<string, unknown>): string[] | null {
+  const raw = capability.tools;
+  if (!Array.isArray(raw)) return null;
+  const tools = raw.filter((t): t is string => typeof t === "string");
+  return tools.length > 0 ? tools : null;
+}
+
+function managedSystemPrompt(orgPublic: string, runKind: string): string {
+  return [
+    "You are a governed delegation run for a sourceplane workspace, executing on the anthropic-managed interface.",
+    "Your toolset was narrowed at definition time and cannot widen mid-run; there is no approval channel — if a step",
+    "needs a permission you do not hold, state exactly what is missing and end. You cannot assert work-plane progress:",
+    "your transcript is the record, and anything you ship is judged by the platform's own gates like everyone else's.",
+    `Workspace: ${orgPublic}. Run kind: ${runKind}. Be direct; cite ids; never fabricate a capability.`,
+  ].join(" ");
+}
+
+function managedBrief(session: { runKind: string; taskKey?: string; workRef?: string }): string {
+  const target = session.taskKey
+    ? `task ${session.taskKey}${session.workRef ? ` (${session.workRef})` : ""}`
+    : "the operator's request";
+  return `Run kind: ${session.runKind}. Target: ${target}. Work within your toolset; summarize findings and proposed changes; an open question you cannot resolve ends the run with the question stated.`;
+}
+
+type ProvisionProfile = NonNullable<Awaited<ReturnType<AgentsDeps["repo"]["getSessionProfile"]>>>;
+type ProvisionSession = NonNullable<Awaited<ReturnType<AgentsDeps["repo"]["getSession"]>>>;
+
+async function provisionManaged(
+  deps: AgentsDeps,
+  orgId: string,
+  session: ProvisionSession,
+  profile: ProvisionProfile,
+  actor: ActorContext,
+  requestId: string,
+): Promise<Response> {
+  const orgPublic = orgPublicId(orgId);
+
+  // Gate 1 — the no-ask rule (interface_requires_ask): definition-time
+  // narrowing is the managed runtime's ONLY enforcement, so an explicit
+  // tools allowlist on the profile ceiling is mandatory. Actionable refusal.
+  const tools = managedToolAllowlist(profile.capability);
+  if (tools === null) {
+    return errorResponse(
+      "interface_requires_ask",
+      "The anthropic-managed interface has no approval channel: set an explicit capability.tools allowlist on the profile (definition-time narrowing), or switch the profile to orun-sandbox",
+      422,
+      requestId,
+    );
+  }
+
+  // Gate 2 — the model credential, same custody as every path.
+  const anthropic = await pickConnection(deps, orgId, "anthropic");
+  if ("error" in anthropic) {
+    return errorResponse("provider_connection_invalid", `Cannot provision: ${anthropic.error}`, 409, requestId);
+  }
+  const anthropicKey = await deps.providerKeys!.resolve(orgId, anthropic.secretRef, actor, requestId);
+  if (!anthropicKey) {
+    return errorResponse("provider_connection_invalid", "No key material for the anthropic connection", 409, requestId);
+  }
+  const adapter = deps.managedAgents?.(anthropicKey, anthropic.config);
+  if (!adapter) {
+    return errorResponse("provider_unsupported", "No anthropic-managed adapter", 503, requestId);
+  }
+
+  const spec: ManagedSpawnSpec = {
+    model: profile.model,
+    system: managedSystemPrompt(orgPublic, session.runKind),
+    tools,
+    brief: managedBrief(session),
+    ...(session.taskKey ? { title: session.taskKey } : {}),
+  };
+
+  try {
+    logBoot(session.publicId, orgPublic, "create.start", "provider=anthropic-managed");
+    const ref = await adapter.spawn(spec);
+    logBoot(session.publicId, orgPublic, "create.ok", `provider=anthropic-managed session=${ref.sessionId}`);
+    // Managed sessions have no heartbeat: the first user event already ran,
+    // so the control plane advances straight through provisioning → running.
+    await deps.repo.advanceSession(
+      { orgId },
+      {
+        publicId: session.publicId,
+        to: "provisioning",
+        sandbox: {
+          provider: "anthropic-managed",
+          id: ref.sessionId,
+          agentId: ref.agentId,
+          connection: anthropic.publicId,
+        },
+      },
+    );
+    const running = await deps.repo.advanceSession(
+      { orgId },
+      { publicId: session.publicId, to: "running" },
+    );
+    void deps.usage?.record(
+      orgId,
+      "agents.sessions_started",
+      1,
+      { runKind: session.runKind, profile: profile.publicId },
+      actor,
+      requestId,
+    );
+    return successResponse(toPublicSession(running), requestId);
+  } catch (e) {
+    const reason = e instanceof ManagedAgentsError ? `${e.step}: ${e.message}` : "provider unreachable";
+    logBoot(session.publicId, orgPublic, "create.failed", `provider=anthropic-managed reason=${reason}`);
+    await deps.repo.advanceSession(
+      { orgId },
+      {
+        publicId: session.publicId,
+        to: "failed",
+        sandbox: { provider: "anthropic-managed", error: reason },
       },
     );
     return errorResponse("provider_verification_failed", `Provisioning failed: ${reason}`, 502, requestId);

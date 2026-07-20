@@ -134,7 +134,10 @@ describe("provider verifier — anthropic (unchanged read-only probe)", () => {
 
 describe("provider verifier — unsupported provider", () => {
   it("refuses an unknown provider", async () => {
-    const res = await createProviderVerifier().verify("openai", "k", {});
+    // openai/openrouter became verifiable providers in DX6; gemini is the
+    // rejected-provider fixture platform-wide (the config-worker/db suites'
+    // convention).
+    const res = await createProviderVerifier().verify("gemini", "k", {});
     expect(res).toEqual({ ok: false, reason: "provider unsupported" });
   });
 });

@@ -35,6 +35,9 @@ export const AGENTS_ERROR_CODES = {
   sessionNotLive: "agent_session_not_live",
   /** The sandbox provider failed to provision/resume. */
   sandboxUnavailable: "sandbox_unavailable",
+  /** DX7: a managed-interface profile needs a definition-time tools
+   * allowlist (no verdict channel exists to ask mid-run). */
+  interfaceRequiresAsk: "interface_requires_ask",
 } as const;
 
 export type AgentsErrorCode =
@@ -73,6 +76,20 @@ export const AGENT_SESSION_TERMINAL_STATES = [
 export function isTerminalSessionState(s: AgentSessionState): boolean {
   return (AGENT_SESSION_TERMINAL_STATES as readonly string[]).includes(s);
 }
+
+/**
+ * Delegation interfaces (saas-dispatch DX7): HOW a profile's runs execute.
+ * `orun-sandbox` — `orun agent serve` in a Daytona box against a sealed
+ * brief (a **Sealed run**: content-addressed input, replayable snapshot,
+ * mid-run ask-gated approvals). `anthropic-managed` — a Claude Managed
+ * Agents cloud session spawned via API (a **Managed run**: seconds to first
+ * token, definition-time tool narrowing ONLY — no verdict channel exists,
+ * so `awaiting_approval` is unreachable on this interface by construction).
+ * One dispatch door governs both (DD9); the tier renders, never averaged
+ * (DD10).
+ */
+export const DELEGATION_INTERFACES = ["orun-sandbox", "anthropic-managed"] as const;
+export type DelegationInterface = (typeof DELEGATION_INTERFACES)[number];
 
 /** Run kinds — mirrors the orun runtime's nodes.RunKind*. */
 export const AGENT_RUN_KINDS = [
@@ -116,6 +133,8 @@ export interface AgentProfile {
   agentType: string;
   harness: string;
   model: string;
+  /** How this profile's runs execute (DX7). Default: orun-sandbox. */
+  interface: DelegationInterface;
   autonomyDefault: AgentAutonomyLevel;
   /** The address of the last autonomy movement (AF7): {direction, from, to,
    * by, at, record?|trigger?}. Absent = never moved. */
@@ -132,6 +151,8 @@ export interface CreateAgentProfileRequest {
   agentType: string;
   harness: string;
   model: string;
+  /** DX7: the delegation interface; omitted = orun-sandbox. */
+  interface?: DelegationInterface;
   autonomyDefault?: AgentAutonomyLevel;
   capability?: Record<string, unknown>;
 }

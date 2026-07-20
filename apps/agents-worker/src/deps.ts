@@ -15,6 +15,7 @@ import type { PolicyResource } from "@saas/contracts/policy";
 import { createProviderKeyClient, type ProviderKeyClient } from "./config-client.js";
 import { createProviderVerifier, type ProviderVerifier } from "./verifiers.js";
 import { createDaytonaProvider } from "./providers/daytona.js";
+import { createManagedAgentsAdapter, type ManagedAgentsAdapter } from "./providers/managed-agents.js";
 import { createSessionTokenMinter, type SessionTokenMinter } from "./identity-client.js";
 import { checkBillingEntitlement, decideAgentsFeature, type AgentsEntitlementGate } from "./billing-client.js";
 import { createUsageRecorder, type UsageRecorder } from "./metering-client.js";
@@ -39,6 +40,8 @@ export interface AgentsDeps {
   verifier?: ProviderVerifier;
   /** Sandbox adapters keyed by provider (AG5); stubbed in tests. */
   sandboxes?: SandboxFactory;
+  /** DX7: the anthropic-managed executor factory (fixture-stubbed in tests). */
+  managedAgents?: (apiKey: string, config: Record<string, unknown>) => ManagedAgentsAdapter | null;
   /** Agent-session token mint over the identity binding (AG6 §3.2). */
   sessionTokens?: SessionTokenMinter;
   /** feature.agents entitlement gate (AG10 §8); absent = open (D3). */
@@ -76,6 +79,12 @@ export function buildDeps(env: Env): AgentsDeps {
     // The same host the console + CLI use (custom hostnames route here too);
     // workers.dev is always live, so the bootstrap needs no per-env DNS.
     apiBaseUrl: `https://api-edge-${env.ENVIRONMENT}.oruncloud.workers.dev`,
+    managedAgents(apiKey, config) {
+      return createManagedAgentsAdapter({
+        apiKey,
+        ...(typeof config.baseUrl === "string" && config.baseUrl ? { apiUrl: config.baseUrl } : {}),
+      });
+    },
     sandboxes(provider, apiKey, config) {
       if (provider !== "daytona") return null;
       return createDaytonaProvider({

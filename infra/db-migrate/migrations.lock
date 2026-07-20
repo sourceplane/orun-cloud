@@ -93,3 +93,4 @@
 840_service_identity_custody
 850_identity_oauth_dynamic_clients
 860_agents_model_providers
+870_agents_profile_interface

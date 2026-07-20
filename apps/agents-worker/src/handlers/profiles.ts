@@ -3,7 +3,7 @@
 
 import type { AgentsDeps } from "../deps.js";
 import type { ActorContext } from "../router.js";
-import { AgentsError } from "@saas/db/agents";
+import { AgentsError, isDelegationInterface } from "@saas/db/agents";
 import { errorResponse, listResponse, successResponse, validationError } from "../http.js";
 import { toPublicProfile } from "../mappers.js";
 
@@ -41,6 +41,10 @@ export async function handleCreateProfile(
   for (const field of ["name", "principalId", "owner", "agentType", "harness", "model"]) {
     if (typeof b[field] !== "string" || !b[field]) missing[field] = ["required"];
   }
+  // DX7: the delegation interface is a closed vocabulary; junk refuses loud.
+  if (b.interface !== undefined && (typeof b.interface !== "string" || !isDelegationInterface(b.interface))) {
+    missing.interface = ["one of orun-sandbox, anthropic-managed"];
+  }
   if (Object.keys(missing).length > 0) return validationError(requestId, missing);
 
   try {
@@ -53,7 +57,15 @@ export async function handleCreateProfile(
         agentType: b.agentType as string,
         harness: b.harness as string,
         model: b.model as string,
+        ...(typeof b.interface === "string" && isDelegationInterface(b.interface)
+          ? { interface: b.interface }
+          : {}),
         ...(typeof b.autonomyDefault === "string" ? { autonomyDefault: b.autonomyDefault as never } : {}),
+        // The capability ceiling (narrowing-only): the managed interface's
+        // no-ask gate reads capability.tools at provision time.
+        ...(typeof b.capability === "object" && b.capability !== null
+          ? { capability: b.capability as Record<string, unknown> }
+          : {}),
       },
     );
     return successResponse(toPublicProfile(profile), requestId, 201);

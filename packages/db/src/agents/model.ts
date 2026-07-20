@@ -62,6 +62,15 @@ export type RunKind = (typeof RUN_KINDS)[number];
 export const AUTONOMY_LEVELS = ["manual", "assist", "auto-dispatch", "full"] as const;
 export type AutonomyLevel = (typeof AUTONOMY_LEVELS)[number];
 
+/** Delegation interfaces (saas-dispatch DX7): how a profile's runs execute.
+ * Extending this list requires the matching agent_profiles CHECK migration. */
+export const DELEGATION_INTERFACES = ["orun-sandbox", "anthropic-managed"] as const;
+export type DelegationInterface = (typeof DELEGATION_INTERFACES)[number];
+
+export function isDelegationInterface(v: string): v is DelegationInterface {
+  return (DELEGATION_INTERFACES as readonly string[]).includes(v);
+}
+
 /** The closed session-event vocabulary — no status/lifecycle kind exists.
  * The child_* kinds (saas-agents-fleet AF4) are the parent's sealed story of
  * its delegation tree, emitted by the runtime and relayed like everything
@@ -106,6 +115,8 @@ export interface AgentProfile {
   agentType: string;
   harness: string;
   model: string;
+  /** How this profile's runs execute (DX7). Default: orun-sandbox. */
+  interface: DelegationInterface;
   autonomyDefault: AutonomyLevel;
   capability: Record<string, unknown>;
   /** The address of the last autonomy movement (AF7): direction, from/to,
