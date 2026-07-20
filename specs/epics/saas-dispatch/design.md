@@ -253,7 +253,165 @@ budget *visible* (the Budget card) exactly where spend is initiated.
 
 ---
 
-## 9. Acceptance narrative (the story DX must pass)
+## 9. Provider & model settings (DX6)
+
+### 9.1 Where the delegation model and provider are set today (the as-built map)
+
+Recording this here because the answer was previously scattered across five
+files and one epic doc:
+
+| Knob | Where it lives | Set by |
+|---|---|---|
+| **The model a run uses** | `agent_profiles.model` (free-text model id; console picker in `create-profile-dialog` from `AGENT_MODELS`) | profile create/edit (Agents tab) |
+| **The harness** | `agent_profiles.harness` (`claude-code` today) | profile create |
+| **The provider key** | config-worker custody under the reserved namespace `agents/providers/<provider>/<name>/API_KEY`; the row in `agents.provider_connections` stores only `secret_ref` + a `…last4` hint | Connect card (Agents tab / Integrations hub) |
+| **Non-secret provider details** | `provider_connections.config` JSONB (daytona `{apiUrl?, target?}`; model providers `{defaultModel?, baseUrl?}`) | the same Connect card |
+| **Which connection a run rides** | sole-or-`default` selection at spawn (`pickAnthropic` mirror of the provisioning gate); a profile MAY pin one by name | spawn gate |
+
+### 9.2 What DX6 changes
+
+1. **The vocabulary widens** — `daytona · anthropic · openai · openrouter`.
+   OpenAI and OpenRouter are model-credential providers on the *identical*
+   AG12 path: same one-shot write-only create, same reserved-namespace
+   custody (config-worker remains the only decrypt path), same read-only
+   verification ping (`GET /models` Bearer for OpenAI-compatible; OpenRouter's
+   `GET /key`), same `…last4` hint, same `verified/invalid` pill. A connection
+   MAY carry `config.baseUrl` to point an OpenAI-compatible gateway, and
+   `config.defaultModel` to seed pickers. **Groundwork for this slice landed
+   with this spec change** (contracts + db vocab, migration `860` relaxing the
+   provider CHECK, the config-worker namespace guard, the verifier pings, the
+   console card fields — enumerated in IMPLEMENTATION-STATUS).
+2. **Settings becomes the canonical home.** Today the Connect cards render in
+   the Agents tab and the Integrations hub. DX6 adds **`Settings › AI
+   Providers`** (settings-nav) rendering the *same* `ProviderConnections`
+   component — three doors, one surface, zero new API. Settings is where an
+   admin *expects* keys to live; the Agents-tab card stays as the
+   point-of-need affordance ("add your AI provider keys" beside where
+   sessions spawn), and the hub card stays for discovery.
+3. **Model pickers become connection-aware.** The profile dialog's hardcoded
+   `AGENT_MODELS` list grows a second source: the workspace's verified model
+   connections contribute `{provider, defaultModel}` options, so "which model
+   does this delegation use" is answered where the key was saved — a
+   provider-details setting, not a code constant.
+4. **Chat-loop parity is scoped honestly.** The Workspace Agent's
+   `ModelClient` is Anthropic-SDK-only today (`anthropicModel`). DX6 does
+   *not* silently swap it: an OpenAI-compatible `ModelClient` behind the same
+   seam is a named follow-up (DX-Q6) — until it lands, OpenAI/OpenRouter keys
+   power *executor* runs (DX7's managed path resolves keys per interface) and
+   are saved/verified/ready, while the chat voice stays on the Anthropic
+   connection.
+
+Security posture unchanged by construction: the key never lands in a row, a
+DO, a log, or a wire shape; widening the provider list only widens a CHECK
+constraint and a regex — both enumerated, both tested.
+
+---
+
+## 10. Delegation interfaces (DX7) — one door, two executors
+
+### 10.1 The product shape
+
+Delegation today has exactly one executor interface: **`orun-sandbox`** — a
+Daytona box running `orun agent serve` against a sealed brief, judged by
+gates, sealed into orun's object graph. DX7 adds a second:
+**`anthropic-managed`** — a Claude **Managed Agents** cloud session spawned
+programmatically (beta `managed-agents-2026-04-01`), for work that wants
+seconds-to-first-token and a managed runtime more than it wants a sealed,
+replayable proof.
+
+The seam is a per-profile choice, phrased in the product as the profile's
+**delegation interface**:
+
+```
+AgentProfile
+  harness:   claude-code            # unchanged (orun driver)
+  interface: orun-sandbox | anthropic-managed   # NEW — how this profile's runs execute
+```
+
+Nothing upstream of the executor changes: dispatch is still assignment
+through the **one AG9 door** (entitlement → autonomy ladder → dedupe →
+concurrency → budget), the session row is still the same
+`agent_sessions` state machine, the relay is still the per-session DO, the
+Situation rail renders both. A managed run is *governed identically and
+executed differently*.
+
+### 10.2 Mapping Managed Agents onto the nouns we already have
+
+The Managed Agents API is four concepts; every one lands on an existing
+platform noun rather than minting a new one:
+
+| Managed Agents (API) | This platform | Notes |
+|---|---|---|
+| **Agent** (`POST /v1/agents`: model, system, tools, `mcp_servers`, skills) | the **agent profile** | the control plane materializes/updates one managed-agent definition per profile (id cached on the profile); `tools` is derived from the profile's capability ceiling — narrowing renders as a *smaller toolset*, enforced at definition time |
+| **Environment** (`POST /v1/environments`: cloud or self-hosted worker) | a **provider-connection detail** | `config.environment: {type: cloud, networking} \| {type: self-hosted, …}` on the workspace's `anthropic` connection; created lazily, id cached — the "select the environment" step is a Settings detail, not a per-spawn question |
+| **Session** (`POST /v1/sessions`: agent ref + `environment_id` + `vault_ids`) | an **`agent_sessions` row** with `sandbox: {provider: "anthropic-managed", id: <session_id>, …}` | the two-step create-then-first-event maps cleanly onto `requested → provisioning → running` |
+| **Events** (send `user.message`; stream/webhook `agent.message`, `agent.tool_use`, `session.status_idle`) | the **AttachRelay feed** | the control plane is the session's event client and *translates* into the closed `AGENT_SESSION_EVENT_KINDS` vocabulary — the relay stays a relay, now with a second feeder |
+| **Vaults** (`vault_ids`, Anthropic-managed OAuth refresh) | **MCP-credential refs on the connection** | vault ids are non-secret references stored in `config`; the platform never holds the OAuth tokens — a custody *delegation*, disclosed in the spawn consent |
+
+State translation (infrastructure facts only — no status kind exists on
+either side, which is exactly why this maps):
+
+| Managed signal | Session state / event |
+|---|---|
+| session created (sandbox provisioned, idle) | `requested → provisioning` |
+| first `user.message` accepted (the brief-as-prompt) | `→ running` |
+| `agent.message` / `agent.tool_use` | relayed `message_agent` / `tool_call` events |
+| `session.status_idle` | `→ completing → completed` |
+| interrupt / archive | `→ canceled` |
+| API error / webhook lapse past grace | `→ failed(reason)` — redacted, provider-body never echoed |
+
+Steer/interrupt from the thread (AN5 verbs) forward as further
+`user.message` / interrupt calls — same verbs, second wire. Webhooks are the
+primary completion signal (the async posture; no held-open SSE from a
+Worker); the lease-sweep discipline reuses AN3's timer with the webhook as
+heartbeat-equivalent, so a zombie managed session dies by the same clock as
+a zombie sandbox.
+
+### 10.3 Trust tiers, rendered — the honesty rule that makes two interfaces safe
+
+The two interfaces are *not* equivalent, and the product says so instead of
+averaging them. Every session card, list row, and spawn consent carries the
+tier pill:
+
+| | **Sealed run** (`orun-sandbox`) | **Managed run** (`anthropic-managed`) |
+|---|---|---|
+| Input | content-addressed `AgentBrief` (byte-reproducible) | prompt assembled from the same brief content, *not* sealed by hash |
+| Record | sealed `AgentSessionSnapshot` + R2 mirror; `orun agent replay` byte-identical | server-side transcript, fetched and mirrored to R2; replay = transcript replay |
+| Mid-run approvals | `ask`-gated tools → human verdicts | none — capability is narrowed *at definition time* (smaller toolset), no verdict channel |
+| Egress | allowlist, per-profile | environment networking config (default-restricted; opening it is a consent line) |
+| Residency / retention | tenant's own Daytona + A5 retention | Anthropic-managed runtime; **no ZDR / HIPAA BAA** (per current beta) — stated verbatim in the consent |
+| Cost | tenant Daytona compute + tokens | tokens + a per-session-hour runtime charge (metered as `agents.managed_session_hours`) |
+| Best at | provenance-grade implementation/design runs ending in PRs | interactive runs, research/triage, quick fixes, sub-minute spin-up |
+
+Two structural consequences, adopted as rules:
+
+- **No-ask ceilings only.** Because a managed run has no verdict channel, the
+  dispatch door refuses to send a profile whose effective ceiling contains
+  `ask`-gated tools down the managed interface (`interface_requires_ask`,
+  actionable: narrow the ceiling or switch interface). `awaiting_approval` is
+  simply unreachable for managed runs — unrepresentable, not policed.
+- **Work-truth is interface-blind.** A managed run that opens a PR is
+  observed by the work fold exactly like any other PR; a managed run still
+  writes no status anywhere. The WP constitution needs zero amendment.
+
+Routing defaults follow the tiers: `implementation`/`design`/`fix` runs
+default to `orun-sandbox`; `interactive` runs default to
+`anthropic-managed` when the profile allows both. Defaults, not law — the
+profile's interface choice wins, and the spawn consent shows which executor
+the click buys.
+
+### 10.4 What is deliberately not adopted from Managed Agents
+
+| Affordance | Verdict | Why |
+|---|---|---|
+| Multiagent `coordinator` (API-side sub-agent trees) | ✗ | the delegation tree is AF4's — one tree model, one set of caps and ceilings; a managed session is always a *leaf* |
+| Managed Agents as the chat voice | ✗ | the Workspace Agent DO is the voice (AN4); its unprivileged-client posture and per-turn custody are load-bearing |
+| Agent-definition sprawl | ✗ | one managed-agent per profile, materialized/updated by the control plane; users never touch the raw API objects |
+| Anthropic-hosted skills as the golden path | later | orun compositions remain the packaged-expertise plane; revisit if a managed-only workspace emerges |
+
+---
+
+## 11. Acceptance narrative (the story DX must pass)
 
 A user signs in and lands — not on a dashboard, but on the Dispatch. The
 shell paints instantly; the Situation hydrates a beat later: three tasks
@@ -266,8 +424,14 @@ the rail *and* a session card streams in the thread. The child hits an
 `ask`-gated `contract_propose`; a sticky card appears in **Waiting on me** and
 in the thread; they open the session page and approve — attributed to them.
 The child seals with a PR link; the rail shows the session **completed** beside
-the task still **In review**. They close the tab. Next morning, the Dispatch
-home row wears a "2 pending" badge; the standing brief turn recaps the merge
-and one budget mark. Nothing about execution truth changed — the sealed
-session still replays byte-identically in orun — because this epic only built
-a face for what was already true.
+the task still **In review**. Mid-afternoon they ask "triage why staging p95
+doubled" — the quick-runs profile rides the **anthropic-managed** interface,
+so a **Managed run** card (tier pill visible) streams findings within
+seconds, burning the workspace's own Anthropic key saved under `Settings ›
+AI Providers`, and lands `completed` with a transcript ref — no PR, no
+status written anywhere. They close the tab. Next morning, the Dispatch home row
+wears a "2 pending" badge; the standing brief turn recaps the merge and one
+budget mark. Nothing about execution truth changed — the sealed session
+still replays byte-identically in orun, and the managed run is labeled as
+exactly what it is — because this epic only built a face (and a second door
+to the same gates) for what was already true.

@@ -115,6 +115,59 @@ hostile fold); custody stays per-turn-and-never-stored (unchanged), verified.
 
 ---
 
+## DX6 — Provider & model settings
+
+**Build.** Widen the AG12 provider plane to `daytona · anthropic · openai ·
+openrouter` on the identical custody path: contracts + db vocabularies
+(`MODEL_PROVIDERS`/`isModelProvider`), migration `860_agents_model_providers`
+relaxing the `provider_connections` CHECK (+ manifest entry + regenerated
+`migrations.lock`), the config-worker reserved-namespace guard, per-provider
+read-only verification pings (OpenAI-compatible `GET /models` Bearer;
+OpenRouter `GET /key`; `config.baseUrl` override honored), console
+`PROVIDER_META` cards with `{baseUrl?, defaultModel?}` fields. *This slice
+landed with the spec change — see IMPLEMENTATION-STATUS for the file list and
+verification.* **Remaining:** the `Settings › AI Providers` entry
+(settings-nav) rendering the same `ProviderConnections` component;
+connection-aware model options in the profile dialog (verified model
+connections contribute `{provider, defaultModel}` beside `AGENT_MODELS`);
+the OpenAI-compatible chat `ModelClient` is deliberately out (DX-Q6).
+
+**Done when.** An OpenAI or OpenRouter key saves write-only, verifies with a
+redacted-reason ping, and shows `…last4` in all three doors (Settings, Agents
+tab, Integrations hub); a `gemini` key is still refused at both the handler
+and the custody regex (tested); the profile dialog offers connection-sourced
+models; db + config-worker + agents-worker + console suites green.
+
+---
+
+## DX7 — Delegation interfaces (orun-sandbox + anthropic-managed)
+
+**Build.** The executor seam goes multi-backend (design §10). Contracts/db:
+`interface: orun-sandbox | anthropic-managed` on the profile (CHECK'd,
+default `orun-sandbox`). agents-worker: a `ManagedAgentsProvider` beside the
+Daytona adapter — materializes one managed-agent per profile
+(`POST /v1/agents`, toolset derived from the capability ceiling), lazily
+creates the environment from the `anthropic` connection's
+`config.environment`, spawns sessions (`POST /v1/sessions` with
+`vault_ids`), sends the brief as the first `user.message`, and translates
+webhook/stream events into the closed session-event vocabulary through the
+same AttachRelay (state mapping per design §10.2). Dispatch-door gate:
+`interface_requires_ask` refusal for ask-gated ceilings on the managed
+interface. Metering: `agents.managed_session_hours` beside tokens. Console:
+the trust-tier pill (Sealed/Managed) on session cards, spawn consent lines
+(runtime, networking, no-ZDR disclosure), interface picker on the profile.
+
+**Done when.** A profile on the managed interface dispatches through the
+unchanged AG9 door and lands `requested → provisioning → running →
+completed` from recorded webhook fixtures with every relayed event in the
+closed vocabulary (no status kind — asserted); an ask-gated ceiling is
+refused with `interface_requires_ask`; steer/interrupt forward as events;
+the tier pill renders on every session surface; a live smoke (real key)
+completes one managed run end-to-end; budgets/entitlement/metering apply on
+both interfaces identically (tested).
+
+---
+
 ## Sequencing notes
 
 - **DX0 → DX1 is the spine**: get the fold right as a request, *then* make it
@@ -125,5 +178,13 @@ hostile fold); custody stays per-turn-and-never-stored (unchanged), verified.
   cheap, reversible, flagged reshuffle.
 - **DX4 depends on nothing new** — AN6's runtime hooks (`schedule`, routine
   targets) exist; DX4 gives them a face. It can land in parallel with DX3.
-- **DX5 closes the epic**: the budget only becomes a *contract* once CI holds
-  the line.
+- **DX5 closes the surface work**: the budget only becomes a *contract* once
+  CI holds the line.
+- **DX6 is independent and partially landed** — the provider widening rides
+  the shipped AG12 seam and touches no dispatch surface; the Settings door is
+  a small console follow-up.
+- **DX7 depends on DX6's Anthropic connection details** (environment config,
+  vault refs) and on nothing else in this epic — it can land before or after
+  the Dispatch surface, because the door, session vocabulary, and relay it
+  extends are all shipped. Fixture-first: the state mapping and relay feeder
+  are recorded-webhook-testable; only the final smoke needs a live key.
