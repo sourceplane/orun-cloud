@@ -27,9 +27,16 @@ import { errorResponse } from "./http.js";
 import { resolveActor } from "./resolve-actor.js";
 
 const ORG_DISPATCH_SITUATION_RE = /^\/v1\/organizations\/([^/]+)\/dispatch\/situation$/;
+// DX1 — the live layer: WS attach to the per-workspace DispatchIndex DO (or
+// its snapshot-first shell on a plain GET), served by the UNPRIVILEGED
+// chat-worker. Browser WebSocket/EventSource cannot set an Authorization
+// header, so this route accepts an `access_token` query parameter — it is
+// synthesized into the bearer BEFORE actor resolution and STRIPPED before
+// forwarding (never logged, never downstream), the AL attach-route rule.
+const ORG_DISPATCH_INDEX_RE = /^\/v1\/organizations\/([^/]+)\/dispatch\/index$/;
 
 export function isDispatchRoute(pathname: string): boolean {
-  return ORG_DISPATCH_SITUATION_RE.test(pathname);
+  return ORG_DISPATCH_SITUATION_RE.test(pathname) || ORG_DISPATCH_INDEX_RE.test(pathname);
 }
 
 /** The soft mark (AF8): attention fires past this fraction of a ceiling. */
@@ -112,12 +119,57 @@ interface BudgetSlice {
   maxTokens: number;
 }
 
+/** Forward the DX1 live-layer route (WS upgrade or shell GET) to chat-worker
+ * with the resolved actor stamped — the upgrade Response returned untouched
+ * so the handshake completes end-to-end (the AN2 pass-through pattern). */
+async function handleIndexRoute(
+  request: Request,
+  env: Env,
+  requestId: string,
+  pathname: string,
+): Promise<Response> {
+  if (request.method !== "GET") {
+    return errorResponse("unsupported", "Method not allowed", 405, requestId);
+  }
+  if (!env.IDENTITY_WORKER || !env.CHAT_WORKER) {
+    return errorResponse("internal_error", "Service unavailable", 503, requestId);
+  }
+  const url = new URL(request.url);
+  let authed = request;
+  if (!request.headers.get("authorization")) {
+    const qt = url.searchParams.get("access_token");
+    if (qt) {
+      authed = new Request(request);
+      authed.headers.set("authorization", `Bearer ${qt}`);
+    }
+  }
+  const sessionResult = await resolveActor(authed, env, requestId);
+  if ("error" in sessionResult) return sessionResult.error;
+
+  url.searchParams.delete("access_token"); // never forwarded, never logged
+  const target = new URL(pathname + url.search, "https://chat.internal");
+  const fwd = new Request(target.toString(), request);
+  fwd.headers.delete("authorization");
+  fwd.headers.set("x-request-id", requestId);
+  fwd.headers.set("x-actor-subject-id", sessionResult.subjectId);
+  fwd.headers.set("x-actor-subject-type", sessionResult.subjectType);
+  fwd.headers.set("x-actor-email", sessionResult.email);
+  try {
+    return await env.CHAT_WORKER.fetch(fwd);
+  } catch {
+    return errorResponse("internal_error", "Dispatch service unavailable", 503, requestId);
+  }
+}
+
 export async function handleDispatchRoute(
   request: Request,
   env: Env,
   requestId: string,
   pathname: string,
 ): Promise<Response> {
+  if (ORG_DISPATCH_INDEX_RE.test(pathname)) {
+    return handleIndexRoute(request, env, requestId, pathname);
+  }
   const m = ORG_DISPATCH_SITUATION_RE.exec(pathname);
   if (!m) return errorResponse("not_found", "Not found", 404, requestId);
   if (request.method !== "GET") {
