@@ -19,6 +19,10 @@ export function handleHealth(env: Env, requestId: string): Response {
       toolCount: readOnlyTools.length,
       checks: {
         apiEdgeUrl: { configured: !!env.API_EDGE_URL },
+        // The service binding is how tool calls actually reach api-edge in
+        // deployed envs (a sibling *.workers.dev fetch would bare-404). Absent
+        // locally, where global fetch → local API_EDGE_URL is used instead.
+        apiEdgeBinding: { bound: !!env.API_EDGE },
       },
     },
     requestId,

@@ -144,6 +144,34 @@ describe("mcp-worker route", () => {
     }
   });
 
+  it("dispatches SDK calls through the api-edge service binding when bound (sibling *.workers.dev fetch would bare-404)", async () => {
+    const bindingCalls: string[] = [];
+    // The binding's fetch answers; the deps fetch THROWS if touched — proving
+    // the SDK went through env.API_EDGE, not global/deps fetch.
+    const boundStub = apiEdgeStub([]);
+    const apiEdge = {
+      fetch: (async (input: RequestInfo | URL, init?: RequestInit) => {
+        bindingCalls.push(typeof input === "string" ? input : input.toString());
+        return boundStub.fetch(input, init);
+      }) as typeof fetch,
+    } as unknown as Fetcher;
+    const explodingDeps: McpWorkerDeps = {
+      fetch: (async () => {
+        throw new Error("deps.fetch must not be used when API_EDGE is bound");
+      }) as typeof fetch,
+      entitlementCache: new Map(),
+    };
+    const res = await route(
+      rpcRequest({ jsonrpc: "2.0", id: 7, method: "tools/call", params: { name: "whoami", arguments: {} } }),
+      { ...env, API_EDGE: apiEdge },
+      explodingDeps,
+    );
+    const body = (await res.json()) as JsonRpcResponse;
+    expect(body.result?.["isError"]).toBeFalsy();
+    expect(bindingCalls.length).toBeGreaterThan(0);
+    expect(bindingCalls.every((u) => u.startsWith("https://api.test/"))).toBe(true);
+  });
+
   it("401s without a bearer and points at the protected-resource metadata", async () => {
     const req = new Request(`${BASE}/mcp`, {
       method: "POST",
@@ -235,12 +263,20 @@ describe("mcp-worker route", () => {
     const res = await route(new Request(`${BASE}/health`), env);
     expect(res.status).toBe(200);
     const body = (await res.json()) as {
-      data: { ok: boolean; service: string; name: string; toolCount: number };
+      data: {
+        ok: boolean;
+        service: string;
+        name: string;
+        toolCount: number;
+        checks: { apiEdgeBinding: { bound: boolean } };
+      };
     };
     expect(body.data.ok).toBe(true);
     expect(body.data.service).toBe("mcp-worker");
     expect(body.data.name).toBe("orun-cloud");
     expect(body.data.toolCount).toBe(19);
+    // env in this suite has no API_EDGE binding → reported unbound.
+    expect(body.data.checks.apiEdgeBinding.bound).toBe(false);
   });
 
   it("429s with Retry-After past the in-flight cap, then recovers", async () => {

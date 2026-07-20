@@ -49,10 +49,21 @@ export async function handleMcpPost(
     return errorResponse("internal_error", "Service unavailable", 503, requestId);
   }
 
+  // Reach api-edge through its service binding when bound (all deployed envs):
+  // a Worker's global `fetch()` to a sibling `*.workers.dev` origin is not
+  // routed through the edge and returns a bare Cloudflare 404, so every tool
+  // call would fail. `env.API_EDGE.fetch` dispatches straight to the api-edge
+  // worker, which handles the forwarded bearer + RBAC exactly as for a public
+  // request. Local dev / unit tests leave the binding unset and fall back to
+  // the deps fetch (global fetch → local API_EDGE_URL, or an injected stub).
+  const edgeFetch: typeof fetch = env.API_EDGE
+    ? (env.API_EDGE.fetch.bind(env.API_EDGE) as typeof fetch)
+    : deps.fetch;
+
   const sdk = new OrunCloud({
     baseUrl: env.API_EDGE_URL,
     auth: { kind: "bearer", token },
-    fetch: deps.fetch,
+    fetch: edgeFetch,
   });
   // readOnly: true — the remote transport serves ONLY the 19-tool read set,
   // hard-excluding the MCP5 write tools from tools/list and execution
