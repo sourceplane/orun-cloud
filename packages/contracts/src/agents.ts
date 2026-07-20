@@ -617,13 +617,32 @@ export interface AttentionSummary {
 }
 
 // ── Provider connections (AG12) ─────────────────────────────
-// BYO provider accounts: a workspace connects its own Daytona account and
-// Anthropic key. The key is write-only (custody in the secret manager under
+// BYO provider accounts: a workspace connects its own sandbox-compute account
+// (Daytona) and one or more model-provider keys (Anthropic, OpenAI,
+// OpenRouter, …). The key is write-only (custody in the secret manager under
 // the reserved agents/providers/* namespace); these wire shapes never carry
 // key material beyond the one-shot create request.
 
-export const AGENT_PROVIDERS = ["daytona", "anthropic"] as const;
+export const AGENT_PROVIDERS = ["daytona", "anthropic", "openai", "openrouter"] as const;
 export type AgentProvider = (typeof AGENT_PROVIDERS)[number];
+
+/** The sandbox-compute providers — sessions run inside these. */
+export const COMPUTE_PROVIDERS = ["daytona"] as const;
+export type ComputeProvider = (typeof COMPUTE_PROVIDERS)[number];
+
+/**
+ * Model-credential providers. A session/chat reads the resolved key from its
+ * environment; OpenAI and OpenRouter are OpenAI-compatible, so a connection
+ * MAY carry a `baseUrl` in `config` to point at a compatible gateway, plus an
+ * optional `defaultModel`. The key custody + verification path is identical
+ * across all of them — only the verification endpoint differs.
+ */
+export const MODEL_PROVIDERS = ["anthropic", "openai", "openrouter"] as const;
+export type ModelProvider = (typeof MODEL_PROVIDERS)[number];
+
+export function isModelProvider(p: string): p is ModelProvider {
+  return (MODEL_PROVIDERS as readonly string[]).includes(p);
+}
 
 export const PROVIDER_CONNECTION_STATUSES = ["unverified", "verified", "invalid"] as const;
 export type ProviderConnectionStatus = (typeof PROVIDER_CONNECTION_STATUSES)[number];
@@ -645,7 +664,9 @@ export interface ProviderConnection {
   id: string;
   provider: AgentProvider;
   name: string;
-  /** Non-secret provider config (daytona: apiUrl/orgId/target; anthropic: defaultModel). */
+  /** Non-secret provider config — daytona: {apiUrl?, orgId?, target?}; model
+   * providers: {defaultModel?, baseUrl?} (baseUrl overrides the vendor default,
+   * e.g. an OpenAI-compatible gateway). Never key material. */
   config: Record<string, unknown>;
   /** Write-only key display hint, e.g. `…abcd`. Never the key. */
   keyHint?: string;

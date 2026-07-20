@@ -16,7 +16,7 @@ import { useToast } from "@/components/ui/toast";
 import { wrap } from "@/lib/api";
 import { qk, useApiQuery } from "@/lib/query";
 import { useSession } from "@/lib/session";
-import { connectionTone, PROVIDER_META } from "@/lib/agents/model";
+import { connectionTone, PROVIDER_META, MODEL_PROVIDER_SET } from "@/lib/agents/model";
 import { Skeleton } from "@/components/ui/skeleton";
 
 export function ProviderConnections({ orgId }: { orgId: string }) {
@@ -59,15 +59,32 @@ function ProviderCard({
   const meta = PROVIDER_META[provider];
   const { client } = useSession();
   const { toast } = useToast();
+  const isModelProvider = MODEL_PROVIDER_SET.has(provider);
   const [apiKey, setApiKey] = React.useState("");
   const [apiUrl, setApiUrl] = React.useState("");
+  const [baseUrl, setBaseUrl] = React.useState("");
+  const [defaultModel, setDefaultModel] = React.useState("");
   const [busy, setBusy] = React.useState(false);
   const [formOpen, setFormOpen] = React.useState(false);
+
+  function buildConfig(): Record<string, string> | undefined {
+    // Daytona: an optional self-hosted API URL. Model providers: an optional
+    // OpenAI-compatible base URL and a default model. Empty fields are omitted
+    // so the server keeps its vendor defaults.
+    const config: Record<string, string> = {};
+    if (provider === "daytona") {
+      if (apiUrl.trim()) config.apiUrl = apiUrl.trim();
+    } else if (isModelProvider) {
+      if (baseUrl.trim()) config.baseUrl = baseUrl.trim();
+      if (defaultModel.trim()) config.defaultModel = defaultModel.trim();
+    }
+    return Object.keys(config).length > 0 ? config : undefined;
+  }
 
   async function connect() {
     if (!apiKey) return;
     setBusy(true);
-    const config = provider === "daytona" && apiUrl ? { apiUrl } : undefined;
+    const config = buildConfig();
     const res = await wrap(async () =>
       client.agents.connectProvider(orgId, { provider, apiKey, ...(config ? { config } : {}) }),
     );
@@ -76,6 +93,8 @@ function ProviderCard({
       // The key never sits in component state longer than the one request.
       setApiKey("");
       setApiUrl("");
+      setBaseUrl("");
+      setDefaultModel("");
       setFormOpen(false);
       toast(
         res.data.status === "verified"
@@ -181,6 +200,20 @@ function ProviderCard({
                   value={apiUrl}
                   onChange={(e) => setApiUrl(e.target.value)}
                 />
+              ) : null}
+              {isModelProvider ? (
+                <>
+                  <Input
+                    placeholder="Base URL (optional — for an OpenAI-compatible gateway)"
+                    value={baseUrl}
+                    onChange={(e) => setBaseUrl(e.target.value)}
+                  />
+                  <Input
+                    placeholder="Default model (optional)"
+                    value={defaultModel}
+                    onChange={(e) => setDefaultModel(e.target.value)}
+                  />
+                </>
               ) : null}
               <div className="flex items-center gap-2">
                 <Button size="sm" disabled={busy || !apiKey} onClick={() => void connect()}>

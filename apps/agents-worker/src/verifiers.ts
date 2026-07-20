@@ -24,6 +24,16 @@ export interface ProviderVerifier {
 }
 
 const ANTHROPIC_API = "https://api.anthropic.com";
+const OPENAI_API = "https://api.openai.com/v1";
+const OPENROUTER_API = "https://openrouter.ai/api/v1";
+
+/** A workspace may point an OpenAI-compatible provider at its own gateway via
+ * config.baseUrl; fall back to the vendor default. Trailing slash trimmed so
+ * `${base}/models` is well-formed. */
+function baseUrlFrom(config: Record<string, unknown>, fallback: string): string {
+  const raw = typeof config.baseUrl === "string" && config.baseUrl.trim() ? config.baseUrl.trim() : fallback;
+  return raw.replace(/\/+$/, "");
+}
 
 async function ping(url: string, headers: Record<string, string>): Promise<VerifyResult> {
   let res: Response;
@@ -78,9 +88,20 @@ export function createProviderVerifier(): ProviderVerifier {
           return verifyDaytonaCreate(apiKey, config);
         case "anthropic":
           // GET /v1/models — the canonical key-validity probe; no tokens spent.
-          return ping(`${ANTHROPIC_API}/v1/models`, {
+          return ping(`${baseUrlFrom(config, ANTHROPIC_API + "/v1")}/models`, {
             "x-api-key": apiKey,
             "anthropic-version": "2023-06-01",
+          });
+        case "openai":
+          // GET /v1/models — read-only key-validity probe (OpenAI-compatible).
+          return ping(`${baseUrlFrom(config, OPENAI_API)}/models`, {
+            authorization: `Bearer ${apiKey}`,
+          });
+        case "openrouter":
+          // GET /key — returns the key's own limits/credits; a cheap, no-token
+          // validity probe that also works when /models is served unauthenticated.
+          return ping(`${baseUrlFrom(config, OPENROUTER_API)}/key`, {
+            authorization: `Bearer ${apiKey}`,
           });
         default:
           return { ok: false, reason: "provider unsupported" };

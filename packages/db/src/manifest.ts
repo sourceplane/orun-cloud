@@ -777,5 +777,14 @@ export const manifest: MigrationManifest = {
       description:
         "RFC 7591 dynamic OAuth client registry (saas-mcp-server MCP11 leg B, D1 → Option B): identity.oauth_dynamic_clients holds self-registered PUBLIC clients (server-minted dcr_<hex32> ids — the namespace CHECK guarantees no shadowing of the static vetted allow-list, which resolves first in code), client_name (1–100 chars), redirect_uris jsonb (https non-loopback OR http loopback, validated server-side), and a TTL'd expires_at (~30d, refreshed on token redemption) — the unused-client GC horizon; expired rows are treated as unknown clients and deleted opportunistically on later registrations. NO secret column exists on purpose (public clients only; registration mints identities, never credentials — risks R5). Additive + idempotent.",
     },
+    {
+      id: "860_agents_model_providers",
+      context: "agents",
+      path: "860_agents_model_providers/up.sql",
+      checksum:
+        "ad2e5fb73d264bbdeac81083f58097a2751365fbaddadc1e51244d6c3b12e6ac",
+      description:
+        "Broaden connectable model providers (saas-agents AG12 follow-up): relax the agents.provider_connections provider CHECK to include 'openai' and 'openrouter' alongside 'daytona' and 'anthropic', so a workspace can save + verify BYO OpenAI / OpenRouter keys (OpenAI-compatible, optional config.baseUrl). Storage path only — custody, the reserved namespace, and the row shape are unchanged. Idempotent DO block (drop-if-exists then re-add the named CHECK).",
+    },
   ],
 };

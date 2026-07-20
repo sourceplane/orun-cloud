@@ -123,8 +123,24 @@ export const PROVIDER_META = {
   },
   anthropic: {
     name: "Anthropic",
-    blurb: "The model key injected into each session as ANTHROPIC_API_KEY — never stored on the session.",
+    blurb: "The Claude model key injected into each session as ANTHROPIC_API_KEY — never stored on the session.",
     keyPlaceholder: "sk-ant-…",
     docsUrl: "https://docs.claude.com/en/api/getting-started",
   },
+  openai: {
+    name: "OpenAI",
+    blurb: "An OpenAI API key for model calls. Add a Base URL to point at an OpenAI-compatible gateway.",
+    keyPlaceholder: "sk-…",
+    docsUrl: "https://platform.openai.com/docs/api-reference",
+  },
+  openrouter: {
+    name: "OpenRouter",
+    blurb: "One OpenRouter key, many models. OpenAI-compatible — set a Default model to pick one.",
+    keyPlaceholder: "sk-or-…",
+    docsUrl: "https://openrouter.ai/docs",
+  },
 } as const;
+
+/** Providers that accept an optional {baseUrl, defaultModel} in config — the
+ * model-credential providers (Daytona takes apiUrl instead). */
+export const MODEL_PROVIDER_SET = new Set(["anthropic", "openai", "openrouter"]);

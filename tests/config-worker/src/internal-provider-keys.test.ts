@@ -117,7 +117,7 @@ describe("provider-key store", () => {
 
   it.each([
     "DATABASE_URL",
-    "agents/providers/openai/default/API_KEY",
+    "agents/providers/gemini/default/API_KEY",
     "agents/providers/daytona/default/OTHER",
     "agents/providers/daytona//API_KEY",
     "agents/providers/daytona/UPPER/API_KEY",

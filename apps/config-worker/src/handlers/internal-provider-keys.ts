@@ -29,7 +29,10 @@ import { decryptEnvelope } from "../decryption.js";
 import type { EncryptionAdapter } from "../encryption.js";
 
 const RESERVED_PREFIX = "agents/providers/";
-const RESERVED_KEY_RE = /^agents\/providers\/(daytona|anthropic)\/[a-z0-9][a-z0-9-]*\/API_KEY$/;
+// The closed provider vocabulary mirrors @saas/db/agents PROVIDERS; this seam
+// stays namespace-restricted so it can never become a general-purpose secret
+// backdoor. Widen both together (and the provider_connections CHECK migration).
+const RESERVED_KEY_RE = /^agents\/providers\/(daytona|anthropic|openai|openrouter)\/[a-z0-9][a-z0-9-]*\/API_KEY$/;
 
 export interface ProviderKeyDeps {
   repo: Pick<
