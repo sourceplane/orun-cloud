@@ -12,6 +12,7 @@ spec:
   dependsOn:
     - component: contracts
       input: true
+    - component: membership-worker
     - component: policy-worker
     - component: config-worker
     - component: api-edge

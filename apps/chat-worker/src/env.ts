@@ -6,6 +6,10 @@
 // Every effect re-enters api-edge as a client with the owner's credential.
 
 export interface Env {
+  /** Membership worker — the actor's role assignments, fetched to build the
+   * policy-evaluation context (part of the authz gate, not a capability: the
+   * policy engine is pure and needs the caller's memberships to decide). */
+  MEMBERSHIP_WORKER?: Fetcher;
   /** Policy worker — deny-by-default authorization (organization.agent.chat). */
   POLICY_WORKER?: Fetcher;
   /** Config worker — provider-key custody resolve (AG12/AG5 path). */
