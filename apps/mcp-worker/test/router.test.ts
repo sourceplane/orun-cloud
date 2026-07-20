@@ -199,12 +199,14 @@ describe("mcp-worker route", () => {
 
   it("a transient (non-401) api-edge failure on the auth probe fails OPEN — the tool call still proceeds", async () => {
     // Only a hard 401 forces re-auth; a 500/timeout must not masquerade as one.
-    let firstCall = true;
+    let firstProbe = true;
     const flakyProbeDeps: McpWorkerDeps = {
       fetch: (async (input: RequestInfo | URL, init?: RequestInit) => {
         const { pathname } = new URL(new Request(input, init).url);
-        if (pathname === "/v1/auth/profile" && firstCall) {
-          firstCall = false;
+        // The probe hits /v1/workspaces (the tool-plane auth path); blip the
+        // first one only, so the whoami tool's own list call still succeeds.
+        if (pathname === "/v1/workspaces" && firstProbe) {
+          firstProbe = false;
           return Response.json(
             { error: { code: "internal_error", message: "blip", details: {}, requestId: "req_stub" } },
             { status: 500 },

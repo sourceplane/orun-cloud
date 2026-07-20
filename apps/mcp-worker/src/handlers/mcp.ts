@@ -37,9 +37,17 @@ const AUTH_PROBE_TTL_MS = 60_000;
  * expired/invalid bearer with 401, but inside a tool call that surfaces as a
  * JSON-RPC tool ERROR (HTTP 200) — which MCP clients do NOT treat as an auth
  * challenge, so an expired access token would silently break the connection
- * instead of triggering the client's refresh. Probing a cheap authenticated
- * endpoint up front lets the transport answer a hard 401 at the HTTP level with
- * `WWW-Authenticate`, the signal the client needs to refresh and retry.
+ * instead of triggering the client's refresh. Probing up front lets the
+ * transport answer a hard 401 at the HTTP level with `WWW-Authenticate`, the
+ * signal the client needs to refresh and retry.
+ *
+ * The probe MUST use a tool-plane endpoint — `workspaces.list` goes through
+ * api-edge's `resolveActor` (`/v1/auth/resolve`), the SAME auth every tool call
+ * uses, which accepts session cookies, `sk_` keys, AND the CLI-JWT that an MCP
+ * OAuth grant mints. (NOT `getProfile`: `/v1/auth/profile` is
+ * session-token-only — `parseSessionToken` — so it 401s a perfectly valid
+ * OAuth/`sk_` bearer and would reject the credentials the client was just
+ * issued, breaking the whole connection.)
  *
  * Cached per token (short TTL, per-isolate) so a burst of messages on one
  * connection pays at most one probe. NON-401 failures fail OPEN — a transient
@@ -54,7 +62,7 @@ async function bearerRejected(
   const validUntil = cache.get(token);
   if (validUntil !== undefined && validUntil > Date.now()) return false;
   try {
-    await sdk.auth.getProfile();
+    await sdk.workspaces.list();
     cache.set(token, Date.now() + AUTH_PROBE_TTL_MS);
     return false;
   } catch (err) {
