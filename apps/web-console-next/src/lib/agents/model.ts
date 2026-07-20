@@ -144,3 +144,32 @@ export const PROVIDER_META = {
 /** Providers that accept an optional {baseUrl, defaultModel} in config — the
  * model-credential providers (Daytona takes apiUrl instead). */
 export const MODEL_PROVIDER_SET = new Set(["anthropic", "openai", "openrouter"]);
+
+/** A model option the profile dialog offers. */
+export interface ModelOption {
+  value: string;
+  label: string;
+}
+
+/**
+ * modelOptions (saas-dispatch DX6): the profile dialog's model list becomes
+ * connection-aware — the hardcoded `AGENT_MODELS` plus every VERIFIED model
+ * connection that pins a `config.defaultModel`, labeled with its provider so
+ * "which model does this delegation use" is answered where the key was
+ * saved. Deduped by value; the static list wins the label on collision.
+ */
+export function modelOptions(
+  connections: Array<{ provider: string; status: string; config?: Record<string, unknown> }>,
+): ModelOption[] {
+  const out: ModelOption[] = AGENT_MODELS.map((m) => ({ value: m.value, label: m.label }));
+  const seen = new Set(out.map((m) => m.value));
+  for (const c of connections) {
+    if (!MODEL_PROVIDER_SET.has(c.provider) || c.status !== "verified") continue;
+    const model = typeof c.config?.defaultModel === "string" ? c.config.defaultModel.trim() : "";
+    if (!model || seen.has(model)) continue;
+    seen.add(model);
+    const meta = PROVIDER_META[c.provider as keyof typeof PROVIDER_META];
+    out.push({ value: model, label: `${model} · ${meta?.name ?? c.provider}` });
+  }
+  return out;
+}
