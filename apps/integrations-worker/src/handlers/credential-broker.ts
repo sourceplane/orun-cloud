@@ -275,7 +275,7 @@ type MintCoreFailure =
   | { kind: "params_invalid"; unknownParams: string[] }
   | { kind: "limit_reached"; limit: number }
   | { kind: "parent_credential_missing" }
-  | { kind: "mint_failed"; reason: string }
+  | { kind: "mint_failed"; reason: string; detail?: string }
   | { kind: "mint_lock_timeout" }
   | { kind: "service_error" };
 
@@ -509,18 +509,31 @@ async function executeMintCore(
           subjectKind: "integration_connection",
           subjectId: connection.id,
           requestId,
-          payload: { provider: connection.provider, template: templateId, reason: outcome.reason },
+          // `detail` is operator telemetry (org event log): which live provider
+          // call failed and its HTTP status / truncated provider message — e.g.
+          // "permission_groups http_401", "mint http_404". No secret, no token.
+          // It pins the generic `provider_error` to a specific cause. NOT echoed
+          // into the tenant/CI resolve error, which stays typed-slug only.
+          payload: {
+            provider: connection.provider,
+            template: templateId,
+            reason: outcome.reason,
+            ...(outcome.detail ? { detail: outcome.detail } : {}),
+          },
         },
         audit: {
           id: generateUuid(),
           category: "integrations",
-          description: `Credential mint failed (${templateId}): ${outcome.reason}`,
+          description: `Credential mint failed (${templateId}): ${outcome.reason}${outcome.detail ? ` (${outcome.detail})` : ""}`,
         },
       });
     } catch {
       // best-effort
     }
-    return { ok: false, failure: { kind: "mint_failed", reason: outcome.reason } };
+    return {
+      ok: false,
+      failure: { kind: "mint_failed", reason: outcome.reason, ...(outcome.detail ? { detail: outcome.detail } : {}) },
+    };
   }
 
   // (The rotation re-envelope happened INSIDE the custody lock above.)
