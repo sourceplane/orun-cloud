@@ -847,9 +847,13 @@ export function createIdentityRepository(executor: SqlExecutor): IdentityReposit
     async createOAuthDynamicClient(input: CreateOAuthDynamicClientInput): Promise<IdentityResult<OAuthDynamicClient>> {
       try {
         const result = await executor.execute<Record<string, unknown>>(
+          // $3::jsonb is required: the executor binds params with an explicit
+          // text type OID over the extended protocol, and Postgres will not
+          // implicitly cast text → jsonb on INSERT (fails 42804). Mirrors the
+          // jsonb-cast convention in agents/repository.ts.
           `INSERT INTO identity.oauth_dynamic_clients
              (client_id, client_name, redirect_uris, created_at, expires_at)
-           VALUES ($1, $2, $3, $4, $5)
+           VALUES ($1, $2, $3::jsonb, $4, $5)
            ON CONFLICT (client_id) DO NOTHING
            RETURNING *`,
           [
