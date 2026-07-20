@@ -282,6 +282,57 @@ describe("dispatch facade (DX0)", () => {
     expect(res.status).toBe(503);
   });
 
+  it("never blurs viewers: two actors folding the same workspace get their OWN authorized Situations (DX5)", async () => {
+    // Downstream answers differ BY VIEWER (deny-by-default RBAC re-runs on
+    // the stamped actor): the admin sees a session the contractor's grants
+    // hide. The facade must pass each viewer's truth through untouched —
+    // any shared-cache "optimization" turns this test red.
+    const perViewer = (subjectHeader: string | null, adminBody: unknown, contractorBody: unknown) =>
+      subjectHeader === "usr_admin" ? adminBody : contractorBody;
+    const makeViewerFetcher = () =>
+      ({
+        fetch(input: string | Request | URL, init?: RequestInit): Promise<Response> {
+          const req = input instanceof Request ? input : new Request(input.toString(), init);
+          const viewer = req.headers.get("x-actor-subject-id");
+          const path = new URL(req.url).pathname;
+          if (path.endsWith("/agents/sessions")) {
+            return Promise.resolve(
+              jsonResponse(
+                perViewer(
+                  viewer,
+                  [{ id: "as_secret", state: "running", runKind: "implementation", profileId: "agp_1", spawnedBy: "usr_admin" }],
+                  [],
+                ),
+              ),
+            );
+          }
+          if (path.endsWith("/agents/attention")) return Promise.resolve(jsonResponse({ items: [], counts: {}, running: 0 }));
+          if (path.endsWith("/agents/budgets")) return Promise.resolve(jsonResponse([]));
+          if (path.endsWith("/work")) return Promise.resolve(jsonResponse({ tasks: [], coordSeq: 1, obsSeq: 1 }));
+          return Promise.resolve(new Response("nf", { status: 404 }));
+        },
+        connect() {
+          throw new Error("not implemented");
+        },
+      }) as unknown as Fetcher;
+
+    const foldAs = async (userId: string) => {
+      const env = {
+        ENVIRONMENT: "test",
+        IDENTITY_WORKER: createIdentityFetcher(userId),
+        AGENTS_WORKER: makeViewerFetcher(),
+        STATE_WORKER: makeViewerFetcher(),
+      };
+      return situationOf(await handleDispatchRoute(situationRequest(), env as never, "req_t", PATH));
+    };
+
+    const admin = await foldAs("usr_admin");
+    const contractor = await foldAs("usr_contractor");
+    expect(admin.inFlight.map((s: any) => s.id)).toEqual(["as_secret"]);
+    expect(contractor.inFlight).toEqual([]);
+    expect(JSON.stringify(contractor)).not.toContain("as_secret");
+  });
+
   it("405s non-GET methods", async () => {
     const { env } = envWith();
     const res = await handleDispatchRoute(

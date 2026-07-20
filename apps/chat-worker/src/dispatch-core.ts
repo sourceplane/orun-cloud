@@ -26,6 +26,24 @@ import type { ChatStorage, ConnectionLike } from "./chat-thread.js";
 const STATE_KEY = "dx:shell";
 const CURSOR_RE = /^w(\d+)\.(\d+)$/;
 
+/** The closed count vocabulary a head may report (DX5 hardening): the shell
+ * is viewer-agnostic and served to EVERY head, so reported counts are
+ * sanitized to known section keys + finite non-negative numbers — a hostile
+ * head cannot smuggle content into shell keys or values. */
+const COUNT_KEYS = ["ready", "inFlight", "waitingOnMe", "running"] as const;
+
+export function sanitizeCounts(raw: unknown): Record<string, number> {
+  const out: Record<string, number> = {};
+  if (typeof raw !== "object" || raw === null) return out;
+  for (const key of COUNT_KEYS) {
+    const v = (raw as Record<string, unknown>)[key];
+    if (typeof v === "number" && Number.isFinite(v) && v >= 0) {
+      out[key] = Math.floor(v);
+    }
+  }
+  return out;
+}
+
 export interface DispatchShell {
   /** The work fold's watermark (`w<coordSeq>.<obsSeq>`), `w0.0` until first report. */
   cursor: string;
@@ -99,7 +117,7 @@ export class DispatchIndexCore {
     if (!cursorAdvances(this.shell.cursor, cursor)) return { advanced: false };
     this.shell = {
       cursor,
-      counts: counts ? { ...counts } : this.shell.counts,
+      counts: counts ? sanitizeCounts(counts) : this.shell.counts,
       updatedAt: at,
     };
     await this.storage.put(STATE_KEY, this.shell);
