@@ -786,5 +786,14 @@ export const manifest: MigrationManifest = {
       description:
         "Broaden connectable model providers (saas-agents AG12 follow-up): relax the agents.provider_connections provider CHECK to include 'openai' and 'openrouter' alongside 'daytona' and 'anthropic', so a workspace can save + verify BYO OpenAI / OpenRouter keys (OpenAI-compatible, optional config.baseUrl). Storage path only — custody, the reserved namespace, and the row shape are unchanged. Idempotent DO block (drop-if-exists then re-add the named CHECK).",
     },
+    {
+      id: "870_agents_profile_interface",
+      context: "agents",
+      path: "870_agents_profile_interface/up.sql",
+      checksum:
+        "470cee6fb4edf0d83ef11b7844ff27812e4379c399ba3dd6ecb513abf43968fd",
+      description:
+        "The delegation interface (saas-dispatch DX7): agents.agent_profiles gains `interface` — 'orun-sandbox' (the sealed Daytona + orun agent serve path; DEFAULT, prior behavior) or 'anthropic-managed' (a Claude Managed Agents cloud session spawned via API). Additive + idempotent (ADD COLUMN IF NOT EXISTS with default + a named CHECK re-added in a DO block); existing profiles are untouched until they opt in.",
+    },
   ],
 };

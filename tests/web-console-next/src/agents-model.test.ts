@@ -4,6 +4,7 @@
 
 import {
   connectionTone,
+  interfaceTier,
   modelOptions,
   orderFleetRows,
   sessionLabel,
@@ -109,5 +110,20 @@ describe("modelOptions (saas-dispatch DX6 — connection-aware model picker)", (
       { provider: "anthropic", status: "verified", config: { defaultModel: "claude-opus-4-8" } }, // already static
     ]);
     expect(options.length).toBe(base);
+  });
+});
+
+describe("interfaceTier (saas-dispatch DX7 — the rendered trust tier)", () => {
+  it("labels both interfaces distinctly and defaults unknown/absent to Sealed", () => {
+    expect(interfaceTier("orun-sandbox").label).toBe("Sealed run");
+    expect(interfaceTier("anthropic-managed").label).toBe("Managed run");
+    expect(interfaceTier(undefined).label).toBe("Sealed run");
+    expect(interfaceTier("junk").label).toBe("Sealed run");
+  });
+  it("states the managed tier's differences — never averaged away", () => {
+    const managed = interfaceTier("anthropic-managed");
+    expect(managed.blurb).toContain("no mid-run approvals");
+    expect(managed.blurb).toContain("ZDR");
+    expect(managed.tone).toBe("warning");
   });
 });

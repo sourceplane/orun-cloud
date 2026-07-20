@@ -108,6 +108,37 @@ export const AGENT_MODELS = [
 /** The only harness the base image ships today. */
 export const DEFAULT_HARNESS = "claude-code";
 
+/** The delegation interfaces a profile can ride (saas-dispatch DX7) — the
+ * trust tier is RENDERED, never averaged (DD10): a Sealed run and a Managed
+ * run must never look interchangeable. */
+export const DELEGATION_INTERFACE_META = {
+  "orun-sandbox": {
+    label: "Sealed run",
+    tone: "info" as const,
+    blurb:
+      "orun agent serve in your Daytona sandbox: content-addressed brief, replayable sealed record, mid-run approvals.",
+  },
+  "anthropic-managed": {
+    label: "Managed run",
+    tone: "warning" as const,
+    blurb:
+      "A Claude Managed Agents cloud session (beta): seconds to first token, definition-time tool narrowing only — no mid-run approvals, transcript record, Anthropic-managed runtime (not ZDR/HIPAA-eligible).",
+  },
+} as const;
+
+export type DelegationInterfaceKey = keyof typeof DELEGATION_INTERFACE_META;
+
+/** The tier pill for a profile's interface; unknown values render as sealed
+ * (the conservative default — the prior behavior). */
+export function interfaceTier(iface: string | undefined): {
+  label: string;
+  tone: "info" | "warning";
+  blurb: string;
+} {
+  const meta = DELEGATION_INTERFACE_META[(iface ?? "orun-sandbox") as DelegationInterfaceKey];
+  return meta ?? DELEGATION_INTERFACE_META["orun-sandbox"];
+}
+
 /** Build the canonical sp_ subject id from a service principal's raw UUID
  * (the shape api-keys list returns) — the profile's principalId. */
 export function servicePrincipalSubjectId(uuid: string): string {

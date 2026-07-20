@@ -92,6 +92,7 @@ export class MemoryAgentsRepository implements AgentsRepository {
       agentType: input.agentType,
       harness: input.harness,
       model: input.model,
+      interface: input.interface ?? "orun-sandbox",
       autonomyDefault: input.autonomyDefault ?? "assist",
       capability: input.capability ?? {},
       createdAt: ts,

@@ -37,6 +37,8 @@ import {
   AGENT_MODELS,
   AGENT_TYPES,
   DEFAULT_HARNESS,
+  DELEGATION_INTERFACE_META,
+  interfaceTier,
   modelOptions,
   servicePrincipalSubjectId,
 } from "@/lib/agents/model";
@@ -77,6 +79,10 @@ export function CreateProfileDialog({
   const [principalUuid, setPrincipalUuid] = React.useState<string | null>(null);
   const [agentType, setAgentType] = React.useState<string>(AGENT_TYPES[0].value);
   const [model, setModel] = React.useState<string>(AGENT_MODELS[0].value);
+  // DX7: how this profile's runs execute; managed requires a definition-time
+  // tools allowlist (no verdict channel exists to ask mid-run).
+  const [iface, setIface] = React.useState<string>("orun-sandbox");
+  const [managedTools, setManagedTools] = React.useState("");
   const [busy, setBusy] = React.useState(false);
 
   const chosenUuid = principalUuid ?? keys[0]?.servicePrincipal.id ?? null;
@@ -85,6 +91,10 @@ export function CreateProfileDialog({
   async function create() {
     if (!name || !chosenUuid || !ownerId) return;
     setBusy(true);
+    const tools = managedTools
+      .split(",")
+      .map((t) => t.trim())
+      .filter(Boolean);
     const res = await wrap(async () =>
       client.agents.createProfile(orgId, {
         name,
@@ -93,6 +103,8 @@ export function CreateProfileDialog({
         agentType,
         harness: DEFAULT_HARNESS,
         model,
+        interface: iface as "orun-sandbox" | "anthropic-managed",
+        ...(iface === "anthropic-managed" && tools.length > 0 ? { capability: { tools } } : {}),
       }),
     );
     setBusy(false);
@@ -171,6 +183,32 @@ export function CreateProfileDialog({
                 ))}
               </SelectContent>
             </Select>
+          </div>
+
+          <div className="grid gap-1.5">
+            <Label>Delegation interface</Label>
+            <Select value={iface} onValueChange={setIface}>
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {Object.entries(DELEGATION_INTERFACE_META).map(([value, meta]) => (
+                  <SelectItem key={value} value={value}>
+                    {meta.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <StatusText tone="neutral" className="text-[11.5px]">
+              {interfaceTier(iface).blurb}
+            </StatusText>
+            {iface === "anthropic-managed" ? (
+              <Input
+                placeholder="Tool allowlist (comma-separated — required: managed runs narrow at definition time)"
+                value={managedTools}
+                onChange={(e) => setManagedTools(e.target.value)}
+              />
+            ) : null}
           </div>
 
           <div className="grid gap-1.5">

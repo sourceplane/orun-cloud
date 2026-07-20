@@ -14,6 +14,7 @@ import type {
   Budget,
   BudgetGrain,
   ConnectionStatus,
+  DelegationInterface,
   Provider,
   ProviderConnection,
   Routine,
@@ -35,6 +36,8 @@ export interface CreateProfileInput {
   agentType: string;
   harness: string;
   model: string;
+  /** DX7: omitted = orun-sandbox. */
+  interface?: DelegationInterface;
   autonomyDefault?: AutonomyLevel;
   capability?: Record<string, unknown>;
 }
