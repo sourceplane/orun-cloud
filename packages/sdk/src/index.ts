@@ -33,6 +33,7 @@ import { OrganizationsClient } from "./organizations.js";
 import { WorkspacesClient } from "./workspaces.js";
 import { ProjectsClient } from "./projects.js";
 import { AgentsClient } from "./agents.js";
+import { DispatchClient } from "./dispatch.js";
 import { SecurityEventsClient } from "./securityEvents.js";
 import { WebhooksClient } from "./webhooks.js";
 import { Transport, type ClientOptions } from "./transport.js";
@@ -88,6 +89,8 @@ export class OrunCloud {
   readonly work: WorkClient;
   /** Agents resource — hosted sessions, profiles, provider connections (saas-agents). */
   readonly agents: AgentsClient;
+  /** Dispatch resource — the per-viewer Situation fold (saas-dispatch DX0). */
+  readonly dispatch: DispatchClient;
   /** Underlying HTTP transport. Exposed for advanced extension. */
   readonly transport: Transport;
 
@@ -120,6 +123,7 @@ export class OrunCloud {
     this.state = new StateClient(this.transport);
     this.work = new WorkClient(this.transport);
     this.agents = new AgentsClient(this.transport);
+    this.dispatch = new DispatchClient(this.transport);
   }
 }
 
@@ -151,6 +155,7 @@ export {
   type AgentChatDetail,
   type AgentMemoryEntry,
 } from "./agents.js";
+export { DispatchClient } from "./dispatch.js";
 export { BillingClient } from "./billing.js";
 export {
   EventsClient,
