@@ -85,7 +85,16 @@ export function toErrorResult(err: unknown): CallToolResult {
       code: err.code,
       message: err.message,
       requestId: err.requestId,
+      // Upstream HTTP status + URL: without these a mapped `not_found`/`HTTP
+      // 404` is indistinguishable from a routing/connectivity fault vs a real
+      // "resource not found" — the exact ambiguity that made the first live
+      // connect hard to diagnose. Cheap to surface; carries no secret (the
+      // bearer is never part of code/message/url).
+      httpStatus: err.status,
     };
+    if (err.response?.url) {
+      detail["url"] = err.response.url;
+    }
     if (err instanceof RateLimitError && err.retryAfterSeconds !== null) {
       detail["retryAfterSeconds"] = err.retryAfterSeconds;
     }
@@ -93,7 +102,7 @@ export function toErrorResult(err: unknown): CallToolResult {
       detail["fields"] = err.fields;
     }
     return errorResult(
-      `${err.code}: ${err.message} (requestId: ${err.requestId})`,
+      `${err.code}: ${err.message} (HTTP ${err.status}, requestId: ${err.requestId})`,
       detail,
     );
   }

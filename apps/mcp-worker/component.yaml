@@ -77,3 +77,8 @@ spec:
 # set so verify-deploy runs with the corrected wire-live (renders vars-only
 # workers from the fixture) and workers_dev:true (#507), bringing the advertised
 # mcp-worker-<env>.workers.dev hostname online.
+# ci: redeploy to pick up the @saas/mcp error-observability change (upstream
+# HTTP status + URL now surfaced on mapped tool errors). @saas/mcp is a
+# build-input of this worker but that edge is inert under the CI-pinned orun
+# (< v2.22), so --changed would rescope only `mcp`; this trigger rescopes the
+# worker so the live remote transport actually carries the new diagnostics.
