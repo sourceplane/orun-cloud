@@ -142,11 +142,11 @@ describe("DispatchIndexCore", () => {
     const storage = memoryStorage();
     const first = new DispatchIndexCore(storage);
     await first.load();
-    await first.report(null, "w10.4", { ready: 2, verdict: 1 }, AT);
+    await first.report(null, "w10.4", { ready: 2, waitingOnMe: 1 }, AT);
 
     const reborn = new DispatchIndexCore(storage);
     await reborn.load();
-    expect(reborn.shellState()).toEqual({ cursor: "w10.4", counts: { ready: 2, verdict: 1 }, updatedAt: AT });
+    expect(reborn.shellState()).toEqual({ cursor: "w10.4", counts: { ready: 2, waitingOnMe: 1 }, updatedAt: AT });
     const head = fakeConn("h9");
     reborn.connect(head);
     expect(frames(head)[0]!.cursor).toBe("w10.4");
@@ -177,6 +177,42 @@ describe("DispatchIndexCore", () => {
     await core.report(null, "w1.0", { ready: 1 }, AT);
     const stored = (await storage.get("dx:shell")) as Record<string, unknown>;
     expect(Object.keys(stored).sort()).toEqual(["counts", "cursor", "updatedAt"]);
+  });
+
+  it("sanitizes reported counts to the closed vocabulary — a hostile head cannot smuggle content into the shared shell (DX5)", async () => {
+    const storage = memoryStorage();
+    const core = new DispatchIndexCore(storage);
+    await core.load();
+    const victim = fakeConn("victim");
+    const hostile = fakeConn("hostile");
+    core.connect(victim);
+    core.connect(hostile);
+    victim.sent.length = 0;
+
+    // A hostile head reports junk keys (content smuggling), string values,
+    // negatives, and Infinity beside one legitimate count.
+    await core.handleMessage(
+      hostile,
+      JSON.stringify({
+        v: 1,
+        t: "situation:report",
+        cursor: "w9.9",
+        counts: {
+          ready: 2.9,
+          "secret:ORN-142 credentials leaked": 1,
+          waitingOnMe: "три" as unknown as number,
+          inFlight: -5,
+          running: Number.POSITIVE_INFINITY,
+        },
+      }),
+      AT,
+    );
+    const shell = core.shellState();
+    expect(shell.counts).toEqual({ ready: 2 }); // floor'd, everything else dropped
+    expect(JSON.stringify(shell)).not.toContain("secret");
+    // The stored copy (served to every later head) is equally clean.
+    const stored = (await storage.get("dx:shell")) as { counts: Record<string, number> };
+    expect(Object.keys(stored.counts)).toEqual(["ready"]);
   });
 });
 
