@@ -30,12 +30,15 @@ describe("buildNavSections", () => {
     expect(ids).not.toContain("project");
   });
 
-  it("puts Overview first in the org section, pointing at the org root", () => {
+  it("puts Dispatch first in the org section as the landing (saas-dispatch DX3), Overview demoted beside it", () => {
     const org = buildNavSections({ orgSlug: "acme" }).find((s) => s.id === "org")!;
     const first = org.links[0]!;
-    expect(first.label).toBe("Overview");
+    expect(first.label).toBe("Dispatch");
     expect(first.href).toBe("/orgs/acme");
     expect(first.subPanel ?? false).toBe(false);
+    const second = org.links[1]!;
+    expect(second.label).toBe("Overview");
+    expect(second.href).toBe("/orgs/acme/overview");
   });
 
   it("adds a product-focused org section (work surfaces only) at the top", () => {
@@ -133,8 +136,8 @@ describe("isLinkActive", () => {
     expect(isLinkActive("/you/security", "/you/security")).toBe(true);
   });
 
-  it("matches the org root (Overview) exactly, not its sub-routes", () => {
-    // The Overview home row lives at /orgs/:slug, a prefix of every org page —
+  it("matches the org root (the Dispatch home row) exactly, not its sub-routes", () => {
+    // The Dispatch home row lives at /orgs/:slug, a prefix of every org page —
     // it must only light up on the root, never on Catalog/Activities/etc.
     expect(isLinkActive("/orgs/acme", "/orgs/acme")).toBe(true);
     expect(isLinkActive("/orgs/acme", "/orgs/acme/catalog")).toBe(false);

@@ -60,9 +60,14 @@ export function buildNavSections(scope: NavScope): NavSection[] {
       id: "org",
       label: orgSlug ? `Workspace · ${orgSlug}` : "Workspace",
       links: [
-        // The Overview is the Workspace landing (the org root), so it is the
-        // rail's home row — first, above Catalog.
-        { href: orgBase, label: "Overview", icon: "LayoutDashboard" },
+        // Dispatch is the Workspace landing (saas-dispatch DX3): the org root
+        // renders the command surface — speak an intent, see what's pending —
+        // so the home row is the root itself (exact-match highlighting).
+        { href: orgBase, label: "Dispatch", icon: "Send" },
+        // Overview demoted from the landing to a first-class metrics view
+        // (content unchanged, saas-workspace-overview); it can reclaim the
+        // landing via the preference toggle on its own page.
+        { href: `${orgBase}/overview`, label: "Overview", icon: "LayoutDashboard" },
         { href: `${orgBase}/catalog`, label: "Catalog", icon: "Boxes" },
         // Docs — the org-wide catalog doc library (saas-catalog-docs CD5):
         // git-authored entity docs, browsed by kind/role, rendered by digest.
