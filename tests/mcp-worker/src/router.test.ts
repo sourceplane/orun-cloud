@@ -52,6 +52,8 @@ const stubDeps: McpWorkerDeps = {
     Response.json({ data: {}, meta: { requestId: "req_stub", cursor: null } })) as typeof fetch,
   // MCP6: fresh per-run entitlement decision cache (per-isolate Map in prod).
   entitlementCache: new Map(),
+  // Bearer pre-flight probe cache (self-healing auth).
+  authCache: new Map(),
 };
 
 describe("mcp-worker route (smoke)", () => {

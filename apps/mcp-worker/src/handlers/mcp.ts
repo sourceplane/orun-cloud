@@ -21,13 +21,47 @@
 
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 import { createEntitlementGate, createMcpServer } from "@saas/mcp";
-import { OrunCloud } from "@saas/sdk";
+import { OrunCloud, OrunCloudError } from "@saas/sdk";
 
 import type { McpWorkerDeps } from "../deps.js";
 import type { Env } from "../env.js";
 import { errorResponse } from "../http.js";
 
 const BEARER_RE = /^Bearer\s+(\S+)$/i;
+
+// How long a successful bearer probe is trusted before re-checking api-edge.
+const AUTH_PROBE_TTL_MS = 60_000;
+
+/**
+ * Pre-flight bearer check (self-healing OAuth). api-edge rejects an
+ * expired/invalid bearer with 401, but inside a tool call that surfaces as a
+ * JSON-RPC tool ERROR (HTTP 200) — which MCP clients do NOT treat as an auth
+ * challenge, so an expired access token would silently break the connection
+ * instead of triggering the client's refresh. Probing a cheap authenticated
+ * endpoint up front lets the transport answer a hard 401 at the HTTP level with
+ * `WWW-Authenticate`, the signal the client needs to refresh and retry.
+ *
+ * Cached per token (short TTL, per-isolate) so a burst of messages on one
+ * connection pays at most one probe. NON-401 failures fail OPEN — a transient
+ * api-edge blip must never masquerade as an auth failure and force a needless
+ * re-auth (matches the entitlement gate's fail-open posture).
+ */
+async function bearerRejected(
+  sdk: OrunCloud,
+  token: string,
+  cache: Map<string, number>,
+): Promise<boolean> {
+  const validUntil = cache.get(token);
+  if (validUntil !== undefined && validUntil > Date.now()) return false;
+  try {
+    await sdk.auth.getProfile();
+    cache.set(token, Date.now() + AUTH_PROBE_TTL_MS);
+    return false;
+  } catch (err) {
+    if (err instanceof OrunCloudError && err.status === 401) return true;
+    return false; // transient / non-401 → fail open
+  }
+}
 
 export async function handleMcpPost(
   request: Request,
@@ -81,6 +115,9 @@ export async function handleMcpPost(
   // - usage: every successful tool call fire-and-forgets one `mcp.tool_call`
   //   event through the public metering ingest, waitUntil-scheduled so it
   //   outlives the response without ever blocking it.
+  // Constructing the server stamps `x-client-surface: mcp` onto the sdk's
+  // default headers, so it must happen BEFORE the auth probe below for the
+  // probe request to carry the same provenance as every other MCP-plane call.
   const server = createMcpServer({
     sdk,
     readOnly: true,
@@ -93,6 +130,16 @@ export async function handleMcpPost(
         : {}),
     },
   });
+
+  // Self-healing auth: a rejected bearer answers 401 + the protected-resource
+  // challenge (so the MCP client refreshes), instead of letting an expired
+  // token surface as a silent per-tool error.
+  if (await bearerRejected(sdk, token, deps.authCache)) {
+    const origin = new URL(request.url).origin;
+    return errorResponse("unauthenticated", "Authentication failed", 401, requestId, {
+      "WWW-Authenticate": `Bearer resource_metadata="${origin}/.well-known/oauth-protected-resource"`,
+    });
+  }
   // No sessionIdGenerator = stateless mode (exactOptionalPropertyTypes forbids
   // the explicit `sessionIdGenerator: undefined` spelling).
   const transport = new WebStandardStreamableHTTPServerTransport({

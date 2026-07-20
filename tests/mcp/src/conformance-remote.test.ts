@@ -71,7 +71,7 @@ function seededApiEdge(calls: RecordedCall[] = []): McpWorkerDeps {
       { status: 404 },
     );
   };
-  return { fetch: stub, entitlementCache: new Map() };
+  return { fetch: stub, entitlementCache: new Map(), authCache: new Map() };
 }
 
 function rpcRequest(body: unknown, headers: Record<string, string> = {}): Request {

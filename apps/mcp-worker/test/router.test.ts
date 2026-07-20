@@ -71,7 +71,7 @@ function apiEdgeStub(
       { status: 404 },
     );
   };
-  return { fetch: stub, entitlementCache: new Map() };
+  return { fetch: stub, entitlementCache: new Map(), authCache: new Map() };
 }
 
 async function rpc(body: unknown, deps?: McpWorkerDeps): Promise<JsonRpcResponse> {
@@ -160,6 +160,7 @@ describe("mcp-worker route", () => {
         throw new Error("deps.fetch must not be used when API_EDGE is bound");
       }) as typeof fetch,
       entitlementCache: new Map(),
+      authCache: new Map(),
     };
     const res = await route(
       rpcRequest({ jsonrpc: "2.0", id: 7, method: "tools/call", params: { name: "whoami", arguments: {} } }),
@@ -170,6 +171,58 @@ describe("mcp-worker route", () => {
     expect(body.result?.["isError"]).toBeFalsy();
     expect(bindingCalls.length).toBeGreaterThan(0);
     expect(bindingCalls.every((u) => u.startsWith("https://api.test/"))).toBe(true);
+  });
+
+  it("answers a rejected bearer with 401 + the refresh challenge (self-healing), not a silent tool error", async () => {
+    // api-edge rejects the bearer (expired/invalid). Without the pre-flight the
+    // failure would surface as a JSON-RPC tool error (HTTP 200) the client
+    // ignores; the probe promotes it to a real 401 so the client refreshes.
+    const rejectingDeps: McpWorkerDeps = {
+      fetch: (async () =>
+        Response.json(
+          { error: { code: "unauthenticated", message: "Authentication failed", details: {}, requestId: "req_stub" } },
+          { status: 401 },
+        )) as typeof fetch,
+      entitlementCache: new Map(),
+      authCache: new Map(),
+    };
+    const res = await route(
+      rpcRequest({ jsonrpc: "2.0", id: 8, method: "tools/call", params: { name: "whoami", arguments: {} } }),
+      env,
+      rejectingDeps,
+    );
+    expect(res.status).toBe(401);
+    expect(res.headers.get("www-authenticate")).toContain("resource_metadata");
+    const body = (await res.json()) as { error: { code: string } };
+    expect(body.error.code).toBe("unauthenticated");
+  });
+
+  it("a transient (non-401) api-edge failure on the auth probe fails OPEN — the tool call still proceeds", async () => {
+    // Only a hard 401 forces re-auth; a 500/timeout must not masquerade as one.
+    let firstCall = true;
+    const flakyProbeDeps: McpWorkerDeps = {
+      fetch: (async (input: RequestInfo | URL, init?: RequestInit) => {
+        const { pathname } = new URL(new Request(input, init).url);
+        if (pathname === "/v1/auth/profile" && firstCall) {
+          firstCall = false;
+          return Response.json(
+            { error: { code: "internal_error", message: "blip", details: {}, requestId: "req_stub" } },
+            { status: 500 },
+          );
+        }
+        return apiEdgeStub([]).fetch(input, init);
+      }) as typeof fetch,
+      entitlementCache: new Map(),
+      authCache: new Map(),
+    };
+    const res = await route(
+      rpcRequest({ jsonrpc: "2.0", id: 10, method: "tools/call", params: { name: "whoami", arguments: {} } }),
+      env,
+      flakyProbeDeps,
+    );
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as JsonRpcResponse;
+    expect(body.result?.["isError"]).toBeFalsy();
   });
 
   it("401s without a bearer and points at the protected-resource metadata", async () => {
@@ -292,6 +345,7 @@ describe("mcp-worker route", () => {
         return apiEdgeStub([]).fetch(input, init);
       }) as typeof fetch,
       entitlementCache: new Map(),
+      authCache: new Map(),
     };
     const call = () =>
       route(
@@ -394,7 +448,7 @@ describe("mcp-worker MCP6 (entitlement gate + usage metering)", () => {
         { status: 404 },
       );
     };
-    return { fetch: stub, entitlementCache: opts.cache ?? new Map() };
+    return { fetch: stub, entitlementCache: opts.cache ?? new Map(), authCache: new Map() };
   }
 
   function quotaCheckCall(id: number): Record<string, unknown> {
@@ -455,7 +509,7 @@ describe("mcp-worker MCP6 (entitlement gate + usage metering)", () => {
           }
           return base.fetch(input, init);
         };
-        return { fetch: fetchImpl, entitlementCache: base.entitlementCache };
+        return { fetch: fetchImpl, entitlementCache: base.entitlementCache, authCache: base.authCache };
       })(),
     );
     expect(body.result?.["isError"]).toBeFalsy();
