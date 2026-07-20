@@ -24,4 +24,19 @@ describe("dispatch resource", () => {
     expect(calls[0]).toContain("/v1/organizations/org_x/dispatch/situation");
     expect(situation.cursor).toBe("w0.0");
   });
+
+  it("hands off through the ONE dispatch door (DX2 Ready card)", async () => {
+    const calls: { url: string; init: RequestInit }[] = [];
+    const f: typeof fetch = vi.fn(async (input, init) => {
+      calls.push({ url: String(input), init: init ?? {} });
+      return new Response(JSON.stringify({ data: { id: "as_1", state: "requested" }, meta: { requestId: "r", cursor: null } }), {
+        headers: { "content-type": "application/json" },
+      });
+    });
+    const c = new OrunCloud({ baseUrl: "https://api.test", fetch: f });
+    await c.agents.dispatchTask("org_x", { taskKey: "ORN-1" });
+    expect(calls[0]!.url).toContain("/v1/organizations/org_x/agents/dispatch");
+    expect(calls[0]!.init.method).toBe("POST");
+    expect(JSON.parse(String(calls[0]!.init.body))).toEqual({ taskKey: "ORN-1" });
+  });
 });

@@ -85,6 +85,8 @@ export const qk = {
     ["orgAgentSessionChildren", orgId, sessionId] as const,
   /** BYO provider connections (AG12): Daytona + Anthropic cards. */
   orgAgentProviders: (orgId: string) => ["orgAgentProviders", orgId] as const,
+  /** The Dispatch surface's Situation fold (saas-dispatch DX2). */
+  orgDispatchSituation: (orgId: string) => ["orgDispatchSituation", orgId] as const,
   accountRuns: (orgId: string) => ["accountRuns", orgId] as const,
   repoFacets: (orgId: string) => ["repoFacets", orgId] as const,
   docObject: (orgId: string, projectId: string, digest: string) =>

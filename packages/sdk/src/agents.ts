@@ -140,6 +140,24 @@ export class AgentsClient {
   }
 
   /**
+   * POST /agents/dispatch — the ONE dispatch door (AG9): entitlement,
+   * autonomy ladder, one-live-run-per-task dedupe, concurrency cap, budget
+   * envelope all apply server-side. A gate refusal is the product — surface
+   * its reason verbatim. Used by the Dispatch surface's Ready hand-off
+   * (saas-dispatch DX2) exactly as the chat's session_spawn verb uses it.
+   */
+  dispatchTask(
+    orgId: string,
+    body: { taskKey: string; specKey?: string },
+    opts: RequestOptions = {},
+  ): Promise<AgentSession & { provisioned?: boolean }> {
+    return this.transport.request<AgentSession & { provisioned?: boolean }>(
+      { method: "POST", path: `${agentsBase(orgId)}/dispatch`, body },
+      opts,
+    );
+  }
+
+  /**
    * POST /agents/sessions/:id/cancel — tree-transitive kill (AF4): cancels
    * the session AND its delegation subtree, children first; sandboxes are
    * destroyed best-effort (the sweep finishes stragglers). Returns the kill
