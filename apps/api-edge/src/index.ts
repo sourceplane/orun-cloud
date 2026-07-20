@@ -14,6 +14,7 @@ import { isNotificationRulesRoute, handleNotificationRulesRoute } from "./notifi
 import { isNotificationChannelsRoute, handleNotificationChannelsRoute } from "./notification-channels-facade";
 import { isConfigRoute, handleConfigRoute } from "./config-facade";
 import { isAgentsRoute, handleAgentsRoute } from "./agents-facade";
+import { isDispatchRoute, handleDispatchRoute } from "./dispatch-facade";
 import { isWebhooksRoute, handleWebhooksRoute } from "./webhooks-facade";
 import { isMeteringRoute, handleMeteringRoute } from "./metering-facade";
 import { isBillingRoute, handleBillingRoute } from "./billing-facade";
@@ -94,6 +95,10 @@ export default {
       response = await handleConfigRoute(routedRequest, env, requestId, pathname);
     } else if (isAgentsRoute(pathname)) {
       response = await handleAgentsRoute(routedRequest, env, requestId, pathname);
+    } else if (isDispatchRoute(pathname)) {
+      // saas-dispatch DX0 — the Situation fold: a per-viewer read composition
+      // over the work fold + agents plane; owns no table, writes nothing.
+      response = await handleDispatchRoute(routedRequest, env, requestId, pathname);
     } else if (isIntegrationsIngressRoute(pathname)) {
       // Public install-callback ingress (no session) — authenticated by the
       // signed single-use state verified in integrations-worker.
