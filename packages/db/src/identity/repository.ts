@@ -847,10 +847,17 @@ export function createIdentityRepository(executor: SqlExecutor): IdentityReposit
     async createOAuthDynamicClient(input: CreateOAuthDynamicClientInput): Promise<IdentityResult<OAuthDynamicClient>> {
       try {
         const result = await executor.execute<Record<string, unknown>>(
-          // $3::jsonb is required: the executor binds params with an explicit
-          // text type OID over the extended protocol, and Postgres will not
-          // implicitly cast text → jsonb on INSERT (fails 42804). Mirrors the
-          // jsonb-cast convention in agents/repository.ts.
+          // redirect_uris must be bound as the raw JS array (NOT
+          // JSON.stringify'd) with a $3::jsonb cast. The postgres.js executor
+          // (fetch_types:false) JSON-encodes each parameter destined for jsonb:
+          // a JS array serializes to a jsonb ARRAY, but a pre-stringified value
+          // is treated as a JSON string and DOUBLE-ENCODES to a jsonb STRING
+          // (jsonb_typeof 'string'), which trips the table's
+          // `jsonb_typeof(redirect_uris) = 'array'` CHECK (23514). The agents
+          // repository stringifies OBJECTS into unconstrained jsonb columns, so
+          // its identical double-encoding is silently tolerated there — here the
+          // array CHECK makes it fail closed. The ::jsonb cast is still required
+          // so Postgres does not see a text param over the extended protocol.
           `INSERT INTO identity.oauth_dynamic_clients
              (client_id, client_name, redirect_uris, created_at, expires_at)
            VALUES ($1, $2, $3::jsonb, $4, $5)
@@ -859,7 +866,7 @@ export function createIdentityRepository(executor: SqlExecutor): IdentityReposit
           [
             input.clientId,
             input.clientName,
-            JSON.stringify(input.redirectUris),
+            input.redirectUris,
             input.createdAt.toISOString(),
             input.expiresAt.toISOString(),
           ],

@@ -1416,4 +1416,61 @@ describe("IdentityRepository", () => {
       }
     });
   });
+
+  describe("createOAuthDynamicClient", () => {
+    const DCR_ROW = {
+      client_id: "dcr_0123456789abcdef0123456789abcdef",
+      client_name: "Claude",
+      redirect_uris: ["https://claude.ai/api/mcp/auth_callback"],
+      created_at: NOW.toISOString(),
+      last_used_at: null,
+      expires_at: FUTURE.toISOString(),
+    };
+
+    // Regression (MCP11 leg B, "Registration service unavailable" 503):
+    // redirect_uris MUST be bound as the raw JS array, never JSON.stringify'd.
+    // The postgres.js executor JSON-encodes each jsonb-bound param, so a
+    // pre-stringified value double-encodes to a jsonb STRING and trips the
+    // table's `jsonb_typeof(redirect_uris) = 'array'` CHECK (23514). A fake
+    // executor cannot see Postgres's cast, so this asserts the bind SHAPE that
+    // keeps the real driver honest: param[2] is the array itself, and the SQL
+    // carries the ::jsonb cast.
+    it("binds redirect_uris as a raw array (not a JSON string) with a ::jsonb cast", async () => {
+      const { executor, queries } = createFakeExecutor({ rows: [DCR_ROW], rowCount: 1 });
+      const repo = createIdentityRepository(executor);
+
+      const redirectUris = ["https://claude.ai/api/mcp/auth_callback"];
+      const result = await repo.createOAuthDynamicClient({
+        clientId: "dcr_0123456789abcdef0123456789abcdef",
+        clientName: "Claude",
+        redirectUris,
+        createdAt: NOW,
+        expiresAt: FUTURE,
+      });
+
+      expect(result.ok).toBe(true);
+      expect(queries[0]!.text).toContain("$3::jsonb");
+      // The exact defect was JSON.stringify(redirectUris) here: assert the
+      // bound value is the array, not its serialized form.
+      expect(Array.isArray(queries[0]!.params[2])).toBe(true);
+      expect(queries[0]!.params[2]).toEqual(redirectUris);
+      expect(typeof queries[0]!.params[2]).not.toBe("string");
+    });
+
+    it("maps a conflict (0 rows) to a conflict error", async () => {
+      const { executor } = createFakeExecutor({ rows: [], rowCount: 0 });
+      const repo = createIdentityRepository(executor);
+
+      const result = await repo.createOAuthDynamicClient({
+        clientId: "dcr_0123456789abcdef0123456789abcdef",
+        clientName: "Claude",
+        redirectUris: ["https://claude.ai/api/mcp/auth_callback"],
+        createdAt: NOW,
+        expiresAt: FUTURE,
+      });
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.error.kind).toBe("conflict");
+    });
+  });
 });

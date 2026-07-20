@@ -90,3 +90,7 @@ spec:
 # left this worker on the stale bundle (POST /oauth2/register still 503s). This
 # trigger content-hashes identity-worker into the changed set so it redeploys
 # with the corrected @saas/db, bringing dynamic client registration live.
+# ci: redeploy for MCP11 DCR fix #2 — the raw-array redirect_uris bind (jsonb
+# array vs double-encoded jsonb string). Same @saas/db build-input inertness,
+# so this trigger rescopes identity-worker to redeploy with the corrected
+# createOAuthDynamicClient in a single merge.
