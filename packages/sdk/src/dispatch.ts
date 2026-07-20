@@ -16,4 +16,19 @@ export class DispatchClient {
       opts,
     );
   }
+
+  /**
+   * GET /v1/organizations/{orgId}/dispatch/index — the snapshot-first shell
+   * (DX1): the fold's cursor watermark + viewer-agnostic section counts.
+   * Cheap enough for ambient chrome (the DX4 pending badge).
+   */
+  shell(
+    orgId: string,
+    opts: RequestOptions = {},
+  ): Promise<{ cursor: string; counts: Record<string, number>; updatedAt: string | null }> {
+    return this.transport.request<{ cursor: string; counts: Record<string, number>; updatedAt: string | null }>(
+      { method: "GET", path: `/v1/organizations/${encodeURIComponent(orgId)}/dispatch/index` },
+      opts,
+    );
+  }
 }

@@ -6,6 +6,7 @@
 // Situation rail on the right. Mobile stacks command-first (DX-Q4).
 
 import { WorkspaceChatList } from "@/components/agents/workspace-chat";
+import { BriefCard } from "@/components/dispatch/brief-card";
 import { SituationRail } from "@/components/dispatch/situation-rail";
 import { useSituation } from "@/lib/dispatch/use-situation";
 
@@ -13,7 +14,8 @@ export function DispatchSurface({ orgId, orgSlug }: { orgId: string; orgSlug: st
   const live = useSituation(orgId);
   return (
     <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_380px]">
-      <div className="min-w-0">
+      <div className="min-w-0 space-y-4">
+        <BriefCard orgSlug={orgSlug} situation={live.situation} />
         <WorkspaceChatList orgId={orgId} orgSlug={orgSlug} />
       </div>
       <aside className="min-w-0">

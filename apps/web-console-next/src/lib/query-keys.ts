@@ -87,6 +87,8 @@ export const qk = {
   orgAgentProviders: (orgId: string) => ["orgAgentProviders", orgId] as const,
   /** The Dispatch surface's Situation fold (saas-dispatch DX2). */
   orgDispatchSituation: (orgId: string) => ["orgDispatchSituation", orgId] as const,
+  /** The DX1 shell (cursor + counts) — the DX4 ambient badge read. */
+  orgDispatchShell: (orgId: string) => ["orgDispatchShell", orgId] as const,
   accountRuns: (orgId: string) => ["accountRuns", orgId] as const,
   repoFacets: (orgId: string) => ["repoFacets", orgId] as const,
   docObject: (orgId: string, projectId: string, digest: string) =>
