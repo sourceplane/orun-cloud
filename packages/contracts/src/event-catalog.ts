@@ -212,6 +212,8 @@ export const EVENT_CATALOG: Readonly<Record<string, CatalogEntry>> = Object.from
   entry({ type: "integration.credential.mint_failed", version: 1, category: "security", severity: "warning", title: "Credential mint failed ({payload.provider} · {payload.template})", audit: true }),
   entry({ type: "integration.secret_binding.created", version: 1, category: "security", severity: "notice", title: "Secret bound to integration ({payload.provider} · {payload.template})", audit: true }),
   entry({ type: "integration.secret_binding.removed", version: 1, category: "security", severity: "notice", title: "Brokered secret binding removed", audit: true }),
+  // Service-identity bootstrap (sub-epics/service-identity-bootstrap SI3).
+  entry({ type: "integration.connection.upgraded", version: 1, category: "security", severity: "notice", title: "Connection custody upgraded to a service identity ({payload.provider})", audit: true }),
 
   // --- messaging.* — normalized messaging events (integrations-worker, IH3) --
   entry({ type: "messaging.command.invoked", version: 1, category: "activity", severity: "info", title: "Slash command invoked ({payload.command})", audit: true }),
