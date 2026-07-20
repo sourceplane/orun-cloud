@@ -38,6 +38,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { buildNavSections, isLinkActive } from "./nav-items";
+import { DispatchPendingBadge } from "@/components/dispatch/pending-badge";
 import { SidebarAccount } from "./sidebar-account";
 import { SidebarOrgSwitcher } from "./sidebar-org-switcher";
 import { SidebarFind } from "./sidebar-find";
@@ -131,6 +132,9 @@ function ProductNav({
 
   const renderLink = (link: (typeof sections)[number]["links"][number]) => {
     const Icon = ICONS[link.icon] ?? Settings;
+    // The Dispatch home row wears the ambient needs-you badge (DX4) — the
+    // only chrome-level read, and it is the viewer-agnostic DX1 shell.
+    const isDispatchHome = !!orgSlug && link.href === `/orgs/${orgSlug}`;
     return (
       <SidebarLink
         key={link.href}
@@ -140,6 +144,7 @@ function ProductNav({
         onClick={onNavigate}
         mobile={mobile}
         chevron={!!link.subPanel}
+        badge={isDispatchHome && orgSlug ? <DispatchPendingBadge orgSlug={orgSlug} /> : undefined}
       >
         {link.label}
       </SidebarLink>
@@ -237,6 +242,7 @@ function SidebarLink({
   onClick,
   mobile = false,
   chevron = false,
+  badge,
   children,
 }: {
   href: string;
@@ -246,6 +252,8 @@ function SidebarLink({
   mobile?: boolean;
   /** Show a trailing › to signal the link opens a nested sidebar panel. */
   chevron?: boolean;
+  /** Trailing ambient badge (the Dispatch home row's needs-you count, DX4). */
+  badge?: React.ReactNode;
   children: React.ReactNode;
 }) {
   return (
@@ -262,6 +270,7 @@ function SidebarLink({
     >
       <Icon strokeWidth={1.8} className={cn(mobile ? "h-5 w-5" : "h-[15px] w-[15px]")} />
       <span className="min-w-0 flex-1 truncate">{children}</span>
+      {badge}
       {chevron && <ChevronRight className={cn("shrink-0 opacity-50", mobile ? "h-4 w-4" : "h-3 w-3")} />}
     </Link>
   );
