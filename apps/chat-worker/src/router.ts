@@ -10,6 +10,9 @@ import { errorResponse, methodNotAllowed, notFound, successResponse } from "./ht
 import type { ChatMeta } from "./chat-thread.js";
 import type { ChatSummary } from "./chat-index.js";
 import type { MemoryRpc } from "./memory.js";
+import { fetchAuthorizationContext } from "./membership-client.js";
+import { authorizeViaPolicy } from "./policy-client.js";
+import type { PolicyResource } from "@saas/contracts/policy";
 import { uuidFromPublicId } from "@saas/db/ids";
 
 const CHATS_RE = /^\/v1\/organizations\/([^/]+)\/agents\/chats$/;
@@ -51,24 +54,35 @@ export interface ChatDeps {
 export function buildDeps(env: Env): ChatDeps {
   return {
     async authorize(action, orgId, actor, requestId) {
-      if (!env.POLICY_WORKER) return false;
-      try {
-        const res = await env.POLICY_WORKER.fetch("http://policy-worker/v1/internal/policy/authorize", {
-          method: "POST",
-          headers: { "content-type": "application/json", "x-request-id": requestId },
-          body: JSON.stringify({
-            orgId,
-            action,
-            subjectId: actor.subjectId,
-            subjectType: actor.subjectType,
-          }),
-        });
-        if (!res.ok) return false;
-        const body = (await res.json()) as { data?: { allowed?: boolean } };
-        return body.data?.allowed === true;
-      } catch {
-        return false;
-      }
+      // The authz gate, done the way every other worker does it (this was the
+      // bug that shipped: the hand-rolled call sent {orgId,action,subjectId,
+      // subjectType} and read data.allowed, but the policy-worker REQUIRES a
+      // {subject, action, resource, context:{memberships}} body and answers
+      // data.allow — and the caller must fetch the memberships. The mismatch
+      // 400'd every request, so deny-by-default denied every chat + dispatch
+      // route with "Not authorized"). Fetch the actor's role assignments from
+      // membership-worker, then evaluate through policy-worker with the real
+      // contract.
+      if (!env.MEMBERSHIP_WORKER || !env.POLICY_WORKER) return false;
+      const ctx = await fetchAuthorizationContext(
+        env.MEMBERSHIP_WORKER,
+        actor.subjectId,
+        actor.subjectType,
+        orgId,
+        requestId,
+      );
+      if (!ctx.ok) return false;
+      const resource: PolicyResource = { kind: "organization", orgId };
+      const res = await authorizeViaPolicy(
+        env.POLICY_WORKER,
+        actor.subjectId,
+        actor.subjectType,
+        action,
+        resource,
+        ctx.memberships,
+        requestId,
+      );
+      return res.allow;
     },
     now: () => new Date(),
     newChatId: () => `ch_${crypto.randomUUID().replace(/-/g, "").slice(0, 24)}`,

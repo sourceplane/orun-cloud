@@ -53,6 +53,7 @@
         ]
       },
       "services": [
+        { "binding": "MEMBERSHIP_WORKER", "service": "membership-worker-stage" },
         { "binding": "POLICY_WORKER", "service": "policy-worker-stage" },
         { "binding": "CONFIG_WORKER", "service": "config-worker-stage" },
         { "binding": "API_EDGE", "service": "api-edge-stage" }
@@ -70,6 +71,7 @@
         ]
       },
       "services": [
+        { "binding": "MEMBERSHIP_WORKER", "service": "membership-worker-prod" },
         { "binding": "POLICY_WORKER", "service": "policy-worker-prod" },
         { "binding": "CONFIG_WORKER", "service": "config-worker-prod" },
         { "binding": "API_EDGE", "service": "api-edge-prod" }
