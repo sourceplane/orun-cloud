@@ -84,3 +84,9 @@ spec:
 # ci: trigger full-component verification (orun v2.12.0 upgrade — PR #183)
 # ci: redeploy with live Hyperdrive wiring (BF6b convergence)
 # ci: SS3 prod secrets seeded — redeploy to sync runtime secrets (secrets-live)
+# ci: redeploy for MCP11 DCR fix — #511 corrected the redirect_uris jsonb-cast
+# in @saas/db (createOAuthDynamicClient), but the build-input edge to `db` is
+# inert under the CI-pinned orun (< v2.22), so --changed rescoped only `db` and
+# left this worker on the stale bundle (POST /oauth2/register still 503s). This
+# trigger content-hashes identity-worker into the changed set so it redeploys
+# with the corrected @saas/db, bringing dynamic client registration live.
