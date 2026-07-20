@@ -37,6 +37,7 @@ import {
   AGENT_MODELS,
   AGENT_TYPES,
   DEFAULT_HARNESS,
+  modelOptions,
   servicePrincipalSubjectId,
 } from "@/lib/agents/model";
 
@@ -62,6 +63,12 @@ export function CreateProfileDialog({
   const profile = useApiQuery(qk.profile(), () => wrap(async () => (await client.auth.getProfile()).user), {
     enabled: open,
   });
+  // DX6: verified model connections contribute their defaultModel to the
+  // picker — the model list is a provider-details setting, not a constant.
+  const providers = useApiQuery(qk.orgAgentProviders(orgId), () => wrap(async () => client.agents.listProviders(orgId)), {
+    enabled: open,
+  });
+  const models = modelOptions(providers.data ?? []);
 
   // Active (non-revoked) keys back a usable service principal.
   const keys = (apiKeys.data?.apiKeys ?? []).filter((k) => !k.revokedAt);
@@ -173,7 +180,7 @@ export function CreateProfileDialog({
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {AGENT_MODELS.map((m) => (
+                {models.map((m) => (
                   <SelectItem key={m.value} value={m.value}>
                     {m.label}
                   </SelectItem>

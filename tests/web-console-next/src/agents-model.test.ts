@@ -4,6 +4,7 @@
 
 import {
   connectionTone,
+  modelOptions,
   orderFleetRows,
   sessionLabel,
   sessionTone,
@@ -86,5 +87,27 @@ describe("orderFleetRows (saas-agents-fleet AF4)", () => {
     const input = [s("as_r"), s("as_x", "as_r"), s("as_y", "as_x"), s("as_z")];
     const rows = orderFleetRows(input);
     expect(rows.map((r) => r.session.id).sort()).toEqual(input.map((i) => i.id).sort());
+  });
+});
+
+describe("modelOptions (saas-dispatch DX6 — connection-aware model picker)", () => {
+  const base = AGENT_MODELS.length;
+  it("offers the static list plus verified model-connection defaults, provider-labeled", () => {
+    const options = modelOptions([
+      { provider: "openrouter", status: "verified", config: { defaultModel: "meta-llama/llama-4" } },
+      { provider: "openai", status: "verified", config: { defaultModel: "gpt-5.2" } },
+    ]);
+    expect(options.length).toBe(base + 2);
+    expect(options.some((o) => o.value === "meta-llama/llama-4" && o.label.includes("OpenRouter"))).toBe(true);
+    expect(options.some((o) => o.value === "gpt-5.2" && o.label.includes("OpenAI"))).toBe(true);
+  });
+  it("skips unverified connections, non-model providers, empty models, and dedupes", () => {
+    const options = modelOptions([
+      { provider: "openai", status: "invalid", config: { defaultModel: "gpt-x" } },
+      { provider: "daytona", status: "verified", config: { defaultModel: "not-a-model" } },
+      { provider: "anthropic", status: "verified", config: {} },
+      { provider: "anthropic", status: "verified", config: { defaultModel: "claude-opus-4-8" } }, // already static
+    ]);
+    expect(options.length).toBe(base);
   });
 });

@@ -121,3 +121,14 @@ describe("isSettingsLinkActive", () => {
     expect(isSettingsLinkActive(webhooks, null)).toBe(false);
   });
 });
+
+describe("AI providers door (saas-dispatch DX6)", () => {
+  it("lists AI providers under Developer, beside the MCP server", () => {
+    const developer = buildSettingsNav("acme").find((g) => g.id === "developer")!;
+    const hrefs = developer.links.map((l) => l.href);
+    expect(hrefs).toContain("/orgs/acme/settings/ai-providers");
+    const entry = developer.links.find((l) => l.href === "/orgs/acme/settings/ai-providers")!;
+    expect(entry.label).toBe("AI providers");
+    expect(entry.description).toContain("OpenRouter");
+  });
+});

@@ -119,6 +119,16 @@ export function buildSettingsNav(orgSlug: string): SettingsNavGroup[] {
           icon: "Bot",
           description: "Connect AI agents — Claude Code, Cursor, VS Code",
         },
+        {
+          // AI providers (saas-dispatch DX6): the canonical Settings home for
+          // BYO provider keys + details (Daytona compute; Anthropic/OpenAI/
+          // OpenRouter model credentials). Same surface the Agents tab and
+          // Integrations hub render — three doors, one component, one API.
+          href: `${base}/ai-providers`,
+          label: "AI providers",
+          icon: "Cpu",
+          description: "Model + sandbox keys: Anthropic, OpenAI, OpenRouter, Daytona",
+        },
         // Sessions & devices moved to the personal account area — CLI sessions
         // are per-user, not workspace-scoped (saas-settings-ia SI1).
         {
