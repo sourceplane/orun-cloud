@@ -1,8 +1,11 @@
 // Rendered to wrangler.jsonc by tooling/wire/render.mjs (BF6 deploy-time wiring).
-// This template carries NO @@wiring@@ tokens — the worker binds no resources at
-// all (no DB, no KV, no DO, no service bindings; design §2 client-not-service).
-// Its only egress is the public api-edge URL below, reached via `@saas/sdk`
-// with the caller's forwarded bearer.
+// This template carries NO @@wiring@@ tokens — the worker binds no data
+// resources (no DB, no KV, no DO) and no DOWNSTREAM worker; design §2
+// client-not-service. The one binding is a service binding to api-edge ITSELF
+// (the public entry): a Worker's fetch() to a sibling *.workers.dev origin is
+// not routed through the edge and returns a bare Cloudflare 404, so the
+// client-not-service hop is made through the binding instead of a public URL.
+// The forwarded bearer + api-edge RBAC/rate-limit/audit are unchanged.
 //
 // Served on workers.dev (workers_dev is forced ON per env — this is the PUBLIC
 // remote transport; MCP11 leg A: the route silently defaulted off and the
@@ -29,7 +32,12 @@
         "ENVIRONMENT": "dev",
         "API_EDGE_URL": "https://api-edge-dev.oruncloud.workers.dev",
         "OAUTH_AUTHORIZATION_SERVER_URL": "https://api-edge-dev.oruncloud.workers.dev"
-      }
+      },
+      // Service binding to api-edge itself — a Worker cannot reach a sibling
+      // *.workers.dev origin over fetch() (bare Cloudflare 404), so tool calls
+      // dispatch through this binding. Not a downstream binding: api-edge is
+      // the public entry and applies RBAC/rate-limits/audit unchanged.
+      "services": [{ "binding": "API_EDGE", "service": "api-edge-dev" }]
     },
     "stage": {
       "workers_dev": true,
@@ -37,7 +45,8 @@
         "ENVIRONMENT": "stage",
         "API_EDGE_URL": "https://api-edge-stage.oruncloud.workers.dev",
         "OAUTH_AUTHORIZATION_SERVER_URL": "https://api-edge-stage.oruncloud.workers.dev"
-      }
+      },
+      "services": [{ "binding": "API_EDGE", "service": "api-edge-stage" }]
     },
     "prod": {
       "workers_dev": true,
@@ -45,7 +54,8 @@
         "ENVIRONMENT": "prod",
         "API_EDGE_URL": "https://api-edge-prod.oruncloud.workers.dev",
         "OAUTH_AUTHORIZATION_SERVER_URL": "https://api-edge-prod.oruncloud.workers.dev"
-      }
+      },
+      "services": [{ "binding": "API_EDGE", "service": "api-edge-prod" }]
     }
   }
 }
