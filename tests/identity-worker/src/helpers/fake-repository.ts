@@ -25,6 +25,8 @@ import type {
   RotateCliSessionInput,
   CliLoginGrant,
   CreateCliLoginGrantInput,
+  OAuthDynamicClient,
+  CreateOAuthDynamicClientInput,
 } from "@saas/db/identity";
 
 interface StoredChallenge extends LoginChallenge {
@@ -54,6 +56,7 @@ export function createFakeRepository(): IdentityRepository & {
   _apiKeys: Map<string, ApiKey & { keyHash: string }>;
   _servicePrincipals: Map<string, ServicePrincipal>;
   _grants: Map<string, StoredGrant>;
+  _dynamicClients: Map<string, OAuthDynamicClient>;
 } {
   const users = new Map<string, User>();
   const authIdentities = new Map<string, AuthIdentity>();
@@ -63,6 +66,7 @@ export function createFakeRepository(): IdentityRepository & {
   const apiKeys = new Map<string, ApiKey & { keyHash: string }>();
   const servicePrincipals = new Map<string, ServicePrincipal>();
   const grants = new Map<string, StoredGrant>();
+  const dynamicClients = new Map<string, OAuthDynamicClient>();
 
   const repo: IdentityRepository & {
     _users: Map<string, User>;
@@ -73,6 +77,7 @@ export function createFakeRepository(): IdentityRepository & {
     _apiKeys: Map<string, ApiKey & { keyHash: string }>;
     _servicePrincipals: Map<string, ServicePrincipal>;
     _grants: Map<string, StoredGrant>;
+    _dynamicClients: Map<string, OAuthDynamicClient>;
   } = {
     _users: users,
     _authIdentities: authIdentities,
@@ -82,6 +87,7 @@ export function createFakeRepository(): IdentityRepository & {
     _apiKeys: apiKeys,
     _servicePrincipals: servicePrincipals,
     _grants: grants,
+    _dynamicClients: dynamicClients,
 
     async createUser(input: CreateUserInput): Promise<IdentityResult<User>> {
       if (users.has(input.id)) {
@@ -448,6 +454,50 @@ export function createFakeRepository(): IdentityRepository & {
       g.redeemedAt = redeemedAt;
       g.updatedAt = redeemedAt;
       return { ok: true, value: g };
+    },
+
+    // --- Dynamic OAuth clients (RFC 7591, MCP11 leg B) ---
+
+    async createOAuthDynamicClient(input: CreateOAuthDynamicClientInput): Promise<IdentityResult<OAuthDynamicClient>> {
+      if (dynamicClients.has(input.clientId)) {
+        return { ok: false, error: { kind: "conflict", entity: "oauth_dynamic_client" } };
+      }
+      const client: OAuthDynamicClient = {
+        clientId: input.clientId,
+        clientName: input.clientName,
+        redirectUris: [...input.redirectUris],
+        createdAt: input.createdAt,
+        lastUsedAt: null,
+        expiresAt: input.expiresAt,
+      };
+      dynamicClients.set(input.clientId, client);
+      return { ok: true, value: client };
+    },
+
+    async getOAuthDynamicClientByClientId(clientId: string): Promise<IdentityResult<OAuthDynamicClient>> {
+      const c = dynamicClients.get(clientId);
+      return c ? { ok: true, value: c } : { ok: false, error: { kind: "not_found" } };
+    },
+
+    async touchOAuthDynamicClientUsed(clientId: string, usedAt: Date, expiresAt: Date): Promise<IdentityResult<OAuthDynamicClient>> {
+      const c = dynamicClients.get(clientId);
+      if (!c) return { ok: false, error: { kind: "not_found" } };
+      c.lastUsedAt = usedAt;
+      // Mirrors the repo's GREATEST(): the horizon only ever moves forward.
+      if (expiresAt.getTime() > c.expiresAt.getTime()) c.expiresAt = expiresAt;
+      return { ok: true, value: c };
+    },
+
+    async deleteExpiredOAuthDynamicClients(now: Date, limit: number): Promise<IdentityResult<number>> {
+      let count = 0;
+      for (const [id, c] of dynamicClients) {
+        if (count >= limit) break;
+        if (c.expiresAt.getTime() <= now.getTime()) {
+          dynamicClients.delete(id);
+          count++;
+        }
+      }
+      return { ok: true, value: count };
     },
 
     async recordSecurityEvent(input: CreateSecurityEventInput): Promise<IdentityResult<SecurityEvent>> {

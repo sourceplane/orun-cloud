@@ -10,10 +10,20 @@
 // OAuth spec the user agent is NEVER redirected to an unregistered
 // redirect_uri: an unknown client or a non-matching redirect renders an error
 // instead of redirecting.
+//
+// MCP11 leg B (D1 → Option B): dynamically-registered clients (`dcr_` ids)
+// cannot be resolved from the static list — the page fetches them via
+// `auth.getOAuthClientInfo` and validates the redirect against the RETURNED
+// registration (same matcher), so the never-redirect-unregistered invariant
+// holds for the deny path too. Dynamic clients always render as
+// "Unverified app" — never the trusted-client styling.
 
 import {
   findOAuthPublicClient,
+  isOAuthDynamicClientId,
   isOAuthRedirectUriAllowed,
+  oauthRedirectUriMatches,
+  type OAuthClientInfo,
   type OAuthPublicClient,
 } from "@saas/contracts/auth";
 
@@ -28,7 +38,12 @@ export interface OAuthAuthorizeRequestParams {
 }
 
 export type ParsedAuthorizeRequest =
-  | { ok: true; client: OAuthPublicClient; params: OAuthAuthorizeRequestParams }
+  /** Vetted allow-list client — fully resolved and redirect-validated locally. */
+  | { ok: true; kind: "static"; client: OAuthPublicClient; params: OAuthAuthorizeRequestParams }
+  /** Dynamically-registered (`dcr_`) client — the page must fetch the
+   *  registration via `auth.getOAuthClientInfo` and validate the redirect with
+   *  {@link dynamicClientRedirectAllowed} before rendering consent. */
+  | { ok: true; kind: "dynamic"; clientId: string; params: OAuthAuthorizeRequestParams }
   | { ok: false; error: string };
 
 const S256_CHALLENGE_RE = /^[A-Za-z0-9\-_]{43}$/;
@@ -42,11 +57,18 @@ export function parseAuthorizeRequest(searchParams: URLSearchParams | null): Par
   const codeChallengeMethod = searchParams.get("code_challenge_method") ?? "";
 
   if (!clientId) return { ok: false, error: "Missing client_id." };
+  // Static-first, mirroring the server's resolution order: a `dcr_` id can
+  // never be on the static list, and a static id never falls through to the
+  // dynamic path.
   const client = findOAuthPublicClient(clientId);
-  if (!client) {
+  const dynamic = !client && isOAuthDynamicClientId(clientId);
+  if (!client && !dynamic) {
     return { ok: false, error: `Unknown client "${clientId}" — it is not on the vetted client list.` };
   }
-  if (!redirectUri || !isOAuthRedirectUriAllowed(client, redirectUri)) {
+  if (!redirectUri) {
+    return { ok: false, error: "Missing redirect_uri." };
+  }
+  if (client && !isOAuthRedirectUriAllowed(client, redirectUri)) {
     return { ok: false, error: "The redirect_uri is not registered for this client." };
   }
   if (responseType !== null && responseType !== "code") {
@@ -59,17 +81,40 @@ export function parseAuthorizeRequest(searchParams: URLSearchParams | null): Par
     return { ok: false, error: "Malformed code_challenge (expected a base64url SHA-256 digest)." };
   }
 
+  const params: OAuthAuthorizeRequestParams = {
+    clientId,
+    redirectUri,
+    state: searchParams.get("state"),
+    codeChallenge,
+    codeChallengeMethod: "S256",
+    scope: searchParams.get("scope"),
+  };
+  if (client) return { ok: true, kind: "static", client, params };
+  // Dynamic: the redirect check is deferred until the registration is fetched
+  // (dynamicClientRedirectAllowed) — until then the page never redirects.
+  return { ok: true, kind: "dynamic", clientId, params };
+}
+
+/** Redirect pre-check for a fetched dynamic registration — the same matcher as
+ *  static clients (exact, loopback any-port carve-out only for loopback URIs).
+ *  The server remains the authority; a mismatch renders an error, never a
+ *  redirect (approve AND deny paths). */
+export function dynamicClientRedirectAllowed(client: OAuthClientInfo, redirectUri: string): boolean {
+  return client.redirectUris.some((registered) => oauthRedirectUriMatches(registered, redirectUri));
+}
+
+/** Consent-header presentation facts. Dynamic (self-registered) clients are
+ *  ALWAYS labeled "Unverified app" and never get the trusted-client styling —
+ *  the name is attacker-chosen registration data, shown but visibly untrusted. */
+export function consentClientPresentation(client: { name: string; dynamic: boolean }): {
+  name: string;
+  unverified: boolean;
+  badgeLabel: string | null;
+} {
   return {
-    ok: true,
-    client,
-    params: {
-      clientId,
-      redirectUri,
-      state: searchParams.get("state"),
-      codeChallenge,
-      codeChallengeMethod: "S256",
-      scope: searchParams.get("scope"),
-    },
+    name: client.name,
+    unverified: client.dynamic,
+    badgeLabel: client.dynamic ? "Unverified app" : null,
   };
 }
 

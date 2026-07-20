@@ -35,6 +35,14 @@ export function generateOAuthAuthorizationCode(): string {
   return `ocac_${randomHex(32)}`;
 }
 
+/** Dynamically-registered OAuth client id (MCP11 leg B, RFC 7591):
+ *  `dcr_<32 hex>`. NOT a secret — it is the public client identifier; the
+ *  `dcr_` namespace guarantees it can never collide with (or shadow) a static
+ *  allow-list clientId. */
+export function generateOAuthDynamicClientId(): string {
+  return `dcr_${randomHex(16)}`;
+}
+
 /** Internal opaque session-correlation secret hashed into sessions.token_hash
  *  (parity with web sessions; the CLI never sees this — it uses access+refresh). */
 export function generateSessionTokenSecret(): string {

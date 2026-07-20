@@ -419,6 +419,118 @@ export function isOAuthRedirectUriAllowed(client: OAuthPublicClient, redirectUri
   return client.redirectUris.some((registered) => oauthRedirectUriMatches(registered, redirectUri));
 }
 
+// ---------------------------------------------------------------------------
+// RFC 7591 Dynamic Client Registration (saas-mcp-server MCP11 leg B).
+//
+// Activates the D1 → Option B path (documented in the risks doc as "DCR behind
+// rate limits + short-lived unused-client GC"): claude.ai's connector flow
+// requires a `registration_endpoint`, so PUBLIC clients may now self-register
+// into `identity.oauth_dynamic_clients`. Guardrails:
+//   - public clients only (`token_endpoint_auth_method: "none"`; NO secrets
+//     are ever minted or stored — registration mints CLIENTS, not tokens, R5);
+//   - minted ids live in the `dcr_` namespace so a dynamic registration can
+//     NEVER shadow a vetted static clientId (static allow-list resolves first);
+//   - redirect URIs must be https non-loopback OR http loopback (RFC 8252
+//     §7.3); matching reuses `oauthRedirectUriMatches` (exact, with the
+//     loopback any-port carve-out only for loopback URIs);
+//   - rows are TTL'd (~30d, refreshed on use) — the unused-client GC horizon;
+//   - the console consent page labels dynamic clients "Unverified app".
+// RFC 7592 (client update/delete management endpoints) is deliberately out of
+// scope — unused registrations simply age out.
+// ---------------------------------------------------------------------------
+
+/** Namespace prefix of dynamically-registered client ids (`dcr_<hex32>`). */
+export const OAUTH_DYNAMIC_CLIENT_ID_PREFIX = "dcr_";
+
+export function isOAuthDynamicClientId(clientId: string): boolean {
+  return clientId.startsWith(OAUTH_DYNAMIC_CLIENT_ID_PREFIX);
+}
+
+/** Registration limits (enforced server-side, mirrored in the DB CHECKs). */
+export const OAUTH_DCR_MAX_REDIRECT_URIS = 10;
+export const OAUTH_DCR_MAX_CLIENT_NAME_LENGTH = 100;
+export const OAUTH_DCR_MAX_REDIRECT_URI_LENGTH = 2048;
+
+export const OAUTH_SUPPORTED_GRANT_TYPES = ["authorization_code", "refresh_token"] as const;
+export const OAUTH_SUPPORTED_RESPONSE_TYPES = ["code"] as const;
+
+/**
+ * Is `uri` registrable by a DYNAMIC client? Stricter than the static
+ * allow-list (which may carry vetted custom schemes like `cursor://`):
+ * https on a non-loopback host, or http on a loopback host (RFC 8252 §7.3).
+ * Fragments are forbidden (RFC 6749 §3.1.2).
+ */
+export function isRegistrableDynamicRedirectUri(uri: string): boolean {
+  if (!uri || uri.length > OAUTH_DCR_MAX_REDIRECT_URI_LENGTH) return false;
+  let parsed: URL;
+  try {
+    parsed = new URL(uri);
+  } catch {
+    return false;
+  }
+  if (parsed.hash !== "") return false;
+  if (parsed.protocol === "https:") return !LOOPBACK_HOSTS.has(parsed.hostname);
+  if (parsed.protocol === "http:") return LOOPBACK_HOSTS.has(parsed.hostname);
+  return false;
+}
+
+/**
+ * POST /v1/auth/oauth2/register — RFC 7591 §2 client metadata (the accepted
+ * subset). Anything else in the body is ignored, EXCEPT a caller-chosen
+ * `client_id`, which is rejected (ids are always server-minted `dcr_…`).
+ */
+export interface OAuthClientRegistrationRequest {
+  client_name?: string;
+  redirect_uris?: string[];
+  /** Must be absent or "none" — public clients only. */
+  token_endpoint_auth_method?: string;
+  /** Must be within OAUTH_SUPPORTED_GRANT_TYPES when present. */
+  grant_types?: string[];
+  /** Must be within OAUTH_SUPPORTED_RESPONSE_TYPES when present. */
+  response_types?: string[];
+}
+
+/** RFC 7591 §3.2.1 registration response (201, raw JSON — no envelope, and
+ *  deliberately NO client_secret: public clients only). */
+export interface OAuthClientRegistrationResponse {
+  client_id: string;
+  /** Seconds since the epoch (RFC 7591 §3.2.1). */
+  client_id_issued_at: number;
+  client_name: string;
+  redirect_uris: string[];
+  token_endpoint_auth_method: "none";
+  grant_types: string[];
+  response_types: string[];
+}
+
+/** RFC 7591 §3.2.2 error body (400, raw JSON, `Cache-Control: no-store`). */
+export type OAuthRegistrationErrorCode = "invalid_client_metadata" | "invalid_redirect_uri";
+
+export interface OAuthRegistrationErrorResponse {
+  error: OAuthRegistrationErrorCode;
+  error_description?: string;
+}
+
+/**
+ * GET /v1/auth/oauth2/client/{clientId} — public-safe client info for the
+ * console consent page (platform envelope, unlike the raw RFC endpoints).
+ * Static allow-list clients resolve first; `dcr_` ids resolve from the
+ * dynamic table (unknown or expired → 404). `redirectUris` lets the console
+ * keep the "never redirect to an unregistered URI" pre-check for dynamic
+ * clients (the server remains the authority).
+ */
+export interface OAuthClientInfo {
+  clientId: string;
+  name: string;
+  /** true when the client came from DCR — consent must render "Unverified app". */
+  dynamic: boolean;
+  redirectUris: string[];
+}
+
+export interface OAuthClientInfoResponse {
+  client: OAuthClientInfo;
+}
+
 /**
  * POST /v1/auth/oauth2/authorize/complete — called by the console after the
  * signed-in user consents. Actor-authenticated (api-edge injects x-actor-*).
@@ -494,6 +606,8 @@ export interface AuthorizationServerMetadata {
   /** The console consent page (browser navigation, not an API endpoint). */
   authorization_endpoint: string;
   token_endpoint: string;
+  /** RFC 7591 dynamic client registration endpoint (MCP11 leg B). */
+  registration_endpoint: string;
   response_types_supported: string[];
   grant_types_supported: string[];
   code_challenge_methods_supported: string[];

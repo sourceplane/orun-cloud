@@ -884,4 +884,79 @@ describe("api-edge auth facade", () => {
       expect(tk.status).toBe(405);
     });
   });
+
+  describe("oauth2 dynamic client registration routes (MCP11 leg B)", () => {
+    it("recognises the register + client-info routes via isAuthRoute", () => {
+      expect(isAuthRoute("/v1/auth/oauth2/register")).toBe(true);
+      expect(isAuthRoute("/v1/auth/oauth2/client/dcr_abc123")).toBe(true);
+      expect(isAuthRoute("/v1/auth/oauth2/client/claude-web")).toBe(true);
+      expect(isAuthRoute("/v1/auth/oauth2/client/")).toBe(false);
+      expect(isAuthRoute("/v1/auth/oauth2/client/a/b")).toBe(false);
+    });
+
+    it("forwards POST /v1/auth/oauth2/register as PUBLIC (no actor headers) with the JSON body", async () => {
+      const { fetcher, calls } = createFakeFetcher();
+      const request = new Request("https://api.example.com/v1/auth/oauth2/register", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ client_name: "Claude", redirect_uris: ["https://claude.ai/cb"] }),
+      });
+
+      const response = await handleAuthRoute(
+        request,
+        { IDENTITY_WORKER: fetcher, ENVIRONMENT: "test" },
+        "req_dcr1",
+        "/v1/auth/oauth2/register",
+      );
+
+      expect(response.status).toBe(200);
+      expect(calls).toHaveLength(1);
+      expect(calls[0]!.url).toContain("/v1/auth/oauth2/register");
+      expect(calls[0]!.init.method).toBe("POST");
+      expect(calls[0]!.init.body).toBeDefined();
+      const headers = calls[0]!.init.headers as Headers;
+      expect(headers.get("content-type")).toContain("application/json");
+      expect(headers.get("x-actor-subject-id")).toBeNull();
+    });
+
+    it("forwards GET /v1/auth/oauth2/client/{clientId} as PUBLIC (no actor headers)", async () => {
+      const { fetcher, calls } = createFakeFetcher();
+      const request = new Request("https://api.example.com/v1/auth/oauth2/client/dcr_abc123", {
+        method: "GET",
+      });
+
+      const response = await handleAuthRoute(
+        request,
+        { IDENTITY_WORKER: fetcher, ENVIRONMENT: "test" },
+        "req_dcr2",
+        "/v1/auth/oauth2/client/dcr_abc123",
+      );
+
+      expect(response.status).toBe(200);
+      expect(calls).toHaveLength(1);
+      expect(calls[0]!.url).toContain("/v1/auth/oauth2/client/dcr_abc123");
+      expect(calls[0]!.init.method).toBe("GET");
+      const headers = calls[0]!.init.headers as Headers;
+      expect(headers.get("x-actor-subject-id")).toBeNull();
+    });
+
+    it("405s wrong methods on register + client-info", async () => {
+      const { fetcher } = createFakeFetcher();
+      const reg = await handleAuthRoute(
+        new Request("https://api.example.com/v1/auth/oauth2/register", { method: "GET" }),
+        { IDENTITY_WORKER: fetcher, ENVIRONMENT: "test" },
+        "req_dcr3",
+        "/v1/auth/oauth2/register",
+      );
+      expect(reg.status).toBe(405);
+
+      const info = await handleAuthRoute(
+        new Request("https://api.example.com/v1/auth/oauth2/client/dcr_abc123", { method: "POST" }),
+        { IDENTITY_WORKER: fetcher, ENVIRONMENT: "test" },
+        "req_dcr4",
+        "/v1/auth/oauth2/client/dcr_abc123",
+      );
+      expect(info.status).toBe(405);
+    });
+  });
 });

@@ -5,7 +5,7 @@ what is genuinely open, plus the risks worth naming before they bite.
 
 ## Open decisions
 
-### D1 — OAuth client registration posture (MCP3) — ✅ Decided: Option A (2026-07-09)
+### D1 — OAuth client registration posture (MCP3) — ✅ Option A (2026-07-09); **Option B ACTIVATED (2026-07-20, MCP11 leg B)**
 
 **Decided at MCP3 implementation start: Option A — vetted public-client
 allow-list; NO open dynamic client registration.** Rationale: open DCR on a
@@ -21,6 +21,38 @@ never redirected there. PKCE S256 is mandatory and consent always renders the
 requesting client's identity. Option B (DCR behind rate limits + unused-client
 GC) remains the documented later path if ecosystem pressure demands it — it
 would be additive on top of the same authorize/token endpoints.
+
+**Option B activated 2026-07-20 (MCP11 leg B), exactly on that documented
+path** — the ecosystem pressure arrived: claude.ai's connector flow requires
+an RFC 7591 `registration_endpoint` and died at "Couldn't register with
+orun's sign-in service" without one. As built,
+`POST /v1/auth/oauth2/register` is additive on top of the unchanged
+authorize/token endpoints, with the abuse surface defended by guardrails:
+
+- **Public clients only** — auth method absent or `"none"`; NO client_secret
+  is ever minted or stored (registration mints client identities, never
+  credentials — R5 holds).
+- **`dcr_` namespace** — ids are always server-minted `dcr_<hex32>` (a
+  caller-chosen `client_id` is rejected; the DB PK CHECK pins the prefix), so
+  a dynamic registration can never shadow a vetted clientId, and **the static
+  allow-list keeps resolution priority** (static-first in
+  `identity-worker/src/oauth2/clients.ts`, shared by authorize/token/consent).
+- **Strict redirect URIs** — https non-loopback OR http loopback only
+  (RFC 8252 §7.3; custom schemes stay static-allow-list-only), 1–10 per
+  registration, matched with the same exact-match helper as static clients
+  (any-port carve-out only for loopback).
+- **30d unused-client GC** — rows carry `expires_at` (creation + 30d,
+  refreshed on token redemption); expired rows resolve as unknown clients and
+  are deleted opportunistically (bounded) on later registrations.
+- **Rate-limited** — public POST through the api-edge `auth` family (10/min
+  per anonymous IP); no bespoke in-worker limiter state was invented.
+- **"Unverified app" labeling** — the console consent page renders dynamic
+  clients with a warning badge and a self-reported-name caution, never the
+  trusted-client styling (the phishing-shaped-consent concern above).
+
+RFC 7592 (client update/delete) is deliberately out of scope — unused
+registrations age out. The "unbounded client rows" concern is bounded by the
+rate limit × GC horizon product.
 
 Original options, for the record:
 

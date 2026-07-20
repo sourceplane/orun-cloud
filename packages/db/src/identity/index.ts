@@ -32,6 +32,9 @@ export type {
   CliLoginGrantFlow,
   CliLoginGrantStatus,
   CreateCliLoginGrantInput,
+  // MCP11 leg B — RFC 7591 dynamic OAuth clients
+  OAuthDynamicClient,
+  CreateOAuthDynamicClientInput,
 } from "./types.js";
 
 export { createIdentityRepository } from "./repository.js";

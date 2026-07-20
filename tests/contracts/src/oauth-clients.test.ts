@@ -6,9 +6,12 @@
 
 import {
   OAUTH_PUBLIC_CLIENTS,
+  OAUTH_DYNAMIC_CLIENT_ID_PREFIX,
   findOAuthPublicClient,
   oauthRedirectUriMatches,
   isOAuthRedirectUriAllowed,
+  isOAuthDynamicClientId,
+  isRegistrableDynamicRedirectUri,
 } from "@saas/contracts/auth";
 
 describe("OAUTH_PUBLIC_CLIENTS allow-list", () => {
@@ -71,6 +74,33 @@ describe("oauthRedirectUriMatches (RFC 8252 §7.3)", () => {
 
   it("rejects garbage URIs", () => {
     expect(oauthRedirectUriMatches("http://127.0.0.1/callback", "not a uri")).toBe(false);
+  });
+});
+
+describe("dynamic client registration helpers (MCP11 leg B, D1 → Option B)", () => {
+  it("no vetted static clientId ever lives in the dcr_ namespace (the shadowing guard)", () => {
+    for (const c of OAUTH_PUBLIC_CLIENTS) {
+      expect(isOAuthDynamicClientId(c.clientId)).toBe(false);
+    }
+    expect(isOAuthDynamicClientId(OAUTH_DYNAMIC_CLIENT_ID_PREFIX + "a".repeat(32))).toBe(true);
+    expect(isOAuthDynamicClientId("claude-web")).toBe(false);
+  });
+
+  it("isRegistrableDynamicRedirectUri: https non-loopback OR http loopback only", () => {
+    // Allowed.
+    expect(isRegistrableDynamicRedirectUri("https://claude.ai/api/mcp/auth_callback")).toBe(true);
+    expect(isRegistrableDynamicRedirectUri("http://127.0.0.1/callback")).toBe(true);
+    expect(isRegistrableDynamicRedirectUri("http://localhost:8080/cb")).toBe(true);
+    // Rejected: http on a hosted domain, https on loopback, custom schemes,
+    // fragments, garbage.
+    expect(isRegistrableDynamicRedirectUri("http://evil.example/cb")).toBe(false);
+    expect(isRegistrableDynamicRedirectUri("https://127.0.0.1/cb")).toBe(false);
+    expect(isRegistrableDynamicRedirectUri("https://localhost/cb")).toBe(false);
+    expect(isRegistrableDynamicRedirectUri("cursor://callback")).toBe(false);
+    expect(isRegistrableDynamicRedirectUri("https://example.com/cb#frag")).toBe(false);
+    expect(isRegistrableDynamicRedirectUri("not a uri")).toBe(false);
+    expect(isRegistrableDynamicRedirectUri("")).toBe(false);
+    expect(isRegistrableDynamicRedirectUri("https://example.com/" + "a".repeat(3000))).toBe(false);
   });
 });
 

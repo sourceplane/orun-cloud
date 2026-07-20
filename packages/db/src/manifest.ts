@@ -768,5 +768,14 @@ export const manifest: MigrationManifest = {
       description:
         "Service-identity custody substrate (service-identity-bootstrap SI1): provider_credentials.kind admits cloudflare_service_token (the durable account-owned API token Orun provisions for itself at bootstrap, replacing the user-derived refresh token as operating custody) and supabase_project_secret (per-project secret keys enveloped as one encrypted JSON map per connection); provider_credentials.credential_class discriminates identity (bootstrap-only, deleted after provisioning) from infrastructure (durable, platform-rotated), backfilled from kind; minted_credentials.parent_kind records which custody kind authorized each mint — the SI3/SI5 deprecation metric. Guarded CHECK swaps; additive + idempotent.",
     },
+    {
+      id: "850_identity_oauth_dynamic_clients",
+      context: "identity",
+      path: "850_identity_oauth_dynamic_clients/up.sql",
+      checksum:
+        "5d3a8646ab06aa56e874459b72a2b416198c47bad6b00d19ea9bbe3fe9b7e601",
+      description:
+        "RFC 7591 dynamic OAuth client registry (saas-mcp-server MCP11 leg B, D1 → Option B): identity.oauth_dynamic_clients holds self-registered PUBLIC clients (server-minted dcr_<hex32> ids — the namespace CHECK guarantees no shadowing of the static vetted allow-list, which resolves first in code), client_name (1–100 chars), redirect_uris jsonb (https non-loopback OR http loopback, validated server-side), and a TTL'd expires_at (~30d, refreshed on token redemption) — the unused-client GC horizon; expired rows are treated as unknown clients and deleted opportunistically on later registrations. NO secret column exists on purpose (public clients only; registration mints identities, never credentials — risks R5). Additive + idempotent.",
+    },
   ],
 };
