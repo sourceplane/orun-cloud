@@ -69,3 +69,11 @@ spec:
     layer: runtime
     surface: mcp
     runtime: cloudflare
+
+# ci: force first deploy — MCP11. mcp-worker had never converged: the
+# composition wire-live fix (#508) landed as a composition-source-only change
+# that orun --changed did not rescope to this component, so its (first ever)
+# deploy never ran. This trigger content-hashes the component into the changed
+# set so verify-deploy runs with the corrected wire-live (renders vars-only
+# workers from the fixture) and workers_dev:true (#507), bringing the advertised
+# mcp-worker-<env>.workers.dev hostname online.
