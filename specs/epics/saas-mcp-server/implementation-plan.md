@@ -219,3 +219,35 @@ it without transformation).
 **Done when:** no doc points a user at `orun-cloud mcp serve` as the primary
 path; the Connect page's copy-paste flow works end-to-end against a released
 orun binary (UM3).
+
+## MCP11 — Remote connectability: reachable hostname + dynamic client registration — 🗓️ In progress
+
+From the 2026-07-13 field failure ("Couldn't register with orun's sign-in
+service" adding the connector in claude.ai). Two independent causes:
+
+- **Leg A (shipped with this milestone's first PR): the advertised remote
+  URL did not exist.** The mcp-worker template omitted `workers_dev`, and
+  the route defaulted off — `mcp-worker-<env>.workers.dev` 404'd for every
+  path including `/health`, so connector discovery died at the origin.
+  Fixed by forcing `workers_dev: true` at top level and per env (this is
+  the PUBLIC transport; binding-free client-not-service posture unchanged).
+- **Leg B: dynamic client registration (activates D1 → Option B on its
+  documented path).** claude.ai's connector flow requires RFC 7591 DCR;
+  without a `registration_endpoint` it can only offer manual-client-ID
+  entry. Ship: `POST /v1/auth/oauth2/register` (public via api-edge, `auth`
+  rate-limit family + a dedicated tighter bucket) accepting PUBLIC clients
+  only (`token_endpoint_auth_method: "none"`, https or loopback redirect
+  URIs, name required), minting `dcr_…` client ids into a new
+  `identity.oauth_dynamic_clients` table (TTL'd: unused-client GC per the
+  D1 Option B sketch); authorize/complete + token honor dynamic clients
+  alongside the static allow-list; the consent page labels dynamic clients
+  **Unverified app** (name from registration, never trusted styling);
+  `registration_endpoint` added to the AS metadata; `oauth.client.registered`
+  security event + audit. Static allow-listed clients keep priority (a
+  dynamic registration cannot shadow a vetted clientId).
+
+**Done when:** `/health` and `/.well-known/oauth-protected-resource` respond
+on the advertised prod hostname; adding the connector in claude.ai with NO
+manual client ID completes registration → consent (labeled Unverified when
+dynamic) → tools listed; the manual `claude-web` client-ID path still works;
+unused dynamic clients are GC'd; registration is rate-limited and audited.
