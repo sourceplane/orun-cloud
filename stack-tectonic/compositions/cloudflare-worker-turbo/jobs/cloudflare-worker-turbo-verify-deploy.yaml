@@ -122,6 +122,7 @@ spec:
       shell: bash
       run: |
         {{- if .parameters.wranglerTemplate }}
+        {{- if .parameters.wiringComponents }}
         set -euo pipefail
         wiring_dir=$(mktemp -d)
         for comp in $(echo "{{ .parameters.wiringComponents }}" | tr ',' ' '); do
@@ -135,6 +136,16 @@ spec:
           --template "{{ .parameters.wranglerTemplate }}" \
           --out "{{ .parameters.wranglerConfig }}" \
           --secrets-dir "${wiring_dir}"
+        {{- else }}
+        # Vars-only template (no @@wiring@@ tokens, no wiringComponents): there are
+        # no Secrets Manager documents to fetch, so render from the committed
+        # fixture — same as wire-fixture. Without this an empty component segment
+        # produces an invalid GetSecretValue name ("<org>/<repo>//<env>").
+        node {{ .parameters.workspaceDir }}/tooling/wire/render.mjs \
+          --template "{{ .parameters.wranglerTemplate }}" \
+          --out "{{ .parameters.wranglerConfig }}" \
+          --map "{{ .parameters.wiringFixture }}"
+        {{- end }}
         {{- else }}
         echo "wire-live: component is not wiring-templated; skipping."
         {{- end }}
