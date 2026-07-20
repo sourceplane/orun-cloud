@@ -5,7 +5,7 @@
 
 import type { AgentsDeps } from "../deps.js";
 import type { ActorContext } from "../router.js";
-import { AgentsError, isProvider, providerSecretRef, type Provider } from "@saas/db/agents";
+import { AgentsError, isProvider, PROVIDERS, providerSecretRef, type Provider } from "@saas/db/agents";
 import { errorResponse, listResponse, notFound, successResponse, validationError } from "../http.js";
 import type { ProviderConnection as WireConnection } from "@saas/contracts/agents";
 import type { ProviderConnection as DbConnection } from "@saas/db/agents";
@@ -65,7 +65,7 @@ export async function handleCreateConnection(
   const b = body as Record<string, unknown>;
   const missing: Record<string, string[]> = {};
   if (typeof b.provider !== "string" || !isProvider(b.provider)) {
-    missing.provider = ["one of daytona, anthropic"];
+    missing.provider = [`one of ${PROVIDERS.join(", ")}`];
   }
   if (typeof b.apiKey !== "string" || b.apiKey.length === 0) {
     missing.apiKey = ["required"];

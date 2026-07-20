@@ -273,9 +273,22 @@ export function validateBudgetInput(input: { grain: string; maxTokens: number })
 
 // ── Provider connections (AG12) ─────────────────────────────
 
-/** Providers a workspace can connect (design §10). */
-export const PROVIDERS = ["daytona", "anthropic"] as const;
+/** Providers a workspace can connect (design §10): the sandbox-compute
+ * provider (`daytona`) plus the model-credential providers (`anthropic`,
+ * `openai`, `openrouter`). Extending this list requires a matching migration
+ * relaxing the provider_connections CHECK constraint. */
+export const PROVIDERS = ["daytona", "anthropic", "openai", "openrouter"] as const;
 export type Provider = (typeof PROVIDERS)[number];
+
+/** The model-credential providers — a session/chat reads the resolved key from
+ * its environment. OpenAI/OpenRouter are OpenAI-compatible and may carry a
+ * `baseUrl` in config. */
+export const MODEL_PROVIDERS = ["anthropic", "openai", "openrouter"] as const;
+export type ModelProvider = (typeof MODEL_PROVIDERS)[number];
+
+export function isModelProvider(p: string): p is ModelProvider {
+  return (MODEL_PROVIDERS as readonly string[]).includes(p);
+}
 
 export function isProvider(p: string): p is Provider {
   return (PROVIDERS as readonly string[]).includes(p);

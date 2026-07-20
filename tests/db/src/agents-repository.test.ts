@@ -194,10 +194,13 @@ describe("provider connections (AG12)", () => {
   it("derives the reserved secret ref and validates inputs", () => {
     expect(providerSecretRef("daytona", "default")).toBe("agents/providers/daytona/default/API_KEY");
     expect(isProvider("daytona")).toBe(true);
-    expect(isProvider("openai")).toBe(false);
-    expect(() => validateConnectionInput({ provider: "openai", name: "default" })).toThrow(AgentsError);
+    expect(isProvider("openai")).toBe(true);
+    expect(isProvider("openrouter")).toBe(true);
+    expect(isProvider("gemini")).toBe(false);
+    expect(() => validateConnectionInput({ provider: "gemini", name: "default" })).toThrow(AgentsError);
     expect(() => validateConnectionInput({ provider: "daytona", name: "Bad Name" })).toThrow(AgentsError);
     expect(() => validateConnectionInput({ provider: "anthropic", name: "team-a" })).not.toThrow();
+    expect(() => validateConnectionInput({ provider: "openai", name: "team-a" })).not.toThrow();
   });
 
   it("creates, lists (filtered), gets, and deletes connections per workspace", async () => {
