@@ -138,6 +138,20 @@ export function toPublicSecretMetadata(s: SecretMetadata): PublicSecretMetadata 
             : {}),
         }
       : {}),
+    // Provider-rotation producer facts (RS4) — additive: omitted entirely for
+    // a non-rotated secret. Display-only provenance ("rotated · cloudflare ·
+    // workers-deploy") — never params, never a value.
+    ...(s.rotationProvider && s.rotationConnectionId && s.rotationTemplate
+      ? {
+          rotation: {
+            provider: s.rotationProvider,
+            connectionId: connectionPublicId(s.rotationConnectionId),
+            template: s.rotationTemplate,
+            graceSeconds: s.rotationGraceSeconds,
+            deliverTarget: s.rotationDeliverTarget,
+          },
+        }
+      : {}),
     createdAt: toISOString(s.createdAt),
     updatedAt: toISOString(s.updatedAt),
   };

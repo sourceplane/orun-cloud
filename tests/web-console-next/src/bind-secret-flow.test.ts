@@ -2,6 +2,7 @@ import {
   brokerConnections,
   brokeredCreateErrorMessage,
   deriveBrokerRow,
+  deriveRotationRow,
   isBrokerCapableProvider,
   orphanView,
   orphanedSecrets,
@@ -229,5 +230,47 @@ describe("brokeredCreateErrorMessage", () => {
   it("falls back to the server message for unknown reasons", () => {
     expect(brokeredCreateErrorMessage({ message: "kaboom" })).toBe("kaboom");
     expect(brokeredCreateErrorMessage({ message: "kaboom", reason: "weird" })).toBe("kaboom");
+  });
+});
+
+describe("deriveRotationRow (provider-rotated-secrets RS4)", () => {
+  it("returns null for non-rotated rows", () => {
+    expect(deriveRotationRow({})).toBeNull();
+    expect(deriveRotationRow({ rotationPolicy: "30d" })).toBeNull();
+  });
+
+  it("derives the producer provenance with the cadence", () => {
+    expect(
+      deriveRotationRow({
+        rotationPolicy: "30d",
+        rotation: {
+          provider: "cloudflare",
+          connectionId: "int_" + "cd".repeat(16),
+          template: "workers-deploy",
+          graceSeconds: null,
+          deliverTarget: null,
+        },
+      }),
+    ).toEqual({
+      provider: "cloudflare",
+      template: "workers-deploy",
+      connectionId: "int_" + "cd".repeat(16),
+      deliverTarget: null,
+      label: "rotated · cloudflare · workers-deploy · every 30d",
+    });
+  });
+
+  it("omits the cadence segment when no policy is set and carries the deliver target", () => {
+    const row = deriveRotationRow({
+      rotation: {
+        provider: "cloudflare",
+        connectionId: "int_" + "cd".repeat(16),
+        template: "workers-deploy",
+        graceSeconds: 3600,
+        deliverTarget: "cloudflare-worker:api-prod",
+      },
+    });
+    expect(row?.label).toBe("rotated · cloudflare · workers-deploy");
+    expect(row?.deliverTarget).toBe("cloudflare-worker:api-prod");
   });
 });

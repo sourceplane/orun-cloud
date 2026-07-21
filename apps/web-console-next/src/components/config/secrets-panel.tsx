@@ -52,6 +52,7 @@ import {
   brokerConnections,
   brokeredCreateErrorMessage,
   deriveBrokerRow,
+  deriveRotationRow,
   orphanView,
   orphanedSecrets,
   validateBindingForm,
@@ -373,12 +374,17 @@ export function SecretsPanel({ scope, scopeKey }: { scope: ConfigScope; scopeKey
                 // Brokered rows (IH8) lead with their binding provenance; no
                 // value-shaped action (rotate/reveal) applies to them.
                 const broker = deriveBrokerRow(s);
+                // Provider-rotated rows (RS4) lead with their producer
+                // provenance; value-shaped actions still apply (it IS stored).
+                const rotationRow = deriveRotationRow(s);
                 // brokered-orphan-safety (Feature 1): the derived orphan health
                 // for this row (null for static / unstamped rows).
                 const orphan = orphanView(s);
                 const used = broker
                   ? broker.label
-                  : (s.displayName ?? (s.servesFrom ? `serves from ${s.servesFrom}` : null));
+                  : (rotationRow?.label ??
+                    s.displayName ??
+                    (s.servesFrom ? `serves from ${s.servesFrom}` : null));
                 return (
                   <div
                     key={s.id}
@@ -396,6 +402,11 @@ export function SecretsPanel({ scope, scopeKey }: { scope: ConfigScope; scopeKey
                         {broker ? (
                           <Badge variant="info" className="shrink-0 text-[10.5px]">
                             brokered
+                          </Badge>
+                        ) : null}
+                        {rotationRow ? (
+                          <Badge variant="info" className="shrink-0 text-[10.5px]">
+                            rotated
                           </Badge>
                         ) : null}
                         {orphan?.orphaned ? (
