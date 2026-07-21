@@ -139,7 +139,9 @@ function mapSecretMetadata(row: Record<string, unknown>): SecretMetadata {
     rotationProvider: (row.rotation_provider as string) ?? null,
     rotationConnectionId: (row.rotation_connection_id as string) ?? null,
     rotationTemplate: (row.rotation_template as string) ?? null,
-    rotationParams: (row.rotation_params as Record<string, unknown>) ?? null,
+    // rotation_params is JSONB: with fetch_types:false it arrives as raw JSON
+    // TEXT (the parseJsonbValue chokepoint), so parse it here rather than cast.
+    rotationParams: (parseJsonbValue(row.rotation_params) as Record<string, unknown> | null) ?? null,
     rotationGraceSeconds:
       row.rotation_grace_seconds === null || row.rotation_grace_seconds === undefined
         ? null

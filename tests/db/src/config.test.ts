@@ -850,7 +850,9 @@ describe("ConfigRepository — Brokered Secrets (IH7)", () => {
       rotation_provider: "cloudflare",
       rotation_connection_id: "00000000-0000-0000-0000-00000000c0f1",
       rotation_template: "workers-deploy",
-      rotation_params: { zoneIds: ["z1"] },
+      // JSONB arrives as raw JSON TEXT under fetch_types:false — the mapper must
+      // parse it (regression guard for the parseJsonbValue chokepoint).
+      rotation_params: JSON.stringify({ zoneIds: ["z1"] }),
       rotation_grace_seconds: 3600,
       rotation_deliver_target: "cloudflare-worker:api-prod",
     };
@@ -889,6 +891,8 @@ describe("ConfigRepository — Brokered Secrets (IH7)", () => {
       expect(result.value.rotationProvider).toBe("cloudflare");
       expect(result.value.rotationGraceSeconds).toBe(3600);
       expect(result.value.rotationDeliverTarget).toBe("cloudflare-worker:api-prod");
+      // Parsed back into an object, not left as raw JSON text.
+      expect(result.value.rotationParams).toEqual({ zoneIds: ["z1"] });
     }
   });
 
