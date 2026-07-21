@@ -60,6 +60,10 @@ function ProviderCard({
   const { client } = useSession();
   const { toast } = useToast();
   const isModelProvider = MODEL_PROVIDER_SET.has(provider);
+  // OpenAI-compatible providers have no built-in default model — dispatch
+  // can't build a client without one, so the field is required for them
+  // (Anthropic ships a built-in default, so it stays optional there).
+  const modelRequired = provider === "openai" || provider === "openrouter";
   const [apiKey, setApiKey] = React.useState("");
   const [apiUrl, setApiUrl] = React.useState("");
   const [baseUrl, setBaseUrl] = React.useState("");
@@ -81,8 +85,10 @@ function ProviderCard({
     return Object.keys(config).length > 0 ? config : undefined;
   }
 
+  const canConnect = !!apiKey && (!modelRequired || !!defaultModel.trim());
+
   async function connect() {
-    if (!apiKey) return;
+    if (!canConnect) return;
     setBusy(true);
     const config = buildConfig();
     const res = await wrap(async () =>
@@ -209,14 +215,23 @@ function ProviderCard({
                     onChange={(e) => setBaseUrl(e.target.value)}
                   />
                   <Input
-                    placeholder="Default model (optional)"
+                    placeholder={
+                      modelRequired
+                        ? `Default model (required — e.g. ${meta.modelPlaceholder})`
+                        : "Default model (optional)"
+                    }
                     value={defaultModel}
                     onChange={(e) => setDefaultModel(e.target.value)}
                   />
+                  {modelRequired ? (
+                    <StatusText tone="neutral" className="text-[11.5px]">
+                      {meta.name} has no built-in default — dispatch needs a model id to route chat.
+                    </StatusText>
+                  ) : null}
                 </>
               ) : null}
               <div className="flex items-center gap-2">
-                <Button size="sm" disabled={busy || !apiKey} onClick={() => void connect()}>
+                <Button size="sm" disabled={busy || !canConnect} onClick={() => void connect()}>
                   {busy ? "Connecting…" : "Connect"}
                 </Button>
                 <Button size="sm" variant="ghost" disabled={busy} onClick={() => setFormOpen(false)}>

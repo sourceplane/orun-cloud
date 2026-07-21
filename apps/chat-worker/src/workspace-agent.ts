@@ -86,6 +86,11 @@ export class WorkspaceAgent extends Agent<Env> {
     const edgeFetch: typeof fetch | undefined = env.API_EDGE
       ? (((input: RequestInfo | URL, init?: RequestInit) => env.API_EDGE!.fetch(input as never, init as never)) as typeof fetch)
       : undefined;
+    // The turn holds the raw UUID (the DO key), but every api-edge surface
+    // decodes its org segment via uuidFromPublicId — so all public reads must
+    // carry the `org_<hex>` public id, not the bare UUID (a UUID decodes to
+    // null → 404, which silently sinks settings + connection discovery).
+    const orgPublic = `org_${uuidToHex(orgId)}`;
 
     const resolveModel = async (): Promise<ModelClient | null> => {
       if (!env.CONFIG_WORKER) return null;
@@ -96,7 +101,7 @@ export class WorkspaceAgent extends Agent<Env> {
       let preferredId: string | null = null;
       try {
         const sres = await doFetch(
-          `${baseUrl}/v1/organizations/${orgId}/config/settings/resolve?key=${encodeURIComponent(DISPATCH_MODEL_SETTING_KEY)}`,
+          `${baseUrl}/v1/organizations/${orgPublic}/config/settings/resolve?key=${encodeURIComponent(DISPATCH_MODEL_SETTING_KEY)}`,
           { headers: { authorization: `Bearer ${ownerToken}` } },
         );
         if (sres.ok) {
@@ -110,8 +115,8 @@ export class WorkspaceAgent extends Agent<Env> {
 
       const resolved = await resolveDispatchModel(
         {
-          listConnections: async (org) => {
-            const res = await doFetch(`${baseUrl}/v1/organizations/${org}/agents/providers`, {
+          listConnections: async () => {
+            const res = await doFetch(`${baseUrl}/v1/organizations/${orgPublic}/agents/providers`, {
               headers: { authorization: `Bearer ${ownerToken}` },
             });
             if (!res.ok) return [];
@@ -141,7 +146,7 @@ export class WorkspaceAgent extends Agent<Env> {
         baseUrl,
         ownerToken,
         http: { fetch: (edgeFetch ?? fetch) as (input: string, init?: RequestInit) => Promise<Response> },
-        orgPublicId: `org_${uuidToHex(orgId)}`,
+        orgPublicId: orgPublic,
       },
     );
 
@@ -163,7 +168,6 @@ export class WorkspaceAgent extends Agent<Env> {
     // ingest with the owner's credential (BYO key — the meter is visibility
     // and budget substrate, not billing). Fire-and-forget: a lost sample is
     // a reconciliation problem, never a failed turn.
-    const orgPublic = `org_${uuidToHex(orgId)}`;
     console.warn(
       `[chat-turn] chat=${chatId} org=${orgPublic} ok=${result.ok}${result.reason ? ` reason=${result.reason}` : ""} tools=${result.toolCalls ?? 0} tokens=${result.tokens ?? 0} ms=${Date.now() - startedAt}`,
     );
