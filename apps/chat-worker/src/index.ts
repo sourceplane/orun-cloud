@@ -3,6 +3,10 @@
 // conversation and tool ROUTING on Cloudflare, execution never (the amended
 // AG lock, design §10). One DO per chat thread; one registry DO per
 // workspace; deny-by-default authz on every route.
+//
+// Deploy nudge: rescopes chat-worker for `orun run --changed` so the
+// MEMBERSHIP_WORKER service binding (the "Not authorized" authz fix, #529)
+// is wired live. Comment-only — no behavior change.
 
 import type { Env } from "./env.js";
 import { route } from "./router.js";
