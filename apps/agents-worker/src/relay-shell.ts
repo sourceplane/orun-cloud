@@ -20,6 +20,7 @@ import {
   errorFrame,
   isHeadInputFrame,
 } from "@saas/contracts/agents-attach";
+import { attachBridgeInitial, translateAttachFrame, type AttachV1Frame } from "@saas/contracts/agui-bridge";
 import { RelayCore, type HeadSink, type RelaySessionInfo, type RelayStorage } from "./relay-core.js";
 
 /** The slice of an `agents` Connection the shell needs (structurally typed so
@@ -210,6 +211,8 @@ export async function handleBodyRequest(
       }
       case "GET /attach":
         return sseAttach(core, url);
+      case "GET /agui-watch":
+        return aguiAttach(core, url);
       default:
         return new Response("not found", { status: 404 });
     }
@@ -443,6 +446,49 @@ export class RelayShell {
   bodyWireCount(): number {
     return this.bodyWires.size;
   }
+}
+
+/** aguiAttach — the session AG-UI watch door (saas-copilot-surface CX1,
+ * design §2.3): the SAME attach choreography as sseAttach (hello → replay
+ * past `from` → live), with every frame folded through the attach bridge
+ * before it hits the wire. Translation at the source — no SSE re-parsing,
+ * no second fan-out machinery, the hibernation posture unchanged. */
+function aguiAttach(core: RelayCore, url: URL): Response {
+  const from = Number(url.searchParams.get("from") ?? "-1");
+  const surface = url.searchParams.get("surface") || "console";
+  const principal = url.searchParams.get("principal") || "unknown";
+  const sessionId = url.searchParams.get("sessionId") || "unknown";
+
+  const { readable, writable } = new TransformStream<Uint8Array, Uint8Array>();
+  const writer = writable.getWriter();
+  const encoder = new TextEncoder();
+  const id = crypto.randomUUID();
+  let bridge = attachBridgeInitial(sessionId);
+
+  const sink: HeadSink = {
+    id,
+    principal,
+    surface,
+    send(frame: AttachFrame) {
+      const r = translateAttachFrame(bridge, frame as AttachV1Frame);
+      bridge = r.state;
+      for (const e of r.events) {
+        void writer.write(encoder.encode(`data: ${JSON.stringify(e)}\n\n`)).catch(() => {});
+      }
+    },
+    close() {
+      void writer.close().catch(() => {});
+    },
+  };
+  core.attach(sink, Number.isFinite(from) ? from : -1);
+
+  return new Response(readable, {
+    headers: {
+      "content-type": "text/event-stream",
+      "cache-control": "no-cache",
+      connection: "keep-alive",
+    },
+  });
 }
 
 /** sseAttach is the SSE fallback binding — the AL6 head feed, unchanged. */

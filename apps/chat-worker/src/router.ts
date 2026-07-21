@@ -13,6 +13,7 @@ import type { MemoryRpc } from "./memory.js";
 import { fetchAuthorizationContext } from "./membership-client.js";
 import { authorizeViaPolicy } from "./policy-client.js";
 import type { PolicyResource } from "@saas/contracts/policy";
+import { validClientTools, type AguiRunInput } from "@saas/contracts/agui";
 import { uuidFromPublicId } from "@saas/db/ids";
 
 const CHATS_RE = /^\/v1\/organizations\/([^/]+)\/agents\/chats$/;
@@ -20,6 +21,11 @@ const MEMORY_RE = /^\/v1\/organizations\/([^/]+)\/agents\/memory$/;
 const MEMORY_ENTRY_RE = /^\/v1\/organizations\/([^/]+)\/agents\/memory\/([^/]+)$/;
 const CHAT_RE = /^\/v1\/organizations\/([^/]+)\/agents\/chats\/([^/]+)$/;
 const CHAT_TURN_RE = /^\/v1\/organizations\/([^/]+)\/agents\/chats\/([^/]+)\/turn$/;
+// The AG-UI doors (saas-copilot-surface CX1): run (turn = run over SSE, the
+// owner bearer rides exactly as the turn route's) and watch (passive SSE
+// follower — the same frames every WS head receives, through the bridge).
+const CHAT_AGUI_RUN_RE = /^\/v1\/organizations\/([^/]+)\/agents\/chats\/([^/]+)\/agui\/run$/;
+const CHAT_AGUI_WATCH_RE = /^\/v1\/organizations\/([^/]+)\/agents\/chats\/([^/]+)\/agui\/watch$/;
 // The Dispatch live layer (saas-dispatch DX1): WS attach (upgrade) or the
 // snapshot-first shell (plain GET). The DO holds no authorized content —
 // the same chat grant gates the wire, and heads fold with their own bearer.
@@ -140,6 +146,8 @@ export async function route(request: Request, env: Env, injectedDeps?: ChatDeps)
       CHATS_RE.test(url.pathname) ||
       CHAT_RE.test(url.pathname) ||
       CHAT_TURN_RE.test(url.pathname) ||
+      CHAT_AGUI_RUN_RE.test(url.pathname) ||
+      CHAT_AGUI_WATCH_RE.test(url.pathname) ||
       MEMORY_RE.test(url.pathname) ||
       MEMORY_ENTRY_RE.test(url.pathname) ||
       DISPATCH_INDEX_RE.test(url.pathname);
@@ -166,7 +174,72 @@ export async function route(request: Request, env: Env, injectedDeps?: ChatDeps)
       return successResponse(await idx.shell(), reqId);
     }
 
-    let m = CHAT_TURN_RE.exec(url.pathname);
+    // CX1 — the AG-UI run door: turn = run over SSE. Authorized like the turn
+    // route (same grant, same owner-bearer requirement); the input's tools
+    // must name registry entries only (the model's tool surface is code).
+    let m = CHAT_AGUI_RUN_RE.exec(url.pathname);
+    if (m) {
+      const orgId = uuidFromPublicId(m[1]!, "org");
+      if (!orgId) return notFound(reqId, url.pathname);
+      if (request.method !== "POST") return methodNotAllowed(reqId);
+      if (!(await deps.authorize("organization.agent.chat", orgId, actor, reqId))) {
+        return errorResponse("forbidden", "Not authorized", 403, reqId);
+      }
+      if (!env.WORKSPACE_AGENT) return errorResponse("unavailable", "Chat not configured", 503, reqId);
+      const ownerToken = request.headers.get("x-owner-bearer") || "";
+      if (!ownerToken) return errorResponse("forbidden", "Run requires the owner credential", 403, reqId);
+      let input: AguiRunInput;
+      try {
+        input = (await request.json()) as AguiRunInput;
+      } catch {
+        return errorResponse("validation_failed", "Invalid JSON", 400, reqId);
+      }
+      if (!validClientTools(input.tools)) {
+        return errorResponse("validation_failed", "Unknown client tool — tools must name registry entries", 422, reqId);
+      }
+      const lastUser = [...(input.messages ?? [])].reverse().find((mm) => mm.role === "user");
+      const text = (lastUser?.content ?? "").trim();
+      if (!text) return errorResponse("validation_failed", "A user message is required", 400, reqId);
+      const ns = env.WORKSPACE_AGENT;
+      const doStub = ns.get(ns.idFromName(`chat:${m[2]!}`));
+      const internal = new Request("https://chat/agui-run", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          orgId,
+          text,
+          principal: actor.subjectId,
+          ownerToken,
+          ...(input.runId ? { runId: input.runId } : {}),
+        }),
+      });
+      const res = await doStub.fetch(internal);
+      // Touch the index + ring dispatch exactly as the turn route does —
+      // fire-and-forget, never blocking the stream.
+      const idx = indexStub(env, orgId);
+      if (idx) void idx.touch(m[2]!, deps.now().toISOString()).catch(() => {});
+      const dx = dispatchIndexStub(env, orgId);
+      if (dx) void dx.ring("inFlight").catch(() => {});
+      return res;
+    }
+
+    // CX1 — the AG-UI watch door: the passive SSE follower.
+    m = CHAT_AGUI_WATCH_RE.exec(url.pathname);
+    if (m) {
+      const orgId = uuidFromPublicId(m[1]!, "org");
+      if (!orgId) return notFound(reqId, url.pathname);
+      if (request.method !== "GET") return methodNotAllowed(reqId);
+      if (!(await deps.authorize("organization.agent.chat", orgId, actor, reqId))) {
+        return errorResponse("forbidden", "Not authorized", 403, reqId);
+      }
+      if (!env.WORKSPACE_AGENT) return errorResponse("unavailable", "Chat not configured", 503, reqId);
+      const from = url.searchParams.get("from") ?? "-1";
+      const ns = env.WORKSPACE_AGENT;
+      const doStub = ns.get(ns.idFromName(`chat:${m[2]!}`));
+      return doStub.fetch(new Request(`https://chat/agui-watch?orgId=${encodeURIComponent(orgId)}&from=${encodeURIComponent(from)}`, { method: "GET", signal: request.signal }));
+    }
+
+    m = CHAT_TURN_RE.exec(url.pathname);
     if (m) {
       const orgId = uuidFromPublicId(m[1]!, "org");
       if (!orgId) return notFound(reqId, url.pathname);

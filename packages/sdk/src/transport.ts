@@ -164,7 +164,14 @@ export class Transport {
       for (const [k, v] of Object.entries(opts.headers)) headers.set(k, v);
     }
 
+    let body: BodyInit | undefined;
+    if (input.body !== undefined) {
+      headers.set("content-type", "application/json");
+      body = JSON.stringify(input.body);
+    }
+
     const init: RequestInit = { method: input.method, headers };
+    if (body !== undefined) init.body = body;
     if (opts.signal !== undefined) init.signal = opts.signal;
 
     const response = await this.fetchImpl(url, init);

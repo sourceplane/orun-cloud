@@ -21,6 +21,7 @@ import {
   DISPATCH_MODEL_SETTING_KEY,
   type ProviderConnectionLite,
 } from "./custody.js";
+import { aguiRunDoor, aguiWatchDoor } from "./agui-doors.js";
 import { createOwnerToolExecutor } from "./tools.js";
 import { withSessionVerbs } from "./session-verbs.js";
 import { formatMemoryForSystem, withMemoryTool, type MemoryEntry, type MemoryRpc } from "./memory.js";
@@ -222,7 +223,39 @@ export class WorkspaceAgent extends Agent<Env> {
     this.thread.disconnect(conn.id);
   }
 
-  override async onRequest(): Promise<Response> {
+  // ── The AG-UI doors (saas-copilot-surface CX1, design §2) ────────────────
+  // Plain-HTTP surface behind the worker router's authz: the RUN door (turn =
+  // run, teed into SSE) and the WATCH door (passive follower). Both attach a
+  // virtual head to the SAME fan-out every WS head rides — no second emission
+  // path. The worker has already authorized the viewer and, for run, carries
+  // the owner bearer; the DO never stores either.
+
+  override async onRequest(request: Request): Promise<Response> {
+    await this.ensureLoaded();
+    const url = new URL(request.url);
+    const info = this.thread.info();
+    const chatId = info?.chatId ?? "unknown";
+
+    if (url.pathname === "/agui-run" && request.method === "POST") {
+      let body: { orgId?: string; text?: string; principal?: string; ownerToken?: string; runId?: string };
+      try {
+        body = (await request.json()) as typeof body;
+      } catch {
+        return new Response("invalid json", { status: 400 });
+      }
+      const { orgId, text, principal, ownerToken, runId } = body;
+      if (!orgId || !text || !principal || !ownerToken) return new Response("missing fields", { status: 400 });
+      if (!info || info.orgId !== orgId) return new Response("not found", { status: 404 });
+      return aguiRunDoor(this.thread, chatId, runId, () => this.turn(orgId, text, principal, ownerToken));
+    }
+
+    if (url.pathname === "/agui-watch" && request.method === "GET") {
+      const orgId = url.searchParams.get("orgId") ?? "";
+      if (!info || info.orgId !== orgId) return new Response("not found", { status: 404 });
+      const from = Number(url.searchParams.get("from") ?? "-1");
+      return aguiWatchDoor(this.thread, chatId, from, request.signal);
+    }
+
     return new Response("not found", { status: 404 });
   }
 }

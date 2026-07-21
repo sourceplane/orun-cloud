@@ -79,6 +79,31 @@ export async function handleAttach(
   return forward(stub, "GET", `/attach?${qs}`);
 }
 
+/** GET …/agui/watch — the session AG-UI watch door (saas-copilot-surface
+ * CX1, design §2.3): the attach feed through the bridge. Same read gate,
+ * same choreography (hello → replay → live), a second dialect on the wire. */
+export async function handleAguiWatch(
+  env: Env,
+  deps: AgentsDeps,
+  orgId: string,
+  sessionId: string,
+  actor: ActorContext,
+  requestId: string,
+  from: number,
+  surface: string,
+): Promise<Response> {
+  if (!(await deps.authorize("organization.agent.session.read", orgId, actor, requestId))) {
+    return errorResponse("forbidden", "Not authorized", 403, requestId);
+  }
+  const session = await deps.repo.getSession({ orgId }, sessionId);
+  if (!session) return errorResponse("not_found", "Session not found", 404, requestId);
+  const stub = relayStub(env, sessionId);
+  if (!stub) return errorResponse("unavailable", "Relay not configured", 503, requestId);
+  const principal = actor.subjectId || "unknown";
+  const qs = `from=${from}&surface=${encodeURIComponent(surface)}&principal=${encodeURIComponent(principal)}&sessionId=${encodeURIComponent(sessionId)}`;
+  return forward(stub, "GET", `/agui-watch?${qs}`);
+}
+
 /** POST …/input — a head steer/verdict/interrupt/end. Requires interact; the
  * principal is stamped from the resolved actor, never the body. */
 export async function handleHeadInput(
