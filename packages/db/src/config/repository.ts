@@ -117,6 +117,15 @@ function mapSecretMetadata(row: Record<string, unknown>): SecretMetadata {
     bindingProvider: (row.binding_provider as string) ?? null,
     bindingConnectionId: (row.binding_connection_id as string) ?? null,
     bindingTemplate: (row.binding_template as string) ?? null,
+    rotationProvider: (row.rotation_provider as string) ?? null,
+    rotationConnectionId: (row.rotation_connection_id as string) ?? null,
+    rotationTemplate: (row.rotation_template as string) ?? null,
+    rotationParams: (row.rotation_params as Record<string, unknown>) ?? null,
+    rotationGraceSeconds:
+      row.rotation_grace_seconds === null || row.rotation_grace_seconds === undefined
+        ? null
+        : Number(row.rotation_grace_seconds),
+    rotationDeliverTarget: (row.rotation_deliver_target as string) ?? null,
     createdAt: new Date(row.created_at as string),
     updatedAt: new Date(row.updated_at as string),
   };
@@ -187,7 +196,7 @@ const ZERO_UUID = "00000000-0000-0000-0000-000000000000";
 
 // ── Secret metadata safe columns (no ciphertext_envelope) ──
 
-const SECRET_METADATA_SAFE_COLUMNS = `id, org_id, project_id, environment_id, scope_kind, secret_key, display_name, status, version, rotation_policy, last_rotated_at, expires_at, created_by, personal_owner, overridable, last_used_at, source, binding_provider, binding_connection_id, binding_template, created_at, updated_at`;
+const SECRET_METADATA_SAFE_COLUMNS = `id, org_id, project_id, environment_id, scope_kind, secret_key, display_name, status, version, rotation_policy, last_rotated_at, expires_at, created_by, personal_owner, overridable, last_used_at, source, binding_provider, binding_connection_id, binding_template, rotation_provider, rotation_connection_id, rotation_template, rotation_params, rotation_grace_seconds, rotation_deliver_target, created_at, updated_at`;
 
 const SECRET_VERSION_SAFE_COLUMNS = `secret_id, version, status, created_by, created_at`;
 

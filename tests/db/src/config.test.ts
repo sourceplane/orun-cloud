@@ -976,6 +976,12 @@ describe("Secret Safety Invariants", () => {
       bindingProvider: null,
       bindingConnectionId: null,
       bindingTemplate: null,
+      rotationProvider: null,
+      rotationConnectionId: null,
+      rotationTemplate: null,
+      rotationParams: null,
+      rotationGraceSeconds: null,
+      rotationDeliverTarget: null,
       createdAt: NOW,
       updatedAt: NOW,
     };
