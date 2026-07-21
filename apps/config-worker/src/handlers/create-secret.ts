@@ -21,9 +21,15 @@ import {
   INTEGRATION_ENTITLEMENTS,
   INTEGRATION_EVENT_TYPES,
   INTEGRATION_POLICY_ACTIONS,
+  type InternalMintCredentialRequest,
   type ValidateBrokerBindingRequest,
 } from "@saas/contracts/integrations";
-import { validateBrokerBinding, type BrokerBindingValidation } from "../integrations-client.js";
+import {
+  mintBrokeredCredential,
+  validateBrokerBinding,
+  type BrokeredMintOutcome,
+  type BrokerBindingValidation,
+} from "../integrations-client.js";
 import { checkBillingEntitlement, type BillingEntitlementResult } from "../billing-client.js";
 import { orgPublicId } from "../ids.js";
 
@@ -71,6 +77,30 @@ export interface CreateSecretDeps {
    * checkBillingEntitlement over the BILLING_WORKER service binding.
    * A brokered create with no checker available fails closed (503). */
   checkEntitlement?: (orgPublicId: string, entitlementKey: string) => Promise<BillingEntitlementResult>;
+  /** RS1 seam: the create-from-parent rotation mint (tests). Production wires
+   * mintBrokeredCredential (purpose "rotation") over the INTEGRATIONS_WORKER
+   * service binding. A rotated create with no minter available fails closed
+   * (503) — nothing is persisted without a minted v1. */
+  mintRotation?: (req: InternalMintCredentialRequest) => Promise<BrokeredMintOutcome>;
+}
+
+// ── Rotation-policy grammar (SM6): "<n>[hdwmy]", e.g. "30d". A rotated create
+// requires a parseable policy so the RS2 engine has a schedule to run. ──
+const ROTATION_POLICY_RE = /^[0-9]+[hdwmy]$/;
+const ROTATION_POLICY_UNIT_SECONDS: Record<string, number> = {
+  h: 3600,
+  d: 86400,
+  w: 7 * 86400,
+  m: 30 * 86400,
+  y: 365 * 86400,
+};
+const ROTATION_DEFAULT_POLICY = "30d"; // RS-D2 default interval
+const ROTATION_DEFAULT_GRACE_SECONDS = 86400; // RS-D2 default grace (24h)
+const MAX_DELIVER_TARGET_LENGTH = 256;
+
+function rotationPolicySeconds(policy: string): number {
+  const unit = policy[policy.length - 1]!;
+  return Number(policy.slice(0, -1)) * ROTATION_POLICY_UNIT_SECONDS[unit]!;
 }
 
 function randomHex(bytes: number): string {
@@ -112,7 +142,7 @@ export async function handleCreateSecret(
     }
   }
 
-  const { secretKey, displayName, rotationPolicy, expiresAt, value, overridable, personal, binding } = raw as {
+  const { secretKey, displayName, rotationPolicy, expiresAt, value, overridable, personal, binding, rotation } = raw as {
     secretKey?: unknown;
     displayName?: unknown;
     rotationPolicy?: unknown;
@@ -121,6 +151,7 @@ export async function handleCreateSecret(
     overridable?: unknown;
     personal?: unknown;
     binding?: unknown;
+    rotation?: unknown;
   };
 
   if (typeof secretKey !== "string" || !KEY_RE.test(secretKey)) {
@@ -190,6 +221,83 @@ export async function handleCreateSecret(
     }
   }
 
+  // ── Rotation producer (provider-rotated-secrets RS1): `rotation` in place
+  //    of `value` — the v1 value is minted once from the connected parent and
+  //    stored as ordinary ciphertext; these fields tell the RS2 engine how to
+  //    mint the next version. Same wire grammar as the brokered binding. ──
+  interface ParsedRotation {
+    connectionId: string;
+    template: string;
+    params?: Record<string, unknown>;
+    graceSeconds?: number;
+    deliverTarget?: string;
+  }
+  let parsedRotation: ParsedRotation | null = null;
+  if (rotation !== undefined) {
+    if (!rotation || typeof rotation !== "object" || Array.isArray(rotation)) {
+      fields.rotation = ["rotation must be an object { connectionId, template, params?, graceSeconds?, deliverTarget? }"];
+    } else {
+      const r = rotation as Record<string, unknown>;
+      const rotationErrors: string[] = [];
+      if (typeof r.connectionId !== "string" || !CONNECTION_ID_RE.test(r.connectionId)) {
+        rotationErrors.push("rotation.connectionId must be a connection public id (int_<32 hex>)");
+      }
+      if (typeof r.template !== "string" || !TEMPLATE_RE.test(r.template)) {
+        rotationErrors.push("rotation.template must be a template id (lowercase letters, digits, hyphens; 1-64 chars)");
+      }
+      let rotationParams: Record<string, unknown> | undefined;
+      if (r.params !== undefined) {
+        if (!r.params || typeof r.params !== "object" || Array.isArray(r.params)) {
+          rotationErrors.push("rotation.params must be a plain object");
+        } else if (Object.keys(r.params).length > MAX_BINDING_PARAM_KEYS) {
+          rotationErrors.push(`rotation.params allows at most ${MAX_BINDING_PARAM_KEYS} keys`);
+        } else if (Object.keys(r.params).length > 0) {
+          rotationParams = r.params as Record<string, unknown>;
+        }
+      }
+      let graceSeconds: number | undefined;
+      if (r.graceSeconds !== undefined && r.graceSeconds !== null) {
+        if (typeof r.graceSeconds !== "number" || !Number.isInteger(r.graceSeconds) || r.graceSeconds < 0) {
+          rotationErrors.push("rotation.graceSeconds must be a non-negative integer");
+        } else {
+          graceSeconds = r.graceSeconds;
+        }
+      }
+      let deliverTarget: string | undefined;
+      if (r.deliverTarget !== undefined && r.deliverTarget !== null) {
+        if (typeof r.deliverTarget !== "string" || r.deliverTarget.trim() === "" || r.deliverTarget.length > MAX_DELIVER_TARGET_LENGTH) {
+          rotationErrors.push(`rotation.deliverTarget must be a non-empty string (max ${MAX_DELIVER_TARGET_LENGTH} chars)`);
+        } else {
+          deliverTarget = r.deliverTarget;
+        }
+      }
+      if (rotationErrors.length > 0) {
+        fields.rotation = rotationErrors;
+      } else {
+        parsedRotation = {
+          connectionId: r.connectionId as string,
+          template: r.template as string,
+          ...(rotationParams ? { params: rotationParams } : {}),
+          ...(graceSeconds !== undefined ? { graceSeconds } : {}),
+          ...(deliverTarget !== undefined ? { deliverTarget } : {}),
+        };
+      }
+    }
+    // The v1 value comes FROM the mint — a caller-supplied value contradicts it.
+    if (value !== undefined && value !== null) {
+      fields.rotation = [...(fields.rotation ?? []), "rotation and value are mutually exclusive"];
+    }
+    // A rotated secret is `source: static` with a stored value; a brokered one
+    // stores none — the two producers cannot share a key (880 DB CHECK).
+    if (binding !== undefined) {
+      fields.rotation = [...(fields.rotation ?? []), "rotation and binding are mutually exclusive"];
+    }
+    // The RS2 engine needs a parseable schedule; the SM6 grammar is "<n>[hdwmy]".
+    if (typeof rotationPolicy === "string" && !ROTATION_POLICY_RE.test(rotationPolicy)) {
+      fields.rotationPolicy = ["rotationPolicy must match \"<n>[hdwmy]\" (e.g. \"30d\") for a rotated secret"];
+    }
+  }
+
   let parsedExpiresAt: Date | undefined;
   if (expiresAt !== undefined && expiresAt !== null) {
     if (typeof expiresAt !== "string") {
@@ -218,6 +326,11 @@ export async function handleCreateSecret(
     return errorResponse("bad_request", "A personal secret cannot be brokered", 400, requestId);
   }
 
+  // Broker authority binds at shared scopes only — same rule for rotation (RS1).
+  if (parsedRotation && personal === true) {
+    return errorResponse("bad_request", "A personal secret cannot be provider-rotated", 400, requestId);
+  }
+
   // Resolve encryption adapter (a brokered pointer is NOT ciphertext — the
   // adapter is only needed when a stored value is being written).
   let encryptionAdapter: EncryptionAdapter | null | undefined = deps?.encryptionAdapter;
@@ -231,6 +344,12 @@ export async function handleCreateSecret(
   // If value is provided, encryption adapter is required
   const secretValue = typeof value === "string" ? value : null;
   if (secretValue && !encryptionAdapter) {
+    return errorResponse("internal_error", "Encryption is not configured", 503, requestId);
+  }
+
+  // A rotated create stores the MINTED value as ordinary ciphertext — the
+  // adapter is required even though no caller-supplied value exists (RS1).
+  if (parsedRotation && !encryptionAdapter) {
     return errorResponse("internal_error", "Encryption is not configured", 503, requestId);
   }
 
@@ -279,10 +398,10 @@ export async function handleCreateSecret(
     }
 
     // Binding a broker (IH7, design §5.4): "you cannot bind authority you
-    // could not mint" — a brokered create ADDITIONALLY requires the broker's
-    // own issue action on the organization. Deny → resource-hiding 404, same
-    // as the secret.write deny above.
-    if (parsedBinding) {
+    // could not mint" — a brokered OR rotated create ADDITIONALLY requires the
+    // broker's own issue action on the organization (a rotated create's v1 IS
+    // a mint). Deny → resource-hiding 404, same as the secret.write deny above.
+    if (parsedBinding || parsedRotation) {
       const issueResult = await authorizeViaPolicy(
         env.POLICY_WORKER!,
         actor.subjectId,
@@ -325,7 +444,8 @@ export async function handleCreateSecret(
     scope,
     secretKey: secretKey as string,
     displayName: (displayName as string) ?? undefined,
-    rotationPolicy: (rotationPolicy as string) ?? undefined,
+    // A rotated create defaults the schedule (RS-D2) — the RS2 engine needs one.
+    rotationPolicy: (rotationPolicy as string) ?? (parsedRotation ? ROTATION_DEFAULT_POLICY : undefined),
     createdBy: createdByUuid,
   };
   const input: CreateSecretMetadataInput = parsedExpiresAt !== undefined
@@ -441,6 +561,111 @@ export async function handleCreateSecret(
       input.bindingConnectionId = connectionUuid;
       input.bindingTemplate = parsedBinding.template;
       bindingProvider = validation.provider;
+    }
+
+    // ── Rotated create (RS1): validate the binding, mint the v1 from the
+    //    connected parent (purpose "rotation"), encrypt, and stamp the
+    //    producer — ALL before any DB mutation. Every step fails closed:
+    //    nothing is persisted without a verified, encrypted minted value. ──
+    if (parsedRotation) {
+      const validateBindingFn =
+        deps?.validateBinding ??
+        (!deps && env.INTEGRATIONS_WORKER
+          ? (r: ValidateBrokerBindingRequest) => validateBrokerBinding(env.INTEGRATIONS_WORKER!, r, requestId)
+          : null);
+      if (!validateBindingFn) {
+        return errorResponse("internal_error", "Service unavailable", 503, requestId);
+      }
+      const validation = await validateBindingFn({
+        orgId: scope.orgId,
+        connectionId: parsedRotation.connectionId,
+        template: parsedRotation.template,
+        ...(parsedRotation.params ? { params: parsedRotation.params } : {}),
+      });
+      if (!validation.ok) {
+        return brokeredValidationFailure(validation.reason, parsedRotation, requestId);
+      }
+
+      const connectionUuid = uuidFromPublicId(parsedRotation.connectionId, "int");
+      if (!connectionUuid) {
+        return validationError(requestId, {
+          rotation: ["rotation.connectionId must be a connection public id (int_<32 hex>)"],
+        });
+      }
+
+      const mintRotationFn =
+        deps?.mintRotation ??
+        (!deps && env.INTEGRATIONS_WORKER
+          ? (r: InternalMintCredentialRequest) => mintBrokeredCredential(env.INTEGRATIONS_WORKER!, r, requestId)
+          : null);
+      if (!mintRotationFn) {
+        return errorResponse("internal_error", "Service unavailable", 503, requestId);
+      }
+
+      // The minted token must outlive the first rotation: interval + grace
+      // (RS-D2). The broker clamps against the rotation-class ceiling; its
+      // entitlement + per-org daily mint rate limit are enforced at the mint
+      // (RS-D6: the rotated tier rides the credential_broker entitlement).
+      const intervalSeconds = rotationPolicySeconds(
+        typeof rotationPolicy === "string" ? rotationPolicy : ROTATION_DEFAULT_POLICY,
+      );
+      const graceSeconds = parsedRotation.graceSeconds ?? ROTATION_DEFAULT_GRACE_SECONDS;
+      const mintOutcome = await mintRotationFn({
+        orgId: scope.orgId,
+        connectionId: parsedRotation.connectionId,
+        template: parsedRotation.template,
+        ...(parsedRotation.params ? { params: parsedRotation.params } : {}),
+        ttlSeconds: intervalSeconds + graceSeconds,
+        purpose: "rotation",
+        requestedBy: actor.subjectId,
+        requestedByType: actor.subjectType,
+      });
+      if (!mintOutcome.ok) {
+        // Same fail-closed taxonomy as the resolve path: an inactive/revoked
+        // connection or refused mint is a typed 412, a broker outage a 503.
+        if (mintOutcome.status === 503) {
+          return errorResponse("internal_error", "Service unavailable", 503, requestId);
+        }
+        return errorResponse(
+          "precondition_failed",
+          `The rotation mint was refused (${mintOutcome.reason})`,
+          412,
+          requestId,
+          { reason: mintOutcome.reason },
+        );
+      }
+
+      // Encrypt the minted value — reveal-once: it exists only inside this
+      // scope and the envelope; it is never logged and never echoed.
+      try {
+        const envelope = await encryptionAdapter!.encrypt(mintOutcome.value);
+        input.ciphertextEnvelope = JSON.stringify(envelope);
+      } catch {
+        return errorResponse("internal_error", "Encryption failed", 503, requestId);
+      }
+
+      // source stays "static" — a rotated secret reads like any stored secret
+      // (880 DB CHECK requires it); the producer columns carry the HOW.
+      input.rotationProvider = validation.provider;
+      input.rotationConnectionId = connectionUuid;
+      input.rotationTemplate = parsedRotation.template;
+      if (parsedRotation.params) {
+        input.rotationParams = parsedRotation.params;
+      }
+      if (parsedRotation.graceSeconds !== undefined) {
+        input.rotationGraceSeconds = parsedRotation.graceSeconds;
+      }
+      if (parsedRotation.deliverTarget !== undefined) {
+        input.rotationDeliverTarget = parsedRotation.deliverTarget;
+      }
+      // Surface the minted token's provider-side death through the SM6 expiry
+      // lane unless the caller pinned an explicit expiry.
+      if (parsedExpiresAt === undefined) {
+        const mintExpiry = new Date(mintOutcome.expiresAt);
+        if (!isNaN(mintExpiry.getTime())) {
+          input.expiresAt = mintExpiry;
+        }
+      }
     }
 
     if (executor && "transaction" in executor) {

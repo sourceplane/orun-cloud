@@ -1163,3 +1163,211 @@ describe("handleRevokeSecret — brokered binding removal (IH7)", () => {
     expect(eventsRepo.calls[0]!.event.type).toBe("secrets.updated");
   });
 });
+
+// ═══════════════════════════════════════════════════════════
+// Rotated create (provider-rotated-secrets RS1): one deliberate
+// purpose:"rotation" mint from the connected parent, encrypted and stored as
+// v1; the rotation_* producer stamped for the RS2 engine.
+// ═══════════════════════════════════════════════════════════
+
+describe("handleCreateSecret — rotated create (provider-rotated-secrets RS1)", () => {
+  const MINT_EXPIRES = "2026-02-15T10:00:00.000Z";
+
+  function rotatedSecret(overrides?: Partial<SecretMetadata>): SecretMetadata {
+    return fakeSecret({
+      secretKey: "CF_TOKEN",
+      rotationPolicy: "30d",
+      rotationProvider: "cloudflare",
+      rotationConnectionId: CONN_UUID,
+      rotationTemplate: "workers-deploy",
+      expiresAt: new Date(MINT_EXPIRES),
+      ...overrides,
+    });
+  }
+
+  /** Records the mint request; returns a reveal-once value. */
+  function fakeMint(outcome?: { fail?: { status: number; reason: string } }) {
+    const calls: Array<Record<string, unknown>> = [];
+    return {
+      calls,
+      fn: (req: Record<string, unknown>) => {
+        calls.push(req);
+        if (outcome?.fail) {
+          return Promise.resolve({ ok: false as const, status: outcome.fail.status, reason: outcome.fail.reason });
+        }
+        return Promise.resolve({
+          ok: true as const,
+          value: "cf-minted-token-SECRET",
+          mintId: "mint_" + "ab".repeat(16),
+          provider: "cloudflare",
+          template: "workers-deploy",
+          expiresAt: MINT_EXPIRES,
+        });
+      },
+    };
+  }
+
+  /** Marks the ciphertext so tests can assert the MINTED value was encrypted. */
+  const markingAdapter = {
+    encrypt: (plaintext: string) =>
+      Promise.resolve({ alg: "AES-256-GCM" as const, v: 1 as const, iv: "test-iv", ct: `ENC(${plaintext.length})` }),
+  };
+
+  it("mints purpose rotation, encrypts the minted v1, and stamps the producer", async () => {
+    let captured: CreateSecretMetadataInput | undefined;
+    const mint = fakeMint();
+    const eventsRepo = fakeEventsRepo();
+    const res = await handleCreateSecret(
+      makeJsonRequest({
+        secretKey: "CF_TOKEN",
+        rotation: { connectionId: CONN_PUBLIC, template: "workers-deploy", params: { accountId: "acc-1" }, deliverTarget: "cloudflare-worker:api-prod" },
+      }),
+      FAKE_ENV, "req_r1", ACTOR, ORG_SCOPE,
+      {
+        repo: {
+          createSecretMetadata: (input: CreateSecretMetadataInput) => {
+            captured = input;
+            return Promise.resolve({ ok: true as const, value: rotatedSecret() });
+          },
+        },
+        eventsRepo,
+        encryptionAdapter: markingAdapter,
+        validateBinding: validationOk,
+        mintRotation: mint.fn as never,
+        generateId: () => FIXED_ID,
+        now: () => FIXED_NOW,
+      },
+    );
+    expect(res.status).toBe(201);
+    // The mint request: purpose rotation, TTL = default 30d interval + 24h grace.
+    expect(mint.calls).toHaveLength(1);
+    expect(mint.calls[0]!.purpose).toBe("rotation");
+    expect(mint.calls[0]!.ttlSeconds).toBe(30 * 86400 + 86400);
+    expect(mint.calls[0]!.connectionId).toBe(CONN_PUBLIC);
+    // Persisted: static source, ENCRYPTED minted value, the producer columns,
+    // the defaulted schedule, and the mint expiry surfaced as expires_at.
+    expect(captured?.source ?? "static").toBe("static");
+    expect(captured?.ciphertextEnvelope).toBe(
+      JSON.stringify({ alg: "AES-256-GCM", v: 1, iv: "test-iv", ct: "ENC(22)" }),
+    );
+    expect(captured?.rotationProvider).toBe("cloudflare");
+    expect(captured?.rotationConnectionId).toBe(CONN_UUID);
+    expect(captured?.rotationTemplate).toBe("workers-deploy");
+    expect(captured?.rotationParams).toEqual({ accountId: "acc-1" });
+    expect(captured?.rotationDeliverTarget).toBe("cloudflare-worker:api-prod");
+    expect(captured?.rotationPolicy).toBe("30d");
+    expect(captured?.expiresAt?.toISOString()).toBe(MINT_EXPIRES);
+    // Reveal-once: the minted value appears NOWHERE outside the envelope.
+    const bodyText = JSON.stringify(await res.json());
+    expect(bodyText).not.toContain("cf-minted-token-SECRET");
+    expect(JSON.stringify(eventsRepo.calls)).not.toContain("cf-minted-token-SECRET");
+  });
+
+  it("honors an explicit rotationPolicy + graceSeconds in the mint TTL", async () => {
+    const mint = fakeMint();
+    const res = await handleCreateSecret(
+      makeJsonRequest({
+        secretKey: "CF_TOKEN",
+        rotationPolicy: "7d",
+        rotation: { connectionId: CONN_PUBLIC, template: "workers-deploy", graceSeconds: 3600 },
+      }),
+      FAKE_ENV, "req_r2", ACTOR, ORG_SCOPE,
+      {
+        repo: { createSecretMetadata: () => Promise.resolve({ ok: true as const, value: rotatedSecret({ rotationPolicy: "7d", rotationGraceSeconds: 3600 }) }) },
+        encryptionAdapter: markingAdapter,
+        validateBinding: validationOk,
+        mintRotation: mint.fn as never,
+        generateId: () => FIXED_ID,
+        now: () => FIXED_NOW,
+      },
+    );
+    expect(res.status).toBe(201);
+    expect(mint.calls[0]!.ttlSeconds).toBe(7 * 86400 + 3600);
+  });
+
+  it("rejects rotation + value and rotation + binding as mutually exclusive (422)", async () => {
+    for (const extra of [{ value: "v" }, { binding: { connectionId: CONN_PUBLIC, template: "workers-deploy" } }]) {
+      const res = await handleCreateSecret(
+        makeJsonRequest({ secretKey: "CF_TOKEN", rotation: { connectionId: CONN_PUBLIC, template: "workers-deploy" }, ...extra }),
+        FAKE_ENV, "req_r3", ACTOR, ORG_SCOPE,
+        { repo: { createSecretMetadata: () => unusedConfigFailure<SecretMetadata>() } },
+      );
+      expect(res.status).toBe(422);
+    }
+  });
+
+  it("rejects a personal rotated secret (400)", async () => {
+    const res = await handleCreateSecret(
+      makeJsonRequest({ secretKey: "CF_TOKEN", personal: true, rotation: { connectionId: CONN_PUBLIC, template: "workers-deploy" } }),
+      FAKE_ENV, "req_r4", ACTOR, ENV_SCOPE,
+      { repo: { createSecretMetadata: () => unusedConfigFailure<SecretMetadata>() } },
+    );
+    expect(res.status).toBe(400);
+  });
+
+  it("rejects an unparseable rotationPolicy on a rotated create (422)", async () => {
+    const res = await handleCreateSecret(
+      makeJsonRequest({ secretKey: "CF_TOKEN", rotationPolicy: "monthly", rotation: { connectionId: CONN_PUBLIC, template: "workers-deploy" } }),
+      FAKE_ENV, "req_r5", ACTOR, ORG_SCOPE,
+      { repo: { createSecretMetadata: () => unusedConfigFailure<SecretMetadata>() } },
+    );
+    expect(res.status).toBe(422);
+  });
+
+  it("412s a refused mint and persists NOTHING", async () => {
+    let created = false;
+    const mint = fakeMint({ fail: { status: 412, reason: "parent_grant_insufficient" } });
+    const res = await handleCreateSecret(
+      makeJsonRequest({ secretKey: "CF_TOKEN", rotation: { connectionId: CONN_PUBLIC, template: "workers-deploy" } }),
+      FAKE_ENV, "req_r6", ACTOR, ORG_SCOPE,
+      {
+        repo: {
+          createSecretMetadata: () => {
+            created = true;
+            return unusedConfigFailure<SecretMetadata>();
+          },
+        },
+        encryptionAdapter: markingAdapter,
+        validateBinding: validationOk,
+        mintRotation: mint.fn as never,
+      },
+    );
+    expect(res.status).toBe(412);
+    expect(created).toBe(false);
+  });
+
+  it("503s a broker outage and persists NOTHING (fail closed)", async () => {
+    let created = false;
+    const mint = fakeMint({ fail: { status: 503, reason: "unavailable" } });
+    const res = await handleCreateSecret(
+      makeJsonRequest({ secretKey: "CF_TOKEN", rotation: { connectionId: CONN_PUBLIC, template: "workers-deploy" } }),
+      FAKE_ENV, "req_r7", ACTOR, ORG_SCOPE,
+      {
+        repo: {
+          createSecretMetadata: () => {
+            created = true;
+            return unusedConfigFailure<SecretMetadata>();
+          },
+        },
+        encryptionAdapter: markingAdapter,
+        validateBinding: validationOk,
+        mintRotation: mint.fn as never,
+      },
+    );
+    expect(res.status).toBe(503);
+    expect(created).toBe(false);
+  });
+
+  it("fails closed (503) when no rotation minter is available", async () => {
+    const res = await handleCreateSecret(
+      makeJsonRequest({ secretKey: "CF_TOKEN", rotation: { connectionId: CONN_PUBLIC, template: "workers-deploy" } }),
+      FAKE_ENV, "req_r8", ACTOR, ORG_SCOPE,
+      {
+        repo: { createSecretMetadata: () => unusedConfigFailure<SecretMetadata>() },
+        encryptionAdapter: markingAdapter,
+        validateBinding: validationOk,
+      },
+    );
+    expect(res.status).toBe(503);
+  });
+});
