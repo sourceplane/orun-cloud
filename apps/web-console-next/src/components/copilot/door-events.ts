@@ -49,8 +49,14 @@ export type StockEvent = Record<string, unknown> & { type: string };
  */
 export function mapDoorEvent(e: AguiEvent): StockEvent[] {
   switch (e.type) {
-    case "MESSAGES_SNAPSHOT":
-      return []; // append-increment: durable-row echo of the streamed content
+    // Dialect-state events the chat engine does not consume — dropped so they
+    // never violate the @ag-ui run verifier (a leading STATE_SNAPSHOT was the
+    // "First event must be 'RUN_STARTED'" break; the server run door also gates
+    // these, this is the belt-and-suspenders half).
+    case "MESSAGES_SNAPSHOT": // append-increment: durable-row echo, history hydrates via GET
+    case "STATE_SNAPSHOT":
+    case "STATE_DELTA":
+      return [];
     case "TOOL_CALL_RESULT":
       return [{ ...e, messageId: e.messageId ?? `result:${e.toolCallId ?? "unknown"}` }];
     case "RUN_STARTED":
@@ -62,8 +68,6 @@ export function mapDoorEvent(e: AguiEvent): StockEvent[] {
     case "TOOL_CALL_START":
     case "TOOL_CALL_ARGS":
     case "TOOL_CALL_END":
-    case "STATE_SNAPSHOT":
-    case "STATE_DELTA":
     case "CUSTOM":
       return [{ ...e }];
     default:
