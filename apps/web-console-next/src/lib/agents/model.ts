@@ -150,24 +150,28 @@ export const PROVIDER_META = {
     name: "Daytona",
     blurb: "Sandbox compute your agent sessions run in. Connect your own Daytona account.",
     keyPlaceholder: "dtn_…",
+    modelPlaceholder: "",
     docsUrl: "https://www.daytona.io/docs/",
   },
   anthropic: {
     name: "Anthropic",
     blurb: "The Claude model key injected into each session as ANTHROPIC_API_KEY — never stored on the session.",
     keyPlaceholder: "sk-ant-…",
+    modelPlaceholder: "claude-opus-4-8",
     docsUrl: "https://docs.claude.com/en/api/getting-started",
   },
   openai: {
     name: "OpenAI",
     blurb: "An OpenAI API key for model calls. Add a Base URL to point at an OpenAI-compatible gateway.",
     keyPlaceholder: "sk-…",
+    modelPlaceholder: "gpt-4o",
     docsUrl: "https://platform.openai.com/docs/api-reference",
   },
   openrouter: {
     name: "OpenRouter",
     blurb: "One OpenRouter key, many models. OpenAI-compatible — set a Default model to pick one.",
     keyPlaceholder: "sk-or-…",
+    modelPlaceholder: "anthropic/claude-sonnet-4.5",
     docsUrl: "https://openrouter.ai/docs",
   },
 } as const;
