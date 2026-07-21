@@ -22,6 +22,8 @@ import {
   type ProviderConnectionLite,
 } from "./custody.js";
 import { aguiRunDoor, aguiWatchDoor } from "./agui-doors.js";
+import { createClientToolBroker, withClientTools, type ClientToolBroker } from "./client-tools.js";
+import type { AguiClientTool } from "@saas/contracts/agui";
 import { createOwnerToolExecutor } from "./tools.js";
 import { withSessionVerbs } from "./session-verbs.js";
 import { formatMemoryForSystem, withMemoryTool, type MemoryEntry, type MemoryRpc } from "./memory.js";
@@ -33,6 +35,10 @@ export class WorkspaceAgent extends Agent<Env> {
 
   private thread = new ChatThread(this.ctx.storage as unknown as ChatStorage);
   private loaded = false;
+  /** Per-run client-tool brokers (CX2): runId → the broker + the principal
+   * who started the run (results are refused from anyone else). In-memory
+   * only — a DO eviction mid-run times the pending call out by design. */
+  private aguiBrokers = new Map<string, { broker: ClientToolBroker; principal: string }>();
 
   private async ensureLoaded(): Promise<void> {
     if (this.loaded) return;
@@ -66,7 +72,7 @@ export class WorkspaceAgent extends Agent<Env> {
    * THIS turn only (tool calls re-enter api-edge with it; custody resolves
    * the model key); nothing credential-shaped is stored.
    */
-  async turn(orgId: string, text: string, principal: string, ownerToken: string): Promise<{ ok: boolean; reason?: string }> {
+  async turn(orgId: string, text: string, principal: string, ownerToken: string, agui?: { runId: string; tools: AguiClientTool[] }): Promise<{ ok: boolean; reason?: string }> {
     await this.ensureLoaded();
     this.thread.assertOrg(orgId);
     const env = this.env;
@@ -156,12 +162,27 @@ export class WorkspaceAgent extends Agent<Env> {
       ? withMemoryTool(tools, memory, { author: principal, source: `chat:${chatId}`, now: () => new Date() })
       : tools;
 
+    // Client tools (CX2): advertised-for-this-turn UI verbs pause the tool
+    // round on a per-run broker until the SAME viewer posts the result (or
+    // the timeout synthesizes one). Registered only for the run's duration.
+    let turnTools = toolsWithMemory;
+    if (agui && agui.tools.length > 0) {
+      const broker = createClientToolBroker(agui.tools);
+      this.aguiBrokers.set(agui.runId, { broker, principal });
+      turnTools = withClientTools(toolsWithMemory, broker);
+    }
+
     const startedAt = Date.now();
-    const result = await this.thread.runTurn(text, principal, {
-      resolveModel,
-      tools: toolsWithMemory,
-      system: workspaceSystemPrompt(orgId) + formatMemoryForSystem(memoryEntries),
-    });
+    let result: Awaited<ReturnType<ChatThread["runTurn"]>>;
+    try {
+      result = await this.thread.runTurn(text, principal, {
+        resolveModel,
+        tools: turnTools,
+        system: workspaceSystemPrompt(orgId) + formatMemoryForSystem(memoryEntries),
+      });
+    } finally {
+      if (agui) this.aguiBrokers.delete(agui.runId);
+    }
 
     // AN7 — the trust plane's visibility half. Per-turn trace (admin plane
     // reads worker logs): never content, only shape. Metering: the chat
@@ -237,16 +258,48 @@ export class WorkspaceAgent extends Agent<Env> {
     const chatId = info?.chatId ?? "unknown";
 
     if (url.pathname === "/agui-run" && request.method === "POST") {
-      let body: { orgId?: string; text?: string; principal?: string; ownerToken?: string; runId?: string };
+      let body: {
+        orgId?: string;
+        text?: string;
+        principal?: string;
+        ownerToken?: string;
+        runId?: string;
+        tools?: AguiClientTool[];
+      };
       try {
         body = (await request.json()) as typeof body;
       } catch {
         return new Response("invalid json", { status: 400 });
       }
-      const { orgId, text, principal, ownerToken, runId } = body;
+      const { orgId, text, principal, ownerToken, runId, tools } = body;
       if (!orgId || !text || !principal || !ownerToken) return new Response("missing fields", { status: 400 });
       if (!info || info.orgId !== orgId) return new Response("not found", { status: 404 });
-      return aguiRunDoor(this.thread, chatId, runId, () => this.turn(orgId, text, principal, ownerToken));
+      // Client tools need a stable run id to correlate the result post-back.
+      const effectiveRunId = runId ?? `${chatId}:${crypto.randomUUID().slice(0, 8)}`;
+      const agui = tools && tools.length > 0 ? { runId: effectiveRunId, tools } : undefined;
+      return aguiRunDoor(this.thread, chatId, effectiveRunId, () => this.turn(orgId, text, principal, ownerToken, agui));
+    }
+
+    // CX2 — the client-tool result post-back: viewer-authorized upstream,
+    // principal-matched to the run here, id-matched + single-use in the
+    // broker. 404 unknown run, 403 wrong subject, 409 no pending call.
+    if (url.pathname === "/agui-tool-result" && request.method === "POST") {
+      let body: { runId?: string; toolCallId?: string; content?: string; isError?: boolean; principal?: string };
+      try {
+        body = (await request.json()) as typeof body;
+      } catch {
+        return new Response("invalid json", { status: 400 });
+      }
+      const { runId, toolCallId, content, isError, principal } = body;
+      if (!runId || !toolCallId || !principal || typeof content !== "string") {
+        return new Response("missing fields", { status: 400 });
+      }
+      const entry = this.aguiBrokers.get(runId);
+      if (!entry) return new Response("no such run", { status: 404 });
+      if (entry.principal !== principal) return new Response("forbidden", { status: 403 });
+      const resolved = entry.broker.resolve(toolCallId, content, isError);
+      if (!resolved) return new Response("no pending call", { status: 409 });
+      return Response.json({ resolved: true });
     }
 
     if (url.pathname === "/agui-watch" && request.method === "GET") {

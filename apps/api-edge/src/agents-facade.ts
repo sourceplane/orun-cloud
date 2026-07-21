@@ -57,6 +57,7 @@ const ORG_AGENTS_CHAT_TURN_RE = /^\/v1\/organizations\/[^/]+\/agents\/chats\/[^/
 // bearer is accepted and stripped like the attach feed's).
 const ORG_AGENTS_CHAT_AGUI_RUN_RE = /^\/v1\/organizations\/[^/]+\/agents\/chats\/[^/]+\/agui\/run$/;
 const ORG_AGENTS_CHAT_AGUI_WATCH_RE = /^\/v1\/organizations\/[^/]+\/agents\/chats\/[^/]+\/agui\/watch$/;
+const ORG_AGENTS_CHAT_AGUI_TOOL_RESULT_RE = /^\/v1\/organizations\/[^/]+\/agents\/chats\/[^/]+\/agui\/run\/[^/]+\/tool-result$/;
 const ORG_AGENTS_SESSION_AGUI_WATCH_RE = /^\/v1\/organizations\/[^/]+\/agents\/sessions\/[^/]+\/agui\/watch$/;
 // The memory plane (AN6): provenanced workspace memory, chat-worker-owned.
 const ORG_AGENTS_MEMORY_RE = /^\/v1\/organizations\/[^/]+\/agents\/memory$/;
@@ -69,6 +70,7 @@ export function isChatRoute(pathname: string): boolean {
     ORG_AGENTS_CHAT_TURN_RE.test(pathname) ||
     ORG_AGENTS_CHAT_AGUI_RUN_RE.test(pathname) ||
     ORG_AGENTS_CHAT_AGUI_WATCH_RE.test(pathname) ||
+    ORG_AGENTS_CHAT_AGUI_TOOL_RESULT_RE.test(pathname) ||
     ORG_AGENTS_MEMORY_RE.test(pathname) ||
     ORG_AGENTS_MEMORY_ENTRY_RE.test(pathname)
   );

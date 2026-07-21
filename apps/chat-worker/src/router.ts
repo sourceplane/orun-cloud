@@ -26,6 +26,9 @@ const CHAT_TURN_RE = /^\/v1\/organizations\/([^/]+)\/agents\/chats\/([^/]+)\/tur
 // follower — the same frames every WS head receives, through the bridge).
 const CHAT_AGUI_RUN_RE = /^\/v1\/organizations\/([^/]+)\/agents\/chats\/([^/]+)\/agui\/run$/;
 const CHAT_AGUI_WATCH_RE = /^\/v1\/organizations\/([^/]+)\/agents\/chats\/([^/]+)\/agui\/watch$/;
+// CX2 — the client-tool result post-back (viewer-authorized; the DO matches
+// the run's principal and the pending call id, single-use).
+const CHAT_AGUI_TOOL_RESULT_RE = /^\/v1\/organizations\/([^/]+)\/agents\/chats\/([^/]+)\/agui\/run\/([^/]+)\/tool-result$/;
 // The Dispatch live layer (saas-dispatch DX1): WS attach (upgrade) or the
 // snapshot-first shell (plain GET). The DO holds no authorized content —
 // the same chat grant gates the wire, and heads fold with their own bearer.
@@ -148,6 +151,7 @@ export async function route(request: Request, env: Env, injectedDeps?: ChatDeps)
       CHAT_TURN_RE.test(url.pathname) ||
       CHAT_AGUI_RUN_RE.test(url.pathname) ||
       CHAT_AGUI_WATCH_RE.test(url.pathname) ||
+      CHAT_AGUI_TOOL_RESULT_RE.test(url.pathname) ||
       MEMORY_RE.test(url.pathname) ||
       MEMORY_ENTRY_RE.test(url.pathname) ||
       DISPATCH_INDEX_RE.test(url.pathname);
@@ -211,6 +215,7 @@ export async function route(request: Request, env: Env, injectedDeps?: ChatDeps)
           principal: actor.subjectId,
           ownerToken,
           ...(input.runId ? { runId: input.runId } : {}),
+          ...(input.tools && input.tools.length > 0 ? { tools: input.tools } : {}),
         }),
       });
       const res = await doStub.fetch(internal);
@@ -221,6 +226,47 @@ export async function route(request: Request, env: Env, injectedDeps?: ChatDeps)
       const dx = dispatchIndexStub(env, orgId);
       if (dx) void dx.ring("inFlight").catch(() => {});
       return res;
+    }
+
+    // CX2 — the client-tool result post-back.
+    m = CHAT_AGUI_TOOL_RESULT_RE.exec(url.pathname);
+    if (m) {
+      const orgId = uuidFromPublicId(m[1]!, "org");
+      if (!orgId) return notFound(reqId, url.pathname);
+      if (request.method !== "POST") return methodNotAllowed(reqId);
+      if (!(await deps.authorize("organization.agent.chat", orgId, actor, reqId))) {
+        return errorResponse("forbidden", "Not authorized", 403, reqId);
+      }
+      if (!env.WORKSPACE_AGENT) return errorResponse("unavailable", "Chat not configured", 503, reqId);
+      let body: { toolCallId?: string; content?: string; isError?: boolean };
+      try {
+        body = (await request.json()) as typeof body;
+      } catch {
+        return errorResponse("validation_failed", "Invalid JSON", 400, reqId);
+      }
+      if (!body.toolCallId || typeof body.content !== "string") {
+        return errorResponse("validation_failed", "toolCallId and content are required", 400, reqId);
+      }
+      const ns = env.WORKSPACE_AGENT;
+      const doStub = ns.get(ns.idFromName(`chat:${m[2]!}`));
+      const res = await doStub.fetch(
+        new Request("https://chat/agui-tool-result", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            runId: m[3]!,
+            toolCallId: body.toolCallId,
+            content: body.content,
+            ...(body.isError ? { isError: true } : {}),
+            principal: actor.subjectId,
+          }),
+        }),
+      );
+      if (res.status === 404) return errorResponse("not_found", "No such run", 404, reqId);
+      if (res.status === 403) return errorResponse("forbidden", "Not your run", 403, reqId);
+      if (res.status === 409) return errorResponse("conflict", "No pending call with that id", 409, reqId);
+      if (!res.ok) return errorResponse("internal_error", "Tool result failed", 500, reqId);
+      return successResponse({ resolved: true }, reqId);
     }
 
     // CX1 — the AG-UI watch door: the passive SSE follower.

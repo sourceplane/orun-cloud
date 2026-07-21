@@ -446,6 +446,26 @@ export class AgentsClient {
     );
   }
 
+  /** POST /agents/chats/:id/agui/run/:runId/tool-result — the client-tool
+   * result post-back (CX2): id-matched, single-use, refused for any subject
+   * but the run's initiator. */
+  aguiToolResult(
+    orgId: string,
+    chatId: string,
+    runId: string,
+    body: { toolCallId: string; content: string; isError?: boolean },
+    opts: RequestOptions = {},
+  ): Promise<{ resolved: boolean }> {
+    return this.transport.request<{ resolved: boolean }>(
+      {
+        method: "POST",
+        path: `${agentsBase(orgId)}/chats/${encodeURIComponent(chatId)}/agui/run/${encodeURIComponent(runId)}/tool-result`,
+        body,
+      },
+      opts,
+    );
+  }
+
   /** GET /agents/chats/:id/agui/watch — the passive AG-UI follower feed. */
   aguiWatchChat(orgId: string, chatId: string, from = -1, opts: RequestOptions = {}): Promise<Response> {
     return this.transport.requestStream(
