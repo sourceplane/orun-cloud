@@ -374,7 +374,40 @@ describe("POST /internal/credentials/mint", () => {
     }
   });
 
-  it("422s a body without purpose secret_resolve", async () => {
+  it("mints with purpose rotation and ledgers it without run attribution (RS1)", async () => {
+    const { provider } = fakeBrokerProvider();
+    let ledgerInsert: unknown[] = [];
+    const { executor, queries } = fakeExecutor((text, params) => {
+      if (text.includes("FROM integrations.connections")) return [connectionRow()];
+      if (text.includes("FROM integrations.provider_credentials")) return [CUSTODY_ROW];
+      if (text.includes("INSERT INTO integrations.minted_credentials")) {
+        ledgerInsert = params;
+        return [mintRow({ purpose: "rotation", run_id: null, job_id: null, requested_by: "usr_admin" })];
+      }
+      return [];
+    });
+    const res = await handleInternalMintCredential(
+      post(mintBody({ purpose: "rotation", requestedBy: "usr_admin", requestedByType: "user", runId: undefined, jobId: undefined })),
+      createEnv(),
+      "req_1",
+      { executor, provider },
+    );
+    expect(res.status).toBe(201);
+    const data = ((await res.json()) as { data: Record<string, unknown> }).data;
+    expect(data.value).toBe("cf-child-token-SECRET");
+    expect((data.mint as Record<string, unknown>).purpose).toBe("rotation");
+    // Ledger purpose column carries the rotation discriminator; no run/job.
+    expect(ledgerInsert[6]).toBe("rotation");
+    expect(ledgerInsert[8]).toBe("usr_admin");
+    expect(ledgerInsert[9]).toBeNull();
+    expect(ledgerInsert[10]).toBeNull();
+    // Events never carry the value.
+    for (const q of queries.filter((q) => q.text.includes("WITH inserted_event"))) {
+      expect(JSON.stringify(q.params)).not.toContain("cf-child-token-SECRET");
+    }
+  });
+
+  it("422s a non-internal purpose (api never reaches this route)", async () => {
     const { executor } = fakeExecutor(() => []);
     const res = await handleInternalMintCredential(
       post(mintBody({ purpose: "api" })), createEnv(), "req_1", { executor },

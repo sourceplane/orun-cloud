@@ -880,11 +880,17 @@ export async function handleInternalMintCredential(
   } catch {
     return errorResponse("bad_request", "Invalid JSON body", 400, requestId);
   }
-  if (body.purpose !== "secret_resolve") {
-    return errorResponse("validation_failed", 'purpose must be "secret_resolve"', 422, requestId, {
+  // Two internal purposes ride this route (contracts): "secret_resolve" (the
+  // IH7 lease-bound brokered resolve) and "rotation" (a provider-rotated
+  // secret's stored value being produced — RS1 create-from-parent / RS2
+  // engine). Anything else is rejected; the public "api" purpose never
+  // reaches this internal handler.
+  if (body.purpose !== "secret_resolve" && body.purpose !== "rotation") {
+    return errorResponse("validation_failed", 'purpose must be "secret_resolve" or "rotation"', 422, requestId, {
       reason: "params_invalid",
     });
   }
+  const internalPurpose: "secret_resolve" | "rotation" = body.purpose;
   const parsed = parseInternalBindingBody(body);
   if (typeof parsed === "string") {
     return errorResponse("validation_failed", parsed, 422, requestId, { reason: "params_invalid" });
@@ -935,7 +941,7 @@ export async function handleInternalMintCredential(
       connection,
       { templateId: parsed.templateId, params: parsed.params, requestedTtl },
       {
-        purpose: "secret_resolve",
+        purpose: internalPurpose,
         requestedBy: typeof req.requestedBy === "string" ? req.requestedBy : null,
         runId: typeof req.runId === "string" ? req.runId : null,
         jobId: typeof req.jobId === "string" ? req.jobId : null,

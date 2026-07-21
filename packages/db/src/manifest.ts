@@ -804,5 +804,14 @@ export const manifest: MigrationManifest = {
       description:
         "Provider-rotation producer binding (saas-integration-hub / provider-rotated-secrets RS0): config.secret_metadata gains rotation_provider, rotation_connection_id, rotation_template, rotation_params, rotation_grace_seconds, and rotation_deliver_target — how the RS2 engine mints the next value for a stored `source = 'static'` secret from a connected credential-broker parent on the SM6 schedule, plus an optional grace overlap and a materialize delivery target for long-lived consumers. This is the proven stored-and-rotated sibling of IH7's dynamic brokered model; the decrypt path is untouched (a rotated secret resolves like any static one). Guard CHECKs keep the producer core all-or-nothing, force provider-rotated rows to be static (brokered has no stored value to rotate), and bound grace to non-negative; a partial org index backs the engine scan. Additive + idempotent.",
     },
+    {
+      id: "890_integrations_rotation_mint_purpose",
+      context: "integrations",
+      path: "890_integrations_rotation_mint_purpose/up.sql",
+      checksum:
+        "42e44d7bcad01e27a398fe4d7cbfcf93a70ad04096169192b0a5a601935bf490",
+      description:
+        "'rotation' joins the mint-purpose enum (provider-rotated-secrets RS1): integrations.minted_credentials.purpose CHECK widens to ('api', 'secret_resolve', 'rotation') so the mints that produce a provider-rotated secret's stored value — at create (RS1) and on the RS2 rotation schedule — are ledgered distinctly from user-facing api mints and lease-bound secret_resolve mints. Guarded CHECK swap (the 720 lesson); purely widening, idempotent.",
+    },
   ],
 };

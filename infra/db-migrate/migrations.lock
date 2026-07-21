@@ -95,3 +95,4 @@
 860_agents_model_providers
 870_agents_profile_interface
 880_config_rotated_secrets
+890_integrations_rotation_mint_purpose
