@@ -1,6 +1,7 @@
 import type { Env } from "./env.js";
 import { route } from "./router.js";
 import { runRotationSweep } from "./rotation-sweep.js";
+import { runRotationEngine } from "./rotation-engine.js";
 
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
@@ -30,6 +31,20 @@ export default {
         } catch (err) {
           // A sweep failure must never break the cron.
           console.error(`[scheduled] rotation-sweep failed: ${String(err)}`);
+        }
+        // Phase 2 (RS2): the provider-rotation engine — re-mint due
+        // provider-rotated secrets from their connected parents. Runs after the
+        // reminder sweep in the SAME cron slot (see CRON-SLOT BUDGET above).
+        try {
+          const engine = await runRotationEngine(env);
+          if (engine && (engine.rotated > 0 || engine.failed > 0)) {
+            console.warn(
+              `[scheduled] rotation-engine: ${engine.rotated} rotated / ${engine.failed} failed / ${engine.scanned} due`,
+            );
+          }
+        } catch (err) {
+          // An engine failure must never break the cron.
+          console.error(`[scheduled] rotation-engine failed: ${String(err)}`);
         }
       })(),
     );
