@@ -277,6 +277,19 @@ export interface CreateSecretMetadataInput {
   bindingConnectionId?: Uuid;
   /** Display-only broker binding fact (IH7): credential template name. */
   bindingTemplate?: string;
+  /**
+   * Provider-rotation producer (provider-rotated-secrets RS1). Omit for a
+   * non-rotated secret. When set, the value is an ordinary stored ciphertext
+   * (v1) and these columns record how the RS2 engine mints the next version.
+   * `rotationProvider`/`rotationConnectionId`/`rotationTemplate` are the
+   * all-or-nothing core (DB CHECK); the rest are optional adjuncts.
+   */
+  rotationProvider?: string;
+  rotationConnectionId?: Uuid;
+  rotationTemplate?: string;
+  rotationParams?: Record<string, unknown>;
+  rotationGraceSeconds?: number;
+  rotationDeliverTarget?: string;
 }
 
 // ── Secret policies (saas-secret-manager SM3, Layer 2) ──────

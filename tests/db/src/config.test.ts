@@ -835,9 +835,61 @@ describe("ConfigRepository — Brokered Secrets (IH7)", () => {
     expect(q.params[13]).toBe("cloudflare");
     expect(q.params[14]).toBe("00000000-0000-0000-0000-00000000c0f1");
     expect(q.params[15]).toBe("workers-deploy");
-    // The binding pointer still rides the existing envelope write path.
-    expect(q.params[16]).toBe(BROKERED_ENVELOPE);
+    // The binding pointer still rides the existing envelope write path (now the
+    // last param, after the RS1 rotation-producer columns).
+    expect(q.params[22]).toBe(BROKERED_ENVELOPE);
+    expect(q.params.length).toBe(23);
     expect(q.text).toContain("INSERT INTO config.secret_versions");
+  });
+
+  it("create persists the RS1 rotation-producer binding alongside a stored v1", async () => {
+    const ROTATED_ROW = {
+      ...SAMPLE_SECRET_ROW,
+      id: "sec-rot",
+      secret_key: "CF_API_TOKEN",
+      rotation_provider: "cloudflare",
+      rotation_connection_id: "00000000-0000-0000-0000-00000000c0f1",
+      rotation_template: "workers-deploy",
+      rotation_params: { zoneIds: ["z1"] },
+      rotation_grace_seconds: 3600,
+      rotation_deliver_target: "cloudflare-worker:api-prod",
+    };
+    const { executor, queries } = createFakeExecutor({ rows: [ROTATED_ROW] });
+    const repo = createConfigRepository(executor);
+    const result = await repo.createSecretMetadata({
+      id: "sec-rot",
+      scope: ORG_SCOPE,
+      secretKey: "CF_API_TOKEN",
+      createdBy: CREATED_BY,
+      // A rotated secret is source 'static' with a real stored ciphertext (v1)…
+      ciphertextEnvelope: "{\"alg\":\"AES-256-GCM\"}",
+      // …plus the rotation producer describing how RS2 mints the next version.
+      rotationProvider: "cloudflare",
+      rotationConnectionId: CONNECTION_ID,
+      rotationTemplate: "workers-deploy",
+      rotationParams: { zoneIds: ["z1"] },
+      rotationGraceSeconds: 3600,
+      rotationDeliverTarget: "cloudflare-worker:api-prod",
+    });
+    expect(result.ok).toBe(true);
+    const q = queries[0]!;
+    expect(q.text).toContain(
+      "rotation_provider, rotation_connection_id, rotation_template, rotation_params, rotation_grace_seconds, rotation_deliver_target",
+    );
+    expect(q.params[16]).toBe("cloudflare");
+    expect(q.params[17]).toBe(CONNECTION_ID);
+    expect(q.params[18]).toBe("workers-deploy");
+    expect(q.params[19]).toBe(JSON.stringify({ zoneIds: ["z1"] })); // jsonb serialized like settings.value
+    expect(q.params[20]).toBe(3600);
+    expect(q.params[21]).toBe("cloudflare-worker:api-prod");
+    // Envelope remains the final param; version 1 is still appended atomically.
+    expect(q.params[22]).toBe("{\"alg\":\"AES-256-GCM\"}");
+    expect(q.text).toContain("INSERT INTO config.secret_versions");
+    if (result.ok) {
+      expect(result.value.rotationProvider).toBe("cloudflare");
+      expect(result.value.rotationGraceSeconds).toBe(3600);
+      expect(result.value.rotationDeliverTarget).toBe("cloudflare-worker:api-prod");
+    }
   });
 
   it("create defaults source to 'static' with no binding facts", async () => {

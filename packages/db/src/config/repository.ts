@@ -489,18 +489,18 @@ export function createConfigRepository(executor: SqlExecutor): ConfigRepository 
         // without an explicit transaction.
         const sql = hasCiphertext
           ? `WITH head AS (
-             INSERT INTO config.secret_metadata (id, org_id, project_id, environment_id, scope_kind, secret_key, display_name, status, version, rotation_policy, expires_at, created_by, personal_owner, overridable, source, binding_provider, binding_connection_id, binding_template, ciphertext_envelope, created_at, updated_at)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, 'active', 1, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, now(), now())
+             INSERT INTO config.secret_metadata (id, org_id, project_id, environment_id, scope_kind, secret_key, display_name, status, version, rotation_policy, expires_at, created_by, personal_owner, overridable, source, binding_provider, binding_connection_id, binding_template, rotation_provider, rotation_connection_id, rotation_template, rotation_params, rotation_grace_seconds, rotation_deliver_target, ciphertext_envelope, created_at, updated_at)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, 'active', 1, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, now(), now())
              RETURNING *
            ), version_append AS (
              INSERT INTO config.secret_versions (secret_id, version, ciphertext_envelope, created_by)
              SELECT id, version, ciphertext_envelope, created_by FROM head
            )
            SELECT ${SECRET_METADATA_SAFE_COLUMNS} FROM head`
-          : `INSERT INTO config.secret_metadata (id, org_id, project_id, environment_id, scope_kind, secret_key, display_name, status, version, rotation_policy, expires_at, created_by, personal_owner, overridable, source, binding_provider, binding_connection_id, binding_template, created_at, updated_at)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, 'active', 1, $8, $9, $10, $11, $12, $13, $14, $15, $16, now(), now())
+          : `INSERT INTO config.secret_metadata (id, org_id, project_id, environment_id, scope_kind, secret_key, display_name, status, version, rotation_policy, expires_at, created_by, personal_owner, overridable, source, binding_provider, binding_connection_id, binding_template, rotation_provider, rotation_connection_id, rotation_template, rotation_params, rotation_grace_seconds, rotation_deliver_target, created_at, updated_at)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, 'active', 1, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, now(), now())
            RETURNING ${SECRET_METADATA_SAFE_COLUMNS}`;
-        const params = [input.id, sc.orgId, sc.projectId, sc.environmentId, sc.scopeKind, input.secretKey, input.displayName ?? null, input.rotationPolicy ?? null, input.expiresAt?.toISOString() ?? null, input.createdBy, input.personalOwner ?? null, input.overridable ?? true, input.source ?? "static", input.bindingProvider ?? null, input.bindingConnectionId ?? null, input.bindingTemplate ?? null];
+        const params = [input.id, sc.orgId, sc.projectId, sc.environmentId, sc.scopeKind, input.secretKey, input.displayName ?? null, input.rotationPolicy ?? null, input.expiresAt?.toISOString() ?? null, input.createdBy, input.personalOwner ?? null, input.overridable ?? true, input.source ?? "static", input.bindingProvider ?? null, input.bindingConnectionId ?? null, input.bindingTemplate ?? null, input.rotationProvider ?? null, input.rotationConnectionId ?? null, input.rotationTemplate ?? null, input.rotationParams != null ? JSON.stringify(input.rotationParams) : null, input.rotationGraceSeconds ?? null, input.rotationDeliverTarget ?? null];
         if (hasCiphertext) {
           params.push(input.ciphertextEnvelope!);
         }
