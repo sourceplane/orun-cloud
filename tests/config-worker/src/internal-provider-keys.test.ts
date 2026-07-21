@@ -7,6 +7,7 @@
 import {
   handleProviderKeyStore,
   handleProviderKeyResolve,
+  handleProviderKeyRevoke,
   type ProviderKeyDeps,
 } from "@config-worker/handlers/internal-provider-keys";
 import type { Env } from "@config-worker/env";
@@ -48,6 +49,7 @@ interface Captured {
   created: CreateSecretMetadataInput[];
   encryptCalls: string[];
   decryptCalls: string[];
+  revoked: string[];
 }
 
 function makeDeps(over?: {
@@ -55,8 +57,9 @@ function makeDeps(over?: {
   createResult?: ConfigResult<SecretMetadata>;
   headResult?: ConfigResult<SecretMetadata>;
   cipherResult?: ConfigResult<string>;
+  revokeResult?: ConfigResult<SecretMetadata>;
 }): ProviderKeyDeps {
-  const capture = over?.capture ?? { created: [], encryptCalls: [], decryptCalls: [] };
+  const capture = over?.capture ?? { created: [], encryptCalls: [], decryptCalls: [], revoked: [] };
   return {
     repo: {
       createSecretMetadata: async (input) => {
@@ -66,6 +69,10 @@ function makeDeps(over?: {
       getSecretMetadataByScopeKey: async () => over?.headResult ?? { ok: true, value: meta() },
       getSecretCiphertext: async () =>
         over?.cipherResult ?? { ok: true, value: JSON.stringify({ alg: "AES-256-GCM", v: 1 }) },
+      revokeSecretMetadata: async (_orgId, secretId) => {
+        capture.revoked.push(secretId);
+        return over?.revokeResult ?? { ok: true, value: meta({ status: "revoked" }) };
+      },
     },
     encryptionAdapter: {
       encrypt: async (value: string) => {
@@ -95,7 +102,7 @@ async function json(res: Response): Promise<{ data?: Record<string, unknown>; er
 
 describe("provider-key store", () => {
   it("encrypts and stores under the reserved namespace, org scope", async () => {
-    const capture: Captured = { created: [], encryptCalls: [], decryptCalls: [] };
+    const capture: Captured = { created: [], encryptCalls: [], decryptCalls: [], revoked: [] };
     const res = await handleProviderKeyStore(
       req("store", { orgId: ORG, key: RESERVED, value: PLAINTEXT }),
       ENV,
@@ -123,7 +130,7 @@ describe("provider-key store", () => {
     "agents/providers/daytona/UPPER/API_KEY",
     "prefix/agents/providers/daytona/default/API_KEY",
   ])("rejects a non-reserved key on store: %s", async (key) => {
-    const capture: Captured = { created: [], encryptCalls: [], decryptCalls: [] };
+    const capture: Captured = { created: [], encryptCalls: [], decryptCalls: [], revoked: [] };
     const res = await handleProviderKeyStore(
       req("store", { orgId: ORG, key, value: "v" }),
       ENV,
@@ -164,7 +171,7 @@ describe("provider-key store", () => {
 
 describe("provider-key resolve", () => {
   it("resolves the plaintext for a stored reserved key", async () => {
-    const capture: Captured = { created: [], encryptCalls: [], decryptCalls: [] };
+    const capture: Captured = { created: [], encryptCalls: [], decryptCalls: [], revoked: [] };
     const res = await handleProviderKeyResolve(
       req("resolve", { orgId: ORG, key: RESERVED }),
       ENV,
@@ -179,7 +186,7 @@ describe("provider-key resolve", () => {
   });
 
   it("rejects a non-reserved key on resolve before touching the repo", async () => {
-    const capture: Captured = { created: [], encryptCalls: [], decryptCalls: [] };
+    const capture: Captured = { created: [], encryptCalls: [], decryptCalls: [], revoked: [] };
     const res = await handleProviderKeyResolve(
       req("resolve", { orgId: ORG, key: "DATABASE_URL" }),
       ENV,
@@ -218,5 +225,49 @@ describe("provider-key resolve", () => {
     expect(res.status).toBe(500);
     const text = JSON.stringify(await json(res));
     expect(text).not.toContain(PLAINTEXT);
+  });
+});
+
+describe("provider-key revoke", () => {
+  it("revokes the active secret under a reserved key", async () => {
+    const capture: Captured = { created: [], encryptCalls: [], decryptCalls: [], revoked: [] };
+    const res = await handleProviderKeyRevoke(
+      req("revoke", { orgId: ORG, key: RESERVED }),
+      ENV,
+      "req_t",
+      ACTOR,
+      makeDeps({ capture }),
+    );
+    expect(res.status).toBe(200);
+    expect((await json(res)).data?.revoked).toBe(true);
+    // Looked the secret up by scope/key, then revoked it by id.
+    expect(capture.revoked).toEqual(["44444444-4444-4444-4444-444444444444"]);
+  });
+
+  it("is idempotent: revoked=false when nothing active is under the ref", async () => {
+    const capture: Captured = { created: [], encryptCalls: [], decryptCalls: [], revoked: [] };
+    const res = await handleProviderKeyRevoke(
+      req("revoke", { orgId: ORG, key: RESERVED }),
+      ENV,
+      "req_t",
+      ACTOR,
+      makeDeps({ capture, headResult: { ok: false, error: { kind: "not_found" } } as never }),
+    );
+    expect(res.status).toBe(200);
+    expect((await json(res)).data?.revoked).toBe(false);
+    expect(capture.revoked.length).toBe(0);
+  });
+
+  it("rejects a non-reserved key on revoke before touching the repo", async () => {
+    const capture: Captured = { created: [], encryptCalls: [], decryptCalls: [], revoked: [] };
+    const res = await handleProviderKeyRevoke(
+      req("revoke", { orgId: ORG, key: "DATABASE_URL" }),
+      ENV,
+      "req_t",
+      ACTOR,
+      makeDeps({ capture }),
+    );
+    expect(res.status).toBe(422);
+    expect(capture.revoked.length).toBe(0);
   });
 });

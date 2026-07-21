@@ -32,12 +32,15 @@ function makeKeyClient(overrides?: { storeOk?: boolean; resolveValue?: string | 
   client: ProviderKeyClient;
   storeCalls: StoreCall[];
   resolveCalls: string[];
+  revokeCalls: string[];
 } {
   const storeCalls: StoreCall[] = [];
   const resolveCalls: string[] = [];
+  const revokeCalls: string[] = [];
   return {
     storeCalls,
     resolveCalls,
+    revokeCalls,
     client: {
       async store(orgId, key, value) {
         storeCalls.push({ orgId, key, value });
@@ -46,6 +49,10 @@ function makeKeyClient(overrides?: { storeOk?: boolean; resolveValue?: string | 
       async resolve(_orgId, key) {
         resolveCalls.push(key);
         return overrides?.resolveValue !== undefined ? overrides.resolveValue : "dtn_live_key";
+      },
+      async revoke(_orgId, key) {
+        revokeCalls.push(key);
+        return true;
       },
     },
   };
@@ -249,6 +256,50 @@ describe("agents-worker provider connections (AG12)", () => {
 
     const missing = await route(req("DELETE", `${PROVIDERS_PATH}/apc_missing`), env, deps);
     expect(missing.status).toBe(404);
+  });
+
+  it("revokes the custody secret on disconnect (no orphaned key)", async () => {
+    const keys = makeKeyClient();
+    const deps = makeDeps({ providerKeys: keys.client });
+    const created = await route(
+      req("POST", PROVIDERS_PATH, { provider: "openrouter", apiKey: "sk-or-x", config: { defaultModel: "m" } }),
+      env,
+      deps,
+    );
+    const id = ((await json(created)).data as { id: string }).id;
+
+    const del = await route(req("DELETE", `${PROVIDERS_PATH}/${id}`), env, deps);
+    expect(del.status).toBe(200);
+    // Disconnect tore down the custody secret under the same reserved ref.
+    expect(keys.revokeCalls).toContain("agents/providers/openrouter/default/API_KEY");
+  });
+
+  it("clears an orphaned custody secret before storing on (re)connect", async () => {
+    const keys = makeKeyClient();
+    const deps = makeDeps({ providerKeys: keys.client });
+    await route(
+      req("POST", PROVIDERS_PATH, { provider: "openrouter", apiKey: "sk-or-x", config: { defaultModel: "m" } }),
+      env,
+      deps,
+    );
+    // The orphan-clear revoke runs before the store, under the same ref — this
+    // is what unblocks a same-name reconnect after a stale key was left behind.
+    expect(keys.revokeCalls).toEqual(["agents/providers/openrouter/default/API_KEY"]);
+    expect(keys.storeCalls.map((c) => c.key)).toEqual(["agents/providers/openrouter/default/API_KEY"]);
+  });
+
+  it("409s a duplicate name without touching custody (no clobber)", async () => {
+    const keys = makeKeyClient();
+    const deps = makeDeps({ providerKeys: keys.client });
+    const body = { provider: "anthropic", apiKey: "sk-ant-1", name: "primary" };
+    expect((await route(req("POST", PROVIDERS_PATH, body), env, deps)).status).toBe(201);
+
+    const dup = await route(req("POST", PROVIDERS_PATH, { provider: "anthropic", apiKey: "sk-ant-2", name: "primary" }), env, deps);
+    expect(dup.status).toBe(409);
+    expect((await json(dup)).error?.code).toBe("provider_connection_conflict");
+    // The existing key was never revoked or overwritten by the rejected dup.
+    expect(keys.storeCalls.map((c) => c.value)).toEqual(["sk-ant-1"]);
+    expect(keys.revokeCalls).toEqual(["agents/providers/anthropic/primary/API_KEY"]);
   });
 
   it("403s every provider route when policy denies", async () => {

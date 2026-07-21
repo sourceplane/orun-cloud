@@ -90,6 +90,9 @@ describe("dispatch entitlement gate + provision usage emission (AG10)", () => {
     async resolve() {
       return "key";
     },
+    async revoke() {
+      return true;
+    },
   };
   const minter: SessionTokenMinter = {
     async mint() {

@@ -37,7 +37,7 @@ const RESERVED_KEY_RE = /^agents\/providers\/(daytona|anthropic|openai|openroute
 export interface ProviderKeyDeps {
   repo: Pick<
     ConfigRepository,
-    "createSecretMetadata" | "getSecretMetadataByScopeKey" | "getSecretCiphertext"
+    "createSecretMetadata" | "getSecretMetadataByScopeKey" | "getSecretCiphertext" | "revokeSecretMetadata"
   >;
   encryptionAdapter?: EncryptionAdapter | null;
   decrypt?: (envelope: string) => Promise<string>;
@@ -162,6 +162,54 @@ export async function handleProviderKeyResolve(
       return errorResponse("internal_error", "Decryption failed", 500, requestId);
     }
     return successResponse({ key: body.key, value, ttlSeconds: 300 }, requestId);
+  } finally {
+    if (executor) await executor.dispose();
+  }
+}
+
+/** POST /v1/internal/config/provider-keys/revoke — { orgId, key } → { revoked }.
+ *
+ * Idempotent teardown of a connection's custody secret (called when a provider
+ * connection is disconnected, and to clear an orphaned key before a fresh
+ * connect reuses the same reserved ref). Revoke — not hard delete — because the
+ * scope-key unique index is partial on status IN ('active','rotated'), so a
+ * revoked row frees the name for re-connection while the version history stays
+ * auditable. `revoked: false` (no active secret found) is a 200, not an error:
+ * the caller treats this as best-effort. */
+export async function handleProviderKeyRevoke(
+  request: Request,
+  env: Env,
+  requestId: string,
+  _actor: ActorContext,
+  deps?: ProviderKeyDeps,
+): Promise<Response> {
+  let body: { orgId?: string; key?: string };
+  try {
+    body = (await request.json()) as typeof body;
+  } catch {
+    return validationError(requestId, { body: ["invalid JSON"] });
+  }
+  if (!body.orgId) return validationError(requestId, { orgId: ["required"] });
+  if (!isReservedKey(body.key)) {
+    return validationError(requestId, { key: [`must match ${RESERVED_PREFIX}<provider>/<name>/API_KEY`] });
+  }
+
+  if (!deps && !env.PLATFORM_DB) {
+    return errorResponse("internal_error", "Service unavailable", 503, requestId);
+  }
+  const executor = deps ? null : createSqlExecutor(env.PLATFORM_DB!);
+  try {
+    const repo = deps?.repo ?? createConfigRepository(executor!);
+    const meta = await repo.getSecretMetadataByScopeKey(
+      { kind: "organization", orgId: body.orgId },
+      body.key,
+    );
+    if (!meta.ok) {
+      // Nothing active under this ref — already clean.
+      return successResponse({ key: body.key, revoked: false }, requestId);
+    }
+    const revoked = await repo.revokeSecretMetadata(body.orgId, meta.value.id);
+    return successResponse({ key: body.key, revoked: revoked.ok }, requestId);
   } finally {
     if (executor) await executor.dispose();
   }

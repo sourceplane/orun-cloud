@@ -7,6 +7,10 @@ import type { ActorContext } from "./router.js";
 export interface ProviderKeyClient {
   store(orgId: string, key: string, value: string, actor: ActorContext, requestId: string): Promise<boolean>;
   resolve(orgId: string, key: string, actor: ActorContext, requestId: string): Promise<string | null>;
+  /** Idempotent revoke of a connection's custody secret (disconnect teardown /
+   * orphan cleanup before a fresh connect reuses the same ref). Best-effort:
+   * resolves true when the seam confirms the ref is clean (revoked or absent). */
+  revoke(orgId: string, key: string, actor: ActorContext, requestId: string): Promise<boolean>;
 }
 
 export function createProviderKeyClient(configWorker: Fetcher): ProviderKeyClient {
@@ -41,6 +45,10 @@ export function createProviderKeyClient(configWorker: Fetcher): ProviderKeyClien
       } catch {
         return null;
       }
+    },
+    async revoke(orgId, key, actor, requestId) {
+      const res = await post("/v1/internal/config/provider-keys/revoke", { orgId, key }, actor, requestId);
+      return !!res && res.ok;
     },
   };
 }

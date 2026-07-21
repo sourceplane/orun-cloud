@@ -245,7 +245,9 @@ describe("agents-worker runtime routes (AG6)", () => {
     const f = await fixture({ state: "running", lease: "2099-01-01T00:00:00Z" });
     const res = await route(reqFor(f, "POST", "token"), env, f.deps);
     expect(res.status).toBe(201);
-    expect(((await json(res)).data as { token: string }).token).toBe("ast_next");
+    // The /token refresh body is FLAT ({token, expiresAt}) — not the {data}
+    // envelope — because the orun runtime unmarshals it flat (see the handler).
+    expect(((await res.json()) as { token: string }).token).toBe("ast_next");
     expect(f.minted).toEqual([`sp_1/${ORG}/${f.sessionId}`]);
   });
 

@@ -45,6 +45,9 @@ const keys: ProviderKeyClient = {
   async resolve() {
     return "dtn_key";
   },
+  async revoke() {
+    return true;
+  },
 };
 
 interface Fixture {
