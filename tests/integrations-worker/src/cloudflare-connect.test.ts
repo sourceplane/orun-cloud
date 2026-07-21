@@ -216,6 +216,61 @@ describe("cloudflare adapter (IH5)", () => {
     expect(api.calls.some((c) => c.url.includes(`/accounts/${ACCOUNT_ID}/tokens/permission_groups`))).toBe(true);
   });
 
+  it("uses ACCOUNT-scoped ids even when the user catalog also answers (regression: 'policies must be present')", async () => {
+    // The real failure: the pasted parent can read BOTH catalogs (it holds
+    // Account API Tokens Read), but an account-owned create only accepts
+    // ACCOUNT-scoped ids. User-scoped ids are a different id space — Cloudflare
+    // drops them and rejects the create with "policies must be present". Both
+    // catalogs answer 200 here with DISTINCT ids; the account ids must win.
+    const calls: Array<{ url: string; method: string; body: Record<string, unknown> | null }> = [];
+    const fetchImpl = async (input: string, init?: RequestInit) => {
+      calls.push({
+        url: input,
+        method: init?.method ?? "GET",
+        body: typeof init?.body === "string" ? (JSON.parse(init.body) as Record<string, unknown>) : null,
+      });
+      if (input.includes(`/accounts/${ACCOUNT_ID}/tokens/permission_groups`)) {
+        return Response.json({
+          success: true,
+          result: [
+            { id: "acct-pg-1", name: "Workers Scripts Write" },
+            { id: "acct-pg-2", name: "Workers KV Storage Write" },
+            { id: "acct-pg-3", name: "Account Settings Read" },
+          ],
+        });
+      }
+      if (input.includes("/user/tokens/permission_groups")) {
+        return Response.json({
+          success: true,
+          result: [
+            { id: "user-pg-1", name: "Workers Scripts Write" },
+            { id: "user-pg-2", name: "Workers KV Storage Write" },
+            { id: "user-pg-3", name: "Account Settings Read" },
+          ],
+        });
+      }
+      if (input.includes(`/accounts/${ACCOUNT_ID}/tokens`) && (init?.method ?? "GET") === "POST") {
+        return Response.json({ success: true, result: { id: "child-token-id", value: "cf-child-SECRET" } });
+      }
+      return new Response("not found", { status: 404 });
+    };
+    const provider = createCloudflareProvider(fetchImpl);
+    const outcome = await provider.broker!.mintCredential({
+      template: "workers-deploy",
+      params: {},
+      ttlSeconds: 900,
+      nowMs: NOW.getTime(),
+      parent: { credential: PARENT_TOKEN, externalRef: ACCOUNT_ID, kind: "cloudflare_parent_token" },
+      mintRef: "orun/org_x/workers-deploy/mint_y",
+    });
+    expect(outcome.ok).toBe(true);
+    const create = calls.find((c) => c.method === "POST");
+    const policy = (create!.body!.policies as Array<Record<string, unknown>>)[0]!;
+    expect(policy.permission_groups).toEqual([{ id: "acct-pg-1" }, { id: "acct-pg-2" }, { id: "acct-pg-3" }]);
+    // User-scoped ids must never reach the policy body.
+    expect(JSON.stringify(create!.body)).not.toContain("user-pg-");
+  });
+
   it("mints a child token: named mintRef, clamped expiry, template policies", async () => {
     const api = cloudflareApi();
     const provider = createCloudflareProvider(api.fetchImpl);

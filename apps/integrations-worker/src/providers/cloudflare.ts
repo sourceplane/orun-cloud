@@ -560,15 +560,21 @@ async function mintCloudflareToken(
     return { ok: false, reason: "provider_error", detail: "dns-edit requires zoneIds (32-hex ids)" };
   }
 
-  // Resolve the template's group NAMES against what the parent can see —
-  // the template ⊆ parent-grant check, deny-by-default. The user endpoint
-  // serves user-owned bearers; ACCOUNT-OWNED tokens 401 there and answer on
-  // the account-scoped twin, so try both.
+  // Resolve the template's group NAMES → ids for the child policy.
+  //
+  // CRITICAL: we always mint an ACCOUNT-OWNED token (`POST /accounts/{id}/
+  // tokens`), so the permission-group ids MUST come from the ACCOUNT-scoped
+  // catalog. User-scoped ids (from `/user/tokens/permission_groups`) are a
+  // DIFFERENT id space; Cloudflare silently drops them from the policy and
+  // rejects the create with "policies must be present". The account catalog is
+  // therefore tried FIRST; the user endpoint is only a fallback for the rare
+  // parent that cannot read the account twin (its ids are last-resort and, if
+  // wrong-scoped, fail closed at the create — never a silent mis-grant).
   let groups: Array<{ id: string; name: string }> | null = null;
   let lastDetail = "permission_groups unavailable";
   for (const endpoint of [
-    `${API_BASE}/user/tokens/permission_groups`,
     `${API_BASE}/accounts/${accountId}/tokens/permission_groups`,
+    `${API_BASE}/user/tokens/permission_groups`,
   ]) {
     try {
       const response = await fetchImpl(endpoint, {
@@ -688,33 +694,51 @@ export async function provisionCloudflareServiceIdentity(
   const accountId = input.externalRef;
   if (!accountId) return { ok: false, reason: "provider_error", detail: "no account anchor" };
 
-  let byName: Map<string, string>;
-  try {
-    const response = await fetchImpl(`${API_BASE}/user/tokens/permission_groups`, {
-      method: "GET",
-      headers: { authorization: `Bearer ${input.bootstrapCredential}` },
-    });
-    if (!response.ok) {
-      // The bootstrap bearer cannot even enumerate groups — treat as an
-      // insufficient grant (fall back to refresh custody), not an outage.
-      return response.status === 401 || response.status === 403
-        ? { ok: false, reason: "bootstrap_grant_insufficient", detail: `permission_groups http_${response.status}` }
-        : { ok: false, reason: "provider_error", detail: `permission_groups http_${response.status}` };
+  // The provisioned service token is ACCOUNT-OWNED, so its permission-group ids
+  // must come from the ACCOUNT-scoped catalog (see mintCloudflareToken) — the
+  // account twin is tried first, the user endpoint is the fallback.
+  let byName: Map<string, string> | null = null;
+  let lastStatus = 0;
+  let lastDetail = "permission_groups unavailable";
+  for (const endpoint of [
+    `${API_BASE}/accounts/${accountId}/tokens/permission_groups`,
+    `${API_BASE}/user/tokens/permission_groups`,
+  ]) {
+    try {
+      const response = await fetchImpl(endpoint, {
+        method: "GET",
+        headers: { authorization: `Bearer ${input.bootstrapCredential}` },
+      });
+      if (!response.ok) {
+        lastStatus = response.status;
+        lastDetail = `permission_groups http_${response.status}`;
+        continue;
+      }
+      const body = (await response.json()) as {
+        success?: boolean;
+        result?: Array<{ id?: unknown; name?: unknown }>;
+      };
+      if (body.success !== true || !Array.isArray(body.result)) {
+        lastDetail = "permission_groups unavailable";
+        continue;
+      }
+      byName = new Map(
+        body.result
+          .filter((g): g is { id: string; name: string } => typeof g.id === "string" && typeof g.name === "string")
+          .map((g) => [g.name, g.id]),
+      );
+      break;
+    } catch {
+      lastDetail = "permission_groups network_error";
     }
-    const body = (await response.json()) as {
-      success?: boolean;
-      result?: Array<{ id?: unknown; name?: unknown }>;
-    };
-    if (body.success !== true || !Array.isArray(body.result)) {
-      return { ok: false, reason: "provider_error", detail: "permission_groups unavailable" };
-    }
-    byName = new Map(
-      body.result
-        .filter((g): g is { id: string; name: string } => typeof g.id === "string" && typeof g.name === "string")
-        .map((g) => [g.name, g.id]),
-    );
-  } catch {
-    return { ok: false, reason: "provider_error", detail: "permission_groups network_error" };
+  }
+  if (byName === null) {
+    // The bootstrap bearer cannot enumerate groups on either catalog — an auth
+    // failure means an insufficient grant (fall back to refresh custody), not
+    // an outage.
+    return lastStatus === 401 || lastStatus === 403
+      ? { ok: false, reason: "bootstrap_grant_insufficient", detail: lastDetail }
+      : { ok: false, reason: "provider_error", detail: lastDetail };
   }
 
   const required = serviceIdentityPermissionGroups();
