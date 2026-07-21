@@ -188,6 +188,27 @@ export interface SecretMetadata {
   /** Display-only broker binding fact (IH7): credential template name
    * (e.g. workers-deploy). */
   bindingTemplate: string | null;
+  /**
+   * Provider-rotation producer (provider-rotated-secrets RS0): integration
+   * provider slug (e.g. `cloudflare`) the next value is minted from on the SM6
+   * rotation schedule. `null` = not provider-rotated. Present iff
+   * `rotationConnectionId` and `rotationTemplate` are (DB CHECK enforces this).
+   * A provider-rotated secret is always `source === "static"`.
+   */
+  rotationProvider: string | null;
+  /** Provider-rotation producer (RS0): raw uuid of the integrations connection
+   * the next value is minted against. Opaque reference. */
+  rotationConnectionId: string | null;
+  /** Provider-rotation producer (RS0): credential broker scope template. */
+  rotationTemplate: string | null;
+  /** Provider-rotation producer (RS0): optional JSON params for the mint. */
+  rotationParams: Record<string, unknown> | null;
+  /** Provider-rotation producer (RS0): overlap seconds the prior token stays
+   * valid after a rotation before revoke. `null` = engine default. */
+  rotationGraceSeconds: number | null;
+  /** Provider-rotation producer (RS0): optional materialize target the rotated
+   * value is re-delivered into for long-lived consumers. `null` = none. */
+  rotationDeliverTarget: string | null;
   createdAt: Date;
   updatedAt: Date;
   // NOTE: ciphertext_envelope is intentionally excluded from the type.

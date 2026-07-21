@@ -795,5 +795,14 @@ export const manifest: MigrationManifest = {
       description:
         "The delegation interface (saas-dispatch DX7): agents.agent_profiles gains `interface` — 'orun-sandbox' (the sealed Daytona + orun agent serve path; DEFAULT, prior behavior) or 'anthropic-managed' (a Claude Managed Agents cloud session spawned via API). Additive + idempotent (ADD COLUMN IF NOT EXISTS with default + a named CHECK re-added in a DO block); existing profiles are untouched until they opt in.",
     },
+    {
+      id: "880_config_rotated_secrets",
+      context: "config",
+      path: "880_config_rotated_secrets/up.sql",
+      checksum:
+        "ab3abe1a498e570011f12b25439fdb01cba1713e5c4216bec99a4fbfa1915121",
+      description:
+        "Provider-rotation producer binding (saas-integration-hub / provider-rotated-secrets RS0): config.secret_metadata gains rotation_provider, rotation_connection_id, rotation_template, rotation_params, rotation_grace_seconds, and rotation_deliver_target — how the RS2 engine mints the next value for a stored `source = 'static'` secret from a connected credential-broker parent on the SM6 schedule, plus an optional grace overlap and a materialize delivery target for long-lived consumers. This is the proven stored-and-rotated sibling of IH7's dynamic brokered model; the decrypt path is untouched (a rotated secret resolves like any static one). Guard CHECKs keep the producer core all-or-nothing, force provider-rotated rows to be static (brokered has no stored value to rotate), and bound grace to non-negative; a partial org index backs the engine scan. Additive + idempotent.",
+    },
   ],
 };

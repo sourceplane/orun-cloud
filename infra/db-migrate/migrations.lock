@@ -94,3 +94,4 @@
 850_identity_oauth_dynamic_clients
 860_agents_model_providers
 870_agents_profile_interface
+880_config_rotated_secrets
