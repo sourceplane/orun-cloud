@@ -614,7 +614,11 @@ async function mintCloudflareToken(
       },
       body: JSON.stringify({
         name: input.mintRef,
-        expires_on: expiresOn.toISOString(),
+        // Cloudflare's token API accepts ONLY seconds-precision RFC3339
+        // ("2005-12-30T01:02:03Z"); Date.toISOString() emits milliseconds
+        // (".400Z"), which it rejects 400 "expires_on must be a valid
+        // date/time". Strip the fractional seconds.
+        expires_on: expiresOn.toISOString().replace(/\.\d{3}Z$/, "Z"),
         policies: [
           {
             effect: "allow",

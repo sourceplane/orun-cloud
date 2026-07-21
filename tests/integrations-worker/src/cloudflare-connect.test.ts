@@ -237,7 +237,11 @@ describe("cloudflare adapter (IH5)", () => {
     expect(create).toBeDefined();
     expect(create!.auth).toBe(`Bearer ${PARENT_TOKEN}`);
     expect(create!.body!.name).toBe("orun/org_x/workers-deploy/mint_y");
-    expect(create!.body!.expires_on).toBe(new Date(NOW.getTime() + 900_000).toISOString());
+    // Cloudflare rejects millisecond precision — expires_on must be
+    // seconds-only RFC3339 (regression: http_400 "expires_on must be a valid
+    // date/time").
+    expect(create!.body!.expires_on).toBe("2026-07-12T14:15:00Z");
+    expect(create!.body!.expires_on).not.toMatch(/\.\d{3}Z$/);
     const policy = (create!.body!.policies as Array<Record<string, unknown>>)[0]!;
     expect(policy.resources).toEqual({ [`com.cloudflare.api.account.${ACCOUNT_ID}`]: "*" });
     expect(policy.permission_groups).toEqual([{ id: "pg-1" }, { id: "pg-2" }, { id: "pg-3" }]);
