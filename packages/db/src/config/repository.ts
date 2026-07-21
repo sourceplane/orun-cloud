@@ -62,6 +62,25 @@ function scopeWhere(scope: ResolveScope): { clause: string; params: unknown[] } 
 
 // ── Row mappers ────────────────────────────────────────────
 
+/**
+ * parseJsonbValue — the Hyperdrive executor runs postgres.js with
+ * `fetch_types: false` (deliberate; see hyperdrive/executor.ts), which
+ * disables OID-based type parsing, so JSONB columns arrive as RAW JSON TEXT:
+ * a stored `"on"` reads back as the five characters `"on"` (quotes included).
+ * Every settings/flags consumer then failed string comparisons silently —
+ * the dispatch-model picker never matched a connection id, the copilot flag
+ * never read as on. Parse at this one chokepoint; a string that is not valid
+ * JSON (pre-fix rows written by other paths, defensive) passes through raw.
+ */
+function parseJsonbValue(v: unknown): unknown {
+  if (typeof v !== "string") return v;
+  try {
+    return JSON.parse(v);
+  } catch {
+    return v;
+  }
+}
+
 function mapSetting(row: Record<string, unknown>): Setting {
   return {
     id: row.id as string,
@@ -70,7 +89,7 @@ function mapSetting(row: Record<string, unknown>): Setting {
     environmentId: (row.environment_id as string) ?? null,
     scopeKind: row.scope_kind as Setting["scopeKind"],
     key: row.key as string,
-    value: row.value,
+    value: parseJsonbValue(row.value),
     description: (row.description as string) ?? null,
     overridable: (row.overridable as boolean) ?? true,
     createdAt: new Date(row.created_at as string),
@@ -87,7 +106,7 @@ function mapFeatureFlag(row: Record<string, unknown>): FeatureFlag {
     scopeKind: row.scope_kind as FeatureFlag["scopeKind"],
     flagKey: row.flag_key as string,
     enabled: row.enabled as boolean,
-    value: row.value ?? null,
+    value: parseJsonbValue(row.value) ?? null,
     description: (row.description as string) ?? null,
     createdAt: new Date(row.created_at as string),
     updatedAt: new Date(row.updated_at as string),
