@@ -22,8 +22,16 @@ export default function SettingsAiProvidersPage() {
             title="AI providers"
             description="Model and sandbox credentials for agent sessions and the Workspace Agent — Anthropic, OpenAI, OpenRouter keys and your Daytona compute account. Keys are stored write-only in the workspace secret manager."
           />
-          <ProviderConnections orgId={org.id} />
           <DispatchModelSetting orgId={org.id} />
+          <div className="grid gap-3">
+            <div>
+              <h3 className="text-[13.5px] font-semibold">Connections</h3>
+              <p className="mt-0.5 text-[12.5px] text-muted-foreground">
+                Your connected provider keys. Model providers power dispatch and agent sessions; Daytona provides sandbox compute.
+              </p>
+            </div>
+            <ProviderConnections orgId={org.id} />
+          </div>
         </div>
       )}
     </OrgScope>

@@ -4,9 +4,12 @@
 
 import {
   connectionTone,
+  connectionModel,
+  connectionReady,
   interfaceTier,
   modelOptions,
   orderFleetRows,
+  pickDispatchConnection,
   sessionLabel,
   sessionTone,
   servicePrincipalSubjectId,
@@ -110,6 +113,46 @@ describe("modelOptions (saas-dispatch DX6 — connection-aware model picker)", (
       { provider: "anthropic", status: "verified", config: { defaultModel: "claude-opus-4-8" } }, // already static
     ]);
     expect(options.length).toBe(base);
+  });
+});
+
+describe("dispatch model resolution (saas-dispatch DX-Q6 — the console mirror of custody)", () => {
+  it("connectionModel reads the pinned defaultModel, trimmed, else empty", () => {
+    expect(connectionModel({ config: { defaultModel: "  gpt-4o " } })).toBe("gpt-4o");
+    expect(connectionModel({ config: {} })).toBe("");
+    expect(connectionModel({})).toBe("");
+  });
+
+  it("connectionReady: Anthropic is always ready; OpenAI/OpenRouter need a model id", () => {
+    expect(connectionReady({ provider: "anthropic", config: {} })).toBe(true);
+    expect(connectionReady({ provider: "openrouter", config: {} })).toBe(false);
+    expect(connectionReady({ provider: "openrouter", config: { defaultModel: "x" } })).toBe(true);
+    expect(connectionReady({ provider: "openai", config: { defaultModel: "gpt-4o" } })).toBe(true);
+  });
+
+  it("pickDispatchConnection mirrors custody: preferred → sole → default → null", () => {
+    const rows = [
+      { id: "apc_a", provider: "anthropic", name: "a", status: "verified" },
+      { id: "apc_or", provider: "openrouter", name: "default", status: "verified" },
+    ];
+    // Preferred by id wins.
+    expect(pickDispatchConnection(rows, "apc_a")?.provider).toBe("anthropic");
+    // No preference among two → the one named "default".
+    expect(pickDispatchConnection(rows)?.provider).toBe("openrouter");
+    // Sole verified model connection.
+    expect(pickDispatchConnection([{ id: "apc_1", provider: "openai", name: "x", status: "verified" }])?.id).toBe("apc_1");
+    // Ambiguous (two, neither "default") → null.
+    expect(
+      pickDispatchConnection([
+        { id: "apc_1", provider: "openai", name: "one", status: "verified" },
+        { id: "apc_2", provider: "openrouter", name: "two", status: "verified" },
+      ]),
+    ).toBeNull();
+    // Unverified + non-model providers are excluded.
+    expect(pickDispatchConnection([{ id: "apc_x", provider: "anthropic", name: "a", status: "invalid" }])).toBeNull();
+    expect(pickDispatchConnection([{ id: "apc_d", provider: "daytona", name: "default", status: "verified" }])).toBeNull();
+    // A stale preferred id falls back to the sole connection.
+    expect(pickDispatchConnection([{ id: "apc_or", provider: "openrouter", name: "or", status: "verified" }], "apc_gone")?.id).toBe("apc_or");
   });
 });
 
