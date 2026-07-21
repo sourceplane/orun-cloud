@@ -22,11 +22,13 @@ import {
 import { wrap } from "@/lib/api";
 import { qk, useApiQuery } from "@/lib/query";
 import { useSession } from "@/lib/session";
-import { AGENT_MODELS, sessionLabel, sessionTone } from "@/lib/agents/model";
+import { AGENT_MODELS, interfaceTier, sessionLabel, sessionTone } from "@/lib/agents/model";
 import { compactTokens } from "@/lib/agents/attention";
 import { ConversationView } from "@/components/agents/conversation-view";
 import type { ConversationEvent, PendingApproval } from "@/lib/agents/conversation";
 import { useAttachSocket } from "@/lib/agents/attach-socket";
+import { SessionLens } from "@/components/copilot/session-lens";
+import { useCopilotFlag } from "@/components/copilot/flag";
 
 function modelLabel(model: string): string {
   return AGENT_MODELS.find((m) => m.value === model)?.label ?? model;
@@ -233,6 +235,15 @@ export function SessionDetail({
     if (await sendFrame({ t: "steer", text })) setComposer("");
   }, [composer, sendFrame]);
 
+  const copilot = useCopilotFlag(orgId);
+  const onApproveId = React.useCallback(
+    (requestId: string) => void sendFrame({ t: "verdict", requestId, approved: true }),
+    [sendFrame],
+  );
+  const onDenyId = React.useCallback(
+    (requestId: string) => void sendFrame({ t: "verdict", requestId, approved: false }),
+    [sendFrame],
+  );
   const onApprove = React.useCallback(
     (a: PendingApproval) => void sendFrame({ t: "verdict", requestId: a.requestId, approved: true }),
     [sendFrame],
@@ -369,6 +380,24 @@ export function SessionDetail({
                   </Link>
                 ))}
               </div>
+            </>
+          ) : null}
+
+          {copilot ? (
+            <>
+              <Kicker className="mb-2.5 mt-6">Live lens</Kicker>
+              <SessionLens
+                target={target.url}
+                token={token}
+                orgId={orgId}
+                sessionId={s.id}
+                live={live}
+                tierLabel={interfaceTier(profile?.interface).label}
+                tierTone={interfaceTier(profile?.interface).tone}
+                onApprove={onApproveId}
+                onDeny={onDenyId}
+                interacting={interacting}
+              />
             </>
           ) : null}
 
