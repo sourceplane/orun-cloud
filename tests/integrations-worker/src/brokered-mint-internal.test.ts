@@ -387,7 +387,7 @@ describe("POST /internal/credentials/mint", () => {
       return [];
     });
     const res = await handleInternalMintCredential(
-      post(mintBody({ purpose: "rotation", requestedBy: "usr_admin", requestedByType: "user", runId: undefined, jobId: undefined })),
+      post(mintBody({ purpose: "rotation", requestedBy: "usr_admin", requestedByType: "user", runId: undefined, jobId: undefined, ttlSeconds: 31 * 86400 })),
       createEnv(),
       "req_1",
       { executor, provider },
@@ -401,6 +401,10 @@ describe("POST /internal/credentials/mint", () => {
     expect(ledgerInsert[8]).toBe("usr_admin");
     expect(ledgerInsert[9]).toBeNull();
     expect(ledgerInsert[10]).toBeNull();
+    // A rotation mint's TTL spans the rotation interval — it must NOT be
+    // clamped to the ≤1h resolve ceiling (a 1h stored token would die
+    // provider-side within the hour). Ledger ttl = the requested 31 days.
+    expect(ledgerInsert[11]).toBe(31 * 86400);
     // Events never carry the value.
     for (const q of queries.filter((q) => q.text.includes("WITH inserted_event"))) {
       expect(JSON.stringify(q.params)).not.toContain("cf-child-token-SECRET");

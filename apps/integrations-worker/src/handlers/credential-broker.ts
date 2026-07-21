@@ -78,6 +78,19 @@ import type { MintCredentialOutcome } from "../providers/types.js";
 export const DEFAULT_TTL_SECONDS = 15 * 60;
 export const MAX_TTL_SECONDS = 60 * 60;
 
+/**
+ * TTL bounds for `purpose: "rotation"` mints (provider-rotated-secrets RS1).
+ * A rotation mint produces a rotated secret's STORED value, so its
+ * provider-side lifetime must span the rotation interval plus the grace
+ * overlap — not the ≤1h resolve ceiling (a 1h-clamped stored token would die
+ * provider-side within the hour of being created). The default covers the
+ * RS-D2 defaults (30d interval + 24h grace); the ceiling is a sanity bound —
+ * the RS2 engine re-mints on schedule and the provider-side expiry is the
+ * orphan backstop (IH9), exactly the sprawl-self-heal posture.
+ */
+export const ROTATION_DEFAULT_TTL_SECONDS = 31 * 24 * 60 * 60;
+export const ROTATION_MAX_TTL_SECONDS = 400 * 24 * 60 * 60;
+
 const MAX_PARAM_KEYS = 10;
 const TEMPLATE_ID_RE = /^[a-z][a-z0-9-]{0,63}$/;
 
@@ -347,7 +360,14 @@ async function executeMintCore(
   }
 
   // TTL requested, clamped (D5): the ledger will record the ACTUAL expiry.
-  const ttlSeconds = Math.min(requestedTtl, template.maxTtlSeconds, MAX_TTL_SECONDS);
+  // Rotation mints (RS1) clamp against the rotation-class ceiling instead of
+  // the resolve ceiling — the token must outlive the rotation interval; the
+  // template's resolve max encodes short-lived-issue semantics that do not
+  // apply to a stored, engine-rotated value.
+  const ttlSeconds =
+    attribution.purpose === "rotation"
+      ? Math.min(requestedTtl, ROTATION_MAX_TTL_SECONDS)
+      : Math.min(requestedTtl, template.maxTtlSeconds, MAX_TTL_SECONDS);
 
   // The mint id is generated BEFORE the provider call so the minted
   // credential carries its ledger identity provider-side (IH9 reconcile).
@@ -891,6 +911,9 @@ export async function handleInternalMintCredential(
     });
   }
   const internalPurpose: "secret_resolve" | "rotation" = body.purpose;
+  // Rotation mints default to the rotation-class TTL (interval + grace), not
+  // the 15-minute resolve default — see ROTATION_DEFAULT_TTL_SECONDS.
+  const defaultTtl = internalPurpose === "rotation" ? ROTATION_DEFAULT_TTL_SECONDS : DEFAULT_TTL_SECONDS;
   const parsed = parseInternalBindingBody(body);
   if (typeof parsed === "string") {
     return errorResponse("validation_failed", parsed, 422, requestId, { reason: "params_invalid" });
@@ -899,7 +922,7 @@ export async function handleInternalMintCredential(
   const requestedTtl =
     typeof body.ttlSeconds === "number" && Number.isInteger(body.ttlSeconds) && body.ttlSeconds > 0
       ? body.ttlSeconds
-      : DEFAULT_TTL_SECONDS;
+      : defaultTtl;
 
   const entitlement = await checkBillingEntitlement(
     env.BILLING_WORKER!,
