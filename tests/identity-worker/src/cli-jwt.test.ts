@@ -10,6 +10,7 @@ import {
   looksLikeCliAccessToken,
   getCliSigningKey,
   CLI_ACCESS_TOKEN_TTL_MS,
+  MCP_ACCESS_TOKEN_TTL_MS,
 } from "../../../apps/identity-worker/src/cli/jwt";
 import type { Env } from "../../../apps/identity-worker/src/env";
 
@@ -30,7 +31,31 @@ describe("CLI access JWT (OP1)", () => {
     expect(token.split(".")).toHaveLength(3);
     expect(looksLikeCliAccessToken(token)).toBe(true);
     expect(expiresAt.getTime()).toBe(now.getTime() + CLI_ACCESS_TOKEN_TTL_MS);
+  });
 
+  it("honours an explicit ttlMs override (MCP sessions get the longer 8h TTL)", async () => {
+    expect(MCP_ACCESS_TOKEN_TTL_MS).toBe(8 * 60 * 60 * 1000);
+    const { token, expiresAt } = await mintCliAccessToken(env(KEY), {
+      sub: "usr_abc",
+      sessionId: "clises_xyz",
+      orgIds: ["org_1"],
+      now,
+      ttlMs: MCP_ACCESS_TOKEN_TTL_MS,
+    });
+    // The prolonged exp is honoured, and the token still verifies well past the
+    // short CLI window (proving the longer TTL is what was signed).
+    expect(expiresAt.getTime()).toBe(now.getTime() + MCP_ACCESS_TOKEN_TTL_MS);
+    const pastCliWindow = new Date(now.getTime() + CLI_ACCESS_TOKEN_TTL_MS + 60_000);
+    expect(await verifyCliAccessToken(env(KEY), token, pastCliWindow)).not.toBeNull();
+  });
+
+  it("re-verifies the default-TTL claims", async () => {
+    const { token } = await mintCliAccessToken(env(KEY), {
+      sub: "usr_abc",
+      sessionId: "clises_xyz",
+      orgIds: ["org_1", "org_2"],
+      now,
+    });
     const claims = await verifyCliAccessToken(env(KEY), token, now);
     expect(claims).not.toBeNull();
     expect(claims!.sub).toBe("usr_abc");

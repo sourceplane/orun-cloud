@@ -14,6 +14,16 @@ import type { Env } from "../env.js";
 
 export const CLI_ACCESS_TOKEN_TTL_MS = 15 * 60 * 1000;
 
+// MCP OAuth sessions get a longer access-token lifetime than the loopback/device
+// CLI (whose short 15m window bounds local, DB-check-free revocation for a tool
+// that may run on an untrusted machine). An MCP connector is a user-authorized,
+// long-lived integration where a browser refresh every 15m is poor UX and the
+// client may not refresh proactively; 8h keeps the connection smooth while still
+// capping how long a revoked session's access token survives (revocation within
+// 8h; the 30-day sliding refresh re-checks the session row on every rotation).
+// Applied only when the session's clientHost is an `mcp:` grant.
+export const MCP_ACCESS_TOKEN_TTL_MS = 8 * 60 * 60 * 1000;
+
 export interface CliAccessClaims {
   /** Subject: the public user id (`usr_<hex>`). */
   sub: string;
@@ -101,14 +111,24 @@ export function looksLikeCliAccessToken(token: string): boolean {
  */
 export async function mintCliAccessToken(
   env: Env,
-  input: { sub: string; sessionId: string; orgIds: string[]; workspaceIds?: string[]; now: Date },
+  input: {
+    sub: string;
+    sessionId: string;
+    orgIds: string[];
+    workspaceIds?: string[];
+    now: Date;
+    /** Access-token lifetime; defaults to the short CLI TTL. MCP sessions pass
+     *  MCP_ACCESS_TOKEN_TTL_MS for a longer-lived connector token. */
+    ttlMs?: number;
+  },
 ): Promise<{ token: string; expiresAt: Date }> {
   const secret = getCliSigningKey(env);
   if (!secret) {
     throw new Error("CLI_JWT_SIGNING_KEY is not configured");
   }
+  const ttlMs = input.ttlMs ?? CLI_ACCESS_TOKEN_TTL_MS;
   const iat = Math.floor(input.now.getTime() / 1000);
-  const exp = Math.floor((input.now.getTime() + CLI_ACCESS_TOKEN_TTL_MS) / 1000);
+  const exp = Math.floor((input.now.getTime() + ttlMs) / 1000);
   const claims: CliAccessClaims = {
     sub: input.sub,
     actorKind: "user",
