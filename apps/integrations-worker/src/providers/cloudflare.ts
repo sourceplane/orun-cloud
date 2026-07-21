@@ -523,6 +523,22 @@ function templateResources(
   return { [`com.cloudflare.api.account.${accountExternalId}`]: "*" };
 }
 
+/**
+ * Compact, secret-free failure detail for a Cloudflare API error: the HTTP
+ * status plus EVERY error message Cloudflare returned (not just the first),
+ * bounded to 600 chars. Fed into the `mint_failed` event (operator telemetry);
+ * never contains a token or value. Widened from the earlier 120-char, first-
+ * message-only form, which truncated Cloudflare's "these rules must pass for
+ * …" policy-validation text mid-sentence and hid which rule failed.
+ */
+function cfErrorDetail(status: number, errors?: Array<{ message?: unknown }>): string {
+  const msgs = (errors ?? [])
+    .map((e) => (typeof e?.message === "string" ? e.message : ""))
+    .filter(Boolean)
+    .join("; ");
+  return `http_${status}${msgs ? `: ${msgs}` : ""}`.slice(0, 600);
+}
+
 async function mintCloudflareToken(
   input: {
     template: string;
@@ -614,7 +630,7 @@ async function mintCloudflareToken(
       errors?: Array<{ message?: unknown }>;
     };
     if (!response.ok || body.success !== true || typeof body.result?.value !== "string") {
-      const detail = String(body.errors?.[0]?.message ?? `http_${response.status}`).slice(0, 120);
+      const detail = cfErrorDetail(response.status, body.errors);
       // A 403 on token creation is the parent grant refusing (needs
       // "Account API Tokens: Edit") — surface it as such, not as a 5xx.
       return response.status === 403
@@ -737,7 +753,7 @@ export async function provisionCloudflareServiceIdentity(
       errors?: Array<{ message?: unknown }>;
     };
     if (!response.ok || body.success !== true || typeof body.result?.value !== "string") {
-      const detail = String(body.errors?.[0]?.message ?? `http_${response.status}`).slice(0, 120);
+      const detail = cfErrorDetail(response.status, body.errors);
       return response.status === 403
         ? { ok: false, reason: "bootstrap_grant_insufficient", detail }
         : { ok: false, reason: "provider_error", detail };
@@ -787,7 +803,7 @@ export async function rotateCloudflareServiceIdentity(
       errors?: Array<{ message?: unknown }>;
     };
     if (!response.ok || body.success !== true || typeof body.result !== "string") {
-      const detail = String(body.errors?.[0]?.message ?? `http_${response.status}`).slice(0, 120);
+      const detail = cfErrorDetail(response.status, body.errors);
       return { ok: false, reason: "provider_error", detail };
     }
     return {
