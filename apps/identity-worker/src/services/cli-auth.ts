@@ -12,7 +12,14 @@ import type { IdentityRepository, Session, User, CliSessionByRefresh } from "@sa
 import type { CliSessionOrg, CliSessionPayload } from "@saas/contracts/auth";
 import type { Env } from "../env.js";
 import { hashSha256 } from "../crypto.js";
-import { mintCliAccessToken } from "../cli/jwt.js";
+import { mintCliAccessToken, MCP_ACCESS_TOKEN_TTL_MS } from "../cli/jwt.js";
+
+// An MCP OAuth grant stamps the session's clientHost as `mcp:<clientId>`; such
+// sessions get the longer access-token TTL (see MCP_ACCESS_TOKEN_TTL_MS). All
+// other CLI flows keep the short default.
+function accessTtlFor(clientHost: string | null): number | undefined {
+  return clientHost?.startsWith("mcp:") ? MCP_ACCESS_TOKEN_TTL_MS : undefined;
+}
 import { encryptGraceSuccessor, decryptGraceSuccessor } from "../cli/grace-crypto.js";
 import {
   generateCliCode,
@@ -171,12 +178,14 @@ export function createCliAuthService(deps: CliAuthServiceDeps) {
     const orgs = await fetchOrgs(subPublic);
     let access: { token: string; expiresAt: Date };
     try {
+      const accessTtlMs = accessTtlFor(clientHost);
       access = await mintCliAccessToken(env, {
         sub: subPublic,
         sessionId: cliSessionPublicId(sessionUuid),
         orgIds: orgs.map((o) => o.id),
         ...workspaceIdsOf(orgs),
         now: currentTime,
+        ...(accessTtlMs !== undefined ? { ttlMs: accessTtlMs } : {}),
       });
     } catch {
       return { error: "signing_unavailable", message: "CLI token signing is not configured" };
@@ -233,12 +242,14 @@ export function createCliAuthService(deps: CliAuthServiceDeps) {
         const orgs = await fetchOrgs(userPublicId(user.id));
         let access: { token: string; expiresAt: Date };
         try {
+          const graceTtlMs = accessTtlFor(session.clientHost);
           access = await mintCliAccessToken(env, {
             sub: userPublicId(user.id),
             sessionId: cliSessionPublicId(session.replacedBy!),
             orgIds: orgs.map((o) => o.id),
             ...workspaceIdsOf(orgs),
             now: now(),
+            ...(graceTtlMs !== undefined ? { ttlMs: graceTtlMs } : {}),
           });
         } catch {
           return { error: "signing_unavailable", message: "CLI token signing is not configured" };
@@ -522,12 +533,16 @@ export function createCliAuthService(deps: CliAuthServiceDeps) {
       const orgs = await fetchOrgs(userPublicId(user.id));
       let access: { token: string; expiresAt: Date };
       try {
+        // Refresh preserves the session's TTL class: an MCP session keeps its
+        // longer access-token lifetime across rotations.
+        const refreshTtlMs = accessTtlFor(session.clientHost);
         access = await mintCliAccessToken(env, {
           sub: userPublicId(user.id),
           sessionId: cliSessionPublicId(newSessionId),
           orgIds: orgs.map((o) => o.id),
           ...workspaceIdsOf(orgs),
           now: currentTime,
+          ...(refreshTtlMs !== undefined ? { ttlMs: refreshTtlMs } : {}),
         });
       } catch {
         return { error: "signing_unavailable", message: "CLI token signing is not configured" };

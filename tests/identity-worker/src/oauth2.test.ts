@@ -492,7 +492,12 @@ describe("POST /v1/auth/oauth2/token (RFC 6749)", () => {
     expect(body["token_type"]).toBe("Bearer");
     expect(String(body["access_token"]).split(".")).toHaveLength(3);
     expect(body["refresh_token"]).toMatch(/^ocrt_/);
-    expect(body["expires_in"]).toBeGreaterThan(0);
+    // MCP OAuth sessions get the prolonged 8h access-token TTL (clientHost is
+    // `mcp:claude-web`), NOT the short 15m CLI default — so a connector doesn't
+    // force a browser re-auth every 15 minutes.
+    const expiresIn = body["expires_in"] as number;
+    expect(expiresIn).toBeGreaterThan(8 * 60 * 60 - 120); // ~8h, minus tiny elapsed
+    expect(expiresIn).toBeLessThanOrEqual(8 * 60 * 60);
     expect(body["data"]).toBeUndefined();
   });
 
