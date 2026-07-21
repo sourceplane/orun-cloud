@@ -14,15 +14,24 @@ import { scopeMatchesRequested } from "../scope-match.js";
 import type { PolicyResource } from "@saas/contracts/policy";
 import type { EncryptionAdapter } from "../encryption.js";
 import { fetchAuthorizationContext as fetchAuthContext } from "../membership-client.js";
-import { INTEGRATION_POLICY_ACTIONS } from "@saas/contracts/integrations";
-import { rotateConnectionSource, type RotateSourceResult } from "../integrations-client.js";
+import { INTEGRATION_POLICY_ACTIONS, type InternalMintCredentialRequest } from "@saas/contracts/integrations";
+import {
+  mintBrokeredCredential,
+  rotateConnectionSource,
+  type BrokeredMintOutcome,
+  type RotateSourceResult,
+} from "../integrations-client.js";
 import type { SecretMetadata } from "@saas/db/config";
+import { connectionPublicId } from "../ids.js";
+import { SECRET_EVENT_TYPES } from "../secret-events.js";
 
 export interface RotateSecretDeps {
-  // touchBrokeredRotation is only reached on the brokered branch, so it stays
-  // optional here — static-rotate test fakes need not provide it.
+  // touchBrokeredRotation / rotateProviderSecret are only reached on their
+  // branches, so they stay optional here — static-rotate test fakes need not
+  // provide them.
   repo: Pick<ConfigRepository, "getSecretMetadata" | "rotateSecretMetadata"> & {
     touchBrokeredRotation?: ConfigRepository["touchBrokeredRotation"];
+    rotateProviderSecret?: ConfigRepository["rotateProviderSecret"];
   };
   eventsRepo?: Pick<EventsRepository, "appendEventWithAudit">;
   generateId?: () => string;
@@ -31,6 +40,28 @@ export interface RotateSecretDeps {
   /** SC2 seam: roll the connection's source credential. Production wires
    *  rotateConnectionSource over the INTEGRATIONS_WORKER binding. */
   rotateSource?: (req: { orgId: string; connectionId: string }) => Promise<RotateSourceResult>;
+  /** RS3 seam: the rotate-now mint for a provider-rotated secret. Production
+   *  wires mintBrokeredCredential (purpose "rotation") over the
+   *  INTEGRATIONS_WORKER binding; fails closed (503) when unavailable. */
+  mintRotation?: (req: InternalMintCredentialRequest) => Promise<BrokeredMintOutcome>;
+}
+
+// Rotation-policy grammar + RS-D2 defaults (mirrors create-secret RS1).
+const ROTATION_POLICY_RE = /^[0-9]+[hdwmy]$/;
+const ROTATION_UNIT_SECONDS: Record<string, number> = {
+  h: 3600,
+  d: 86400,
+  w: 7 * 86400,
+  m: 30 * 86400,
+  y: 365 * 86400,
+};
+const ROTATION_DEFAULT_INTERVAL_SECONDS = 30 * 86400;
+const ROTATION_DEFAULT_GRACE_SECONDS = 86400;
+
+function rotationIntervalSeconds(policy: string | null): number {
+  if (!policy || !ROTATION_POLICY_RE.test(policy)) return ROTATION_DEFAULT_INTERVAL_SECONDS;
+  const unit = policy[policy.length - 1]!;
+  return Number(policy.slice(0, -1)) * ROTATION_UNIT_SECONDS[unit]!;
 }
 
 /**
@@ -184,6 +215,42 @@ export async function handleRotateSecret(
         genId,
         now,
         rotateSource: deps?.rotateSource,
+      });
+    }
+
+    // RS3 dispatch: a provider-rotated secret (rotation_provider set; always
+    // source 'static' by the 880 CHECK) rotates by RE-MINTING from its
+    // connected parent — the operator's break-glass "rotate now", same path
+    // the RS2 engine runs on schedule.
+    if (pre.ok && scopeMatchesRequested(pre.value, requestedScope) && pre.value.rotationProvider) {
+      if (secretValue !== null) {
+        return errorResponse(
+          "unsupported",
+          "A provider-rotated secret's value comes from its connected parent — omit `value`; rotation re-mints it",
+          400,
+          requestId,
+          { reason: "provider_rotated" },
+        );
+      }
+      if (rotationPolicy !== undefined) {
+        return validationError(requestId, {
+          rotationPolicy: ["Editing the cadence of a provider-rotated secret is not supported on rotate yet — rotate re-mints with the stored policy"],
+        });
+      }
+      const rotateRepo = deps?.repo.rotateProviderSecret
+        ? { rotateProviderSecret: deps.repo.rotateProviderSecret }
+        : executor
+          ? { rotateProviderSecret: createConfigRepository(executor).rotateProviderSecret }
+          : null;
+      if (!rotateRepo) return errorResponse("internal_error", "Service unavailable", 503, requestId);
+      return await rotateProviderRotatedSecret(env, requestId, actor, pre.value, {
+        repo: rotateRepo,
+        eventsRepo: deps?.eventsRepo ?? (executor ? createEventsRepository(executor) : undefined),
+        genId,
+        now,
+        createdByUuid,
+        encryptionAdapter,
+        mintRotation: deps?.mintRotation,
       });
     }
 
@@ -487,4 +554,147 @@ async function rotateBrokeredSecret(
   }
 
   return successResponse({ secret: toPublicSecretMetadata(result.value) }, requestId);
+}
+
+/**
+ * RS3: rotate-now for a provider-rotated secret — the operator's break-glass
+ * "roll it NOW", running the same mint→encrypt→append path the RS2 engine runs
+ * on schedule. Non-destructive: any failing step leaves the prior version
+ * current. The minted value exists only inside the encrypt scope; it is never
+ * logged, echoed, or placed in an event.
+ */
+async function rotateProviderRotatedSecret(
+  env: Env,
+  requestId: string,
+  actor: ActorContext,
+  head: SecretMetadata,
+  opts: {
+    repo: Pick<ConfigRepository, "rotateProviderSecret">;
+    eventsRepo?: Pick<EventsRepository, "appendEventWithAudit"> | undefined;
+    genId: () => string;
+    now: Date;
+    createdByUuid: NonNullable<ReturnType<typeof uuidFromPublicId>>;
+    encryptionAdapter: EncryptionAdapter | null | undefined;
+    mintRotation?: ((req: InternalMintCredentialRequest) => Promise<BrokeredMintOutcome>) | undefined;
+  },
+): Promise<Response> {
+  const orgId = head.orgId;
+
+  // Dual policy — identical to a rotated create (RS1): secret.write plus the
+  // broker's own issue action ("you cannot re-mint authority you could not
+  // mint"). Enforced whenever the authz services are wired.
+  if (env.MEMBERSHIP_WORKER && env.POLICY_WORKER) {
+    const contextResult = await fetchAuthContext(env.MEMBERSHIP_WORKER, actor.subjectId, actor.subjectType, orgId, requestId);
+    if (!contextResult.ok) return errorResponse("not_found", "Not found", 404, requestId);
+    const resource: PolicyResource = { kind: head.scopeKind === "organization" ? "organization" : "project", orgId };
+    if (head.projectId) resource.projectId = head.projectId;
+    const writeResult = await authorizeViaPolicy(env.POLICY_WORKER, actor.subjectId, actor.subjectType, "secret.write", resource, contextResult.memberships, requestId);
+    if (!writeResult.allow) return errorResponse("not_found", "Not found", 404, requestId);
+    const issueResult = await authorizeViaPolicy(env.POLICY_WORKER, actor.subjectId, actor.subjectType, INTEGRATION_POLICY_ACTIONS.CREDENTIAL_ISSUE, { kind: "organization", orgId }, contextResult.memberships, requestId);
+    if (!issueResult.allow) return errorResponse("not_found", "Not found", 404, requestId);
+  }
+
+  if (!head.rotationConnectionId || !head.rotationTemplate || !head.rotationProvider) {
+    // Unreachable for a well-formed head (880 all-or-nothing CHECK) — fail
+    // loudly rather than mint against a partial binding.
+    return errorResponse("internal_error", "Rotation binding incomplete", 500, requestId);
+  }
+  if (!opts.encryptionAdapter) {
+    return errorResponse("internal_error", "Encryption is not configured", 503, requestId);
+  }
+
+  const mintRotationFn =
+    opts.mintRotation ??
+    (env.INTEGRATIONS_WORKER
+      ? (req: InternalMintCredentialRequest) => mintBrokeredCredential(env.INTEGRATIONS_WORKER!, req, requestId)
+      : null);
+  if (!mintRotationFn) return errorResponse("internal_error", "Service unavailable", 503, requestId);
+
+  // Mint the next value: TTL = interval + grace (the RS1/RS2 math) so the new
+  // token outlives the next scheduled rotation.
+  const ttlSeconds =
+    rotationIntervalSeconds(head.rotationPolicy) +
+    (head.rotationGraceSeconds ?? ROTATION_DEFAULT_GRACE_SECONDS);
+  const mint = await mintRotationFn({
+    orgId,
+    connectionId: connectionPublicId(head.rotationConnectionId),
+    template: head.rotationTemplate,
+    ...(head.rotationParams && Object.keys(head.rotationParams).length > 0
+      ? { params: head.rotationParams }
+      : {}),
+    ttlSeconds,
+    purpose: "rotation",
+    requestedBy: actor.subjectId,
+    requestedByType: actor.subjectType,
+  });
+  if (!mint.ok) {
+    if (mint.status === 503) {
+      return errorResponse("internal_error", "Service unavailable", 503, requestId);
+    }
+    return errorResponse("precondition_failed", `The rotation mint was refused (${mint.reason})`, 412, requestId, {
+      reason: mint.reason,
+    });
+  }
+
+  // Encrypt, then append — the prior version stays untouched on any failure.
+  let envelope: string;
+  try {
+    envelope = JSON.stringify(await opts.encryptionAdapter.encrypt(mint.value));
+  } catch {
+    return errorResponse("internal_error", "Encryption failed", 503, requestId);
+  }
+  const mintExpiry = new Date(mint.expiresAt);
+  const stored = await opts.repo.rotateProviderSecret(
+    orgId,
+    head.id,
+    opts.createdByUuid,
+    envelope,
+    isNaN(mintExpiry.getTime()) ? null : mintExpiry,
+  );
+  if (!stored.ok) {
+    return stored.error.kind === "not_found"
+      ? errorResponse("not_found", "Secret not found", 404, requestId)
+      : errorResponse("internal_error", "Service unavailable", 503, requestId);
+  }
+
+  if (opts.eventsRepo) {
+    await opts.eventsRepo.appendEventWithAudit({
+      event: {
+        id: opts.genId(),
+        type: SECRET_EVENT_TYPES.ROTATED,
+        version: 1,
+        source: "config-worker",
+        occurredAt: opts.now,
+        actorType: actor.subjectType,
+        actorId: actor.subjectId,
+        orgId,
+        projectId: head.projectId,
+        environmentId: head.environmentId,
+        subjectKind: "secret",
+        subjectId: head.id,
+        subjectName: head.secretKey,
+        requestId,
+        // Metadata only — NEVER a value.
+        payload: {
+          key: head.secretKey,
+          scope: head.scopeKind,
+          provider: head.rotationProvider,
+          template: head.rotationTemplate,
+          version: stored.value.version,
+          expiresAt: stored.value.expiresAt ? stored.value.expiresAt.toISOString() : null,
+          deliveryRequired: head.rotationDeliverTarget !== null,
+          ...(head.rotationDeliverTarget ? { deliverTarget: head.rotationDeliverTarget } : {}),
+        },
+      },
+      audit: {
+        id: opts.genId(),
+        category: "config",
+        description: `Secret rotated (operator): ${head.secretKey} (${head.rotationProvider}/${head.rotationTemplate} → v${stored.value.version})`,
+        projectId: head.projectId,
+        environmentId: head.environmentId,
+      },
+    });
+  }
+
+  return successResponse({ secret: toPublicSecretMetadata(stored.value) }, requestId);
 }

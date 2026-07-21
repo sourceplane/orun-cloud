@@ -1371,3 +1371,156 @@ describe("handleCreateSecret — rotated create (provider-rotated-secrets RS1)",
     expect(res.status).toBe(503);
   });
 });
+
+// ═══════════════════════════════════════════════════════════
+// Rotate-now for provider-rotated secrets (RS3 break-glass):
+// the operator "roll it NOW" runs the same mint→encrypt→append
+// path the RS2 engine runs on schedule.
+// ═══════════════════════════════════════════════════════════
+
+describe("handleRotateSecret — provider-rotated (RS3 rotate-now)", () => {
+  const RS3_MINT_EXPIRES = "2026-02-20T10:00:00.000Z";
+
+  function providerRotatedHead(overrides?: Partial<SecretMetadata>): SecretMetadata {
+    return fakeSecret({
+      secretKey: "CF_TOKEN",
+      rotationPolicy: "30d",
+      rotationProvider: "cloudflare",
+      rotationConnectionId: CONN_UUID,
+      rotationTemplate: "workers-deploy",
+      ...overrides,
+    });
+  }
+
+  function rs3Mint(fail?: { status: number; reason: string }) {
+    const calls: Array<Record<string, unknown>> = [];
+    return {
+      calls,
+      fn: (req: Record<string, unknown>) => {
+        calls.push(req);
+        if (fail) return Promise.resolve({ ok: false as const, status: fail.status, reason: fail.reason });
+        return Promise.resolve({
+          ok: true as const,
+          value: "cf-rotate-now-SECRET",
+          mintId: "mint_" + "aa".repeat(16),
+          provider: "cloudflare",
+          template: "workers-deploy",
+          expiresAt: RS3_MINT_EXPIRES,
+        });
+      },
+    };
+  }
+
+  const rs3Adapter = {
+    encrypt: (plaintext: string) =>
+      Promise.resolve({ alg: "AES-256-GCM" as const, v: 1 as const, iv: "iv3", ct: `ENC(${plaintext.length})` }),
+  };
+
+  it("re-mints (purpose rotation, TTL = interval + grace), appends, and emits secret.rotated with actor attribution", async () => {
+    const mint = rs3Mint();
+    const eventsRepo = fakeEventsRepo();
+    let stored: { envelope: string; expiresAt: Date | null } | undefined;
+    const res = await handleRotateSecret(
+      makeEmptyRequest(), FAKE_ENV, "req_p1", ACTOR, ORG_SCOPE, SECRET_UUID,
+      {
+        repo: {
+          getSecretMetadata: () => Promise.resolve({ ok: true as const, value: providerRotatedHead() }),
+          rotateSecretMetadata: () => {
+            throw new Error("the static rotate path must not run for a provider-rotated head");
+          },
+          rotateProviderSecret: (_o, _i, _b, envelope, expiresAt) => {
+            stored = { envelope, expiresAt };
+            return Promise.resolve({
+              ok: true as const,
+              value: providerRotatedHead({ version: 2, expiresAt: new Date(RS3_MINT_EXPIRES) }),
+            });
+          },
+        },
+        eventsRepo,
+        encryptionAdapter: rs3Adapter,
+        mintRotation: mint.fn as never,
+        generateId: () => FIXED_ID,
+        now: () => FIXED_NOW,
+      },
+    );
+    expect(res.status).toBe(200);
+    expect(mint.calls[0]!.purpose).toBe("rotation");
+    expect(mint.calls[0]!.connectionId).toBe(CONN_PUBLIC);
+    expect(mint.calls[0]!.ttlSeconds).toBe(30 * 86400 + 86400);
+    expect(mint.calls[0]!.requestedBy).toBe(ACTOR.subjectId);
+    expect(stored?.envelope).toBe(JSON.stringify({ alg: "AES-256-GCM", v: 1, iv: "iv3", ct: "ENC(20)" }));
+    expect(stored?.expiresAt?.toISOString()).toBe(RS3_MINT_EXPIRES);
+    const evt = eventsRepo.calls[0]!;
+    expect(evt.event.type).toBe("secret.rotated");
+    expect(evt.event.actorId).toBe(ACTOR.subjectId);
+    expect(evt.event.payload).toMatchObject({ key: "CF_TOKEN", version: 2, deliveryRequired: false });
+    // Reveal-once: the minted value appears nowhere.
+    expect(JSON.stringify(await res.json())).not.toContain("cf-rotate-now-SECRET");
+    expect(JSON.stringify(eventsRepo.calls)).not.toContain("cf-rotate-now-SECRET");
+  });
+
+  it("rejects a caller-supplied value on a provider-rotated head (400)", async () => {
+    const res = await handleRotateSecret(
+      makeJsonRequest({ value: "v" }, "POST"), FAKE_ENV, "req_p2", ACTOR, ORG_SCOPE, SECRET_UUID,
+      {
+        repo: {
+          getSecretMetadata: () => Promise.resolve({ ok: true as const, value: providerRotatedHead() }),
+          rotateSecretMetadata: () => unusedConfigFailure<SecretMetadata>(),
+        },
+        encryptionAdapter: rs3Adapter,
+      },
+    );
+    expect(res.status).toBe(400);
+  });
+
+  it("rejects a cadence edit on rotate for a provider-rotated head (422)", async () => {
+    const res = await handleRotateSecret(
+      makeJsonRequest({ rotationPolicy: "7d" }, "POST"), FAKE_ENV, "req_p3", ACTOR, ORG_SCOPE, SECRET_UUID,
+      {
+        repo: {
+          getSecretMetadata: () => Promise.resolve({ ok: true as const, value: providerRotatedHead() }),
+          rotateSecretMetadata: () => unusedConfigFailure<SecretMetadata>(),
+        },
+        encryptionAdapter: rs3Adapter,
+      },
+    );
+    expect(res.status).toBe(422);
+  });
+
+  it("412s a refused mint and stores NOTHING (non-destructive)", async () => {
+    const mint = rs3Mint({ status: 412, reason: "parent_grant_insufficient" });
+    let storeCalled = false;
+    const res = await handleRotateSecret(
+      makeEmptyRequest(), FAKE_ENV, "req_p4", ACTOR, ORG_SCOPE, SECRET_UUID,
+      {
+        repo: {
+          getSecretMetadata: () => Promise.resolve({ ok: true as const, value: providerRotatedHead() }),
+          rotateSecretMetadata: () => unusedConfigFailure<SecretMetadata>(),
+          rotateProviderSecret: () => {
+            storeCalled = true;
+            return unusedConfigFailure<SecretMetadata>();
+          },
+        },
+        encryptionAdapter: rs3Adapter,
+        mintRotation: mint.fn as never,
+      },
+    );
+    expect(res.status).toBe(412);
+    expect(storeCalled).toBe(false);
+  });
+
+  it("fails closed (503) when no rotation minter is available", async () => {
+    const res = await handleRotateSecret(
+      makeEmptyRequest(), FAKE_ENV, "req_p5", ACTOR, ORG_SCOPE, SECRET_UUID,
+      {
+        repo: {
+          getSecretMetadata: () => Promise.resolve({ ok: true as const, value: providerRotatedHead() }),
+          rotateSecretMetadata: () => unusedConfigFailure<SecretMetadata>(),
+          rotateProviderSecret: () => unusedConfigFailure<SecretMetadata>(),
+        },
+        encryptionAdapter: rs3Adapter,
+      },
+    );
+    expect(res.status).toBe(503);
+  });
+});
