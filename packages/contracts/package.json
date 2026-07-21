@@ -16,6 +16,7 @@
     "./events": "./src/events.ts",
     "./agents": "./src/agents.ts",
     "./agents-attach": "./src/agents-attach.ts",
+    "./agui": "./src/agui.ts",
     "./dispatch": "./src/dispatch.ts",
     "./event-catalog": "./src/event-catalog.ts",
     "./security-events": "./src/security-events.ts",

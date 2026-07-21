@@ -46,6 +46,8 @@
     "dist",
     "../../apps/chat-worker/src/workspace-agent.ts",
     "../../apps/chat-worker/src/chat-index.ts",
+    "../../apps/chat-worker/src/dispatch-index.ts",
+    "../../apps/chat-worker/src/workspace-memory.ts",
     "../../apps/chat-worker/src/index.ts",
     "../../apps/chat-worker/src/model.ts"
   ]
