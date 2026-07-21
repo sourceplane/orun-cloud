@@ -123,3 +123,20 @@ spec:
 # (the console "Add Slack channel" picker surfaced "Not found" 404; the broker
 # mint / brokered-secret bind would deny the same way). This marker republishes
 # the current bundle, unblocking the Slack channel picker + broker surface.
+# ci: redeploy with the saas-agents-native / fleet / dispatch bundle. SEVENTH
+# occurrence of the same failure mode: after PR #397's bundle (the first eight
+# organization.agent.* actions), later epics added MORE agent actions to the
+# role maps + ALL_KNOWN_ACTIONS in `packages/policy-engine` but touched nothing
+# under this component's `path`, so `orun plan --changed` never scheduled the
+# deploy profile and prod kept serving the pre-AN bundle. The newly-denied set:
+# `organization.agent.chat` (AN4 Workspace Agent — the presenting symptom: the
+# console Dispatch/Chat surface shows "Not authorized" for owners, and the DX1
+# `/dispatch/index` live socket stays on "polling", because chat-worker's
+# now-correct authorize() re-enters policy-worker whose stale ALL_KNOWN_ACTIONS
+# lacks the action → allow=false); plus `organization.agent.session.create`
+# `.interact` `.spawn`, `organization.agent.autonomy.write`,
+# `organization.agent.routine.read`/`.write`, and
+# `organization.agent.budget.read`/`.write` (AG9/AF). This marker republishes
+# the current bundle, unblocking the whole Workspace Agent + fleet + dispatch
+# surface in one deploy. (Pairs with the chat-worker authorize fix, #529 — that
+# corrected the request contract; this makes the grant it asks for exist live.)
