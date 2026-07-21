@@ -78,7 +78,7 @@ export interface UpsertProviderCredentialInput {
   expiresAt?: Date | null;
 }
 
-export type MintPurpose = "api" | "secret_resolve";
+export type MintPurpose = "api" | "secret_resolve" | "rotation";
 
 export type MintRevokeStatus = "pending" | "revoked" | "expired" | "orphaned";
 

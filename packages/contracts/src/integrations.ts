@@ -532,7 +532,7 @@ export interface IntegrationScopeTemplate {
   custodyKind?: string;
 }
 
-export type IntegrationMintPurpose = "api" | "secret_resolve";
+export type IntegrationMintPurpose = "api" | "secret_resolve" | "rotation";
 
 export type IntegrationMintRevokeStatus = "pending" | "revoked" | "expired" | "orphaned";
 
@@ -704,13 +704,17 @@ export interface ValidateBrokerBindingResponse {
 }
 
 /**
- * POST /internal/credentials/mint — service-binding-only mint for brokered
- * secret resolution (design §5.4). config-worker has already gated the
- * SECRET read (Layer-1 bearer authz + live lease in state-worker, Layer-2
- * secret policy in config-worker); the broker still enforces its own
- * entitlement, the per-org daily mint rate limit, template validation, and
- * ledger-before-reveal. Executed as the platform; the run attribution lands
- * in the ledger (`purpose: "secret_resolve"`, requestedBy/runId/jobId).
+ * POST /internal/credentials/mint — service-binding-only mint reachable only
+ * over the config→integrations service binding, never through api-edge.
+ * Two internal purposes ride it (both already gated upstream by
+ * config-worker; the broker still enforces its own entitlement, the per-org
+ * daily mint rate limit, template validation, and ledger-before-reveal):
+ *   - "secret_resolve" — brokered secret resolution (design §5.4): Layer-1
+ *     bearer authz + live lease in state-worker, Layer-2 secret policy in
+ *     config-worker; run attribution (runId/jobId) lands in the ledger.
+ *   - "rotation" — a provider-rotated secret's stored value being produced
+ *     (provider-rotated-secrets RS1 create-from-parent / RS2 engine): gated
+ *     by secret.write policy in config-worker; no run/job attribution.
  */
 export interface InternalMintCredentialRequest {
   /** Raw org UUID. */
@@ -721,7 +725,7 @@ export interface InternalMintCredentialRequest {
   params?: Record<string, unknown>;
   /** Requested TTL; the broker clamps to min(request, template max, 1h). */
   ttlSeconds?: number;
-  purpose: "secret_resolve";
+  purpose: "secret_resolve" | "rotation";
   /** Ledger attribution (never an authz input). */
   requestedBy?: string | null;
   /** The verified actor kind behind requestedBy (event attribution only). */
