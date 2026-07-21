@@ -11,15 +11,19 @@ spec:
   path: apps/mcp-worker
   dependsOn:
     # Build inputs (dependsOn[].input): bundled into this component's artifact,
-    # so a change to any rescopes this component in --changed. NO runtime
-    # dependsOn edges: the worker is a CLIENT of the public API (design §2) —
-    # its only egress is the per-env API_EDGE_URL, never a service binding.
+    # so a change to any rescopes this component in --changed.
     - component: contracts
       input: true
     - component: sdk
       input: true
     - component: mcp
       input: true
+    # Runtime edge: the worker is a CLIENT of the public API (design §2), and
+    # its egress rides a service binding to api-edge itself (the OAuth
+    # authorization-server re-entry — a Worker cannot reach its own public
+    # hostname). One-way (api-edge never binds mcp-worker), so a plain
+    # ordering edge, not an acknowledged cycle: deploy api-edge first.
+    - component: api-edge
   subscribe:
     environments:
       - name: dev

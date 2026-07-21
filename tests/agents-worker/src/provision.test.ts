@@ -94,6 +94,9 @@ function makeKeys(values: Record<string, string | null> = {}): ProviderKeyClient
       if (key in values) return values[key]!;
       return `key-for(${key})`;
     },
+    async revoke() {
+      return true;
+    },
   };
 }
 

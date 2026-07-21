@@ -79,10 +79,26 @@ export async function handleCreateConnection(
   const secretRef = providerSecretRef(provider, name);
 
   try {
-    // 1. Key custody first: if the store fails, no connection row exists.
     if (!deps.providerKeys) {
       return errorResponse("internal_error", "Key custody unavailable", 503, requestId);
     }
+
+    // 1. Name guard: if a connection already owns this (provider, name), stop
+    //    before touching custody — its key must never be clobbered. A duplicate
+    //    is a connection conflict, surfaced as such.
+    const existing = await deps.repo.listConnections({ orgId }, provider);
+    if (existing.some((c) => c.name === name)) {
+      return errorResponse("provider_connection_conflict", `A ${provider} connection named "${name}" already exists`, 409, requestId);
+    }
+
+    // 2. Clear an orphaned custody secret under this ref, if any. A prior
+    //    connection under the same name may have been disconnected while its
+    //    key lingered (pre-fix rows, or a partial teardown); the custody store
+    //    conflicts on the reserved ref otherwise. Safe now: the guard above
+    //    proved no live connection owns it. Best-effort — store is the arbiter.
+    await deps.providerKeys.revoke(orgId, secretRef, actor, requestId);
+
+    // 3. Key custody: if the store fails, no connection row exists.
     const stored = await deps.providerKeys.store(orgId, secretRef, apiKey, actor, requestId);
     if (!stored) {
       return errorResponse("internal_error", "Failed to store the key", 502, requestId);
@@ -171,7 +187,16 @@ export async function handleDeleteConnection(
   if (!(await deps.authorize("organization.agent.provider.write", orgId, actor, requestId))) {
     return errorResponse("forbidden", "Not authorized", 403, requestId);
   }
+  // Read the connection's secretRef before deleting the row — the row is the
+  // only pointer to the custody secret, so we capture it first, then tear down
+  // both. Without this the key is orphaned and blocks a same-name re-connect.
+  const connection = await deps.repo.getConnection({ orgId }, connectionId);
   const removed = await deps.repo.deleteConnection({ orgId }, connectionId);
   if (!removed) return notFound(requestId, connectionId);
+  if (connection && deps.providerKeys) {
+    // Best-effort custody teardown: a lingering key is a hygiene problem the
+    // next connect's orphan-clear also handles — never fail the disconnect.
+    await deps.providerKeys.revoke(orgId, connection.secretRef, actor, requestId);
+  }
   return successResponse({ deleted: true }, requestId);
 }

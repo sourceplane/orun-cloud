@@ -48,6 +48,9 @@ function makeKeys(): ProviderKeyClient {
     async resolve(_orgId, key) {
       return `key-for(${key})`;
     },
+    async revoke() {
+      return true;
+    },
   };
 }
 
