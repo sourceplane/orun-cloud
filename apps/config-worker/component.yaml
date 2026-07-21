@@ -95,3 +95,11 @@ spec:
 # ci: redeploy with live Hyperdrive wiring (BF6b convergence)
 # ci: SS3 prod secrets seeded — redeploy to sync runtime secrets (secrets-live)
 # ci: SM2 SECRET_KEK seeded (stage+prod) — redeploy to sync the workspace-DEK wrap key (secrets-live)
+# ci: re-scope to redeploy with the #551 @saas/db bundle (parseJsonbValue in
+# the config repository row mappers). The Hyperdrive executor's
+# fetch_types:false returns JSONB as raw JSON text, so every settings/flags
+# value read back QUOTED — the dispatch-model picker never matched a
+# connection id and the dispatch.copilot flag never read as on. #551 fixed
+# the mapper in packages/db, but a package change does not rescope this
+# component under `orun plan --changed` (the policy-worker gap class); this
+# marker forces the redeploy that puts the parsed reads live.
