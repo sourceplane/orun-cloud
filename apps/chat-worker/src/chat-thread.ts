@@ -245,7 +245,7 @@ export class ChatThread {
       if (!model) {
         await this.append({
           role: "assistant",
-          text: "I can't reach the workspace's Anthropic connection right now — the model key didn't resolve. Check the provider connection under Agents → Providers, then send your message again.",
+          text: "The dispatch model key didn't resolve — no verified model provider is set for this workspace, or the selected one needs a default model. Set your Dispatch model under Settings → AI providers (Anthropic, OpenAI, or OpenRouter), then send your message again.",
           at: now().toISOString(),
           error: true,
         });
