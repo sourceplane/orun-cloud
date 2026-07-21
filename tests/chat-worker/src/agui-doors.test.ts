@@ -88,39 +88,65 @@ describe("CX1: the run door (turn = run)", () => {
 
     const events = await readAll(res);
     const types = events.map((e) => e.type);
-    // hello → STATE_SNAPSHOT leads; then the turn; the stream CLOSES (text()
-    // resolved) — the door's whole contract.
-    expect(types[0]).toBe("STATE_SNAPSHOT");
-    expect(types).toContain("RUN_STARTED");
+    // AG-UI verifier contract: the run stream MUST begin with RUN_STARTED (the
+    // hello-derived STATE_SNAPSHOT is gated out) and end with RUN_FINISHED.
+    expect(types[0]).toBe("RUN_STARTED");
+    expect(types).not.toContain("STATE_SNAPSHOT");
     expect(types.filter((t) => t === "TEXT_MESSAGE_CONTENT").length).toBeGreaterThanOrEqual(2);
     expect(types[types.length - 1]).toBe("RUN_FINISHED");
     expect(events.find((e) => e.type === "RUN_STARTED")!.runId).toBe("run_1");
     // The streamed text reassembles exactly.
     expect(events.filter((e) => e.type === "TEXT_MESSAGE_CONTENT").map((e) => e.delta).join("")).toBe("Two items are ready.");
-    // Replay was suppressed: only THIS turn's durable rows ride the stream.
-    expect(events.filter((e) => e.type === "MESSAGES_SNAPSHOT")).toHaveLength(2); // user + assistant
+    // The user row is fanned out BEFORE turn:start, so the gate drops its
+    // snapshot too (it would else be a second pre-RUN_STARTED event; the
+    // client already rendered the user bubble optimistically). Only the
+    // assistant's durable row rides the stream, after RUN_STARTED.
+    expect(events.filter((e) => e.type === "MESSAGES_SNAPSHOT")).toHaveLength(1);
+    expect(events.find((e) => e.type === "MESSAGES_SNAPSHOT")!.messages![0]!.role).toBe("assistant");
     // The virtual head detached after the run.
     expect(thread.headCount()).toBe(0);
   });
 
-  it("speaks a refusal in-dialect: RUN_ERROR {turn_in_progress} + RUN_FINISHED", async () => {
+  it("speaks a refusal in-dialect: RUN_ERROR {turn_in_progress} is first AND terminal", async () => {
     const thread = await freshThread();
     const res = aguiRunDoor(thread, "ch_1", "run_9", async () => ({ ok: false, reason: "turn_in_progress" }));
     const events = await readAll(res);
-    const err = events.find((e) => e.type === "RUN_ERROR")!;
-    expect(err.code).toBe("turn_in_progress");
-    expect(events[events.length - 1]!.type).toBe("RUN_FINISHED");
+    // A refusal never runs the turn, so RUN_ERROR is the whole stream — valid
+    // (RUN_ERROR may lead) and terminal (no RUN_FINISHED after it).
+    expect(events.map((e) => e.type)).toEqual(["RUN_ERROR"]);
+    expect(events[0]!.code).toBe("turn_in_progress");
     expect(thread.headCount()).toBe(0);
   });
 
-  it("closes the stream even when the turn throws", async () => {
+  it("closes the stream even when the turn throws — RUN_ERROR, no RUN_FINISHED", async () => {
     const thread = await freshThread();
     const res = aguiRunDoor(thread, "ch_1", undefined, async () => {
       throw new Error("boom");
     });
     const events = await readAll(res);
     expect(events.find((e) => e.type === "RUN_ERROR")!.code).toBe("internal_error");
+    expect(events.some((e) => e.type === "RUN_FINISHED")).toBe(false);
     expect(thread.headCount()).toBe(0);
+  });
+
+  it("an error TURN ends at RUN_ERROR — the turn:done RUN_FINISHED is suppressed", async () => {
+    const thread = await freshThread();
+    // A model that resolves to no client → the honest custody error turn:
+    // the loop emits turn:start (RUN_STARTED), the error msg (RUN_ERROR), then
+    // turn:done (RUN_FINISHED) — the last must NOT reach the stream.
+    const res = aguiRunDoor(thread, "ch_1", "run_e", () =>
+      thread.runTurn("hi", "usr_a", {
+        resolveModel: async () => null,
+        tools: noTools(),
+        system: "sys",
+        now: () => new Date("2026-07-21T09:00:00Z"),
+      }),
+    );
+    const events = await readAll(res);
+    const types = events.map((e) => e.type);
+    expect(types[0]).toBe("RUN_STARTED");
+    expect(types[types.length - 1]).toBe("RUN_ERROR");
+    expect(types).not.toContain("RUN_FINISHED");
   });
 });
 
