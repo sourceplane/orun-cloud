@@ -162,7 +162,7 @@ describe("AN4: the turn loop (recorded-model fixtures)", () => {
     const last = thread.history().at(-1)!;
     expect(last.role).toBe("assistant");
     expect(last.error).toBe(true);
-    expect(last.text).toContain("Anthropic connection");
+    expect(last.text).toContain("Dispatch model");
 
     // Retryable: a later turn with custody restored succeeds.
     const model = scriptedModel([{ blocks: [{ type: "text", text: "back online." }], stopReason: "end_turn" }]);

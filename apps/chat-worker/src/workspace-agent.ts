@@ -14,8 +14,13 @@
 import { Agent, type Connection, type ConnectionContext } from "agents";
 import type { Env } from "./env.js";
 import { ChatThread, type ChatMeta, type ChatStorage, type ModelClient } from "./chat-thread.js";
-import { anthropicModel, workspaceSystemPrompt } from "./model.js";
-import { createConfigResolver, resolveAnthropicKey, type ProviderConnectionLite } from "./custody.js";
+import { modelClientFor, workspaceSystemPrompt } from "./model.js";
+import {
+  createConfigResolver,
+  resolveDispatchModel,
+  DISPATCH_MODEL_SETTING_KEY,
+  type ProviderConnectionLite,
+} from "./custody.js";
 import { createOwnerToolExecutor } from "./tools.js";
 import { withSessionVerbs } from "./session-verbs.js";
 import { formatMemoryForSystem, withMemoryTool, type MemoryEntry, type MemoryRpc } from "./memory.js";
@@ -84,10 +89,29 @@ export class WorkspaceAgent extends Agent<Env> {
 
     const resolveModel = async (): Promise<ModelClient | null> => {
       if (!env.CONFIG_WORKER) return null;
-      const key = await resolveAnthropicKey(
+      const doFetch = edgeFetch ?? fetch;
+
+      // Best-effort: the explicit dispatch-model choice (Settings › AI
+      // providers). A read failure just falls back to sole-or-default.
+      let preferredId: string | null = null;
+      try {
+        const sres = await doFetch(
+          `${baseUrl}/v1/organizations/${orgId}/config/settings/resolve?key=${encodeURIComponent(DISPATCH_MODEL_SETTING_KEY)}`,
+          { headers: { authorization: `Bearer ${ownerToken}` } },
+        );
+        if (sres.ok) {
+          const sbody = (await sres.json()) as { data?: { setting?: { value?: unknown } } };
+          const v = sbody.data?.setting?.value;
+          if (typeof v === "string" && v) preferredId = v;
+        }
+      } catch {
+        // fall back to sole-or-default
+      }
+
+      const resolved = await resolveDispatchModel(
         {
           listConnections: async (org) => {
-            const res = await (edgeFetch ?? fetch)(`${baseUrl}/v1/organizations/${org}/agents/providers`, {
+            const res = await doFetch(`${baseUrl}/v1/organizations/${org}/agents/providers`, {
               headers: { authorization: `Bearer ${ownerToken}` },
             });
             if (!res.ok) return [];
@@ -97,8 +121,12 @@ export class WorkspaceAgent extends Agent<Env> {
           resolveKey: createConfigResolver(env.CONFIG_WORKER, "chat-worker"),
         },
         orgId,
+        preferredId,
       );
-      return key ? anthropicModel(key, edgeFetch ? undefined : undefined) : null;
+      if (!resolved) return null;
+      // The model call goes DIRECT to the provider (global fetch), not via
+      // api-edge — anthropic rides the SDK, openai/openrouter the compat client.
+      return modelClientFor(resolved.provider, resolved.key, resolved.config);
     };
 
     // The hands (AN5): session verbs beside the read-only platform tools —
