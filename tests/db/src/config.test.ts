@@ -1021,3 +1021,32 @@ describe("Secret Safety Invariants", () => {
     expect(finalSelect).not.toContain("*");
   });
 });
+
+describe("JSONB value round-trip (fetch_types:false regression)", () => {
+  // The Hyperdrive executor disables OID type parsing, so JSONB columns
+  // arrive as RAW JSON TEXT. A stored string setting must NOT read back
+  // quoted — this exact bug made the dispatch-model picker and the copilot
+  // flag silently fail every string comparison.
+  it("parses a raw-text JSONB string value back to the string", async () => {
+    const row = { ...SAMPLE_SETTING_ROW, key: "dispatch.copilot", value: '"on"' };
+    const { executor } = createFakeExecutor({ rows: [row] });
+    const repo = createConfigRepository(executor);
+    const result = await repo.getSetting("org-001", "set-001");
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.value.value).toBe("on");
+  });
+
+  it("parses raw-text JSONB objects and passes parsed/unparseable values through", async () => {
+    const objRow = { ...SAMPLE_SETTING_ROW, value: '{"dark":true}' };
+    const { executor } = createFakeExecutor({ rows: [objRow] });
+    const repo = createConfigRepository(executor);
+    const obj = await repo.getSetting("org-001", "set-001");
+    if (obj.ok) expect(obj.value.value).toEqual({ dark: true });
+
+    // Driver-parsed values (objects) and non-JSON strings pass through.
+    const parsedRow = { ...SAMPLE_SETTING_ROW, value: { dark: true } };
+    const { executor: e2 } = createFakeExecutor({ rows: [parsedRow] });
+    const p = await createConfigRepository(e2).getSetting("org-001", "set-001");
+    if (p.ok) expect(p.value.value).toEqual({ dark: true });
+  });
+});
