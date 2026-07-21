@@ -82,3 +82,7 @@ spec:
 # build-input of this worker but that edge is inert under the CI-pinned orun
 # (< v2.22), so --changed would rescope only `mcp`; this trigger rescopes the
 # worker so the live remote transport actually carries the new diagnostics.
+# ci: redeploy for the whoami graceful-degradation fix in @saas/mcp (returns
+# the workspace list with user:null for sk_/OAuth credentials instead of 401ing
+# on the session-only /v1/auth/profile). Same inert build-input edge, so this
+# trigger rescopes the worker to ship the corrected tool.

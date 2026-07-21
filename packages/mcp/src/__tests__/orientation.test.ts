@@ -21,13 +21,31 @@ describe("whoami", () => {
     expect(dataOf(result)).toEqual({ user, workspaces: [org] });
   });
 
-  it("maps a forbidden SDK error to an isError result preserving the code", async () => {
+  it("degrades to a workspaces-only answer when the profile is unavailable (remote sk_/OAuth credential)", async () => {
+    // /v1/auth/profile is session-token-only; an sk_ key or MCP OAuth CLI-JWT
+    // 401s there but is valid for the workspace list. whoami must still succeed
+    // (user: null) rather than fail the whole orientation call.
+    const list = vi.fn().mockResolvedValue({ organizations: [org] });
     const result = await runTool(
       "whoami",
       {},
       {
         auth: { getProfile: vi.fn().mockRejectedValue(forbidden()) },
-        workspaces: { list: vi.fn().mockResolvedValue({ organizations: [] }) },
+        workspaces: { list },
+      },
+    );
+    expect(result.isError).toBeFalsy();
+    expect(dataOf(result)).toEqual({ user: null, workspaces: [org] });
+    expect(textOf(result)).toContain("1 workspace(s)");
+  });
+
+  it("surfaces an isError result when the load-bearing workspace list fails", async () => {
+    const result = await runTool(
+      "whoami",
+      {},
+      {
+        auth: { getProfile: vi.fn().mockResolvedValue({ user }) },
+        workspaces: { list: vi.fn().mockRejectedValue(forbidden()) },
       },
     );
     expect(result.isError).toBe(true);
