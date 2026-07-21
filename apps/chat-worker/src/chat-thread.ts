@@ -43,6 +43,9 @@ export interface ChatMessage {
   blocks?: unknown[];
   /** Tool round metadata for head rendering. */
   tool?: { name: string; phase: "call" | "result"; summary: string; isError?: boolean };
+  /** The model's tool_use id for tool rows (CX2) — lets the AG-UI bridge
+   * carry the loop's id verbatim and the client tool result correlate. */
+  toolId?: string;
   /** The authenticated author of a user turn (edge-stamped). */
   principal?: string;
   /** True for the honest error turn (custody/model failure — retryable). */
@@ -87,8 +90,10 @@ export interface ToolSpec {
 export interface ToolExecutor {
   specs(): ToolSpec[];
   /** Execute one read-only platform tool with the OWNER's credential.
-   * Returns a summary + data; throws never (errors come back as results). */
-  execute(name: string, input: Record<string, unknown>): Promise<{ summary: string; data: unknown; isError?: boolean }>;
+   * Returns a summary + data; throws never (errors come back as results).
+   * `callId` is the model's tool_use id (CX2: client tools correlate the
+   * browser's posted result to the pending call by exactly this id). */
+  execute(name: string, input: Record<string, unknown>, callId?: string): Promise<{ summary: string; data: unknown; isError?: boolean }>;
 }
 
 const MSG_PREFIX = "m:";
@@ -312,13 +317,15 @@ export class ChatThread {
             text: textOut,
             at: now().toISOString(),
             tool: { name: call.name, phase: "call", summary: JSON.stringify(call.input) },
+            toolId: call.id,
           });
-          const out = await deps.tools.execute(call.name, call.input);
+          const out = await deps.tools.execute(call.name, call.input, call.id);
           await this.append({
             role: "tool",
             text: "",
             at: now().toISOString(),
             tool: { name: call.name, phase: "result", summary: out.summary, ...(out.isError ? { isError: true } : {}) },
+            toolId: call.id,
           });
           toolResults.push({
             type: "tool_result",
