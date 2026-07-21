@@ -11,6 +11,8 @@
     "lint": "eslint src"
   },
   "dependencies": {
+    "@ag-ui/client": "0.0.57",
+    "@ag-ui/core": "0.0.57",
     "@hookform/resolvers": "^3.10.0",
     "@opennextjs/aws": "3.6.2",
     "@opennextjs/cloudflare": "1.17.1",
@@ -38,6 +40,7 @@
     "react-markdown": "^9.0.1",
     "rehype-sanitize": "^6.0.0",
     "remark-gfm": "^4.0.0",
+    "rxjs": "^7.8.1",
     "tailwind-merge": "^2.6.1",
     "zod": "^3.25.76"
   },

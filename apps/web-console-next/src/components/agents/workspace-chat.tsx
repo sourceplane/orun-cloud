@@ -21,6 +21,8 @@ import {
   type ChatFrame,
   type ChatLiveState,
 } from "@/lib/agents/chat-live";
+import { CopilotThread } from "@/components/copilot/copilot-thread";
+import { useCopilotFlag } from "@/components/copilot/flag";
 
 const BACKOFF_BASE_MS = 500;
 const BACKOFF_MAX_MS = 10_000;
@@ -118,6 +120,7 @@ function MessageRow({ m }: { m: AgentChatMessage }) {
 }
 
 export function WorkspaceChatThread({ orgId, orgSlug, chatId }: { orgId: string; orgSlug: string; chatId: string }) {
+  const copilot = useCopilotFlag(orgId);
   const { client, target, token } = useSession();
   const chat = useApiQuery(qk.orgAgentChat(orgId, chatId), () =>
     wrap(async () => client.agents.getChat(orgId, chatId)),
@@ -191,6 +194,9 @@ export function WorkspaceChatThread({ orgId, orgSlug, chatId }: { orgId: string;
         description="The Workspace Agent reads the workspace through governed tools; execution stays in orun sessions."
       />
 
+      {copilot ? (
+        <CopilotThread orgId={orgId} orgSlug={orgSlug} chatId={chatId} />
+      ) : (
       <div className="mx-auto w-full max-w-3xl">
         {messages.map((m) => (
           <MessageRow key={m.seq} m={m} />
@@ -236,6 +242,7 @@ export function WorkspaceChatThread({ orgId, orgSlug, chatId }: { orgId: string;
           ) : null}
         </div>
       </div>
+      )}
     </Screen>
   );
 }
