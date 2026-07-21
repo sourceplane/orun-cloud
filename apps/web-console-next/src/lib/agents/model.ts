@@ -180,6 +180,41 @@ export const PROVIDER_META = {
  * model-credential providers (Daytona takes apiUrl instead). */
 export const MODEL_PROVIDER_SET = new Set(["anthropic", "openai", "openrouter"]);
 
+/** The defaultModel a connection pins (OpenAI-compatible), else "". */
+export function connectionModel(c: { config?: Record<string, unknown> }): string {
+  const m = c.config?.defaultModel;
+  return typeof m === "string" ? m.trim() : "";
+}
+
+/** Whether a VERIFIED model connection can actually route dispatch: Anthropic
+ * ships a built-in default; OpenAI/OpenRouter need a pinned model id, so a
+ * verified-but-modelless connection is a dead end the UI must call out. */
+export function connectionReady(c: { provider: string; config?: Record<string, unknown> }): boolean {
+  if (c.provider === "openai" || c.provider === "openrouter") return connectionModel(c).length > 0;
+  return true;
+}
+
+/**
+ * pickDispatchConnection — the console mirror of chat-worker custody's
+ * selection rule (saas-dispatch DX-Q6), so Settings can show the model dispatch
+ * will *actually* use, not just what's stored: the setting-named connection if
+ * present + verified, else the sole verified model connection, else the one
+ * named `default`, else null (ambiguous — the user must pick). Keep in lockstep
+ * with apps/chat-worker/src/custody.ts:pickModelConnection.
+ */
+export function pickDispatchConnection<
+  T extends { id?: string; name: string; provider: string; status: string },
+>(connections: T[], preferredId?: string | null): T | null {
+  const rows = connections.filter((c) => MODEL_PROVIDER_SET.has(c.provider) && c.status === "verified");
+  if (rows.length === 0) return null;
+  if (preferredId) {
+    const chosen = rows.find((c) => c.id === preferredId);
+    if (chosen) return chosen;
+  }
+  if (rows.length === 1) return rows[0]!;
+  return rows.find((c) => c.name === "default") ?? null;
+}
+
 /** A model option the profile dialog offers. */
 export interface ModelOption {
   value: string;
