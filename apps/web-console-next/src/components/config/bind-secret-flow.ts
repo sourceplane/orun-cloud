@@ -166,6 +166,41 @@ export function deriveBrokerRow(
 }
 
 // ---------------------------------------------------------------------------
+// Provider-rotation provenance (provider-rotated-secrets RS4)
+// ---------------------------------------------------------------------------
+
+export interface RotationRow {
+  provider: string;
+  template: string;
+  connectionId: string;
+  /** Materialize target re-delivered on rotation; null = per-run consumers. */
+  deliverTarget: string | null;
+  /** Sub-label provenance, e.g. "rotated · cloudflare · workers-deploy · every 30d". */
+  label: string;
+}
+
+/**
+ * Derive the provider-rotation provenance for a secrets-table row. Returns
+ * null for non-rotated rows (absent `rotation` — plain static or brokered).
+ * A rotated row is an ordinary stored secret whose NEXT version the engine
+ * mints from the connected parent; value-shaped actions (rotate now) apply.
+ */
+export function deriveRotationRow(
+  meta: Pick<PublicSecretMetadata, "rotation"> & { rotationPolicy?: string | null },
+): RotationRow | null {
+  const rotation = meta.rotation;
+  if (!rotation) return null;
+  const cadence = meta.rotationPolicy ? ` · every ${meta.rotationPolicy}` : "";
+  return {
+    provider: rotation.provider,
+    template: rotation.template,
+    connectionId: rotation.connectionId,
+    deliverTarget: rotation.deliverTarget,
+    label: `rotated · ${rotation.provider} · ${rotation.template}${cadence}`,
+  };
+}
+
+// ---------------------------------------------------------------------------
 // Orphan health (brokered-orphan-safety, Feature 1)
 // ---------------------------------------------------------------------------
 

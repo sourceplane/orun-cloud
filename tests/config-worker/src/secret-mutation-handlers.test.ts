@@ -1258,9 +1258,22 @@ describe("handleCreateSecret — rotated create (provider-rotated-secrets RS1)",
     expect(captured?.rotationPolicy).toBe("30d");
     expect(captured?.expiresAt?.toISOString()).toBe(MINT_EXPIRES);
     // Reveal-once: the minted value appears NOWHERE outside the envelope.
-    const bodyText = JSON.stringify(await res.json());
+    const resBody = (await res.json()) as {
+      data: { secret: { source?: string; rotation?: Record<string, unknown> } };
+    };
+    const bodyText = JSON.stringify(resBody);
     expect(bodyText).not.toContain("cf-minted-token-SECRET");
     expect(JSON.stringify(eventsRepo.calls)).not.toContain("cf-minted-token-SECRET");
+    // RS4 projection: the rotation producer facts are public display provenance
+    // (public connection id, never params); the secret reads as static.
+    expect(resBody.data.secret.source ?? "static").toBe("static");
+    expect(resBody.data.secret.rotation).toEqual({
+      provider: "cloudflare",
+      connectionId: CONN_PUBLIC,
+      template: "workers-deploy",
+      graceSeconds: null,
+      deliverTarget: null,
+    });
   });
 
   it("honors an explicit rotationPolicy + graceSeconds in the mint TTL", async () => {

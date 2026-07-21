@@ -182,6 +182,23 @@ export interface PublicSecretMetadata {
    * Omitted for static secrets and healthy brokered secrets.
    */
   orphaned?: boolean;
+  /**
+   * Present when the secret is provider-rotated (provider-rotated-secrets
+   * RS0/RS4): display-only producer facts so surfaces can render
+   * `rotated · cloudflare · workers-deploy · every 30d`. The secret itself is
+   * `source: "static"` (a stored value); this describes how the RS2 engine
+   * produces the NEXT version. Never the template params, never a value.
+   */
+  rotation?: {
+    provider: string;
+    /** Public connection id (int_…). */
+    connectionId: string;
+    template: string;
+    /** Grace-overlap seconds; null = the engine default (24h). */
+    graceSeconds: number | null;
+    /** Materialize target re-delivered on rotation; null = per-run consumers only. */
+    deliverTarget: string | null;
+  };
   createdAt: string;
   updatedAt: string;
 }
