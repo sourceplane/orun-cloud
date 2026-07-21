@@ -249,6 +249,31 @@ export interface SecretRotationDue {
   dueKind: "rotation" | "expiry";
 }
 
+/**
+ * A provider-rotated secret due for an engine rotation (provider-rotated-secrets
+ * RS2). Metadata + producer binding only — a value NEVER appears. Due when the
+ * rotation_policy interval has elapsed since the last rotation, or when the
+ * stored token's expires_at is inside the grace window (the stalled-schedule
+ * backstop: rotate before the provider-side token dies).
+ */
+export interface ProviderRotationDue {
+  id: string;
+  orgId: string;
+  projectId: string | null;
+  environmentId: string | null;
+  scopeKind: ScopeKind;
+  secretKey: string;
+  rotationPolicy: string | null;
+  rotationProvider: string;
+  rotationConnectionId: string;
+  rotationTemplate: string;
+  rotationParams: Record<string, unknown> | null;
+  rotationGraceSeconds: number | null;
+  rotationDeliverTarget: string | null;
+  lastRotatedAt: Date | null;
+  expiresAt: Date | null;
+}
+
 export interface CreateSecretMetadataInput {
   id: string;
   /** Account scope is a valid secret rung (SM1), unlike settings writes. */
@@ -536,6 +561,30 @@ export interface ConfigRepository {
   ): Promise<ConfigResult<SecretRotationDue[]>>;
   /** Stamp `last_reminded_at` on a batch of just-reminded secrets (SEC7 cron idempotency). */
   markSecretsReminded(secretIds: string[], at: Date): Promise<ConfigResult<void>>;
+  /**
+   * List the provider-rotated secrets due for an engine rotation (RS2 cron).
+   * A row is due when its `rotation_policy` interval has elapsed since the last
+   * rotation (or creation), OR its `expires_at` is inside the grace window —
+   * the stalled-schedule backstop that rotates before the stored token dies
+   * provider-side. Only active, shared, provider-rotated (`rotation_provider IS
+   * NOT NULL`) heads qualify. Bounded by `limit`. Never a value.
+   */
+  listSecretsDueForProviderRotation(now: Date, limit: number): Promise<ConfigResult<ProviderRotationDue[]>>;
+  /**
+   * Complete one engine rotation (RS2): bump the head version, store the new
+   * ciphertext envelope, append the version row, stamp `last_rotated_at`, and
+   * move `expires_at` to the new token's provider-side expiry — one atomic
+   * statement. Guarded to an active provider-rotated static head; anything
+   * else returns `not_found` (the engine can never touch a non-rotated
+   * secret). Append-only: the prior version row is untouched.
+   */
+  rotateProviderSecret(
+    orgId: string,
+    secretId: string,
+    createdBy: Uuid,
+    ciphertextEnvelope: string,
+    expiresAt: Date | null,
+  ): Promise<ConfigResult<SecretMetadata>>;
 
   // Secret policies (SM3, Layer 2)
   /**

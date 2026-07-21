@@ -140,6 +140,8 @@ export const EVENT_CATALOG: Readonly<Record<string, CatalogEntry>> = Object.from
   entry({ type: "secret.sync.recorded", version: 1, category: "security", severity: "info", title: "Secret sync recorded for {subject.name}", audit: true }),
   entry({ type: "secret.rotation_due", version: 1, category: "security", severity: "warning", title: "Secret {subject.name} rotation due", audit: true }),
   entry({ type: "secret.expiring", version: 1, category: "security", severity: "warning", title: "Secret {subject.name} expiring", audit: true }),
+  entry({ type: "secret.rotated", version: 1, category: "security", severity: "info", title: "Secret {subject.name} rotated", audit: true }),
+  entry({ type: "secret.rotation_failed", version: 1, category: "security", severity: "warning", title: "Secret {subject.name} rotation failed", audit: true }),
 
   // --- billing (billing-worker) ---------------------------------------------
   entry({ type: "subscription.created", version: 1, category: "billing", severity: "notice", title: "Subscription created ({payload.planCode})", audit: true }),

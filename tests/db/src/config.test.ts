@@ -1106,3 +1106,88 @@ describe("JSONB value round-trip (fetch_types:false regression)", () => {
     if (p.ok) expect(p.value.value).toEqual({ dark: true });
   });
 });
+
+// ═══════════════════════════════════════════════════════════
+// Provider-rotated secrets — RS2 engine repo surface
+// ═══════════════════════════════════════════════════════════
+
+describe("ConfigRepository — Provider rotation (RS2)", () => {
+  const NOW_TS = new Date("2026-07-01T00:00:00Z");
+  const DUE_ROW = {
+    id: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+    org_id: "org-001",
+    project_id: null,
+    environment_id: null,
+    scope_kind: "organization",
+    secret_key: "CF_API_TOKEN",
+    rotation_policy: "30d",
+    rotation_provider: "cloudflare",
+    rotation_connection_id: "cdcdcdcd-cdcd-cdcd-cdcd-cdcdcdcdcdcd",
+    rotation_template: "workers-deploy",
+    // JSONB arrives as raw JSON TEXT under fetch_types:false.
+    rotation_params: JSON.stringify({ accountId: "acc-1" }),
+    rotation_grace_seconds: 3600,
+    rotation_deliver_target: "cloudflare-worker:api-prod",
+    last_rotated_at: "2026-05-01T00:00:00Z",
+    expires_at: "2026-07-02T00:00:00Z",
+  };
+
+  it("lists due provider rotations with the policy + token-near-death predicates", async () => {
+    const { executor, queries } = createFakeExecutor({ rows: [DUE_ROW] });
+    const repo = createConfigRepository(executor);
+    const result = await repo.listSecretsDueForProviderRotation(NOW_TS, 50);
+    expect(result.ok).toBe(true);
+    const q = queries[0]!;
+    // Scope: active, shared, provider-rotated only.
+    expect(q.text).toContain("rotation_provider IS NOT NULL");
+    expect(q.text).toContain("personal_owner IS NULL");
+    expect(q.text).toContain("status = 'active'");
+    // Both due rungs: policy elapsed, or token dying inside the grace window.
+    expect(q.text).toContain("rotation_policy ~ '^[0-9]+[hdwmy]$'");
+    expect(q.text).toContain("COALESCE(rotation_grace_seconds, 86400)");
+    // Never the ciphertext.
+    expect(q.text).not.toContain("ciphertext_envelope");
+    expect(q.params[0]).toBe(NOW_TS.toISOString());
+    expect(q.params[1]).toBe(50);
+    if (result.ok) {
+      const due = result.value[0]!;
+      expect(due.rotationProvider).toBe("cloudflare");
+      expect(due.rotationParams).toEqual({ accountId: "acc-1" }); // parsed, not raw text
+      expect(due.rotationGraceSeconds).toBe(3600);
+      expect(due.rotationDeliverTarget).toBe("cloudflare-worker:api-prod");
+    }
+  });
+
+  it("rotateProviderSecret appends a version, stamps rotation, and moves expires_at — guarded to a rotated static head", async () => {
+    const rotatedRow = {
+      ...SAMPLE_SECRET_ROW,
+      id: "sec-rot",
+      version: 2,
+      rotation_provider: "cloudflare",
+      rotation_connection_id: "cdcdcdcd-cdcd-cdcd-cdcd-cdcdcdcdcdcd",
+      rotation_template: "workers-deploy",
+    };
+    const { executor, queries } = createFakeExecutor({ rows: [rotatedRow] });
+    const repo = createConfigRepository(executor);
+    const newExpiry = new Date("2026-08-01T00:00:00Z");
+    const result = await repo.rotateProviderSecret("org-001", "sec-rot", CREATED_BY, "{\"alg\":\"AES-256-GCM\"}", newExpiry);
+    expect(result.ok).toBe(true);
+    const q = queries[0]!;
+    // Guard: only an active provider-rotated STATIC head can be engine-rotated.
+    expect(q.text).toContain("rotation_provider IS NOT NULL AND source = 'static'");
+    // Append-only: the version row lands in the same atomic statement.
+    expect(q.text).toContain("version = version + 1");
+    expect(q.text).toContain("INSERT INTO config.secret_versions");
+    expect(q.text).toContain("last_rotated_at = now()");
+    expect(q.params[3]).toBe("{\"alg\":\"AES-256-GCM\"}");
+    expect(q.params[4]).toBe(newExpiry.toISOString());
+  });
+
+  it("rotateProviderSecret returns not_found for a non-rotated head (0 rows)", async () => {
+    const { executor } = createFakeExecutor({ rows: [], rowCount: 0 });
+    const repo = createConfigRepository(executor);
+    const result = await repo.rotateProviderSecret("org-001", "sec-001", CREATED_BY, "{}", null);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.kind).toBe("not_found");
+  });
+});

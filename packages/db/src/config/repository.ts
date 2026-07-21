@@ -19,6 +19,7 @@ import type {
   SecretPolicyRecord,
   SecretPolicyScope,
   SecretRotationDue,
+  ProviderRotationDue,
   SecretSync,
   SecretVersion,
   Setting,
@@ -874,6 +875,111 @@ export function createConfigRepository(executor: SqlExecutor): ConfigRepository 
         return { ok: true, value: undefined };
       } catch {
         return safeError("Failed to stamp last_reminded_at");
+      }
+    },
+
+    async listSecretsDueForProviderRotation(now: Date, limit: number): Promise<ConfigResult<ProviderRotationDue[]>> {
+      try {
+        // Due when the rotation_policy interval elapsed since the last rotation
+        // (or creation), OR the stored token's expires_at is inside the grace
+        // window (COALESCE to the 24h RS-D2 default) — the stalled-schedule
+        // backstop: rotate BEFORE the token dies provider-side. Only active,
+        // shared, provider-rotated static heads. Producer binding only — the
+        // ciphertext column is never selected.
+        const policyInterval = `
+          CASE right(rotation_policy, 1)
+            WHEN 'h' THEN make_interval(hours  => left(rotation_policy, length(rotation_policy) - 1)::int)
+            WHEN 'd' THEN make_interval(days   => left(rotation_policy, length(rotation_policy) - 1)::int)
+            WHEN 'w' THEN make_interval(weeks  => left(rotation_policy, length(rotation_policy) - 1)::int)
+            WHEN 'm' THEN make_interval(months => left(rotation_policy, length(rotation_policy) - 1)::int)
+            WHEN 'y' THEN make_interval(years  => left(rotation_policy, length(rotation_policy) - 1)::int)
+          END`;
+        const overdueByPolicy = `(rotation_policy ~ '^[0-9]+[hdwmy]$'
+          AND COALESCE(last_rotated_at, created_at) + (${policyInterval}) < $1::timestamptz)`;
+        const tokenNearDeath = `(expires_at IS NOT NULL
+          AND expires_at < $1::timestamptz + make_interval(secs => COALESCE(rotation_grace_seconds, 86400)))`;
+        const sql = `
+          SELECT id, org_id, project_id, environment_id, scope_kind, secret_key,
+                 rotation_policy, rotation_provider, rotation_connection_id,
+                 rotation_template, rotation_params, rotation_grace_seconds,
+                 rotation_deliver_target, last_rotated_at, expires_at
+          FROM config.secret_metadata
+          WHERE status = 'active'
+            AND personal_owner IS NULL
+            AND rotation_provider IS NOT NULL
+            AND (${overdueByPolicy} OR ${tokenNearDeath})
+          ORDER BY COALESCE(last_rotated_at, created_at) ASC
+          LIMIT $2`;
+        const result = await executor.execute<Record<string, unknown>>(sql, [now.toISOString(), limit]);
+        return {
+          ok: true,
+          value: result.rows.map((row) => ({
+            id: row.id as string,
+            orgId: row.org_id as string,
+            projectId: (row.project_id as string) ?? null,
+            environmentId: (row.environment_id as string) ?? null,
+            scopeKind: row.scope_kind as ProviderRotationDue["scopeKind"],
+            secretKey: row.secret_key as string,
+            rotationPolicy: (row.rotation_policy as string) ?? null,
+            rotationProvider: row.rotation_provider as string,
+            rotationConnectionId: row.rotation_connection_id as string,
+            rotationTemplate: row.rotation_template as string,
+            rotationParams: (parseJsonbValue(row.rotation_params) as Record<string, unknown> | null) ?? null,
+            rotationGraceSeconds:
+              row.rotation_grace_seconds === null || row.rotation_grace_seconds === undefined
+                ? null
+                : Number(row.rotation_grace_seconds),
+            rotationDeliverTarget: (row.rotation_deliver_target as string) ?? null,
+            lastRotatedAt: row.last_rotated_at ? new Date(row.last_rotated_at as string) : null,
+            expiresAt: row.expires_at ? new Date(row.expires_at as string) : null,
+          })),
+        };
+      } catch {
+        return safeError("Failed to list secrets due for provider rotation");
+      }
+    },
+
+    async rotateProviderSecret(
+      orgId: string,
+      secretId: string,
+      createdBy: Uuid,
+      ciphertextEnvelope: string,
+      expiresAt: Date | null,
+    ): Promise<ConfigResult<SecretMetadata>> {
+      try {
+        // Append, never overwrite (mirrors rotateSecretMetadata) + move the
+        // expiry to the NEW token's provider-side death. The `rotation_provider
+        // IS NOT NULL AND source = 'static'` predicate makes this a no-op
+        // (→ not_found) for anything but a provider-rotated head — the engine
+        // can never touch a plain static or brokered secret through this path.
+        const sql = `WITH head AS (
+           UPDATE config.secret_metadata
+           SET version = version + 1,
+               last_rotated_at = now(),
+               updated_at = now(),
+               ciphertext_envelope = $4,
+               expires_at = $5
+           WHERE org_id = $1 AND id = $2 AND status = 'active'
+             AND rotation_provider IS NOT NULL AND source = 'static'
+           RETURNING *
+         ), version_append AS (
+           INSERT INTO config.secret_versions (secret_id, version, ciphertext_envelope, created_by)
+           SELECT id, version, ciphertext_envelope, $3 FROM head
+         )
+         SELECT ${SECRET_METADATA_SAFE_COLUMNS} FROM head`;
+        const result = await executor.execute<Record<string, unknown>>(sql, [
+          orgId,
+          secretId,
+          createdBy,
+          ciphertextEnvelope,
+          expiresAt ? expiresAt.toISOString() : null,
+        ]);
+        if (result.rowCount === 0) {
+          return { ok: false, error: { kind: "not_found" } };
+        }
+        return { ok: true, value: mapSecretMetadata(result.rows[0]!) };
+      } catch {
+        return safeError("Failed to rotate provider secret");
       }
     },
 

@@ -20,6 +20,7 @@ export type {
   SecretMetadata,
   SecretVersion,
   SecretRotationDue,
+  ProviderRotationDue,
   CreateSecretMetadataInput,
   SecretPolicyTier,
   SecretPolicyRecord,

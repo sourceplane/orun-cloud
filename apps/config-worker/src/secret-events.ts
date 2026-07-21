@@ -36,6 +36,21 @@ export const SECRET_EVENT_TYPES = {
    * value). Alert-worthy via the distinct type.
    */
   EXPIRING: "secret.expiring",
+  /**
+   * RS2 rotation engine: a provider-rotated secret's value was re-minted from
+   * its connected parent and stored as a new version (payload = key/scope/
+   * provider/template/version/expiresAt/deliveryRequired — NEVER a value).
+   * `deliveryRequired: true` flags a `rotation_deliver_target` consumer that
+   * still holds the PRIOR value and must be re-delivered before it expires.
+   */
+  ROTATED: "secret.rotated",
+  /**
+   * RS2 rotation engine: a due rotation could not complete (payload = key/
+   * scope/provider/template/reason — NEVER a value). Non-destructive: the
+   * prior version stays current; the engine retries next tick. Alert-worthy —
+   * repeated failures mean the stored token will die at its expires_at.
+   */
+  ROTATION_FAILED: "secret.rotation_failed",
 } as const;
 
 export type SecretEventType = (typeof SECRET_EVENT_TYPES)[keyof typeof SECRET_EVENT_TYPES];
