@@ -1,6 +1,20 @@
 # Sub-epic: provider-rotated-secrets
 
-**Status:** Draft — proposed. Extends the Cloudflare adapter (IH5) and the
+**Status:** Shipped — RS0–RS4 landed. RS0 model+validator (#550, migration
+`880`), RS1 create-from-parent (#552 write-path, #556 `rotation` mint purpose
++ migration `890`, #557 handler incl. the rotation-class TTL ceiling), RS2
+rotation engine (#558, cron phase 2 + `secret.rotated`/`rotation_failed`
+events), RS3 rotate-now break-glass (#559), RS4 surfaces (#560 projection +
+console provenance; orun#552 CLI `--from-broker` / `--remint`). Decisions
+taken: RS-D1 rotated-default confirmed by product; RS-D2–D4 defaults as
+specced (verify = the broker's mint-time parent-grant/template checks; the
+minted-token probe remains open). Deliberate deltas from the plan, recorded
+in the shipped code: retire-old is provider-side `expires_on` (interval +
+grace) with the IH9 sweep — explicit broker revoke deferred; cadence edits on
+a rotated head are rejected on rotate pending an update surface; re-delivery
+is flagged (`deliveryRequired` on `secret.rotated`) rather than executed —
+the materialize lane converges long-lived consumers.
+Extends the Cloudflare adapter (IH5) and the
 brokered-credentials model (IH7) with a **proven, stored-and-rotated**
 alternative to dynamic mint-at-resolve.
 **Parent:** `saas-integration-hub` (IH4 broker core, IH5 Cloudflare adapter, IH7 brokered credentials)
