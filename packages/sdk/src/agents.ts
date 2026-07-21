@@ -428,6 +428,40 @@ export class AgentsClient {
     );
   }
 
+  // ── The AG-UI doors (saas-copilot-surface CX1) ──────────────
+
+  /** POST /agents/chats/:id/agui/run — one turn as an AG-UI run: the
+   * response is a `text/event-stream` of dialect-v1 events for exactly this
+   * turn (design §2.1). The caller reads `response.body`; refusals arrive
+   * in-stream as RUN_ERROR {code}. */
+  aguiRun(
+    orgId: string,
+    chatId: string,
+    input: { runId?: string; messages: Array<{ role: string; content: string }>; tools?: Array<{ name: string }> },
+    opts: RequestOptions = {},
+  ): Promise<Response> {
+    return this.transport.requestStream(
+      { method: "POST", path: `${agentsBase(orgId)}/chats/${encodeURIComponent(chatId)}/agui/run`, body: input },
+      opts,
+    );
+  }
+
+  /** GET /agents/chats/:id/agui/watch — the passive AG-UI follower feed. */
+  aguiWatchChat(orgId: string, chatId: string, from = -1, opts: RequestOptions = {}): Promise<Response> {
+    return this.transport.requestStream(
+      { method: "GET", path: `${agentsBase(orgId)}/chats/${encodeURIComponent(chatId)}/agui/watch`, query: { from } },
+      opts,
+    );
+  }
+
+  /** GET /agents/sessions/:id/agui/watch — the delegated-session lens feed. */
+  aguiWatchSession(orgId: string, sessionId: string, from = -1, opts: RequestOptions = {}): Promise<Response> {
+    return this.transport.requestStream(
+      { method: "GET", path: `${agentsBase(orgId)}/sessions/${encodeURIComponent(sessionId)}/agui/watch`, query: { from } },
+      opts,
+    );
+  }
+
   /** DELETE /agents/providers/:id — disconnect (key custody row remains until GC). */
   disconnectProvider(
     orgId: string,

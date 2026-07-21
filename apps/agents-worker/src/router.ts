@@ -17,6 +17,7 @@ import { handleCreateSession, handleGetSession, handleListSessions } from "./han
 import { handleListSessionEvents } from "./handlers/events.js";
 import {
   handleAttach,
+  handleAguiWatch,
   handleBodyWire,
   handleHeadInput,
   handleRelayAck,
@@ -102,6 +103,7 @@ const SESSION_HEARTBEAT_RE = /^\/v1\/organizations\/([^/]+)\/agents\/sessions\/(
 const SESSION_TOKEN_RE = /^\/v1\/organizations\/([^/]+)\/agents\/sessions\/([^/]+)\/token$/;
 // Head-facing relay routes (saas-agents-live AL6): SSE feed + input.
 const SESSION_ATTACH_RE = /^\/v1\/organizations\/([^/]+)\/agents\/sessions\/([^/]+)\/attach$/;
+const SESSION_AGUI_WATCH_RE = /^\/v1\/organizations\/([^/]+)\/agents\/sessions\/([^/]+)\/agui\/watch$/;
 const SESSION_INPUT_RE = /^\/v1\/organizations\/([^/]+)\/agents\/sessions\/([^/]+)\/input$/;
 // Body-facing relay routes (#466): the in-sandbox runtime's live wire — a
 // wire-only delta fan-out and the head→body steer return-queue (long-poll +
@@ -151,6 +153,7 @@ export async function route(request: Request, env: Env, injectedDeps?: AgentsDep
       SESSION_HEARTBEAT_RE.test(url.pathname) ||
       SESSION_TOKEN_RE.test(url.pathname) ||
       SESSION_ATTACH_RE.test(url.pathname) ||
+      SESSION_AGUI_WATCH_RE.test(url.pathname) ||
       SESSION_INPUT_RE.test(url.pathname) ||
       SESSION_STREAM_RE.test(url.pathname) ||
       SESSION_WIRE_RE.test(url.pathname) ||
@@ -368,6 +371,21 @@ async function dispatch(
       const from = Number(url.searchParams.get("from") ?? "-1");
       const surface = url.searchParams.get("surface") || "console";
       return handleAttach(request, env, deps, orgId, sessionId, actor, requestId, from, surface);
+    }
+    return methodNotAllowed(requestId);
+  }
+
+  // The session AG-UI watch door (saas-copilot-surface CX1): the attach feed
+  // through the bridge — same authz, same choreography, a second dialect.
+  m = SESSION_AGUI_WATCH_RE.exec(url.pathname);
+  if (m) {
+    const orgId = parseOrgPublicId(m[1]!);
+    if (!orgId) return notFound(requestId, url.pathname);
+    const sessionId = m[2]!;
+    if (request.method === "GET") {
+      const from = Number(url.searchParams.get("from") ?? "-1");
+      const surface = url.searchParams.get("surface") || "console";
+      return handleAguiWatch(env, deps, orgId, sessionId, actor, requestId, from, surface);
     }
     return methodNotAllowed(requestId);
   }

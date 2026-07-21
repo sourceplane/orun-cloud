@@ -51,6 +51,13 @@ const ORG_AGENTS_SESSION_WIRE_RE = /^\/v1\/organizations\/[^/]+\/agents\/session
 const ORG_AGENTS_CHATS_RE = /^\/v1\/organizations\/[^/]+\/agents\/chats$/;
 const ORG_AGENTS_CHAT_RE = /^\/v1\/organizations\/[^/]+\/agents\/chats\/[^/]+$/;
 const ORG_AGENTS_CHAT_TURN_RE = /^\/v1\/organizations\/[^/]+\/agents\/chats\/[^/]+\/turn$/;
+// The AG-UI doors (saas-copilot-surface CX1): run (a turn with the event
+// stream teed back — carries the owner bearer exactly like /turn) and the
+// passive watch feeds (chat + session; EventSource-reachable, so the query
+// bearer is accepted and stripped like the attach feed's).
+const ORG_AGENTS_CHAT_AGUI_RUN_RE = /^\/v1\/organizations\/[^/]+\/agents\/chats\/[^/]+\/agui\/run$/;
+const ORG_AGENTS_CHAT_AGUI_WATCH_RE = /^\/v1\/organizations\/[^/]+\/agents\/chats\/[^/]+\/agui\/watch$/;
+const ORG_AGENTS_SESSION_AGUI_WATCH_RE = /^\/v1\/organizations\/[^/]+\/agents\/sessions\/[^/]+\/agui\/watch$/;
 // The memory plane (AN6): provenanced workspace memory, chat-worker-owned.
 const ORG_AGENTS_MEMORY_RE = /^\/v1\/organizations\/[^/]+\/agents\/memory$/;
 const ORG_AGENTS_MEMORY_ENTRY_RE = /^\/v1\/organizations\/[^/]+\/agents\/memory\/[^/]+$/;
@@ -60,6 +67,8 @@ export function isChatRoute(pathname: string): boolean {
     ORG_AGENTS_CHATS_RE.test(pathname) ||
     ORG_AGENTS_CHAT_RE.test(pathname) ||
     ORG_AGENTS_CHAT_TURN_RE.test(pathname) ||
+    ORG_AGENTS_CHAT_AGUI_RUN_RE.test(pathname) ||
+    ORG_AGENTS_CHAT_AGUI_WATCH_RE.test(pathname) ||
     ORG_AGENTS_MEMORY_RE.test(pathname) ||
     ORG_AGENTS_MEMORY_ENTRY_RE.test(pathname)
   );
@@ -93,6 +102,7 @@ export function isAgentsRoute(pathname: string): boolean {
     ORG_AGENTS_SESSION_HEARTBEAT_RE.test(pathname) ||
     ORG_AGENTS_SESSION_TOKEN_RE.test(pathname) ||
     ORG_AGENTS_SESSION_ATTACH_RE.test(pathname) ||
+    ORG_AGENTS_SESSION_AGUI_WATCH_RE.test(pathname) ||
     ORG_AGENTS_SESSION_INPUT_RE.test(pathname) ||
     ORG_AGENTS_SESSION_STREAM_RE.test(pathname) ||
     ORG_AGENTS_SESSION_INPUTS_RE.test(pathname) ||
@@ -118,7 +128,12 @@ export function isAgentsRoute(pathname: string): boolean {
  * synthesized into the Authorization header BEFORE actor resolution and
  * STRIPPED before forwarding (it must never reach logs or the worker). */
 function allowsQueryToken(pathname: string): boolean {
-  return ORG_AGENTS_SESSION_ATTACH_RE.test(pathname) || ORG_AGENTS_CHAT_RE.test(pathname);
+  return (
+    ORG_AGENTS_SESSION_ATTACH_RE.test(pathname) ||
+    ORG_AGENTS_CHAT_RE.test(pathname) ||
+    ORG_AGENTS_CHAT_AGUI_WATCH_RE.test(pathname) ||
+    ORG_AGENTS_SESSION_AGUI_WATCH_RE.test(pathname)
+  );
 }
 
 /**
@@ -228,7 +243,7 @@ export async function handleAgentsRoute(
     // the Workspace Agent acts as a CLIENT of public surfaces with the chat
     // owner's credential). This is the only route that forwards it, it is
     // never logged, and the chat DO never stores it.
-    if (ORG_AGENTS_CHAT_TURN_RE.test(pathname)) {
+    if (ORG_AGENTS_CHAT_TURN_RE.test(pathname) || ORG_AGENTS_CHAT_AGUI_RUN_RE.test(pathname)) {
       const auth = request.headers.get("authorization");
       const raw = auth ? /^Bearer\s+(\S+)$/i.exec(auth)?.[1] : undefined;
       if (raw) headers.set("x-owner-bearer", raw);
