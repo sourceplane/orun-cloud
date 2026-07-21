@@ -1609,6 +1609,9 @@ importers:
 
   tests/web-console-next:
     devDependencies:
+      '@ag-ui/core':
+        specifier: 0.0.57
+        version: 0.0.57
       '@saas/contracts':
         specifier: workspace:*
         version: link:../../packages/contracts

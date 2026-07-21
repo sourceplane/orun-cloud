@@ -12,10 +12,16 @@ import { useSession } from "@/lib/session";
 
 export const COPILOT_FLAG_KEY = "dispatch.copilot";
 
+/** The kill switch's brain (CX6): default OFF, only an explicit opt-in
+ * turns the copilot surfaces on. Pure — tested directly. */
+export function parseCopilotFlag(value: unknown): boolean {
+  return typeof value === "string" && ["on", "true", "1"].includes(value);
+}
+
 export function useCopilotFlag(orgId: string): boolean {
   const { client } = useSession();
   const scope = React.useMemo(() => ({ kind: "organization" as const, orgId }), [orgId]);
   const settings = useApiQuery(qk.configSettings(`org:${orgId}`), () => wrap(async () => client.config.listSettings(scope)));
   const entry = (settings.data?.settings ?? []).find((s) => s.key === COPILOT_FLAG_KEY);
-  return typeof entry?.value === "string" && ["on", "true", "1"].includes(entry.value);
+  return parseCopilotFlag(entry?.value);
 }

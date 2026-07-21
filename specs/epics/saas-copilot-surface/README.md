@@ -18,7 +18,7 @@ the dispatch chat *and* the delegated-agent session lens.
 
 | Field | Value |
 |-------|-------|
-| Status | **Draft** (design PR) |
+| Status | **Shipped (v1)** — CX0–CX6 merged 2026-07-21 (#542–#546 + closing PR); as-built truth, recorded deviations, and tails in `IMPLEMENTATION-STATUS.md` |
 | Cluster | **CX** (copilot experience — cloud-only; composes AN/DX/AG/AF, changes no authority) |
 | Owner(s) | `apps/chat-worker` (CX1 the AG-UI run/watch doors, CX2 client tools) · `apps/api-edge` (SSE/POST pass-through) · `apps/web-console-next` (CX3 the copilot thread, CX4 the session lens, CX5 approvals-in-thread) · `packages/contracts` (CX0 the AG-UI event vocabulary + card payloads) · `packages/sdk` (run/watch clients) |
 | Builds on | `saas-agents-native` AN2/AN4/AN5/AN7 (attach + chat sockets, the Workspace Agent, session verbs, metering) · `saas-dispatch` DX0–DX7 as-built (Situation, DispatchIndex, the surface, managed runs) · `saas-agents` AG7/AG9/AG12 (fleet reads, the dispatch door, BYO custody) · **AG-UI protocol** (`@ag-ui` event vocabulary: `RUN_*`, `TEXT_MESSAGE_*`, `TOOL_CALL_*`, `STATE_*`, `CUSTOM`) · **CopilotKit** (headless `useCopilotChat`, `useCopilotAction`, generative-UI render slots) |
