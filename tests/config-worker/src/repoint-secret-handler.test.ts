@@ -74,7 +74,7 @@ function req(body: unknown): Request {
   });
 }
 
-const validationOk: BrokerBindingValidation = { ok: true, provider: "supabase", maxTtlSeconds: 3600 };
+const validationOk: BrokerBindingValidation = { ok: true, provider: "supabase", maxTtlSeconds: 3600, supportedModes: ["brokered"] };
 
 function makeDeps(over: {
   head?: SecretMetadata;

@@ -739,6 +739,11 @@ export interface ValidateBrokerBindingResponse {
   provider: IntegrationProviderId;
   /** The template's TTL ceiling (informational). */
   maxTtlSeconds: number;
+  /** The provider's supported secret modes (saas-secrets-platform SP0b) — the
+   *  create gate rejects a mode this provider does not back, replacing the
+   *  hardcoded ALLOWED_ROTATION_PROVIDERS. Empty for a provider without a
+   *  secrets capability. */
+  supportedModes: readonly SecretMode[];
 }
 
 /**

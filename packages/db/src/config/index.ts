@@ -38,12 +38,3 @@ export type {
 
 export { createConfigRepository } from "./repository.js";
 export { createSecretDekRepository } from "./dek-repository.js";
-export {
-  ALLOWED_ROTATION_PROVIDERS,
-  validateRotationProducer,
-} from "./rotation-binding.js";
-export type {
-  RotationProvider,
-  RotationProducer,
-  ValidateRotationProducerResult,
-} from "./rotation-binding.js";
