@@ -231,9 +231,10 @@ human should confirm a provider is wired for an environment.
 
 ## Read order
 
-1. `README.md` (this file).
-2. `implementation-plan.md` — SP0–SP6 with scope + "done when" *(to be written)*.
-3. `capability-contract.md` — the `SecretsCapability` + authoring interface in
-   full *(to be written)*.
-4. `ownership-model.md` — the substrate/integration boundary, surface by surface
-   *(to be written)*.
+1. `README.md` (this file) — thesis, ownership boundary, secret types, verbs.
+2. `ownership-model.md` — the substrate/integration boundary, surface by surface
+   (Secrets lens · integration space · CLI) + the authoritative ownership matrix.
+3. `capability-contract.md` — the `SecretsCapability`, the wire endpoint, the
+   authoring interface, declarative-vs-custom, the onboarding checklist,
+   invariants.
+4. `implementation-plan.md` — SP0–SP6 with scope + "done when" + sequencing.
