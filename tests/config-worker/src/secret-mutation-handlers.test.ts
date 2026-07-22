@@ -798,7 +798,7 @@ const allowedUnlimited = () =>
   });
 
 const validationOk = () =>
-  Promise.resolve({ ok: true as const, provider: "cloudflare", maxTtlSeconds: 900 });
+  Promise.resolve({ ok: true as const, provider: "cloudflare", maxTtlSeconds: 900, supportedModes: ["brokered", "rotated"] as const });
 
 const throwingAdapter = {
   encrypt: () => {
@@ -1382,6 +1382,35 @@ describe("handleCreateSecret — rotated create (provider-rotated-secrets RS1)",
       },
     );
     expect(res.status).toBe(503);
+  });
+
+  it("rejects a rotated create when the provider does not declare `rotated` (SP0b, 400)", async () => {
+    let minted = false;
+    let created = false;
+    const res = await handleCreateSecret(
+      makeJsonRequest({ secretKey: "SB_TOKEN", rotation: { connectionId: CONN_PUBLIC, template: "management-access" } }),
+      FAKE_ENV, "req_r9", ACTOR, ORG_SCOPE,
+      {
+        repo: {
+          createSecretMetadata: () => {
+            created = true;
+            return unusedConfigFailure<SecretMetadata>();
+          },
+        },
+        encryptionAdapter: markingAdapter,
+        // A brokered-only provider (Supabase) — supportedModes lacks "rotated".
+        validateBinding: () =>
+          Promise.resolve({ ok: true as const, provider: "supabase", maxTtlSeconds: 3600, supportedModes: ["brokered"] as const }),
+        mintRotation: (() => {
+          minted = true;
+          return unusedConfigFailure<SecretMetadata>();
+        }) as never,
+      },
+    );
+    expect(res.status).toBe(400);
+    // Rejected BEFORE the mint and BEFORE any DB write.
+    expect(minted).toBe(false);
+    expect(created).toBe(false);
   });
 });
 

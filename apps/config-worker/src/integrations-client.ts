@@ -40,7 +40,7 @@ function failureReason(parsed: unknown): string {
 }
 
 export type BrokerBindingValidation =
-  | { ok: true; provider: string; maxTtlSeconds: number }
+  | { ok: true; provider: string; maxTtlSeconds: number; supportedModes: readonly ("brokered" | "rotated")[] }
   | { ok: false; status: number; reason: string };
 
 /**
@@ -76,7 +76,12 @@ export async function validateBrokerBinding(
   if (!data || typeof data.provider !== "string" || typeof data.maxTtlSeconds !== "number") {
     return { ok: false, status: 503, reason: "unavailable" };
   }
-  return { ok: true, provider: data.provider, maxTtlSeconds: data.maxTtlSeconds };
+  // supportedModes (SP0b) is tolerated absent for back-compat with an older
+  // integrations-worker (treated as unknown ⇒ the gate does not over-reject).
+  const supportedModes = Array.isArray(data.supportedModes)
+    ? (data.supportedModes as ("brokered" | "rotated")[])
+    : [];
+  return { ok: true, provider: data.provider, maxTtlSeconds: data.maxTtlSeconds, supportedModes };
 }
 
 export type ConnectionStatusesResult =
