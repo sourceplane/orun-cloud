@@ -15,10 +15,14 @@
  * Nothing here ever touches a secret VALUE — a brokered secret has none.
  */
 
-import type { CreateBrokeredSecretRequest, PublicSecretMetadata } from "@saas/contracts/config";
+import type {
+  CreateBrokeredSecretRequest,
+  CreateRotatedSecretRequest,
+  PublicSecretMetadata,
+} from "@saas/contracts/config";
 
 /** The create dialog's two paths: a stored value, or a broker binding. */
-export type CreateSecretMode = "value" | "binding";
+export type CreateSecretMode = "value" | "binding" | "rotated";
 
 /** Public connection id shape (`int_<32hex>`), same alphabet as the platform's prefix ids. */
 export const CONNECTION_ID_PATTERN = /^int_[0-9a-f]{32}$/;
@@ -127,6 +131,92 @@ export function validateBindingForm(
       connectionId: form.connectionId,
       template: template!.id,
       ...(template!.params.length > 0 ? { params } : {}),
+    },
+    ...(displayName.length > 0 ? { displayName } : {}),
+    ...(rotationPolicy.length > 0 ? { rotationPolicy } : {}),
+  };
+  return { ok: true, request };
+}
+
+// ---------------------------------------------------------------------------
+// Provider-rotated create (provider-rotated-secrets RS1/RS4)
+// ---------------------------------------------------------------------------
+
+export interface RotationFormValues extends BindingFormValues {
+  /** Overlap the prior token stays valid after a rotation (seconds). Empty =
+   *  the engine default (24h). */
+  graceSeconds?: string;
+  /** Materialize target re-delivered on rotation for a long-lived consumer. */
+  deliverTarget?: string;
+}
+
+export type RotationFormResult =
+  | { ok: true; request: CreateRotatedSecretRequest }
+  | { ok: false; errors: Record<string, string> };
+
+/**
+ * Validate the rotated-create form and shape the `createRotatedSecret` body.
+ * Same connection/template/params/displayName rules as a brokered binding, but
+ * this IS a stored secret: the value is minted once from the parent and
+ * re-minted on the `rotationPolicy` cadence (RS2). Extra optional inputs:
+ * `graceSeconds` (non-negative integer) and `deliverTarget` (non-empty).
+ */
+export function validateRotationForm(
+  form: RotationFormValues,
+  templates: readonly BindTemplateLike[],
+): RotationFormResult {
+  const errors: Record<string, string> = {};
+
+  const secretKey = form.secretKey.trim();
+  if (secretKey.length === 0) errors.secretKey = "Required";
+  else if (secretKey.length > 128) errors.secretKey = "At most 128 characters";
+
+  if (!CONNECTION_ID_PATTERN.test(form.connectionId)) {
+    errors.connectionId = "Pick a connection";
+  }
+
+  const template = templates.find((t) => t.id === form.template);
+  if (!template) errors.template = "Pick a scope template";
+
+  const params: Record<string, string> = {};
+  if (template) {
+    for (const name of template.params) {
+      const value = (form.params[name] ?? "").trim();
+      if (value.length === 0) errors[name] = "Required";
+      else params[name] = value;
+    }
+  }
+
+  const displayName = form.displayName.trim();
+  if (displayName.length > 128) errors.displayName = "At most 128 characters";
+
+  // Rotation cadence is meaningful here (it drives the RS2 engine), but the
+  // server defaults it to 30d — so an empty policy is valid.
+  const rotationPolicy = (form.rotationPolicy ?? "").trim();
+  if (rotationPolicy.length > 0 && !ROTATION_POLICY_PATTERN.test(rotationPolicy)) {
+    errors.rotationPolicy = "Use a duration like 90d, 12w, or 720h";
+  }
+
+  const graceRaw = (form.graceSeconds ?? "").trim();
+  let graceSeconds: number | undefined;
+  if (graceRaw.length > 0) {
+    const n = Number(graceRaw);
+    if (!Number.isInteger(n) || n < 0) errors.graceSeconds = "Whole seconds, 0 or more";
+    else graceSeconds = n;
+  }
+
+  const deliverTarget = (form.deliverTarget ?? "").trim();
+
+  if (Object.keys(errors).length > 0) return { ok: false, errors };
+
+  const request: CreateRotatedSecretRequest = {
+    secretKey,
+    rotation: {
+      connectionId: form.connectionId,
+      template: template!.id,
+      ...(template!.params.length > 0 ? { params } : {}),
+      ...(graceSeconds !== undefined ? { graceSeconds } : {}),
+      ...(deliverTarget.length > 0 ? { deliverTarget } : {}),
     },
     ...(displayName.length > 0 ? { displayName } : {}),
     ...(rotationPolicy.length > 0 ? { rotationPolicy } : {}),

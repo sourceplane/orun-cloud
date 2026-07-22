@@ -56,6 +56,7 @@ import {
   orphanView,
   orphanedSecrets,
   validateBindingForm,
+  validateRotationForm,
   type CreateSecretMode,
 } from "./bind-secret-flow";
 import { SCOPE_TEMPLATE_CATALOG } from "@/components/integrations/archetype";
@@ -200,11 +201,14 @@ export function SecretsPanel({ scope, scopeKey }: { scope: ConfigScope; scopeKey
             <DialogDescription>
               {createMode === "binding"
                 ? "No value is stored — the credential is minted from the connection just-in-time at resolve."
-                : "The value is encrypted before storage and never shown again — keep your own copy."}
+                : createMode === "rotated"
+                  ? "The value is minted once from the connection, stored encrypted, and re-minted on the rotation schedule."
+                  : "The value is encrypted before storage and never shown again — keep your own copy."}
             </DialogDescription>
           </DialogHeader>
 
-          {/* IH8: a secret is either a stored value or a broker binding. */}
+          {/* A secret is a stored value (static or provider-rotated) or a
+              mint-at-resolve broker binding. */}
           <div className="inline-flex self-start overflow-hidden rounded-md border">
             <button
               type="button"
@@ -212,6 +216,13 @@ export function SecretsPanel({ scope, scopeKey }: { scope: ConfigScope; scopeKey
               className={`px-2.5 py-1 text-xs ${createMode === "value" ? "bg-card font-medium" : "text-muted-foreground"}`}
             >
               Static value
+            </button>
+            <button
+              type="button"
+              onClick={() => setCreateMode("rotated")}
+              className={`border-l px-2.5 py-1 text-xs ${createMode === "rotated" ? "bg-card font-medium" : "text-muted-foreground"}`}
+            >
+              Rotated
             </button>
             <button
               type="button"
@@ -255,13 +266,19 @@ export function SecretsPanel({ scope, scopeKey }: { scope: ConfigScope; scopeKey
               scope={scope}
               orgId={orgId}
               enabled={createOpen}
+              mode={createMode === "rotated" ? "rotated" : "binding"}
               initialConnectionId={bindConnectionId}
               onCancel={() => setCreateOpen(false)}
               onCreated={() => {
+                const wasRotated = createMode === "rotated";
                 setCreateOpen(false);
                 setCreateMode("value");
                 setBindConnectionId(undefined);
-                toast({ kind: "success", title: "Scoped credential created", description: "Minted at resolve — nothing is stored." });
+                toast(
+                  wasRotated
+                    ? { kind: "success", title: "Rotated secret created", description: "Minted from the connection and stored; it re-mints on the schedule." }
+                    : { kind: "success", title: "Scoped credential created", description: "Minted at resolve — nothing is stored." },
+                );
                 secrets.reload();
               }}
             />
@@ -587,6 +604,7 @@ function BindSecretForm({
   scope,
   orgId,
   enabled,
+  mode,
   onCreated,
   onCancel,
   initialConnectionId,
@@ -594,6 +612,11 @@ function BindSecretForm({
   scope: ConfigScope;
   orgId: string;
   enabled: boolean;
+  /** "binding" = a brokered secret (minted at resolve, no stored value, IH7).
+   *  "rotated" = a provider-rotated secret (value minted once + re-minted on
+   *  the cadence, stored, provider-rotated-secrets RS1). Same picker; the
+   *  submit path and the rotation-policy semantics differ. */
+  mode: "binding" | "rotated";
   onCreated: () => void;
   onCancel: () => void;
   /** IH8: when the create flow was launched from a connection's detail page
@@ -601,6 +624,7 @@ function BindSecretForm({
    *  the user is binding a scoped credential to THAT connection. */
   initialConnectionId?: string | undefined;
 }) {
+  const rotated = mode === "rotated";
   const { client } = useSession();
 
   const integrations = useApiQuery(
@@ -619,6 +643,9 @@ function BindSecretForm({
   const [secretKey, setSecretKey] = React.useState("");
   const [displayName, setDisplayName] = React.useState("");
   const [rotationPolicy, setRotationPolicy] = React.useState("");
+  // Rotated-only extras (provider-rotated-secrets RS4).
+  const [graceSeconds, setGraceSeconds] = React.useState("");
+  const [deliverTarget, setDeliverTarget] = React.useState("");
   const [errors, setErrors] = React.useState<Record<string, string>>({});
   // Typed inline error (412 entitlement gates included) — never a silent toast.
   const [formError, setFormError] = React.useState<{ message: string; requestId: string | null } | null>(null);
@@ -653,6 +680,30 @@ function BindSecretForm({
   const locked = Boolean(initialConnectionId) && selected?.id === initialConnectionId;
 
   const submit = async () => {
+    if (rotated) {
+      const v = validateRotationForm(
+        { secretKey, displayName, connectionId, template: templateId, params: paramInputs, rotationPolicy, graceSeconds, deliverTarget },
+        templates,
+      );
+      if (!v.ok) {
+        setErrors(v.errors);
+        return;
+      }
+      setErrors({});
+      setFormError(null);
+      setBusy(true);
+      const r = await wrap(() => client.config.createRotatedSecret(scope, v.request));
+      setBusy(false);
+      if (!r.ok) {
+        setFormError({
+          message: r.status === 412 ? brokeredCreateErrorMessage(r.error) : r.error.message,
+          requestId: r.error.requestId ?? null,
+        });
+        return;
+      }
+      onCreated();
+      return;
+    }
     const v = validateBindingForm(
       { secretKey, displayName, connectionId, template: templateId, params: paramInputs, rotationPolicy },
       templates,
@@ -717,7 +768,9 @@ function BindSecretForm({
         </select>
         {locked ? (
           <span className="block text-xs font-normal text-muted-foreground">
-            Binding a scoped credential to this connection.
+            {rotated
+              ? "Minting the stored value from this connection."
+              : "Binding a scoped credential to this connection."}
           </span>
         ) : null}
         {errors.connectionId ? <span className="block text-xs font-normal text-destructive">{errors.connectionId}</span> : null}
@@ -782,18 +835,53 @@ function BindSecretForm({
           onChange={(e) => setRotationPolicy(e.target.value)}
           className="mt-1.5 h-9 w-full rounded-md border bg-card px-2 text-sm font-normal"
         >
-          <option value="">No scheduled rotation</option>
+          <option value="">{rotated ? "Default (every 30 days)" : "No scheduled rotation"}</option>
           <option value="30d">Every 30 days</option>
           <option value="60d">Every 60 days</option>
           <option value="90d">Every 90 days</option>
           <option value="180d">Every 180 days</option>
         </select>
         <span className="block text-xs font-normal text-muted-foreground">
-          When set, Orun rolls this connection&apos;s org-owned source credential on the cadence. Every run
-          still resolves a fresh short-lived value regardless.
+          {rotated
+            ? "The value is minted once from the connected parent and stored. On this cadence Orun re-mints a fresh token as a new version and retires the old one after a grace overlap."
+            : "When set, Orun rolls this connection's org-owned source credential on the cadence. Every run still resolves a fresh short-lived value regardless."}
         </span>
         {errors.rotationPolicy ? <span className="block text-xs font-normal text-destructive">{errors.rotationPolicy}</span> : null}
       </label>
+
+      {rotated ? (
+        <>
+          <label className="block space-y-1.5 text-sm font-medium">
+            Grace overlap (seconds)
+            <input
+              value={graceSeconds}
+              onChange={(e) => setGraceSeconds(e.target.value)}
+              placeholder="Optional — default 86400 (24h)"
+              inputMode="numeric"
+              className="mt-1.5 h-9 w-full rounded-md border bg-card px-2 font-mono text-xs"
+              aria-invalid={errors.graceSeconds ? true : undefined}
+            />
+            <span className="block text-xs font-normal text-muted-foreground">
+              How long the prior token stays valid after a rotation, so in-flight work keeps working.
+            </span>
+            {errors.graceSeconds ? <span className="block text-xs font-normal text-destructive">{errors.graceSeconds}</span> : null}
+          </label>
+
+          <label className="block space-y-1.5 text-sm font-medium">
+            Deliver target
+            <input
+              value={deliverTarget}
+              onChange={(e) => setDeliverTarget(e.target.value)}
+              placeholder="Optional — e.g. cloudflare-worker:api-prod"
+              className="mt-1.5 h-9 w-full rounded-md border bg-card px-2 font-mono text-xs"
+            />
+            <span className="block text-xs font-normal text-muted-foreground">
+              A long-lived consumer that HOLDS the value and must be re-delivered on rotation. Leave blank
+              for per-run consumers that resolve the current version each run.
+            </span>
+          </label>
+        </>
+      ) : null}
 
       <label className="block space-y-1.5 text-sm font-medium">
         Display name
@@ -821,7 +909,7 @@ function BindSecretForm({
           Cancel
         </Button>
         <Button type="button" loading={busy} onClick={() => void submit()}>
-          Bind secret
+          {rotated ? "Create rotated secret" : "Bind secret"}
         </Button>
       </div>
     </div>

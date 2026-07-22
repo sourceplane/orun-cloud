@@ -282,6 +282,42 @@ export interface CreateBrokeredSecretRequest {
   overridable?: boolean;
 }
 
+/**
+ * Provider-rotation producer (provider-rotated-secrets RS1): mint the value
+ * ONCE from the connected parent and store it, then re-mint on the schedule.
+ * Unlike a brokered binding this IS a stored value (`source: "static"`).
+ */
+export interface SecretRotationBinding {
+  /** Public connection id (int_…) the value is minted against. */
+  connectionId: string;
+  /** Scope template id published by the connection's provider. */
+  template: string;
+  /** Template params (validated against the template's declared params). */
+  params?: Record<string, unknown>;
+  /** Overlap seconds the prior token stays valid after a rotation; omit for
+   *  the engine default (24h). */
+  graceSeconds?: number;
+  /** Materialize target re-delivered on rotation for a long-lived consumer. */
+  deliverTarget?: string;
+}
+
+/**
+ * Provider-rotated secret creation (RS1): `rotation` in place of `value`. The
+ * server mints v1 from the connected parent, encrypts + stores it, and the RS2
+ * engine re-mints on the `rotationPolicy` cadence. Requires both `secret.write`
+ * and `organization.integration.credential.issue`. Mutually exclusive with
+ * `value`, `binding`, and `personal`.
+ */
+export interface CreateRotatedSecretRequest {
+  secretKey: string;
+  rotation: SecretRotationBinding;
+  displayName?: string | null;
+  /** Rotation cadence, "<n>[hdwmy]" (e.g. "30d"); defaults server-side to 30d. */
+  rotationPolicy?: string | null;
+  /** Lock this key as a guardrail — account/organization scope only (SM1). */
+  overridable?: boolean;
+}
+
 export interface CreateSecretMetadataResponse {
   secret: PublicSecretMetadata;
 }
