@@ -266,3 +266,53 @@ describe("AN4: the immutable workspace binding", () => {
     expect(t2.history().map((m) => m.text)).toEqual(["save this", "persisted."]);
   });
 });
+
+describe("DD3 (saas-dispatch-delight): thread naming", () => {
+  it("deriveChatTitle collapses whitespace and cuts on a word boundary", async () => {
+    const { deriveChatTitle } = await import("@chat-worker/chat-thread");
+    expect(deriveChatTitle("What broke overnight?")).toBe("What broke overnight?");
+    expect(deriveChatTitle("  spaced\n\nout   text ")).toBe("spaced out text");
+    expect(deriveChatTitle("")).toBe("New chat");
+    const long = deriveChatTitle(
+      "Please walk me through everything that happened with the failing secrets migration run last night",
+    );
+    expect(long.length).toBeLessThanOrEqual(61);
+    expect(long.endsWith("…")).toBe(true);
+    expect(long).not.toMatch(/\s…$/);
+  });
+
+  it("the first user turn names a default-titled thread; later turns do not rename", async () => {
+    const t = new ChatThread(memStorage());
+    await t.load();
+    await t.init({ chatId: "ch_t", orgId: "org-uuid-1", title: "New chat", createdAt: "2026-07-17T00:00:00Z" });
+    const model = scriptedModel([
+      { blocks: [{ type: "text", text: "answer one" }], stopReason: "end_turn" },
+      { blocks: [{ type: "text", text: "answer two" }], stopReason: "end_turn" },
+    ]);
+    await t.runTurn("What broke overnight?", "usr_a", { resolveModel: async () => model, tools: noTools(), system: "s" });
+    expect(t.info()?.title).toBe("What broke overnight?");
+    await t.runTurn("And the day before?", "usr_a", { resolveModel: async () => model, tools: noTools(), system: "s" });
+    expect(t.info()?.title).toBe("What broke overnight?");
+  });
+
+  it("an explicit rename wins and is never overwritten by auto-titling", async () => {
+    const t = new ChatThread(memStorage());
+    await t.load();
+    await t.init({ chatId: "ch_t2", orgId: "org-uuid-1", title: "New chat", createdAt: "2026-07-17T00:00:00Z" });
+    await t.setTitle("Ops triage");
+    const model = scriptedModel([{ blocks: [{ type: "text", text: "hi" }], stopReason: "end_turn" }]);
+    await t.runTurn("first message here", "usr_a", { resolveModel: async () => model, tools: noTools(), system: "s" });
+    expect(t.info()?.title).toBe("Ops triage");
+  });
+
+  it("setTitle fans a title frame to live heads", async () => {
+    const t = new ChatThread(memStorage());
+    await t.load();
+    await t.init({ chatId: "ch_t3", orgId: "org-uuid-1", title: "New chat", createdAt: "2026-07-17T00:00:00Z" });
+    const head = fakeConn("h1");
+    t.connect(head, -1);
+    await t.setTitle("Named now");
+    const titleFrames = head.sent.map((s) => JSON.parse(s)).filter((f) => f.t === "title");
+    expect(titleFrames).toEqual([{ v: 1, t: "title", chatId: "ch_t3", title: "Named now" }]);
+  });
+});

@@ -28,6 +28,12 @@ export class ChatIndex extends Agent<Env> {
     this.sql`UPDATE chats SET last_at = ${lastAt} WHERE id = ${chatId}`;
   }
 
+  /** setTitle (DD3): keep the list's label in step with the thread's. */
+  async setTitle(chatId: string, title: string): Promise<void> {
+    this.ensureTable();
+    this.sql`UPDATE chats SET title = ${title} WHERE id = ${chatId}`;
+  }
+
   async removeChat(chatId: string): Promise<void> {
     this.ensureTable();
     this.sql`DELETE FROM chats WHERE id = ${chatId}`;

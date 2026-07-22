@@ -44,12 +44,14 @@ export interface WorkspaceAgentRpc {
   initChat(meta: ChatMeta): Promise<void>;
   chatInfo(): Promise<ChatMeta | null>;
   history(orgId: string): Promise<unknown[]>;
+  setTitle(orgId: string, title: string): Promise<void>;
   turn(orgId: string, text: string, principal: string, ownerToken: string): Promise<{ ok: boolean; reason?: string; tokens?: number; toolCalls?: number }>;
   destroyThread(orgId: string): Promise<void>;
 }
 export interface ChatIndexRpc {
   register(chat: ChatSummary): Promise<void>;
   touch(chatId: string, lastAt: string): Promise<void>;
+  setTitle(chatId: string, title: string): Promise<void>;
   removeChat(chatId: string): Promise<void>;
   listChats(): Promise<ChatSummary[]>;
 }
@@ -122,6 +124,14 @@ function memoryStub(env: Env, orgId: string): MemoryRpc | null {
 function indexStub(env: Env, orgId: string): ChatIndexRpc | null {
   if (!env.CHAT_INDEX) return null;
   return env.CHAT_INDEX.get(env.CHAT_INDEX.idFromName(`ws:${orgId}`)) as unknown as ChatIndexRpc;
+}
+
+/** DD3: after a turn, mirror the thread's (possibly newly derived) title into
+ * the list index. Fire-and-forget at every call site — naming never blocks a
+ * turn. */
+async function syncIndexTitle(stub: WorkspaceAgentRpc, idx: ChatIndexRpc, chatId: string): Promise<void> {
+  const info = await stub.chatInfo();
+  if (info?.title) await idx.setTitle(chatId, info.title);
 }
 
 /** The DX1 dispatch-shell DO's typed RPC (worker-side view). */
@@ -223,6 +233,8 @@ export async function route(request: Request, env: Env, injectedDeps?: ChatDeps)
       // fire-and-forget, never blocking the stream.
       const idx = indexStub(env, orgId);
       if (idx) void idx.touch(m[2]!, deps.now().toISOString()).catch(() => {});
+      const titleStub = agentStub(env, m[2]!);
+      if (idx && titleStub) void syncIndexTitle(titleStub, idx, m[2]!).catch(() => {});
       const dx = dispatchIndexStub(env, orgId);
       if (dx) void dx.ring("inFlight").catch(() => {});
       return res;
@@ -314,6 +326,7 @@ export async function route(request: Request, env: Env, injectedDeps?: ChatDeps)
       }
       const idx = indexStub(env, orgId);
       if (idx) await idx.touch(m[2]!, deps.now().toISOString()).catch(() => {});
+      if (idx) void syncIndexTitle(stub, idx, m[2]!).catch(() => {});
       // DX1 doorbell: a turn may have spawned/steered a session — tell every
       // dispatch head to refold. Coarse and fire-and-forget on purpose.
       const dx = dispatchIndexStub(env, orgId);
@@ -400,6 +413,25 @@ export async function route(request: Request, env: Env, injectedDeps?: ChatDeps)
         const idx = indexStub(env, orgId);
         if (idx) await idx.removeChat(m[2]!).catch(() => {});
         return successResponse({ deleted: true }, reqId);
+      }
+      if (request.method === "PATCH") {
+        // DD3: rename — same grant as delete; an explicit rename wins over
+        // (and is never overwritten by) first-turn auto-titling.
+        const info = await stub.chatInfo();
+        if (!info || info.orgId !== orgId) return notFound(reqId, url.pathname);
+        let body: { title?: string };
+        try {
+          body = (await request.json()) as { title?: string };
+        } catch {
+          return errorResponse("validation_failed", "Invalid JSON", 400, reqId);
+        }
+        const title = (body.title ?? "").trim();
+        if (!title) return errorResponse("validation_failed", "title is required", 400, reqId);
+        await stub.setTitle(orgId, title);
+        const renamed = await stub.chatInfo();
+        const idx = indexStub(env, orgId);
+        if (idx && renamed?.title) await idx.setTitle(m[2]!, renamed.title).catch(() => {});
+        return successResponse({ id: m[2]!, title: renamed?.title ?? title }, reqId);
       }
       return methodNotAllowed(reqId);
     }

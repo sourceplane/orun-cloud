@@ -405,6 +405,20 @@ export class AgentsClient {
     );
   }
 
+  /** PATCH /agents/chats/:id — rename a thread (saas-dispatch-delight DD3).
+   * An explicit rename wins over first-turn auto-titling. */
+  renameChat(
+    orgId: string,
+    chatId: string,
+    title: string,
+    opts: RequestOptions = {},
+  ): Promise<{ id: string; title: string }> {
+    return this.transport.request<{ id: string; title: string }>(
+      { method: "PATCH", path: `${agentsBase(orgId)}/chats/${encodeURIComponent(chatId)}`, body: { title } },
+      opts,
+    );
+  }
+
   /** DELETE /agents/chats/:id — delete a thread (complete: DO purge +
    * registry removal). */
   deleteChat(orgId: string, chatId: string, opts: RequestOptions = {}): Promise<{ deleted: boolean }> {
