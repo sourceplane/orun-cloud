@@ -125,3 +125,25 @@ describe("badge + preferences", () => {
     expect(() => writeBriefMuted(throwing, "acme", true)).not.toThrow();
   });
 });
+
+describe("DD4: the brief never counts queued work as in flight", () => {
+  it("splits requested sessions into their own honest line", () => {
+    const situation = {
+      ready: [],
+      inFlight: [
+        { plane: "session", id: "as_1", state: "running", runKind: "interactive", profileId: "p", spawnedBy: "u" },
+        { plane: "session", id: "as_2", state: "requested", runKind: "interactive", profileId: "p", spawnedBy: "u" },
+        { plane: "session", id: "as_3", state: "requested", runKind: "interactive", profileId: "p", spawnedBy: "u" },
+      ],
+      waitingOnMe: [],
+      counts: { running: 1 },
+      budget: { liveTokens: 0, workspaceMaxTokens: null, softMark: 0.8 },
+      cursor: "w0.0",
+      sections: { ready: {}, inFlight: {}, waitingOnMe: {}, budget: {} },
+    } as never;
+    const brief = composeBrief(situation);
+    expect(brief?.lines).toContain("1 session in flight");
+    expect(brief?.lines).toContain("2 sessions queued, never started");
+    expect(brief?.lines.join(" ")).not.toContain("3 sessions in flight");
+  });
+});

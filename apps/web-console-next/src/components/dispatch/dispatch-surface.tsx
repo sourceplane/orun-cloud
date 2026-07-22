@@ -24,6 +24,7 @@ export function DispatchSurface({ orgId, orgSlug }: { orgId: string; orgSlug: st
           orgSlug={orgSlug}
           situation={live.situation}
           loading={live.loading}
+          error={live.error}
           transport={live.transport}
           reload={live.reload}
         />

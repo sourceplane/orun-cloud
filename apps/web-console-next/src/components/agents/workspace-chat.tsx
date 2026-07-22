@@ -21,6 +21,7 @@ import {
   type ChatFrame,
   type ChatLiveState,
 } from "@/lib/agents/chat-live";
+import { compactAge } from "@/lib/agents/attention";
 import { CopilotThread } from "@/components/copilot/copilot-thread";
 import { useCopilotFlag } from "@/components/copilot/flag";
 
@@ -247,6 +248,95 @@ export function WorkspaceChatThread({ orgId, orgSlug, chatId }: { orgId: string;
   );
 }
 
+function ThreadRow({
+  chat,
+  orgSlug,
+  onRename,
+  onDelete,
+}: {
+  chat: AgentChatSummary;
+  orgSlug: string;
+  onRename: (id: string, title: string) => Promise<void>;
+  onDelete: (id: string) => Promise<void>;
+}) {
+  const [editing, setEditing] = React.useState(false);
+  const [draft, setDraft] = React.useState(chat.title);
+  const [busy, setBusy] = React.useState(false);
+
+  const commit = async () => {
+    const title = draft.trim();
+    setEditing(false);
+    if (!title || title === chat.title) return;
+    setBusy(true);
+    try {
+      await onRename(chat.id, title);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="group flex items-center gap-3 border-t border-border/50 px-4 py-2.5 first:border-t-0 hover:bg-muted">
+      {editing ? (
+        <input
+          autoFocus
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onBlur={() => void commit()}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") void commit();
+            if (e.key === "Escape") {
+              setDraft(chat.title);
+              setEditing(false);
+            }
+          }}
+          aria-label="Thread title"
+          className="min-w-0 flex-1 rounded border border-border bg-background px-2 py-0.5 text-[13.5px] outline-none"
+        />
+      ) : (
+        <Link
+          href={`/orgs/${orgSlug}/agents/chat/${chat.id}`}
+          title={chat.id}
+          className="min-w-0 flex-1 truncate text-[13.5px] font-medium"
+        >
+          {chat.title}
+        </Link>
+      )}
+      {/* DD3: the raw ch_… id is metadata (title tooltip), never the label —
+          the row's secondary line is when the thread last moved. */}
+      <span className="whitespace-nowrap text-[11.5px] text-muted-foreground">
+        {chat.lastAt ? `${compactAge(chat.lastAt, new Date())} ago` : ""}
+      </span>
+      <span className="flex shrink-0 items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100">
+        <button
+          type="button"
+          onClick={() => setEditing(true)}
+          disabled={busy}
+          aria-label={`Rename thread ${chat.title}`}
+          title="Rename"
+          className="rounded px-1.5 py-0.5 text-[12px] text-muted-foreground hover:bg-background"
+        >
+          ✎
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            if (window.confirm(`Delete "${chat.title}"? The thread and its history are removed everywhere.`)) {
+              void onDelete(chat.id);
+            }
+          }}
+          disabled={busy}
+          aria-label={`Delete thread ${chat.title}`}
+          title="Delete"
+          className="rounded px-1.5 py-0.5 text-[12px] text-muted-foreground hover:bg-background hover:text-destructive"
+        >
+          ✕
+        </button>
+      </span>
+    </div>
+  );
+}
+
 export function WorkspaceChatList({ orgId, orgSlug }: { orgId: string; orgSlug: string }) {
   const { client } = useSession();
   const chats = useApiQuery(qk.orgAgentChats(orgId), () => wrap(async () => client.agents.listChats(orgId)));
@@ -266,6 +356,28 @@ export function WorkspaceChatList({ orgId, orgSlug }: { orgId: string; orgSlug: 
       reload();
     }
   }, [client, orgId, orgSlug, reload]);
+
+  const onRename = React.useCallback(
+    async (id: string, title: string) => {
+      try {
+        await client.agents.renameChat(orgId, id, title);
+      } finally {
+        reload();
+      }
+    },
+    [client, orgId, reload],
+  );
+
+  const onDelete = React.useCallback(
+    async (id: string) => {
+      try {
+        await client.agents.deleteChat(orgId, id);
+      } finally {
+        reload();
+      }
+    },
+    [client, orgId, reload],
+  );
 
   return (
     <Screen>
@@ -295,14 +407,7 @@ export function WorkspaceChatList({ orgId, orgSlug }: { orgId: string; orgSlug: 
       ) : (
         <div className="overflow-hidden rounded-xl border border-border/60">
           {(chats.data as AgentChatSummary[]).map((c) => (
-            <Link
-              key={c.id}
-              href={`/orgs/${orgSlug}/agents/chat/${c.id}`}
-              className="flex items-center gap-3 border-t border-border/50 px-4 py-2.5 first:border-t-0 hover:bg-muted"
-            >
-              <span className="min-w-0 flex-1 truncate text-[13.5px] font-medium">{c.title}</span>
-              <span className="font-mono text-[11.5px] text-muted-foreground">{c.id}</span>
-            </Link>
+            <ThreadRow key={c.id} chat={c} orgSlug={orgSlug} onRename={onRename} onDelete={onDelete} />
           ))}
         </div>
       )}

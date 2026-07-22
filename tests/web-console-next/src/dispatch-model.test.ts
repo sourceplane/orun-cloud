@@ -108,3 +108,31 @@ describe("degradation + links", () => {
     expect(workItemHref("acme", "ORN-1")).toBe("/orgs/acme/work?item=ORN-1");
   });
 });
+
+describe("DD4: honest liveness", () => {
+  it("partitions requested sessions out of in-flight", async () => {
+    const { partitionInFlight } = await import("@web-console-next/lib/dispatch/model");
+    const { active, queued } = partitionInFlight([
+      { plane: "session", id: "as_1", state: "running", runKind: "interactive", profileId: "p", spawnedBy: "u" },
+      { plane: "session", id: "as_2", state: "requested", runKind: "interactive", profileId: "p", spawnedBy: "u" },
+      { plane: "session", id: "as_3", state: "provisioning", runKind: "interactive", profileId: "p", spawnedBy: "u" },
+    ]);
+    expect(active.map((s) => s.id)).toEqual(["as_1", "as_3"]);
+    expect(queued.map((s) => s.id)).toEqual(["as_2"]);
+  });
+
+  it("humanizes durations — '1163m' can never render", async () => {
+    const { humanizeDurationMs, queuedAge } = await import("@web-console-next/lib/dispatch/model");
+    expect(humanizeDurationMs(1163 * 60_000)).toBe("19 h");
+    expect(humanizeDurationMs(42 * 60_000)).toBe("42 m");
+    expect(humanizeDurationMs(3 * 24 * 3_600_000)).toBe("3 d");
+    expect(humanizeDurationMs(20_000)).toBe("under a minute");
+    expect(humanizeDurationMs(Number.NaN)).toBe("—");
+    expect(
+      queuedAge(
+        { plane: "session", id: "as_2", state: "requested", runKind: "interactive", profileId: "p", spawnedBy: "u", createdAt: "2026-07-21T12:00:00Z" },
+        new Date("2026-07-22T07:23:00Z"),
+      ),
+    ).toBe("19 h");
+  });
+});
