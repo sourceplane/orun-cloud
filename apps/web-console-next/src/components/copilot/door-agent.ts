@@ -64,9 +64,11 @@ export class DispatchDoorAgent extends AbstractAgent {
             role: m.role,
             content: typeof (m as { content?: unknown }).content === "string" ? (m as { content: string }).content : "",
           })),
-          // The registry names only — the door validates, the DO's registry
-          // copy defines the specs (a head cannot widen a tool).
-          tools: CLIENT_TOOLS_V1.map((t) => ({ name: t.name })),
+          // Surface-aware advertisement (DD7): only registry verbs the
+          // mounted surface registered a handler for. The door still
+          // validates against the registry and the DO's copy defines the
+          // specs (a head cannot widen a tool) — this narrows, never widens.
+          tools: CLIENT_TOOLS_V1.filter((t) => t.name in this.cfg.handlers).map((t) => ({ name: t.name })),
         }),
       });
       if (!res.ok || !res.body) {
