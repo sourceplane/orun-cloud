@@ -538,6 +538,18 @@ export async function handleCreateSecret(
       if (!validation.ok) {
         return brokeredValidationFailure(validation.reason, parsedBinding, requestId);
       }
+      // SP0b: the provider must declare it backs this mode (replaces the
+      // hardcoded provider allow-lists). Tolerant of an empty set (older
+      // integrations-worker) so it never over-rejects.
+      if (validation.supportedModes.length > 0 && !validation.supportedModes.includes("brokered")) {
+        return errorResponse(
+          "unsupported",
+          `The ${validation.provider} integration does not support brokered secrets`,
+          400,
+          requestId,
+          { reason: "mode_unsupported" },
+        );
+      }
 
       const connectionUuid = uuidFromPublicId(parsedBinding.connectionId, "int");
       if (!connectionUuid) {
@@ -584,6 +596,17 @@ export async function handleCreateSecret(
       });
       if (!validation.ok) {
         return brokeredValidationFailure(validation.reason, parsedRotation, requestId);
+      }
+      // SP0b: the provider must declare it backs `rotated` (replaces the
+      // hardcoded ALLOWED_ROTATION_PROVIDERS). Tolerant of an empty set.
+      if (validation.supportedModes.length > 0 && !validation.supportedModes.includes("rotated")) {
+        return errorResponse(
+          "unsupported",
+          `The ${validation.provider} integration does not support rotated secrets`,
+          400,
+          requestId,
+          { reason: "mode_unsupported" },
+        );
       }
 
       const connectionUuid = uuidFromPublicId(parsedRotation.connectionId, "int");
