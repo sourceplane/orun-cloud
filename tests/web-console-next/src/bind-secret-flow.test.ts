@@ -7,6 +7,7 @@ import {
   orphanView,
   orphanedSecrets,
   validateBindingForm,
+  validateRotationForm,
   CONNECTION_ID_PATTERN,
   type BindTemplateLike,
 } from "@web-console-next/components/config/bind-secret-flow";
@@ -272,5 +273,86 @@ describe("deriveRotationRow (provider-rotated-secrets RS4)", () => {
     });
     expect(row?.label).toBe("rotated · cloudflare · workers-deploy");
     expect(row?.deliverTarget).toBe("cloudflare-worker:api-prod");
+  });
+});
+
+describe("validateRotationForm (provider-rotated-secrets RS4)", () => {
+  const templates: BindTemplateLike[] = [
+    { id: "workers-deploy", params: [] },
+    { id: "dns-edit", params: ["zoneIds"] },
+  ];
+  const conn = "int_" + "cd".repeat(16);
+
+  it("shapes a createRotatedSecret body with rotation (not binding)", () => {
+    const r = validateRotationForm(
+      { secretKey: "CF_TOKEN", displayName: "", connectionId: conn, template: "workers-deploy", params: {}, rotationPolicy: "30d" },
+      templates,
+    );
+    expect(r.ok).toBe(true);
+    if (r.ok) {
+      expect(r.request.rotation).toEqual({ connectionId: conn, template: "workers-deploy" });
+      expect(r.request.rotationPolicy).toBe("30d");
+      // A rotated create must NOT carry a brokered binding or a value.
+      expect((r.request as unknown as Record<string, unknown>).binding).toBeUndefined();
+      expect((r.request as unknown as Record<string, unknown>).value).toBeUndefined();
+    }
+  });
+
+  it("carries template params, a valid graceSeconds, and deliverTarget", () => {
+    const r = validateRotationForm(
+      {
+        secretKey: "CF_TOKEN",
+        displayName: "",
+        connectionId: conn,
+        template: "dns-edit",
+        params: { zoneIds: "z1" },
+        rotationPolicy: "",
+        graceSeconds: "3600",
+        deliverTarget: "cloudflare-worker:api-prod",
+      },
+      templates,
+    );
+    expect(r.ok).toBe(true);
+    if (r.ok) {
+      expect(r.request.rotation).toEqual({
+        connectionId: conn,
+        template: "dns-edit",
+        params: { zoneIds: "z1" },
+        graceSeconds: 3600,
+        deliverTarget: "cloudflare-worker:api-prod",
+      });
+      // Empty policy is valid — the server defaults it to 30d.
+      expect(r.request.rotationPolicy).toBeUndefined();
+    }
+  });
+
+  it("rejects a bad connection, a missing param, a non-integer grace, and a bad policy", () => {
+    const badConn = validateRotationForm(
+      { secretKey: "K", displayName: "", connectionId: "nope", template: "workers-deploy", params: {}, rotationPolicy: "" },
+      templates,
+    );
+    expect(badConn.ok).toBe(false);
+    if (!badConn.ok) expect(badConn.errors.connectionId).toBeDefined();
+
+    const missingParam = validateRotationForm(
+      { secretKey: "K", displayName: "", connectionId: conn, template: "dns-edit", params: {}, rotationPolicy: "" },
+      templates,
+    );
+    expect(missingParam.ok).toBe(false);
+    if (!missingParam.ok) expect(missingParam.errors.zoneIds).toBeDefined();
+
+    const badGrace = validateRotationForm(
+      { secretKey: "K", displayName: "", connectionId: conn, template: "workers-deploy", params: {}, rotationPolicy: "", graceSeconds: "-5" },
+      templates,
+    );
+    expect(badGrace.ok).toBe(false);
+    if (!badGrace.ok) expect(badGrace.errors.graceSeconds).toBeDefined();
+
+    const badPolicy = validateRotationForm(
+      { secretKey: "K", displayName: "", connectionId: conn, template: "workers-deploy", params: {}, rotationPolicy: "monthly" },
+      templates,
+    );
+    expect(badPolicy.ok).toBe(false);
+    if (!badPolicy.ok) expect(badPolicy.errors.rotationPolicy).toBeDefined();
   });
 });

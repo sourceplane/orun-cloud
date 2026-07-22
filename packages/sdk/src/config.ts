@@ -1,5 +1,6 @@
 import type {
   CreateBrokeredSecretRequest,
+  CreateRotatedSecretRequest,
   CreateFeatureFlagRequest,
   CreateFeatureFlagResponse,
   CreateSecretMetadataResponse,
@@ -191,6 +192,26 @@ export class ConfigClient {
   createBrokeredSecret(
     scope: ConfigScope,
     body: CreateBrokeredSecretRequest,
+    opts: RequestOptions = {},
+  ): Promise<CreateSecretMetadataResponse> {
+    return this.transport.request<CreateSecretMetadataResponse>(
+      { method: "POST", path: `${scopeBase(scope)}/secrets`, body },
+      opts,
+    );
+  }
+
+  /**
+   * POST <scope>/config/secrets — provider-rotated creation (provider-rotated-
+   * secrets RS1). The `rotation` names a credential-broker connection + scope
+   * template in place of a `value`: the server mints v1 from the connected
+   * parent, stores it (`source: "static"`), and re-mints on the `rotationPolicy`
+   * cadence. Same endpoint as brokered create; the server dispatches on the
+   * `rotation` field. Requires `secret.write` + the broker's
+   * `organization.integration.credential.issue`.
+   */
+  createRotatedSecret(
+    scope: ConfigScope,
+    body: CreateRotatedSecretRequest,
     opts: RequestOptions = {},
   ): Promise<CreateSecretMetadataResponse> {
     return this.transport.request<CreateSecretMetadataResponse>(
