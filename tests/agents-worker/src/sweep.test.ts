@@ -192,3 +192,37 @@ describe("lease sweep (AG6 §4.3)", () => {
     expect((await f.repo.getSession({ orgId: ORG_UUID }, id))?.state).toBe("failed");
   });
 });
+
+describe("DD4 (saas-dispatch-delight): stalled requested sessions", () => {
+  it("reclaims a requested session that never provisioned past the stall horizon", async () => {
+    const f = fixture();
+    await f.make({ state: "provisioning", sandboxId: "sb_seed" }); // seeds profile/connection
+    const scope = { orgId: ORG_UUID };
+    const profile = (await f.repo.listProfiles(scope))[0]!;
+    const s = await f.repo.createSession(scope, {
+      profileId: profile.publicId,
+      runKind: "interactive",
+      spawnedBy: "usr_1",
+    });
+    // createdAt ≈ 10:00; NOW = 12:00 — two hours stalled, far past the 30m
+    // horizon the session page promises.
+    const summary = await sweepLapsedSessions(f.deps, "req_dd4", () => NOW);
+    expect(summary.reclaimed).toBeGreaterThanOrEqual(1);
+    expect((await f.repo.getSession(scope, s.publicId))?.state).toBe("failed");
+  });
+
+  it("leaves a young requested session alone", async () => {
+    const f = fixture();
+    const scope = { orgId: ORG_UUID };
+    await f.make({ state: "running", lease: "2026-07-09T13:00:00Z", sandboxId: "sb_ok" });
+    const profile = (await f.repo.listProfiles(scope))[0]!;
+    const s = await f.repo.createSession(scope, {
+      profileId: profile.publicId,
+      runKind: "interactive",
+      spawnedBy: "usr_1",
+    });
+    // 20 minutes after the memory clock's epoch — inside the 30m horizon.
+    await sweepLapsedSessions(f.deps, "req_dd4b", () => new Date("2026-07-09T10:20:00Z"));
+    expect((await f.repo.getSession(scope, s.publicId))?.state).toBe("requested");
+  });
+});

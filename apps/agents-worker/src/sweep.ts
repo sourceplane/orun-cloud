@@ -129,7 +129,9 @@ export async function sweepLapsedSessions(
       deps,
       session,
       requestId,
-      session.state === "provisioning" ? "never_booted" : "lease_lapsed",
+      // DD4: a `requested` session that never even provisioned is reclaimed
+      // on the same horizon — the board's "queued" lane empties itself.
+      session.state === "requested" ? "never_started" : session.state === "provisioning" ? "never_booted" : "lease_lapsed",
     );
     if (r.destroyed) summary.destroyed++;
     if (r.destroyError) summary.destroyErrors++;
