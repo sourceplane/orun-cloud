@@ -34,6 +34,7 @@ import type {
   ParentCredentialContext,
   ProvisionCapability,
   ProvisionOutcome,
+  SecretsCapability,
 } from "./types.js";
 
 const API_BASE = "https://api.cloudflare.com/client/v4";
@@ -989,13 +990,26 @@ export function createCloudflareProvider(
     },
   };
 
+  // Secret-source DESCRIBE (saas-secrets-platform SP0). Reproduces today's
+  // hardcoded truth exactly: Cloudflare backs both brokered and rotated secrets
+  // and can deliver a rotated value into a Worker binding (the RS
+  // cloudflare-worker materialize adapter). authoring stays "declarative" until
+  // SP2 lands the custom Cloudflare create space.
+  const secrets: SecretsCapability = {
+    scopeTemplates: () => CLOUDFLARE_SCOPE_TEMPLATES,
+    supportedModes: ["brokered", "rotated"],
+    deliveryTargets: () => ["cloudflare-worker"],
+    authoring: "declarative",
+  };
+
   return {
     id: "cloudflare",
     displayName: "Cloudflare",
     connectKind: oauthCredentials ? "oauth" : "token",
-    capabilities: ["connect", "credential-broker"],
+    capabilities: ["connect", "credential-broker", "secrets"],
 
     broker,
+    secrets,
     provision,
 
     ...(oauthCredentials

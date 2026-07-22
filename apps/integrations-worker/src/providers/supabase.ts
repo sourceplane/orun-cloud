@@ -16,6 +16,7 @@ import type {
   CredentialBrokerCapability,
   IntegrationProvider,
   MintCredentialOutcome,
+  SecretsCapability,
   SupabaseOauthCredentials,
 } from "./types.js";
 
@@ -351,13 +352,25 @@ export function createSupabaseProvider(
     },
   };
 
+  // Secret-source DESCRIBE (saas-secrets-platform SP0). Reproduces today's
+  // hardcoded truth exactly: Supabase backs brokered secrets only (it was in
+  // BROKER_CAPABLE_PROVIDERS but not ALLOWED_ROTATION_PROVIDERS), has no
+  // materialize delivery target, and uses the substrate's default create surface.
+  const secrets: SecretsCapability = {
+    scopeTemplates: () => SUPABASE_SCOPE_TEMPLATES,
+    supportedModes: ["brokered"],
+    deliveryTargets: () => [],
+    authoring: "declarative",
+  };
+
   return {
     id: "supabase",
     displayName: "Supabase",
     connectKind: "oauth",
-    capabilities: ["connect", "credential-broker"],
+    capabilities: ["connect", "credential-broker", "secrets"],
 
     broker,
+    secrets,
 
     buildAuthorizeUrl(input) {
       return buildSupabaseAuthorizeUrl({

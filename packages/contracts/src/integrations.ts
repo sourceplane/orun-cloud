@@ -44,7 +44,45 @@ export type IntegrationCapability =
   | "inbound"
   | "scm"
   | "messaging"
-  | "credential-broker";
+  | "credential-broker"
+  // saas-secrets-platform SP0: the provider is a secret SOURCE — it declares
+  // scope templates, which secret modes its mint can back, and its delivery
+  // targets, so the secrets substrate derives instead of hardcoding. A
+  // "secrets"-declaring provider MUST also declare "credential-broker" (you
+  // cannot describe a secret source without a mint to produce it).
+  | "secrets";
+
+/**
+ * Which stored/served secret modes a provider's mint can back
+ * (saas-secrets-platform). `brokered` = a short-lived value fit for
+ * mint-at-resolve (IH7); `rotated` = a value that can be STORED and re-minted
+ * on a schedule (the provider issues a token with a settable expiry, RS1).
+ */
+export type SecretMode = "brokered" | "rotated";
+
+/**
+ * The DESCRIBE half of a secret-source provider (saas-secrets-platform SP0),
+ * projected over the wire from `GET …/providers/{id}/secrets-capability`. The
+ * substrate reads this instead of hardcoding BROKER_CAPABLE_PROVIDERS /
+ * ALLOWED_ROTATION_PROVIDERS / SCOPE_TEMPLATE_CATALOG. Never a credential.
+ */
+export interface ProviderSecretsCapability {
+  provider: IntegrationProviderId;
+  /** Canonical scope-template catalog — the single source of truth. */
+  scopeTemplates: readonly IntegrationScopeTemplate[];
+  /** Modes this provider's mint can back. */
+  supportedModes: readonly SecretMode[];
+  /** Materialize target ids a rotated value can be delivered into (RS `deliver`).
+   *  Empty when the provider only serves per-run consumers. */
+  deliveryTargets: readonly string[];
+  /** How the create experience is rendered: the substrate's default surface, or
+   *  a surface the integration registers in its own space. */
+  authoring: "declarative" | "custom";
+}
+
+export interface ProviderSecretsCapabilityResponse {
+  capability: ProviderSecretsCapability;
+}
 
 /**
  * How a provider's connect flow starts (drives the console connect UX):
