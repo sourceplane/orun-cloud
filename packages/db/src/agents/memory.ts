@@ -182,7 +182,13 @@ export class MemoryAgentsRepository implements AgentsRepository {
           (session.state === "running" || session.state === "awaiting_approval") &&
           session.leaseExpiresAt !== undefined &&
           session.leaseExpiresAt < input.leaseCutoff;
-        const stalled = session.state === "provisioning" && session.createdAt < input.provisioningCutoff;
+        // DD4 (saas-dispatch-delight): a `requested` session that never got a
+        // sandbox stalls past the same horizon — without this clause the
+        // board carries "in flight" ghosts for days while the session page
+        // promises reclaim "~30m after spawn".
+        const stalled =
+          (session.state === "provisioning" || session.state === "requested") &&
+          session.createdAt < input.provisioningCutoff;
         if (lapsed || stalled) out.push(session);
       }
     }

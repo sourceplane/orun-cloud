@@ -353,7 +353,7 @@ export function createAgentsRepository(sql: TransactionalSqlExecutor): AgentsRep
         `SELECT * FROM agents.agent_sessions
          WHERE ((state IN ('running','awaiting_approval'))
                 AND lease_expires_at IS NOT NULL AND lease_expires_at < $1)
-            OR (state = 'provisioning' AND created_at < $2)
+            OR (state IN ('provisioning','requested') AND created_at < $2)
          ORDER BY created_at
          LIMIT $3`,
         [input.leaseCutoff, input.provisioningCutoff, input.limit],
