@@ -64,8 +64,15 @@ export function composeBrief(situation: Situation): Brief | null {
   if (situation.ready.length > 0) {
     lines.push(`${situation.ready.length} task${situation.ready.length === 1 ? "" : "s"} Ready to dispatch`);
   }
-  if (situation.inFlight.length > 0) {
-    lines.push(`${situation.inFlight.length} session${situation.inFlight.length === 1 ? "" : "s"} in flight`);
+  // DD4 (counts never lie): a `requested` session has not started — the
+  // brief counts true in-flight work and names the queued lane separately.
+  const active = situation.inFlight.filter((s) => s.state !== "requested");
+  const queued = situation.inFlight.length - active.length;
+  if (active.length > 0) {
+    lines.push(`${active.length} session${active.length === 1 ? "" : "s"} in flight`);
+  }
+  if (queued > 0) {
+    lines.push(`${queued} session${queued === 1 ? "" : "s"} queued, never started`);
   }
   if (situation.waitingOnMe.length > 0) {
     lines.push(

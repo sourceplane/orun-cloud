@@ -34,6 +34,9 @@ function indexSocketURL(target: string, orgId: string, token: string): string {
 export interface SituationState {
   situation: Situation | null;
   loading: boolean;
+  /** Total fold failure (DD9): surfaced so the rail can say so instead of
+   * rendering a silent blank. */
+  error: string | null;
   /** "ws" | "off" — whether the live wire is up (for the UI chip). */
   transport: "ws" | "off";
   reload: () => void;
@@ -119,6 +122,7 @@ export function useSituation(orgId: string): SituationState {
   return {
     situation,
     loading: query.loading && !query.data,
+    error: query.error ? query.error.message : null,
     transport,
     reload: query.reload,
   };

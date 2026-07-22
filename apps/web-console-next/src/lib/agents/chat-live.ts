@@ -61,6 +61,10 @@ export function foldChatFrame(state: ChatLiveState, frame: ChatFrame): ChatLiveS
         streaming: "",
       };
     }
+    case "title":
+      // DD3: first-turn auto-title / rename — live heads pick the name up
+      // without a reload.
+      return frame.title ? { ...state, title: frame.title } : state;
     case "delta":
       return { ...state, streaming: state.streaming + (frame.text ?? "") };
     case "turn":

@@ -24,6 +24,7 @@ import { qk, useApiQuery } from "@/lib/query";
 import { useSession } from "@/lib/session";
 import { AGENT_MODELS, interfaceTier, sessionLabel, sessionTone } from "@/lib/agents/model";
 import { compactTokens } from "@/lib/agents/attention";
+import { humanizeDurationMs } from "@/lib/dispatch/model";
 import { ConversationView } from "@/components/agents/conversation-view";
 import type { ConversationEvent, PendingApproval } from "@/lib/agents/conversation";
 import { useAttachSocket } from "@/lib/agents/attach-socket";
@@ -82,6 +83,13 @@ function prNumber(url: string): string {
  * stall — well before the ~30-min provisioning-stall sweep reclaims it. */
 const PROVISION_WARN_MIN = 5;
 
+/** DD5: a principal id is metadata — compact it ("usr_d5c8bd…88e5e") instead
+ * of dumping 36 opaque characters into a sentence a human reads. */
+function shortPrincipal(id: string): string {
+  if (id.length <= 16) return id;
+  return `${id.slice(0, 10)}…${id.slice(-5)}`;
+}
+
 /**
  * The pre-dial-home notice (requested + provisioning). Before AL: the page went
  * silent the moment state left `requested` — the longer a boot hung, the less
@@ -92,12 +100,18 @@ const PROVISION_WARN_MIN = 5;
  */
 function ProvisioningNotice({ state, since }: { state: string; since: string }) {
   const startedMs = new Date(since).getTime();
-  const elapsedMin = Number.isFinite(startedMs) ? Math.max(0, Math.floor((Date.now() - startedMs) / 60_000)) : 0;
+  const elapsedMs = Number.isFinite(startedMs) ? Math.max(0, Date.now() - startedMs) : 0;
+  const elapsedMin = Math.floor(elapsedMs / 60_000);
   const stalled = elapsedMin >= PROVISION_WARN_MIN;
-  const elapsedLabel = elapsedMin < 1 ? "just now" : `${elapsedMin}m`;
+  // DD4: humane durations — "19 h", never "1163m".
+  const elapsedLabel = elapsedMin < 1 ? "just now" : humanizeDurationMs(elapsedMs);
 
   const message = stalled
-    ? `Still ${state} after ${elapsedLabel}. The sandbox was created but the runtime has not dialed home — it may be failing to start. A stalled session is reclaimed automatically ~30m after spawn.`
+    ? `Still ${state} after ${elapsedLabel}. ${
+        state === "requested"
+          ? "No sandbox was ever created — the spawn likely found no usable compute provider."
+          : "The sandbox was created but the runtime has not dialed home — it may be failing to start."
+      } A stalled session is reclaimed automatically ~30 m after spawn; you can also kill it now.`
     : state === "requested"
       ? "Waiting to provision the sandbox on your connected compute — the run starts once the box dials home."
       : `Provisioning the sandbox and starting the runtime · ${elapsedLabel} — the run starts once it dials home.`;
@@ -301,6 +315,8 @@ export function SessionDetail({
     ? new Date(s.startedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
     : "—";
   const createdLabel = new Date(s.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  // DD5: "Interactive run", "Implementation run" — the id stays metadata.
+  const runTitle = `${s.runKind.charAt(0).toUpperCase()}${s.runKind.slice(1)} run`;
   const hasArtifacts = !!(s.prUrl || s.snapshotId);
 
   return (
@@ -308,19 +324,20 @@ export function SessionDetail({
       <Breadcrumbs
         items={[
           { label: "Agents", href: `/orgs/${orgSlug}/agents` },
-          { label: s.id },
+          { label: runTitle },
         ]}
       />
       <PageHeader
         title={
           <span className="flex items-center gap-3">
-            <span className="font-mono text-[0.85em]">{s.id}</span>
+            {/* DD5: the human label leads; the raw as_… id is metadata below. */}
+            <span>{runTitle}</span>
             <Pill tone={sessionTone(s.state)} dot live={s.state === "running"}>
               {sessionLabel(s.state)}
             </Pill>
           </span>
         }
-        description={`${s.runKind} run · spawned by ${s.spawnedBy} · ${createdLabel}${s.parentSessionId ? ` · child of ${s.parentSessionId}` : ""}`}
+        description={`${s.id} · spawned by ${shortPrincipal(s.spawnedBy)} · started ${createdLabel}${s.parentSessionId ? ` · child of ${s.parentSessionId}` : ""}`}
         actions={
           live ? (
             <button

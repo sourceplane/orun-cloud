@@ -27,6 +27,42 @@ export function situationCounts(s: Situation): Record<string, number> {
   };
 }
 
+// ── Honest liveness (saas-dispatch-delight DD4) ─────────────────────────────
+
+/** A `requested` session has not started — calling it "in flight" is the
+ * board lying. It gets its own Queued lane with its age showing. */
+export function partitionInFlight(items: SituationSessionItem[]): {
+  active: SituationSessionItem[];
+  queued: SituationSessionItem[];
+} {
+  const active: SituationSessionItem[] = [];
+  const queued: SituationSessionItem[] = [];
+  for (const item of items) {
+    (item.state === "requested" ? queued : active).push(item);
+  }
+  return { active, queued };
+}
+
+/** "19 h", "3 d", "42 m" — never "1163m". Pure so the regression is a test. */
+export function humanizeDurationMs(ms: number): string {
+  if (!Number.isFinite(ms) || ms < 0) return "—";
+  const minutes = Math.floor(ms / 60_000);
+  if (minutes < 1) return "under a minute";
+  if (minutes < 60) return `${minutes} m`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours} h`;
+  const days = Math.floor(hours / 24);
+  return `${days} d`;
+}
+
+/** The age line for a queued session: from createdAt to now. */
+export function queuedAge(item: SituationSessionItem, now: Date): string | null {
+  if (!item.createdAt) return null;
+  const at = Date.parse(item.createdAt);
+  if (!Number.isFinite(at)) return null;
+  return humanizeDurationMs(now.getTime() - at);
+}
+
 // ── Budget ──────────────────────────────────────────────────────────────────
 
 export interface BudgetView {
