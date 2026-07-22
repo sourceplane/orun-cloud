@@ -67,6 +67,14 @@ export class WorkspaceAgent extends Agent<Env> {
     return this.thread.history();
   }
 
+  /** setTitle (DD3): rename the thread — used by the PATCH route and the
+   * router's post-turn index refresh. */
+  async setTitle(orgId: string, title: string): Promise<void> {
+    await this.ensureLoaded();
+    this.thread.assertOrg(orgId);
+    await this.thread.setTitle(title);
+  }
+
   /**
    * turn — one user turn. The owner's bearer rides in from the worker for
    * THIS turn only (tool calls re-enter api-edge with it; custody resolves
@@ -178,7 +186,8 @@ export class WorkspaceAgent extends Agent<Env> {
       result = await this.thread.runTurn(text, principal, {
         resolveModel,
         tools: turnTools,
-        system: workspaceSystemPrompt(orgId) + formatMemoryForSystem(memoryEntries),
+        // DD5: the model sees the public workspace identity, never the DO-key UUID.
+        system: workspaceSystemPrompt({ orgPublicId: orgPublic }) + formatMemoryForSystem(memoryEntries),
       });
     } finally {
       if (agui) this.aguiBrokers.delete(agui.runId);

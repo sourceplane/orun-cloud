@@ -100,6 +100,23 @@ const MSG_PREFIX = "m:";
 const META_KEY = "chat:meta";
 const MAX_TOOL_ROUNDS = 8;
 
+/** The default title a thread is born with (DD3: replaced on first turn). */
+export const DEFAULT_CHAT_TITLE = "New chat";
+
+/**
+ * deriveChatTitle (saas-dispatch-delight DD3): a thread is named after its
+ * first user message — collapsed whitespace, ≤60 chars on a word boundary.
+ * Pure, so jest owns the edge cases ("1163m"-class regressions die in tests).
+ */
+export function deriveChatTitle(text: string, max = 60): string {
+  const collapsed = text.replace(/\s+/g, " ").trim();
+  if (!collapsed) return DEFAULT_CHAT_TITLE;
+  if (collapsed.length <= max) return collapsed;
+  const cut = collapsed.slice(0, max);
+  const atWord = cut.lastIndexOf(" ");
+  return `${(atWord > max * 0.5 ? cut.slice(0, atWord) : cut).trimEnd()}…`;
+}
+
 function pad(seq: number): string {
   return String(seq).padStart(12, "0");
 }
@@ -150,6 +167,17 @@ export class ChatThread {
     if (!this.meta || this.meta.orgId !== orgId) {
       throw new Error("chat thread is bound to another workspace");
     }
+  }
+
+  /** setTitle (DD3): rename the thread — the workspace binding stays
+   * immutable, the human label does not. Fans a `title` frame so live heads
+   * (and the thread list) update without a reload. */
+  async setTitle(title: string): Promise<void> {
+    if (!this.meta) throw new Error("chat thread is not initialized");
+    const next = deriveChatTitle(title);
+    this.meta = { ...this.meta, title: next };
+    await this.storage.put(META_KEY, this.meta);
+    this.fanOut({ t: "title", chatId: this.meta.chatId, title: next });
   }
 
   history(): ChatMessage[] {
@@ -243,7 +271,13 @@ export class ChatThread {
     }
     this.turnActive = true;
     try {
+      const isFirstUserMessage = !this.messages.some((m) => m.role === "user");
       await this.append({ role: "user", text, at: now().toISOString(), principal });
+      // DD3: the first user message names the thread (only while the title is
+      // still the default — an explicit rename is never overwritten).
+      if (isFirstUserMessage && this.meta && (!this.meta.title || this.meta.title === DEFAULT_CHAT_TITLE)) {
+        await this.setTitle(deriveChatTitle(text));
+      }
       this.fanOut({ t: "turn", phase: "start" });
 
       const model = await deps.resolveModel();
