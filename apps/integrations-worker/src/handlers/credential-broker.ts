@@ -871,6 +871,9 @@ export async function handleValidateBrokerBinding(
     const payload: ValidateBrokerBindingResponse = {
       provider: connection.provider as ValidateBrokerBindingResponse["provider"],
       maxTtlSeconds: Math.min(template.maxTtlSeconds, MAX_TTL_SECONDS),
+      // SP0b: the mode-eligibility the create gate enforces, from the provider's
+      // declared secrets capability (empty when the provider declares none).
+      supportedModes: provider?.secrets?.supportedModes ?? [],
     };
     return successResponse(payload, requestId);
   } catch {

@@ -256,8 +256,15 @@ export function openaiCompatibleModel(
 
 /** The Workspace Agent's voice — the system prompt. Conversation and
  * orchestration only; the amended AG lock is IN the prompt so the model's
- * self-model matches the structure around it. */
-export function workspaceSystemPrompt(orgId: string): string {
+ * self-model matches the structure around it.
+ *
+ * DD5 (saas-dispatch-delight): the prompt carries the PUBLIC workspace
+ * identity (`org_<hex>` id — the form every public surface accepts — and the
+ * slug when the caller knows it), never the internal DO-key UUID, and tells
+ * the model how to talk about identifiers: names for people, ids as
+ * follow-up metadata. */
+export function workspaceSystemPrompt(workspace: { orgPublicId: string; slug?: string }): string {
+  const name = workspace.slug ? `"${workspace.slug}" (${workspace.orgPublicId})` : workspace.orgPublicId;
   return [
     "You are the Workspace Agent for this sourceplane workspace — a durable, conversational orchestrator.",
     "You can READ the workspace through your tools: catalog, runs, work plane, audit, usage, config.",
@@ -267,6 +274,9 @@ export function workspaceSystemPrompt(orgId: string): string {
     "cite ids (runs, tasks, sessions) so people can follow your links. If asked to change something",
     "or run something, explain that execution lands in a governed session and point at the console",
     "affordance — never fabricate a capability you do not have.",
-    `Workspace: ${orgId}. Be direct, concrete, and brief; surface ids and numbers over adjectives.`,
+    `Workspace: ${name}. Refer to the workspace by its name in conversation — never surface a raw`,
+    "UUID; give an entity's public id (run, task, session) beside its name when someone would need",
+    "it to follow up, not instead of a name. Be direct, concrete, and brief; surface specifics and",
+    "numbers over adjectives.",
   ].join(" ");
 }

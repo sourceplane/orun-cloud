@@ -29,7 +29,7 @@ export function safeRoute(orgSlug: string, route: string): string | null {
 }
 
 export function buildActionHandlers(surface: ConsoleSurface): Record<string, ActionHandler> {
-  return {
+  const handlers: Record<string, ActionHandler> = {
     ui_navigate: async (input) => {
       const route = safeRoute(surface.orgSlug, str(input, "route"));
       if (!route) return "refused: not an org-scoped console route";
@@ -65,13 +65,20 @@ export function buildActionHandlers(surface: ConsoleSurface): Record<string, Act
       await surface.copy(text);
       return "copied";
     },
-    ui_highlight_situation: async (input) => {
+  };
+  // DD7 (saas-dispatch-delight): a handler exists only when the mounted
+  // surface can actually perform it — the door advertises exactly this key
+  // set, so the model is never offered a verb that would no-op or (worse)
+  // stall the turn on a surface that cannot answer it.
+  if (surface.highlight) {
+    handlers.ui_highlight_situation = async (input) => {
       const section = str(input, "section");
       if (!["ready", "inFlight", "waitingOnMe", "budget"].includes(section)) {
         return "refused: unknown section";
       }
-      surface.highlight?.(section);
+      surface.highlight!(section);
       return `highlighted ${section}`;
-    },
-  };
+    };
+  }
+  return handlers;
 }

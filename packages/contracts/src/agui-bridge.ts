@@ -5,7 +5,7 @@
 // both drive these; jest drives them with recorded frames. Same seq, same
 // cursor, no second truth.
 
-import { AGUI_DIALECT_VERSION, type AguiEvent, type AguiMessage } from "./agui.js";
+import { AGUI_DIALECT_VERSION, CLIENT_TOOL_NAMES, type AguiEvent, type AguiMessage } from "./agui.js";
 
 // ── Chat dialect (chat-v1 → AG-UI) ──────────────────────────────────────────
 
@@ -147,32 +147,48 @@ export function translateChatFrame(
       if (frame.tool) {
         if (frame.tool.phase === "call") {
           const toolCallId = frame.toolId ?? `tc_${seq ?? "x"}`;
+          const callEvents: AguiEvent[] = [
+            ...closing,
+            ev({ type: "TOOL_CALL_START", toolCallId, toolCallName: frame.tool.name, ...(seq !== undefined ? { seq } : {}) }),
+            ev({ type: "TOOL_CALL_ARGS", toolCallId, delta: frame.tool.summary ?? "" }),
+          ];
+          // Client tools (DD1, saas-dispatch-delight): the browser executes a
+          // client tool the moment its call+args are complete, and the server
+          // loop is PAUSED awaiting the browser's post-back — so the closed
+          // call must be visible NOW. Emitting TOOL_CALL_END at the call
+          // phase (for client tools only) is what lets a viewer-side tracker
+          // fire before the result exists; waiting for the result phase
+          // deadlocks into the 60s client_timeout by construction.
+          if (CLIENT_TOOL_NAMES.has(frame.tool.name)) {
+            callEvents.push(ev({ type: "TOOL_CALL_END", toolCallId, ...(seq !== undefined ? { seq } : {}) }));
+          }
           return {
             state: { ...next, openToolCalls: { ...next.openToolCalls, [frame.tool.name]: toolCallId } },
-            events: [
-              ...closing,
-              ev({ type: "TOOL_CALL_START", toolCallId, toolCallName: frame.tool.name, ...(seq !== undefined ? { seq } : {}) }),
-              ev({ type: "TOOL_CALL_ARGS", toolCallId, delta: frame.tool.summary ?? "" }),
-            ],
+            events: callEvents,
           };
         }
         // result: match the loop's id when threaded, else the open call by name.
         const matched = frame.toolId ?? next.openToolCalls[frame.tool.name] ?? `tc_${seq ?? "x"}`;
         const remaining = { ...next.openToolCalls };
         delete remaining[frame.tool.name];
+        const resultEvents: AguiEvent[] = [...closing];
+        // Client tools already closed at the call phase (DD1) — a second
+        // TOOL_CALL_END would double-fire trackers that key on END.
+        if (!CLIENT_TOOL_NAMES.has(frame.tool.name)) {
+          resultEvents.push(ev({ type: "TOOL_CALL_END", toolCallId: matched, ...(seq !== undefined ? { seq } : {}) }));
+        }
+        resultEvents.push(
+          ev({
+            type: "TOOL_CALL_RESULT",
+            toolCallId: matched,
+            content: frame.tool.summary ?? "",
+            ...(frame.tool.isError ? { isError: true } : {}),
+            ...(seq !== undefined ? { seq } : {}),
+          }),
+        );
         return {
           state: { ...next, openToolCalls: remaining },
-          events: [
-            ...closing,
-            ev({ type: "TOOL_CALL_END", toolCallId: matched, ...(seq !== undefined ? { seq } : {}) }),
-            ev({
-              type: "TOOL_CALL_RESULT",
-              toolCallId: matched,
-              content: frame.tool.summary ?? "",
-              ...(frame.tool.isError ? { isError: true } : {}),
-              ...(seq !== undefined ? { seq } : {}),
-            }),
-          ],
+          events: resultEvents,
         };
       }
 

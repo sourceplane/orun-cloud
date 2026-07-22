@@ -43,6 +43,10 @@ function fakeAgentNs(turnResult: { ok: boolean; reason?: string } = { ok: true }
         async history() {
           return [];
         },
+        async setTitle(_orgId: string, title: string) {
+          const meta = metas.get(id.name);
+          if (meta) metas.set(id.name, { ...meta, title });
+        },
         async turn(orgId: string, text: string, principal: string, token: string) {
           turns.push({ orgId, text, principal, token });
           return turnResult;
@@ -67,6 +71,10 @@ function fakeIndexNs(): { ns: NonNullable<Env["CHAT_INDEX"]>; chats: ChatSummary
         async touch(id: string, lastAt: string) {
           const c = chats.find((x) => x.id === id);
           if (c) c.lastAt = lastAt;
+        },
+        async setTitle(id: string, title: string) {
+          const c = chats.find((x) => x.id === id);
+          if (c) c.title = title;
         },
         async removeChat(id: string) {
           const i = chats.findIndex((x) => x.id === id);
