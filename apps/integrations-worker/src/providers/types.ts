@@ -14,6 +14,7 @@ import type {
   IntegrationCapability,
   IntegrationConnectKind,
   IntegrationScopeTemplate,
+  SecretMode,
 } from "@saas/contracts/integrations";
 import type { GithubInstallationFacts } from "../github-app.js";
 import type { SlackOauthGrant } from "./slack.js";
@@ -147,6 +148,25 @@ export interface CredentialBrokerCapability {
   ): Promise<boolean>;
 }
 
+/**
+ * Secret-source DESCRIBE capability (saas-secrets-platform SP0). Pure data +
+ * the shared scope-template catalog — the substrate reads this to derive what
+ * it used to hardcode (BROKER_CAPABLE_PROVIDERS / ALLOWED_ROTATION_PROVIDERS /
+ * SCOPE_TEMPLATE_CATALOG). Never mints; the PRODUCE verb stays on `broker`.
+ */
+export interface SecretsCapability {
+  /** Canonical scope-template catalog (the same list `broker.scopeTemplates`
+   *  returns — unified here as the single source of truth). */
+  scopeTemplates(): readonly IntegrationScopeTemplate[];
+  /** Which stored/served modes this provider's mint can back. */
+  supportedModes: readonly SecretMode[];
+  /** Materialize target ids a rotated value can be delivered into (RS deliver);
+   *  empty for providers that only serve per-run consumers. */
+  deliveryTargets(): readonly string[];
+  /** Default substrate surface, or a surface the integration registers itself. */
+  authoring: "declarative" | "custom";
+}
+
 // ── Service-identity provisioning (SI, sub-epics/service-identity-bootstrap) ──
 
 /** A provisioned provider-side service identity: the durable, org-owned
@@ -241,6 +261,11 @@ export interface IntegrationProvider {
   inbound?: InboundCapability;
   broker?: CredentialBrokerCapability;
   messaging?: MessagingCapability;
+  /** Secret-source DESCRIBE capability (saas-secrets-platform SP0). Present iff
+   *  `capabilities` includes "secrets"; a provider that declares it MUST also
+   *  declare `broker`. Lets the secrets substrate derive templates/modes/targets
+   *  instead of hardcoding them. */
+  secrets?: SecretsCapability;
   /** Service-identity lifecycle (SI2+); dormant until an adapter implements
    *  it. Not surfaced in `capabilities` until it goes live per provider. */
   provision?: ProvisionCapability;

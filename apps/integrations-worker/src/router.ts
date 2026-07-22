@@ -44,6 +44,7 @@ import {
 import { handleSlackCredentialsInternal } from "./handlers/slack-credentials-internal.js";
 import { handleInternalRotateSource, ROTATE_SOURCE_PATH } from "./handlers/rotate-source.js";
 import { handleInternalConnectionStatuses } from "./handlers/internal-connection-status.js";
+import { handleInternalSecretsCapability, SECRETS_CAPABILITY_PATH } from "./handlers/internal-secrets-capability.js";
 import {
   handleCreateConnectionGrant,
   handleListConnectionGrants,
@@ -260,6 +261,15 @@ export async function route(request: Request, env: Env): Promise<Response> {
       return errorResponse("internal_error", "Database not configured", 503, requestId);
     }
     return handleInternalRotateSource(request, env, requestId);
+  }
+
+  // Provider secret-source DESCRIBE capability (saas-secrets-platform SP0): the
+  // secrets substrate reads scope templates / supported modes / delivery
+  // targets / authoring instead of hardcoding them. Pure metadata (no
+  // credential), so not gated to a single internal caller.
+  if (pathname === SECRETS_CAPABILITY_PATH) {
+    if (request.method !== "GET") return methodNotAllowed(requestId);
+    return handleInternalSecretsCapability(request, env, requestId);
   }
 
   // Internal batch connection-status read (brokered-orphan-safety, Feature 1):
