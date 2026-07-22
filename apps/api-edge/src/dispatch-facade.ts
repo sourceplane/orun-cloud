@@ -93,6 +93,7 @@ interface SessionSlice {
   workRef?: string;
   spawnedBy: string;
   startedAt?: string;
+  createdAt?: string;
   tokensUsed?: number;
   parentSessionId?: string;
   depth?: number;
@@ -234,6 +235,7 @@ export async function handleDispatchRoute(
         ...(s.taskKey !== undefined ? { taskKey: s.taskKey } : {}),
         ...(s.workRef !== undefined ? { workRef: s.workRef } : {}),
         ...(s.startedAt !== undefined ? { startedAt: s.startedAt } : {}),
+        ...(s.createdAt !== undefined ? { createdAt: s.createdAt } : {}),
         ...(s.tokensUsed !== undefined ? { tokensUsed: s.tokensUsed } : {}),
         ...(s.parentSessionId !== undefined ? { parentSessionId: s.parentSessionId } : {}),
         ...(s.depth !== undefined ? { depth: s.depth } : {}),

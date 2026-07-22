@@ -52,6 +52,9 @@ export interface SituationSessionItem {
   workRef?: string;
   spawnedBy: string;
   startedAt?: string;
+  /** When the session row was created — the honest age of a `requested`
+   * session that never started (saas-dispatch-delight DD4). */
+  createdAt?: string;
   /** Accumulated relayed spend (AF8 cost samples). */
   tokensUsed?: number;
   /** Delegation-tree placement (AF4). */
