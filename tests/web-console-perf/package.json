@@ -1,0 +1,16 @@
+{
+  "name": "@saas/web-console-perf",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "echo 'perf budgets: nothing to build'",
+    "typecheck": "echo 'perf budgets: plain ESM, no TS'",
+    "test": "node src/run.mjs",
+    "lint": "echo 'perf budgets: plain ESM scripts'"
+  },
+  "devDependencies": {
+    "@saas/web-console-next": "workspace:*",
+    "playwright": "^1.49.0"
+  }
+}
