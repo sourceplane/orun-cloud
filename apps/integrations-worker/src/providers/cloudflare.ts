@@ -24,7 +24,10 @@
 // rotation surfaces as parent_grant_insufficient on the NEXT mint — an IH9
 // health concern, not data loss, the same tolerance as Supabase).
 
-import type { IntegrationScopeTemplate } from "@saas/contracts/integrations";
+import type {
+  IntegrationConnectRecipe,
+  IntegrationScopeTemplate,
+} from "@saas/contracts/integrations";
 import type { FetchLike } from "../github-app.js";
 import type {
   CloudflareOauthCredentials,
@@ -499,13 +502,54 @@ export async function refreshCloudflareAccess(
  *  parent token's own permission-group listing — never hardcoded ids. A name
  *  the account cannot see is a `parent_grant_insufficient` (deny-by-default:
  *  template ⊄ parent grant). */
-const TEMPLATE_PERMISSION_GROUPS: Record<string, readonly string[]> = {
+export const TEMPLATE_PERMISSION_GROUPS: Record<string, readonly string[]> = {
   "workers-deploy": ["Workers Scripts Write", "Workers KV Storage Write", "Account Settings Read"],
   "pages-deploy": ["Pages Write", "Account Settings Read"],
   "dns-edit": ["DNS Write"],
   "r2-data": ["Workers R2 Storage Write"],
   "account-read": ["Account Settings Read"],
 };
+
+/** The grant the child-token mint call itself requires — a 403 on mint is
+ *  surfaced as an insufficient parent grant. */
+const MINT_PERMISSION_GROUP = "Account API Tokens Write";
+
+/**
+ * The parent-token connect recipe (IR3), DERIVED from the template grammar —
+ * the single source the connect surface, docs, and grant summaries render.
+ * The console's hand-mirrored copy (`PARENT_TOKEN_RECIPE`) is deleted; this
+ * cannot drift because it IS `TEMPLATE_PERMISSION_GROUPS`, restated.
+ */
+export function buildParentTokenRecipe(): IntegrationConnectRecipe {
+  // permission group → the template display names that need it, in catalog
+  // order (deny-by-default reading: skip a template, skip its groups).
+  const why = new Map<string, string[]>();
+  for (const template of CLOUDFLARE_SCOPE_TEMPLATES) {
+    for (const group of TEMPLATE_PERMISSION_GROUPS[template.id] ?? []) {
+      const list = why.get(group) ?? [];
+      list.push(template.displayName);
+      why.set(group, list);
+    }
+  }
+  return {
+    intro:
+      "Create an Account API token (recommended — owned by the account, not a person; a user token with account scope also works) with these permissions. Templates you skip can be left off:",
+    items: [
+      { name: MINT_PERMISSION_GROUP, why: "mint and revoke the short-lived child tokens" },
+      ...[...why.entries()].map(([name, templates]) => ({
+        name,
+        why: `${[...new Set(templates)].join(", ")} template${new Set(templates).size === 1 ? "" : "s"}`,
+      })),
+    ],
+    links: [
+      {
+        label: "Open Account API Tokens",
+        url: "https://dash.cloudflare.com/?to=/:account/api-tokens",
+      },
+      { label: "or user API tokens", url: "https://dash.cloudflare.com/profile/api-tokens" },
+    ],
+  };
+}
 
 function templateResources(
   template: string,

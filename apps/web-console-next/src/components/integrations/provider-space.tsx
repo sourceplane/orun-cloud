@@ -41,7 +41,8 @@ import { useApiQuery, qk } from "@/lib/query";
 import { wrap } from "@/lib/api";
 import { descriptorById } from "./registry";
 import { connectionDisplayName, connectionStatusMeta } from "./connections";
-import { CloudflareConnectModal } from "./cloudflare-connect-modal";
+import { IntegrationConnectDialog } from "./connect-panel";
+import { connectDispatch } from "./registry";
 import { SpaceActivity } from "./space-activity";
 import { authoringSurfaceFor } from "@/components/config/authoring-registry";
 import { deriveBrokerRow, deriveRotationRow } from "@/components/config/bind-secret-flow";
@@ -171,16 +172,16 @@ export function ProviderSpace({
   const [mode, setMode] = React.useState<"binding" | "rotated">("binding");
   const [initialConnectionId, setInitialConnectionId] = React.useState<string | undefined>(undefined);
 
-  // ── Connect (IR1) ──
+  // ── Connect (IR3) ──
   // The space owns connect for any provider whose posture the hub's popup
-  // flow can't express (a token method / multiple methods — today:
-  // Cloudflare). IR3 replaces this modal mount with the space's real connect
-  // panel rendered from `descriptor.connect`; until then the shipped modal
-  // IS the token-method surface (one-milestone shim).
+  // flow can't express (a token method / multiple methods) — derived from
+  // the served descriptor, never a provider name. The dialog renders the
+  // ordered methods; the token recipe comes from the descriptor.
   const [connectOpen, setConnectOpen] = React.useState(false);
-  const spaceOwnsConnect = providerId === "cloudflare";
-  const oauthLive = descriptor?.connect.some((m) => m.kind === "oauth" && m.live) ?? false;
+  const spaceOwnsConnect = descriptor ? connectDispatch(descriptor).kind === "space" : false;
 
+  // The popup+poll path for a live install/oauth method (from the dialog's
+  // primary action).
   const startOauthConnect = React.useCallback(async () => {
     setConnectOpen(false);
     const r = await wrap(() => client.integrations.connect(orgId, providerId));
@@ -257,11 +258,19 @@ export function ProviderSpace({
           "This provider's space — its connections, its secrets, its scope templates."
         }
         actions={
-          capability && activeConnections.length > 0 ? (
-            <Button size="sm" onClick={() => setCreateOpen(true)}>
-              Create secret
-            </Button>
-          ) : undefined
+          <div className="flex items-center gap-2">
+            {/* IR3: multi-connection providers add accounts from the space. */}
+            {spaceOwnsConnect && descriptor?.multiConnection && activeConnections.length > 0 ? (
+              <Button size="sm" variant="outline" onClick={() => setConnectOpen(true)}>
+                Add account
+              </Button>
+            ) : null}
+            {capability && activeConnections.length > 0 ? (
+              <Button size="sm" onClick={() => setCreateOpen(true)}>
+                Create secret
+              </Button>
+            ) : null}
+          </div>
         }
       />
 
@@ -552,19 +561,19 @@ export function ProviderSpace({
         </DialogContent>
       </Dialog>
 
-      {/* IR1 shim (see spaceOwnsConnect above): the shipped Cloudflare modal
-          serves as the space's connect surface until IR3's descriptor-driven
-          connect panel replaces it. */}
-      {spaceOwnsConnect ? (
-        <CloudflareConnectModal
+      {/* IR3: the descriptor-driven connect surface — ordered methods, the
+          token recipe served from the adapter's own grammar. */}
+      {spaceOwnsConnect && descriptor ? (
+        <IntegrationConnectDialog
           orgId={orgId}
+          descriptor={descriptor}
           open={connectOpen}
           onOpenChange={setConnectOpen}
           onConnected={() => integrations.reload()}
           onGateError={(error) =>
             toast({ kind: "error", title: "Connection gated", description: error.message })
           }
-          {...(oauthLive ? { onOauth: () => void startOauthConnect() } : {})}
+          onPopupConnect={() => void startOauthConnect()}
         />
       ) : null}
     </Screen>

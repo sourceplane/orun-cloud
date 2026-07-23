@@ -122,20 +122,41 @@ describe("manifest ⊆ adapter conformance (IR0)", () => {
 
   it("cloudflare reports per-method liveness honestly across env postures", () => {
     const module = getManifestModule("cloudflare")!;
-    // Full env: both methods live, oauth first (ordered preference).
-    expect(module.resolveConnect(fullEnv())).toEqual([
+    // Full env: both methods live, oauth first (ordered preference); the
+    // token method carries its derived recipe (IR3).
+    expect(module.resolveConnect(fullEnv())).toMatchObject([
       { kind: "oauth", live: true },
-      { kind: "token", live: true },
+      { kind: "token", live: true, recipe: expect.anything() },
     ]);
     // Custody only: token-paste live, oauth parked.
     const custodyOnly = { ENVIRONMENT: "test", SECRET_ENCRYPTION_KEY: KEY } as unknown as Env;
-    expect(module.resolveConnect(custodyOnly)).toEqual([
+    expect(module.resolveConnect(custodyOnly)).toMatchObject([
       { kind: "oauth", live: false },
       { kind: "token", live: true },
     ]);
     // No custody: nothing is live.
     const bare = { ENVIRONMENT: "test" } as unknown as Env;
     expect(module.resolveConnect(bare).every((c) => !c.live)).toBe(true);
+  });
+
+  it("cloudflare's token recipe is derived from the adapter grammar (IR3 — no drift possible)", async () => {
+    const { TEMPLATE_PERMISSION_GROUPS, buildParentTokenRecipe } = await import(
+      "@integrations-worker/providers/cloudflare"
+    );
+    const module = getManifestModule("cloudflare")!;
+    const token = module.resolveConnect(fullEnv()).find((m) => m.kind === "token");
+    expect(token?.recipe).toEqual(buildParentTokenRecipe());
+    // Every permission group any template needs appears in the recipe, plus
+    // the mint grant itself — the deleted console copy can never come back
+    // incomplete.
+    const served = new Set(token!.recipe!.items.map((i) => i.name));
+    for (const groups of Object.values(TEMPLATE_PERMISSION_GROUPS)) {
+      for (const group of groups as readonly string[]) expect(served.has(group)).toBe(true);
+    }
+    expect(served.has("Account API Tokens Write")).toBe(true);
+    // OAuth (a provider-hosted consent) needs no recipe.
+    const oauth = module.resolveConnect(fullEnv()).find((m) => m.kind === "oauth");
+    expect(oauth?.recipe).toBeUndefined();
   });
 
   it("dormant providers never report a live connect method", () => {
