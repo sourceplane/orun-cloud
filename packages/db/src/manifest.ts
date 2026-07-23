@@ -813,5 +813,14 @@ export const manifest: MigrationManifest = {
       description:
         "'rotation' joins the mint-purpose enum (provider-rotated-secrets RS1): integrations.minted_credentials.purpose CHECK widens to ('api', 'secret_resolve', 'rotation') so the mints that produce a provider-rotated secret's stored value — at create (RS1) and on the RS2 rotation schedule — are ledgered distinctly from user-facing api mints and lease-bound secret_resolve mints. Guarded CHECK swap (the 720 lesson); purely widening, idempotent.",
     },
+    {
+      id: "900_integrations_scope_templates",
+      context: "integrations",
+      path: "900_integrations_scope_templates/up.sql",
+      checksum:
+        "b3876d6791d01a7eac313bb1372a4b6379b3657310dde23561a475a7e43989bd",
+      description:
+        "Org-curated scope templates (saas-secrets-platform SP4): integrations.scope_templates — named derivations of a code-declared BASE template, curated in the provider's own space and served to every create surface through the SP0 capability read. The base supplies mint semantics (permission grammar, custody kind, params, TTL ceiling); the org supplies identity and display, so a custom template can never exceed what its base grants. Versioned (display edits bump); status active|retired with soft-retire only — no hard delete exists, so a template can never be deleted out from under a live secret. Additive + idempotent.",
+    },
   ],
 };

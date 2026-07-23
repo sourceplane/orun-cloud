@@ -21,6 +21,11 @@ import type {
   ProviderSecretsCapability,
 } from "@saas/contracts/integrations";
 import { INTEGRATION_POLICY_ACTIONS } from "@saas/contracts/integrations";
+import { createScopeTemplatesRepository } from "@saas/db/integrations";
+import { createSqlExecutor } from "@saas/db/hyperdrive";
+import type { SqlExecutor } from "@saas/db/hyperdrive";
+import type { Uuid } from "@saas/db/ids";
+import { asUuid } from "@saas/db/ids";
 import { successResponse } from "../http.js";
 import {
   DORMANT_PROVIDER_IDS,
@@ -29,6 +34,11 @@ import {
   KNOWN_PROVIDER_IDS,
 } from "../providers/registry.js";
 import { authorizeIntegration } from "./connections.js";
+import { mergeActiveTemplates } from "./scope-templates.js";
+
+export interface SecretsCapabilitiesDeps {
+  executor?: SqlExecutor;
+}
 
 export async function handleListSecretsCapabilities(
   _request: Request,
@@ -36,6 +46,7 @@ export async function handleListSecretsCapabilities(
   requestId: string,
   actor: ActorContext,
   orgId: string,
+  deps?: SecretsCapabilitiesDeps,
 ): Promise<Response> {
   const denied = await authorizeIntegration(
     env,
@@ -46,6 +57,12 @@ export async function handleListSecretsCapabilities(
   );
   if (denied) return denied;
 
+  // SP4: the served catalog = code-declared templates + this org's ACTIVE
+  // custom templates. Fail-soft — a template-store read failure serves the
+  // declared catalog rather than failing the whole capability read.
+  const executor = deps?.executor ?? (env.PLATFORM_DB ? createSqlExecutor(env.PLATFORM_DB) : null);
+  const templatesRepo = executor ? createScopeTemplatesRepository(executor) : null;
+
   const capabilities: ProviderSecretsCapability[] = [];
   for (const id of [...KNOWN_PROVIDER_IDS, ...DORMANT_PROVIDER_IDS]) {
     // A configured provider (env secrets present) is the live case; fall back
@@ -53,9 +70,16 @@ export async function handleListSecretsCapabilities(
     const provider = getConfiguredProvider(env, id)?.provider ?? getDormantProvider(id);
     if (!provider?.secrets) continue;
     const s = provider.secrets;
+    let scopeTemplates = s.scopeTemplates();
+    if (templatesRepo) {
+      const customs = await templatesRepo.listScopeTemplates(asUuid(orgId) as Uuid, provider.id);
+      if (customs.ok && customs.value.length > 0) {
+        scopeTemplates = mergeActiveTemplates(scopeTemplates, customs.value);
+      }
+    }
     capabilities.push({
       provider: provider.id as IntegrationProviderId,
-      scopeTemplates: s.scopeTemplates(),
+      scopeTemplates,
       supportedModes: s.supportedModes,
       deliveryTargets: s.deliveryTargets(),
       authoring: s.authoring,

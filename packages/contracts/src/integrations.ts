@@ -561,7 +561,9 @@ export interface IntegrationScopeTemplate {
   /** Stable template id, unique per provider (e.g. "workers-deploy"). */
   id: string;
   provider: IntegrationProviderId;
-  version: 1;
+  /** Code-declared templates are version 1; org-curated templates (SP4)
+   *  bump on every display edit. */
+  version: number;
   displayName: string;
   /** What the minted credential can do — the EFFECTIVE breadth, honestly
    *  stated (risks R5: a template that cannot be narrowed must say so). */
@@ -579,6 +581,49 @@ export interface IntegrationScopeTemplate {
    * (when declared) selects the entry inside the custodied JSON map.
    */
   custodyKind?: string;
+  /**
+   * Where the template is authored (saas-secrets-platform SP4):
+   * "declared" = the provider adapter's code catalog; "custom" = an
+   * org-curated derivation managed at runtime in the provider's space.
+   * Absent means "declared" (pre-SP4 emitters).
+   */
+  origin?: "declared" | "custom";
+  /** For a custom template: the code-declared base supplying mint semantics. */
+  baseTemplate?: string;
+  /** For a custom template: soft-retire hides it from create surfaces while
+   *  existing bindings keep resolving. Absent means active. */
+  status?: "active" | "retired";
+}
+
+// ── Org-curated scope templates (saas-secrets-platform SP4) ──
+
+/** POST /v1/organizations/:orgId/integrations/providers/:providerId/scope-templates */
+export interface CreateScopeTemplateRequest {
+  /** New template id (code-template grammar; must not collide with the
+   *  provider's declared catalog or an existing custom id). */
+  templateId: string;
+  /** The code-declared template supplying mint semantics (custom ⊆ base). */
+  baseTemplate: string;
+  displayName: string;
+  description?: string;
+}
+
+/** PATCH …/scope-templates/:templateId — display edits bump version;
+ *  `status` soft-retires / reactivates. There is NO hard delete (SP-A6). */
+export interface UpdateScopeTemplateRequest {
+  displayName?: string;
+  description?: string;
+  status?: "active" | "retired";
+}
+
+/** GET …/scope-templates — the manage view: the provider's declared catalog
+ *  plus every org-curated template (active AND retired). */
+export interface ListScopeTemplatesResponse {
+  templates: readonly IntegrationScopeTemplate[];
+}
+
+export interface ScopeTemplateResponse {
+  template: IntegrationScopeTemplate;
 }
 
 export type IntegrationMintPurpose = "api" | "secret_resolve" | "rotation";

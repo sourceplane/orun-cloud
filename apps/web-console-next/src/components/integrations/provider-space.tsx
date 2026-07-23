@@ -25,7 +25,7 @@ import * as React from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Cloud, Database, GitBranch, MessageSquare, Plug, type LucideIcon } from "lucide-react";
 import type { ConfigScope } from "@saas/sdk";
-import type { PublicConnection } from "@saas/contracts/integrations";
+import type { IntegrationScopeTemplate, PublicConnection } from "@saas/contracts/integrations";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -302,39 +302,8 @@ export function ProviderSpace({
             </div>
           )}
 
-          {/* ── Scope templates (read-only until SP4) ── */}
-          <Kicker className="mb-2.5 mt-8">Scope templates</Kicker>
-          <div className="overflow-hidden rounded-xl border bg-card">
-            <div className="overflow-x-auto">
-              <table className="w-full min-w-[560px] text-left text-sm">
-                <thead>
-                  <tr className="border-b text-[11px] font-semibold uppercase tracking-[0.07em] text-muted-foreground/80">
-                    <th className="px-4 py-2.5">Type</th>
-                    <th className="px-4 py-2.5">Grants</th>
-                    <th className="px-4 py-2.5">Params</th>
-                    <th className="px-4 py-2.5">Max TTL</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {capability.scopeTemplates.map((t) => (
-                    <tr key={t.id} className="border-t border-border/50 first:border-t-0 align-top">
-                      <td className="px-4 py-2.5">
-                        <span className="block text-[12.5px] font-semibold">{t.displayName}</span>
-                        <span className="block font-mono text-[11px] text-muted-foreground">{t.id}</span>
-                      </td>
-                      <td className="px-4 py-2.5 text-xs text-muted-foreground">{t.description}</td>
-                      <td className="px-4 py-2.5 font-mono text-[11px] text-muted-foreground">
-                        {t.params.length > 0 ? t.params.join(", ") : "—"}
-                      </td>
-                      <td className="whitespace-nowrap px-4 py-2.5 text-xs text-muted-foreground">
-                        {formatTtl(t.maxTtlSeconds)}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
+          {/* ── Scope templates (SP4: integration-managed at runtime) ── */}
+          <ScopeTemplatesSection orgId={orgId} providerId={providerId} name={name} />
         </>
       ) : capabilitiesQuery.loading ? (
         <p className="mt-8 text-sm text-muted-foreground">Loading capability…</p>
@@ -430,5 +399,306 @@ export function ProviderSpace({
         </DialogContent>
       </Dialog>
     </Screen>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Scope templates (saas-secrets-platform SP4)
+// ---------------------------------------------------------------------------
+
+/**
+ * The integration-managed template catalog: the provider's declared templates
+ * plus this org's curated derivations, managed here and served to every
+ * create surface through the SP0 capability read — no console/db redeploy.
+ * Custom templates derive from a declared BASE (which supplies the mint
+ * semantics); edits bump the version; retire is the only removal (SP-A6) so
+ * a template can never be deleted out from under a live secret.
+ */
+function ScopeTemplatesSection({
+  orgId,
+  providerId,
+  name,
+}: {
+  orgId: string;
+  providerId: string;
+  name: string;
+}) {
+  const { client } = useSession();
+  const { toast } = useToast();
+
+  const templatesQuery = useApiQuery(qk.scopeTemplates(orgId, providerId), () =>
+    wrap(async () => (await client.integrations.listScopeTemplates(orgId, providerId)).templates),
+  );
+  const templates = templatesQuery.data ?? [];
+  const declared = templates.filter((t) => (t.origin ?? "declared") === "declared");
+
+  const [createOpen, setCreateOpen] = React.useState(false);
+  const [editing, setEditing] = React.useState<IntegrationScopeTemplate | null>(null);
+  const [templateId, setTemplateId] = React.useState("");
+  const [baseTemplate, setBaseTemplate] = React.useState("");
+  const [displayName, setDisplayName] = React.useState("");
+  const [description, setDescription] = React.useState("");
+  const [busy, setBusy] = React.useState(false);
+  const [formError, setFormError] = React.useState<string | null>(null);
+
+  const openCreate = () => {
+    setTemplateId("");
+    setBaseTemplate(declared[0]?.id ?? "");
+    setDisplayName("");
+    setDescription("");
+    setFormError(null);
+    setCreateOpen(true);
+  };
+  const openEdit = (t: IntegrationScopeTemplate) => {
+    setDisplayName(t.displayName);
+    setDescription(t.description);
+    setFormError(null);
+    setEditing(t);
+  };
+
+  const submitCreate = async () => {
+    setBusy(true);
+    setFormError(null);
+    const r = await wrap(() =>
+      client.integrations.createScopeTemplate(orgId, providerId, {
+        templateId: templateId.trim(),
+        baseTemplate,
+        displayName: displayName.trim(),
+        ...(description.trim() ? { description: description.trim() } : {}),
+      }),
+    );
+    setBusy(false);
+    if (!r.ok) {
+      setFormError(r.error.message);
+      return;
+    }
+    setCreateOpen(false);
+    toast({ kind: "success", title: "Template created", description: "It is live on every create surface now." });
+    templatesQuery.reload();
+  };
+
+  const submitEdit = async () => {
+    if (!editing) return;
+    setBusy(true);
+    setFormError(null);
+    const r = await wrap(() =>
+      client.integrations.updateScopeTemplate(orgId, providerId, editing.id, {
+        displayName: displayName.trim(),
+        description: description.trim(),
+      }),
+    );
+    setBusy(false);
+    if (!r.ok) {
+      setFormError(r.error.message);
+      return;
+    }
+    setEditing(null);
+    toast({ kind: "success", title: "Template updated", description: "Version bumped; live everywhere." });
+    templatesQuery.reload();
+  };
+
+  const setStatus = async (t: IntegrationScopeTemplate, status: "active" | "retired") => {
+    const r = await wrap(() => client.integrations.updateScopeTemplate(orgId, providerId, t.id, { status }));
+    if (!r.ok) {
+      toast({ kind: "error", title: "Update failed", description: r.error.message });
+      return;
+    }
+    toast({
+      kind: "success",
+      title: status === "retired" ? "Template retired" : "Template reactivated",
+      description:
+        status === "retired"
+          ? "Hidden from create surfaces; existing secrets keep resolving."
+          : "Offered on create surfaces again.",
+    });
+    templatesQuery.reload();
+  };
+
+  return (
+    <>
+      <div className="mb-2.5 mt-8 flex flex-wrap items-end justify-between gap-3">
+        <Kicker className="mb-0">Scope templates</Kicker>
+        {declared.length > 0 ? (
+          <Button variant="outline" size="sm" onClick={openCreate}>
+            New template
+          </Button>
+        ) : null}
+      </div>
+
+      {templatesQuery.loading ? (
+        <p className="text-sm text-muted-foreground">Loading templates…</p>
+      ) : (
+        <div className="overflow-hidden rounded-xl border bg-card">
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[640px] text-left text-sm">
+              <thead>
+                <tr className="border-b text-[11px] font-semibold uppercase tracking-[0.07em] text-muted-foreground/80">
+                  <th className="px-4 py-2.5">Type</th>
+                  <th className="px-4 py-2.5">Grants</th>
+                  <th className="px-4 py-2.5">Params</th>
+                  <th className="px-4 py-2.5">Max TTL</th>
+                  <th className="px-4 py-2.5">Origin</th>
+                  <th className="px-4 py-2.5" />
+                </tr>
+              </thead>
+              <tbody>
+                {templates.map((t) => {
+                  const custom = t.origin === "custom";
+                  const retired = t.status === "retired";
+                  return (
+                    <tr
+                      key={t.id}
+                      className={`border-t border-border/50 first:border-t-0 align-top${retired ? " opacity-60" : ""}`}
+                    >
+                      <td className="px-4 py-2.5">
+                        <span className="block text-[12.5px] font-semibold">{t.displayName}</span>
+                        <span className="block font-mono text-[11px] text-muted-foreground">
+                          {t.id}
+                          {custom ? ` · v${t.version}` : ""}
+                        </span>
+                      </td>
+                      <td className="px-4 py-2.5 text-xs text-muted-foreground">
+                        {t.description}
+                        {custom && t.baseTemplate ? (
+                          <span className="mt-1 block font-mono text-[11px]">base: {t.baseTemplate}</span>
+                        ) : null}
+                      </td>
+                      <td className="px-4 py-2.5 font-mono text-[11px] text-muted-foreground">
+                        {t.params.length > 0 ? t.params.join(", ") : "—"}
+                      </td>
+                      <td className="whitespace-nowrap px-4 py-2.5 text-xs text-muted-foreground">
+                        {formatTtl(t.maxTtlSeconds)}
+                      </td>
+                      <td className="whitespace-nowrap px-4 py-2.5 text-xs text-muted-foreground">
+                        {custom ? (retired ? "custom · retired" : "custom") : "declared"}
+                      </td>
+                      <td className="whitespace-nowrap px-4 py-2.5 text-right text-xs">
+                        {custom ? (
+                          <span className="inline-flex gap-2">
+                            <button
+                              type="button"
+                              className="underline underline-offset-2 hover:text-foreground"
+                              onClick={() => openEdit(t)}
+                            >
+                              Edit
+                            </button>
+                            <button
+                              type="button"
+                              className="underline underline-offset-2 hover:text-foreground"
+                              onClick={() => void setStatus(t, retired ? "active" : "retired")}
+                            >
+                              {retired ? "Reactivate" : "Retire"}
+                            </button>
+                          </span>
+                        ) : null}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* Create dialog */}
+      <Dialog open={createOpen} onOpenChange={setCreateOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>New {name} scope template</DialogTitle>
+            <DialogDescription>
+              A named derivation of a declared template. The base supplies what the credential can DO —
+              your template can never exceed it.
+            </DialogDescription>
+          </DialogHeader>
+          <label className="block space-y-1.5 text-sm font-medium">
+            Base template
+            <select
+              value={baseTemplate}
+              onChange={(e) => setBaseTemplate(e.target.value)}
+              className="mt-1.5 h-9 w-full rounded-md border bg-card px-2 text-sm font-normal"
+            >
+              {declared.map((t) => (
+                <option key={t.id} value={t.id}>
+                  {t.displayName} ({t.id})
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="block space-y-1.5 text-sm font-medium">
+            Template id
+            <input
+              value={templateId}
+              onChange={(e) => setTemplateId(e.target.value)}
+              placeholder="prod-workers-deploy"
+              className="mt-1.5 h-9 w-full rounded-md border bg-card px-2 font-mono text-xs"
+            />
+          </label>
+          <label className="block space-y-1.5 text-sm font-medium">
+            Display name
+            <input
+              value={displayName}
+              onChange={(e) => setDisplayName(e.target.value)}
+              className="mt-1.5 h-9 w-full rounded-md border bg-card px-2 text-sm font-normal"
+            />
+          </label>
+          <label className="block space-y-1.5 text-sm font-medium">
+            Description
+            <input
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              placeholder="Optional"
+              className="mt-1.5 h-9 w-full rounded-md border bg-card px-2 text-sm font-normal"
+            />
+          </label>
+          {formError ? <p className="text-xs text-destructive">{formError}</p> : null}
+          <div className="flex justify-end gap-2 pt-1">
+            <Button type="button" variant="ghost" onClick={() => setCreateOpen(false)}>
+              Cancel
+            </Button>
+            <Button type="button" loading={busy} onClick={() => void submitCreate()}>
+              Create template
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit dialog (display edits bump the version) */}
+      <Dialog open={editing !== null} onOpenChange={(o) => !o && setEditing(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Edit template</DialogTitle>
+            <DialogDescription className="font-mono text-xs">
+              {editing?.id} · v{editing?.version} → v{(editing?.version ?? 0) + 1}
+            </DialogDescription>
+          </DialogHeader>
+          <label className="block space-y-1.5 text-sm font-medium">
+            Display name
+            <input
+              value={displayName}
+              onChange={(e) => setDisplayName(e.target.value)}
+              className="mt-1.5 h-9 w-full rounded-md border bg-card px-2 text-sm font-normal"
+            />
+          </label>
+          <label className="block space-y-1.5 text-sm font-medium">
+            Description
+            <input
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              className="mt-1.5 h-9 w-full rounded-md border bg-card px-2 text-sm font-normal"
+            />
+          </label>
+          {formError ? <p className="text-xs text-destructive">{formError}</p> : null}
+          <div className="flex justify-end gap-2 pt-1">
+            <Button type="button" variant="ghost" onClick={() => setEditing(null)}>
+              Cancel
+            </Button>
+            <Button type="button" loading={busy} onClick={() => void submitEdit()}>
+              Save (bump version)
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }

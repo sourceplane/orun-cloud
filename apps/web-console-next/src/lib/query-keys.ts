@@ -42,6 +42,9 @@ export const qk = {
    * static per deploy, cached long; the create surfaces and the Secrets lens
    * share this one entry. */
   secretsCapabilities: (orgId: string) => ["secretsCapabilities", orgId] as const,
+  /** Org-curated scope templates for one provider (SP4) — the manage view. */
+  scopeTemplates: (orgId: string, providerId: string) =>
+    ["scopeTemplates", orgId, providerId] as const,
   /** One connection's detail read (saas-integration-hub IH8). */
   integration: (orgId: string, connectionId: string) =>
     ["integration", orgId, connectionId] as const,
