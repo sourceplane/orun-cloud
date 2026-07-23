@@ -52,7 +52,11 @@ export const qk = {
   /** One connection's detail read (saas-integration-hub IH8). */
   integration: (orgId: string, connectionId: string) =>
     ["integration", orgId, connectionId] as const,
-  /** The credential-broker mint ledger for one connection (IH8). */
+  /** A connection's inbound delivery log (IR2 space Activity tab). */
+  inboundDeliveries: (orgId: string, connectionId: string) =>
+    ["inboundDeliveries", orgId, connectionId] as const,
+  /** The credential-broker mint ledger for one connection (IH8; IR2 space
+   *  Activity tab). */
   mintedCredentials: (orgId: string, connectionId: string) =>
     ["mintedCredentials", orgId, connectionId] as const,
   /** Slack channels visible to a messaging connection's bot (IH8). */

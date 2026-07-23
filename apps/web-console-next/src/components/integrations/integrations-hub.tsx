@@ -14,7 +14,7 @@
 //   returns a URL carrying the signed single-use state; our ingress
 //   activates; the poll loop observes).
 // - anything else (token method, multiple methods) → the provider's space
-//   owns the flow (`/integrations/providers/{id}?connect=1`).
+//   owns the flow (`/integrations/{id}?connect=1`, IR2's canonical route).
 //
 // SP-A5: while the registry read is loading/failed, connect entry points
 // render disabled with a hint — never a baked-in fallback catalog.
@@ -161,7 +161,7 @@ export function IntegrationsHub({ orgId, orgSlug }: { orgId: string; orgSlug: st
       const dispatch = connectDispatch(descriptor);
       if (dispatch.kind === "none") return;
       if (dispatch.kind === "space") {
-        router.push(`/orgs/${orgSlug}/integrations/providers/${descriptor.id}?connect=1`);
+        router.push(`/orgs/${orgSlug}/integrations/${descriptor.id}?connect=1`);
         return;
       }
       const r = await wrap(() => client.integrations.connect(orgId, descriptor.id));
@@ -549,7 +549,7 @@ function ConnectionCard({
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
             <Link
-              href={`/orgs/${orgSlug}/integrations/${connection.id}`}
+              href={`/orgs/${orgSlug}/integrations/${connection.provider}/connections/${connection.id}`}
               className="text-[15px] font-semibold leading-tight hover:underline"
             >
               {providerName}

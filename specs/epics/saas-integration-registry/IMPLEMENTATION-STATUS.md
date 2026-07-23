@@ -8,8 +8,8 @@ rails; implementation started same day.
 | ID | Status |
 |----|--------|
 | IR0 | ✅ Shipped (#596) — manifest + registry read |
-| IR1 | 🔄 In progress — unified hub from the registry |
-| IR2 | 🗓️ Planned |
+| IR1 | ✅ Shipped (#597) — unified hub from the registry |
+| IR2 | 🔄 In progress — canonical space + nested detail + redirects |
 | IR3 | 🗓️ Planned |
 | IR4 | 🗓️ Planned |
 | IR5 | 🗓️ Planned (gate: IR-D3 sign-off) |
@@ -19,6 +19,34 @@ rails; implementation started same day.
 | IR9 | 🗓️ Planned |
 
 ## Notes
+
+- 2026-07-23: IR2 as built:
+  - **Route model**: `/integrations/[slug]` is the canonical integration
+    route — the one dynamic segment resolves by shape via
+    `components/integrations/route-model.ts` (`int_<32hex>` → legacy
+    connection redirect resolving the provider from the connections list;
+    anything else → the provider space). Nested detail:
+    `/integrations/{provider}/connections/{connectionId}` (ConnectionDetail
+    gains `backHref`/`backLabel`); `providers/[providerId]` became a
+    redirect stub carrying `?create/?connection/?connect` through (the
+    `settings/integrations` precedent). The R2 guard test enumerates the
+    contract provider ids against the connection-id shape + reserved
+    segments.
+  - **Space chrome**: the space renders the standard tab skeleton
+    (Overview · Connections · Secrets · Templates · Activity · Settings)
+    from `descriptor.space.tabs`, degrading to a capability-derived tab set
+    while the registry read is unavailable (SP-A5). `?tab=` deep-links.
+  - **Activity tab** (`space-activity.tsx`, new): per-connection mint
+    ledger (template, purpose, run/actor attribution, expiry, live/expired/
+    revoked state, revoke action — the first console consumer of the
+    shipped `listMintedCredentials`/`revokeMintedCredential` surface) and
+    inbound delivery log (event, attempts, status, replay for failures) —
+    metadata only, by construction.
+  - **Link sweep**: `providerSpaceHref` now canonical; hub connection cards
+    and space connection rows link nested; every legacy URL redirects, none
+    break.
+  - Verified: console 87 suites / 843 tests (route-model + updated
+    provider-space routing expectations), typecheck + lint clean.
 
 - 2026-07-23: IR1 as built:
   - **Console registry lib** (`components/integrations/registry.ts`): pure

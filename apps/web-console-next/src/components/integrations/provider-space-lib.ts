@@ -11,10 +11,11 @@ import type { PublicSecretMetadata } from "@saas/contracts/config";
 import type { ProviderSecretsCapability, SecretMode } from "@saas/contracts/integrations";
 import { deriveBrokerRow, deriveRotationRow } from "@/components/config/bind-secret-flow";
 
-/** The provider space route (SP-A2) — every "managed by {integration}" deep
- *  link lands here. */
+/** The integration's canonical route (IR2, was the SP-A2 `providers/` path —
+ *  which now redirects here) — every "managed by {integration}" deep link
+ *  lands here. */
 export function providerSpaceHref(orgSlug: string, providerId: string): string {
-  return `/orgs/${orgSlug}/integrations/providers/${providerId}`;
+  return `/orgs/${orgSlug}/integrations/${providerId}`;
 }
 
 /** The provider space's create deep-link: pre-selects (and locks) a

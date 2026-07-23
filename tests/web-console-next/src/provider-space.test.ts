@@ -46,17 +46,17 @@ const CAPS = [
   capability({ provider: "supabase" }),
 ];
 
-describe("provider space routing (SP-A2/SP-A4)", () => {
+describe("provider space routing (SP-A2/SP-A4; IR2 canonical route)", () => {
   it("builds the space and create hrefs", () => {
     expect(providerSpaceHref("acme", "cloudflare")).toBe(
-      "/orgs/acme/integrations/providers/cloudflare",
+      "/orgs/acme/integrations/cloudflare",
     );
     expect(providerSpaceCreateHref("acme", "cloudflare")).toBe(
-      "/orgs/acme/integrations/providers/cloudflare?create=1",
+      "/orgs/acme/integrations/cloudflare?create=1",
     );
     const conn = `int_${"a".repeat(32)}`;
     expect(providerSpaceCreateHref("acme", "cloudflare", conn)).toBe(
-      `/orgs/acme/integrations/providers/cloudflare?create=1&connection=${conn}`,
+      `/orgs/acme/integrations/cloudflare?create=1&connection=${conn}`,
     );
   });
 });
@@ -121,12 +121,12 @@ describe("integrationCreateMenu (SP3, SP-A3)", () => {
       {
         providerId: "cloudflare",
         label: "From Cloudflare…",
-        href: "/orgs/acme/integrations/providers/cloudflare?create=1",
+        href: "/orgs/acme/integrations/cloudflare?create=1",
       },
       {
         providerId: "supabase",
         label: "From supabase…",
-        href: "/orgs/acme/integrations/providers/supabase?create=1",
+        href: "/orgs/acme/integrations/supabase?create=1",
       },
     ]);
   });
@@ -142,7 +142,7 @@ describe("legacyBindRedirect (SP3, SP-A4)", () => {
 
   it("routes a known connection to its owner's create dialog, pre-selected", () => {
     expect(legacyBindRedirect("acme", CONN, connections)).toBe(
-      `/orgs/acme/integrations/providers/cloudflare?create=1&connection=${CONN}`,
+      `/orgs/acme/integrations/cloudflare?create=1&connection=${CONN}`,
     );
   });
 

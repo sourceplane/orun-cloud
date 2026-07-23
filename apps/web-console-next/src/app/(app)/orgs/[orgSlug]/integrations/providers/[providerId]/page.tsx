@@ -1,21 +1,25 @@
 "use client";
 
-// The per-provider integration space route (saas-secrets-platform SP2,
-// design addendum SP-A2). A thin wrapper around the shared space component,
-// mirroring the hub and connection-detail routes beside it. The static
-// `providers` segment wins over the sibling `[connectionId]` dynamic segment.
+// Redirect stub (saas-integration-registry IR2): the SP2-era provider-space
+// route moved to the canonical `/integrations/{provider}`. Bookmarks and
+// shipped deep links (`?create=1`, `?connection=`, `?connect=1`) carry
+// through — the shipped `settings/integrations` stub precedent.
 
-import { useParams } from "next/navigation";
-import { OrgScope } from "@/components/shell/org-scope";
-import { ProviderSpace } from "@/components/integrations/provider-space";
+import * as React from "react";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 
-export default function ProviderSpacePage() {
+export default function LegacyProviderSpaceRedirect() {
   const params = useParams<{ orgSlug: string; providerId: string }>();
-  const slug = params?.orgSlug ?? "";
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const orgSlug = params?.orgSlug ?? "";
   const providerId = params?.providerId ?? "";
-  return (
-    <OrgScope slug={slug}>
-      {(org) => <ProviderSpace orgId={org.id} orgSlug={slug} providerId={providerId} />}
-    </OrgScope>
-  );
+
+  React.useEffect(() => {
+    if (!orgSlug || !providerId) return;
+    const qs = searchParams?.toString();
+    router.replace(`/orgs/${orgSlug}/integrations/${providerId}${qs ? `?${qs}` : ""}`);
+  }, [orgSlug, providerId, searchParams, router]);
+
+  return null;
 }

@@ -42,6 +42,7 @@ import { wrap } from "@/lib/api";
 import { descriptorById } from "./registry";
 import { connectionDisplayName, connectionStatusMeta } from "./connections";
 import { CloudflareConnectModal } from "./cloudflare-connect-modal";
+import { SpaceActivity } from "./space-activity";
 import { authoringSurfaceFor } from "@/components/config/authoring-registry";
 import { deriveBrokerRow, deriveRotationRow } from "@/components/config/bind-secret-flow";
 import {
@@ -76,6 +77,18 @@ function formatTtl(seconds: number): string {
   if (seconds % 60 === 0) return `${seconds / 60} min`;
   return `${seconds}s`;
 }
+
+/** The standard space tabs (IR2). Order fixed; presence per capability. */
+type SpaceTabId = "overview" | "connections" | "secrets" | "templates" | "activity" | "settings";
+
+const SPACE_TAB_LABELS: Record<SpaceTabId, string> = {
+  overview: "Overview",
+  connections: "Connections",
+  secrets: "Secrets",
+  templates: "Templates",
+  activity: "Activity",
+  settings: "Settings",
+};
 
 export function ProviderSpace({
   orgId,
@@ -215,6 +228,26 @@ export function ProviderSpace({
   const Surface = authoringSurfaceFor(providerId);
   const name = descriptor?.displayName ?? providerId;
 
+  // ── Tab chrome (IR2): the standard space skeleton. Tabs come from the
+  // served manifest declaration; while the registry read is unavailable the
+  // chrome degrades to the capability read (SP-A5) — never a provider-name
+  // branch. `?tab=` deep-links a tab.
+  const declaredTabs = descriptor?.space.tabs;
+  const fallbackTabs: SpaceTabId[] = [
+    "overview",
+    "connections",
+    ...(capability ? (["secrets", "templates"] as SpaceTabId[]) : []),
+    "settings",
+  ];
+  const tabs: readonly SpaceTabId[] = declaredTabs ?? fallbackTabs;
+  const [tab, setTab] = React.useState<SpaceTabId>(() => {
+    const requested = searchParams?.get("tab") as SpaceTabId | null;
+    return requested && SPACE_TAB_LABELS[requested] ? requested : "overview";
+  });
+  const activeTab: SpaceTabId = tabs.includes(tab) ? tab : "overview";
+  const showMints = descriptor?.capabilities.includes("credential-broker") ?? Boolean(capability);
+  const showDeliveries = descriptor?.capabilities.includes("inbound") ?? false;
+
   return (
     <Screen>
       <PageHeader
@@ -258,10 +291,113 @@ export function ProviderSpace({
         ) : null}
       </div>
 
-      {/* ── Secrets (the owner's create + footprint) ── */}
-      {capability ? (
+      {/* ── Tab bar (IR2 standard chrome — substrate-owned; a provider fills
+          slots, it never restyles the skeleton) ── */}
+      <div className="mt-6 flex gap-1 overflow-x-auto border-b" role="tablist">
+        {tabs.map((t) => (
+          <button
+            key={t}
+            type="button"
+            role="tab"
+            aria-selected={activeTab === t}
+            onClick={() => setTab(t)}
+            className={`shrink-0 border-b-2 px-3 py-1.5 text-[12.5px] ${
+              activeTab === t
+                ? "border-foreground font-semibold"
+                : "border-transparent text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            {SPACE_TAB_LABELS[t]}
+          </button>
+        ))}
+      </div>
+
+      {/* ── Overview / Connections ── */}
+      {activeTab === "overview" || activeTab === "connections" ? (
         <>
-          <div className="mb-2.5 mt-8 flex flex-wrap items-end justify-between gap-3">
+          <Kicker className="mb-2.5 mt-6">Connections</Kicker>
+          {connections.length === 0 ? (
+            <div className="rounded-xl border bg-card px-5 py-4 text-xs text-muted-foreground">
+              No {name} connection yet.{" "}
+              {spaceOwnsConnect ? (
+                <button type="button" className="underline" onClick={() => setConnectOpen(true)}>
+                  Connect {name}
+                </button>
+              ) : (
+                <QuietLink href={`/orgs/${orgSlug}/integrations?connect=${providerId}`}>
+                  Connect from the Integrations hub
+                </QuietLink>
+              )}
+            </div>
+          ) : (
+            <div className="overflow-hidden rounded-xl border bg-card">
+              {connections.map((c: PublicConnection) => {
+                const meta = connectionStatusMeta(c.status);
+                return (
+                  <a
+                    key={c.id}
+                    href={`/orgs/${orgSlug}/integrations/${providerId}/connections/${c.id}`}
+                    className="flex items-center gap-3 border-t border-border/50 px-5 py-3 text-sm first:border-t-0 hover:bg-muted/40"
+                  >
+                    <StatusDot tone={STATUS_TONE[meta.tone] ?? "neutral"} />
+                    <span className="font-medium">{connectionDisplayName(c)}</span>
+                    <span className="text-xs text-muted-foreground">{meta.label}</span>
+                    <span className="ml-auto font-mono text-[11px] text-muted-foreground">{c.id}</span>
+                  </a>
+                );
+              })}
+            </div>
+          )}
+          {activeTab === "overview" && capability && providerSecrets.length > 0 ? (
+            <div className="mt-4 rounded-xl border bg-card px-5 py-4 text-xs text-muted-foreground">
+              {providerSecrets.length} {name} secret{providerSecrets.length === 1 ? "" : "s"} at the
+              selected scope — see the Secrets tab; activity per connection is on the Activity tab.
+            </div>
+          ) : null}
+        </>
+      ) : null}
+
+      {/* ── Activity (IR2): the mint ledger + inbound delivery log ── */}
+      {activeTab === "activity" ? (
+        <SpaceActivity
+          orgId={orgId}
+          connections={connections}
+          showMints={showMints}
+          showDeliveries={showDeliveries}
+        />
+      ) : null}
+
+      {/* ── Settings: the descriptor rendered honestly ── */}
+      {activeTab === "settings" ? (
+        <div className="mt-4 rounded-xl border bg-card px-5 py-4 text-xs text-muted-foreground">
+          <div className="grid gap-1.5">
+            <div>
+              provider <span className="font-mono text-[11px]">{providerId}</span>
+              {descriptor ? <> · category {descriptor.category} · manifest v{descriptor.version}</> : null}
+            </div>
+            {descriptor ? (
+              <div>
+                connect methods:{" "}
+                {descriptor.connect
+                  .map((m) => `${m.kind}${m.live ? "" : " (not configured here)"}`)
+                  .join(" · ")}
+              </div>
+            ) : (
+              <div>Registry unavailable — provider details are limited right now.</div>
+            )}
+            {capability ? <div>authoring: {capability.authoring}</div> : null}
+            <div>
+              Revoke and custody live on each connection&apos;s page (Connections tab · danger zone).
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {/* ── Secrets (the owner's create + footprint) ── */}
+      {activeTab === "secrets" ? (
+        capability ? (
+        <>
+          <div className="mb-2.5 mt-6 flex flex-wrap items-end justify-between gap-3">
             <Kicker className="mb-0">Secrets</Kicker>
             <div className="flex items-center gap-2 text-xs">
               <select
@@ -345,46 +481,20 @@ export function ProviderSpace({
             </div>
           )}
 
-          {/* ── Scope templates (SP4: integration-managed at runtime) ── */}
-          <ScopeTemplatesSection orgId={orgId} providerId={providerId} name={name} />
         </>
-      ) : capabilitiesQuery.loading ? (
-        <p className="mt-8 text-sm text-muted-foreground">Loading capability…</p>
-      ) : (
-        <div className="mt-8 rounded-xl border bg-card px-5 py-4 text-xs text-muted-foreground">
-          {name} is not a secret source — it declares no secrets capability.
-        </div>
-      )}
+        ) : capabilitiesQuery.loading ? (
+          <p className="mt-6 text-sm text-muted-foreground">Loading capability…</p>
+        ) : (
+          <div className="mt-6 rounded-xl border bg-card px-5 py-4 text-xs text-muted-foreground">
+            {name} is not a secret source — it declares no secrets capability.
+          </div>
+        )
+      ) : null}
 
-      {/* ── Connections ── */}
-      <Kicker className="mb-2.5 mt-8">Connections</Kicker>
-      {connections.length === 0 ? (
-        <div className="rounded-xl border bg-card px-5 py-4 text-xs text-muted-foreground">
-          No {name} connection yet.{" "}
-          <QuietLink href={`/orgs/${orgSlug}/integrations?connect=${providerId}`}>
-            Connect from the Integrations hub
-          </QuietLink>
-          .
-        </div>
-      ) : (
-        <div className="overflow-hidden rounded-xl border bg-card">
-          {connections.map((c: PublicConnection) => {
-            const meta = connectionStatusMeta(c.status);
-            return (
-              <a
-                key={c.id}
-                href={`/orgs/${orgSlug}/integrations/${c.id}`}
-                className="flex items-center gap-3 border-t border-border/50 px-5 py-3 text-sm first:border-t-0 hover:bg-muted/40"
-              >
-                <StatusDot tone={STATUS_TONE[meta.tone] ?? "neutral"} />
-                <span className="font-medium">{connectionDisplayName(c)}</span>
-                <span className="text-xs text-muted-foreground">{meta.label}</span>
-                <span className="ml-auto font-mono text-[11px] text-muted-foreground">{c.id}</span>
-              </a>
-            );
-          })}
-        </div>
-      )}
+      {/* ── Scope templates (SP4: integration-managed at runtime) ── */}
+      {activeTab === "templates" ? (
+        <ScopeTemplatesSection orgId={orgId} providerId={providerId} name={name} />
+      ) : null}
 
       {/* ── Create dialog: the provider's registered authoring surface ── */}
       <Dialog
