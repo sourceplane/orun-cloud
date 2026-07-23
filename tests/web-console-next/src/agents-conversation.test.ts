@@ -108,3 +108,30 @@ describe("delegation events (saas-agents-fleet AF4)", () => {
     expect(c.terminal).toBe(false);
   });
 });
+
+describe("harness-error sanitization (the HTML-404 dump fix)", () => {
+  it("collapses an HTML error payload to its status line + an actionable pointer", () => {
+    const c = foldConversation([
+      {
+        seq: 1,
+        kind: "error",
+        payload: { text: 'API Error: 404 <!DOCTYPE html><html lang="en"><head>endless markup</head></html>' },
+      },
+    ]);
+    const note = c.items[0]!;
+    expect(note.kind).toBe("note");
+    expect(note.text).toContain("API Error: 404");
+    expect(note.text).toContain("Base URL");
+    expect(note.text).not.toContain("<html");
+    expect(note.text.length).toBeLessThan(400);
+  });
+
+  it("keeps a plain error verbatim and caps runaway length", () => {
+    const c = foldConversation([
+      { seq: 1, kind: "error", payload: { text: "model refused: quota exhausted" } },
+      { seq: 2, kind: "error", payload: { text: "x".repeat(2000) } },
+    ]);
+    expect(c.items[0]!.text).toBe("Error: model refused: quota exhausted");
+    expect(c.items[1]!.text.length).toBeLessThan(650);
+  });
+});

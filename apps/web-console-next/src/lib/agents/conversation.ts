@@ -10,6 +10,7 @@
 // Pure and dependency-light so it is unit-testable exactly like model.ts.
 
 import type { AgentSessionEventKind } from "@saas/contracts/agents";
+import { sanitizeHarnessError } from "./harness-error";
 
 /** One relayed session event (the wire shape from listSessionEvents / the SSE
  * event frame's payload). */
@@ -126,7 +127,8 @@ export function foldConversation(events: ConversationEvent[]): Conversation {
         break;
       }
       case "error":
-        items.push({ key, kind: "note", text: `Error: ${str(p, "text")}` });
+        // Sanitized: a misrouted gateway relays entire HTML pages here.
+        items.push({ key, kind: "note", text: `Error: ${sanitizeHarnessError(str(p, "text"))}` });
         break;
       // Delegation (saas-agents-fleet AF4): the parent's sealed story of its
       // children. Verdict-shaped judge results ride child_completed.

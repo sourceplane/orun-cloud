@@ -131,10 +131,10 @@ describe("dispatch model resolution (saas-dispatch DX-Q6 — the console mirror 
     expect(connectionReady({ provider: "openai", config: { defaultModel: "gpt-4o" } })).toBe(true);
   });
 
-  it("connectionSessionReady: Anthropic rides natively; gateways need a Base URL (the provision rule)", () => {
+  it("connectionSessionReady: Anthropic + OpenRouter ride natively; OpenAI needs a gateway Base URL", () => {
     expect(connectionSessionReady({ provider: "anthropic", config: {} })).toBe(true);
-    expect(connectionSessionReady({ provider: "openrouter", config: { defaultModel: "x" } })).toBe(false);
-    expect(connectionSessionReady({ provider: "openrouter", config: { baseUrl: "https://gw.example/anthropic" } })).toBe(true);
+    // OpenRouter defaults to its Anthropic-compatible endpoint at provision.
+    expect(connectionSessionReady({ provider: "openrouter", config: { defaultModel: "x" } })).toBe(true);
     expect(connectionSessionReady({ provider: "openai", config: {} })).toBe(false);
     expect(connectionSessionReady({ provider: "openai", config: { baseUrl: "https://gw.example" } })).toBe(true);
   });

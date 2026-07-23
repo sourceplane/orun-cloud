@@ -20,6 +20,30 @@ const MAX_TOKENS = 16000;
 const OPENAI_DEFAULT_BASE = "https://api.openai.com/v1";
 const OPENROUTER_DEFAULT_BASE = "https://openrouter.ai/api/v1";
 
+/**
+ * The Chat Completions base for an OpenAI-compatible connection. OpenRouter
+ * serves TWO dialects from openrouter.ai — the OpenAI-compatible `/api/v1`
+ * (what THIS client speaks) and the Anthropic skin `/api` (what sandbox
+ * sessions speak) — so any openrouter.ai baseUrl is canonicalized to the
+ * OpenAI flavor here rather than trusted verbatim: a connection pinned at
+ * the Anthropic skin (or the site root) must not 404 dispatch. Only a
+ * non-openrouter.ai host (a real custom gateway) is honored as-is. Keep in
+ * lockstep with the session-side canonicalization in agents-worker provision.
+ */
+function openaiCompatibleBase(provider: string, config: Record<string, unknown>): string {
+  const fallback = provider === "openrouter" ? OPENROUTER_DEFAULT_BASE : OPENAI_DEFAULT_BASE;
+  const raw = typeof config.baseUrl === "string" && config.baseUrl.trim() ? config.baseUrl.trim().replace(/\/$/, "") : "";
+  if (!raw) return fallback;
+  if (provider === "openrouter") {
+    try {
+      if (new URL(raw).hostname === "openrouter.ai") return OPENROUTER_DEFAULT_BASE;
+    } catch {
+      return fallback;
+    }
+  }
+  return raw;
+}
+
 /** Build the right ModelClient for a resolved model connection. The model
  * call goes DIRECT to the provider (global fetch), never through api-edge. */
 export function modelClientFor(
@@ -34,8 +58,7 @@ export function modelClientFor(
   if (provider === "openai" || provider === "openrouter") {
     const model = typeof config.defaultModel === "string" && config.defaultModel.trim() ? config.defaultModel.trim() : "";
     if (!model) return null; // honest: OpenAI-compatible needs an explicit model id
-    const fallbackBase = provider === "openrouter" ? OPENROUTER_DEFAULT_BASE : OPENAI_DEFAULT_BASE;
-    const baseUrl = typeof config.baseUrl === "string" && config.baseUrl.trim() ? config.baseUrl.trim() : fallbackBase;
+    const baseUrl = openaiCompatibleBase(provider, config);
     return openaiCompatibleModel(apiKey, { baseUrl, model, ...(fetchFn ? { fetchFn } : {}) });
   }
   return null;

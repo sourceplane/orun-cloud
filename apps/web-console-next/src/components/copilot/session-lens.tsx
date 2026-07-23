@@ -11,9 +11,11 @@
 // verdict path the page already owns — AN lock 5 survives generative UI.
 
 import * as React from "react";
+import ReactMarkdown from "react-markdown";
 import type { AguiEvent } from "@saas/contracts/agui";
 import { Pill, StatusDot, type Tone } from "@/components/ui/northwind";
 import { sessionTone, sessionLabel } from "@/lib/agents/model";
+import { sanitizeHarnessError } from "@/lib/agents/harness-error";
 
 export interface LensToolCall {
   id: string;
@@ -32,6 +34,13 @@ export interface LensApproval {
   approved?: boolean;
 }
 
+/** A transcript bubble the lens renders chronologically — the session's chat
+ * story on the copilot engine (user steers, agent turns, error cards). */
+export type LensThreadItem =
+  | { kind: "user"; id: string; text: string; principal?: string }
+  | { kind: "assistant"; id: string; text: string }
+  | { kind: "error"; id: string; text: string };
+
 export interface LensState {
   sessionState: string | null;
   timeline: Array<{ state: string; seq?: number }>;
@@ -39,12 +48,24 @@ export interface LensState {
   activity: Array<{ kind: string; at?: string; seq?: number; summary: string }>;
   tokens: number;
   approvals: LensApproval[];
+  /** The chronological transcript (user/agent/error bubbles). */
+  items: LensThreadItem[];
   streaming: string;
   cursor: number;
 }
 
 export function initialLensState(): LensState {
-  return { sessionState: null, timeline: [], tools: [], activity: [], tokens: 0, approvals: [], streaming: "", cursor: -1 };
+  return {
+    sessionState: null,
+    timeline: [],
+    tools: [],
+    activity: [],
+    tokens: 0,
+    approvals: [],
+    items: [],
+    streaming: "",
+    cursor: -1,
+  };
 }
 
 /** foldLensEvent — the lens's pure fold over dialect events (tested). */
@@ -79,7 +100,22 @@ export function foldLensEvent(s: LensState, e: AguiEvent): LensState {
     case "TEXT_MESSAGE_CONTENT":
       return { ...s, cursor, streaming: s.streaming + (e.delta ?? "") };
     case "TEXT_MESSAGE_END":
-      return { ...s, cursor, streaming: "" };
+      // A completed streamed turn becomes a durable-looking bubble — text the
+      // user watched arrive must not vanish (the copilot-thread DD2 posture).
+      return s.streaming
+        ? {
+            ...s,
+            cursor,
+            items: [...s.items, { kind: "assistant", id: String(e.messageId ?? `m_${s.items.length}`), text: s.streaming }],
+            streaming: "",
+          }
+        : { ...s, cursor, streaming: "" };
+    case "RUN_ERROR": {
+      // A harness/relay error is a transcript artifact, not a dropped event —
+      // sanitized, because a misrouted gateway sends entire HTML pages.
+      const message = sanitizeHarnessError(String(e.message ?? e.code ?? "run failed"));
+      return { ...s, cursor, streaming: "", items: [...s.items, { kind: "error", id: `err_${s.items.length}`, text: message }] };
+    }
     case "CUSTOM": {
       if (e.name === "cost") {
         const t = (e.value as { tokens?: unknown } | undefined)?.tokens;
@@ -111,6 +147,31 @@ export function foldLensEvent(s: LensState, e: AguiEvent): LensState {
             cursor,
             approvals: s.approvals.map((a) => (a.requestId === rid ? { ...a, resolved: true, approved } : a)),
           };
+        }
+        // Chat-shaped session events become transcript bubbles, not activity
+        // noise — the lens is the session's copilot head.
+        if (kind === "message_user") {
+          const text = typeof v.payload?.text === "string" ? v.payload.text : "";
+          if (!text) return { ...s, cursor };
+          const principal = typeof v.payload?.principal === "string" ? v.payload.principal : undefined;
+          return {
+            ...s,
+            cursor,
+            items: [...s.items, { kind: "user", id: `u_${e.seq ?? s.items.length}`, text, ...(principal ? { principal } : {}) }],
+          };
+        }
+        if (kind === "message_agent") {
+          const text = typeof v.payload?.text === "string" ? v.payload.text : "";
+          if (!text) return { ...s, cursor };
+          // The durable copy of a turn the stream already showed: skip the
+          // duplicate bubble (replays re-deliver the durable event only).
+          const last = [...s.items].reverse().find((it) => it.kind === "assistant");
+          if (last && last.text === text) return { ...s, cursor };
+          return { ...s, cursor, items: [...s.items, { kind: "assistant", id: `a_${e.seq ?? s.items.length}`, text }] };
+        }
+        if (kind === "error") {
+          const text = sanitizeHarnessError(typeof v.payload?.text === "string" ? v.payload.text : "");
+          return { ...s, cursor, items: [...s.items, { kind: "error", id: `err_${e.seq ?? s.items.length}`, text }] };
         }
         const summary = v.payload ? JSON.stringify(v.payload).slice(0, 140) : "";
         return {
@@ -245,6 +306,35 @@ export function SessionLens({
         <ApprovalCard key={a.requestId} a={a} onApprove={onApprove} onDeny={onDeny} busy={interacting} />
       ))}
 
+      {/* The transcript (CX4 upgraded): user steers, agent turns, and error
+          cards folded from the AG-UI stream — chat bubbles, not activity
+          lines, so the lens reads as the session's copilot head. */}
+      {lens.items.map((it) =>
+        it.kind === "user" ? (
+          <div key={it.id} className="my-2 flex justify-end">
+            <div className="max-w-[85%] rounded-xl bg-secondary px-3.5 py-2 text-[13px]">
+              {it.principal ? (
+                <div className="mb-0.5 font-mono text-[10.5px] text-muted-foreground">{it.principal}</div>
+              ) : null}
+              <span className="whitespace-pre-wrap">{it.text}</span>
+            </div>
+          </div>
+        ) : it.kind === "assistant" ? (
+          <div key={it.id} className="my-2 flex justify-start">
+            <div className="prose-chat max-w-[85%] rounded-2xl border border-border/60 px-3.5 py-2 text-[13px]">
+              <ReactMarkdown>{it.text}</ReactMarkdown>
+            </div>
+          </div>
+        ) : (
+          <div
+            key={it.id}
+            className="my-2 rounded-lg border border-destructive/40 bg-destructive/5 px-3.5 py-2 text-[12.5px] text-destructive"
+          >
+            {it.text}
+          </div>
+        ),
+      )}
+
       {lens.tools.map((t) => (
         <div key={t.id} className="my-1 rounded-lg border border-border/50 bg-muted/40 px-3 py-1.5 font-mono text-[12px] text-muted-foreground">
           <span className="mr-2">⚙ {t.name}</span>
@@ -266,7 +356,7 @@ export function SessionLens({
         </p>
       ) : null}
 
-      {!live && lens.activity.length === 0 && lens.tools.length === 0 ? (
+      {!live && lens.items.length === 0 && lens.activity.length === 0 && lens.tools.length === 0 ? (
         <p className="text-[12.5px] text-muted-foreground">This session's stream has ended; the durable log below is the record.</p>
       ) : null}
     </div>
