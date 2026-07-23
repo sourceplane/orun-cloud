@@ -19,7 +19,7 @@ proof.
 
 | Field | Value |
 |-------|-------|
-| Status | **Draft — for review** |
+| Status | **Shipped** (2026-07-23) — IR0 #596 · IR1 #597 · IR2 #598 · IR3 #599 · IR4 #600 · IR5 #601 · IR6–IR9 #602 · CLI: orun ICL0–ICL3 #559; as-built record in `IMPLEMENTATION-STATUS.md` |
 | Cluster | **IR** (integration registry — unifies **IH** capability seam + **SP** secrets-platform ownership + the **AG** provider panel into one registry and one IA) |
 | Owner(s) | `apps/integrations-worker` (registry + manifests), `apps/web-console-next` (unified hub + integration spaces), `apps/config-worker` (unchanged substrate), `apps/agents-worker` (consumes re-homed connections), `packages/{contracts,sdk,cli}`, `orun` CLI (`specs/orun-integrations-cli/` — the cross-repo twin) |
 | Target branch | `main` (PRs merged incrementally) |
@@ -90,16 +90,16 @@ direction — touches the manifest and the adapter, and every plane lights up.
 
 | ID | Milestone | Status |
 |----|-----------|--------|
-| IR0 | **The manifest + registry read**: `IntegrationManifest` type beside each adapter; `GET …/integrations/registry` bulk read (per-env live/dormant resolution, ETag); secrets-capabilities read re-expressed as a projection; contracts + SDK | 🗓️ Planned |
-| IR1 | **Unified hub**: the Integrations tab renders every integration from the registry (categories: Source control · Messaging · Infrastructure · AI providers · Compute); connected-state summaries; hub special-cases deleted; agents panel embedding retired | 🗓️ Planned |
-| IR2 | **The canonical space**: `/integrations/{provider}` standard chrome (header · Overview · Connections · Secrets\* · Templates\* · Activity · Settings — \* = per capability); connection detail nests at `/integrations/{provider}/connections/{id}`; legacy `[connectionId]` + `providers/[providerId]` routes redirect | 🗓️ Planned |
-| IR3 | **Cloudflare unified**: connect folds into the space (posture from manifest: OAuth-if-configured, else token recipe *derived from the adapter's grammar*); multi-account first-class; scope-knowledge single-sourced; the modal's mirrored recipe deleted | 🗓️ Planned |
-| IR4 | **Secret creation v2**: the outcome-first wizard (use-case → where → lifecycle → review with plain-language grant summary) built on SP1 primitives; replaces the tab-shaped authoring dialog for brokered/rotated; declarative providers inherit it | 🗓️ Planned |
-| IR5 | **AI + compute re-home**: `anthropic`/`openai`/`openrouter`/`daytona` become registry integrations (`connectKind: "apikey"`); connection identity moves to `integrations.connections`; `agents.provider_connections` becomes the facts table; custody untouched; `settings/ai-providers` redirects to the spaces | 🗓️ Planned (gate: IR-D3 sign-off) |
-| IR6 | **Provider spaces earn their keep**: GitHub (Repositories + installs + recent `scm.*`), Slack (Channels + `/orun` + recent `messaging.*`), Supabase (Projects), Daytona (Sandboxes + usage), AI providers (Models + key health + usage) as manifest-declared modules | 🗓️ Planned |
-| IR7 | **CLI projection**: the manifest `cli` block; registry read consumed by orun; `orun integrations` lists from the registry; per-provider verb trees rendered at runtime; SP5's secret verbs re-expressed as the first served tree (cross-repo: `orun/specs/orun-integrations-cli/` ICL0–ICL3) | 🗓️ Planned |
-| IR8 | **Registry governance**: manifest versioning + additive-evolution lint, dormant-manifest handling, per-env posture reporting, entitlement/policy projection into the read, docs generation from manifests | 🗓️ Planned |
-| IR9 | **Pluggability proof**: one dormant provider (AWS) lights up hub card + space chrome + CLI tree from a manifest-only change; one *live* provider onboarded end-to-end with zero console/CLI substrate edits | 🗓️ Planned |
+| IR0 | **The manifest + registry read**: `IntegrationManifest` type beside each adapter; `GET …/integrations/registry` bulk read (per-env live/dormant resolution, ETag); secrets-capabilities read re-expressed as a projection; contracts + SDK | ✅ Shipped |
+| IR1 | **Unified hub**: the Integrations tab renders every integration from the registry (categories: Source control · Messaging · Infrastructure · AI providers · Compute); connected-state summaries; hub special-cases deleted; agents panel embedding retired | ✅ Shipped |
+| IR2 | **The canonical space**: `/integrations/{provider}` standard chrome (header · Overview · Connections · Secrets\* · Templates\* · Activity · Settings — \* = per capability); connection detail nests at `/integrations/{provider}/connections/{id}`; legacy `[connectionId]` + `providers/[providerId]` routes redirect | ✅ Shipped |
+| IR3 | **Cloudflare unified**: connect folds into the space (posture from manifest: OAuth-if-configured, else token recipe *derived from the adapter's grammar*); multi-account first-class; scope-knowledge single-sourced; the modal's mirrored recipe deleted | ✅ Shipped |
+| IR4 | **Secret creation v2**: the outcome-first wizard (use-case → where → lifecycle → review with plain-language grant summary) built on SP1 primitives; replaces the tab-shaped authoring dialog for brokered/rotated; declarative providers inherit it | ✅ Shipped |
+| IR5 | **AI + compute re-home**: `anthropic`/`openai`/`openrouter`/`daytona` become registry integrations (`connectKind: "apikey"`); connection identity moves to `integrations.connections`; `agents.provider_connections` becomes the facts table; custody untouched; `settings/ai-providers` redirects to the spaces | ✅ Shipped |
+| IR6 | **Provider spaces earn their keep**: GitHub (Repositories + installs + recent `scm.*`), Slack (Channels + `/orun` + recent `messaging.*`), Supabase (Projects), Daytona (Sandboxes + usage), AI providers (Models + key health + usage) as manifest-declared modules | ✅ Shipped |
+| IR7 | **CLI projection**: the manifest `cli` block; registry read consumed by orun; `orun integrations` lists from the registry; per-provider verb trees rendered at runtime; SP5's secret verbs re-expressed as the first served tree (cross-repo: `orun/specs/orun-integrations-cli/` ICL0–ICL3) | ✅ Shipped |
+| IR8 | **Registry governance**: manifest versioning + additive-evolution lint, dormant-manifest handling, per-env posture reporting, entitlement/policy projection into the read, docs generation from manifests | ✅ Shipped |
+| IR9 | **Pluggability proof**: one dormant provider (AWS) lights up hub card + space chrome + CLI tree from a manifest-only change; one *live* provider onboarded end-to-end with zero console/CLI substrate edits | ✅ Shipped |
 
 ## Scope boundary
 
