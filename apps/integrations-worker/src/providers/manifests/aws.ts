@@ -22,8 +22,24 @@ const manifest: IntegrationManifest = {
     modules: [],
     authoring: "declarative",
   },
+  // IR7/IR9: a SERVED verb on the dormant proof manifest — the orun binary
+  // renders this tree (custom summary overriding the capability-derived
+  // default at the same path) from the registry read alone; no orun release,
+  // no console change. `invoke.op` must be in the compiled-in allowlist on
+  // both sides (cli-projection.test.ts mirrors orun's ops.go).
+  cli: {
+    verbs: [
+      {
+        path: ["credentials", "list"],
+        summary: "List STS sessions minted from this connection (ledger, never values)",
+        args: [],
+        invoke: { plane: "integrations", op: "integrations.listMinted", bind: {} },
+        needsConnection: true,
+      },
+    ],
+  },
   entitlement: "feature.integrations.aws",
-  version: 1,
+  version: 2,
   status: "roadmap",
 };
 
