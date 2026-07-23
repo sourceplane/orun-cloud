@@ -336,6 +336,11 @@ export async function handleProvisionSession(
     ORUN_SESSION_ID: session.publicId,
     ORUN_ORG_ID: orgPublic,
     ORUN_RUN_KIND: session.runKind,
+    // The profile's agent type — serve resolves it (authored file, else the
+    // copy embedded in the binary) for the persona AND the tool policy.
+    // Without it serve boots type-less and deny-by-default denies every
+    // tool the session tries (the all-deny transcript).
+    ...(profile.agentType ? { ORUN_AGENT_TYPE: profile.agentType } : {}),
     ...(session.taskKey ? { ORUN_TASK_KEY: session.taskKey } : {}),
     ...(deps.apiBaseUrl ? { ORUN_CLOUD_API: deps.apiBaseUrl } : {}),
   };

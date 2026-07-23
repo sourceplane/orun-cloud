@@ -107,3 +107,12 @@ describe("the lens transcript (the session's copilot head)", () => {
     expect(s.items[1]!.text).toBe("plain failure");
   });
 });
+
+describe("tool-denial error activity ({tool, error} with no text)", () => {
+  it("composes the honest error card", () => {
+    const s = fold([
+      { v: 1, type: "CUSTOM", name: "activity", seq: 3, value: { kind: "error", payload: { tool: "Bash", error: "denied by tool policy" } } },
+    ]);
+    expect(s.items).toEqual([{ kind: "error", id: "err_3", text: "Bash denied by tool policy" }]);
+  });
+});

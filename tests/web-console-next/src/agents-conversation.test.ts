@@ -135,3 +135,12 @@ describe("harness-error sanitization (the HTML-404 dump fix)", () => {
     expect(c.items[1]!.text.length).toBeLessThan(650);
   });
 });
+
+describe("tool-denial errors ({tool, error} payloads with no text)", () => {
+  it("composes the honest line instead of 'no detail'", () => {
+    const c = foldConversation([
+      { seq: 1, kind: "error", payload: { tool: "Bash", error: "denied by tool policy" } },
+    ]);
+    expect(c.items[0]!.text).toBe("Error: Bash denied by tool policy");
+  });
+});

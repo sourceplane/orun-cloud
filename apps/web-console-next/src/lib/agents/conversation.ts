@@ -126,10 +126,14 @@ export function foldConversation(events: ConversationEvent[]): Conversation {
         if (phase) items.push({ key, kind: "note", text: `Harness: ${phase}` });
         break;
       }
-      case "error":
-        // Sanitized: a misrouted gateway relays entire HTML pages here.
-        items.push({ key, kind: "note", text: `Error: ${sanitizeHarnessError(str(p, "text"))}` });
+      case "error": {
+        // Sanitized: a misrouted gateway relays entire HTML pages here. Older
+        // runtimes emit tool-policy denials as {tool, error} with no text —
+        // compose the honest line instead of "no detail".
+        const text = str(p, "text") || [str(p, "tool"), str(p, "error")].filter(Boolean).join(" ");
+        items.push({ key, kind: "note", text: `Error: ${sanitizeHarnessError(text)}` });
         break;
+      }
       // Delegation (saas-agents-fleet AF4): the parent's sealed story of its
       // children. Verdict-shaped judge results ride child_completed.
       case "child_spawned": {
