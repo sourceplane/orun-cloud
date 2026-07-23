@@ -86,8 +86,8 @@ export function QuickSpawnCard({
         </div>
       </div>
       <p className="mt-3.5 border-t pt-3 text-[12px] text-muted-foreground">
-        Runs in your Daytona sandbox as {principalHint} · ANTHROPIC_API_KEY injected at start, never
-        stored on the session.
+        Runs in your Daytona sandbox as {principalHint} · your selected model provider’s key injected at
+        start (Settings › AI providers), never stored on the session.
       </p>
     </div>
   );

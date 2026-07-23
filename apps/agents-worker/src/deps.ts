@@ -12,7 +12,12 @@ import type { ActorContext } from "./router.js";
 import { fetchAuthorizationContext } from "./membership-client.js";
 import { authorizeViaPolicy } from "./policy-client.js";
 import type { PolicyResource } from "@saas/contracts/policy";
-import { createProviderKeyClient, type ProviderKeyClient } from "./config-client.js";
+import {
+  createOrgSettingReader,
+  createProviderKeyClient,
+  type OrgSettingReader,
+  type ProviderKeyClient,
+} from "./config-client.js";
 import { createProviderVerifier, type ProviderVerifier } from "./verifiers.js";
 import { createDaytonaProvider } from "./providers/daytona.js";
 import { createManagedAgentsAdapter, type ManagedAgentsAdapter } from "./providers/managed-agents.js";
@@ -36,6 +41,9 @@ export interface AgentsDeps {
   /** Provider-key custody client (config-worker service binding). Absent when
    * CONFIG_WORKER is unbound — provider routes then 503. */
   providerKeys?: ProviderKeyClient;
+  /** Best-effort org-setting read (session model preference, DX-Q6 on the
+   * session path). Absent or failing = sole-or-default selection. */
+  orgSettings?: OrgSettingReader;
   /** Provider verification pings (AG12 §10.3); stubbed in tests. */
   verifier?: ProviderVerifier;
   /** Sandbox adapters keyed by provider (AG5); stubbed in tests. */
@@ -66,7 +74,12 @@ export function buildDeps(env: Env): AgentsDeps {
   const repo = createAgentsRepository(executor);
   return {
     repo,
-    ...(env.CONFIG_WORKER ? { providerKeys: createProviderKeyClient(env.CONFIG_WORKER) } : {}),
+    ...(env.CONFIG_WORKER
+      ? {
+          providerKeys: createProviderKeyClient(env.CONFIG_WORKER),
+          orgSettings: createOrgSettingReader(env.CONFIG_WORKER),
+        }
+      : {}),
     verifier: createProviderVerifier(),
     ...(env.IDENTITY_WORKER ? { sessionTokens: createSessionTokenMinter(env.IDENTITY_WORKER) } : {}),
     ...(env.BILLING_WORKER

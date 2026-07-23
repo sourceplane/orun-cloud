@@ -105,6 +105,8 @@ interface Fixture {
   repo: MemoryAgentsRepository;
   log: ProviderLog;
   sessionId: string;
+  /** publicIds of the fixture's connections, in creation order. */
+  connectionIds: string[];
 }
 
 async function fixture(overrides?: {
@@ -112,7 +114,14 @@ async function fixture(overrides?: {
   keys?: ProviderKeyClient;
   factory?: SandboxFactory;
   minter?: SessionTokenMinter;
-  connections?: Array<{ provider: "daytona" | "anthropic"; name?: string; verified?: boolean; config?: Record<string, unknown> }>;
+  connections?: Array<{
+    provider: "daytona" | "anthropic" | "openai" | "openrouter";
+    name?: string;
+    verified?: boolean;
+    config?: Record<string, unknown>;
+  }>;
+  /** Org settings the fixture's orgSettings reader serves (key → value). */
+  settings?: Record<string, string>;
   providerOverrides?: { failCreate?: boolean; failExec?: boolean; captureVersion?: string; captureThrows?: boolean };
 }): Promise<Fixture> {
   const repo = new MemoryAgentsRepository();
@@ -138,6 +147,7 @@ async function fixture(overrides?: {
     { provider: "daytona" as const, verified: true },
     { provider: "anthropic" as const, verified: true },
   ];
+  const connectionIds: string[] = [];
   for (const c of conns) {
     const name = c.name ?? "default";
     const row = await repo.createConnection(scope, {
@@ -147,6 +157,7 @@ async function fixture(overrides?: {
       secretRef: providerSecretRef(c.provider, name),
       createdBy: "usr_rahul",
     });
+    connectionIds.push(row.publicId);
     if (c.verified !== false) {
       await repo.setConnectionStatus(scope, { publicId: row.publicId, status: "verified" });
     }
@@ -168,12 +179,17 @@ async function fixture(overrides?: {
     sandboxes:
       overrides?.factory ??
       ((provider) => (provider === "daytona" ? stubProvider(log, overrides?.providerOverrides) : null)),
+    ...(overrides?.settings
+      ? {
+          orgSettings: async (_org: string, key: string) => overrides.settings![key] ?? null,
+        }
+      : {}),
     apiBaseUrl: "https://api-edge-test.oruncloud.workers.dev",
     async dispose() {
       /* no-op */
     },
   };
-  return { deps, repo, log, sessionId: session.publicId };
+  return { deps, repo, log, sessionId: session.publicId, connectionIds };
 }
 
 const provisionPath = (id: string) => `/v1/organizations/${ORG}/agents/sessions/${id}/provision`;
@@ -210,14 +226,94 @@ describe("agents-worker session provisioning (AG5)", () => {
     expect(script).toContain("exec orun agent serve");
     // The script itself carries no secret — the token arrives via exec env.
     expect(script).not.toContain("ast(");
+    // The exec env carries the identity vars TOO (the lease_lost fix): the
+    // toolbox session exec does not inherit the create-time manifest, so the
+    // exec env is the only copy serve is guaranteed to see. The model rides
+    // pinned (ANTHROPIC_MODEL from the profile) so the harness never falls
+    // back to its own default.
     expect(f.log.execs[0]!.env).toEqual({
+      ORUN_SESSION_ID: f.sessionId,
+      ORUN_ORG_ID: ORG,
+      ORUN_RUN_KIND: "implementation",
+      ORUN_TASK_KEY: "ORN-142",
+      ORUN_CLOUD_API: "https://api-edge-test.oruncloud.workers.dev",
       ANTHROPIC_API_KEY: "key-for(agents/providers/anthropic/default/API_KEY)",
+      ANTHROPIC_MODEL: "claude-opus-4-8",
       ORUN_SESSION_TOKEN: `ast(sp_1,${ORG},${f.sessionId})`,
     });
 
-    // The recorded sandbox carries the provider ref, never key material.
+    // Egress covers the dial-home host — a heartbeat must never be walled out.
+    expect(spec.egressAllow).toContain("api-edge-test.oruncloud.workers.dev");
+    expect(spec.egressAllow).toContain("api.anthropic.com");
+
+    // The recorded sandbox carries the provider refs, never key material.
     const stored = await f.repo.getSession({ orgId: ORG_UUID }, f.sessionId);
-    expect(stored?.sandbox).toEqual({ provider: "daytona", id: "sb_1", connection: expect.stringMatching(/^apc_/) });
+    expect(stored?.sandbox).toEqual({
+      provider: "daytona",
+      id: "sb_1",
+      connection: expect.stringMatching(/^apc_/),
+      modelConnection: expect.stringMatching(/^apc_/),
+      modelProvider: "anthropic",
+    });
+  });
+
+  it("honors the agents.sessions.connection setting: the named model connection boots the box", async () => {
+    const f = await fixture({
+      connections: [
+        { provider: "daytona" },
+        { provider: "anthropic", name: "default" },
+        { provider: "anthropic", name: "team-b", config: { defaultModel: "claude-sonnet-5" } },
+      ],
+    });
+    // Point the setting at the NON-default connection (created third).
+    const teamB = f.connectionIds[2]!;
+    f.deps.orgSettings = async (_org, key) => (key === "agents.sessions.connection" ? teamB : null);
+    const res = await route(req("POST", provisionPath(f.sessionId)), env, f.deps);
+    expect(res.status).toBe(200);
+    expect(f.log.execs[0]!.env!.ANTHROPIC_API_KEY).toBe("key-for(agents/providers/anthropic/team-b/API_KEY)");
+    // The connection's pinned model wins over the profile's.
+    expect(f.log.execs[0]!.env!.ANTHROPIC_MODEL).toBe("claude-sonnet-5");
+    const stored = await f.repo.getSession({ orgId: ORG_UUID }, f.sessionId);
+    expect((stored?.sandbox as { modelConnection?: string }).modelConnection).toBe(teamB);
+  });
+
+  it("boots on an OpenAI-compatible gateway connection: ANTHROPIC_BASE_URL + AUTH_TOKEN, never API_KEY", async () => {
+    const f = await fixture({
+      connections: [
+        { provider: "daytona" },
+        { provider: "openrouter", config: { baseUrl: "https://gateway.example/anthropic/", defaultModel: "anthropic/claude-sonnet-4.5" } },
+      ],
+    });
+    const res = await route(req("POST", provisionPath(f.sessionId)), env, f.deps);
+    expect(res.status).toBe(200);
+    const execEnv = f.log.execs[0]!.env!;
+    expect(execEnv.ANTHROPIC_BASE_URL).toBe("https://gateway.example/anthropic");
+    expect(execEnv.ANTHROPIC_AUTH_TOKEN).toBe("key-for(agents/providers/openrouter/default/API_KEY)");
+    expect(execEnv.ANTHROPIC_MODEL).toBe("anthropic/claude-sonnet-4.5");
+    expect(execEnv.ANTHROPIC_API_KEY).toBeUndefined();
+    // The gateway host joins the egress allowlist.
+    expect(f.log.created[0]!.egressAllow).toContain("gateway.example");
+  });
+
+  it("refuses a gateway connection with no Base URL — actionable, before any provider call", async () => {
+    const f = await fixture({
+      connections: [{ provider: "daytona" }, { provider: "openai", config: { defaultModel: "gpt-4o" } }],
+    });
+    const res = await route(req("POST", provisionPath(f.sessionId)), env, f.deps);
+    expect(res.status).toBe(409);
+    const body = await json(res);
+    expect(body.error?.code).toBe("provider_connection_invalid");
+    expect(body.error?.message).toContain("Base URL");
+    expect(f.log.created.length).toBe(0);
+    expect((await f.repo.getSession({ orgId: ORG_UUID }, f.sessionId))?.state).toBe("requested");
+  });
+
+  it("refuses when no verified model provider connection exists", async () => {
+    const f = await fixture({ connections: [{ provider: "daytona" }, { provider: "anthropic", verified: false }] });
+    const res = await route(req("POST", provisionPath(f.sessionId)), env, f.deps);
+    expect(res.status).toBe(409);
+    expect((await json(res)).error?.message).toContain("model provider");
+    expect(f.log.created.length).toBe(0);
   });
 
   it("ALWAYS installs orun — no `command -v orun` short-circuit that a stale image could satisfy", async () => {

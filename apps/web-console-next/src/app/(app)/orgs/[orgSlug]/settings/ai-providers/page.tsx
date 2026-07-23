@@ -9,6 +9,7 @@ import { useParams } from "next/navigation";
 import { OrgScope } from "@/components/shell/org-scope";
 import { SettingsHeader } from "@/components/settings/settings-primitives";
 import { ProviderConnections } from "@/components/agents/provider-connections";
+import { SessionModelSetting } from "@/components/agents/session-model-setting";
 import { DispatchModelSetting } from "@/components/dispatch/dispatch-model-setting";
 import { CopilotToggle } from "@/components/copilot/copilot-toggle";
 
@@ -23,6 +24,7 @@ export default function SettingsAiProvidersPage() {
             title="AI providers"
             description="Model and sandbox credentials for agent sessions and the Workspace Agent — Anthropic, OpenAI, OpenRouter keys and your Daytona compute account. Keys are stored write-only in the workspace secret manager."
           />
+          <SessionModelSetting orgId={org.id} />
           <DispatchModelSetting orgId={org.id} />
           <CopilotToggle orgId={org.id} />
           <div className="grid gap-3">
