@@ -85,6 +85,17 @@ export interface ProviderSecretsCapabilityResponse {
 }
 
 /**
+ * The org-facing BULK capability read (saas-secrets-platform SP0c, SP-A1):
+ * every capability-declaring provider in one response, so the console's create
+ * surfaces and the Secrets lens share a single cached read. Served at
+ * `GET /v1/organizations/{orgId}/integrations/secrets-capabilities` (rides the
+ * existing api-edge integrations facade). Pure metadata — never a credential.
+ */
+export interface ProviderSecretsCapabilitiesResponse {
+  capabilities: readonly ProviderSecretsCapability[];
+}
+
+/**
  * How a provider's connect flow starts (drives the console connect UX):
  * - "install": provider-hosted app install page (GitHub App).
  * - "oauth": OAuth authorization-code flow (Slack, Supabase).

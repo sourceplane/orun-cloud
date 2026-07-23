@@ -20,6 +20,11 @@ import type {
   CreateRotatedSecretRequest,
   PublicSecretMetadata,
 } from "@saas/contracts/config";
+import type {
+  IntegrationScopeTemplate,
+  ProviderSecretsCapability,
+  SecretMode,
+} from "@saas/contracts/integrations";
 
 /** The create dialog's two paths: a stored value, or a broker binding. */
 export type CreateSecretMode = "value" | "binding" | "rotated";
@@ -28,28 +33,47 @@ export type CreateSecretMode = "value" | "binding" | "rotated";
 export const CONNECTION_ID_PATTERN = /^int_[0-9a-f]{32}$/;
 
 /**
- * Providers with the `credential-broker` capability the console can bind
- * against (design §5: Cloudflare + Supabase adapters; GitHub's broker serves
- * repo tokens through the Git surface, not secret bindings, in v1).
+ * Provider ids that can back an integration-bound secret, derived from the
+ * bulk capability read (saas-secrets-platform SP0c, SP-A1) — replaces the
+ * deleted BROKER_CAPABLE_PROVIDERS hardcode. `mode` narrows to providers
+ * declaring that mode (only rotated-capable providers back the Rotated tab).
  */
-export const BROKER_CAPABLE_PROVIDERS: readonly string[] = ["cloudflare", "supabase"];
-
-export function isBrokerCapableProvider(providerId: string): boolean {
-  return BROKER_CAPABLE_PROVIDERS.includes(providerId);
+export function capableProviders(
+  capabilities: readonly ProviderSecretsCapability[],
+  mode?: SecretMode,
+): ReadonlySet<string> {
+  return new Set(
+    capabilities.filter((c) => (mode ? c.supportedModes.includes(mode) : true)).map((c) => c.provider),
+  );
 }
 
-/** Connections the binding picker offers: active + broker-capable. */
+/** Connections the binding picker offers: active + capability-declared (SP0c). */
 export function brokerConnections<T extends { provider: string; status: string }>(
   connections: readonly T[],
+  capabilities: readonly ProviderSecretsCapability[],
+  mode?: SecretMode,
 ): T[] {
-  return connections.filter((c) => c.status === "active" && isBrokerCapableProvider(c.provider));
+  const capable = capableProviders(capabilities, mode);
+  return connections.filter((c) => c.status === "active" && capable.has(c.provider));
+}
+
+/**
+ * The provider's declared scope templates from the bulk read (SP0c) —
+ * replaces the deleted console SCOPE_TEMPLATE_CATALOG mirror. The worker
+ * adapters remain the single source of truth for what a mint issues.
+ */
+export function templatesForProvider(
+  capabilities: readonly ProviderSecretsCapability[],
+  providerId: string,
+): readonly IntegrationScopeTemplate[] {
+  return capabilities.find((c) => c.provider === providerId)?.scopeTemplates ?? [];
 }
 
 // ---------------------------------------------------------------------------
 // Binding form validation
 // ---------------------------------------------------------------------------
 
-/** Structural twin of `ScopeTemplateInfo` (archetype.ts) — kept local for purity. */
+/** Structural subset of `IntegrationScopeTemplate` — kept local for purity. */
 export interface BindTemplateLike {
   id: string;
   params: readonly string[];

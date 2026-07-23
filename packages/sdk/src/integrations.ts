@@ -17,6 +17,7 @@ import type {
   ConnectIntegrationResponse,
   GetIntegrationResponse,
   ListIntegrationsResponse,
+  ProviderSecretsCapabilitiesResponse,
   ListInboundDeliveriesResponse,
   ReplayInboundDeliveryResponse,
   RevokeIntegrationResponse,
@@ -45,6 +46,27 @@ export class IntegrationsClient {
       {
         method: "GET",
         path: `/v1/organizations/${encodeURIComponent(orgId)}/integrations`,
+      },
+      opts,
+    );
+  }
+
+  /**
+   * GET /v1/organizations/:orgId/integrations/secrets-capabilities
+   *
+   * The bulk secret-source DESCRIBE read (saas-secrets-platform SP0c, SP-A1):
+   * every capability-declaring provider's scope templates, supported modes,
+   * delivery targets, and authoring style in one response. Pure metadata —
+   * static per deploy, safe to cache long.
+   */
+  listSecretsCapabilities(
+    orgId: string,
+    opts: RequestOptions = {},
+  ): Promise<ProviderSecretsCapabilitiesResponse> {
+    return this.transport.request<ProviderSecretsCapabilitiesResponse>(
+      {
+        method: "GET",
+        path: `/v1/organizations/${encodeURIComponent(orgId)}/integrations/secrets-capabilities`,
       },
       opts,
     );

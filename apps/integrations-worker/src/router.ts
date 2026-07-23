@@ -45,6 +45,7 @@ import { handleSlackCredentialsInternal } from "./handlers/slack-credentials-int
 import { handleInternalRotateSource, ROTATE_SOURCE_PATH } from "./handlers/rotate-source.js";
 import { handleInternalConnectionStatuses } from "./handlers/internal-connection-status.js";
 import { handleInternalSecretsCapability, SECRETS_CAPABILITY_PATH } from "./handlers/internal-secrets-capability.js";
+import { handleListSecretsCapabilities } from "./handlers/secrets-capabilities.js";
 import {
   handleCreateConnectionGrant,
   handleListConnectionGrants,
@@ -105,6 +106,10 @@ function resolveActor(request: Request): ActorContext | null {
 }
 
 const ORG_INTEGRATIONS_RE = /^\/v1\/organizations\/([^/]+)\/integrations$/;
+// SP0c (SP-A1): must be matched BEFORE ORG_INTEGRATION_RE — "secrets-capabilities"
+// would otherwise parse as a connection id segment.
+const ORG_SECRETS_CAPABILITIES_RE =
+  /^\/v1\/organizations\/([^/]+)\/integrations\/secrets-capabilities$/;
 const ORG_INTEGRATIONS_CONNECT_RE = /^\/v1\/organizations\/([^/]+)\/integrations\/([a-z]+)\/connect$/;
 const ORG_INTEGRATION_RE = /^\/v1\/organizations\/([^/]+)\/integrations\/([^/]+)$/;
 const ORG_DELIVERIES_RE = /^\/v1\/organizations\/([^/]+)\/integrations\/([^/]+)\/deliveries$/;
@@ -319,6 +324,16 @@ export async function route(request: Request, env: Env): Promise<Response> {
     if (!orgId) return notFound(requestId, pathname);
     if (request.method !== "GET") return methodNotAllowed(requestId);
     return handleListIntegrations(request, env, requestId, actor, orgId);
+  }
+
+  // SP0c (SP-A1): the console's bulk secret-source capability read. Matched
+  // before ORG_INTEGRATION_RE so the literal segment never parses as an id.
+  m = pathname.match(ORG_SECRETS_CAPABILITIES_RE);
+  if (m) {
+    const orgId = parseOrgPublicId(m[1]!);
+    if (!orgId) return notFound(requestId, pathname);
+    if (request.method !== "GET") return methodNotAllowed(requestId);
+    return handleListSecretsCapabilities(request, env, requestId, actor, orgId);
   }
 
   m = pathname.match(ORG_GITHUB_TOKEN_RE);

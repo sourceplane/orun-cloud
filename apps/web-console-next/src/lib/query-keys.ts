@@ -38,6 +38,10 @@ export const qk = {
   notificationChannels: (orgId: string) => ["notificationChannels", orgId] as const,
   deadLetters: (orgId: string, status: string) => ["deadLetters", orgId, status] as const,
   integrations: (orgId: string) => ["integrations", orgId] as const,
+  /** Bulk secret-source capability read (saas-secrets-platform SP0c, SP-A1) —
+   * static per deploy, cached long; the create surfaces and the Secrets lens
+   * share this one entry. */
+  secretsCapabilities: (orgId: string) => ["secretsCapabilities", orgId] as const,
   /** One connection's detail read (saas-integration-hub IH8). */
   integration: (orgId: string, connectionId: string) =>
     ["integration", orgId, connectionId] as const,
