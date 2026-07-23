@@ -80,9 +80,18 @@ this org can back a secret, with which templates) is org-scoped. One internal
 read, served by integrations-worker, consumed by config-worker and the console:
 
 ```
-GET  …/internal/providers/{providerId}/secrets-capability
-→ 200 { scopeTemplates: [...], supportedModes: [...], deliveryTargets: [...], authoring }
+GET  …/internal/providers/secrets-capability?provider={id}     (shipped, SP0a)
+→ 200 { capability: { provider, scopeTemplates, supportedModes, deliveryTargets, authoring } }
+
+GET  /v1/organizations/{orgId}/integrations/secrets-capabilities  (SP0c, SP-A1)
+→ 200 { capabilities: ProviderSecretsCapability[] }
 ```
+
+The internal per-provider read is the service-binding seam (config-worker).
+The org-scoped **bulk** collection is the console's read (SP-A1): it rides the
+existing api-edge integrations facade (path matches `ORG_INTEGRATIONS_RE`),
+inherits actor auth, and returns every capability-declaring provider in one
+response so the create surfaces and the Secrets lens share one cache entry.
 
 - **config-worker** calls it to validate a rotated/brokered create (does this
   provider support this mode? is this template real? is this a known delivery

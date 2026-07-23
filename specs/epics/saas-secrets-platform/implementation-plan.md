@@ -9,6 +9,13 @@ shippable; the boundary moves are ordered so no surface is ever orphaned.
 
 ## SP0 — The capability + endpoint (foundation)
 
+> **Status:** SP0a (declaration + internal endpoint, #570) and SP0b
+> (config-worker mode gate; `ALLOWED_ROTATION_PROVIDERS` deleted, #571) are
+> **shipped**. SP0c (console consumption) remains, re-scoped by **SP-A1**
+> (`design-addenda.md`): the console reads an org-scoped **bulk**
+> `GET …/integrations/secrets-capabilities` (rides the existing api-edge
+> integrations facade unchanged) instead of N per-provider reads.
+
 **Scope.**
 - Add `SecretsCapability` to the provider seam (`providers/types.ts`) and
   implement it on the Cloudflare + Supabase adapters (reproducing today's
@@ -49,6 +56,10 @@ resolves the default for every provider.
 ## SP2 — Integration-owned creation (Cloudflare first)
 
 **Scope.**
+- **New route** (SP-A2): `/orgs/[orgSlug]/integrations/providers/[providerId]`
+  — the provider space (no per-provider page exists today; the hub and
+  `ConnectionDetail` stay as-is). `ConnectionDetail`'s "Create scoped
+  credential" button retargets here (SP-A4).
 - Add a **Secrets** section to the Cloudflare integration page: a custom
   authoring surface (account/connection pick, template pick/manage, brokered vs
   rotated, policy/grace/deliver) built on the SP1 primitives; a filtered
@@ -67,10 +78,14 @@ new row appears (unchanged) on the Secrets lens. **Lands before SP3.**
 **Scope.**
 - Remove the "Scoped credential" + "Rotated" create tabs from the Secrets-page
   dialog; it creates **static** secrets only.
+- "New secret" becomes a routed menu (SP-A3): static value natively, plus
+  per-provider "From {provider}…" items derived from the SP-A1 bulk read.
 - Keep integration rows visible with type-generic actions (SP-D1); add the
   "Managed by {integration}" affordance + deep link for create-shaped actions.
 - Empty-state + type-filter point to the owning integration for integration
-  types.
+  types (SP-A3); the legacy `?bind=1[&connection=]` deep-link redirects to the
+  owning provider space (SP-A4); capability reads degrade progressively,
+  never to a hardcoded fallback (SP-A5).
 
 **Done when** the Secrets page creates only static secrets, still lists + manages
 every type, and every "create an integration secret" path routes to the owner.
@@ -84,7 +99,8 @@ Depends on SP2 (no orphaned create window).
   integration space, served to the substrate via the SP0 endpoint (the source
   of truth never leaves the integration).
 - Versioned templates; a template in use cannot be deleted out from under a
-  live secret (soft-retire).
+  live secret (soft-retire). Creates pin `(templateId, templateVersion)`;
+  hard-delete refused with a typed 409 while any live secret pins it (SP-A6).
 
 **Done when** an operator can add/edit a Cloudflare scope template in the
 Cloudflare space and it appears in the create surface + the capability endpoint,
@@ -97,7 +113,10 @@ with no console/db redeploy.
 - Integration-namespaced authoring: `orun integrations {provider} secret create
   …` (reads the capability for templates/modes; calls the authoring SDK).
 - Deprecate `orun secrets set --from-broker` toward the namespaced form (keep
-  working with a deprecation notice for one release).
+  working with a deprecation notice for one release; the notice prints the
+  exact replacement command, SP-A7). The namespaced command derives help
+  (templates/modes/targets) from the capability read — the CLI carries no
+  template catalog.
 
 **Done when** the CLI mirrors the UI boundary and the namespaced authoring
 command creates a provider-bound secret from the declared templates.
