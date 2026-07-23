@@ -1,0 +1,29 @@
+apiVersion: sourceplane.io/v1
+kind: Component
+metadata:
+  name: web-console-perf-budgets
+spec:
+  type: turbo-package
+  lifecycle: production
+  owner: platform
+  domain: starter-tests
+  dependsOn:
+    # IC9: the whole point of this component is to fail a PR that regresses
+    # the console's budgets — so a console change must rescope it under
+    # --changed. input:true also folds the app's sources into this
+    # component's build inputs (the suite next-builds the app it budgets).
+    - component: web-console-next
+      input: true
+  subscribe:
+    environments:
+      - name: dev
+        profile: quick-check
+  parameters:
+    nodeVersion: "20"
+    pnpmVersion: "10.12.1"
+    buildCommand: pnpm exec turbo run build --filter=./
+    typecheckCommand: pnpm exec turbo run typecheck --filter=./
+    preBuildCommand: pnpm exec turbo run test --filter=./
+  labels:
+    team: platform
+    layer: test

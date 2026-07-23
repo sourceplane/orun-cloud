@@ -14,7 +14,7 @@ audit (`design.md`); each milestone re-measures its own surface.
 | IC6 | Streams that stream | ✅ (client discipline) / ⚠️ prod passthrough validation pending | reconnects per minute under the audit pathology · streams per org | ~1/s spin (fixed 1s floor; sim: **60 connections/min**); one tail per surface/tab | exponential backoff + jitter (sim: **5 connections/min**, −92%); healthy 55s cadence unchanged; **1 stream per org across tabs** (Web Lock leader + BroadcastChannel fan-out, degraded per-tab fallback). **Prod validation still required**: whether the deployed path holds ~55s SSE legs (design §3.6) — decides D2 (keep SSE vs DO-relay WebSocket). Static review found no edge-side buffering of stream GETs (replayOrExecute only buffers unsafe+keyed methods); the ~1/s prod observation remains unexplained by code — needs a live authenticated probe |
 | IC7 | ⌘K finds anything | ✅ (delivers PX6) | search results · warm search latency · open-to-interactive | typing an existing service name returned **0 results** (static route list; useRegisterCommands had zero call sites) | entities/docs/teams/(session-read secrets) findable by name/ref/path/handle; warm search **5–12ms** in-page (<50ms target ✓); open→interactive 128ms first / **64ms** reopen (<100ms ✓); cold cache: lazy first-fetch on open, exactly 1 catalog request; recents ranked first |
 | IC8 | Big-list hygiene | ✅ | DOM rows @1,000 entities · long frames · row semantics · hover prefetches | **1,000 DOM rows** (plain .map, cap 5,000); rows were buttons (no cmd/middle-click); hover warmed data only | **22 DOM rows** (window virtualization >100 rows, −97.8%); long frames 1→0; rows are real `prefetch={false}` links (href, cmd/middle-click ✓); hover intent warms data (react-query-deduped) + route (once per key per mount — 10 hovers = 1 route warm, 0 duplicates) |
-| IC9 | Budgets in CI | 🗓️ | CI-enforced budgets | none | — |
+| IC9 | Budgets in CI | ✅ (RUM leg rides PERF6, in progress) | budget checks per PR | none | `web-console-perf-budgets` CI component: 13 budgets — 10 deterministic (one-boot-one-fetch ×3, concurrent-dup detector, persisted-revisit ≤4 reqs, per-route no-identical-repeat, ⌘K finds entity + lazy-prime ≤1, catalog ≤80 DOM rows + link rows) + 3 median-of-3 timings (cold FCP <1500, warm nav <300×band, ⌘K open <100×band). `dependsOn: web-console-next (input)` so console changes rescope it under --changed (activates fully on the v2.22 CI cutover, same as the worker input-edges) |
 
 ## IC1 — detail (2026-07-23)
 
@@ -35,3 +35,18 @@ audit (`design.md`); each milestone re-measures its own surface.
 Prod p50 for `/v1/state/runs` after deploy to be confirmed on the next
 walkthrough (re-measure rides IC3 per the plan); the round-trip count is the
 deterministic guard.
+
+## Epic-close remainders (need prod access / other epics)
+
+- **Prod re-audit** (IC0 re-run): the epic's before/after on live prod —
+  FCP, `/v1/state/runs` p50, doc-open, warm navs — needs an authenticated
+  walkthrough; all local/deterministic measurements above predict the wins.
+- **SSE passthrough probe** (IC6 / decision D2): confirm whether the
+  deployed path holds ~55s stream legs (devtools on the Work surface, or a
+  `curl -N` with a bearer). Client backoff makes either verdict
+  non-pathological; D2 (SSE vs DO-relay WebSocket) stays open until then.
+- **RUM dashboard** (IC9 second leg): rides the PERF6 Analytics Engine
+  sink (in progress in saas-performance); no AE binding exists yet to
+  ship a console web-vitals emitter against.
+- **Events feed cache conversion** (IC4 follow-up): spun off — Events + 5
+  minor surfaces still hand-roll first-page loading.
