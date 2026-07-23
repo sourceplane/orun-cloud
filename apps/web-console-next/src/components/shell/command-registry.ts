@@ -14,8 +14,10 @@
  * commands without editing this file.
  */
 
-/** Stable group ordering for the palette. */
-export const COMMAND_GROUPS = ["Navigation", "Create", "Target", "Session"] as const;
+/** Stable group ordering for the palette. IC7 adds the data-backed groups
+ *  (catalog entities, docs, teams, secrets — sourced from the shared query
+ *  cache by `palette-entity-source.tsx`) between Navigation and Create. */
+export const COMMAND_GROUPS = ["Navigation", "Catalog", "Docs", "Teams", "Secrets", "Create", "Target", "Session"] as const;
 export type CommandGroup = (typeof COMMAND_GROUPS)[number];
 
 /**

@@ -52,6 +52,7 @@ import {
   type CommandContext,
   type CommandDescriptor,
 } from "./command-registry";
+import { recordRecentCommandId } from "@/lib/palette/entity-commands";
 
 // Icon-name → component resolver. Keeps `command-registry.ts` pure (string
 // names only) while the renderer owns the concrete icon set.
@@ -92,10 +93,14 @@ const ICONS: Record<string, LucideIcon> = {
 
 interface PaletteCtxValue {
   open: () => void;
+  /** IC7: true while the palette dialog is up — the entity source primes its
+   *  lazy first-fetch and re-reads recents on the rising edge. */
+  isOpen: boolean;
   register: (commands: CommandDescriptor[]) => () => void;
 }
 const PaletteCtx = React.createContext<PaletteCtxValue>({
   open: () => {},
+  isOpen: false,
   register: () => () => {},
 });
 
@@ -154,6 +159,7 @@ export function CommandPaletteProvider({ children }: { children: React.ReactNode
   );
 
   const run = (cmd: CommandDescriptor) => {
+    recordRecentCommandId(cmd.id); // IC7: entity-ish runs rank first next open
     setOpen(false);
     switch (cmd.kind) {
       case "navigate":
@@ -178,7 +184,7 @@ export function CommandPaletteProvider({ children }: { children: React.ReactNode
   };
 
   return (
-    <PaletteCtx.Provider value={{ open: () => setOpen(true), register }}>
+    <PaletteCtx.Provider value={{ open: () => setOpen(true), isOpen: open, register }}>
       {children}
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="max-w-xl overflow-hidden rounded-[14px] p-0">
