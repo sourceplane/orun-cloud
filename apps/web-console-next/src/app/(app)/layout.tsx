@@ -6,6 +6,7 @@ import { Sidebar } from "@/components/shell/sidebar";
 import { Topbar } from "@/components/shell/topbar";
 import { BottomTabs } from "@/components/shell/bottom-tabs";
 import { LastOrgRecorder } from "@/components/shell/last-org-recorder";
+import { PaletteEntitySource } from "@/components/shell/palette-entity-source";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useRequireAuth } from "@/lib/use-async";
 import { useSession } from "@/lib/session";
@@ -53,6 +54,8 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         {ready && <BottomTabs />}
       </div>
       {ready && <LastOrgRecorder />}
+      {/* IC7: feeds ⌘K from the shared query cache (entities/docs/teams). */}
+      {ready && <PaletteEntitySource />}
       {ready && <OnboardingGate />}
     </div>
   );
