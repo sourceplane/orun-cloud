@@ -5,12 +5,21 @@
  */
 
 import * as React from "react";
+import Link from "next/link";
+import { useWindowVirtualizer } from "@tanstack/react-virtual";
 import { Search, ChevronRight } from "lucide-react";
 import type { CatalogService } from "@/lib/catalog-portal/model";
 import type { DecoratedService } from "@/lib/catalog-portal/model";
 import { needsAttention } from "@/lib/catalog-portal/model";
 import type { CatalogGroup, SortDir, SortKey } from "@/lib/catalog-portal/filter";
 import { OwnerAvatar, RowChevron } from "@/components/ui/northwind";
+
+/** Above this row count the desktop table windows its rows (IC8). Small
+ *  catalogs keep the plain DOM — zero behavior change where it isn't needed. */
+export const VIRTUALIZE_THRESHOLD = 100;
+/** Estimated desktop row height (measured: 55px incl the border). */
+const ROW_ESTIMATE_PX = 55;
+const GROUP_HEADER_ESTIMATE_PX = 38;
 
 // Mock grid: Entity / Owner / Lifecycle / Health / SLO 30d / Maturity / chevron.
 const GRID =
@@ -61,14 +70,17 @@ function SortHeader({
 // rows whose props actually change — not the whole list (PERF C3).
 const Row = React.memo(function Row({
   d,
+  href,
   selected,
-  onOpen,
   onQuickView,
   onIntent,
 }: {
   d: DecoratedService;
+  /** IC8: the row IS a link — cmd/middle-click, copy-link, and a11y come
+   *  free. `prefetch={false}` so a thousand rows don't fire a thousand
+   *  auto-prefetches; hover intent warms route+data, deduped, instead. */
+  href: string;
   selected: boolean;
-  onOpen: (key: string) => void;
   onQuickView?: ((key: string) => void) | undefined;
   onIntent?: ((key: string) => void) | undefined;
 }) {
@@ -76,18 +88,17 @@ const Row = React.memo(function Row({
   const tierInk = d.tier ? TIER_INK[d.tier] : undefined;
   return (
     <div className="group relative">
-      <button
-        type="button"
+      <Link
+        href={href}
+        prefetch={false}
         data-row
         data-entitykey={d.key}
-        onMouseEnter={onIntent ? () => onIntent(d.key) : undefined}
-        onFocus={onIntent ? () => onIntent(d.key) : undefined}
-        onDoubleClick={onQuickView ? () => onQuickView(d.key) : undefined}
-        onClick={() => onOpen(d.key)}
+        {...(onIntent ? { onMouseEnter: () => onIntent(d.key), onFocus: () => onIntent(d.key) } : {})}
+        {...(onQuickView ? { onDoubleClick: () => onQuickView(d.key) } : {})}
         className={`relative grid w-full ${GRID} items-center gap-3 border-b border-b-border/60 px-[22px] py-[13px] text-left transition-colors ${
           attention ? "bg-warning-wash hover:bg-warning-wash/70" : "hover:bg-foreground/[0.022]"
         }`}
-        style={selected ? { boxShadow: "inset 2px 0 0 hsl(var(--primary))" } : undefined}
+        {...(selected ? { style: { boxShadow: "inset 2px 0 0 hsl(var(--primary))" } } : {})}
       >
         {/* entity — name + mono ref subline */}
         <span className="flex min-w-0 flex-col">
@@ -144,7 +155,7 @@ const Row = React.memo(function Row({
         </span>
         {/* chevron — revealed on row hover, the Northwind idiom */}
         <RowChevron className="ml-0" />
-      </button>
+      </Link>
     </div>
   );
 });
@@ -153,28 +164,28 @@ const Row = React.memo(function Row({
 // screens. A single tap opens the full service page.
 const MobileCard = React.memo(function MobileCard({
   d,
+  href,
   selected,
-  onOpen,
   onIntent,
 }: {
   d: DecoratedService;
+  href: string;
   selected: boolean;
-  onOpen: (key: string) => void;
   onIntent?: ((key: string) => void) | undefined;
 }) {
   const attention = needsAttention(d.svc);
   const tierInk = d.tier ? TIER_INK[d.tier] : undefined;
   return (
-    <button
-      type="button"
+    <Link
+      href={href}
+      prefetch={false}
       data-row
       data-entitykey={d.key}
-      onPointerDown={onIntent ? () => onIntent(d.key) : undefined}
-      onClick={() => onOpen(d.key)}
+      {...(onIntent ? { onPointerDown: () => onIntent(d.key) } : {})}
       className={`relative flex w-full flex-col gap-2.5 border-b border-b-border/60 px-4 py-3.5 text-left transition-colors ${
         attention ? "bg-warning-wash active:bg-warning-wash/70" : "active:bg-foreground/[0.03]"
       }`}
-      style={selected ? { boxShadow: "inset 2px 0 0 hsl(var(--primary))" } : undefined}
+      {...(selected ? { style: { boxShadow: "inset 2px 0 0 hsl(var(--primary))" } } : {})}
     >
       {/* header: name + ref · health · chevron */}
       <span className="flex min-w-0 items-center gap-3">
@@ -209,9 +220,98 @@ const MobileCard = React.memo(function MobileCard({
           </span>
         ) : null}
       </span>
-    </button>
+    </Link>
   );
 });
+
+/** Flattened render stream for the virtualizer: group headers interleaved
+ *  with rows, one entry per DOM block. */
+type VirtualItem =
+  | { type: "header"; key: string; label: string; count: number; sub: string }
+  | { type: "row"; key: string; svc: CatalogService };
+
+function flattenItems(groups: CatalogGroup[] | null, flat: CatalogService[], keyOf: (s: CatalogService) => string): VirtualItem[] {
+  if (!groups) return flat.map((s) => ({ type: "row", key: keyOf(s), svc: s }));
+  const out: VirtualItem[] = [];
+  for (const g of groups) {
+    out.push({ type: "header", key: `hdr:${g.key}`, label: g.label, count: g.count, sub: g.sub });
+    for (const s of g.services) out.push({ type: "row", key: keyOf(s), svc: s });
+  }
+  return out;
+}
+
+/** Windowed desktop rows (IC8): only the visible slice renders, scrolling
+ *  with the page (window virtualizer, so the layout is unchanged). */
+function VirtualRows({
+  items,
+  decorate,
+  selectedKey,
+  hrefOf,
+  onQuickView,
+  onIntent,
+}: {
+  items: VirtualItem[];
+  decorate: (s: CatalogService) => DecoratedService;
+  selectedKey: string | null;
+  hrefOf: (key: string) => string;
+  onQuickView?: ((key: string) => void) | undefined;
+  onIntent?: ((key: string) => void) | undefined;
+}) {
+  const listRef = React.useRef<HTMLDivElement | null>(null);
+  const [scrollMargin, setScrollMargin] = React.useState(0);
+  React.useLayoutEffect(() => {
+    setScrollMargin(listRef.current?.getBoundingClientRect().top ?? 0);
+  }, []);
+  const virtualizer = useWindowVirtualizer({
+    count: items.length,
+    estimateSize: (i) => (items[i]!.type === "header" ? GROUP_HEADER_ESTIMATE_PX : ROW_ESTIMATE_PX),
+    overscan: 12,
+    scrollMargin,
+    getItemKey: (i) => items[i]!.key,
+  });
+  return (
+    <div ref={listRef} style={{ height: virtualizer.getTotalSize(), position: "relative" }}>
+      {virtualizer.getVirtualItems().map((vi) => {
+        const item = items[vi.index]!;
+        return (
+          <div
+            key={vi.key}
+            ref={virtualizer.measureElement}
+            data-index={vi.index}
+            style={{
+              position: "absolute",
+              top: 0,
+              left: 0,
+              width: "100%",
+              transform: `translateY(${vi.start - scrollMargin}px)`,
+            }}
+          >
+            {item.type === "header" ? (
+              <div className="flex items-center gap-2.5 border-b border-b-border bg-background px-[22px] py-[9px]">
+                <span className="text-[12px] font-semibold text-foreground/90">{item.label}</span>
+                <span className="font-mono text-[11px] text-muted-foreground/60">{item.count}</span>
+                <span className="ml-auto text-[11px] text-muted-foreground/80">{item.sub}</span>
+              </div>
+            ) : (
+              (() => {
+                const d = decorate(item.svc);
+                return (
+                  <Row
+                    d={d}
+                    href={hrefOf(d.key)}
+                    selected={selectedKey === d.key}
+                    onQuickView={onQuickView}
+                    onIntent={onIntent}
+                  />
+                );
+              })()
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
 
 export function TableView({
   groups,
@@ -221,7 +321,7 @@ export function TableView({
   sortDir,
   onSort,
   selectedKey,
-  onOpen,
+  hrefOf,
   onQuickView,
   onIntent,
   onClearFilters,
@@ -234,8 +334,8 @@ export function TableView({
   sortDir: SortDir;
   onSort: (k: SortKey) => void;
   selectedKey: string | null;
-  /** Open the full service page — the primary single-click/tap action. */
-  onOpen: (key: string) => void;
+  /** IC8: the row href — rows are real links (cmd/middle-click works). */
+  hrefOf: (key: string) => string;
   /** Open the quick-view drawer (desktop only) — omitted hides the peek. */
   onQuickView?: ((key: string) => void) | undefined;
   /** Warm the entity route's data on hover/focus (PERF G3) — optional. */
@@ -246,6 +346,13 @@ export function TableView({
   isDesktop: boolean;
 }) {
   const isEmpty = groups ? groups.length === 0 : flat.length === 0;
+  const keyOf = React.useCallback((s: CatalogService) => decorate(s).key, [decorate]);
+  const totalRows = groups ? groups.reduce((n, g) => n + g.services.length, 0) : flat.length;
+  const virtualize = isDesktop && totalRows > VIRTUALIZE_THRESHOLD;
+  const items = React.useMemo(
+    () => (virtualize ? flattenItems(groups, flat, keyOf) : []),
+    [virtualize, groups, flat, keyOf],
+  );
 
   const renderRows = (list: CatalogService[]) =>
     list.map((s) => {
@@ -254,8 +361,8 @@ export function TableView({
         <Row
           key={d.key}
           d={d}
+          href={hrefOf(d.key)}
           selected={selectedKey === d.key}
-          onOpen={onOpen}
           onQuickView={onQuickView}
           onIntent={onIntent}
         />
@@ -269,8 +376,8 @@ export function TableView({
         <MobileCard
           key={d.key}
           d={d}
+          href={hrefOf(d.key)}
           selected={selectedKey === d.key}
-          onOpen={onOpen}
           onIntent={onIntent}
         />
       );
@@ -324,9 +431,18 @@ export function TableView({
             <SortHeader label="Maturity" active={sortKey === "readiness"} dir={sortDir} onClick={() => onSort("readiness")} />
             <span aria-hidden />
           </div>
-          {/* rows */}
+          {/* rows — windowed above VIRTUALIZE_THRESHOLD (IC8) */}
           {isEmpty ? (
             empty
+          ) : virtualize ? (
+            <VirtualRows
+              items={items}
+              decorate={decorate}
+              selectedKey={selectedKey}
+              hrefOf={hrefOf}
+              onQuickView={onQuickView}
+              onIntent={onIntent}
+            />
           ) : groups ? (
             groups.map((g) => (
               <React.Fragment key={g.key}>
