@@ -1,29 +1,28 @@
 "use client";
 
-// The delegated-session lens (saas-copilot-surface CX4/CX5, design §5.3, §6):
-// the session's activity stream through the AG-UI watch door, rendered by the
-// same component vocabulary as the dispatch thread — a state timeline
-// (STATE_DELTA), tool cards on the shared lanes, cost ticks, plane-honest
-// activity lines, and the in-thread APPROVAL card. The card renders ONLY
-// from server-emitted CUSTOM {name:"approval"} events (the fold is fed
-// exclusively by the door's EventSource; a forged client-side shape cannot
-// produce one), and Approve/Deny resolve through the EXISTING credentialed
-// verdict path the page already owns — AN lock 5 survives generative UI.
+// The delegated-session lens (saas-copilot-surface CX4/CX5, design §5.3, §6;
+// unified in copilotkit-interface-unify): the session's activity stream through
+// the AG-UI watch door, rendered by the SAME transcript vocabulary as the
+// dispatch thread (components/copilot/transcript.tsx) — streaming markdown
+// bubbles, collapsible tool cards, attributed steers, and honest error cards.
+// The lens is now the session's ONE copilot head: it hydrates the durable log
+// for ended sessions and rides the watch door's full replay (from=-1) while
+// live, so there is no second, differently-styled transcript beneath it.
+//
+// The in-thread APPROVAL card renders ONLY from server-emitted CUSTOM
+// {name:"approval"} events (the fold is fed exclusively by the door's
+// EventSource; a forged client-side shape cannot produce one), and
+// Approve/Deny resolve through the EXISTING credentialed verdict path the page
+// already owns — AN lock 5 survives generative UI.
 
 import * as React from "react";
-import ReactMarkdown from "react-markdown";
 import type { AguiEvent } from "@saas/contracts/agui";
+import type { AgentSessionEventKind } from "@saas/contracts/agents";
 import { Pill, StatusDot, type Tone } from "@/components/ui/northwind";
 import { sessionTone, sessionLabel } from "@/lib/agents/model";
 import { sanitizeHarnessError } from "@/lib/agents/harness-error";
-
-export interface LensToolCall {
-  id: string;
-  name: string;
-  args: string;
-  result?: string;
-  isError?: boolean;
-}
+import type { ConversationEvent } from "@/lib/agents/conversation";
+import { StreamingBubble, TranscriptRow, type TranscriptItem } from "./transcript.js";
 
 export interface LensApproval {
   requestId: string;
@@ -34,22 +33,15 @@ export interface LensApproval {
   approved?: boolean;
 }
 
-/** A transcript bubble the lens renders chronologically — the session's chat
- * story on the copilot engine (user steers, agent turns, error cards). */
-export type LensThreadItem =
-  | { kind: "user"; id: string; text: string; principal?: string }
-  | { kind: "assistant"; id: string; text: string }
-  | { kind: "error"; id: string; text: string };
-
 export interface LensState {
   sessionState: string | null;
   timeline: Array<{ state: string; seq?: number }>;
-  tools: LensToolCall[];
-  activity: Array<{ kind: string; at?: string; seq?: number; summary: string }>;
   tokens: number;
   approvals: LensApproval[];
-  /** The chronological transcript (user/agent/error bubbles). */
-  items: LensThreadItem[];
+  /** The single chronological transcript — user steers, agent turns, tool
+   * cards, honest activity notes, and error cards, interleaved by arrival
+   * (the copilot-thread DD2 posture, shared vocabulary). */
+  items: TranscriptItem[];
   streaming: string;
   cursor: number;
 }
@@ -58,8 +50,6 @@ export function initialLensState(): LensState {
   return {
     sessionState: null,
     timeline: [],
-    tools: [],
-    activity: [],
     tokens: 0,
     approvals: [],
     items: [],
@@ -68,7 +58,16 @@ export function initialLensState(): LensState {
   };
 }
 
-/** foldLensEvent — the lens's pure fold over dialect events (tested). */
+/** A generic (non-chat, non-error) activity line, folded into an honest note
+ * — the plane-honest posture: name the kind, keep a compact payload tail. */
+function activityNote(kind: string, payload: Record<string, unknown> | undefined): string {
+  const summary = payload ? JSON.stringify(payload).slice(0, 140) : "";
+  return summary ? `${kind} · ${summary}` : kind;
+}
+
+/** foldLensEvent — the lens's pure fold over dialect events (tested). Produces
+ * a single chronological transcript plus the session chrome (state timeline,
+ * cost, approvals). */
 export function foldLensEvent(s: LensState, e: AguiEvent): LensState {
   const cursor = typeof e.seq === "number" && e.seq > s.cursor ? e.seq : s.cursor;
   switch (e.type) {
@@ -88,14 +87,39 @@ export function foldLensEvent(s: LensState, e: AguiEvent): LensState {
       };
     }
     case "TOOL_CALL_START":
-      return { ...s, cursor, tools: [...s.tools, { id: String(e.toolCallId), name: String(e.toolCallName ?? "tool"), args: "" }] };
+      return {
+        ...s,
+        cursor,
+        items: [
+          ...s.items,
+          {
+            kind: "tool",
+            id: String(e.toolCallId),
+            // Session tools run in the sandbox — never client (ui_) tools —
+            // so they always render as the collapsible tool card.
+            tool: { id: String(e.toolCallId), name: String(e.toolCallName ?? "tool"), args: "", client: false },
+          },
+        ],
+      };
     case "TOOL_CALL_ARGS":
-      return { ...s, cursor, tools: s.tools.map((t) => (t.id === e.toolCallId ? { ...t, args: t.args + (e.delta ?? "") } : t)) };
+      return {
+        ...s,
+        cursor,
+        items: s.items.map((it) =>
+          it.kind === "tool" && it.id === e.toolCallId
+            ? { ...it, tool: { ...it.tool, args: it.tool.args + String(e.delta ?? "") } }
+            : it,
+        ),
+      };
     case "TOOL_CALL_RESULT":
       return {
         ...s,
         cursor,
-        tools: s.tools.map((t) => (t.id === e.toolCallId ? { ...t, result: e.content ?? "", ...(e.isError ? { isError: true } : {}) } : t)),
+        items: s.items.map((it) =>
+          it.kind === "tool" && it.id === e.toolCallId
+            ? { ...it, tool: { ...it.tool, result: String(e.content ?? ""), ...(e.isError ? { isError: true } : {}) } }
+            : it,
+        ),
       };
     case "TEXT_MESSAGE_CONTENT":
       return { ...s, cursor, streaming: s.streaming + (e.delta ?? "") };
@@ -166,7 +190,7 @@ export function foldLensEvent(s: LensState, e: AguiEvent): LensState {
           // The durable copy of a turn the stream already showed: skip the
           // duplicate bubble (replays re-deliver the durable event only).
           const last = [...s.items].reverse().find((it) => it.kind === "assistant");
-          if (last && last.text === text) return { ...s, cursor };
+          if (last && last.kind === "assistant" && last.text === text) return { ...s, cursor };
           return { ...s, cursor, items: [...s.items, { kind: "assistant", id: `a_${e.seq ?? s.items.length}`, text }] };
         }
         if (kind === "error") {
@@ -177,11 +201,10 @@ export function foldLensEvent(s: LensState, e: AguiEvent): LensState {
           const text = sanitizeHarnessError(raw);
           return { ...s, cursor, items: [...s.items, { kind: "error", id: `err_${e.seq ?? s.items.length}`, text }] };
         }
-        const summary = v.payload ? JSON.stringify(v.payload).slice(0, 140) : "";
         return {
           ...s,
           cursor,
-          activity: [...s.activity, { kind, ...(v.at ? { at: v.at } : {}), ...(typeof e.seq === "number" ? { seq: e.seq } : {}), summary }],
+          items: [...s.items, { kind: "note", id: `n_${e.seq ?? s.items.length}`, text: activityNote(kind, v.payload) }],
         };
       }
       return { ...s, cursor };
@@ -189,6 +212,95 @@ export function foldLensEvent(s: LensState, e: AguiEvent): LensState {
     default:
       return { ...s, cursor };
   }
+}
+
+/** sessionEventsToItems — the durable session log (the closed relayed
+ * vocabulary from listSessionEvents) folded into the SAME transcript items the
+ * live stream produces, so an ended session reads exactly like a live one. It
+ * mirrors foldConversation's mapping, into the shared copilot vocabulary. */
+export function sessionEventsToItems(events: ConversationEvent[]): TranscriptItem[] {
+  const items: TranscriptItem[] = [];
+  const str = (p: Record<string, unknown> | undefined, k: string): string => {
+    const v = p?.[k];
+    return typeof v === "string" ? v : "";
+  };
+  for (const e of events) {
+    const p = e.payload;
+    const id = `h${e.seq}`;
+    switch (e.kind as AgentSessionEventKind | string) {
+      case "message_agent":
+        items.push({ kind: "assistant", id, text: str(p, "text") });
+        break;
+      case "message_user": {
+        const principal = str(p, "principal");
+        items.push({ kind: "user", id, text: str(p, "text"), ...(principal ? { principal } : {}) });
+        break;
+      }
+      case "tool_call": {
+        const decision = str(p, "decision");
+        items.push({
+          kind: "tool",
+          id,
+          // A durable tool row is settled: render it "done" (result "") with
+          // the policy decision as its args, never a spinning "…".
+          tool: { id, name: str(p, "tool") || "tool", args: decision, result: "", client: false },
+        });
+        break;
+      }
+      case "artifact_produced": {
+        const pr = str(p, "pr");
+        items.push({ kind: "note", id, text: pr ? `Artifact: ${pr}` : "Artifact produced" });
+        break;
+      }
+      case "approval_resolved": {
+        const approved = p?.approved === true;
+        const who = str(p, "principal") || "—";
+        items.push({ kind: "note", id, text: `Approval ${approved ? "approved" : "denied"} by ${who}` });
+        break;
+      }
+      case "state_changed": {
+        const state = str(p, "state");
+        if (state) items.push({ kind: "note", id, text: `State: ${state}` });
+        break;
+      }
+      case "harness_event": {
+        const phase = str(p, "phase");
+        if (phase) items.push({ kind: "note", id, text: `Harness: ${phase}` });
+        break;
+      }
+      case "error": {
+        const raw = str(p, "text") || [str(p, "tool"), str(p, "error")].filter(Boolean).join(" ");
+        items.push({ kind: "error", id, text: sanitizeHarnessError(raw) });
+        break;
+      }
+      case "child_spawned": {
+        const goal = str(p, "goal");
+        items.push({ kind: "note", id, text: `Spawned ${str(p, "sessionId") || "child"}${goal ? ` — ${goal}` : ""}` });
+        break;
+      }
+      case "child_completed": {
+        const verdict = str(p, "verdict");
+        const summary = str(p, "summary");
+        items.push({
+          kind: "note",
+          id,
+          text: `Child ${str(p, "sessionId") || "session"} completed${verdict ? ` — verdict: ${verdict}` : ""}${summary ? ` — ${summary}` : ""}`,
+        });
+        break;
+      }
+      case "child_failed":
+        items.push({
+          kind: "note",
+          id,
+          text: `Child ${str(p, "sessionId") || "session"} failed${str(p, "reason") ? ` — ${str(p, "reason")}` : ""}`,
+        });
+        break;
+      // tool_result (activity clear), approval_requested (the sticky card
+      // owns it / the live replay re-emits it), cost_sample (the tokens rail),
+      // and unknown kinds carry no transcript bubble.
+    }
+  }
+  return items;
 }
 
 /** The lens's transport: the session AG-UI watch door over EventSource
@@ -270,25 +382,37 @@ export function SessionLens({
   orgId,
   sessionId,
   live,
+  events,
   tierLabel,
   tierTone,
   onApprove,
   onDeny,
   interacting,
+  emptyHint,
 }: {
   target: string;
   token: string | null;
   orgId: string;
   sessionId: string;
   live: boolean;
+  /** The durable session log — rendered when the live watch stream is gone
+   * (an ended session), so the transcript survives past the last frame. */
+  events: ConversationEvent[];
   /** The trust tier — rendered permanently (DX lock 8, inherited). */
   tierLabel: string;
   tierTone: Tone;
   onApprove: (requestId: string) => void;
   onDeny: (requestId: string) => void;
   interacting: boolean;
+  /** Empty-state line — the caller varies it by state. */
+  emptyHint?: string;
 }) {
   const lens = useSessionLens(target, token, orgId, sessionId, live);
+
+  // While live, the watch door replays the whole session (from=-1) then goes
+  // live, so the lens fold IS the complete transcript. Once the stream is
+  // gone, the durable log is the record — folded into the same vocabulary.
+  const items = live ? lens.items : sessionEventsToItems(events);
 
   return (
     <div className="min-w-0">
@@ -310,58 +434,19 @@ export function SessionLens({
         <ApprovalCard key={a.requestId} a={a} onApprove={onApprove} onDeny={onDeny} busy={interacting} />
       ))}
 
-      {/* The transcript (CX4 upgraded): user steers, agent turns, and error
-          cards folded from the AG-UI stream — chat bubbles, not activity
-          lines, so the lens reads as the session's copilot head. */}
-      {lens.items.map((it) =>
-        it.kind === "user" ? (
-          <div key={it.id} className="my-2 flex justify-end">
-            <div className="max-w-[85%] rounded-xl bg-secondary px-3.5 py-2 text-[13px]">
-              {it.principal ? (
-                <div className="mb-0.5 font-mono text-[10.5px] text-muted-foreground">{it.principal}</div>
-              ) : null}
-              <span className="whitespace-pre-wrap">{it.text}</span>
-            </div>
-          </div>
-        ) : it.kind === "assistant" ? (
-          <div key={it.id} className="my-2 flex justify-start">
-            <div className="prose-chat max-w-[85%] rounded-2xl border border-border/60 px-3.5 py-2 text-[13px]">
-              <ReactMarkdown>{it.text}</ReactMarkdown>
-            </div>
-          </div>
-        ) : (
-          <div
-            key={it.id}
-            className="my-2 rounded-lg border border-destructive/40 bg-destructive/5 px-3.5 py-2 text-[12.5px] text-destructive"
-          >
-            {it.text}
-          </div>
-        ),
-      )}
-
-      {lens.tools.map((t) => (
-        <div key={t.id} className="my-1 rounded-lg border border-border/50 bg-muted/40 px-3 py-1.5 font-mono text-[12px] text-muted-foreground">
-          <span className="mr-2">⚙ {t.name}</span>
-          <span className={t.isError ? "text-destructive" : ""}>{t.result === undefined ? "…" : t.result || "done"}</span>
-        </div>
+      {/* The unified transcript — the SAME rows the dispatch thread renders. */}
+      {items.map((it) => (
+        <TranscriptRow key={it.id} it={it} />
       ))}
 
-      {lens.activity.map((a, i) => (
-        <div key={`${a.seq ?? i}`} className="my-1 flex items-baseline gap-2 text-[12px] text-muted-foreground">
-          <span className="font-mono text-[11px] text-muted-foreground/70">{a.kind}</span>
-          <span className="truncate">{a.summary}</span>
-        </div>
-      ))}
+      {live && lens.streaming ? <StreamingBubble text={lens.streaming} /> : null}
 
-      {lens.streaming ? (
-        <p className="mt-2 whitespace-pre-wrap text-[13px] italic text-muted-foreground">
-          {lens.streaming}
-          <span className="animate-pulse">▍</span>
+      {items.length === 0 && !lens.streaming ? (
+        <p className="text-[12.5px] text-muted-foreground">
+          {live
+            ? emptyHint ?? "The runtime relays its session log here once the sandbox dials home."
+            : emptyHint ?? "This session ended without relaying a session log."}
         </p>
-      ) : null}
-
-      {!live && lens.items.length === 0 && lens.activity.length === 0 && lens.tools.length === 0 ? (
-        <p className="text-[12.5px] text-muted-foreground">This session's stream has ended; the durable log below is the record.</p>
       ) : null}
     </div>
   );
