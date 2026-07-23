@@ -86,8 +86,10 @@ async function disposeIfOwned(executor: SqlExecutor, owned: boolean): Promise<vo
 }
 
 // ── Authorization helper ─────────────────────────────────────
+// Exported for the sibling org-surface handlers (secrets-capabilities.ts) so
+// there is exactly one membership+policy gate implementation.
 
-async function authorizeIntegration(
+export async function authorizeIntegration(
   env: Env,
   actor: ActorContext,
   orgId: string,

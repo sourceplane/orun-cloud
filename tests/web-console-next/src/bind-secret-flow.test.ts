@@ -1,22 +1,55 @@
 import {
   brokerConnections,
   brokeredCreateErrorMessage,
+  capableProviders,
   deriveBrokerRow,
   deriveRotationRow,
-  isBrokerCapableProvider,
   orphanView,
   orphanedSecrets,
+  templatesForProvider,
   validateBindingForm,
   validateRotationForm,
   CONNECTION_ID_PATTERN,
   type BindTemplateLike,
 } from "@web-console-next/components/config/bind-secret-flow";
+import type { ProviderSecretsCapability } from "@saas/contracts/integrations";
 
 const CONNECTION_ID = `int_${"a".repeat(32)}`;
 
 const TEMPLATES: BindTemplateLike[] = [
   { id: "workers-deploy", params: [] },
   { id: "dns-edit", params: ["zoneIds"] },
+];
+
+/** Capability fixtures shaped like the SP0c bulk read (SP-A1). */
+function capability(overrides: Partial<ProviderSecretsCapability> & { provider: ProviderSecretsCapability["provider"] }): ProviderSecretsCapability {
+  return {
+    scopeTemplates: [],
+    supportedModes: ["brokered"],
+    deliveryTargets: [],
+    authoring: "declarative",
+    ...overrides,
+  };
+}
+
+const CAPABILITIES: ProviderSecretsCapability[] = [
+  capability({
+    provider: "cloudflare",
+    supportedModes: ["brokered", "rotated"],
+    scopeTemplates: [
+      {
+        id: "workers-deploy",
+        provider: "cloudflare",
+        version: 1,
+        displayName: "Deploy Workers",
+        description: "Edit Workers scripts and KV.",
+        params: [],
+        maxTtlSeconds: 3600,
+      },
+    ],
+    deliveryTargets: ["cloudflare-worker"],
+  }),
+  capability({ provider: "supabase" }),
 ];
 
 describe("connection id pattern", () => {
@@ -29,23 +62,45 @@ describe("connection id pattern", () => {
   });
 });
 
-describe("brokerConnections", () => {
-  it("keeps only active, broker-capable connections", () => {
-    const conns = [
-      { id: "1", provider: "cloudflare", status: "active" },
-      { id: "2", provider: "supabase", status: "active" },
-      { id: "3", provider: "cloudflare", status: "revoked" },
-      { id: "4", provider: "github", status: "active" },
-      { id: "5", provider: "slack", status: "active" },
-    ];
-    expect(brokerConnections(conns).map((c) => c.id)).toEqual(["1", "2"]);
+describe("brokerConnections (capability-derived, SP0c)", () => {
+  const conns = [
+    { id: "1", provider: "cloudflare", status: "active" },
+    { id: "2", provider: "supabase", status: "active" },
+    { id: "3", provider: "cloudflare", status: "revoked" },
+    { id: "4", provider: "github", status: "active" },
+    { id: "5", provider: "slack", status: "active" },
+  ];
+
+  it("keeps only active connections of capability-declaring providers", () => {
+    expect(brokerConnections(conns, CAPABILITIES).map((c) => c.id)).toEqual(["1", "2"]);
   });
 
-  it("knows the broker-capable provider set", () => {
-    expect(isBrokerCapableProvider("cloudflare")).toBe(true);
-    expect(isBrokerCapableProvider("supabase")).toBe(true);
-    expect(isBrokerCapableProvider("github")).toBe(false);
-    expect(isBrokerCapableProvider("slack")).toBe(false);
+  it("narrows by mode: only rotated-capable providers back the Rotated tab", () => {
+    expect(brokerConnections(conns, CAPABILITIES, "rotated").map((c) => c.id)).toEqual(["1"]);
+    expect(brokerConnections(conns, CAPABILITIES, "brokered").map((c) => c.id)).toEqual(["1", "2"]);
+  });
+
+  it("offers nothing when no capabilities are loaded — never a hardcoded fallback (SP-A5)", () => {
+    expect(brokerConnections(conns, [])).toEqual([]);
+  });
+
+  it("derives the capable-provider set from the declarations", () => {
+    expect([...capableProviders(CAPABILITIES)].sort()).toEqual(["cloudflare", "supabase"]);
+    expect([...capableProviders(CAPABILITIES, "rotated")]).toEqual(["cloudflare"]);
+    expect(capableProviders(CAPABILITIES).has("github")).toBe(false);
+  });
+});
+
+describe("templatesForProvider (capability-derived, SP0c)", () => {
+  it("returns the provider's declared templates", () => {
+    expect(templatesForProvider(CAPABILITIES, "cloudflare").map((t) => t.id)).toEqual([
+      "workers-deploy",
+    ]);
+  });
+
+  it("returns [] for providers without a declaration", () => {
+    expect(templatesForProvider(CAPABILITIES, "github")).toEqual([]);
+    expect(templatesForProvider([], "cloudflare")).toEqual([]);
   });
 });
 

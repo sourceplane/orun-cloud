@@ -5,11 +5,21 @@
 
 import { handleInternalSecretsCapability } from "@integrations-worker/handlers/internal-secrets-capability";
 import { getConfiguredProvider, KNOWN_PROVIDER_IDS } from "@integrations-worker/providers/registry";
+import { route } from "@integrations-worker/router";
 import type { Env } from "@integrations-worker/env";
 import { CLOUDFLARE_SCOPE_TEMPLATES } from "@integrations-worker/providers/cloudflare";
 import { SUPABASE_SCOPE_TEMPLATES } from "@integrations-worker/providers/supabase";
 
 const KEY = "0".repeat(64);
+
+function jsonFetcher(body: unknown): Fetcher {
+  return {
+    fetch: () => Promise.resolve(Response.json(body)),
+    connect() {
+      throw new Error("not implemented");
+    },
+  } as unknown as Fetcher;
+}
 
 function createEnv(overrides?: Record<string, unknown>): Env {
   return {
@@ -20,6 +30,28 @@ function createEnv(overrides?: Record<string, unknown>): Env {
     ...overrides,
   } as unknown as Env;
 }
+
+/** Env for the org-surface route: DB + auth service bindings present, policy allow. */
+function createOrgEnv(): Env {
+  return createEnv({
+    PLATFORM_DB: { connectionString: "postgres://fake" },
+    MEMBERSHIP_WORKER: jsonFetcher({
+      data: {
+        memberships: [
+          {
+            kind: "role_assignment",
+            role: "admin",
+            scope: { kind: "organization", orgId: "11111111-1111-4111-8111-111111111111" },
+          },
+        ],
+      },
+    }),
+    POLICY_WORKER: jsonFetcher({ data: { allow: true, reason: "org_admin" } }),
+  });
+}
+
+// org_<32hex> — a valid v4-shaped uuid in hex form (matches parseOrgPublicId).
+const ORG_PUBLIC_ID = "org_11111111111141118111111111111111";
 
 function get(provider?: string): Request {
   const url = provider
@@ -102,6 +134,56 @@ describe("GET /internal/providers/secrets-capability (SP0)", () => {
       GITHUB_APP_WEBHOOK_SECRET: "whs",
     });
     const res = await handleInternalSecretsCapability(get("github"), env, "req_1");
+    expect(res.status).toBe(404);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// SP0c (SP-A1): the org-facing BULK read the console consumes.
+// ---------------------------------------------------------------------------
+
+function orgGet(headers: Record<string, string> = {}): Request {
+  return new Request(
+    `https://iw/v1/organizations/${ORG_PUBLIC_ID}/integrations/secrets-capabilities`,
+    { method: "GET", headers },
+  );
+}
+
+const ACTOR_HEADERS = {
+  "x-actor-subject-id": "usr_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "x-actor-subject-type": "user",
+};
+
+describe("GET /v1/organizations/:orgId/integrations/secrets-capabilities (SP0c)", () => {
+  it("lists every capability-declaring provider in one response", async () => {
+    const res = await route(orgGet(ACTOR_HEADERS), createOrgEnv());
+    expect(res.status).toBe(200);
+    const data = await body(res);
+    const capabilities = data.capabilities as Array<Record<string, unknown>>;
+    const byProvider = new Map(capabilities.map((c) => [c.provider, c]));
+    // The configured secret-source providers — and ONLY those.
+    expect([...byProvider.keys()].sort()).toEqual(["cloudflare", "supabase"]);
+    const cf = byProvider.get("cloudflare")!;
+    expect(cf.scopeTemplates).toEqual(CLOUDFLARE_SCOPE_TEMPLATES);
+    expect([...(cf.supportedModes as string[])].sort()).toEqual(["brokered", "rotated"]);
+    expect(cf.deliveryTargets).toEqual(["cloudflare-worker"]);
+    const sb = byProvider.get("supabase")!;
+    expect(sb.scopeTemplates).toEqual(SUPABASE_SCOPE_TEMPLATES);
+    expect(sb.supportedModes).toEqual(["brokered"]);
+  });
+
+  it("requires an actor (401 without x-actor headers)", async () => {
+    const res = await route(orgGet(), createOrgEnv());
+    expect(res.status).toBe(401);
+  });
+
+  it("policy deny resource-hides (404)", async () => {
+    const env = createEnv({
+      PLATFORM_DB: { connectionString: "postgres://fake" },
+      MEMBERSHIP_WORKER: jsonFetcher({ data: { memberships: [] } }),
+      POLICY_WORKER: jsonFetcher({ data: { allow: false, reason: "no_grant" } }),
+    });
+    const res = await route(orgGet(ACTOR_HEADERS), env);
     expect(res.status).toBe(404);
   });
 });

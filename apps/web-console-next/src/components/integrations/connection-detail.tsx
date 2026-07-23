@@ -57,7 +57,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { archetypeForProvider, SCOPE_TEMPLATE_CATALOG } from "@/components/integrations/archetype";
+import { archetypeForProvider } from "@/components/integrations/archetype";
+import { templatesForProvider } from "@/components/config/bind-secret-flow";
 import { ConnectionAdmission } from "@/components/integrations/connection-admission";
 
 /** Badge tone (connections.ts) → Northwind pill tone (mirrors the hub). */
@@ -98,6 +99,14 @@ export function ConnectionDetail({
     lastLoadError.current = r.ok ? null : { error: r.error, status: r.status };
     return r;
   });
+
+  // SP0c (SP-A1): the "credential types" table derives from the bulk
+  // capability read — the console no longer mirrors the worker catalogs.
+  const capabilitiesQuery = useApiQuery(
+    qk.secretsCapabilities(orgId),
+    () => wrap(async () => (await client.integrations.listSecretsCapabilities(orgId)).capabilities),
+    { staleTime: 10 * 60_000 },
+  );
 
   const [revokeOpen, setRevokeOpen] = React.useState(false);
   // brokered-orphan-safety (Feature 2): the referential guard blocks a revoke
@@ -164,7 +173,7 @@ export function ConnectionDetail({
   const scopeMeta = connectionScopeMeta(connection.scope);
   const shareMeta = connectionShareModeMeta(connection);
   const Icon = PROVIDER_ICONS[connection.provider] ?? Plug;
-  const templates = SCOPE_TEMPLATE_CATALOG[connection.provider] ?? [];
+  const templates = templatesForProvider(capabilitiesQuery.data ?? [], connection.provider);
   const isActive = connection.status === "active";
   const showAdmission = isActive && connection.scope === "account" && !connection.inherited;
   // IH9 re-auth CTA (design §5.3): a suspended oauth/token-kind connection is
@@ -320,7 +329,11 @@ export function ConnectionDetail({
 
           {templates.length === 0 ? (
             <div className="mt-3 rounded-xl border bg-card px-5 py-4 text-xs text-muted-foreground">
-              No scope templates are published for this provider yet.
+              {capabilitiesQuery.loading
+                ? "Loading credential types…"
+                : capabilitiesQuery.error
+                  ? "Credential types are unavailable right now — try again shortly."
+                  : "No scope templates are published for this provider yet."}
             </div>
           ) : (
             <>

@@ -55,11 +55,11 @@ import {
   deriveRotationRow,
   orphanView,
   orphanedSecrets,
+  templatesForProvider,
   validateBindingForm,
   validateRotationForm,
   type CreateSecretMode,
 } from "./bind-secret-flow";
-import { SCOPE_TEMPLATE_CATALOG } from "@/components/integrations/archetype";
 
 const secretSchema = z.object({
   secretKey: z.string().min(1).max(128),
@@ -632,9 +632,22 @@ function BindSecretForm({
     () => wrap(async () => (await client.integrations.list(orgId)).connections),
     { enabled },
   );
+  // SP0c (SP-A1): provider eligibility + templates derive from the bulk
+  // capability read — never a hardcoded list. Static per deploy → cache long.
+  const capabilitiesQuery = useApiQuery(
+    qk.secretsCapabilities(orgId),
+    () => wrap(async () => (await client.integrations.listSecretsCapabilities(orgId)).capabilities),
+    { enabled, staleTime: 10 * 60_000 },
+  );
+  const capabilities = React.useMemo(() => capabilitiesQuery.data ?? [], [capabilitiesQuery.data]);
   const connections = React.useMemo(
-    () => brokerConnections<PublicConnection>(integrations.data ?? []),
-    [integrations.data],
+    () =>
+      brokerConnections<PublicConnection>(
+        integrations.data ?? [],
+        capabilities,
+        rotated ? "rotated" : "brokered",
+      ),
+    [integrations.data, capabilities, rotated],
   );
 
   const [connectionId, setConnectionId] = React.useState("");
@@ -652,20 +665,20 @@ function BindSecretForm({
   const [busy, setBusy] = React.useState(false);
 
   const selected = connections.find((c) => c.id === connectionId) ?? null;
-  const templates = selected ? (SCOPE_TEMPLATE_CATALOG[selected.provider] ?? []) : [];
+  const templates = selected ? templatesForProvider(capabilities, selected.provider) : [];
   const template = templates.find((t) => t.id === templateId) ?? null;
 
   const pickConnection = React.useCallback(
     (id: string) => {
       setConnectionId(id);
       const conn = connections.find((c) => c.id === id);
-      const first = conn ? (SCOPE_TEMPLATE_CATALOG[conn.provider] ?? [])[0] : undefined;
+      const first = conn ? templatesForProvider(capabilities, conn.provider)[0] : undefined;
       setTemplateId(first?.id ?? "");
       setParamInputs({});
       setErrors({});
       setFormError(null);
     },
-    [connections],
+    [connections, capabilities],
   );
 
   // Seed the locked connection once it appears in the broker-capable list.
@@ -728,15 +741,33 @@ function BindSecretForm({
     onCreated();
   };
 
-  if (integrations.loading) {
+  if (integrations.loading || capabilitiesQuery.loading) {
     return <p className="text-sm text-muted-foreground">Loading connections…</p>;
+  }
+  // SP-A5: capability reads degrade progressively — when the read fails, say
+  // so; never fall back to a hardcoded provider list.
+  if (capabilitiesQuery.error) {
+    return (
+      <div className="space-y-3">
+        <p className="text-sm text-muted-foreground">
+          Provider capabilities are unavailable right now, so integration-backed secrets can&apos;t be
+          created. Static secrets are unaffected — try again shortly.
+        </p>
+        <div className="flex justify-end">
+          <Button type="button" variant="ghost" onClick={onCancel}>
+            Close
+          </Button>
+        </div>
+      </div>
+    );
   }
   if (connections.length === 0) {
     return (
       <div className="space-y-3">
         <p className="text-sm text-muted-foreground">
-          No broker-capable connection is available. Connect Cloudflare or Supabase from the Integrations hub,
-          then bind secrets to it here.
+          {rotated
+            ? "No connection from a rotation-capable provider is available. Connect one from the Integrations hub, then mint rotated secrets from it here."
+            : "No broker-capable connection is available. Connect a provider from the Integrations hub, then bind secrets to it here."}
         </p>
         <div className="flex justify-end">
           <Button type="button" variant="ghost" onClick={onCancel}>
@@ -1054,10 +1085,12 @@ function RepointSecretDialog({
     () => wrap(async () => (await client.integrations.list(orgId)).connections),
     { enabled: open },
   );
-  // Candidates: live, broker-capable connections of the SAME provider, minus the
-  // connection the secret is already (orphaned) bound to.
+  // Candidates: live connections of the SAME provider, minus the connection
+  // the secret is already (orphaned) bound to. Same-provider is a stronger
+  // constraint than capability-declared (the provider was declared at create),
+  // so no capability read is needed here (SP0c).
   const candidates = React.useMemo(() => {
-    const all = brokerConnections<PublicConnection>(integrations.data ?? []);
+    const all = (integrations.data ?? []).filter((c) => c.status === "active");
     return all.filter((c) => c.provider === broker?.provider && c.id !== broker?.connectionId);
   }, [integrations.data, broker?.provider, broker?.connectionId]);
 
