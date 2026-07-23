@@ -26,9 +26,6 @@ import type {
   SecretMode,
 } from "@saas/contracts/integrations";
 
-/** The create dialog's two paths: a stored value, or a broker binding. */
-export type CreateSecretMode = "value" | "binding" | "rotated";
-
 /** Public connection id shape (`int_<32hex>`), same alphabet as the platform's prefix ids. */
 export const CONNECTION_ID_PATTERN = /^int_[0-9a-f]{32}$/;
 
@@ -312,6 +309,17 @@ export function deriveRotationRow(
     deliverTarget: rotation.deliverTarget,
     label: `rotated · ${rotation.provider} · ${rotation.template}${cadence}`,
   };
+}
+
+/**
+ * The provider that OWNS this row's authoring (SP3 "Managed by {integration}"):
+ * the rotation producer or the broker binding's provider; null for human
+ * (static / personal) rows, which the Secrets surface itself owns.
+ */
+export function managedByProvider(
+  meta: Pick<PublicSecretMetadata, "source" | "binding" | "rotation">,
+): string | null {
+  return deriveRotationRow(meta)?.provider ?? deriveBrokerRow(meta)?.provider ?? null;
 }
 
 // ---------------------------------------------------------------------------
