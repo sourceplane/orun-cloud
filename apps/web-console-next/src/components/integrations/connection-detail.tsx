@@ -81,15 +81,22 @@ export function ConnectionDetail({
   orgId,
   orgSlug,
   connectionId,
+  backHref,
+  backLabel,
 }: {
   orgId: string;
   orgSlug: string;
   connectionId: string;
+  /** IR2: when rendered nested under the integration's space, back points at
+   *  the space; unset (legacy mounts) falls back to the hub. */
+  backHref?: string;
+  backLabel?: string;
 }) {
   const { client } = useSession();
   const { toast } = useToast();
   const router = useRouter();
-  const hubHref = `/orgs/${orgSlug}/integrations`;
+  const hubHref = backHref ?? `/orgs/${orgSlug}/integrations`;
+  const hubLabel = backLabel ?? "Integrations";
 
   // `useApiQuery` narrows errors to { code, message }; keep the full body
   // alongside so the load-error card can show the requestId (design §6:
@@ -147,7 +154,7 @@ export function ConnectionDetail({
     }
     return (
       <Screen>
-        <QuietLink href={hubHref}>← Integrations</QuietLink>
+        <QuietLink href={hubHref}>← {hubLabel}</QuietLink>
         <div className="mt-4 rounded-xl border bg-card px-6 py-5">
           <div className="text-[13.5px] font-medium text-destructive">Failed to load the connection</div>
           <div className="mt-1 text-xs text-muted-foreground">{conn.error.message}</div>
@@ -227,7 +234,7 @@ export function ConnectionDetail({
 
   return (
     <Screen>
-      <QuietLink href={hubHref}>← Integrations</QuietLink>
+      <QuietLink href={hubHref}>← {hubLabel}</QuietLink>
 
       {/* Header — provider tile, name, status, scope/sharing provenance. */}
       <div className="mt-4 rounded-xl border bg-card px-5 py-[18px] sm:px-6 sm:py-[22px]">
