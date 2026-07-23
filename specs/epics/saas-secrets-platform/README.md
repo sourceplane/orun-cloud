@@ -17,7 +17,7 @@ Secrets console, or the CLI.
 
 | Field | Value |
 |-------|-------|
-| Status | **Draft — for review** |
+| Status | **In progress** — SP0a/SP0b shipped (#570/#571); design reviewed 2026-07-23 (see `design-addenda.md`, SP-A1–A7) |
 | Cluster | **SP** (SP0–SP6) |
 | Owner(s) | `apps/config-worker` (substrate: store/resolve/type-generic actions), `apps/integrations-worker` (the provider capability seam), `apps/web-console-next` (the Secrets lens + per-integration secret spaces), `packages/{contracts,sdk,cli}`, `orun` CLI (`orun secrets` + integration-namespaced authoring) |
 | Builds on | `saas-integration-hub` (IH0 capability seam, IH4/IH5/IH6 broker), `saas-secret-manager` (SM1–SM6 store/resolve/policy), `saas-integration-hub/sub-epics/provider-rotated-secrets` (RS0–RS4, shipped) |
@@ -232,6 +232,10 @@ human should confirm a provider is wired for an environment.
 ## Read order
 
 1. `README.md` (this file) — thesis, ownership boundary, secret types, verbs.
+1. `design-addenda.md` — the 2026-07-23 design-review decisions (SP-A1–A7):
+   bulk capability read, the provider-space route, no-dead-ends navigation,
+   deep-link migration, progressive degradation, template version pinning,
+   CLI deprecation UX.
 2. `ownership-model.md` — the substrate/integration boundary, surface by surface
    (Secrets lens · integration space · CLI) + the authoritative ownership matrix.
 3. `capability-contract.md` — the `SecretsCapability`, the wire endpoint, the
