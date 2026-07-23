@@ -231,6 +231,11 @@ export function CatalogPortal({ orgId, orgSlug }: { orgId: string; orgSlug: stri
   // the exact query `EntityWorkbench` will run — drilling in then has no spinner
   // even for the authoritative fetch (the seed already covers the first paint).
   const prefetch = usePrefetch();
+  // IC8: repeated hovers must issue ZERO duplicate prefetches — data is
+  // deduped by react-query (prefetchApi respects staleTime); the route
+  // (_rsc/chunk) prefetch is deduped by this per-mount set. Rows themselves
+  // are prefetch={false} links, so hover intent is the only prefetch path.
+  const warmedRoutes = React.useRef(new Set<string>());
   const warmEntity = React.useCallback(
     (key: string) => {
       const id = decodeEntityKey(key);
@@ -243,9 +248,15 @@ export function CatalogPortal({ orgId, orgSlug }: { orgId: string; orgSlug: stri
           }),
         ),
       );
+      if (!warmedRoutes.current.has(key)) {
+        warmedRoutes.current.add(key);
+        router.prefetch(`${catalogHref}/${key}`);
+      }
     },
-    [prefetch, client, orgId],
+    [prefetch, client, orgId, router, catalogHref],
   );
+
+  const entityHref = React.useCallback((key: string) => `${catalogHref}/${key}`, [catalogHref]);
 
   const setSelectedKey = React.useCallback(
     (key: string | null) => {
@@ -453,7 +464,7 @@ export function CatalogPortal({ orgId, orgSlug }: { orgId: string; orgSlug: stri
               sortDir={sortDir}
               onSort={onSort}
               selectedKey={selectedKey}
-              onOpen={openFull}
+              hrefOf={entityHref}
               onQuickView={isDesktop ? quickView : undefined}
               onIntent={warmEntity}
               dense={false}
