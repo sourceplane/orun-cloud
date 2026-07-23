@@ -142,6 +142,59 @@ describe("state facade — forwarding", () => {
     expect(calls[0]!.url).toContain("status=running");
   });
 
+  it("read-through caches the catalog doc body per actor (IC5) — repeat open touches no downstream", async () => {
+    const DOC_PATH = "/v1/organizations/org_x/catalog/doc";
+    const store = new Map<string, Response>();
+    (globalThis as { caches?: unknown }).caches = {
+      default: {
+        match: (key: string) => Promise.resolve(store.get(key)?.clone()),
+        put: (key: string, res: Response) => {
+          store.set(key, res);
+          return Promise.resolve();
+        },
+      },
+    };
+    try {
+      const { fetcher, calls } = createDownstream(
+        new Response("# Overview", {
+          status: 200,
+          headers: {
+            "content-type": "text/markdown; charset=utf-8",
+            "cache-control": "public, max-age=31536000, immutable",
+          },
+        }),
+      );
+      const env = { IDENTITY_WORKER: sessionFetcher(), STATE_WORKER: fetcher, ENVIRONMENT: "test" };
+      const mkReq = () =>
+        new Request(`https://edge.test${DOC_PATH}?digest=sha256:${"d".repeat(64)}`, {
+          method: "GET",
+          headers: { authorization: "Bearer tok_123" },
+        });
+
+      const first = await handleStateRoute(mkReq(), env as never, "req_1", DOC_PATH);
+      expect(first.status).toBe(200);
+      expect(await first.text()).toBe("# Overview");
+      expect(first.headers.get("orun-edge-cache")).toBe("miss");
+      expect(calls).toHaveLength(1);
+      // The cache key is actor-scoped: a hit can only re-serve to the same
+      // authenticated subject (downstream policy is never bypassed for others).
+      const docKey = [...store.keys()].find((k) => k.includes("doc-cache.internal"));
+      expect(docKey).toBeDefined();
+      expect(docKey).toContain("usr_abc");
+
+      const second = await handleStateRoute(mkReq(), env as never, "req_2", DOC_PATH);
+      expect(second.status).toBe(200);
+      expect(await second.text()).toBe("# Overview");
+      expect(second.headers.get("orun-edge-cache")).toBe("hit");
+      // Browsers keep the immutable contract on hits.
+      expect(second.headers.get("cache-control")).toBe("public, max-age=31536000, immutable");
+      // THE IC5 BUDGET: the repeat open made zero downstream (DB/R2) touches.
+      expect(calls).toHaveLength(1);
+    } finally {
+      delete (globalThis as { caches?: unknown }).caches;
+    }
+  });
+
   it("appends edge timing phases to Server-Timing (IC1 — /state/* was the observability hole)", async () => {
     const { fetcher } = createDownstream(
       Response.json({ data: { runs: [], nextCursor: null }, meta: { requestId: "req_inner", cursor: null } }),

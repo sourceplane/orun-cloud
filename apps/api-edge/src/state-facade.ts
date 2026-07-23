@@ -57,6 +57,25 @@ const COORDINATION_ROUTE_RE =
 const OBJECTS_ROUTE_RE =
   /^\/v1\/organizations\/[^/]+\/projects\/[^/]+\/state\/(?:objects(?:\/|$)|catalog\/head$)/;
 
+// IC5 — how long the edge holds a per-actor catalog-doc body. The content is
+// immutable by digest; the TTL exists to bound the deny-after-cache window
+// (an actor who loses catalog read keeps at most this much re-serve time for
+// bodies they had already fetched).
+const DOC_EDGE_CACHE_TTL_S = 3_600;
+
+// Same minimal Cache-API surface (and availability guard) as the PERF2
+// actor-cache: string keys against the colo-local default cache.
+type DocCacheLike = {
+  match(key: string): Promise<Response | undefined>;
+  put(key: string, res: Response): Promise<void>;
+};
+
+function docCacheApi(): DocCacheLike | undefined {
+  return typeof caches !== "undefined"
+    ? (caches as unknown as { default?: DocCacheLike }).default
+    : undefined;
+}
+
 // `orun-contract-version` is forwarded so state-worker enforces the major and
 // rejects unsupported skew with 409 contract_version_unsupported. `orun-object-
 // kind` + `content-length` are forwarded for the OP3 object plane's digest-
@@ -143,6 +162,32 @@ export async function handleStateRoute(
     const url = new URL(request.url);
     const target = new URL(pathname + url.search, "https://state.internal");
 
+    // IC5 — edge read-through for the catalog doc body (scoped instance of
+    // PERF8). The body is content-addressed by digest (immutable by
+    // construction), so a repeat open needs neither a DB resolve nor an R2
+    // GET. The cache key is scoped PER ACTOR: a hit only ever re-serves a
+    // body this exact authenticated subject already fetched, so the
+    // downstream deny-by-default policy is never bypassed for anyone else
+    // (same TTL-bounded trade-off as the PERF2 bearer cache — the edge copy
+    // expires after DOC_EDGE_CACHE_TTL_S even though browsers may hold it
+    // immutable).
+    const docCache =
+      request.method === "GET" && ORG_CATALOG_DOC_RE.test(pathname) ? docCacheApi() : undefined;
+    const docCacheKey = docCache
+      ? `https://doc-cache.internal/${encodeURIComponent(sessionResult.subjectId)}${pathname}${url.search}`
+      : undefined;
+    if (docCache && docCacheKey) {
+      const hit = await timings.measure("edge_cache", () => docCache.match(docCacheKey));
+      if (hit) {
+        const res = new Response(hit.body, hit);
+        res.headers.set("cache-control", "public, max-age=31536000, immutable");
+        res.headers.set("x-request-id", requestId);
+        res.headers.set("orun-edge-cache", "hit");
+        endTotal();
+        return withEdgeTimings(res, requestId, "edge.state", timings);
+      }
+    }
+
     try {
       const fetchInit: RequestInit = { method: request.method, headers };
       if (request.method === "POST" || request.method === "PUT") {
@@ -157,6 +202,17 @@ export async function handleStateRoute(
         status: downstream.status,
         headers: downstream.headers,
       });
+      if (docCache && docCacheKey && res.status === 200) {
+        // Store a TTL-bounded edge copy (the outgoing response keeps the
+        // downstream's immutable header for browsers).
+        const copy = res.clone();
+        const edgeCopy = new Response(copy.body, copy);
+        edgeCopy.headers.set("cache-control", `public, max-age=${DOC_EDGE_CACHE_TTL_S}`);
+        await docCache.put(docCacheKey, edgeCopy).catch(() => {
+          /* best-effort — a failed put must not fail the read */
+        });
+        res.headers.set("orun-edge-cache", "miss");
+      }
       endTotal();
       return withEdgeTimings(res, requestId, "edge.state", timings);
     } catch {
