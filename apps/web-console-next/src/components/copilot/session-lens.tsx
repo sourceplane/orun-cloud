@@ -170,7 +170,11 @@ export function foldLensEvent(s: LensState, e: AguiEvent): LensState {
           return { ...s, cursor, items: [...s.items, { kind: "assistant", id: `a_${e.seq ?? s.items.length}`, text }] };
         }
         if (kind === "error") {
-          const text = sanitizeHarnessError(typeof v.payload?.text === "string" ? v.payload.text : "");
+          // Older runtimes emit tool denials as {tool, error} with no text.
+          const raw =
+            (typeof v.payload?.text === "string" && v.payload.text) ||
+            [v.payload?.tool, v.payload?.error].filter((x): x is string => typeof x === "string" && !!x).join(" ");
+          const text = sanitizeHarnessError(raw);
           return { ...s, cursor, items: [...s.items, { kind: "error", id: `err_${e.seq ?? s.items.length}`, text }] };
         }
         const summary = v.payload ? JSON.stringify(v.payload).slice(0, 140) : "";

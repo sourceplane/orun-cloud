@@ -211,6 +211,7 @@ describe("agents-worker session provisioning (AG5)", () => {
       ORUN_SESSION_ID: f.sessionId,
       ORUN_ORG_ID: ORG,
       ORUN_RUN_KIND: "implementation",
+      ORUN_AGENT_TYPE: "implementer",
       ORUN_TASK_KEY: "ORN-142",
       ORUN_CLOUD_API: "https://api-edge-test.oruncloud.workers.dev",
     });
@@ -235,6 +236,7 @@ describe("agents-worker session provisioning (AG5)", () => {
       ORUN_SESSION_ID: f.sessionId,
       ORUN_ORG_ID: ORG,
       ORUN_RUN_KIND: "implementation",
+      ORUN_AGENT_TYPE: "implementer",
       ORUN_TASK_KEY: "ORN-142",
       ORUN_CLOUD_API: "https://api-edge-test.oruncloud.workers.dev",
       ANTHROPIC_API_KEY: "key-for(agents/providers/anthropic/default/API_KEY)",
