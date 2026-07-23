@@ -44,12 +44,14 @@ export function AgentsWorkbench({ orgId, orgSlug }: { orgId: string; orgSlug: st
       // (AF7) — degrade to empty rather than blank the fleet home if they
       // fail (e.g. a role without the routine grant); the page still shows
       // sessions and the needs-you queue.
-      const [sessionRows, profileRows, attention] = await Promise.all([
+      // One parallel batch (IC4): the two-stage await here serialized
+      // routines/records behind the core reads, so the page's data resolved
+      // at batch1 + batch2 instead of the slowest single call — the audit's
+      // "sessions → routines chained at 1,129ms" waterfall.
+      const [sessionRows, profileRows, attention, routineRows, recordRows] = await Promise.all([
         client.agents.listSessions(orgId),
         client.agents.listProfiles(orgId),
         client.agents.attention(orgId),
-      ]);
-      const [routineRows, recordRows] = await Promise.all([
         client.agents.listRoutines(orgId).catch(() => []),
         client.agents.records(orgId).catch(() => []),
       ]);
