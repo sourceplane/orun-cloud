@@ -53,6 +53,44 @@ export function providerBoundSecrets<T extends Pick<PublicSecretMetadata, "sourc
   });
 }
 
+/**
+ * The Secrets page's "New secret" menu (SP3, SP-A3): one routed item per
+ * capability-declaring provider, deep-linking to the owner's create surface.
+ * Derived from the bulk read — never a hardcoded list. Providers appear even
+ * without a live connection: the space owns the connect CTA, so creation
+ * still STARTS at the owner.
+ */
+export function integrationCreateMenu(
+  capabilities: readonly ProviderSecretsCapability[],
+  orgSlug: string,
+  providerNameFor: (providerId: string) => string = (id) => id,
+): Array<{ providerId: string; label: string; href: string }> {
+  return capabilities.map((c) => ({
+    providerId: c.provider,
+    label: `From ${providerNameFor(c.provider)}…`,
+    href: providerSpaceCreateHref(orgSlug, c.provider),
+  }));
+}
+
+/**
+ * SP-A4: the legacy `?bind=1[&connection=int_…]` Secrets-page deep link
+ * migrates to the owning provider space. With a connection id we resolve its
+ * provider from the (already-fetched) connections list and land on that
+ * space's create dialog with the connection pre-selected; without one (or
+ * when the connection is unknown) the hub is the honest owner-of-owners.
+ */
+export function legacyBindRedirect(
+  orgSlug: string,
+  connectionId: string | null,
+  connections: ReadonlyArray<{ id: string; provider: string }>,
+): string {
+  if (connectionId) {
+    const conn = connections.find((c) => c.id === connectionId);
+    if (conn) return providerSpaceCreateHref(orgSlug, conn.provider, conn.id);
+  }
+  return `/orgs/${orgSlug}/integrations`;
+}
+
 /** Surface mode ("binding" | "rotated") for a declared SecretMode. */
 export function surfaceModeFor(mode: SecretMode): "binding" | "rotated" {
   return mode === "rotated" ? "rotated" : "binding";

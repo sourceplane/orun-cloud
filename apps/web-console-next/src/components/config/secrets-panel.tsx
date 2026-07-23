@@ -8,11 +8,12 @@ import {
   Waypoints,
   Eye,
   MoreHorizontal,
+  Plug,
   RefreshCw,
   ShieldAlert,
   TriangleAlert,
 } from "lucide-react";
-import { useParams, usePathname, useRouter, useSearchParams } from "next/navigation";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import type { ConfigScope } from "@saas/sdk";
 import type { PublicSecretMetadata, PublicSecretVersion, PublicSecretSync } from "@saas/contracts/config";
 import { Button } from "@/components/ui/button";
@@ -50,14 +51,18 @@ import { rotationStatus, revealGuard, syncStatusView, scopeChainChips } from "./
 import {
   deriveBrokerRow,
   deriveRotationRow,
+  managedByProvider,
   orphanView,
   orphanedSecrets,
-  type CreateSecretMode,
 } from "./bind-secret-flow";
-// SP1: the brokered/rotated create paths render the default authoring surface,
-// composed from the authoring primitives (authoring.tsx) — the former inline
-// BindSecretForm, extracted so integration spaces can compose the same pieces.
-import { DefaultAuthoringSurface } from "./authoring-surface";
+// SP3: integration-bound creation lives with the owner (SP2's provider
+// spaces); this surface routes there and creates static secrets natively.
+import { providerById } from "@/components/integrations/providers";
+import {
+  integrationCreateMenu,
+  legacyBindRedirect,
+  providerSpaceHref,
+} from "@/components/integrations/provider-space-lib";
 
 const secretSchema = z.object({
   secretKey: z.string().min(1).max(128),
@@ -80,7 +85,6 @@ export function SecretsPanel({ scope, scopeKey }: { scope: ConfigScope; scopeKey
   const params = useParams<{ orgSlug?: string }>();
   const orgSlug = params?.orgSlug ?? "";
   const router = useRouter();
-  const pathname = usePathname();
   const searchParams = useSearchParams();
   const isEnv = scope.kind === "environment";
   // Every ConfigScope kind carries the org — the binding picker's query scope.
@@ -96,7 +100,6 @@ export function SecretsPanel({ scope, scopeKey }: { scope: ConfigScope; scopeKey
   );
 
   const [createOpen, setCreateOpen] = React.useState(false);
-  const [createMode, setCreateMode] = React.useState<CreateSecretMode>("value");
   const [rotating, setRotating] = React.useState<PublicSecretMetadata | null>(null);
   const [rotatingScoped, setRotatingScoped] = React.useState<PublicSecretMetadata | null>(null);
   const [repointing, setRepointing] = React.useState<PublicSecretMetadata | null>(null);
@@ -116,28 +119,40 @@ export function SecretsPanel({ scope, scopeKey }: { scope: ConfigScope; scopeKey
     };
   }, [newSecretRef]);
 
-  // Deep-link (`?bind=1[&connection=int_…]`, saas-integration-hub IH8): the
-  // Cmd-K "Bind brokered secret" entry and the connection detail page's
-  // "Create scoped credential" button both land here with the create dialog
-  // open in binding mode; `connection` pre-selects and locks that connection.
-  // Seed once, then clear the params so a refresh doesn't reopen the dialog.
-  const [bindConnectionId, setBindConnectionId] = React.useState<string | undefined>(undefined);
+  // SP3 (SP-A1/SP-A3): the capability-declaring providers drive the routed
+  // "New secret" menu and the "Managed by {integration}" affordances — never
+  // a hardcoded list; absent capabilities simply render no integration items.
+  const capabilitiesQuery = useApiQuery(
+    qk.secretsCapabilities(orgId),
+    () => wrap(async () => (await client.integrations.listSecretsCapabilities(orgId)).capabilities),
+    { staleTime: 10 * 60_000 },
+  );
+  const createMenu = React.useMemo(
+    () =>
+      integrationCreateMenu(capabilitiesQuery.data ?? [], orgSlug, (id) => providerById(id)?.name ?? id),
+    [capabilitiesQuery.data, orgSlug],
+  );
+
+  // SP3 (SP-A4): the legacy `?bind=1[&connection=int_…]` deep link now
+  // belongs to the OWNER — redirect to the owning provider space (provider
+  // resolved from the connections list), or the Integrations hub when the
+  // connection is unknown. Old bookmarks and Cmd-K entries keep working.
+  const bindParam = searchParams?.get("bind") === "1";
+  const bindIntegrations = useApiQuery(
+    qk.integrations(orgId),
+    () => wrap(async () => (await client.integrations.list(orgId)).connections),
+    { enabled: bindParam },
+  );
   const bindSeeded = React.useRef(false);
   React.useEffect(() => {
-    if (bindSeeded.current) return;
-    if (searchParams?.get("bind") === "1") {
-      bindSeeded.current = true;
-      const conn = searchParams.get("connection");
-      if (conn) setBindConnectionId(conn);
-      setCreateMode("binding");
-      setCreateOpen(true);
-      const next = new URLSearchParams(searchParams.toString());
-      next.delete("bind");
-      next.delete("connection");
-      const qs = next.toString();
-      router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
-    }
-  }, [searchParams, pathname, router]);
+    if (bindSeeded.current || !bindParam) return;
+    const conn = searchParams?.get("connection") ?? null;
+    // With a connection to resolve, wait for the list; a plain `bind=1` can
+    // route immediately.
+    if (conn && bindIntegrations.loading) return;
+    bindSeeded.current = true;
+    router.replace(legacyBindRedirect(orgSlug, conn, bindIntegrations.data ?? []));
+  }, [bindParam, bindIntegrations.loading, bindIntegrations.data, orgSlug, router, searchParams]);
 
   const now = React.useMemo(() => new Date(), [secrets.data]);
 
@@ -178,61 +193,38 @@ export function SecretsPanel({ scope, scopeKey }: { scope: ConfigScope; scopeKey
         <Button asChild variant="outline" size="sm">
           <a href={`/orgs/${orgSlug}/settings/audit?subjectKind=secret`}>Secret activity</a>
         </Button>
-        <Button size="sm" onClick={() => setCreateOpen(true)}>
-          New secret
-        </Button>
+        {/* SP3 (SP-A3): "New secret" is a routed menu — static natively, plus
+            one "From {provider}…" item per capability-declaring provider,
+            deep-linking to the OWNER's create surface. Never a dead end. */}
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button size="sm">New secret</Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            <DropdownMenuItem onSelect={() => setCreateOpen(true)}>Static value</DropdownMenuItem>
+            {createMenu.length > 0 ? <DropdownMenuSeparator /> : null}
+            {createMenu.map((item) => (
+              <DropdownMenuItem key={item.providerId} asChild>
+                <a href={item.href}>{item.label}</a>
+              </DropdownMenuItem>
+            ))}
+          </DropdownMenuContent>
+        </DropdownMenu>
       </div>
 
-      <Dialog
-        open={createOpen}
-        onOpenChange={(o) => {
-          setCreateOpen(o);
-          if (!o) {
-            setCreateMode("value");
-            setBindConnectionId(undefined);
-          }
-        }}
-      >
+      {/* SP3: this dialog creates STATIC (human) secrets only — the Secrets
+          surface is their native home. Integration-bound creation lives in
+          the owning provider's space (SP2); the menu above routes there. */}
+      <Dialog open={createOpen} onOpenChange={setCreateOpen}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Create secret</DialogTitle>
             <DialogDescription>
-              {createMode === "binding"
-                ? "No value is stored — the credential is minted from the connection just-in-time at resolve."
-                : createMode === "rotated"
-                  ? "The value is minted once from the connection, stored encrypted, and re-minted on the rotation schedule."
-                  : "The value is encrypted before storage and never shown again — keep your own copy."}
+              The value is encrypted before storage and never shown again — keep your own copy.
             </DialogDescription>
           </DialogHeader>
 
-          {/* A secret is a stored value (static or provider-rotated) or a
-              mint-at-resolve broker binding. */}
-          <div className="inline-flex self-start overflow-hidden rounded-md border">
-            <button
-              type="button"
-              onClick={() => setCreateMode("value")}
-              className={`px-2.5 py-1 text-xs ${createMode === "value" ? "bg-card font-medium" : "text-muted-foreground"}`}
-            >
-              Static value
-            </button>
-            <button
-              type="button"
-              onClick={() => setCreateMode("rotated")}
-              className={`border-l px-2.5 py-1 text-xs ${createMode === "rotated" ? "bg-card font-medium" : "text-muted-foreground"}`}
-            >
-              Rotated
-            </button>
-            <button
-              type="button"
-              onClick={() => setCreateMode("binding")}
-              className={`border-l px-2.5 py-1 text-xs ${createMode === "binding" ? "bg-card font-medium" : "text-muted-foreground"}`}
-            >
-              Scoped credential
-            </button>
-          </div>
-
-          {createMode === "value" ? (
-            <ZodForm
+          <ZodForm
               schema={secretSchema}
               defaultValues={{ secretKey: "", value: "", displayName: "" }}
               fields={[
@@ -259,28 +251,6 @@ export function SecretsPanel({ scope, scopeKey }: { scope: ConfigScope; scopeKey
                 secrets.reload();
               }}
             />
-          ) : (
-            <DefaultAuthoringSurface
-              scope={scope}
-              orgId={orgId}
-              enabled={createOpen}
-              mode={createMode === "rotated" ? "rotated" : "binding"}
-              initialConnectionId={bindConnectionId}
-              onCancel={() => setCreateOpen(false)}
-              onCreated={() => {
-                const wasRotated = createMode === "rotated";
-                setCreateOpen(false);
-                setCreateMode("value");
-                setBindConnectionId(undefined);
-                toast(
-                  wasRotated
-                    ? { kind: "success", title: "Rotated secret created", description: "Minted from the connection and stored; it re-mints on the schedule." }
-                    : { kind: "success", title: "Scoped credential created", description: "Minted at resolve — nothing is stored." },
-                );
-                secrets.reload();
-              }}
-            />
-          )}
         </DialogContent>
       </Dialog>
 
@@ -360,12 +330,29 @@ export function SecretsPanel({ scope, scopeKey }: { scope: ConfigScope; scopeKey
       ) : secrets.error ? (
         <LoadError title="Failed to load secrets" message={secrets.error.message} />
       ) : !secrets.data || secrets.data.length === 0 ? (
-        <EmptyState
-          icon={Lock}
-          title="No secrets yet"
-          description="Store provider keys and tokens encrypted at this scope, or bring an existing set in with orun secrets import. Read them from your product at runtime — values never leave the vault."
-          primaryAction={{ label: "New secret", onClick: () => setCreateOpen(true) }}
-        />
+        <>
+          <EmptyState
+            icon={Lock}
+            title="No secrets yet"
+            description="Store provider keys and tokens encrypted at this scope, or bring an existing set in with orun secrets import. Read them from your product at runtime — values never leave the vault."
+            primaryAction={{ label: "New static secret", onClick: () => setCreateOpen(true) }}
+          />
+          {/* SP3 (SP-A3): the empty state makes the same offer as the menu —
+              integration-bound creation starts at the owner. */}
+          {createMenu.length > 0 ? (
+            <p className="text-center text-xs text-muted-foreground">
+              Or create one from an integration:{" "}
+              {createMenu.map((item, i) => (
+                <React.Fragment key={item.providerId}>
+                  {i > 0 ? " · " : null}
+                  <a className="underline underline-offset-2 hover:text-foreground" href={item.href}>
+                    {item.label.replace(/^From /, "").replace(/…$/, "")}
+                  </a>
+                </React.Fragment>
+              ))}
+            </p>
+          ) : null}
+        </>
       ) : (
         <>
           <div className="overflow-hidden rounded-xl border bg-card">
@@ -530,6 +517,19 @@ export function SecretsPanel({ scope, scopeKey }: { scope: ConfigScope; scopeKey
                             <DropdownMenuItem onSelect={() => setRepointing(s)}>
                               <Waypoints className="mr-2 h-4 w-4" /> Repoint binding
                             </DropdownMenuItem>
+                          ) : null}
+                          {/* SP3: create-shaped work (re-bind, template change)
+                              belongs to the OWNER — deep link to its space. */}
+                          {managedByProvider(s) ? (
+                            <>
+                              <DropdownMenuSeparator />
+                              <DropdownMenuItem asChild>
+                                <a href={providerSpaceHref(orgSlug, managedByProvider(s)!)}>
+                                  <Plug className="mr-2 h-4 w-4" /> Managed by{" "}
+                                  {providerById(managedByProvider(s)!)?.name ?? managedByProvider(s)}
+                                </a>
+                              </DropdownMenuItem>
+                            </>
                           ) : null}
                           <DropdownMenuItem onSelect={() => setRevoking(s)} className="text-destructive">
                             Revoke

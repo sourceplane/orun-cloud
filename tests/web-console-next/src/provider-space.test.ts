@@ -9,12 +9,15 @@ import type { ProviderSecretsCapability } from "@saas/contracts/integrations";
 import type { PublicSecretMetadata } from "@saas/contracts/config";
 import {
   capabilityForProvider,
+  integrationCreateMenu,
+  legacyBindRedirect,
   modeToggleFor,
   providerBoundSecrets,
   providerSpaceCreateHref,
   providerSpaceHref,
   surfaceModeFor,
 } from "@web-console-next/components/integrations/provider-space-lib";
+import { managedByProvider } from "@web-console-next/components/config/bind-secret-flow";
 import {
   authoringSurfaceFor,
   hasCustomAuthoring,
@@ -104,6 +107,63 @@ describe("providerBoundSecrets (the owner's footprint)", () => {
     expect(providerBoundSecrets(rows, "cloudflare")).toHaveLength(2);
     expect(providerBoundSecrets(rows, "supabase")).toHaveLength(1);
     expect(providerBoundSecrets(rows, "github")).toHaveLength(0);
+  });
+});
+
+describe("integrationCreateMenu (SP3, SP-A3)", () => {
+  it("derives one routed item per capability-declaring provider", () => {
+    const items = integrationCreateMenu(CAPS, "acme", (id) => (id === "cloudflare" ? "Cloudflare" : id));
+    expect(items).toEqual([
+      {
+        providerId: "cloudflare",
+        label: "From Cloudflare…",
+        href: "/orgs/acme/integrations/providers/cloudflare?create=1",
+      },
+      {
+        providerId: "supabase",
+        label: "From supabase…",
+        href: "/orgs/acme/integrations/providers/supabase?create=1",
+      },
+    ]);
+  });
+
+  it("renders no items with no capabilities — never a hardcoded fallback (SP-A5)", () => {
+    expect(integrationCreateMenu([], "acme")).toEqual([]);
+  });
+});
+
+describe("legacyBindRedirect (SP3, SP-A4)", () => {
+  const CONN = `int_${"c".repeat(32)}`;
+  const connections = [{ id: CONN, provider: "cloudflare" }];
+
+  it("routes a known connection to its owner's create dialog, pre-selected", () => {
+    expect(legacyBindRedirect("acme", CONN, connections)).toBe(
+      `/orgs/acme/integrations/providers/cloudflare?create=1&connection=${CONN}`,
+    );
+  });
+
+  it("falls back to the hub without (or with an unknown) connection", () => {
+    expect(legacyBindRedirect("acme", null, connections)).toBe("/orgs/acme/integrations");
+    expect(legacyBindRedirect("acme", `int_${"d".repeat(32)}`, connections)).toBe("/orgs/acme/integrations");
+  });
+});
+
+describe("managedByProvider (SP3 'Managed by {integration}')", () => {
+  const CONN = `int_${"e".repeat(32)}`;
+  it("names the rotation producer, else the broker binding's provider, else null", () => {
+    expect(
+      managedByProvider({
+        source: "static",
+        rotation: { provider: "cloudflare", template: "t", connectionId: CONN, deliverTarget: null },
+      } as never),
+    ).toBe("cloudflare");
+    expect(
+      managedByProvider({
+        source: "brokered",
+        binding: { provider: "supabase", template: "t", connectionId: CONN },
+      } as never),
+    ).toBe("supabase");
+    expect(managedByProvider({ source: "static" } as never)).toBeNull();
   });
 });
 
