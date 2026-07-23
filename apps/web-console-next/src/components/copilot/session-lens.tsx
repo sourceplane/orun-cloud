@@ -216,8 +216,9 @@ export function foldLensEvent(s: LensState, e: AguiEvent): LensState {
 
 /** sessionEventsToItems — the durable session log (the closed relayed
  * vocabulary from listSessionEvents) folded into the SAME transcript items the
- * live stream produces, so an ended session reads exactly like a live one. It
- * mirrors foldConversation's mapping, into the shared copilot vocabulary. */
+ * live stream produces, so an ended session reads exactly like a live one.
+ * This is the one durable-log renderer now that the legacy console-head fold
+ * has been decommissioned. */
 export function sessionEventsToItems(events: ConversationEvent[]): TranscriptItem[] {
   const items: TranscriptItem[] = [];
   const str = (p: Record<string, unknown> | undefined, k: string): string => {

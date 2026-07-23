@@ -1081,10 +1081,10 @@ describe("Secret Safety Invariants", () => {
 describe("JSONB value round-trip (fetch_types:false regression)", () => {
   // The Hyperdrive executor disables OID type parsing, so JSONB columns
   // arrive as RAW JSON TEXT. A stored string setting must NOT read back
-  // quoted — this exact bug made the dispatch-model picker and the copilot
-  // flag silently fail every string comparison.
+  // quoted — this exact bug made the dispatch-model picker silently fail
+  // every string comparison.
   it("parses a raw-text JSONB string value back to the string", async () => {
-    const row = { ...SAMPLE_SETTING_ROW, key: "dispatch.copilot", value: '"on"' };
+    const row = { ...SAMPLE_SETTING_ROW, key: "dispatch.model", value: '"on"' };
     const { executor } = createFakeExecutor({ rows: [row] });
     const repo = createConfigRepository(executor);
     const result = await repo.getSetting("org-001", "set-001");

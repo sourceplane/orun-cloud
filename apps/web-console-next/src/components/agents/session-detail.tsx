@@ -25,12 +25,10 @@ import { useSession } from "@/lib/session";
 import { AGENT_MODELS, interfaceTier, sessionLabel, sessionTone } from "@/lib/agents/model";
 import { compactTokens } from "@/lib/agents/attention";
 import { humanizeDurationMs } from "@/lib/dispatch/model";
-import { ConversationView } from "@/components/agents/conversation-view";
-import type { ConversationEvent, PendingApproval } from "@/lib/agents/conversation";
+import type { ConversationEvent } from "@/lib/agents/conversation";
 import { useAttachSocket } from "@/lib/agents/attach-socket";
 import { SessionLens } from "@/components/copilot/session-lens";
 import { Composer } from "@/components/copilot/transcript";
-import { useCopilotFlag } from "@/components/copilot/flag";
 
 function modelLabel(model: string): string {
   return AGENT_MODELS.find((m) => m.value === model)?.label ?? model;
@@ -250,21 +248,12 @@ export function SessionDetail({
     if (await sendFrame({ t: "steer", text })) setComposer("");
   }, [composer, sendFrame]);
 
-  const copilot = useCopilotFlag(orgId);
   const onApproveId = React.useCallback(
     (requestId: string) => void sendFrame({ t: "verdict", requestId, approved: true }),
     [sendFrame],
   );
   const onDenyId = React.useCallback(
     (requestId: string) => void sendFrame({ t: "verdict", requestId, approved: false }),
-    [sendFrame],
-  );
-  const onApprove = React.useCallback(
-    (a: PendingApproval) => void sendFrame({ t: "verdict", requestId: a.requestId, approved: true }),
-    [sendFrame],
-  );
-  const onDeny = React.useCallback(
-    (a: PendingApproval) => void sendFrame({ t: "verdict", requestId: a.requestId, approved: false }),
     [sendFrame],
   );
 
@@ -406,112 +395,47 @@ export function SessionDetail({
             {live ? (tail.transport === "off" ? " · live" : ` · live (${tail.transport})`) : ""}
           </Kicker>
 
-          {copilot ? (
-            /* Unified copilot head: the SAME transcript vocabulary the dispatch
-               thread renders, over the session's AG-UI watch door (full replay
-               while live, the durable log once it ends). No second,
-               differently-styled conversation beneath it. */
-            <>
-              {events.loading && !events.data && !live ? (
-                <Skeleton className="h-48 w-full rounded-xl" />
-              ) : (
-                <SessionLens
-                  target={target.url}
-                  token={token}
-                  orgId={orgId}
-                  sessionId={s.id}
-                  live={live}
-                  events={mergedEvents}
-                  tierLabel={interfaceTier(profile?.interface).label}
-                  tierTone={interfaceTier(profile?.interface).tone}
-                  onApprove={onApproveId}
-                  onDeny={onDenyId}
-                  interacting={interacting}
-                  emptyHint={
-                    live
-                      ? "The runtime relays its session log here once the sandbox dials home."
-                      : "This session ended without relaying a session log."
-                  }
-                />
-              )}
-
-              {/* Composer — always-on while the session is live. Same chrome as
-                  the dispatch composer; a steer lands in the session log,
-                  attributed to you. */}
-              {live ? (
-                <Composer
-                  value={composer}
-                  onChange={setComposer}
-                  onSend={onSteer}
-                  ariaLabel="Steer the run"
-                  placeholder="Steer the run — lands in the session log, attributed to you"
-                  disabled={interacting}
-                  error={inputError}
-                />
-              ) : null}
-            </>
+          {/* The cockpit head (the one session surface): the SAME transcript
+              vocabulary the dispatch thread renders, over the session's AG-UI
+              watch door — full replay while live, the durable log once it
+              ends. */}
+          {events.loading && !events.data && !live ? (
+            <Skeleton className="h-48 w-full rounded-xl" />
           ) : (
-            /* Flag OFF (CX6 kill switch): the native AL7 head, unchanged. */
-            <>
-              {events.loading && !events.data ? (
-                <Skeleton className="h-48 w-full rounded-xl" />
-              ) : (
-                <ConversationView
-                  events={mergedEvents}
-                  onApprove={onApprove}
-                  onDeny={onDeny}
-                  interacting={interacting}
-                  emptyHint={
-                    live
-                      ? "The runtime relays its session log here once the sandbox dials home."
-                      : "This session ended without relaying a session log."
-                  }
-                />
-              )}
-
-              {/* The in-progress turn's token stream (wire-only): superseded by
-                  the turn's durable message the moment it lands. */}
-              {live && tail.streaming ? (
-                <p className="mt-2 whitespace-pre-wrap text-[13px] italic text-muted-foreground">
-                  {tail.streaming}
-                  <span className="animate-pulse">▍</span>
-                </p>
-              ) : null}
-
-              {live ? (
-                <div className="mt-4">
-                  <div className="flex items-center gap-2 rounded-xl border border-border px-2 py-1.5 focus-within:border-primary">
-                    <input
-                      value={composer}
-                      onChange={(e) => setComposer(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter" && !e.shiftKey) {
-                          e.preventDefault();
-                          onSteer();
-                        }
-                      }}
-                      disabled={interacting}
-                      placeholder="Steer the run — lands in the session log, attributed to you"
-                      className="min-w-0 flex-1 bg-transparent px-2 py-1 text-[13px] outline-none disabled:opacity-50"
-                    />
-                    <button
-                      type="button"
-                      onClick={onSteer}
-                      disabled={interacting || !composer.trim()}
-                      className="rounded-lg bg-foreground px-3.5 py-1.5 text-[12.5px] font-medium text-background hover:opacity-90 disabled:opacity-50"
-                    >
-                      Send
-                    </button>
-                  </div>
-                  {inputError ? (
-                    <StatusText tone="error" className="mt-1.5">
-                      {inputError}
-                    </StatusText>
-                  ) : null}
-                </div>
-              ) : null}
-            </>
+            <SessionLens
+              target={target.url}
+              token={token}
+              orgId={orgId}
+              sessionId={s.id}
+              live={live}
+              events={mergedEvents}
+              tierLabel={interfaceTier(profile?.interface).label}
+              tierTone={interfaceTier(profile?.interface).tone}
+              onApprove={onApproveId}
+              onDeny={onDenyId}
+              interacting={interacting}
+              emptyHint={
+                live
+                  ? "The runtime relays its session log here once the sandbox dials home."
+                  : "This session ended without relaying a session log."
+              }
+            />
           )}
+
+          {/* Composer — always-on while the session is live. Same chrome as the
+              dispatch composer; a steer lands in the session log, attributed to
+              you. */}
+          {live ? (
+            <Composer
+              value={composer}
+              onChange={setComposer}
+              onSend={onSteer}
+              ariaLabel="Steer the run"
+              placeholder="Steer the run — lands in the session log, attributed to you"
+              disabled={interacting}
+              error={inputError}
+            />
+          ) : null}
         </div>
 
         {/* ── Right rail: the facts ─────────────────────────────── */}
