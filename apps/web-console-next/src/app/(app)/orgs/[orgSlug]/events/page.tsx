@@ -37,13 +37,13 @@ import {
 } from "@/components/ui/northwind";
 import { cn } from "@/lib/cn";
 import { wrap } from "@/lib/api";
+import { useApiQuery, qk } from "@/lib/query";
 import { useSession } from "@/lib/session";
 import {
-  appendEventPage,
+  composeEventLog,
   buildEventFilterChips,
   buildEventsQuery,
   EMPTY_EVENT_FILTERS,
-  EMPTY_EVENT_LOG,
   EVENT_CATEGORY_OPTIONS,
   EVENT_SEVERITY_OPTIONS,
   EVENT_TIME_PRESETS,
@@ -54,7 +54,6 @@ import {
   groupEventsByDay,
   hasActiveEventFilters,
   hasMoreEvents,
-  prependNewEvents,
   presetFromIso,
   type EventFilterFormValues,
   type EventLogState,
@@ -169,28 +168,38 @@ function Inner({ orgId, orgSlug }: { orgId: string; orgSlug: string }) {
     window.history.replaceState(null, "", qs ? `?${qs}` : window.location.pathname);
   }, [applied, preset]);
 
-  const [log, setLog] = React.useState<EventLogState>(EMPTY_EVENT_LOG);
-  const [loading, setLoading] = React.useState(true);
+  // First page rides the shared query cache (IC4 follow-up, mirroring the
+  // IC3 Activities conversion): a revisited stream paints instantly from
+  // cache (in-memory or IC3-persisted) and revalidates in the background
+  // instead of skeletoning behind a fresh fetch on every mount. Cursor
+  // pagination and the live-poll head stay component-local and reset when
+  // the first page changes (filter switch or revalidation).
+  const firstPage = useApiQuery(qk.orgEventsFeed(orgId, appliedKey), () =>
+    wrap(() => client.events.listEventsPage(orgId, buildEventsQuery(applied))),
+  );
+  const [tailPages, setTailPages] = React.useState<Array<{ events: ReadonlyArray<PublicEvent>; cursor: string | null }>>([]);
+  const [head, setHead] = React.useState<ReadonlyArray<PublicEvent>>([]);
   const [loadingMore, setLoadingMore] = React.useState(false);
-  const [error, setError] = React.useState<{ code: string; message: string } | null>(null);
+  const [moreError, setMoreError] = React.useState<{ code: string; message: string } | null>(null);
   const [selected, setSelected] = React.useState<PublicEvent | null>(null);
 
-  const loadFirstPage = React.useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    const res = await wrap(() => client.events.listEventsPage(orgId, buildEventsQuery(applied)));
-    if (res.ok) {
-      setLog(appendEventPage(EMPTY_EVENT_LOG, res.data, /* reset */ true));
-    } else {
-      setError({ code: res.error.code, message: res.error.message });
-      setLog(EMPTY_EVENT_LOG);
-    }
-    setLoading(false);
-  }, [client, orgId, appliedKey]);
-
+  // Fresh first page (filter switch or revalidation): local pagination and
+  // the live-poll head belong to the previous page-1 — drop them.
   React.useEffect(() => {
-    void loadFirstPage();
-  }, [loadFirstPage]);
+    if (!firstPage.data) return;
+    setTailPages([]);
+    setHead([]);
+    setMoreError(null);
+  }, [firstPage.data]);
+
+  const log = React.useMemo<EventLogState>(
+    () => composeEventLog(firstPage.data, tailPages, head),
+    [firstPage.data, tailPages, head],
+  );
+  const loading = firstPage.loading;
+  // A failed background revalidation must not ghost a painted log (matches
+  // the old silent-refresh behavior); errors surface only with nothing shown.
+  const error = (firstPage.data ? null : firstPage.error) ?? moreError;
 
   const loadMore = React.useCallback(async () => {
     if (log.cursor === null || loadingMore) return;
@@ -198,21 +207,26 @@ function Inner({ orgId, orgSlug }: { orgId: string; orgSlug: string }) {
     const res = await wrap(() =>
       client.events.listEventsPage(orgId, buildEventsQuery(applied, log.cursor ?? undefined)),
     );
-    if (res.ok) setLog((prev) => appendEventPage(prev, res.data));
-    else setError({ code: res.error.code, message: res.error.message });
+    if (res.ok) setTailPages((prev) => [...prev, res.data]);
+    else setMoreError({ code: res.error.code, message: res.error.message });
     setLoadingMore(false);
   }, [client, orgId, appliedKey, log.cursor, loadingMore]);
 
   // Live poll: re-fetch the first page on an interval and prepend new rows.
   // Paused when the tab isn't the stream; re-created (so it pauses/re-anchors)
-  // whenever the applied filters change.
+  // whenever the applied filters change. Prepends accumulate in `head` (the
+  // fold dedupes by id), leaving the cached page-1 and the tail cursor alone.
   React.useEffect(() => {
     if (!livePoll || tab !== "stream") return;
     let cancelled = false;
     const poll = async () => {
       const res = await wrap(() => client.events.listEventsPage(orgId, buildEventsQuery(applied)));
       if (cancelled || !res.ok) return;
-      setLog((prev) => prependNewEvents(prev, res.data.events));
+      setHead((prev) => {
+        const seen = new Set(prev.map((e) => e.id));
+        const fresh = res.data.events.filter((e) => !seen.has(e.id));
+        return fresh.length > 0 ? [...fresh, ...prev] : prev;
+      });
     };
     const id = setInterval(() => void poll(), POLL_INTERVAL_MS);
     return () => {
@@ -301,7 +315,10 @@ function Inner({ orgId, orgSlug }: { orgId: string; orgSlug: string }) {
               variant="outline"
               size="icon"
               aria-label="Refresh"
-              onClick={() => setRefreshNonce((n) => n + 1)}
+              onClick={() => {
+                setRefreshNonce((n) => n + 1);
+                firstPage.reload(); // same-key refresh goes through the cache
+              }}
               disabled={loading}
             >
               <RefreshCw className={cn("h-4 w-4", loading && "animate-spin")} strokeWidth={1.8} />

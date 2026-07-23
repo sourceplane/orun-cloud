@@ -204,6 +204,24 @@ export function prependNewEvents(
 }
 
 /** Whether a "Load more" affordance should be shown. */
+/**
+ * Compose the rendered log from its three sources (IC4 follow-up — the
+ * cache-backed Events page): the cached first page, locally-paged tail
+ * pages, and the live-poll head. Fold order preserves the pre-conversion
+ * semantics exactly: page-1 reset, tail appends (id-deduped, cursor from
+ * the last tail page), head prepends (id-deduped, cursor untouched).
+ */
+export function composeEventLog(
+  firstPage: { events: ReadonlyArray<PublicEvent>; cursor: string | null } | null,
+  tailPages: ReadonlyArray<{ events: ReadonlyArray<PublicEvent>; cursor: string | null }>,
+  head: ReadonlyArray<PublicEvent>,
+): EventLogState {
+  if (!firstPage) return EMPTY_EVENT_LOG;
+  let state = appendEventPage(EMPTY_EVENT_LOG, firstPage, /* reset */ true);
+  for (const page of tailPages) state = appendEventPage(state, page);
+  return prependNewEvents(state, head);
+}
+
 export function hasMoreEvents(state: EventLogState): boolean {
   return state.cursor !== null;
 }
