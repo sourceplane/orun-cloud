@@ -4,10 +4,10 @@
  * `getConfiguredProvider`:
  *
  *   - a provider with a registered CUSTOM surface renders its own create
- *     experience in its own space (SP2: Cloudflare), built on the SP1
- *     primitives;
- *   - every other provider inherits `DefaultAuthoringSurface`, rendered from
- *     its SP0 capability declaration — zero UI code for a new provider.
+ *     experience in its own space (SP2), built on the SP1 primitives;
+ *   - every other provider inherits the default surface — since IR4 the
+ *     outcome-first `SecretWizardSurface` (`secret-wizard.tsx`), rendered
+ *     from its SP0 capability declaration — zero UI code for a new provider.
  *
  * The declaration's `authoring: "declarative" | "custom"` field is the
  * provider's INTENT; this registry is the console-side resolution. A declared
@@ -16,16 +16,17 @@
  */
 
 import type * as React from "react";
-import { DefaultAuthoringSurface, type AuthoringSurfaceProps } from "./authoring-surface";
+import { SecretWizardSurface, type AuthoringSurfaceProps } from "./secret-wizard";
 
 export type AuthoringSurface = React.ComponentType<AuthoringSurfaceProps>;
 
 /** Custom surfaces, keyed by provider id. SP2 registers Cloudflare's here. */
 const CUSTOM_AUTHORING: Record<string, AuthoringSurface> = {};
 
-/** Resolve the authoring surface for a provider (custom graft, else default). */
+/** Resolve the authoring surface for a provider (custom graft, else the
+ *  default outcome-first wizard). */
 export function authoringSurfaceFor(providerId: string): AuthoringSurface {
-  return CUSTOM_AUTHORING[providerId] ?? DefaultAuthoringSurface;
+  return CUSTOM_AUTHORING[providerId] ?? SecretWizardSurface;
 }
 
 /** True when the provider has a registered custom surface. */

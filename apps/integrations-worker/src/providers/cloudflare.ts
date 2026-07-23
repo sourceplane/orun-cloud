@@ -1045,7 +1045,9 @@ export function createCloudflareProvider(
     scopeTemplates: () => CLOUDFLARE_SCOPE_TEMPLATES,
     supportedModes: ["brokered", "rotated"],
     deliveryTargets: () => ["cloudflare-worker"],
-    authoring: "custom",
+    // IR4: the outcome-first wizard expresses everything the deleted custom
+    // surface did (SP-D4 confirmed at n=2) — Cloudflare is declarative again.
+    authoring: "declarative",
   };
 
   return {

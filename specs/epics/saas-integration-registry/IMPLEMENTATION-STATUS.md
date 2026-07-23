@@ -10,8 +10,8 @@ rails; implementation started same day.
 | IR0 | ✅ Shipped (#596) — manifest + registry read |
 | IR1 | ✅ Shipped (#597) — unified hub from the registry |
 | IR2 | ✅ Shipped (#598) — canonical space + nested detail + redirects |
-| IR3 | 🔄 In progress — Cloudflare unified |
-| IR4 | 🗓️ Planned |
+| IR3 | ✅ Shipped (#599) — Cloudflare unified |
+| IR4 | 🔄 In progress — the outcome-first secret wizard |
 | IR5 | 🗓️ Planned (gate: IR-D3 sign-off) |
 | IR6 | 🗓️ Planned |
 | IR7 | 🗓️ Planned (pairs orun ICL0–ICL3) |
@@ -19,6 +19,27 @@ rails; implementation started same day.
 | IR9 | 🗓️ Planned |
 
 ## Notes
+
+- 2026-07-23: IR4 as built:
+  - **The wizard** (`components/config/secret-wizard.tsx` +
+    `secret-wizard-lib.ts`): outcome-first stepper — use-case cards from the
+    ACTIVE template catalog (org customs included) → where (scope rung +
+    connection + params) → how (brokered "fresh per run" recommended vs
+    rotated + delivery; the step is SKIPPED for single-mode providers) →
+    review (smart `<PROVIDER>_API_TOKEN` key default, plain-language summary
+    from the template's own copy, one governed write through the frozen SP1
+    hooks). Validation REUSES `validateBindingForm`/`validateRotationForm` —
+    no rule restated. A11y: labeled step list, focus-managed headings.
+  - **Default surface swap**: the wizard replaces the mechanism-first
+    default (`authoring-surface.tsx` deleted); the Cloudflare custom surface
+    (`cloudflare-authoring.tsx`) proved fully expressible by the generic
+    wizard and was DELETED — SP-D4 confirmed at n=2. The adapter + manifest
+    flip `authoring` back to `"declarative"` (conformance-linted); the SP0c
+    test expectation updated.
+  - **Deep links**: `?create=1&connection=&template=` seeds and locks;
+    `?template=` never pre-selects retired/unknown ids.
+  - Verified: console 88 suites / 864 tests (18 new wizard tests),
+    integrations-worker 458/458, typecheck + lint clean.
 
 - 2026-07-23: IR3 as built:
   - **Recipe on the wire**: `IntegrationConnectRecipe` (contracts, additive)

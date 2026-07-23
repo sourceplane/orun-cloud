@@ -112,8 +112,9 @@ describe("GET /internal/providers/secrets-capability (SP0)", () => {
     expect(cap.scopeTemplates).toEqual(CLOUDFLARE_SCOPE_TEMPLATES);
     expect([...(cap.supportedModes as string[])].sort()).toEqual(["brokered", "rotated"]);
     expect(cap.deliveryTargets).toEqual(["cloudflare-worker"]);
-    // SP2: Cloudflare registers a custom authoring surface in its space.
-    expect(cap.authoring).toBe("custom");
+    // IR4: the outcome-first wizard replaced the SP2 custom surface —
+    // Cloudflare is declarative again (SP-D4 confirmed at n=2).
+    expect(cap.authoring).toBe("declarative");
   });
 
   it("422s a missing provider param", async () => {

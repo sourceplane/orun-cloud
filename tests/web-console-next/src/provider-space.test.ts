@@ -1,9 +1,9 @@
 // saas-secrets-platform SP2: the per-provider integration space (SP-A2).
 //
 // Pure-logic tests for the space's routing, secret filtering, and mode
-// derivation, plus the Cloudflare custom-surface registration (the SP2
-// "authoring: custom" fulfillment). No jsdom — components are identity-
-// checked, never rendered.
+// derivation, plus the authoring-surface resolution after IR4 (Cloudflare's
+// custom surface was deleted — every provider now inherits the outcome-first
+// wizard). No jsdom — components are identity-checked, never rendered.
 
 import type { ProviderSecretsCapability } from "@saas/contracts/integrations";
 import type { PublicSecretMetadata } from "@saas/contracts/config";
@@ -26,9 +26,9 @@ import {
   authoringSurfaceFor,
   hasCustomAuthoring,
 } from "@web-console-next/components/config/authoring-registry";
-import { DefaultAuthoringSurface } from "@web-console-next/components/config/authoring-surface";
-import { CloudflareAuthoringSurface } from "@web-console-next/components/integrations/cloudflare-authoring";
-// The side-effect module the provider space imports.
+import { SecretWizardSurface } from "@web-console-next/components/config/secret-wizard";
+// The side-effect module the provider space imports (empty since IR4 —
+// asserted below to stay honest about the Cloudflare graft's removal).
 import "@web-console-next/components/integrations/authoring-surfaces";
 
 function capability(overrides: Partial<ProviderSecretsCapability> & { provider: ProviderSecretsCapability["provider"] }): ProviderSecretsCapability {
@@ -171,12 +171,12 @@ describe("managedByProvider (SP3 'Managed by {integration}')", () => {
   });
 });
 
-describe("Cloudflare custom-surface registration (SP2)", () => {
-  it("cloudflare resolves to its custom surface; supabase inherits the default", () => {
-    expect(hasCustomAuthoring("cloudflare")).toBe(true);
-    expect(authoringSurfaceFor("cloudflare")).toBe(CloudflareAuthoringSurface);
+describe("authoring-surface resolution after IR4 (wizard is the default)", () => {
+  it("cloudflare's custom graft is gone — its declared 'custom' fails open to the wizard", () => {
+    expect(hasCustomAuthoring("cloudflare")).toBe(false);
+    expect(authoringSurfaceFor("cloudflare")).toBe(SecretWizardSurface);
     expect(hasCustomAuthoring("supabase")).toBe(false);
-    expect(authoringSurfaceFor("supabase")).toBe(DefaultAuthoringSurface);
+    expect(authoringSurfaceFor("supabase")).toBe(SecretWizardSurface);
   });
 });
 
@@ -200,9 +200,9 @@ describe("SP6 pluggability proof — a new provider lights up by declaration alo
     ],
   });
 
-  it("inherits the default authoring surface (declarative, zero UI code)", () => {
+  it("inherits the default wizard surface (declarative, zero UI code)", () => {
     expect(hasCustomAuthoring("aws")).toBe(false);
-    expect(authoringSurfaceFor("aws")).toBe(DefaultAuthoringSurface);
+    expect(authoringSurfaceFor("aws")).toBe(SecretWizardSurface);
   });
 
   it("derives eligibility, templates, menu items, and the mode toggle generically", () => {
