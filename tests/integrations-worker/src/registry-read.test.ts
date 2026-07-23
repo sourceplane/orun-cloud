@@ -66,10 +66,25 @@ describe("GET /v1/organizations/:orgId/integrations/registry (IR0)", () => {
     expect(res.status).toBe(200);
     const registry = await registryOf(res);
     expect(registry.map((d) => d.id).sort()).toEqual(
-      ["aws", "cloudflare", "discord", "github", "slack", "supabase"].sort(),
+      [
+        "aws",
+        "cloudflare",
+        "discord",
+        "github",
+        "slack",
+        "supabase",
+        // IR5: the re-homed AI/compute family.
+        "anthropic",
+        "openai",
+        "openrouter",
+        "daytona",
+      ].sort(),
     );
+    expect(registry.length).toBe(10);
     const statuses = new Map(registry.map((d) => [d.id, d.status]));
     expect(statuses.get("supabase")).toBe("live");
+    expect(statuses.get("anthropic")).toBe("live");
+    expect(statuses.get("daytona")).toBe("live");
     expect(statuses.get("aws")).toBe("roadmap");
   });
 
@@ -80,6 +95,10 @@ describe("GET /v1/organizations/:orgId/integrations/registry (IR0)", () => {
     const byId = new Map(registry.map((d) => [d.id, d]));
     expect(byId.get("supabase")!.connect).toEqual([{ kind: "oauth", live: true }]);
     expect(byId.get("github")!.connect).toEqual([{ kind: "install", live: false }]);
+    // Apikey providers (IR5) are live everywhere — the paste is the
+    // credential, so there is no env gate to report.
+    expect(byId.get("openrouter")!.connect).toEqual([{ kind: "apikey", live: true }]);
+    expect(byId.get("daytona")!.connect).toEqual([{ kind: "apikey", live: true }]);
     // Cloudflare's token method carries its adapter-derived recipe (IR3).
     expect(byId.get("cloudflare")!.connect).toMatchObject([
       { kind: "oauth", live: false },

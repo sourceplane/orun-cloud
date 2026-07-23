@@ -11,14 +11,45 @@ rails; implementation started same day.
 | IR1 | ✅ Shipped (#597) — unified hub from the registry |
 | IR2 | ✅ Shipped (#598) — canonical space + nested detail + redirects |
 | IR3 | ✅ Shipped (#599) — Cloudflare unified |
-| IR4 | 🔄 In progress — the outcome-first secret wizard |
-| IR5 | 🗓️ Planned (gate: IR-D3 sign-off) |
+| IR4 | ✅ Shipped (#600) — the outcome-first secret wizard |
+| IR5 | 🔄 In progress — AI + compute re-home |
 | IR6 | 🗓️ Planned |
 | IR7 | 🗓️ Planned (pairs orun ICL0–ICL3) |
 | IR8 | 🗓️ Planned |
 | IR9 | 🗓️ Planned |
 
 ## Notes
+
+- 2026-07-23: IR5 as built:
+  - **Migration `910_integration_registry_rehome`**: nullable
+    `agents.provider_connections.connection_id` + index; CTE backfill
+    creating one `integrations.connections` identity row per facts row
+    (verified→active, unverified→pending, invalid→suspended;
+    `scope='workspace'` per IR-D4); idempotent; COMMENT documents the
+    facts-table turn; registered in manifest + migrations.lock.
+  - **Adapters + manifests**: apikey family (anthropic/openai/openrouter/
+    daytona) — `connectKind: "apikey"`, always-configured (the paste IS the
+    credential; no env gate), `verifyApiKey` mirroring the agents-plane
+    probes (Daytona's stays DELEGATED to the agents plane — sandbox-create
+    verification is not re-implemented). Manifests live, multiConnection,
+    modules models/sandboxes. `IntegrationProviderId` widened to 10.
+  - **Dual-write + audit** (agents-worker): create writes the identity row
+    FIRST and stamps `connection_id` on the facts INSERT (identity failure
+    degrades to a NULL pointer — the pre-backfill shape, never a failed
+    connect); verify flips active/suspended; delete revokes.
+    `integration.connected`/`integration.revoked` now emitted (net-new —
+    the agents plane had NO audit before). `ProviderConnection.connectionId`
+    projected additively.
+  - **Console**: the hub's embedded agents panel + kicker are DELETED —
+    AI/compute render as registry cards dispatching to their spaces;
+    `connect-panel.tsx` gains the apikey paste form (submits via the AGENTS
+    plane — the space is chrome, custody stays where keys are consumed).
+    **Deviation from IR-D3's redirect default**: `settings/ai-providers`
+    stays live but connection-free (Session/Dispatch model settings +
+    Copilot toggle had no other home) with a "connections moved" note —
+    recorded here instead of silently redirecting settings away.
+  - Verified: integrations-worker 483, agents-worker 235, console 865,
+    db 978, contracts 174 — all green; typecheck + lint clean.
 
 - 2026-07-23: IR4 as built:
   - **The wizard** (`components/config/secret-wizard.tsx` +

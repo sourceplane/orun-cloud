@@ -326,6 +326,13 @@ export interface ProviderConnection {
   status: ConnectionStatus;
   lastVerifiedAt?: string;
   statusReason?: string;
+  /**
+   * saas-integration-registry IR5 (the facts-table turn): the UUID of this
+   * connection's identity row in integrations.connections. Absent on
+   * pre-backfill rows for one release (risks R3 dual-read) — callers must
+   * tolerate it.
+   */
+  connectionId?: string;
   createdBy: string;
   createdAt: string;
   updatedAt: string;

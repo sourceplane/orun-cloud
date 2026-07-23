@@ -59,8 +59,17 @@ function bodyBuffer(body: string): ArrayBuffer {
 }
 
 describe("provider registry (IH0)", () => {
-  it("knows all four provider ids", () => {
-    expect([...KNOWN_PROVIDER_IDS]).toEqual(["github", "slack", "cloudflare", "supabase"]);
+  it("knows all eight provider ids (incl. the IR5 apikey family)", () => {
+    expect([...KNOWN_PROVIDER_IDS]).toEqual([
+      "github",
+      "slack",
+      "cloudflare",
+      "supabase",
+      "anthropic",
+      "openai",
+      "openrouter",
+      "daytona",
+    ]);
   });
 
   it("returns null for an unknown provider id", () => {

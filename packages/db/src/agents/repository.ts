@@ -157,6 +157,9 @@ function mapConnection(row: Row): ProviderConnection {
   if (verified !== undefined) c.lastVerifiedAt = verified;
   const reason = optStr(row.status_reason);
   if (reason !== undefined) c.statusReason = reason;
+  // IR5 identity pointer; absent on pre-backfill rows (dual-read, risks R3).
+  const connectionId = optStr(row.connection_id);
+  if (connectionId !== undefined) c.connectionId = connectionId;
   return c;
 }
 
@@ -695,8 +698,8 @@ export function createAgentsRepository(sql: TransactionalSqlExecutor): AgentsRep
       }
       const res = await sql.execute(
         `INSERT INTO agents.provider_connections
-           (public_id, org_id, provider, name, config, secret_ref, key_hint, created_by)
-         VALUES ($1,$2,$3,$4,$5::jsonb,$6,$7,$8)
+           (public_id, org_id, provider, name, config, secret_ref, key_hint, connection_id, created_by)
+         VALUES ($1,$2,$3,$4,$5::jsonb,$6,$7,$8,$9)
          RETURNING *`,
         [
           newPublicId("apc_"),
@@ -706,6 +709,7 @@ export function createAgentsRepository(sql: TransactionalSqlExecutor): AgentsRep
           JSON.stringify(input.config ?? {}),
           input.secretRef,
           input.keyHint ?? null,
+          input.connectionId ?? null,
           input.createdBy,
         ],
       );

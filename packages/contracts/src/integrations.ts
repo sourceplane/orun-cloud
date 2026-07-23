@@ -21,11 +21,21 @@
 // no env secrets, no console card beyond the "On the roadmap" strip — the
 // registry never resolves them to a configured adapter. Listing them here is
 // additive (R7) and is what lets a dormant adapter's scope templates typecheck.
+// The AI/compute providers (saas-integration-registry IR5) are the re-homed
+// agents-plane connections: anthropic/openai/openrouter model keys and the
+// daytona compute account. Their connect flow is `apikey` (paste + verify +
+// custody pointer); custody stays in the config substrate under the reserved
+// `agents/providers/…` namespace and session provisioning stays on the agents
+// plane — the registry unifies IDENTITY, not planes (design §8).
 export type IntegrationProviderId =
   | "github"
   | "slack"
   | "cloudflare"
   | "supabase"
+  | "anthropic"
+  | "openai"
+  | "openrouter"
+  | "daytona"
   | "aws"
   | "discord";
 
@@ -100,8 +110,11 @@ export interface ProviderSecretsCapabilitiesResponse {
  * - "install": provider-hosted app install page (GitHub App).
  * - "oauth": OAuth authorization-code flow (Slack, Supabase).
  * - "token": customer pastes a parent credential once (Cloudflare).
+ * - "apikey": customer pastes a provider API key (IR5 — AI/compute providers);
+ *   verified synchronously, custodied under the reserved agents namespace,
+ *   never echoed. Needs no platform env credential to be live.
  */
-export type IntegrationConnectKind = "install" | "oauth" | "token";
+export type IntegrationConnectKind = "install" | "oauth" | "token" | "apikey";
 
 /** Static provider descriptors (marketplace cards, capability narrowing). */
 export const INTEGRATION_PROVIDER_DESCRIPTORS: Record<
@@ -131,6 +144,28 @@ export const INTEGRATION_PROVIDER_DESCRIPTORS: Record<
     displayName: "Supabase",
     connectKind: "oauth",
     capabilities: ["connect", "credential-broker"],
+  },
+  // AI/compute providers (IR5): apikey connect, connection lifecycle only —
+  // model/sandbox behavior stays on the agents plane.
+  anthropic: {
+    displayName: "Anthropic",
+    connectKind: "apikey",
+    capabilities: ["connect"],
+  },
+  openai: {
+    displayName: "OpenAI",
+    connectKind: "apikey",
+    capabilities: ["connect"],
+  },
+  openrouter: {
+    displayName: "OpenRouter",
+    connectKind: "apikey",
+    capabilities: ["connect"],
+  },
+  daytona: {
+    displayName: "Daytona",
+    connectKind: "apikey",
+    capabilities: ["connect"],
   },
   // Dormant (IH10): reserved descriptors for the roadmap strip. The adapters
   // implement the capability seam but no live path exists.
@@ -1055,6 +1090,14 @@ export const INTEGRATION_ENTITLEMENTS = {
   CREDENTIAL_BROKER: "feature.integrations.credential_broker",
   BROKERED_SECRETS_LIMIT: "limit.brokered_secrets",
   CREDENTIAL_MINTS_PER_DAY_LIMIT: "limit.credential_mints_per_day",
+  // Re-homed AI/compute providers (saas-integration-registry IR5): these keys
+  // gate CONNECT only. Usage entitlements (feature.agents, token budgets,
+  // session limits) stay on the agent plane — the re-home moves identity, not
+  // metering (design §10).
+  ANTHROPIC: "feature.integrations.anthropic",
+  OPENAI: "feature.integrations.openai",
+  OPENROUTER: "feature.integrations.openrouter",
+  DAYTONA: "feature.integrations.daytona",
 } as const;
 
 // ── Integration Registry (saas-integration-registry IR0) ─────

@@ -166,3 +166,90 @@ describe("manifest ⊆ adapter conformance (IR0)", () => {
     }
   });
 });
+
+// saas-integration-registry IR5: the re-homed AI/compute apikey family.
+describe("apikey providers (IR5)", () => {
+  const APIKEY_IDS = ["anthropic", "openai", "openrouter", "daytona"] as const;
+
+  it("apikey connect is live with ZERO env secrets — the paste is the credential", () => {
+    const bare = { ENVIRONMENT: "test" } as unknown as Env;
+    for (const id of APIKEY_IDS) {
+      const module = getManifestModule(id)!;
+      expect(module.resolveConnect(bare)).toEqual([{ kind: "apikey", live: true }]);
+      // The adapter resolves configured on the same bare env (no gate).
+      expect(getConfiguredProvider(bare, id)?.provider.connectKind).toBe("apikey");
+    }
+  });
+
+  it("declares connect-only capabilities and the capability-pure tab set", () => {
+    for (const id of APIKEY_IDS) {
+      const { manifest } = getManifestModule(id)!;
+      expect(manifest.status).toBe("live");
+      expect([...manifest.capabilities]).toEqual(["connect"]);
+      expect(manifest.multiConnection).toBe(true); // named keys
+      // No secrets/templates capability → no secrets/templates tab.
+      expect([...manifest.space.tabs]).toEqual(["overview", "connections", "activity", "settings"]);
+    }
+  });
+
+  it("categories: the AI trio + daytona compute; modules models/sandboxes", () => {
+    for (const id of ["anthropic", "openai", "openrouter"] as const) {
+      const { manifest } = getManifestModule(id)!;
+      expect(manifest.category).toBe("ai-provider");
+      expect([...manifest.space.modules]).toEqual(["models"]);
+      expect(manifest.entitlement).toBe(`feature.integrations.${id}`);
+    }
+    const daytona = getManifestModule("daytona")!.manifest;
+    expect(daytona.category).toBe("compute");
+    expect([...daytona.space.modules]).toEqual(["sandboxes"]);
+    expect(daytona.entitlement).toBe("feature.integrations.daytona");
+  });
+
+  it("every apikey adapter exposes verifyApiKey; daytona's is DELEGATED", async () => {
+    const bare = { ENVIRONMENT: "test" } as unknown as Env;
+    for (const id of APIKEY_IDS) {
+      expect(getConfiguredProvider(bare, id)?.provider.verifyApiKey).toBeDefined();
+    }
+    // Daytona never re-implements the agents plane's sandbox-create probe —
+    // it answers with the delegation marker instead of a real verdict.
+    const daytona = getConfiguredProvider(bare, "daytona")!.provider;
+    await expect(daytona.verifyApiKey!("dtn_x", {})).resolves.toEqual({
+      ok: true,
+      delegated: true,
+    });
+  });
+
+  it("AI trio verification mirrors the agents-worker probes (endpoint + headers, redacted failures)", async () => {
+    const calls: Array<{ url: string; headers: Record<string, string> }> = [];
+    const fetchImpl = (async (url: string, init?: RequestInit) => {
+      calls.push({ url, headers: (init?.headers ?? {}) as Record<string, string> });
+      return new Response("nope", { status: 401 });
+    }) as unknown as Parameters<typeof getConfiguredProvider>[2];
+    const bare = { ENVIRONMENT: "test" } as unknown as Env;
+
+    const anthropic = getConfiguredProvider(bare, "anthropic", fetchImpl)!.provider;
+    expect(await anthropic.verifyApiKey!("sk-ant-x", {})).toEqual({
+      ok: false,
+      reason: "401 from provider",
+    });
+    expect(calls[0]).toEqual({
+      url: "https://api.anthropic.com/v1/models",
+      headers: { "x-api-key": "sk-ant-x", "anthropic-version": "2023-06-01" },
+    });
+
+    const openai = getConfiguredProvider(bare, "openai", fetchImpl)!.provider;
+    await openai.verifyApiKey!("sk-x", {});
+    expect(calls[1]).toEqual({
+      url: "https://api.openai.com/v1/models",
+      headers: { authorization: "Bearer sk-x" },
+    });
+
+    const openrouter = getConfiguredProvider(bare, "openrouter", fetchImpl)!.provider;
+    await openrouter.verifyApiKey!("sk-or-x", { baseUrl: "https://gw.example/v1/" });
+    // config.baseUrl overrides the vendor default, trailing slash trimmed.
+    expect(calls[2]).toEqual({
+      url: "https://gw.example/v1/key",
+      headers: { authorization: "Bearer sk-or-x" },
+    });
+  });
+});

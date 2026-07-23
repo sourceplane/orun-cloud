@@ -2,13 +2,29 @@
 // Daytona account / add your Anthropic key. The apiKey is consumed at this
 // boundary — forwarded to config-worker custody (reserved namespace) — and is
 // never stored on, logged from, or readable back through the connection.
+//
+// saas-integration-registry IR5 (dual-write): every lifecycle transition here
+// also maintains the connection's IDENTITY row in integrations.connections
+// (create → pending, verified → active, invalid → suspended, delete →
+// revoked) and emits `integration.connected` / `integration.revoked` audit
+// events — the same vocabulary integrations-worker uses. The identity write
+// is best-effort and NULL-tolerant (risks R3: pre-backfill rows / unbound
+// deps never break the agents flow); custody and provisioning stay put.
 
 import type { AgentsDeps } from "../deps.js";
 import type { ActorContext } from "../router.js";
 import { AgentsError, isProvider, PROVIDERS, providerSecretRef, type Provider } from "@saas/db/agents";
+import { asUuid, uuidToHex } from "@saas/db/ids";
+import { INTEGRATION_EVENT_TYPES } from "@saas/contracts/integrations";
 import { errorResponse, listResponse, notFound, successResponse, validationError } from "../http.js";
 import type { ProviderConnection as WireConnection } from "@saas/contracts/agents";
 import type { ProviderConnection as DbConnection } from "@saas/db/agents";
+
+/** The integrations-plane public id (`int_<32hex>`) for an identity row —
+ *  the same prefix rule integrations-worker's ids.ts applies. */
+function integrationPublicId(uuid: string): string {
+  return `int_${uuidToHex(uuid)}`;
+}
 
 export function toPublicConnection(c: DbConnection): WireConnection {
   const out: WireConnection = {
@@ -24,7 +40,51 @@ export function toPublicConnection(c: DbConnection): WireConnection {
   if (c.keyHint !== undefined) out.keyHint = c.keyHint;
   if (c.lastVerifiedAt !== undefined) out.lastVerifiedAt = c.lastVerifiedAt;
   if (c.statusReason !== undefined) out.statusReason = c.statusReason;
+  // IR5 (additive): the registry identity, projected as its public id.
+  if (c.connectionId !== undefined) out.connectionId = integrationPublicId(c.connectionId);
   return out;
+}
+
+/** Best-effort audit emission (IR5): the same `integration.*` vocabulary +
+ *  events-repo pattern integrations-worker's connections handler uses. Never
+ *  fails the calling flow. */
+async function emitIntegrationAudit(
+  deps: AgentsDeps,
+  orgId: string,
+  actor: ActorContext,
+  requestId: string,
+  type: string,
+  connectionUuid: string,
+  provider: string,
+  name: string,
+  description: string,
+): Promise<void> {
+  if (!deps.events) return;
+  try {
+    await deps.events.appendEventWithAudit({
+      event: {
+        id: crypto.randomUUID(),
+        type,
+        version: 1,
+        source: "agents-worker",
+        occurredAt: new Date(),
+        actorType: actor.subjectType,
+        actorId: actor.subjectId,
+        orgId,
+        subjectKind: "integration_connection",
+        subjectId: connectionUuid,
+        requestId,
+        payload: { provider, name },
+      },
+      audit: {
+        id: crypto.randomUUID(),
+        category: "integrations",
+        description,
+      },
+    });
+  } catch {
+    // Best-effort: audit emission never fails the lifecycle write.
+  }
 }
 
 export async function handleListConnections(
@@ -104,7 +164,26 @@ export async function handleCreateConnection(
       return errorResponse("internal_error", "Failed to store the key", 502, requestId);
     }
 
-    // 2. The connection row (no key material; last4 hint only).
+    // 4. IR5 dual-write, identity first: the integrations.connections row
+    // (scope 'workspace' + share_mode 'auto' — IR-D4's private default) is
+    // created before the facts row so connection_id rides the same INSERT.
+    // Best-effort: an identity failure degrades to a NULL pointer (the same
+    // pre-backfill shape the read path tolerates), never a failed connect.
+    let connectionId: string | undefined;
+    if (deps.integrations) {
+      const identity = await deps.integrations.createConnection({
+        id: crypto.randomUUID(),
+        orgId: asUuid(orgId),
+        provider,
+        scope: "workspace",
+        shareMode: "auto",
+        displayName: name,
+        createdBy: actor.subjectId,
+      });
+      if (identity.ok) connectionId = identity.value.id;
+    }
+
+    // 5. The connection facts row (no key material; last4 hint only).
     const connection = await deps.repo.createConnection(
       { orgId },
       {
@@ -113,6 +192,7 @@ export async function handleCreateConnection(
         config,
         secretRef,
         keyHint: `…${apiKey.slice(-4)}`,
+        ...(connectionId !== undefined ? { connectionId } : {}),
         // Not the UUID-column bug class: provider_connections.created_by is
         // TEXT and stores the public membership subject (like sessions'
         // spawned_by), so no uuidFromPublicId decode here.
@@ -121,9 +201,11 @@ export async function handleCreateConnection(
       },
     );
 
-    // 3. Verify the key with a cheap read-only ping (design §10.3). A failed
+    // 6. Verify the key with a cheap read-only ping (design §10.3). A failed
     // ping still creates the connection — as `invalid`, with a redacted
-    // reason — so the user sees exactly what happened.
+    // reason — so the user sees exactly what happened. The identity row
+    // mirrors the outcome (verified→active + connected_at, invalid→suspended)
+    // and a verified create emits `integration.connected` (IR5 audit gain).
     let verified = connection;
     if (deps.verifier) {
       const result = await deps.verifier.verify(provider, apiKey, config);
@@ -135,6 +217,32 @@ export async function handleCreateConnection(
           ...(result.reason !== undefined ? { statusReason: result.reason } : {}),
         },
       );
+      if (connectionId !== undefined && deps.integrations) {
+        if (result.ok) {
+          // pending → active; stamps connected_at (the identity was pending
+          // from step 4, so the guarded activate always matches here).
+          await deps.integrations.activateConnection(asUuid(orgId), asUuid(connectionId), {
+            displayName: name,
+          });
+          await emitIntegrationAudit(
+            deps,
+            orgId,
+            actor,
+            requestId,
+            INTEGRATION_EVENT_TYPES.CONNECTED,
+            connectionId,
+            provider,
+            name,
+            `${provider} provider connection "${name}" connected (key verified)`,
+          );
+        } else {
+          await deps.integrations.updateConnectionStatus(
+            asUuid(orgId),
+            asUuid(connectionId),
+            "suspended",
+          );
+        }
+      }
     }
     return successResponse(toPublicConnection(verified), requestId, 201);
   } catch (e) {
@@ -174,6 +282,28 @@ export async function handleVerifyConnection(
       ...(result.reason !== undefined ? { statusReason: result.reason } : {}),
     },
   );
+  // IR5: mirror the verification outcome onto the identity row. Skip silently
+  // when connection_id is null — pre-backfill tolerance (risks R3 dual-read).
+  if (connection.connectionId !== undefined && deps.integrations) {
+    await deps.integrations.updateConnectionStatus(
+      asUuid(orgId),
+      asUuid(connection.connectionId),
+      result.ok ? "active" : "suspended",
+    );
+    if (result.ok) {
+      await emitIntegrationAudit(
+        deps,
+        orgId,
+        actor,
+        requestId,
+        INTEGRATION_EVENT_TYPES.CONNECTED,
+        connection.connectionId,
+        connection.provider,
+        connection.name,
+        `${connection.provider} provider connection "${connection.name}" verified`,
+      );
+    }
+  }
   return successResponse(toPublicConnection(updated), requestId);
 }
 
@@ -197,6 +327,26 @@ export async function handleDeleteConnection(
     // Best-effort custody teardown: a lingering key is a hygiene problem the
     // next connect's orphan-clear also handles — never fail the disconnect.
     await deps.providerKeys.revoke(orgId, connection.secretRef, actor, requestId);
+  }
+  // IR5: revoke the identity row (status 'revoked' + revoked_at) and emit
+  // `integration.revoked`. Skip silently on a null pointer (pre-backfill).
+  if (connection?.connectionId !== undefined && deps.integrations) {
+    await deps.integrations.updateConnectionStatus(
+      asUuid(orgId),
+      asUuid(connection.connectionId),
+      "revoked",
+    );
+    await emitIntegrationAudit(
+      deps,
+      orgId,
+      actor,
+      requestId,
+      INTEGRATION_EVENT_TYPES.REVOKED,
+      connection.connectionId,
+      connection.provider,
+      connection.name,
+      `${connection.provider} provider connection "${connection.name}" revoked`,
+    );
   }
   return successResponse({ deleted: true }, requestId);
 }

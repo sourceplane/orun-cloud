@@ -13,10 +13,14 @@
 // into `IntegrationDescriptor.connect[].live` by the registry handler.
 
 import type { IntegrationManifest } from "@saas/contracts/integrations";
+import { anthropicManifestModule } from "./anthropic.js";
 import { awsManifestModule } from "./aws.js";
 import { cloudflareManifestModule } from "./cloudflare.js";
+import { daytonaManifestModule } from "./daytona.js";
 import { discordManifestModule } from "./discord.js";
 import { githubManifestModule } from "./github.js";
+import { openaiManifestModule } from "./openai.js";
+import { openrouterManifestModule } from "./openrouter.js";
 import type { ManifestModule } from "./shared.js";
 import { slackManifestModule } from "./slack.js";
 import { supabaseManifestModule } from "./supabase.js";
@@ -29,6 +33,11 @@ export const INTEGRATION_MANIFEST_MODULES: readonly ManifestModule[] = [
   slackManifestModule,
   cloudflareManifestModule,
   supabaseManifestModule,
+  // Re-homed AI/compute identities (IR5): ai-provider trio, then compute.
+  anthropicManifestModule,
+  openaiManifestModule,
+  openrouterManifestModule,
+  daytonaManifestModule,
   awsManifestModule,
   discordManifestModule,
 ];

@@ -130,8 +130,9 @@ export function cardState(
 /**
  * How connect starts for a descriptor (design §4/§5): a single live
  * install/oauth method keeps the hub's popup+poll flow; anything else —
- * token method, multiple methods — is owned by the provider's space, which
- * renders the full posture. Provider-generic: the `id === "cloudflare"`
+ * token method, apikey method (IR5: the paste form lives in the space's
+ * connect dialog), multiple methods — is owned by the provider's space,
+ * which renders the full posture. Provider-generic: the `id === "cloudflare"`
  * special case this replaces must never come back.
  */
 export type ConnectDispatch =

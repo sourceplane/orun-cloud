@@ -450,6 +450,7 @@ export class MemoryAgentsRepository implements AgentsRepository {
       createdAt: ts,
       updatedAt: ts,
       ...(input.keyHint !== undefined ? { keyHint: input.keyHint } : {}),
+      ...(input.connectionId !== undefined ? { connectionId: input.connectionId } : {}),
     };
     s.connections.push(conn);
     return conn;

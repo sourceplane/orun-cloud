@@ -72,7 +72,6 @@ import {
   groupByCategory,
   providerIconName,
 } from "@/components/integrations/registry";
-import { ProviderConnections } from "@/components/agents/provider-connections";
 import { ConnectionAdmission } from "@/components/integrations/connection-admission";
 
 const POLL_INTERVAL_MS = 2500;
@@ -217,8 +216,9 @@ export function IntegrationsHub({ orgId, orgSlug }: { orgId: string; orgSlug: st
 
   // Registry-derived sections: unconnected live providers by category
   // ("connected" cards render above, in the Connected section), plus the
-  // roadmap strip. AI & compute keeps its section chrome with the embedded
-  // agents panel until IR5 re-homes those connections into the registry.
+  // roadmap strip. AI & compute providers render as registry cards like
+  // everyone else since IR5 re-homed their connections (their apikey connect
+  // dispatches to the provider space; the agents panel's hub mount is gone).
   const unconnectedGroups = groupByCategory(
     registry.filter((d) => {
       const state = cardState(d, connections);
@@ -345,14 +345,6 @@ export function IntegrationsHub({ orgId, orgSlug }: { orgId: string; orgSlug: st
           </React.Fragment>
         ))
       )}
-
-      {/* BYO agent providers (saas-agents AG12 §10.5). Section chrome is
-          registry-ordered (ai-provider · compute close the category walk);
-          the embedded panel is the pre-IR5 state — IR5 re-homes these
-          connections into `integrations.connections` and this becomes
-          registry cards like everything above. */}
-      <Kicker className="mb-2.5 mt-8">AI &amp; compute providers</Kicker>
-      <ProviderConnections orgId={orgId} />
 
       {/* Roadmap providers — honest "Soon" slots from `status: "roadmap"`
           manifests; the same source of truth as live cards, so ghost drift
