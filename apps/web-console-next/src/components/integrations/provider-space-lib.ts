@@ -18,6 +18,24 @@ export function providerSpaceHref(orgSlug: string, providerId: string): string {
   return `/orgs/${orgSlug}/integrations/${providerId}`;
 }
 
+/**
+ * IR-U: which tab the space shows. A FOCUSED connection is always the
+ * Connections tab (the detail renders in place there); otherwise the
+ * `?tab=` request applies when it names a real tab, falling back to Overview.
+ * Keeping this pure locks the invariant "a connection is a sub-view of the
+ * Connections tab, never a separate page."
+ */
+export function resolveActiveSpaceTab<T extends string>(
+  focusConnectionId: string | undefined,
+  requestedTab: T | null | undefined,
+  tabs: readonly T[],
+  fallback: T,
+): T {
+  if (focusConnectionId) return tabs.includes("connections" as T) ? ("connections" as T) : fallback;
+  if (requestedTab && tabs.includes(requestedTab)) return requestedTab;
+  return fallback;
+}
+
 /** The provider space's create deep-link: pre-selects (and locks) a
  *  connection in the create dialog — the SP-A4 successor of the Secrets
  *  page's `?bind=1&connection=`. */

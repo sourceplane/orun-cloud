@@ -7,7 +7,7 @@
 
 import type { ProviderSecretsCapability } from "@saas/contracts/integrations";
 import type { PublicSecretMetadata } from "@saas/contracts/config";
-import {
+import { resolveActiveSpaceTab,
   capabilityForProvider,
   integrationCreateMenu,
   legacyBindRedirect,
@@ -216,5 +216,29 @@ describe("SP6 pluggability proof — a new provider lights up by declaration alo
     expect(brokerConnections(conns, caps, "brokered")).toHaveLength(1);
     // Rotated narrows it out — the declaration, not a hardcode, decides.
     expect(brokerConnections(conns, caps, "rotated")).toHaveLength(0);
+  });
+});
+
+describe("resolveActiveSpaceTab (IR-U: a focused connection is a sub-view, not a page)", () => {
+  const TABS = ["overview", "connections", "secrets", "templates", "activity", "settings"] as const;
+
+  it("forces the Connections tab whenever a connection is focused — ignoring ?tab", () => {
+    expect(resolveActiveSpaceTab("int_abc", "secrets", TABS, "overview")).toBe("connections");
+    expect(resolveActiveSpaceTab("int_abc", "activity", TABS, "overview")).toBe("connections");
+    expect(resolveActiveSpaceTab("int_abc", null, TABS, "overview")).toBe("connections");
+  });
+
+  it("falls back to `overview` when a focused provider has no connections tab (defensive)", () => {
+    expect(resolveActiveSpaceTab("int_abc", "settings", ["overview", "settings"], "overview")).toBe(
+      "overview",
+    );
+  });
+
+  it("honors ?tab only when unfocused and the tab is real", () => {
+    expect(resolveActiveSpaceTab(undefined, "templates", TABS, "overview")).toBe("templates");
+    expect(resolveActiveSpaceTab(undefined, "nope" as (typeof TABS)[number], TABS, "overview")).toBe(
+      "overview",
+    );
+    expect(resolveActiveSpaceTab(undefined, null, TABS, "overview")).toBe("overview");
   });
 });

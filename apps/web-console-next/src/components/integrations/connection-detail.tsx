@@ -1,19 +1,21 @@
 "use client";
 
-// The per-connection detail page (saas-integration-hub IH8, design §6
-// "Connection detail, per archetype"). One shared header + danger zone; the
-// body branches by provider archetype:
+// The per-connection detail (saas-integration-hub IH8; unified into the
+// canonical space by IR2/IR-U). This is now an EMBEDDED body — it renders
+// inside `ProviderSpace`'s Connections tab, sharing the integration header
+// and tab bar, so a connection is a focused sub-view of one page, never a
+// second page. It branches by provider archetype:
 //
 //   - messaging (Slack): workspace facts, channels the bot can post to, and
 //     the admission panel for account-shared connections.
-//   - infrastructure (Cloudflare/Supabase): account facts, the scope-template
-//     catalog (the scoped credentials this connection can provide), and the
-//     "Create scoped credential" flow that binds a run-time secret to it.
+//   - infrastructure (Cloudflare/Supabase): account facts, credential custody,
+//     and a "Create secret" action that opens the space's wizard IN PLACE
+//     (pre-selecting this connection). The scope-template catalog is NOT
+//     repeated here — it lives on the space's Templates tab, one click away.
 //   - source-control (GitHub): deliberately minimal — facts + a pointer to the
 //     per-project Git tab (design: "GitHub: unchanged") + admission panel.
 
 import * as React from "react";
-import { useRouter } from "next/navigation";
 import {
   Cloud,
   Database,
@@ -32,7 +34,7 @@ import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Skeleton } from "@/components/ui/skeleton";
-import { AttentionBanner, Kicker, Pill, QuietLink, Screen, type Tone } from "@/components/ui/northwind";
+import { AttentionBanner, Kicker, Pill, QuietLink, type Tone } from "@/components/ui/northwind";
 import { useToast } from "@/components/ui/toast";
 import { wrap, type ApiErrorBody } from "@/lib/api";
 import { useSession } from "@/lib/session";
@@ -58,8 +60,6 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { archetypeForProvider } from "@/components/integrations/archetype";
-import { templatesForProvider } from "@/components/config/bind-secret-flow";
-import { providerSpaceCreateHref } from "@/components/integrations/provider-space-lib";
 import { ConnectionAdmission } from "@/components/integrations/connection-admission";
 
 /** Badge tone (connections.ts) → Northwind pill tone (mirrors the hub). */
@@ -77,26 +77,35 @@ const PROVIDER_ICONS: Record<string, LucideIcon> = {
   supabase: Database,
 };
 
-export function ConnectionDetail({
+export function ConnectionDetailBody({
   orgId,
   orgSlug,
   connectionId,
-  backHref,
-  backLabel,
+  backToListHref,
+  templatesHref,
+  onCreateSecret,
+  onRevoked,
+  onChanged,
 }: {
   orgId: string;
   orgSlug: string;
   connectionId: string;
-  /** IR2: when rendered nested under the integration's space, back points at
-   *  the space; unset (legacy mounts) falls back to the hub. */
-  backHref?: string;
-  backLabel?: string;
+  /** IR-U: where "← All connections" (and not-found recovery) points — the
+   *  space's Connections tab. The space header stays; this is a sub-view. */
+  backToListHref: string;
+  /** The space's Templates tab, where the full scope-template catalog lives —
+   *  the connection body links there instead of repeating the table. */
+  templatesHref?: string;
+  /** Opens the space's create-secret wizard IN PLACE, pre-selecting this
+   *  connection — no navigation. Absent = the create affordance is hidden. */
+  onCreateSecret?: (connectionId: string) => void;
+  /** Focus returns to the connections list after a successful revoke. */
+  onRevoked?: () => void;
+  /** A mutation (admission grant, etc.) changed connection state. */
+  onChanged?: () => void;
 }) {
   const { client } = useSession();
   const { toast } = useToast();
-  const router = useRouter();
-  const hubHref = backHref ?? `/orgs/${orgSlug}/integrations`;
-  const hubLabel = backLabel ?? "Integrations";
 
   // `useApiQuery` narrows errors to { code, message }; keep the full body
   // alongside so the load-error card can show the requestId (design §6:
@@ -108,8 +117,9 @@ export function ConnectionDetail({
     return r;
   });
 
-  // SP0c (SP-A1): the "credential types" table derives from the bulk
-  // capability read — the console no longer mirrors the worker catalogs.
+  // IR-U: the connection body no longer repeats the scope-template catalog
+  // (it lives on the space's Templates tab). It only needs to know WHETHER
+  // this provider is a secret source — the bulk capability read, cached long.
   const capabilitiesQuery = useApiQuery(
     qk.secretsCapabilities(orgId),
     () => wrap(async () => (await client.integrations.listSecretsCapabilities(orgId)).capabilities),
@@ -126,35 +136,33 @@ export function ConnectionDetail({
 
   if (conn.loading) {
     return (
-      <Screen>
-        <div className="space-y-4 pt-2">
-          <Skeleton className="h-5 w-40" />
-          <Skeleton className="h-[120px] w-full rounded-xl" />
-          <Skeleton className="h-[220px] w-full rounded-xl" />
-        </div>
-      </Screen>
+      <div className="mt-6 space-y-4">
+        <Skeleton className="h-5 w-40" />
+        <Skeleton className="h-[120px] w-full rounded-xl" />
+        <Skeleton className="h-[220px] w-full rounded-xl" />
+      </div>
     );
   }
 
   if (conn.error) {
     const failure = lastLoadError.current;
     // An unknown or foreign connection id 404s — render the honest empty state
-    // with a way back, not an error card.
+    // with a way back to the connections list, still inside the space chrome.
     if (failure?.status === 404 || conn.error.code === "not_found") {
       return (
-        <Screen>
+        <div className="mt-6">
           <EmptyState
             icon={Plug}
             title="Connection not found"
             description="This connection doesn't exist in this organization — it may have been revoked, or the link points at another workspace's connection."
-            primaryAction={{ label: "Back to Integrations", href: hubHref }}
+            primaryAction={{ label: "All connections", href: backToListHref }}
           />
-        </Screen>
+        </div>
       );
     }
     return (
-      <Screen>
-        <QuietLink href={hubHref}>← {hubLabel}</QuietLink>
+      <div className="mt-6">
+        <QuietLink href={backToListHref}>← All connections</QuietLink>
         <div className="mt-4 rounded-xl border bg-card px-6 py-5">
           <div className="text-[13.5px] font-medium text-destructive">Failed to load the connection</div>
           <div className="mt-1 text-xs text-muted-foreground">{conn.error.message}</div>
@@ -167,7 +175,7 @@ export function ConnectionDetail({
             Retry
           </Button>
         </div>
-      </Screen>
+      </div>
     );
   }
 
@@ -181,7 +189,9 @@ export function ConnectionDetail({
   const scopeMeta = connectionScopeMeta(connection.scope);
   const shareMeta = connectionShareModeMeta(connection);
   const Icon = PROVIDER_ICONS[connection.provider] ?? Plug;
-  const templates = templatesForProvider(capabilitiesQuery.data ?? [], connection.provider);
+  // Whether this provider is a secret source (declares a secrets capability) —
+  // gates the "scoped credentials" affordance without repeating the catalog.
+  const isBroker = (capabilitiesQuery.data ?? []).some((c) => c.provider === connection.provider);
   const isActive = connection.status === "active";
   const showAdmission = isActive && connection.scope === "account" && !connection.inherited;
   // IH9 re-auth CTA (design §5.3): a suspended oauth/token-kind connection is
@@ -208,7 +218,8 @@ export function ConnectionDetail({
       return;
     }
     toast({ kind: "success", title: "Connection revoked" });
-    router.push(hubHref);
+    conn.reload();
+    onRevoked?.();
   };
 
   // Force-revoke: proceed despite the blockers, orphaning the brokered secrets.
@@ -229,15 +240,22 @@ export function ConnectionDetail({
         ? { description: `${orphanedCount} brokered secret${orphanedCount === 1 ? "" : "s"} orphaned — repoint or revoke them.` }
         : {}),
     });
-    router.push(hubHref);
+    conn.reload();
+    onRevoked?.();
   };
 
   return (
-    <Screen>
-      <QuietLink href={hubHref}>← {hubLabel}</QuietLink>
+    <div>
+      {/* IR-U: a breadcrumb, not a page change — the space header + tabs stay
+          above this; a connection is a focused sub-view of the Connections
+          tab. */}
+      <div className="mt-6 flex items-center gap-2">
+        <QuietLink href={backToListHref}>← All connections</QuietLink>
+      </div>
 
-      {/* Header — provider tile, name, status, scope/sharing provenance. */}
-      <div className="mt-4 rounded-xl border bg-card px-5 py-[18px] sm:px-6 sm:py-[22px]">
+      {/* Compact connection sub-header — the integration identity already
+          lives in the space header above; this names WHICH connection. */}
+      <div className="mt-3 rounded-xl border bg-card px-5 py-[18px] sm:px-6 sm:py-[22px]">
         <div className="flex flex-wrap items-center gap-3.5">
           <span className="grid h-[38px] w-[38px] shrink-0 place-items-center rounded-[10px] bg-[#171717]" aria-hidden>
             <Icon className="h-5 w-5 text-[#FAFAFA]" strokeWidth={1.8} />
@@ -288,7 +306,7 @@ export function ConnectionDetail({
           className="mt-4"
           action={
             <Button asChild size="sm" className="shrink-0">
-              <a href={`${hubHref}?connect=${connection.provider}`}>{reauth.label}</a>
+              <a href={`/orgs/${orgSlug}/integrations?connect=${connection.provider}`}>{reauth.label}</a>
             </Button>
           }
         >
@@ -311,16 +329,15 @@ export function ConnectionDetail({
         </>
       ) : null}
 
-      {archetype === "infrastructure" ? (
+      {archetype === "infrastructure" && isBroker ? (
         <>
           <div className="mb-2.5 mt-8 flex flex-wrap items-end justify-between gap-3">
             <Kicker className="mb-0">Scoped credentials</Kicker>
-            {isActive ? (
-              <Button asChild size="sm" className="shrink-0">
-                {/* SP2 (SP-A4): creation lives in the provider's own space now. */}
-                <a href={providerSpaceCreateHref(orgSlug, connection.provider, connection.id)}>
-                  Create scoped credential
-                </a>
+            {isActive && onCreateSecret ? (
+              // IR-U: opens the space's create wizard IN PLACE, pre-selecting
+              // this connection — no navigation to a second page.
+              <Button size="sm" className="shrink-0" onClick={() => onCreateSecret(connection.id)}>
+                Create secret from this connection
               </Button>
             ) : null}
           </div>
@@ -330,58 +347,19 @@ export function ConnectionDetail({
             <p className="text-xs text-muted-foreground">
               A scoped credential is a secret bound to this connection at a workspace, project, or environment
               scope. It has no stored value — every <span className="font-mono text-[11px]">orun</span> run
-              resolves a fresh, scoped, short-lived credential from it. Create one here or from the{" "}
-              <QuietLink href={`/orgs/${orgSlug}/secrets`}>Secrets</QuietLink> page; manage and rotate them
-              on Secrets.
+              resolves a fresh, scoped, short-lived credential from it.{" "}
+              {templatesHref ? (
+                <>
+                  See the{" "}
+                  <QuietLink href={templatesHref}>credential types</QuietLink> this connection can mint, or
+                  manage secrets on the{" "}
+                </>
+              ) : (
+                "Manage secrets on the "
+              )}
+              <QuietLink href={`/orgs/${orgSlug}/secrets`}>Secrets</QuietLink> page.
             </p>
           </div>
-
-          {templates.length === 0 ? (
-            <div className="mt-3 rounded-xl border bg-card px-5 py-4 text-xs text-muted-foreground">
-              {capabilitiesQuery.loading
-                ? "Loading credential types…"
-                : capabilitiesQuery.error
-                  ? "Credential types are unavailable right now — try again shortly."
-                  : "No scope templates are published for this provider yet."}
-            </div>
-          ) : (
-            <>
-              <p className="mb-2.5 mt-6 text-[11px] font-semibold uppercase tracking-[0.07em] text-muted-foreground/80">
-                Credential types this connection provides
-              </p>
-              <div className="overflow-hidden rounded-xl border bg-card">
-                <div className="overflow-x-auto">
-                  <table className="w-full min-w-[560px] text-left text-sm">
-                    <thead>
-                      <tr className="border-b text-[11px] font-semibold uppercase tracking-[0.07em] text-muted-foreground/80">
-                        <th className="px-4 py-2.5">Type</th>
-                        <th className="px-4 py-2.5">Grants</th>
-                        <th className="px-4 py-2.5">Params</th>
-                        <th className="px-4 py-2.5">Max TTL</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {templates.map((t) => (
-                        <tr key={t.id} className="border-t border-border/50 first:border-t-0 align-top">
-                          <td className="px-4 py-2.5">
-                            <span className="block text-[12.5px] font-semibold">{t.displayName}</span>
-                            <span className="block font-mono text-[11px] text-muted-foreground">{t.id}</span>
-                          </td>
-                          <td className="px-4 py-2.5 text-xs text-muted-foreground">{t.description}</td>
-                          <td className="px-4 py-2.5 font-mono text-[11px] text-muted-foreground">
-                            {t.params.length > 0 ? t.params.join(", ") : "—"}
-                          </td>
-                          <td className="whitespace-nowrap px-4 py-2.5 text-xs text-muted-foreground">
-                            {formatTtl(t.maxTtlSeconds)}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            </>
-          )}
         </>
       ) : null}
 
@@ -403,7 +381,14 @@ export function ConnectionDetail({
       {showAdmission ? (
         <>
           <Kicker className="mb-2.5 mt-8">Workspace access</Kicker>
-          <ConnectionAdmission orgId={orgId} connection={connection} onChanged={() => conn.reload()} />
+          <ConnectionAdmission
+            orgId={orgId}
+            connection={connection}
+            onChanged={() => {
+              conn.reload();
+              onChanged?.();
+            }}
+          />
         </>
       ) : null}
 
@@ -464,7 +449,7 @@ export function ConnectionDetail({
           </Dialog>
         </>
       ) : null}
-    </Screen>
+    </div>
   );
 }
 
@@ -607,11 +592,3 @@ function MiniPill({ children }: { children: React.ReactNode }) {
   );
 }
 
-function formatTtl(seconds: number): string {
-  if (seconds % 3600 === 0) {
-    const h = seconds / 3600;
-    return h === 1 ? "1 hour" : `${h} hours`;
-  }
-  if (seconds % 60 === 0) return `${seconds / 60} min`;
-  return `${seconds}s`;
-}

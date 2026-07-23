@@ -42,6 +42,7 @@ import { useApiQuery, qk } from "@/lib/query";
 import { wrap } from "@/lib/api";
 import { descriptorById } from "./registry";
 import { connectionDisplayName, connectionStatusMeta } from "./connections";
+import { ConnectionDetailBody } from "./connection-detail";
 import { IntegrationConnectDialog } from "./connect-panel";
 import { connectDispatch } from "./registry";
 import { SpaceActivity } from "./space-activity";
@@ -54,6 +55,7 @@ import { deriveBrokerRow, deriveRotationRow } from "@/components/config/bind-sec
 import {
   capabilityForProvider,
   modeToggleFor,
+  resolveActiveSpaceTab,
   providerBoundSecrets,
 } from "./provider-space-lib";
 // Side effect: register the built-in custom surfaces (Cloudflare) before the
@@ -100,10 +102,15 @@ export function ProviderSpace({
   orgId,
   orgSlug,
   providerId,
+  focusConnectionId,
 }: {
   orgId: string;
   orgSlug: string;
   providerId: string;
+  /** IR-U: when set, the space renders that connection's detail as a focused
+   *  sub-view of the Connections tab — same header, same tabs, one page.
+   *  Set by the nested `…/connections/{id}` route. */
+  focusConnectionId?: string;
 }) {
   const { client } = useSession();
   const { toast } = useToast();
@@ -253,7 +260,21 @@ export function ProviderSpace({
     const requested = searchParams?.get("tab") as SpaceTabId | null;
     return requested && SPACE_TAB_LABELS[requested] ? requested : "overview";
   });
-  const activeTab: SpaceTabId = tabs.includes(tab) ? tab : "overview";
+  // IR-U: a focused connection IS the Connections tab, in-place. Tab clicks
+  // while focused navigate to the space root (dropping the connection), so
+  // the URL and the view stay in lockstep.
+  const spaceRoot = `/orgs/${orgSlug}/integrations/${providerId}`;
+  const activeTab: SpaceTabId = resolveActiveSpaceTab(focusConnectionId, tab, tabs, "overview");
+  const selectTab = React.useCallback(
+    (t: SpaceTabId) => {
+      if (focusConnectionId) {
+        router.push(t === "overview" ? spaceRoot : `${spaceRoot}?tab=${t}`);
+        return;
+      }
+      setTab(t);
+    },
+    [focusConnectionId, router, spaceRoot],
+  );
   const showMints = descriptor?.capabilities.includes("credential-broker") ?? Boolean(capability);
   const showDeliveries = descriptor?.capabilities.includes("inbound") ?? false;
 
@@ -317,7 +338,7 @@ export function ProviderSpace({
             type="button"
             role="tab"
             aria-selected={activeTab === t}
-            onClick={() => setTab(t)}
+            onClick={() => selectTab(t)}
             className={`shrink-0 border-b-2 px-3 py-1.5 text-[12.5px] ${
               activeTab === t
                 ? "border-foreground font-semibold"
@@ -329,8 +350,34 @@ export function ProviderSpace({
         ))}
       </div>
 
-      {/* ── Overview / Connections ── */}
-      {activeTab === "overview" || activeTab === "connections" ? (
+      {/* ── Focused connection (IR-U): the detail renders IN PLACE, as a
+          sub-view of the Connections tab — the header + tabs above stay, so
+          it is one unified page, never a second one. ── */}
+      {focusConnectionId ? (
+        <ConnectionDetailBody
+          orgId={orgId}
+          orgSlug={orgSlug}
+          connectionId={focusConnectionId}
+          backToListHref={`${spaceRoot}?tab=connections`}
+          {...(capability ? { templatesHref: `${spaceRoot}?tab=templates` } : {})}
+          {...(capability
+            ? {
+                onCreateSecret: (connId: string) => {
+                  setInitialConnectionId(connId);
+                  setCreateOpen(true);
+                },
+              }
+            : {})}
+          onRevoked={() => {
+            integrations.reload();
+            router.push(`${spaceRoot}?tab=connections`);
+          }}
+          onChanged={() => integrations.reload()}
+        />
+      ) : null}
+
+      {/* ── Overview / Connections list ── */}
+      {!focusConnectionId && (activeTab === "overview" || activeTab === "connections") ? (
         <>
           <Kicker className="mb-2.5 mt-6">Connections</Kicker>
           {connections.length === 0 ? (
