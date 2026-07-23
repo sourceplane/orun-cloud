@@ -88,11 +88,26 @@ function ProviderCard({
   // (Anthropic ships a built-in default, so it stays optional there).
   const modelRequired = provider === "openai" || provider === "openrouter";
   const [apiKey, setApiKey] = React.useState("");
+  const [name, setName] = React.useState("");
   const [apiUrl, setApiUrl] = React.useState("");
   const [baseUrl, setBaseUrl] = React.useState("");
   const [defaultModel, setDefaultModel] = React.useState("");
   const [busy, setBusy] = React.useState(false);
   const [formOpen, setFormOpen] = React.useState(false);
+
+  // Adding a second key used to always collide on the server-side "default"
+  // name. The form now names every key: "default" for the first, a free
+  // "key-N" suggested after that, editable either way — and a collision is
+  // caught here, before the request.
+  const takenNames = React.useMemo(() => new Set(connections.map((c) => c.name)), [connections]);
+  const suggestedName = React.useMemo(() => {
+    if (!takenNames.has("default")) return "default";
+    for (let i = 2; ; i++) {
+      if (!takenNames.has(`key-${i}`)) return `key-${i}`;
+    }
+  }, [takenNames]);
+  const effectiveName = name.trim() || suggestedName;
+  const nameTaken = takenNames.has(effectiveName);
 
   function buildConfig(): Record<string, string> | undefined {
     // Daytona: an optional self-hosted API URL. Model providers: an optional
@@ -108,10 +123,11 @@ function ProviderCard({
     return Object.keys(config).length > 0 ? config : undefined;
   }
 
-  const canConnect = !!apiKey && (!modelRequired || !!defaultModel.trim());
+  const canConnect = !!apiKey && !nameTaken && (!modelRequired || !!defaultModel.trim());
 
   function resetForm() {
     setApiKey("");
+    setName("");
     setApiUrl("");
     setBaseUrl("");
     setDefaultModel("");
@@ -123,7 +139,7 @@ function ProviderCard({
     setBusy(true);
     const config = buildConfig();
     const res = await wrap(async () =>
-      client.agents.connectProvider(orgId, { provider, apiKey, ...(config ? { config } : {}) }),
+      client.agents.connectProvider(orgId, { provider, apiKey, name: effectiveName, ...(config ? { config } : {}) }),
     );
     setBusy(false);
     if (res.ok) {
@@ -277,6 +293,25 @@ function ProviderCard({
               />
             </Field>
 
+            <Field
+              label="Name"
+              hint={
+                nameTaken
+                  ? `A ${meta.name} key named “${effectiveName}” already exists — pick another name.`
+                  : `Identifies this key — “default” is the one auto-selection picks when several exist.`
+              }
+              htmlFor={`${provider}-name`}
+            >
+              <Input
+                id={`${provider}-name`}
+                placeholder={suggestedName}
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                aria-invalid={nameTaken}
+                className={nameTaken ? "border-destructive" : undefined}
+              />
+            </Field>
+
             {provider === "daytona" ? (
               <Field label="API URL" hint="Optional — defaults to https://app.daytona.io/api" htmlFor={`${provider}-url`}>
                 <Input
@@ -307,7 +342,15 @@ function ProviderCard({
                     onChange={(e) => setDefaultModel(e.target.value)}
                   />
                 </Field>
-                <Field label="Base URL" hint="Optional — for an OpenAI-compatible gateway." htmlFor={`${provider}-base`}>
+                <Field
+                  label="Base URL"
+                  hint={
+                    provider === "openrouter"
+                      ? "Optional — OpenRouter endpoints are picked automatically (chat rides /api/v1, sessions ride /api). Set only for a custom gateway."
+                      : "Optional — an OpenAI-compatible gateway for chat; sessions need an Anthropic-compatible one."
+                  }
+                  htmlFor={`${provider}-base`}
+                >
                   <Input
                     id={`${provider}-base`}
                     placeholder="https://…/v1"

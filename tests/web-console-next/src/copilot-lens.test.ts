@@ -65,3 +65,45 @@ describe("CX5: the approval guard (design §6)", () => {
     expect(s.approvals[0]).toMatchObject({ resolved: true, approved: true });
   });
 });
+
+describe("the lens transcript (the session's copilot head)", () => {
+  it("folds user steers + agent turns into chronological bubbles, never activity noise", () => {
+    const s = fold([
+      { v: 1, type: "CUSTOM", name: "activity", seq: 1, value: { kind: "message_user", payload: { text: "Hi", principal: "usr_1" } } },
+      { v: 1, type: "TEXT_MESSAGE_CONTENT", delta: "Hello " },
+      { v: 1, type: "TEXT_MESSAGE_CONTENT", delta: "there" },
+      { v: 1, type: "TEXT_MESSAGE_END", messageId: "m1" },
+    ]);
+    expect(s.items.map((i) => i.kind)).toEqual(["user", "assistant"]);
+    expect(s.items[0]).toMatchObject({ text: "Hi", principal: "usr_1" });
+    expect(s.items[1]).toMatchObject({ text: "Hello there" });
+    expect(s.streaming).toBe("");
+    expect(s.activity).toHaveLength(0);
+  });
+
+  it("the durable message_agent copy of a streamed turn is deduped; a replay-only turn still lands", () => {
+    const streamed = fold([
+      { v: 1, type: "TEXT_MESSAGE_CONTENT", delta: "done" },
+      { v: 1, type: "TEXT_MESSAGE_END", messageId: "m1" },
+      { v: 1, type: "CUSTOM", name: "activity", seq: 4, value: { kind: "message_agent", payload: { text: "done" } } },
+    ]);
+    expect(streamed.items.filter((i) => i.kind === "assistant")).toHaveLength(1);
+
+    const replayOnly = fold([
+      { v: 1, type: "CUSTOM", name: "activity", seq: 4, value: { kind: "message_agent", payload: { text: "done" } } },
+    ]);
+    expect(replayOnly.items).toEqual([{ kind: "assistant", id: "a_4", text: "done" }]);
+  });
+
+  it("RUN_ERROR and error events become sanitized error cards — raw HTML never renders", () => {
+    const s = fold([
+      { v: 1, type: "RUN_ERROR", message: "API Error: 404 <!DOCTYPE html><html><head>lots of markup</head></html>" },
+      { v: 1, type: "CUSTOM", name: "activity", seq: 9, value: { kind: "error", payload: { text: "plain failure" } } },
+    ]);
+    expect(s.items.map((i) => i.kind)).toEqual(["error", "error"]);
+    expect(s.items[0]!.text).toContain("API Error: 404");
+    expect(s.items[0]!.text).toContain("Base URL");
+    expect(s.items[0]!.text).not.toContain("<html");
+    expect(s.items[1]!.text).toBe("plain failure");
+  });
+});

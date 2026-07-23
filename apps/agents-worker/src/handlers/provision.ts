@@ -109,13 +109,37 @@ function pickSessionModelConnection(
   };
 }
 
+/** OpenRouter's Anthropic-compatible endpoint (the "Anthropic skin"): the
+ * claude-code harness speaks its native Messages protocol to this base. Any
+ * other openrouter.ai URL (the site root, the OpenAI-compatible /api/v1)
+ * answers /v1/messages with the WEBSITE's HTML 404 — so a connection pinned
+ * at openrouter.ai is canonicalized here rather than left to fail mid-run. */
+const OPENROUTER_ANTHROPIC_BASE = "https://openrouter.ai/api";
+
+/** The gateway base a non-Anthropic connection rides: the configured baseUrl,
+ * canonicalized for known hosts; OpenRouter defaults when none is set. */
+function gatewayBaseUrl(provider: Provider, cfg: Record<string, unknown>): string {
+  const raw = typeof cfg.baseUrl === "string" && cfg.baseUrl ? cfg.baseUrl.replace(/\/$/, "") : "";
+  if (provider === "openrouter") {
+    if (!raw) return OPENROUTER_ANTHROPIC_BASE;
+    try {
+      if (new URL(raw).hostname === "openrouter.ai") return OPENROUTER_ANTHROPIC_BASE;
+    } catch {
+      // Malformed → fall through to the raw string; the verify ping caught
+      // real garbage at connect time.
+    }
+  }
+  return raw;
+}
+
 /**
  * Model env for the exec (claude-code harness convention): Anthropic keys ride
- * natively as ANTHROPIC_API_KEY; OpenAI/OpenRouter connections require an
- * Anthropic-compatible gateway `config.baseUrl` and ride as ANTHROPIC_BASE_URL
- * + ANTHROPIC_AUTH_TOKEN. The pinned model (connection defaultModel, else the
- * profile's) rides as ANTHROPIC_MODEL so the harness runs what the profile
- * says — never its own default.
+ * natively as ANTHROPIC_API_KEY; OpenAI/OpenRouter connections ride an
+ * Anthropic-compatible gateway as ANTHROPIC_BASE_URL + ANTHROPIC_AUTH_TOKEN
+ * (OpenRouter's skin is the default; OpenAI needs an explicit gateway). The
+ * pinned model (connection defaultModel, else the profile's) rides as
+ * ANTHROPIC_MODEL so the harness runs what the profile says — never its own
+ * default.
  */
 function modelEnvForConnection(
   connection: ProviderConnection,
@@ -123,10 +147,10 @@ function modelEnvForConnection(
   profileModel: string,
 ): { env: Record<string, string>; baseUrl?: string } | { error: string } {
   const cfg = connection.config;
-  const baseUrl = typeof cfg.baseUrl === "string" && cfg.baseUrl ? cfg.baseUrl.replace(/\/$/, "") : "";
   const pinned = typeof cfg.defaultModel === "string" && cfg.defaultModel.trim() ? cfg.defaultModel.trim() : "";
   const model = pinned || profileModel;
   if (connection.provider === "anthropic") {
+    const baseUrl = typeof cfg.baseUrl === "string" && cfg.baseUrl ? cfg.baseUrl.replace(/\/$/, "") : "";
     return {
       env: {
         ANTHROPIC_API_KEY: key,
@@ -136,6 +160,7 @@ function modelEnvForConnection(
       ...(baseUrl ? { baseUrl } : {}),
     };
   }
+  const baseUrl = gatewayBaseUrl(connection.provider, cfg);
   if (!baseUrl) {
     return {
       error: `${connection.provider} connection ${connection.name} needs a Base URL (an Anthropic-compatible endpoint) to power sandbox sessions — set one under Settings › AI providers, or select an Anthropic connection`,

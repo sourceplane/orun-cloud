@@ -173,7 +173,7 @@ export const PROVIDER_META = {
   openrouter: {
     name: "OpenRouter",
     blurb:
-      "One OpenRouter key, many models. Set a Default model to pick one; sessions also need an Anthropic-compatible Base URL.",
+      "One OpenRouter key, many models. Set a Default model to pick one; sessions ride its Anthropic-compatible endpoint (https://openrouter.ai/api) automatically.",
     keyPlaceholder: "sk-or-…",
     modelPlaceholder: "anthropic/claude-sonnet-4.5",
     docsUrl: "https://openrouter.ai/docs",
@@ -213,11 +213,12 @@ export function connectionBaseUrl(c: { config?: Record<string, unknown> }): stri
 }
 
 /** Whether a VERIFIED model connection can power a sandbox SESSION: Anthropic
- * rides natively; OpenAI/OpenRouter need an Anthropic-compatible Base URL
- * (the claude-code harness gateway convention) — keep in lockstep with
+ * rides natively; OpenRouter defaults to its Anthropic-compatible endpoint
+ * (any openrouter.ai Base URL is canonicalized at provision); OpenAI needs an
+ * explicit Anthropic-compatible gateway Base URL — keep in lockstep with
  * modelEnvForConnection in agents-worker's provision handler. */
 export function connectionSessionReady(c: { provider: string; config?: Record<string, unknown> }): boolean {
-  if (c.provider === "openai" || c.provider === "openrouter") return connectionBaseUrl(c).length > 0;
+  if (c.provider === "openai") return connectionBaseUrl(c).length > 0;
   return true;
 }
 

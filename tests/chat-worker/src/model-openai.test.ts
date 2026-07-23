@@ -110,4 +110,22 @@ describe("modelClientFor", () => {
     expect(modelClientFor("openrouter", "sk-or", {})).toBeNull();
     expect(modelClientFor("daytona", "x", {})).toBeNull();
   });
+
+  it("canonicalizes any openrouter.ai baseUrl to /api/v1 — the Anthropic skin (/api) is for sessions, not chat", async () => {
+    const urls: string[] = [];
+    const fetchFn = (async (input: RequestInfo | URL) => {
+      urls.push(String(input));
+      return new Response("nope", { status: 500 });
+    }) as unknown as typeof fetch;
+    for (const baseUrl of ["https://openrouter.ai/api", "https://openrouter.ai", "https://openrouter.ai/api/v1/"]) {
+      const client = modelClientFor("openrouter", "sk-or", { defaultModel: "m", baseUrl }, fetchFn)!;
+      await client.stream({ system: "S", messages: [{ role: "user", content: "x" }], tools: [] }, () => {}).catch(() => {});
+    }
+    expect(urls).toHaveLength(3);
+    for (const u of urls) expect(u).toBe("https://openrouter.ai/api/v1/chat/completions");
+    // A real custom gateway is honored verbatim.
+    const custom = modelClientFor("openrouter", "sk-or", { defaultModel: "m", baseUrl: "https://gw.example/v1" }, fetchFn)!;
+    await custom.stream({ system: "S", messages: [{ role: "user", content: "x" }], tools: [] }, () => {}).catch(() => {});
+    expect(urls[3]).toBe("https://gw.example/v1/chat/completions");
+  });
 });

@@ -295,6 +295,25 @@ describe("agents-worker session provisioning (AG5)", () => {
     expect(f.log.created[0]!.egressAllow).toContain("gateway.example");
   });
 
+  it("OpenRouter defaults to its Anthropic-compatible endpoint; any openrouter.ai URL is canonicalized", async () => {
+    // No baseUrl at all → the default skin.
+    const f = await fixture({
+      connections: [{ provider: "daytona" }, { provider: "openrouter", config: { defaultModel: "anthropic/claude-sonnet-4.5" } }],
+    });
+    expect((await route(req("POST", provisionPath(f.sessionId)), env, f.deps)).status).toBe(200);
+    expect(f.log.execs[0]!.env!.ANTHROPIC_BASE_URL).toBe("https://openrouter.ai/api");
+
+    // The site root (the HTML-404 trap) → canonicalized to the skin.
+    const g = await fixture({
+      connections: [
+        { provider: "daytona" },
+        { provider: "openrouter", config: { baseUrl: "https://openrouter.ai", defaultModel: "anthropic/claude-sonnet-4.5" } },
+      ],
+    });
+    expect((await route(req("POST", provisionPath(g.sessionId)), env, g.deps)).status).toBe(200);
+    expect(g.log.execs[0]!.env!.ANTHROPIC_BASE_URL).toBe("https://openrouter.ai/api");
+  });
+
   it("refuses a gateway connection with no Base URL — actionable, before any provider call", async () => {
     const f = await fixture({
       connections: [{ provider: "daytona" }, { provider: "openai", config: { defaultModel: "gpt-4o" } }],
