@@ -46,6 +46,7 @@ import { handleInternalRotateSource, ROTATE_SOURCE_PATH } from "./handlers/rotat
 import { handleInternalConnectionStatuses } from "./handlers/internal-connection-status.js";
 import { handleInternalSecretsCapability, SECRETS_CAPABILITY_PATH } from "./handlers/internal-secrets-capability.js";
 import { handleListSecretsCapabilities } from "./handlers/secrets-capabilities.js";
+import { handleGetIntegrationRegistry } from "./handlers/registry.js";
 import {
   handleCreateScopeTemplate,
   handleListScopeTemplates,
@@ -111,6 +112,10 @@ function resolveActor(request: Request): ActorContext | null {
 }
 
 const ORG_INTEGRATIONS_RE = /^\/v1\/organizations\/([^/]+)\/integrations$/;
+// IR0: the bulk Integration Registry read. Matched BEFORE ORG_INTEGRATION_RE —
+// "registry" would otherwise parse as a connection id segment.
+const ORG_INTEGRATIONS_REGISTRY_RE =
+  /^\/v1\/organizations\/([^/]+)\/integrations\/registry$/;
 // SP0c (SP-A1): must be matched BEFORE ORG_INTEGRATION_RE — "secrets-capabilities"
 // would otherwise parse as a connection id segment.
 const ORG_SECRETS_CAPABILITIES_RE =
@@ -334,6 +339,16 @@ export async function route(request: Request, env: Env): Promise<Response> {
     if (!orgId) return notFound(requestId, pathname);
     if (request.method !== "GET") return methodNotAllowed(requestId);
     return handleListIntegrations(request, env, requestId, actor, orgId);
+  }
+
+  // IR0: the bulk Integration Registry read. Matched before
+  // ORG_INTEGRATION_RE so the literal segment never parses as an id.
+  m = pathname.match(ORG_INTEGRATIONS_REGISTRY_RE);
+  if (m) {
+    const orgId = parseOrgPublicId(m[1]!);
+    if (!orgId) return notFound(requestId, pathname);
+    if (request.method !== "GET") return methodNotAllowed(requestId);
+    return handleGetIntegrationRegistry(request, env, requestId, actor, asUuid(orgId));
   }
 
   // SP0c (SP-A1): the console's bulk secret-source capability read. Matched

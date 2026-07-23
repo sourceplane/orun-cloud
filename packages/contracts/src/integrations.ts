@@ -1056,3 +1056,154 @@ export const INTEGRATION_ENTITLEMENTS = {
   BROKERED_SECRETS_LIMIT: "limit.brokered_secrets",
   CREDENTIAL_MINTS_PER_DAY_LIMIT: "limit.credential_mints_per_day",
 } as const;
+
+// ── Integration Registry (saas-integration-registry IR0) ─────
+//
+// One manifest per provider, declared in code beside its adapter and served
+// through the bulk registry read. Every surface — hub, integration space,
+// Secrets lens, Cmd-K, docs, the orun CLI — derives from these descriptors;
+// none re-encodes provider knowledge. Additive-evolution rule applies: fields
+// are added, never repurposed; `version` bumps on additions; consumers ignore
+// unknown fields. Pure metadata: never behavior, never a credential.
+
+/** Hub grouping + space header vocabulary. `ai-provider` and `compute` are
+ *  reserved for the IR5 re-home of the agents provider panel. */
+export type IntegrationCategory =
+  | "source-control"
+  | "messaging"
+  | "infrastructure"
+  | "ai-provider"
+  | "compute";
+
+/** Lifecycle of a manifest, not of a connection: `live` renders as a
+ *  connectable card, `dormant` is served for fixtures/tests but hidden from
+ *  the hub outside the roadmap strip, `roadmap` renders non-interactive. */
+export type IntegrationManifestStatus = "live" | "dormant" | "roadmap";
+
+/** Standard space chrome tabs (IR2). Overview/Connections/Settings render for
+ *  every provider; the rest appear per capability. */
+export type IntegrationSpaceTab =
+  | "overview"
+  | "connections"
+  | "secrets"
+  | "templates"
+  | "activity"
+  | "settings";
+
+/** Provider module slots the space can mount (IR6). String-typed so a module
+ *  can land console-side without a contracts release; well-known ids today:
+ *  "repositories" | "channels" | "accounts" | "projects" | "models"
+ *  | "sandboxes". */
+export type IntegrationModuleRef = string;
+
+// ── CLI projection (IR7 / orun-integrations-cli) ─────────────
+
+/** One positional or flag of a served CLI verb. */
+export interface IntegrationCliArg {
+  name: string;
+  kind: "positional" | "flag";
+  type: "string" | "int" | "bool" | "enum" | "kv";
+  enum?: readonly string[];
+  required?: boolean;
+  /** May be given multiple times (repeatable flag / variadic positional). */
+  repeat?: boolean;
+  help: string;
+}
+
+/** The typed endpoint invocation a verb maps onto. `op` values come from a
+ *  closed, compiled-in allowlist on BOTH sides (server lint + CLI mapper) —
+ *  a descriptor can never reach an operation the SDK could not. */
+export interface IntegrationCliInvoke {
+  plane: "config" | "integrations";
+  op: string;
+  /** Arg name → request-field mapping. */
+  bind: Readonly<Record<string, string>>;
+}
+
+/** One verb of a provider's served command tree. */
+export interface IntegrationCliVerb {
+  /** Path under the provider namespace, e.g. ["secret","create"]. */
+  path: readonly string[];
+  summary: string;
+  args: readonly IntegrationCliArg[];
+  invoke: IntegrationCliInvoke;
+  /** The verb needs a connection: the CLI auto-resolves when the org has
+   *  exactly one, prompts/errors otherwise, honors `--connection`. */
+  needsConnection?: boolean;
+}
+
+/** A provider's declared CLI namespace. STANDARD verbs (connections/health/
+ *  templates/secret/credentials) derive from `capabilities` and need no entry
+ *  here; explicit entries extend or override the standard set (served wins). */
+export interface IntegrationCliNamespace {
+  verbs: readonly IntegrationCliVerb[];
+}
+
+// ── The manifest + its wire projection ───────────────────────
+
+/** A connect method as DECLARED (ordered preference). Environment liveness is
+ *  resolved server-side into the descriptor — never declared here. */
+export interface IntegrationConnectMethodDecl {
+  kind: IntegrationConnectKind;
+}
+
+/**
+ * The Integration Manifest — the one declaration a provider owns
+ * (IR design §2). Declared beside the adapter in integrations-worker;
+ * conformance-linted against the adapter (manifest ⊆ adapter) so it can
+ * never drift the way the console catalogs did.
+ */
+export interface IntegrationManifest {
+  id: IntegrationProviderId;
+  displayName: string;
+  category: IntegrationCategory;
+  /** Hub card + space header copy. */
+  tagline: string;
+  /** Ordered connect-method preference; the console renders the first LIVE
+   *  method as primary and the rest beneath. */
+  connect: readonly IntegrationConnectMethodDecl[];
+  /** May an org hold more than one active connection (e.g. Cloudflare
+   *  accounts, named AI-provider keys)? */
+  multiConnection: boolean;
+  /** Mirrors the adapter's capability objects — conformance-linted. */
+  capabilities: readonly IntegrationCapability[];
+  /** What the console derives for the integration's space (IR2/IR6). */
+  space: {
+    tabs: readonly IntegrationSpaceTab[];
+    modules: readonly IntegrationModuleRef[];
+    /** SP1 authoring-registry key, absorbed into the manifest. */
+    authoring: "declarative" | "custom";
+  };
+  /** Served CLI verb tree (IR7); standard verbs derive from capabilities. */
+  cli?: IntegrationCliNamespace;
+  /** Entitlement key gating connect (412 + upgrade UX). */
+  entitlement: string;
+  /** Manifest version — bumps on additive evolution. */
+  version: number;
+  status: IntegrationManifestStatus;
+}
+
+/** A connect method as SERVED: declaration + this environment's readiness
+ *  (the `getConfiguredProvider` gate, reported instead of hidden). */
+export interface IntegrationConnectMethod extends IntegrationConnectMethodDecl {
+  live: boolean;
+}
+
+/**
+ * The manifest projected per environment + org — what the registry read
+ * returns and every surface consumes.
+ */
+export interface IntegrationDescriptor
+  extends Omit<IntegrationManifest, "connect"> {
+  connect: readonly IntegrationConnectMethod[];
+  /** Whether this org's plan currently allows connecting the provider.
+   *  Omitted when the entitlement service was unavailable at read time
+   *  (fail-soft — surfaces render the connect gate's own 412 on attempt). */
+  entitled?: boolean;
+}
+
+/** GET /v1/organizations/{orgId}/integrations/registry (IR0). Bulk, ETag'd,
+ *  static per deploy apart from the entitlement projection. */
+export interface IntegrationRegistryResponse {
+  registry: readonly IntegrationDescriptor[];
+}

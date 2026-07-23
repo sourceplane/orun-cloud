@@ -27,12 +27,8 @@ import type { SqlExecutor } from "@saas/db/hyperdrive";
 import type { Uuid } from "@saas/db/ids";
 import { asUuid } from "@saas/db/ids";
 import { successResponse } from "../http.js";
-import {
-  DORMANT_PROVIDER_IDS,
-  getConfiguredProvider,
-  getDormantProvider,
-  KNOWN_PROVIDER_IDS,
-} from "../providers/registry.js";
+import { getConfiguredProvider, getDormantProvider } from "../providers/registry.js";
+import { listIntegrationManifests } from "../providers/manifests/index.js";
 import { authorizeIntegration } from "./connections.js";
 import { mergeActiveTemplates } from "./scope-templates.js";
 
@@ -63,8 +59,11 @@ export async function handleListSecretsCapabilities(
   const executor = deps?.executor ?? (env.PLATFORM_DB ? createSqlExecutor(env.PLATFORM_DB) : null);
   const templatesRepo = executor ? createScopeTemplatesRepository(executor) : null;
 
+  // IR0: this read is a PROJECTION of the Integration Registry — the provider
+  // iteration order and set come from the manifests, the capability payload
+  // still comes from the adapters' `secrets` objects. Wire shape unchanged.
   const capabilities: ProviderSecretsCapability[] = [];
-  for (const id of [...KNOWN_PROVIDER_IDS, ...DORMANT_PROVIDER_IDS]) {
+  for (const id of listIntegrationManifests().map((m) => m.id)) {
     // A configured provider (env secrets present) is the live case; fall back
     // to the dormant registry so a reserved provider's declaration still lists.
     const provider = getConfiguredProvider(env, id)?.provider ?? getDormantProvider(id);
