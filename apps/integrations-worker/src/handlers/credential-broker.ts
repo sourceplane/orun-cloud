@@ -64,6 +64,7 @@ import { checkBillingEntitlement } from "../billing-client.js";
 import { encodeCursor, parsePageParams } from "../pagination.js";
 import { getConfiguredProvider } from "../providers/registry.js";
 import { getCapability, type IntegrationProvider } from "../providers/types.js";
+import { resolveCustomTemplate } from "./scope-templates.js";
 import {
   readCustodyServedCredential,
   readParentCredential,
@@ -327,7 +328,14 @@ async function executeMintCore(
     return { ok: false, failure: { kind: "capability_not_supported" } };
   }
 
-  const template = broker.scopeTemplates().find((t) => t.id === templateId);
+  // SP4: an id outside the code catalog may be an org-curated custom template
+  // — resolve it to its BASE, which supplies every mint semantic (permission
+  // grammar, custody, params, TTL ceiling), so a custom can never exceed what
+  // its base grants. Any status resolves: soft-retire only hides creation.
+  const declared = broker.scopeTemplates();
+  const template =
+    declared.find((t) => t.id === templateId) ??
+    (await resolveCustomTemplate(executor, orgId, connection.provider, templateId, declared));
   if (!template) {
     return { ok: false, failure: { kind: "template_unknown" } };
   }

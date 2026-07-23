@@ -47,6 +47,11 @@ import { handleInternalConnectionStatuses } from "./handlers/internal-connection
 import { handleInternalSecretsCapability, SECRETS_CAPABILITY_PATH } from "./handlers/internal-secrets-capability.js";
 import { handleListSecretsCapabilities } from "./handlers/secrets-capabilities.js";
 import {
+  handleCreateScopeTemplate,
+  handleListScopeTemplates,
+  handleUpdateScopeTemplate,
+} from "./handlers/scope-templates.js";
+import {
   handleCreateConnectionGrant,
   handleListConnectionGrants,
   handleRevokeConnectionGrant,
@@ -110,6 +115,11 @@ const ORG_INTEGRATIONS_RE = /^\/v1\/organizations\/([^/]+)\/integrations$/;
 // would otherwise parse as a connection id segment.
 const ORG_SECRETS_CAPABILITIES_RE =
   /^\/v1\/organizations\/([^/]+)\/integrations\/secrets-capabilities$/;
+// SP4: org-curated scope templates, managed in the provider's space.
+const ORG_PROVIDER_SCOPE_TEMPLATES_RE =
+  /^\/v1\/organizations\/([^/]+)\/integrations\/providers\/([a-z]+)\/scope-templates$/;
+const ORG_PROVIDER_SCOPE_TEMPLATE_RE =
+  /^\/v1\/organizations\/([^/]+)\/integrations\/providers\/([a-z]+)\/scope-templates\/([a-z0-9-]+)$/;
 const ORG_INTEGRATIONS_CONNECT_RE = /^\/v1\/organizations\/([^/]+)\/integrations\/([a-z]+)\/connect$/;
 const ORG_INTEGRATION_RE = /^\/v1\/organizations\/([^/]+)\/integrations\/([^/]+)$/;
 const ORG_DELIVERIES_RE = /^\/v1\/organizations\/([^/]+)\/integrations\/([^/]+)\/deliveries$/;
@@ -334,6 +344,39 @@ export async function route(request: Request, env: Env): Promise<Response> {
     if (!orgId) return notFound(requestId, pathname);
     if (request.method !== "GET") return methodNotAllowed(requestId);
     return handleListSecretsCapabilities(request, env, requestId, actor, orgId);
+  }
+
+  // SP4: org-curated scope templates (list/create/edit-or-retire), managed in
+  // the provider's own space. Matched before ORG_INTEGRATION_RE.
+  m = pathname.match(ORG_PROVIDER_SCOPE_TEMPLATES_RE);
+  if (m) {
+    const orgId = parseOrgPublicId(m[1]!);
+    const providerId = m[2]!;
+    if (!orgId) return notFound(requestId, pathname);
+    if (request.method === "GET") {
+      return handleListScopeTemplates(request, env, requestId, actor, asUuid(orgId), providerId);
+    }
+    if (request.method === "POST") {
+      return handleCreateScopeTemplate(request, env, requestId, actor, asUuid(orgId), providerId);
+    }
+    return methodNotAllowed(requestId);
+  }
+  m = pathname.match(ORG_PROVIDER_SCOPE_TEMPLATE_RE);
+  if (m) {
+    const orgId = parseOrgPublicId(m[1]!);
+    const providerId = m[2]!;
+    const templateId = m[3]!;
+    if (!orgId) return notFound(requestId, pathname);
+    if (request.method !== "PATCH") return methodNotAllowed(requestId);
+    return handleUpdateScopeTemplate(
+      request,
+      env,
+      requestId,
+      actor,
+      asUuid(orgId),
+      providerId,
+      templateId,
+    );
   }
 
   m = pathname.match(ORG_GITHUB_TOKEN_RE);

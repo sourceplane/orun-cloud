@@ -33,6 +33,15 @@ export type {
 
 export { createIntegrationsRepository } from "./repository.js";
 
+export type {
+  OrgScopeTemplate,
+  OrgScopeTemplateStatus,
+  CreateOrgScopeTemplateInput,
+  UpdateOrgScopeTemplateInput,
+  ScopeTemplatesRepository,
+} from "./scope-templates.js";
+export { createScopeTemplatesRepository } from "./scope-templates.js";
+
 // Integration-hub substrate (saas-integration-hub IH0): custody, mint ledger,
 // per-provider facts. Additive module beside the IG repository.
 export type {

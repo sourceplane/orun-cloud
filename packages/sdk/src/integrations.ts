@@ -18,6 +18,10 @@ import type {
   GetIntegrationResponse,
   ListIntegrationsResponse,
   ProviderSecretsCapabilitiesResponse,
+  CreateScopeTemplateRequest,
+  UpdateScopeTemplateRequest,
+  ListScopeTemplatesResponse,
+  ScopeTemplateResponse,
   ListInboundDeliveriesResponse,
   ReplayInboundDeliveryResponse,
   RevokeIntegrationResponse,
@@ -67,6 +71,63 @@ export class IntegrationsClient {
       {
         method: "GET",
         path: `/v1/organizations/${encodeURIComponent(orgId)}/integrations/secrets-capabilities`,
+      },
+      opts,
+    );
+  }
+
+  /**
+   * GET /v1/organizations/:orgId/integrations/providers/:providerId/scope-templates
+   *
+   * The manage view (saas-secrets-platform SP4): the provider's declared
+   * catalog plus every org-curated template (active AND retired).
+   */
+  listScopeTemplates(
+    orgId: string,
+    providerId: string,
+    opts: RequestOptions = {},
+  ): Promise<ListScopeTemplatesResponse> {
+    return this.transport.request<ListScopeTemplatesResponse>(
+      {
+        method: "GET",
+        path: `/v1/organizations/${encodeURIComponent(orgId)}/integrations/providers/${encodeURIComponent(providerId)}/scope-templates`,
+      },
+      opts,
+    );
+  }
+
+  /** POST …/providers/:providerId/scope-templates — create an org-curated
+   *  template derived from a declared base (SP4). */
+  createScopeTemplate(
+    orgId: string,
+    providerId: string,
+    body: CreateScopeTemplateRequest,
+    opts: RequestOptions = {},
+  ): Promise<ScopeTemplateResponse> {
+    return this.transport.request<ScopeTemplateResponse>(
+      {
+        method: "POST",
+        path: `/v1/organizations/${encodeURIComponent(orgId)}/integrations/providers/${encodeURIComponent(providerId)}/scope-templates`,
+        body,
+      },
+      opts,
+    );
+  }
+
+  /** PATCH …/scope-templates/:templateId — display edits bump version;
+   *  status soft-retires/reactivates. No hard delete exists (SP4). */
+  updateScopeTemplate(
+    orgId: string,
+    providerId: string,
+    templateId: string,
+    body: UpdateScopeTemplateRequest,
+    opts: RequestOptions = {},
+  ): Promise<ScopeTemplateResponse> {
+    return this.transport.request<ScopeTemplateResponse>(
+      {
+        method: "PATCH",
+        path: `/v1/organizations/${encodeURIComponent(orgId)}/integrations/providers/${encodeURIComponent(providerId)}/scope-templates/${encodeURIComponent(templateId)}`,
+        body,
       },
       opts,
     );
