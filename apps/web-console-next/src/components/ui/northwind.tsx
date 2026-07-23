@@ -16,16 +16,36 @@ import { cn } from "@/lib/cn";
 
 /* ── Layout ─────────────────────────────────────────────────────────── */
 
+// IC4: the entrance fade is a cold-load brand moment, not a navigation tax.
+// Module state survives SPA navigations and resets on a full document load,
+// so the first Screen of a session fades up once and every subsequent
+// navigation paints at full opacity immediately — the audit measured the
+// per-nav re-fade ghosting already-rendered (often cache-served) content for
+// 280ms on every click.
+let entranceFadePlayed = false;
+
+/** True exactly once per document load: the first caller gets the entrance
+ *  animation, everyone after paints immediately. */
+export function useEntranceFade(): boolean {
+  const [first] = React.useState(() => !entranceFadePlayed);
+  React.useEffect(() => {
+    entranceFadePlayed = true;
+  }, []);
+  return first;
+}
+
 /** Standard screen container: 1060px column, generous vertical rhythm. */
 export function Screen({
   className,
   detail = false,
   ...props
 }: React.HTMLAttributes<HTMLDivElement> & { detail?: boolean }) {
+  const fade = useEntranceFade();
   return (
     <div
       className={cn(
-        "mx-auto w-full max-w-[1060px] animate-fade-up px-5 pb-20 sm:px-8 lg:px-12",
+        "mx-auto w-full max-w-[1060px] px-5 pb-20 sm:px-8 lg:px-12",
+        fade && "animate-fade-up",
         detail ? "pt-7 sm:pt-10" : "pt-8 sm:pt-11 lg:pt-[52px]",
         className,
       )}

@@ -10,6 +10,7 @@ import {
   flattenSettingsNav,
   isSettingsLinkActive,
 } from "@/components/shell/settings-nav";
+import { useEntranceFade } from "@/components/ui/northwind";
 import { buildAccountNav, isAccountSettingsPath } from "@/components/shell/account-nav";
 
 /**
@@ -27,6 +28,8 @@ import { buildAccountNav, isAccountSettingsPath } from "@/components/shell/accou
  * personal ("You") scope lives in the identity chip, not here.
  */
 export default function SettingsLayout({ children }: { children: React.ReactNode }) {
+  // IC4: entrance fade is once-per-document, shared with Screen.
+  const fade = useEntranceFade();
   const params = useParams<{ orgSlug?: string }>();
   const pathname = usePathname();
   const orgSlug = params?.orgSlug ?? "";
@@ -121,7 +124,7 @@ export default function SettingsLayout({ children }: { children: React.ReactNode
         </div>
       </div>
 
-      <div className="mt-6 min-w-0 flex-1 animate-fade-up lg:mt-0 lg:pt-1.5">{children}</div>
+      <div className={cn("mt-6 min-w-0 flex-1 lg:mt-0 lg:pt-1.5", fade && "animate-fade-up")}>{children}</div>
     </div>
   );
 }
