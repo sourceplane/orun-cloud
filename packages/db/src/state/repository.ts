@@ -1382,11 +1382,25 @@ export function createStateRepository(executor: SqlExecutor): StateRepository {
         // it works whether doc_ref is a proper object or a string scalar, so no
         // re-projection is needed. `$2` carries the `sha256:` prefix, so it can
         // never collide with the sibling `sha` (bare-hex) field.
-        const result = await executor.execute<Record<string, unknown>>(
+        // IC5: the exact catalog_docs leg is index-backed
+        // (ix_state_catalog_docs_digest on (org_id, digest)) and covers every
+        // doc attached since CD3 — run it ALONE first. The old single UNION
+        // executed the two leading-wildcard LIKE legs (forced sequential
+        // scans over repo_facet + org_catalog_entities) on EVERY doc open,
+        // which the 2026-07-23 audit measured at 1.0–1.3s per open. The LIKE
+        // legs survive strictly as a fallback for read models projected
+        // before the doc index existed.
+        const fast = await executor.execute<Record<string, unknown>>(
           `SELECT source_project_id FROM state.catalog_docs
              WHERE org_id = $1 AND digest = $2
-           UNION
-           SELECT source_project_id FROM state.repo_facet
+             LIMIT 1`,
+          [orgId, digest],
+        );
+        if (fast.rowCount > 0) {
+          return { ok: true, value: fast.rows[0]!.source_project_id as Uuid };
+        }
+        const legacy = await executor.execute<Record<string, unknown>>(
+          `SELECT source_project_id FROM state.repo_facet
              WHERE org_id = $1 AND doc_ref::text LIKE '%' || $2 || '%'
            UNION
            SELECT source_project_id FROM state.org_catalog_entities
@@ -1394,8 +1408,8 @@ export function createStateRepository(executor: SqlExecutor): StateRepository {
            LIMIT 1`,
           [orgId, digest],
         );
-        if (result.rowCount === 0) return { ok: true, value: null };
-        return { ok: true, value: result.rows[0]!.source_project_id as Uuid };
+        if (legacy.rowCount === 0) return { ok: true, value: null };
+        return { ok: true, value: legacy.rows[0]!.source_project_id as Uuid };
       } catch {
         return safeError("Failed to resolve catalog doc project");
       }

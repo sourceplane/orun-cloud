@@ -263,10 +263,14 @@ export async function handleGetOrgCatalogDoc(
 
     // The deframed body is git-authored markdown; return it as UTF-8 text (the
     // console renders it through its sanitizing markdown pipeline, WO5).
+    // IC5: the body is content-addressed by digest — immutable by
+    // construction — so say so: browsers and the edge read-through cache
+    // (api-edge state-facade) can serve repeat opens without re-fetching.
     return new Response(new TextDecoder().decode(obj.body), {
       status: 200,
       headers: {
         "content-type": "text/markdown; charset=utf-8",
+        "cache-control": "public, max-age=31536000, immutable",
         "x-request-id": requestId,
       },
     });
