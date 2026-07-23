@@ -659,6 +659,20 @@ export interface StateRepository {
   listRunnableJobs(orgId: Uuid, projectId: Uuid, runId: Uuid): Promise<StateResult<RunJob[]>>;
   /** Per-status job tallies for the run projection. */
   getRunJobCounts(orgId: Uuid, projectId: Uuid, runId: Uuid): Promise<StateResult<RunJobCounts>>;
+  /**
+   * Per-status job tallies for a PAGE of runs in one grouped round-trip
+   * (IC1). The per-run loop this replaces cost one Postgres round-trip per
+   * row — 51 sequential trips for a full Activities page on per-request
+   * Hyperdrive connections, the 4.5s stall the 2026-07-23 audit caught.
+   * Keyed by runId; a run with no job rows is simply absent (callers
+   * substitute zero counts), matching getRunJobCounts semantics per run.
+   * Runs may span projects (the org-global feed): each (projectId, runId)
+   * pair is matched exactly.
+   */
+  getRunJobCountsBatch(
+    orgId: Uuid,
+    runs: Array<{ projectId: Uuid; runId: Uuid }>,
+  ): Promise<StateResult<Map<string, RunJobCounts>>>;
 
   // Objects (CAS index)
   upsertObject(input: UpsertObjectInput): Promise<StateResult<UpsertObjectOutcome>>;
