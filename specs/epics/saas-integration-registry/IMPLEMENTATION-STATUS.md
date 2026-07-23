@@ -9,8 +9,8 @@ rails; implementation started same day.
 |----|--------|
 | IR0 | ✅ Shipped (#596) — manifest + registry read |
 | IR1 | ✅ Shipped (#597) — unified hub from the registry |
-| IR2 | 🔄 In progress — canonical space + nested detail + redirects |
-| IR3 | 🗓️ Planned |
+| IR2 | ✅ Shipped (#598) — canonical space + nested detail + redirects |
+| IR3 | 🔄 In progress — Cloudflare unified |
 | IR4 | 🗓️ Planned |
 | IR5 | 🗓️ Planned (gate: IR-D3 sign-off) |
 | IR6 | 🗓️ Planned |
@@ -19,6 +19,28 @@ rails; implementation started same day.
 | IR9 | 🗓️ Planned |
 
 ## Notes
+
+- 2026-07-23: IR3 as built:
+  - **Recipe on the wire**: `IntegrationConnectRecipe` (contracts, additive)
+    on served connect methods; the Cloudflare adapter exports
+    `buildParentTokenRecipe()` DERIVED from `TEMPLATE_PERMISSION_GROUPS` +
+    the template catalog + the mint grant — the manifest's token method
+    serves it. The console's hand-mirrored `PARENT_TOKEN_RECIPE` is deleted
+    with the modal; grammar literals now exist only in the adapter
+    (conformance-tested: every template's groups + the mint grant appear in
+    the served recipe).
+  - **Generic connect surface** (`connect-panel.tsx`): renders the
+    descriptor's ORDERED methods — live install/oauth primary, token-paste
+    beneath with the served recipe; zero provider-name branches. The
+    token form reuses the shipped `token-connect-flow` reducer and posts
+    through the provider-generic SDK connect (`{ parentToken }`).
+    `cloudflare-connect-modal.tsx` deleted; the space's `spaceOwnsConnect`
+    is now descriptor-driven (`connectDispatch(...) === "space"`).
+  - **Multi-account first-class**: `multiConnection` drives an "Add
+    account" header CTA on the space; the connections tab, activity picker,
+    and authoring connection picker were already connection-scoped.
+  - Verified: integrations-worker 458/458, console 87 suites / 843 tests,
+    typecheck + lint clean.
 
 - 2026-07-23: IR2 as built:
   - **Route model**: `/integrations/[slug]` is the canonical integration

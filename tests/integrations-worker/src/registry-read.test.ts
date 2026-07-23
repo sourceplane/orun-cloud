@@ -80,9 +80,10 @@ describe("GET /v1/organizations/:orgId/integrations/registry (IR0)", () => {
     const byId = new Map(registry.map((d) => [d.id, d]));
     expect(byId.get("supabase")!.connect).toEqual([{ kind: "oauth", live: true }]);
     expect(byId.get("github")!.connect).toEqual([{ kind: "install", live: false }]);
-    expect(byId.get("cloudflare")!.connect).toEqual([
+    // Cloudflare's token method carries its adapter-derived recipe (IR3).
+    expect(byId.get("cloudflare")!.connect).toMatchObject([
       { kind: "oauth", live: false },
-      { kind: "token", live: true },
+      { kind: "token", live: true, recipe: expect.anything() },
     ]);
   });
 

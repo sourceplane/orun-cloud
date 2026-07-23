@@ -12,6 +12,7 @@ import type {
 } from "@saas/contracts/integrations";
 import { INTEGRATION_ENTITLEMENTS } from "@saas/contracts/integrations";
 import type { Env } from "../../env.js";
+import { buildParentTokenRecipe } from "../cloudflare.js";
 import type { ManifestModule } from "./shared.js";
 
 const manifest: IntegrationManifest = {
@@ -37,7 +38,9 @@ function resolveConnect(env: Env): readonly IntegrationConnectMethod[] {
   const oauth = custody && Boolean(env.CLOUDFLARE_OAUTH_CLIENT_ID && env.CLOUDFLARE_OAUTH_CLIENT_SECRET);
   return [
     { kind: "oauth", live: oauth },
-    { kind: "token", live: custody },
+    // The recipe is DERIVED from the adapter's template grammar (IR3) — the
+    // token panel, docs, and grant summaries all render this one source.
+    { kind: "token", live: custody, recipe: buildParentTokenRecipe() },
   ];
 }
 

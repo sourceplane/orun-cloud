@@ -1183,10 +1183,33 @@ export interface IntegrationManifest {
   status: IntegrationManifestStatus;
 }
 
+/** One line of a connect recipe: a provider-side permission/grant the
+ *  customer creates, and why the platform needs it. */
+export interface IntegrationConnectRecipeItem {
+  name: string;
+  why: string;
+}
+
+/**
+ * A served connect recipe (IR3): the guidance a token/apikey-kind method
+ * renders — DERIVED server-side from the adapter's own grant grammar (e.g.
+ * Cloudflare's template → permission-group map), never hand-mirrored in a
+ * console file. Pure display metadata.
+ */
+export interface IntegrationConnectRecipe {
+  /** One-line framing above the items (e.g. what kind of token to create). */
+  intro: string;
+  items: readonly IntegrationConnectRecipeItem[];
+  /** Provider dashboard deep links. */
+  links: readonly { label: string; url: string }[];
+}
+
 /** A connect method as SERVED: declaration + this environment's readiness
  *  (the `getConfiguredProvider` gate, reported instead of hidden). */
 export interface IntegrationConnectMethod extends IntegrationConnectMethodDecl {
   live: boolean;
+  /** Present on methods that need customer-side setup (token/apikey kinds). */
+  recipe?: IntegrationConnectRecipe;
 }
 
 /**
