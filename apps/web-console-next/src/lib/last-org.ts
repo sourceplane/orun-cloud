@@ -70,6 +70,19 @@ interface PostAuthClient {
 }
 
 /**
+ * Minimal query-cache seam (IC2). Structurally a `QueryClient`, but typed
+ * locally so this module stays dependency-free and pure-logic testable.
+ */
+interface QueryCacheSeed {
+  setQueryData: (key: readonly unknown[], data: unknown) => unknown;
+}
+
+/** The shared query-cache keys the boot reads (must mirror `qk` in
+ *  `query-keys.ts` — asserted by test to stay in lockstep). */
+const PROFILE_KEY = ["profile"] as const;
+const ORGS_KEY = ["orgs"] as const;
+
+/**
  * Resolve where to send the user right after authentication.
  *
  * The server preference is the cross-device source of truth: we read it with the
@@ -80,10 +93,22 @@ interface PostAuthClient {
  * fails (network, API-key token) we fall back to the local cache so the
  * redirect is never blocked. Pass a client built with the NEW token — the
  * session context's client may not have it yet on this tick.
+ *
+ * IC2 (one boot, one fetch): pass the app `QueryClient` as `seed` and every
+ * successful read is written into the shared query cache under the same keys
+ * the shell boots from (`qk.profile()` / `qk.orgs()`), so the post-redirect
+ * boot paints from cache instead of re-issuing the requests this function
+ * just made. Seeding happens strictly AFTER the reads resolve, which is after
+ * `CacheResetOnAuthChange` has cleared the previous identity's cache (the
+ * clear runs at token-swap commit; these reads take a network round-trip).
  */
-export async function resolvePostAuthDestination(client: PostAuthClient): Promise<string> {
+export async function resolvePostAuthDestination(
+  client: PostAuthClient,
+  seed?: QueryCacheSeed,
+): Promise<string> {
   try {
     const { user } = await client.auth.getProfile();
+    seed?.setQueryData(PROFILE_KEY, user);
     const serverSlug = user.lastOrgSlug ?? null;
     if (serverSlug) {
       writeLastOrgSlug(serverSlug);
@@ -94,6 +119,7 @@ export async function resolvePostAuthDestination(client: PostAuthClient): Promis
   }
   try {
     const { organizations } = await client.organizations.list();
+    seed?.setQueryData(ORGS_KEY, organizations);
     if (organizations.length === 0) return "/onboarding";
     const home = pickAccountBillingOrg(organizations)!;
     writeLastOrgSlug(home.slug);
