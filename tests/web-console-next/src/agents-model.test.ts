@@ -6,6 +6,7 @@ import {
   connectionTone,
   connectionModel,
   connectionReady,
+  connectionSessionReady,
   interfaceTier,
   modelOptions,
   orderFleetRows,
@@ -128,6 +129,14 @@ describe("dispatch model resolution (saas-dispatch DX-Q6 — the console mirror 
     expect(connectionReady({ provider: "openrouter", config: {} })).toBe(false);
     expect(connectionReady({ provider: "openrouter", config: { defaultModel: "x" } })).toBe(true);
     expect(connectionReady({ provider: "openai", config: { defaultModel: "gpt-4o" } })).toBe(true);
+  });
+
+  it("connectionSessionReady: Anthropic rides natively; gateways need a Base URL (the provision rule)", () => {
+    expect(connectionSessionReady({ provider: "anthropic", config: {} })).toBe(true);
+    expect(connectionSessionReady({ provider: "openrouter", config: { defaultModel: "x" } })).toBe(false);
+    expect(connectionSessionReady({ provider: "openrouter", config: { baseUrl: "https://gw.example/anthropic" } })).toBe(true);
+    expect(connectionSessionReady({ provider: "openai", config: {} })).toBe(false);
+    expect(connectionSessionReady({ provider: "openai", config: { baseUrl: "https://gw.example" } })).toBe(true);
   });
 
   it("pickDispatchConnection mirrors custody: preferred → sole → default → null", () => {

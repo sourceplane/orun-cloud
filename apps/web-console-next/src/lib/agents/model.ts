@@ -96,8 +96,10 @@ export const AGENT_TYPES = [
   { value: "orchestrator", label: "Orchestrator", blurb: "Turns an epic into design + proposed contracts." },
 ] as const;
 
-/** Models a profile can pin. The sandbox injects the workspace's Anthropic key
- * as ANTHROPIC_API_KEY; the runtime reads the model from the profile. */
+/** Models a profile can pin. The sandbox injects the workspace's selected
+ * model-provider key at exec time (ANTHROPIC_API_KEY for Anthropic;
+ * ANTHROPIC_BASE_URL + ANTHROPIC_AUTH_TOKEN for gateway providers) and pins
+ * the model via ANTHROPIC_MODEL. */
 export const AGENT_MODELS = [
   { value: "claude-opus-4-8", label: "Claude Opus 4.8" },
   { value: "claude-fable-5", label: "Claude Fable 5" },
@@ -162,14 +164,16 @@ export const PROVIDER_META = {
   },
   openai: {
     name: "OpenAI",
-    blurb: "An OpenAI API key for model calls. Add a Base URL to point at an OpenAI-compatible gateway.",
+    blurb:
+      "An OpenAI API key for model calls. Add a Base URL to point at a gateway — sessions need an Anthropic-compatible one.",
     keyPlaceholder: "sk-…",
     modelPlaceholder: "gpt-4o",
     docsUrl: "https://platform.openai.com/docs/api-reference",
   },
   openrouter: {
     name: "OpenRouter",
-    blurb: "One OpenRouter key, many models. OpenAI-compatible — set a Default model to pick one.",
+    blurb:
+      "One OpenRouter key, many models. Set a Default model to pick one; sessions also need an Anthropic-compatible Base URL.",
     keyPlaceholder: "sk-or-…",
     modelPlaceholder: "anthropic/claude-sonnet-4.5",
     docsUrl: "https://openrouter.ai/docs",
@@ -191,6 +195,29 @@ export function connectionModel(c: { config?: Record<string, unknown> }): string
  * verified-but-modelless connection is a dead end the UI must call out. */
 export function connectionReady(c: { provider: string; config?: Record<string, unknown> }): boolean {
   if (c.provider === "openai" || c.provider === "openrouter") return connectionModel(c).length > 0;
+  return true;
+}
+
+/** The org setting naming the model connection agent SESSIONS boot with —
+ * read by agents-worker at provision time. Keep in lockstep with
+ * apps/agents-worker/src/handlers/provision.ts. */
+export const SESSION_MODEL_SETTING_KEY = "agents.sessions.connection";
+
+/** The mirror of DISPATCH_MODEL_SETTING_KEY for chat (chat-worker custody). */
+export const DISPATCH_MODEL_SETTING_KEY = "agents.chat.connection";
+
+/** The Base URL a connection pins, else "". */
+export function connectionBaseUrl(c: { config?: Record<string, unknown> }): string {
+  const u = c.config?.baseUrl;
+  return typeof u === "string" ? u.trim() : "";
+}
+
+/** Whether a VERIFIED model connection can power a sandbox SESSION: Anthropic
+ * rides natively; OpenAI/OpenRouter need an Anthropic-compatible Base URL
+ * (the claude-code harness gateway convention) — keep in lockstep with
+ * modelEnvForConnection in agents-worker's provision handler. */
+export function connectionSessionReady(c: { provider: string; config?: Record<string, unknown> }): boolean {
+  if (c.provider === "openai" || c.provider === "openrouter") return connectionBaseUrl(c).length > 0;
   return true;
 }
 

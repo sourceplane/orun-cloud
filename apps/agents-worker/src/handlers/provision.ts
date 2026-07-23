@@ -1,6 +1,15 @@
 // Session provisioning (saas-agents AG5 live slice, design §2 + §10.4): boot
 // the sandbox a requested session runs in, on the workspace's OWN Daytona
-// account, with the workspace's OWN Anthropic key injected at exec time.
+// account, with the workspace's OWN model-provider key injected at exec time.
+//
+// The model provider is no longer hard-wired to Anthropic (the DX-Q6 posture,
+// now on the session path too): the sandbox boots with whichever verified
+// model connection the workspace picks — the one the
+// `agents.sessions.connection` setting names (Settings › AI providers), else
+// the sole verified model connection, else the one named `default`. Anthropic
+// keys ride as ANTHROPIC_API_KEY; OpenAI/OpenRouter connections ride their
+// Anthropic-compatible gateway (`config.baseUrl`) as ANTHROPIC_BASE_URL +
+// ANTHROPIC_AUTH_TOKEN — the claude-code harness convention.
 //
 // The gate fails loud (design §10.3): a missing or unverified provider
 // connection refuses the spawn here — never mid-run. Key material transits
@@ -48,6 +57,97 @@ const DEFAULT_EGRESS = [
   "registry.npmjs.org",
   "proxy.golang.org",
 ];
+
+/** The default egress plus the hosts THIS boot actually dials: the platform
+ * API (dial-home — heartbeat/events/token would be unreachable under an
+ * enforced allowlist that omits it) and the model gateway, when one is set. */
+function egressAllow(apiBaseUrl?: string, modelBaseUrl?: string): string[] {
+  const hosts = new Set(DEFAULT_EGRESS);
+  for (const raw of [apiBaseUrl, modelBaseUrl]) {
+    if (!raw) continue;
+    try {
+      hosts.add(new URL(raw).hostname);
+    } catch {
+      // A malformed URL never blocks the spawn; the default list stands.
+    }
+  }
+  return [...hosts];
+}
+
+/** The org setting naming the model connection sandbox sessions boot with
+ * (Settings › AI providers — the session mirror of `agents.chat.connection`). */
+export const SESSION_MODEL_SETTING_KEY = "agents.sessions.connection";
+
+/** Providers that supply a model key (Daytona is compute, excluded). Keep in
+ * lockstep with @saas/db/agents MODEL_PROVIDERS. */
+const MODEL_PROVIDERS = new Set<Provider>(["anthropic", "openai", "openrouter"]);
+
+/**
+ * pickSessionModelConnection — the session-path mirror of chat-worker
+ * custody's rule (DX-Q6): the connection the `agents.sessions.connection`
+ * setting names, if present + verified; else the sole verified model
+ * connection; else the one named `default`; else an actionable refusal.
+ */
+function pickSessionModelConnection(
+  connections: ProviderConnection[],
+  preferredId: string | null,
+): ProviderConnection | { error: string } {
+  const rows = connections.filter((c) => MODEL_PROVIDERS.has(c.provider) && c.status === "verified");
+  if (rows.length === 0) {
+    return { error: "no verified model provider connection (connect one under Settings › AI providers)" };
+  }
+  if (preferredId) {
+    const chosen = rows.find((c) => c.publicId === preferredId);
+    if (chosen) return chosen;
+  }
+  if (rows.length === 1) return rows[0]!;
+  const byName = rows.find((c) => c.name === "default");
+  if (byName) return byName;
+  return {
+    error:
+      "several model provider connections and none selected — pick a session model under Settings › AI providers",
+  };
+}
+
+/**
+ * Model env for the exec (claude-code harness convention): Anthropic keys ride
+ * natively as ANTHROPIC_API_KEY; OpenAI/OpenRouter connections require an
+ * Anthropic-compatible gateway `config.baseUrl` and ride as ANTHROPIC_BASE_URL
+ * + ANTHROPIC_AUTH_TOKEN. The pinned model (connection defaultModel, else the
+ * profile's) rides as ANTHROPIC_MODEL so the harness runs what the profile
+ * says — never its own default.
+ */
+function modelEnvForConnection(
+  connection: ProviderConnection,
+  key: string,
+  profileModel: string,
+): { env: Record<string, string>; baseUrl?: string } | { error: string } {
+  const cfg = connection.config;
+  const baseUrl = typeof cfg.baseUrl === "string" && cfg.baseUrl ? cfg.baseUrl.replace(/\/$/, "") : "";
+  const pinned = typeof cfg.defaultModel === "string" && cfg.defaultModel.trim() ? cfg.defaultModel.trim() : "";
+  const model = pinned || profileModel;
+  if (connection.provider === "anthropic") {
+    return {
+      env: {
+        ANTHROPIC_API_KEY: key,
+        ...(baseUrl ? { ANTHROPIC_BASE_URL: baseUrl } : {}),
+        ...(model ? { ANTHROPIC_MODEL: model } : {}),
+      },
+      ...(baseUrl ? { baseUrl } : {}),
+    };
+  }
+  if (!baseUrl) {
+    return {
+      error: `${connection.provider} connection ${connection.name} needs a Base URL (an Anthropic-compatible endpoint) to power sandbox sessions — set one under Settings › AI providers, or select an Anthropic connection`,
+    };
+  }
+  if (!model) {
+    return {
+      error: `${connection.provider} connection ${connection.name} has no model set — pin a Default model under Settings › AI providers`,
+    };
+  }
+  return { env: { ANTHROPIC_BASE_URL: baseUrl, ANTHROPIC_AUTH_TOKEN: key, ANTHROPIC_MODEL: model }, baseUrl };
+}
 
 /**
  * The in-sandbox bootstrap (saas-agents-live AL8, retiring the bash stand-in):
@@ -161,20 +261,36 @@ export async function handleProvisionSession(
   if ("error" in daytona) {
     return errorResponse("provider_connection_invalid", `Cannot provision: ${daytona.error}`, 409, requestId);
   }
-  const anthropic = await pickConnection(deps, orgId, "anthropic");
-  if ("error" in anthropic) {
-    return errorResponse("provider_connection_invalid", `Cannot provision: ${anthropic.error}`, 409, requestId);
+
+  // The model connection: the workspace's explicit session choice (the
+  // `agents.sessions.connection` setting, read best-effort — a settings
+  // outage falls back to sole-or-default), else sole, else `default`.
+  const orgPublicForSetting = orgPublicId(orgId);
+  const preferredModelId = deps.orgSettings
+    ? await deps.orgSettings(orgPublicForSetting, SESSION_MODEL_SETTING_KEY, actor, requestId)
+    : null;
+  const modelConnection = pickSessionModelConnection(
+    await deps.repo.listConnections({ orgId }),
+    preferredModelId,
+  );
+  if ("error" in modelConnection) {
+    return errorResponse("provider_connection_invalid", `Cannot provision: ${modelConnection.error}`, 409, requestId);
   }
 
   const daytonaKey = await deps.providerKeys.resolve(orgId, daytona.secretRef, actor, requestId);
-  const anthropicKey = await deps.providerKeys.resolve(orgId, anthropic.secretRef, actor, requestId);
-  if (!daytonaKey || !anthropicKey) {
+  const modelKey = await deps.providerKeys.resolve(orgId, modelConnection.secretRef, actor, requestId);
+  if (!daytonaKey || !modelKey) {
     return errorResponse(
       "provider_connection_invalid",
       "No key material for a required provider connection",
       409,
       requestId,
     );
+  }
+
+  const modelEnv = modelEnvForConnection(modelConnection, modelKey, profile.model);
+  if ("error" in modelEnv) {
+    return errorResponse("provider_connection_invalid", `Cannot provision: ${modelEnv.error}`, 409, requestId);
   }
 
   const provider = deps.sandboxes("daytona", daytonaKey, daytona.config);
@@ -184,22 +300,28 @@ export async function handleProvisionSession(
 
   const orgPublic = orgPublicId(orgId);
   const cfg = daytona.config;
+  // Non-secret identity/config the runtime needs to dial home. It rides BOTH
+  // the create-time manifest (so a suspend snapshot keeps it) AND the exec env
+  // below: Daytona's toolbox session exec does NOT inherit the create-time
+  // sandbox env, so a serve started with manifest-only identity booted blind —
+  // checkServeIdentity exited before the first heartbeat and every session
+  // was swept `failed(lease_lost)` ("task rung untouched"). The exec env is
+  // the copy that actually reaches the process.
+  const identityEnv: Record<string, string> = {
+    ORUN_SESSION_ID: session.publicId,
+    ORUN_ORG_ID: orgPublic,
+    ORUN_RUN_KIND: session.runKind,
+    ...(session.taskKey ? { ORUN_TASK_KEY: session.taskKey } : {}),
+    ...(deps.apiBaseUrl ? { ORUN_CLOUD_API: deps.apiBaseUrl } : {}),
+  };
   const spec: SandboxSpec = {
     // Only a connection-pinned snapshot is ever named; otherwise the account's
     // default image boots and the bootstrap installs orun (a made-up name
     // would 404 the create against the workspace's own Daytona account).
     ...(typeof cfg.snapshot === "string" && cfg.snapshot ? { baseSnapshot: cfg.snapshot } : {}),
     ttlSeconds: typeof cfg.ttlSeconds === "number" && cfg.ttlSeconds > 0 ? cfg.ttlSeconds : 3600,
-    egressAllow: DEFAULT_EGRESS,
-    // Non-secret only — create-time env can outlive a suspend snapshot. The
-    // runtime calls the public API, so ORUN_ORG_ID is the public org id.
-    env: {
-      ORUN_SESSION_ID: session.publicId,
-      ORUN_ORG_ID: orgPublic,
-      ORUN_RUN_KIND: session.runKind,
-      ...(session.taskKey ? { ORUN_TASK_KEY: session.taskKey } : {}),
-      ...(deps.apiBaseUrl ? { ORUN_CLOUD_API: deps.apiBaseUrl } : {}),
-    },
+    egressAllow: egressAllow(deps.apiBaseUrl, "baseUrl" in modelEnv ? modelEnv.baseUrl : undefined),
+    env: identityEnv,
   };
 
   // The session credential the runtime dials home with (AG6 §3.2): minted for
@@ -217,7 +339,7 @@ export async function handleProvisionSession(
   // boot died (create vs exec) — the pre-dial-home blind spot the audit hit.
   let step = "create";
   try {
-    logBoot(session.publicId, orgPublic, "create.start", "provider=daytona");
+    logBoot(session.publicId, orgPublic, "create.start", `provider=daytona model=${modelConnection.provider}`);
     const ref = await provider.create(spec);
     logBoot(session.publicId, orgPublic, "create.ok", `provider=daytona sandbox=${ref.id}`);
 
@@ -239,9 +361,11 @@ export async function handleProvisionSession(
     step = "exec";
     try {
       // Secrets ride the exec env only (design §10.4): TTL'd with the
-      // process, never in the manifest, never surviving suspend.
+      // process, never in the manifest, never surviving suspend. The
+      // identity env rides here TOO — the toolbox session exec is the only
+      // env the serve process is guaranteed to see (the lease_lost fix).
       await provider.exec(ref, ["sh", "-lc", bootstrapScript()], {
-        env: { ANTHROPIC_API_KEY: anthropicKey, ORUN_SESSION_TOKEN: sessionToken.token },
+        env: { ...identityEnv, ...modelEnv.env, ORUN_SESSION_TOKEN: sessionToken.token },
       });
     } catch (e) {
       // Over-destroy on ambiguity (design §2): a half-booted box is reclaimed.
@@ -255,7 +379,14 @@ export async function handleProvisionSession(
       {
         publicId: session.publicId,
         to: "provisioning",
-        sandbox: { provider: "daytona", id: ref.id, connection: daytona.publicId },
+        sandbox: {
+          provider: "daytona",
+          id: ref.id,
+          connection: daytona.publicId,
+          // Which model connection this boot rode (observability; never a key).
+          modelConnection: modelConnection.publicId,
+          modelProvider: modelConnection.provider,
+        },
       },
     );
     // The box is up and the bootstrap is running; the session now waits on the
