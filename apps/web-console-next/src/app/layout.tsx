@@ -2,7 +2,9 @@ import type { Metadata, Viewport } from "next";
 import { Newsreader } from "next/font/google";
 import "../styles/globals.css";
 import { Providers } from "./providers";
-import { CONSOLE_TITLE, PRODUCT_DESCRIPTION, PRODUCT_NAME } from "@/lib/app-config";
+import { CONSOLE_TITLE, PRODUCT_DESCRIPTION, PRODUCT_NAME, STORAGE_PREFIX } from "@/lib/app-config";
+import { TARGETS } from "@/lib/api";
+import { bootPrimerScript } from "@/lib/boot-primer";
 
 // Northwind display serif — page titles, greetings, stat numerals. Exposed as
 // a CSS variable so globals.css can fold it into --font-serif.
@@ -62,6 +64,13 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             __html: "globalThis.__name=globalThis.__name||function(t){return t};",
           }}
         />
+        {/*
+          IC3 boot primer: fire the session-boot reads (profile + org list)
+          the moment HTML arrives — before any bundle downloads or hydrates —
+          so boot data races the JS instead of waiting for it. The hydrated
+          SDK client adopts these in-flight responses (see lib/boot-primer.ts).
+        */}
+        <script dangerouslySetInnerHTML={{ __html: bootPrimerScript(TARGETS, STORAGE_PREFIX) }} />
         <Providers>{children}</Providers>
       </body>
     </html>

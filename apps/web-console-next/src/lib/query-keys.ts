@@ -67,6 +67,10 @@ export const qk = {
   configSecrets: (scopeKey: string) => ["configSecrets", scopeKey] as const,
   orgCatalog: (orgId: string) => ["orgCatalog", orgId] as const,
   orgRuns: (orgId: string) => ["orgRuns", orgId] as const,
+  /** Activities feed first page, per filter selection (IC3): rides the shared
+   *  cache so a revisited feed paints instantly and revalidates in background;
+   *  cursor pagination beyond page 1 stays component-local. */
+  orgRunsFeed: (orgId: string, filterKey: string) => ["orgRunsFeed", orgId, filterKey] as const,
   orgWork: (orgId: string) => ["orgWork", orgId] as const,
   orgWorkRollups: (orgId: string, initiative: string) => ["orgWorkRollups", orgId, initiative] as const,
   orgWorkDesigns: (orgId: string, initiative: string) => ["orgWorkDesigns", orgId, initiative] as const,

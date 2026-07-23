@@ -141,12 +141,29 @@ export function ActivityWorkbench({ orgId, orgSlug }: { orgId: string; orgSlug: 
   }, [repo, env]);
   const appliedKey = JSON.stringify(applied);
 
-  const [runs, setRuns] = React.useState<Run[]>([]);
-  const [cursor, setCursor] = React.useState<StateCursor | null>(null);
-  const [loading, setLoading] = React.useState(true);
+  // First page rides the shared query cache (IC3): a revisited feed paints
+  // instantly from cache (in-memory or persisted) and revalidates in the
+  // background instead of skeletoning behind a fresh fetch on every mount.
+  // Cursor pagination beyond page 1 stays component-local and resets when the
+  // first page changes (filter switch or revalidation).
+  const firstPage = useApiQuery(qk.orgRunsFeed(orgId, appliedKey), () =>
+    wrap(() => client.state.listOrgRuns(orgId, applied)),
+  );
+  const [more, setMore] = React.useState<{ runs: Run[]; cursor: StateCursor | null; pages: number } | null>(null);
   const [loadingMore, setLoadingMore] = React.useState(false);
-  const [pages, setPages] = React.useState(0);
-  const [error, setError] = React.useState<{ code: string; message: string } | null>(null);
+  const [moreError, setMoreError] = React.useState<{ code: string; message: string } | null>(null);
+
+  const runs = React.useMemo<Run[]>(
+    () => (firstPage.data ? [...firstPage.data.runs, ...(more?.runs ?? [])] : []),
+    [firstPage.data, more],
+  );
+  const cursor = more ? more.cursor : (firstPage.data?.nextCursor ?? null);
+  const pages = firstPage.data ? 1 + (more?.pages ?? 0) : 0;
+  const loading = firstPage.loading;
+  // A failed background revalidation must not ghost an already-painted feed
+  // (matches the pre-IC3 silent-refresh behavior); errors surface only when
+  // there is nothing to show.
+  const error = (firstPage.data ? null : firstPage.error) ?? moreError;
 
   // A ticking clock so relative times and live durations stay current.
   const [now, setNow] = React.useState(() => Date.now());
@@ -165,30 +182,14 @@ export function ActivityWorkbench({ orgId, orgSlug }: { orgId: string; orgSlug: 
     }
   }, []);
 
-  const loadFirstPage = React.useCallback(
-    async (silent = false) => {
-      if (!silent) setLoading(true);
-      const res = await wrap(() => client.state.listOrgRuns(orgId, applied));
-      if (res.ok) {
-        setRuns(res.data.runs);
-        setCursor(res.data.nextCursor);
-        setPages(1);
-        setError(null);
-        absorbFacets(res.data.runs);
-      } else if (!silent) {
-        setError({ code: res.error.code, message: res.error.message });
-        setRuns([]);
-        setCursor(null);
-      }
-      if (!silent) setLoading(false);
-      // appliedKey serialization is the real dependency (applied derives from it).
-    },
-    [client, orgId, appliedKey, absorbFacets],
-  );
-
+  // Fresh first page (filter switch or revalidation): fold facets in and
+  // reset local pagination — the cursor chain belongs to the new page 1.
   React.useEffect(() => {
-    void loadFirstPage();
-  }, [loadFirstPage]);
+    if (!firstPage.data) return;
+    setMore(null);
+    setMoreError(null);
+    absorbFacets(firstPage.data.runs);
+  }, [firstPage.data, absorbFacets]);
 
   const loadMore = React.useCallback(async () => {
     if (cursor === null || loadingMore) return;
@@ -197,12 +198,14 @@ export function ActivityWorkbench({ orgId, orgSlug }: { orgId: string; orgSlug: 
       client.state.listOrgRuns(orgId, { ...applied, cursor: `${cursor.createdAt}|${cursor.id}` }),
     );
     if (res.ok) {
-      setRuns((prev) => [...prev, ...res.data.runs]);
-      setCursor(res.data.nextCursor);
-      setPages((p) => p + 1);
+      setMore((prev) => ({
+        runs: [...(prev?.runs ?? []), ...res.data.runs],
+        cursor: res.data.nextCursor,
+        pages: (prev?.pages ?? 0) + 1,
+      }));
       absorbFacets(res.data.runs);
     } else {
-      setError({ code: res.error.code, message: res.error.message });
+      setMoreError({ code: res.error.code, message: res.error.message });
     }
     setLoadingMore(false);
   }, [client, orgId, appliedKey, cursor, loadingMore, absorbFacets]);
@@ -225,11 +228,16 @@ export function ActivityWorkbench({ orgId, orgSlug }: { orgId: string; orgSlug: 
 
   // Slow auto-refresh: only while live runs exist AND the reader is still on the
   // first page (so paging further down isn't yanked out from under them).
+  // SWR refresh through the cache: rows stay painted while the fresh first
+  // page loads in the background (was a silent bespoke refetch pre-IC3).
+  // `reload`'s identity changes per render, so the interval reads it via ref.
+  const reloadRef = React.useRef(firstPage.reload);
+  reloadRef.current = firstPage.reload;
   React.useEffect(() => {
     if (!hasLive || pages !== 1) return;
-    const id = setInterval(() => void loadFirstPage(true), LIVE_REFRESH_MS);
+    const id = setInterval(() => reloadRef.current(), LIVE_REFRESH_MS);
     return () => clearInterval(id);
-  }, [hasLive, pages, loadFirstPage]);
+  }, [hasLive, pages]);
 
   const filtersActive = repo !== "all" || (env !== ENV_DEFAULT && env !== ENV_ALL) || statusFacet !== "all" || mine;
   const clearAll = () => {

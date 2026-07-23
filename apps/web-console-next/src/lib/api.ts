@@ -20,6 +20,7 @@
 
 import { OrunCloud, OrunCloudError, type ClientOptions } from "@saas/sdk";
 import { apiEdgeWorkersDevUrl } from "./app-config";
+import { consumePrimedBootResponse } from "./boot-primer";
 
 export type ApiClient = OrunCloud;
 
@@ -57,6 +58,17 @@ export type ApiResult<T> =
 export function createClient(target: ApiTarget, token: string | null): OrunCloud {
   const opts: ClientOptions = { baseUrl: target.url };
   if (token) opts.auth = { kind: "bearer", token };
+  // IC3: adopt the pre-hydration primer's in-flight boot responses (profile +
+  // org list) instead of re-fetching them. One-shot, token-bound, TTL-bounded;
+  // anything unprimed falls through to the platform fetch untouched.
+  if (typeof window !== "undefined") {
+    opts.fetch = ((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
+      const method = init?.method ?? (input instanceof Request ? input.method : "GET");
+      const primed = consumePrimedBootResponse(url, method, token);
+      return primed ?? fetch(input, init);
+    }) as typeof fetch;
+  }
   return new OrunCloud(opts);
 }
 
