@@ -17,6 +17,7 @@ import type { IntegrationScopeTemplate } from "@saas/contracts/integrations";
 import type {
   CredentialBrokerCapability,
   IntegrationProvider,
+  SecretsCapability,
 } from "./types.js";
 
 /**
@@ -71,12 +72,28 @@ export function createAwsProvider(): IntegrationProvider {
     },
   };
 
+  // Secret-source DESCRIBE (saas-secrets-platform SP6 — the dormant
+  // pluggability proof). This declaration is the ONLY addition that lights up
+  // AWS across the secrets plane: the SP0c bulk read lists it, the console's
+  // provider space + create menu derive it, the SP1 registry resolves the
+  // default authoring surface, and the SP5 CLI validates against it — with
+  // zero changes to config-worker, the Secrets lens, or the CLI substrate.
+  // Brokered-only (an STS session is inherently mint-at-resolve; nothing to
+  // store or rotate), no delivery targets, declarative authoring.
+  const secrets: SecretsCapability = {
+    scopeTemplates: () => AWS_SCOPE_TEMPLATES,
+    supportedModes: ["brokered"],
+    deliveryTargets: () => [],
+    authoring: "declarative",
+  };
+
   return {
     id: "aws",
     displayName: "AWS",
     connectKind: "token",
-    capabilities: ["connect", "credential-broker"],
+    capabilities: ["connect", "credential-broker", "secrets"],
 
     broker,
+    secrets,
   };
 }

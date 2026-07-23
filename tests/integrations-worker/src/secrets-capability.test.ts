@@ -162,8 +162,9 @@ describe("GET /v1/organizations/:orgId/integrations/secrets-capabilities (SP0c)"
     const data = await body(res);
     const capabilities = data.capabilities as Array<Record<string, unknown>>;
     const byProvider = new Map(capabilities.map((c) => [c.provider, c]));
-    // The configured secret-source providers — and ONLY those.
-    expect([...byProvider.keys()].sort()).toEqual(["cloudflare", "supabase"]);
+    // The secret-source providers — configured (cloudflare, supabase) AND the
+    // dormant declaration-only proof (aws, SP6).
+    expect([...byProvider.keys()].sort()).toEqual(["aws", "cloudflare", "supabase"]);
     const cf = byProvider.get("cloudflare")!;
     expect(cf.scopeTemplates).toEqual(CLOUDFLARE_SCOPE_TEMPLATES);
     expect([...(cf.supportedModes as string[])].sort()).toEqual(["brokered", "rotated"]);
@@ -176,6 +177,24 @@ describe("GET /v1/organizations/:orgId/integrations/secrets-capabilities (SP0c)"
   it("requires an actor (401 without x-actor headers)", async () => {
     const res = await route(orgGet(), createOrgEnv());
     expect(res.status).toBe(401);
+  });
+
+  it("serves the dormant AWS declaration (SP6 pluggability proof)", async () => {
+    const res = await route(orgGet(ACTOR_HEADERS), createOrgEnv());
+    const data = await body(res);
+    const aws = (data.capabilities as Array<Record<string, unknown>>).find(
+      (c) => c.provider === "aws",
+    )!;
+    // Declaration-only: brokered STS sessions, nothing stored, nothing
+    // delivered, default authoring surface. The provider lit up across the
+    // secrets plane with ZERO substrate changes — only its adapter file.
+    expect(aws.supportedModes).toEqual(["brokered"]);
+    expect(aws.deliveryTargets).toEqual([]);
+    expect(aws.authoring).toBe("declarative");
+    expect((aws.scopeTemplates as Array<{ id: string }>).map((t) => t.id)).toEqual([
+      "deploy-session",
+      "readonly-session",
+    ]);
   });
 
   it("policy deny resource-hides (404)", async () => {

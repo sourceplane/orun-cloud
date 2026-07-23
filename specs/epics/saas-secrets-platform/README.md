@@ -17,7 +17,7 @@ Secrets console, or the CLI.
 
 | Field | Value |
 |-------|-------|
-| Status | **In progress** — SP0a/SP0b shipped (#570/#571); design reviewed 2026-07-23 (see `design-addenda.md`, SP-A1–A7) |
+| Status | **Shipped** (2026-07-23) — SP0 #570/#571/#573 · SP1 #574 · SP2 #575 · SP3 #576 · SP4 #577 · SP5 (orun CLI) · SP6 (this PR); design reviewed same day (`design-addenda.md`, SP-A1–A7) |
 | Cluster | **SP** (SP0–SP6) |
 | Owner(s) | `apps/config-worker` (substrate: store/resolve/type-generic actions), `apps/integrations-worker` (the provider capability seam), `apps/web-console-next` (the Secrets lens + per-integration secret spaces), `packages/{contracts,sdk,cli}`, `orun` CLI (`orun secrets` + integration-namespaced authoring) |
 | Builds on | `saas-integration-hub` (IH0 capability seam, IH4/IH5/IH6 broker), `saas-secret-manager` (SM1–SM6 store/resolve/policy), `saas-integration-hub/sub-epics/provider-rotated-secrets` (RS0–RS4, shipped) |
@@ -228,6 +228,44 @@ human should confirm a provider is wired for an environment.
   single-provider path into the plugin contract.
 - **saas-secrets-sync (SS)** — the platform's *own* worker secrets; unaffected.
   SP is the customer-facing producer plane.
+
+## As built (2026-07-23)
+
+All seven milestones landed in one continuous run, in order, each verified
+green before merge:
+
+- **SP0** (#570 SP0a, #571 SP0b, #573 SP0c) — `SecretsCapability` + internal
+  describe endpoint; config-worker mode gate from the declaration; console
+  derives eligibility + templates from the **bulk** org read
+  `GET …/integrations/secrets-capabilities` (SP-A1 — rides the api-edge
+  integrations facade unchanged). All three hardcoded lists deleted. Bonus
+  fix: the Rotated tab now offers only rotated-capable providers.
+- **SP1** (#574) — the authoring primitives (`authoring.tsx`), the default
+  surface (former `BindSecretForm`, rebuilt on the primitives), the
+  authoring-surface registry with custom graft + fail-open default.
+- **SP2** (#575) — the provider space route
+  `/orgs/[slug]/integrations/providers/[id]` (SP-A2): create + owner
+  footprint + templates + connections; Cloudflare's custom surface
+  registered (`authoring: "custom"`); Supabase stays declarative.
+- **SP3** (#576) — the Secrets page creates static secrets only; routed
+  "New secret" menu (SP-A3); "Managed by {integration}" affordances; the
+  legacy `?bind=1` deep link redirects to the owner (SP-A4).
+- **SP4** (#577) — runtime-managed templates: org-curated derivations of a
+  declared base (custom ⊆ base by construction), versioned, soft-retire
+  only; served through the capability read; mint path resolves custom → base.
+- **SP5** (orun repo) — `orun integrations {provider} secret create` with
+  capability-driven validation (the CLI carries no catalog); `--from-broker`
+  deprecation prints the exact replacement (SP-A7).
+- **SP6** — the proof: AWS-STS lights up across console + CLI purely by
+  adding its `secrets` declaration to the dormant adapter (this PR touches
+  the adapter + tests only); Supabase is the live declarative proof.
+
+Deviations from the plan, all recorded in `design-addenda.md`: the console
+read is bulk (SP-A1) rather than per-provider; SP4 custom templates derive
+from a declared base rather than authoring raw provider grammar (a custom
+can never exceed its base — deny-by-default by construction); hard-delete
+was never built (soft-retire is the only removal, which satisfies the
+in-use-deletion invariant trivially).
 
 ## Read order
 
