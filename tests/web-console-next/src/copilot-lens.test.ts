@@ -1,10 +1,13 @@
-// The delegated-session lens fold (saas-copilot-surface CX4/CX5): state
-// timeline from STATE_DELTA, tool lanes, cost accumulation, plane-honest
-// activity, and the §6 approval guard — a card exists ONLY from a server
-// CUSTOM {name:"approval"} event; activity payloads that merely look
-// approval-ish never produce one; resolution collapses by requestId.
+// The delegated-session lens fold (saas-copilot-surface CX4/CX5, unified in
+// copilotkit-interface-unify): a SINGLE chronological transcript (the shared
+// copilot vocabulary) plus the session chrome — state timeline from
+// STATE_DELTA, cost accumulation, and the §6 approval guard. A card exists
+// ONLY from a server CUSTOM {name:"approval"} event; activity payloads that
+// merely look approval-ish never produce one; resolution collapses by
+// requestId. sessionEventsToItems folds the durable log into the SAME items.
 
-import { foldLensEvent, initialLensState } from "@web-console-next/components/copilot/session-lens";
+import { foldLensEvent, initialLensState, sessionEventsToItems } from "@web-console-next/components/copilot/session-lens";
+import type { ConversationEvent } from "@web-console-next/lib/agents/conversation";
 import type { AguiEvent } from "@saas/contracts/agui";
 
 const fold = (events: AguiEvent[]) => events.reduce(foldLensEvent, initialLensState());
@@ -21,7 +24,7 @@ describe("CX4: the lens fold", () => {
     expect(s.cursor).toBe(9);
   });
 
-  it("accumulates cost ticks and folds tool lanes", () => {
+  it("accumulates cost ticks and folds tool cards into the transcript", () => {
     const s = fold([
       { v: 1, type: "CUSTOM", name: "cost", seq: 1, value: { tokens: 800 } },
       { v: 1, type: "CUSTOM", name: "cost", seq: 2, value: { tokens: 200 } },
@@ -29,16 +32,18 @@ describe("CX4: the lens fold", () => {
       { v: 1, type: "TOOL_CALL_RESULT", toolCallId: "tu_1", content: "72 passed", seq: 4 },
     ]);
     expect(s.tokens).toBe(1000);
-    expect(s.tools[0]).toMatchObject({ name: "bash", result: "72 passed" });
+    const tool = s.items.find((i) => i.kind === "tool");
+    expect(tool).toMatchObject({ kind: "tool", tool: { name: "bash", result: "72 passed", client: false } });
   });
 
-  it("renders activity honestly and streams per-turn deltas", () => {
+  it("renders generic activity as an honest note and streams per-turn deltas", () => {
     const s = fold([
       { v: 1, type: "CUSTOM", name: "activity", seq: 1, value: { kind: "status_asserted", payload: { note: "x" } } },
       { v: 1, type: "TEXT_MESSAGE_CONTENT", delta: "half " },
       { v: 1, type: "TEXT_MESSAGE_CONTENT", delta: "done" },
     ]);
-    expect(s.activity[0]).toMatchObject({ kind: "status_asserted" });
+    const note = s.items.find((i) => i.kind === "note");
+    expect(note?.kind === "note" && note.text).toContain("status_asserted");
     expect(s.streaming).toBe("half done");
     expect(foldLensEvent(s, { v: 1, type: "TEXT_MESSAGE_END" }).streaming).toBe("");
   });
@@ -78,7 +83,6 @@ describe("the lens transcript (the session's copilot head)", () => {
     expect(s.items[0]).toMatchObject({ text: "Hi", principal: "usr_1" });
     expect(s.items[1]).toMatchObject({ text: "Hello there" });
     expect(s.streaming).toBe("");
-    expect(s.activity).toHaveLength(0);
   });
 
   it("the durable message_agent copy of a streamed turn is deduped; a replay-only turn still lands", () => {
@@ -101,10 +105,12 @@ describe("the lens transcript (the session's copilot head)", () => {
       { v: 1, type: "CUSTOM", name: "activity", seq: 9, value: { kind: "error", payload: { text: "plain failure" } } },
     ]);
     expect(s.items.map((i) => i.kind)).toEqual(["error", "error"]);
-    expect(s.items[0]!.text).toContain("API Error: 404");
-    expect(s.items[0]!.text).toContain("Base URL");
-    expect(s.items[0]!.text).not.toContain("<html");
-    expect(s.items[1]!.text).toBe("plain failure");
+    const first = s.items[0];
+    const second = s.items[1];
+    expect(first?.kind === "error" && first.text).toContain("API Error: 404");
+    expect(first?.kind === "error" && first.text).toContain("Base URL");
+    expect(first?.kind === "error" && first.text).not.toContain("<html");
+    expect(second?.kind === "error" && second.text).toBe("plain failure");
   });
 });
 
@@ -114,5 +120,34 @@ describe("tool-denial error activity ({tool, error} with no text)", () => {
       { v: 1, type: "CUSTOM", name: "activity", seq: 3, value: { kind: "error", payload: { tool: "Bash", error: "denied by tool policy" } } },
     ]);
     expect(s.items).toEqual([{ kind: "error", id: "err_3", text: "Bash denied by tool policy" }]);
+  });
+});
+
+describe("sessionEventsToItems: the durable log → the shared transcript", () => {
+  it("folds the closed relayed vocabulary into the same items the live stream produces", () => {
+    const events: ConversationEvent[] = [
+      { seq: 1, kind: "message_user", payload: { text: "ship it", principal: "usr_1" } },
+      { seq: 2, kind: "tool_call", payload: { tool: "bash", decision: "allow" } },
+      { seq: 3, kind: "tool_result", payload: {} },
+      { seq: 4, kind: "message_agent", payload: { text: "done" } },
+      { seq: 5, kind: "cost_sample", payload: { tokens: 40 } },
+      { seq: 6, kind: "state_changed", payload: { state: "completed" } },
+    ];
+    const items = sessionEventsToItems(events);
+    expect(items.map((i) => i.kind)).toEqual(["user", "tool", "assistant", "note"]);
+    expect(items[0]).toMatchObject({ kind: "user", text: "ship it", principal: "usr_1" });
+    // A durable tool row is settled — rendered "done" (result ""), never a spinner.
+    expect(items[1]).toMatchObject({ kind: "tool", tool: { name: "bash", args: "allow", result: "", client: false } });
+    expect(items[2]).toMatchObject({ kind: "assistant", text: "done" });
+    expect(items[3]).toMatchObject({ kind: "note", text: "State: completed" });
+  });
+
+  it("sanitizes durable error events and skips approval-request rows (the sticky card owns them)", () => {
+    const events: ConversationEvent[] = [
+      { seq: 1, kind: "approval_requested", payload: { requestId: "apr_1", tool: "bash" } },
+      { seq: 2, kind: "error", payload: { tool: "Bash", error: "denied by tool policy" } },
+    ];
+    const items = sessionEventsToItems(events);
+    expect(items).toEqual([{ kind: "error", id: "h2", text: "Bash denied by tool policy" }]);
   });
 });

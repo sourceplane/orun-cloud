@@ -13,8 +13,7 @@
 // produced it, and the reloaded thread has the same shape as the live one.
 
 import * as React from "react";
-import ReactMarkdown from "react-markdown";
-import { Pill, StatusText } from "@/components/ui/northwind";
+import { StatusText } from "@/components/ui/northwind";
 import { Skeleton } from "@/components/ui/skeleton";
 import { wrap } from "@/lib/api";
 import { qk, useApiQuery } from "@/lib/query";
@@ -22,24 +21,21 @@ import { useSession } from "@/lib/session";
 import { CLIENT_TOOL_NAMES } from "@saas/contracts/agui";
 import { DispatchDoorAgent } from "./door-agent.js";
 import { buildActionHandlers } from "./actions.js";
+import {
+  Composer,
+  JumpToLatest,
+  StreamingBubble,
+  TranscriptRow,
+  WorkingLine,
+  type ToolCallView,
+  type TranscriptItem,
+} from "./transcript.js";
 import { useRouter } from "next/navigation";
 
-export interface ToolCallView {
-  id: string;
-  name: string;
-  args: string;
-  result?: string;
-  isError?: boolean;
-  client: boolean;
-}
-
-/** One transcript entry, in arrival order (DD2). */
-export type TranscriptItem =
-  | { kind: "user"; id: string; text: string }
-  | { kind: "assistant"; id: string; text: string; error?: boolean }
-  | { kind: "tool"; id: string; tool: ToolCallView }
-  | { kind: "error"; id: string; text: string }
-  | { kind: "note"; id: string; text: string };
+// The transcript vocabulary lives in transcript.tsx now (shared with the
+// session lens). Re-exported here so existing importers and the CX3 fold tests
+// keep their single entry point.
+export type { ToolCallView, TranscriptItem };
 
 export interface LiveState {
   items: TranscriptItem[];
@@ -199,82 +195,6 @@ export function historyToItems(
   return items;
 }
 
-function ToolCard({ t }: { t: ToolCallView }) {
-  const [open, setOpen] = React.useState(false);
-  if (t.client) {
-    // The agent's hands are always on camera (design §3.3).
-    return (
-      <div className="my-1 flex items-center gap-2 text-[12px]">
-        <span className="sr-only">console action</span>
-        <Pill tone={t.isError ? "warning" : "info"} dot>
-          {t.name.replace(/^ui_/, "").replace(/_/g, " ")}
-        </Pill>
-        {t.result ? <span className="text-muted-foreground">{t.result}</span> : <span className="animate-pulse text-muted-foreground">…</span>}
-      </div>
-    );
-  }
-  return (
-    <div className="my-1 rounded-lg border border-border/50 bg-muted/40 text-[12px]">
-      <button
-        type="button"
-        onClick={() => setOpen(!open)}
-        aria-expanded={open}
-        aria-label={`tool ${t.name} — ${t.result === undefined ? "running" : t.isError ? "failed" : "done"}`}
-        className="flex w-full items-center gap-2 px-3 py-1.5 text-left font-mono text-muted-foreground"
-      >
-        <span>⚙ {t.name}</span>
-        <span className={t.isError ? "text-destructive" : ""}>{t.result === undefined ? "…" : t.isError ? "failed" : "done"}</span>
-        <span className="ml-auto text-[10px]" aria-hidden>
-          {open ? "▾" : "▸"}
-        </span>
-      </button>
-      {open ? (
-        <div className="border-t border-border/50 px-3 py-2 font-mono text-[11px] text-muted-foreground">
-          <div className="truncate">args: {t.args || "{}"}</div>
-          {t.result !== undefined ? <div className="mt-1 whitespace-pre-wrap break-words">{t.result}</div> : null}
-        </div>
-      ) : null}
-    </div>
-  );
-}
-
-function TranscriptRow({ it, onRetry }: { it: TranscriptItem; onRetry?: () => void }) {
-  switch (it.kind) {
-    case "user":
-      return (
-        <div className="my-2 flex justify-end">
-          <div className="max-w-[80%] whitespace-pre-wrap rounded-2xl bg-foreground px-3.5 py-2 text-[13.5px] text-background">{it.text}</div>
-        </div>
-      );
-    case "assistant":
-      return (
-        <div className="my-2 flex justify-start">
-          <div className={`prose-chat max-w-[80%] rounded-2xl border px-3.5 py-2 text-[13.5px] ${it.error ? "border-amber-500/50 bg-amber-500/5" : "border-border/60"}`}>
-            <ReactMarkdown>{it.text}</ReactMarkdown>
-          </div>
-        </div>
-      );
-    case "tool":
-      return <ToolCard t={it.tool} />;
-    case "error":
-      // DD6: durable-looking error bubble with a retry affordance.
-      return (
-        <div className="my-2 flex justify-start">
-          <div className="max-w-[80%] rounded-2xl border border-amber-500/50 bg-amber-500/5 px-3.5 py-2 text-[13.5px]">
-            <span>{it.text}</span>
-            {onRetry ? (
-              <button type="button" onClick={onRetry} className="ml-2 underline decoration-dotted underline-offset-2 hover:opacity-80">
-                Retry
-              </button>
-            ) : null}
-          </div>
-        </div>
-      );
-    case "note":
-      return <div className="my-2 text-[12px] italic text-muted-foreground">{it.text}</div>;
-  }
-}
-
 export function CopilotThread({ orgId, orgSlug, chatId }: { orgId: string; orgSlug: string; chatId: string }) {
   const { client, target, token } = useSession();
   const router = useRouter();
@@ -371,89 +291,36 @@ export function CopilotThread({ orgId, orgSlug, chatId }: { orgId: string; orgSl
       ))}
       {/* DD11: streaming text + turn status announce politely. */}
       <div aria-live="polite">
-        {live.streaming ? (
-          <div className="my-2 flex justify-start">
-            <div className="prose-chat max-w-[80%] rounded-2xl border border-border/60 px-3.5 py-2 text-[13.5px]">
-              <ReactMarkdown>{live.streaming}</ReactMarkdown>
-              <span className="animate-pulse" aria-hidden>
-                ▍
-              </span>
-            </div>
-          </div>
-        ) : null}
-        {live.running && !live.streaming ? (
-          <div className="my-2 text-[12px] text-muted-foreground">The Workspace Agent is working…</div>
-        ) : null}
+        {live.streaming ? <StreamingBubble text={live.streaming} /> : null}
+        {live.running && !live.streaming ? <WorkingLine label="The Workspace Agent is working…" /> : null}
       </div>
       <div ref={endRef} />
 
       {!following && (live.running || live.streaming) ? (
-        <div className="sticky bottom-20 flex justify-center">
-          <button
-            type="button"
-            onClick={() => {
-              setFollowing(true);
-              endRef.current?.scrollIntoView({ behavior: "smooth" });
-            }}
-            className="rounded-full border border-border bg-background px-3 py-1 text-[12px] shadow-sm hover:bg-muted"
-          >
-            ↓ Jump to latest
-          </button>
-        </div>
+        <JumpToLatest
+          onClick={() => {
+            setFollowing(true);
+            endRef.current?.scrollIntoView({ behavior: "smooth" });
+          }}
+        />
       ) : null}
 
-      <div className="sticky bottom-4 mt-6">
-        <div className="flex items-center gap-2 rounded-xl border border-border bg-background px-2 py-1.5 shadow-sm focus-within:border-primary">
-          <input
-            value={composer}
-            onChange={(e) => setComposer(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && !e.shiftKey) {
-                e.preventDefault();
-                if (!live.running) void send(composer);
-              }
-            }}
-            aria-label="Message the Workspace Agent"
-            placeholder={
-              live.running
-                ? "The agent is answering — you can draft your next message…"
-                : "Ask, delegate, steer — the agent can open pages and prefill forms for you…"
-            }
-            className="min-w-0 flex-1 bg-transparent px-2 py-1 text-[13px] outline-none"
-          />
-          {live.running ? (
-            <button
-              type="button"
-              onClick={() => agentRef.current?.abortRun()}
-              className="rounded-lg border border-border px-3 py-1.5 text-[12.5px] hover:bg-muted"
-            >
-              Stop
-            </button>
-          ) : (
-            <>
-              {lastUserRef.current ? (
-                <button
-                  type="button"
-                  onClick={() => void send(lastUserRef.current)}
-                  title="Regenerate the last answer"
-                  aria-label="Regenerate the last answer"
-                  className="rounded-lg px-2 py-1.5 text-[12.5px] text-muted-foreground hover:bg-muted"
-                >
-                  ↻
-                </button>
-              ) : null}
-              <button
-                type="button"
-                onClick={() => void send(composer)}
-                disabled={!composer.trim()}
-                className="rounded-lg bg-foreground px-3.5 py-1.5 text-[12.5px] font-medium text-background hover:opacity-90 disabled:opacity-50"
-              >
-                Send
-              </button>
-            </>
-          )}
-        </div>
-      </div>
+      <Composer
+        value={composer}
+        onChange={setComposer}
+        onSend={() => void send(composer)}
+        ariaLabel="Message the Workspace Agent"
+        placeholder={
+          live.running
+            ? "The agent is answering — you can draft your next message…"
+            : "Ask, delegate, steer — the agent can open pages and prefill forms for you…"
+        }
+        running={live.running}
+        onStop={() => agentRef.current?.abortRun()}
+        {...(lastUserRef.current
+          ? { onRegenerate: () => void send(lastUserRef.current), canRegenerate: true }
+          : {})}
+      />
     </div>
   );
 }
