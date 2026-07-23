@@ -62,6 +62,11 @@ export const qk = {
   /** Slack channels visible to a messaging connection's bot (IH8). */
   slackChannels: (orgId: string, connectionId: string) =>
     ["slackChannels", orgId, connectionId] as const,
+  /** Repositories a source-control connection can see (IR6 repositories
+   *  module; the repo pickers keep their own debounced component-local
+   *  fetch). Shape: ListRepositoriesResponse. */
+  integrationRepositories: (orgId: string, connectionId: string) =>
+    ["integrationRepositories", orgId, connectionId] as const,
   connectionGrants: (orgId: string, connectionId: string) =>
     ["connectionGrants", orgId, connectionId] as const,
   accountWorkspaces: (orgId: string) => ["accountWorkspaces", orgId] as const,
@@ -108,6 +113,10 @@ export const qk = {
     ["orgAgentSessionChildren", orgId, sessionId] as const,
   /** BYO provider connections (AG12): Daytona + Anthropic cards. */
   orgAgentProviders: (orgId: string) => ["orgAgentProviders", orgId] as const,
+  /** The bare agent-session list (AgentSession[]) — IR6 sandboxes module.
+   * Kept distinct from `orgAgents` (the fleet-home COMPOSITE) for the same
+   * reason `orgAgentProfiles` is: a shared key must always cache one shape. */
+  orgAgentSessions: (orgId: string) => ["orgAgentSessions", orgId] as const,
   /** The Dispatch surface's Situation fold (saas-dispatch DX2). */
   orgDispatchSituation: (orgId: string) => ["orgDispatchSituation", orgId] as const,
   /** The DX1 shell (cursor + counts) — the DX4 ambient badge read. */
