@@ -1,22 +1,23 @@
 "use client";
 
-// The Integrations hub — a first-class org surface (promoted out of Settings):
-// the place to connect the external providers Orun coordinates. All four live
-// providers are fully managed here (connect, status, revoke), grouped by
-// archetype (design §6): GitHub (source control, install-kind), Slack
-// (messaging, oauth-kind), Cloudflare (infrastructure, token-kind), and
-// Supabase (infrastructure, oauth-kind). Genuinely-future providers (Discord,
-// AWS) render as honest "Soon" slots.
+// The Integrations hub — a first-class org surface: ONE directory of every
+// integration the platform coordinates, rendered from the served Integration
+// Registry (saas-integration-registry IR1). Sections are category-grouped
+// (Source control · Messaging · Infrastructure · AI & compute · Roadmap) and
+// every card is a pure function of its `IntegrationDescriptor` + this org's
+// connections — the hub holds NO provider catalog and NO per-provider
+// branches (the old `providers.ts` + `id === "cloudflare"` special case are
+// gone; connect posture comes from `descriptor.connect`).
 //
-// install/oauth kinds share one UX: popup + poll. The worker returns a URL
-// carrying the signed single-use state; the provider redirects back to our
-// ingress, which activates the connection the poll loop then observes. The
-// token kind (Cloudflare) opens a paste modal instead — the worker verifies
-// the token before any write and the connection comes back already active.
+// Connect dispatch (registry.ts `connectDispatch`):
+// - a single live install/oauth method → popup + poll here (the worker
+//   returns a URL carrying the signed single-use state; our ingress
+//   activates; the poll loop observes).
+// - anything else (token method, multiple methods) → the provider's space
+//   owns the flow (`/integrations/providers/{id}?connect=1`).
 //
-// Northwind restyle: serif page header, "Connected" kicker over a white
-// connection card (provider tile, status pill, inner stat tiles), and an
-// "On the roadmap" kicker over dashed provider cards.
+// SP-A5: while the registry read is loading/failed, connect entry points
+// render disabled with a hint — never a baked-in fallback catalog.
 
 import * as React from "react";
 import Link from "next/link";
@@ -26,12 +27,17 @@ import {
   Plug,
   Database,
   Cloud,
+  Cpu,
   MessageSquare,
   MessageCircle,
   Server,
+  Sparkles,
   type LucideIcon,
 } from "lucide-react";
-import type { PublicConnection } from "@saas/contracts/integrations";
+import type {
+  IntegrationDescriptor,
+  PublicConnection,
+} from "@saas/contracts/integrations";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -60,27 +66,31 @@ import {
   visibleConnections,
 } from "@/components/integrations/connections";
 import {
-  availableProviders,
-  popupConnectMethod,
-  providerById,
-  roadmapProviders,
-  type ProviderId,
-} from "@/components/integrations/providers";
-import { groupByArchetype } from "@/components/integrations/archetype";
-import { CloudflareConnectModal } from "@/components/integrations/cloudflare-connect-modal";
+  cardState,
+  connectDispatch,
+  descriptorById,
+  groupByCategory,
+  providerIconName,
+} from "@/components/integrations/registry";
 import { ProviderConnections } from "@/components/agents/provider-connections";
 import { ConnectionAdmission } from "@/components/integrations/connection-admission";
 
 const POLL_INTERVAL_MS = 2500;
 const POLL_BUDGET_MS = 11 * 60 * 1000; // connect state TTL (10 min) + margin
+const REGISTRY_STALE_MS = 10 * 60_000; // manifests are static per deploy
 
-const PROVIDER_ICONS: Record<string, LucideIcon> = {
+/** lucide resolution for registry icon names (registry.ts picks the name). */
+const ICONS: Record<string, LucideIcon> = {
   Github: GitBranch, // connect slots only; the live GitHub card uses the solid mark
+  GitBranch,
   Database,
   Cloud,
+  Cpu,
   MessageSquare,
   MessageCircle,
   Server,
+  Sparkles,
+  Plug,
 };
 
 /** Badge tone (connections.ts) → Northwind pill tone. */
@@ -103,9 +113,14 @@ export function IntegrationsHub({ orgId, orgSlug }: { orgId: string; orgSlug: st
   const list = useApiQuery(qk.integrations(orgId), () =>
     wrap(async () => (await client.integrations.list(orgId)).connections),
   );
+  const registryQuery = useApiQuery(
+    qk.integrationRegistry(orgId),
+    () => wrap(async () => (await client.integrations.getRegistry(orgId)).registry),
+    { staleTime: REGISTRY_STALE_MS },
+  );
+  const registry = React.useMemo(() => registryQuery.data ?? [], [registryQuery.data]);
 
-  const [connectingProvider, setConnectingProvider] = React.useState<ProviderId | null>(null);
-  const [cloudflareOpen, setCloudflareOpen] = React.useState(false);
+  const [connectingProvider, setConnectingProvider] = React.useState<string | null>(null);
   const [gateError, setGateError] = React.useState<ApiErrorBody | null>(null);
   const [revokeTarget, setRevokeTarget] = React.useState<PublicConnection | null>(null);
   const pollUntil = React.useRef<number>(0);
@@ -131,47 +146,25 @@ export function IntegrationsHub({ orgId, orgSlug }: { orgId: string; orgSlug: st
     if (connectingActive && connectingProvider) {
       toast({
         kind: "success",
-        title: `${providerById(connectingProvider)?.name ?? connectingProvider} connected`,
+        title: `${descriptorById(registry, connectingProvider)?.displayName ?? connectingProvider} connected`,
       });
       setConnectingProvider(null);
     }
-  }, [connectingActive, connectingProvider, toast]);
+  }, [connectingActive, connectingProvider, registry, toast]);
 
-  // Dispatch on the registry's connectKind: install/oauth share the popup +
-  // poll machinery; token-kind opens the paste modal instead — the returned
-  // connection is already active, so no poll. Cloudflare now advertises
-  // connectKind:"oauth" (an OAuth client is configured for the env), so it
-  // takes the popup path; the paste modal remains its token-paste fallback.
+  // Dispatch is descriptor-driven (registry.ts): popup kinds run the shared
+  // popup + poll machinery through the provider-generic SDK connect; every
+  // other posture navigates to the provider's space, which owns the flow.
   const connect = React.useCallback(
-    async (providerId: ProviderId) => {
-      const provider = providerById(providerId);
-      if (!provider || provider.status !== "available") return;
+    async (descriptor: IntegrationDescriptor) => {
       setGateError(null);
-      // Cloudflare always goes through its connect modal (SI-D1 remediation):
-      // the modal offers BOTH the OAuth authorize (which provisions Orun's
-      // service identity) and the token-paste path — some OAuth grants cannot
-      // create account API tokens, and the paste posture must stay reachable
-      // even in an OAuth-configured environment.
-      if (provider.connectKind === "token" || provider.id === "cloudflare") {
-        setCloudflareOpen(true);
+      const dispatch = connectDispatch(descriptor);
+      if (dispatch.kind === "none") return;
+      if (dispatch.kind === "space") {
+        router.push(`/orgs/${orgSlug}/integrations/providers/${descriptor.id}?connect=1`);
         return;
       }
-      // The connect call per provider (install/oauth all return an installUrl
-      // for the popup/poll flow). Driven by the tested `popupConnectMethod`
-      // map so a provider can never silently fall through to GitHub again
-      // (Cloudflare OAuth passes no body — the worker returns its installUrl).
-      const r = await wrap(() => {
-        switch (popupConnectMethod(provider.id)) {
-          case "connectSlack":
-            return client.integrations.connectSlack(orgId);
-          case "connectSupabase":
-            return client.integrations.connectSupabase(orgId);
-          case "connectCloudflare":
-            return client.integrations.connectCloudflare(orgId);
-          case "connectGithub":
-            return client.integrations.connectGithub(orgId);
-        }
-      });
+      const r = await wrap(() => client.integrations.connect(orgId, descriptor.id));
       if (!r.ok) {
         if (r.status === 412) {
           setGateError(r.error);
@@ -181,66 +174,36 @@ export function IntegrationsHub({ orgId, orgSlug }: { orgId: string; orgSlug: st
         return;
       }
       pollUntil.current = Date.now() + POLL_BUDGET_MS;
-      setConnectingProvider(provider.id);
+      setConnectingProvider(descriptor.id);
       list.reload();
       const { installUrl } = r.data;
-      const popup = window.open(installUrl, `${provider.id}-connect`, "width=1020,height=780");
+      const popup = window.open(installUrl, `${descriptor.id}-connect`, "width=1020,height=780");
       if (!popup && installUrl) {
         // Popup blocked — same flow, same tab.
         window.location.assign(installUrl);
       }
     },
-    [client, orgId, list, toast],
+    [client, orgId, orgSlug, router, list, toast],
   );
 
-  // The Cloudflare OAuth authorize path (popup + poll), invoked from the
-  // connect modal's primary action when the environment has an OAuth client.
-  const startCloudflareOauth = React.useCallback(async () => {
-    setCloudflareOpen(false);
-    const r = await wrap(() => client.integrations.connectCloudflare(orgId));
-    if (!r.ok) {
-      if (r.status === 412) {
-        setGateError(r.error);
-      } else {
-        toast({ kind: "error", title: "Could not start the connection", description: r.error.message });
-      }
-      return;
-    }
-    pollUntil.current = Date.now() + POLL_BUDGET_MS;
-    setConnectingProvider("cloudflare");
-    list.reload();
-    const { installUrl } = r.data;
-    const popup = window.open(installUrl, "cloudflare-connect", "width=1020,height=780");
-    if (!popup && installUrl) {
-      window.location.assign(installUrl);
-    }
-  }, [client, orgId, list, toast]);
-
-  // Cmd-K deep link: `?connect=<provider>` triggers the same connect dispatch
-  // once the list has loaded (so the available/unconnected check is real),
-  // then clears the param — mirroring the app's `?new=1` convention. Popup
-  // kinds opened outside a click gesture may be blocked; `connect()` already
-  // falls back to same-tab navigation, and the token kind just opens a modal.
+  // Cmd-K deep link: `?connect=<provider>` triggers the same registry-driven
+  // dispatch once both reads are in (so the available/unconnected check is
+  // real), then clears the param — mirroring the app's `?new=1` convention.
   const consumedConnectParam = React.useRef(false);
   React.useEffect(() => {
     if (consumedConnectParam.current) return;
     const requested = searchParams?.get("connect");
-    if (!requested || !list.data) return;
+    if (!requested || !list.data || !registryQuery.data) return;
     consumedConnectParam.current = true;
-    const provider = providerById(requested);
-    const alreadyLive =
-      provider !== null &&
-      list.data.some(
-        (c) => c.provider === provider.id && (c.status === "active" || c.status === "pending"),
-      );
-    if (provider && provider.status === "available" && !alreadyLive) {
-      void connect(provider.id);
+    const descriptor = descriptorById(registryQuery.data, requested);
+    if (descriptor && cardState(descriptor, list.data) === "available") {
+      void connect(descriptor);
     }
     const params = new URLSearchParams(searchParams?.toString() ?? "");
     params.delete("connect");
     const qs = params.toString();
     router.replace(qs ? `${pathname}?${qs}` : pathname);
-  }, [searchParams, list.data, connect, pathname, router]);
+  }, [searchParams, list.data, registryQuery.data, connect, pathname, router]);
 
   const revoke = async (connection: PublicConnection) => {
     const r = await wrap(() => client.integrations.revoke(orgId, connection.id));
@@ -252,19 +215,41 @@ export function IntegrationsHub({ orgId, orgSlug }: { orgId: string; orgSlug: st
     list.reload();
   };
 
+  // Registry-derived sections: unconnected live providers by category
+  // ("connected" cards render above, in the Connected section), plus the
+  // roadmap strip. AI & compute keeps its section chrome with the embedded
+  // agents panel until IR5 re-homes those connections into the registry.
+  const unconnectedGroups = groupByCategory(
+    registry.filter((d) => {
+      const state = cardState(d, connections);
+      return state === "available" || state === "locked" || state === "configure";
+    }),
+  );
+  const roadmap = registry.filter((d) => cardState(d, connections) === "roadmap");
+
+  const githubDescriptor = descriptorById(registry, "github");
+  const githubConnected = connections.some(
+    (c) => c.provider === "github" && c.status === "active",
+  );
+
   return (
     <Screen>
       <PageHeader
         title="Integrations"
         description="Orun is an orchestration plane over the services you already use. Connect a provider, and plans can act on it — without storing your credentials."
         actions={
-          <Button onClick={() => void connect("github")} disabled={connectingProvider !== null}>
-            {connectingProvider === "github"
-              ? "Waiting for GitHub…"
-              : connections.some((c) => c.provider === "github" && c.status === "active")
-                ? "Connect another"
-                : "Connect GitHub"}
-          </Button>
+          githubDescriptor && cardState(githubDescriptor, connections) !== "roadmap" ? (
+            <Button
+              onClick={() => void connect(githubDescriptor)}
+              disabled={connectingProvider !== null || registryQuery.loading}
+            >
+              {connectingProvider === "github"
+                ? "Waiting for GitHub…"
+                : githubConnected
+                  ? "Connect another"
+                  : "Connect GitHub"}
+            </Button>
+          ) : undefined
         }
       />
 
@@ -294,7 +279,9 @@ export function IntegrationsHub({ orgId, orgSlug }: { orgId: string; orgSlug: st
           icon={GitBranch}
           title="No connections yet"
           description="Connect a provider below — GitHub for repositories, Slack for notifications — and plans can act on it."
-          primaryAction={{ label: "Connect GitHub", onClick: () => void connect("github") }}
+          {...(githubDescriptor
+            ? { primaryAction: { label: "Connect GitHub", onClick: () => void connect(githubDescriptor) } }
+            : {})}
         />
       ) : (
         <div className="space-y-3">
@@ -305,85 +292,100 @@ export function IntegrationsHub({ orgId, orgSlug }: { orgId: string; orgSlug: st
               orgSlug={orgSlug}
               connection={connection}
               onRevoke={() => setRevokeTarget(connection)}
-              onReconnect={() => void connect(connection.provider)}
+              onReconnect={() => {
+                const d = descriptorById(registry, connection.provider);
+                if (d) void connect(d);
+              }}
               reconnectWaiting={connectingProvider === connection.provider}
-              reconnectDisabled={connectingProvider !== null}
+              reconnectDisabled={connectingProvider !== null || registryQuery.loading}
               onChanged={() => list.reload()}
             />
           ))}
         </div>
       )}
 
-      {/* Live-but-unconnected providers, marketplace-grouped by archetype
-          (design §6): each available provider without a live connection gets
-          a real Connect card under its archetype kicker. */}
-      {groupByArchetype(
-        availableProviders().filter(
-          (p) =>
-            !connections.some(
-              (c) => c.provider === p.id && (c.status === "active" || c.status === "pending"),
-            ),
-        ),
-      ).map((group) => (
-        <React.Fragment key={group.archetype}>
-          <Kicker className="mb-2.5 mt-8">{group.label}</Kicker>
+      {/* Registry-driven sections (IR1): every unconnected live provider gets
+          a card under its category kicker. SP-A5: loading renders a skeleton
+          strip; a failed read renders the honest hint — never a fallback
+          catalog. */}
+      {registryQuery.loading ? (
+        <>
+          <Kicker className="mb-2.5 mt-8">Available</Kicker>
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            {group.items.map((provider) => {
-              const Icon = PROVIDER_ICONS[provider.icon] ?? Plug;
-              const waiting = connectingProvider === provider.id;
+            <Skeleton className="h-[104px] rounded-xl" />
+            <Skeleton className="h-[104px] rounded-xl" />
+            <Skeleton className="h-[104px] rounded-xl" />
+          </div>
+        </>
+      ) : registryQuery.error ? (
+        <div className="mt-8 rounded-xl border bg-card px-6 py-5">
+          <div className="text-[13.5px] font-medium">Integration directory unavailable</div>
+          <div className="mt-1 text-xs text-muted-foreground">
+            Could not load the integration registry — connected providers keep working; new
+            connections are paused until it recovers. {registryQuery.error.message}
+          </div>
+        </div>
+      ) : (
+        unconnectedGroups.map((group) => (
+          <React.Fragment key={group.category}>
+            <Kicker className="mb-2.5 mt-8">{group.label}</Kicker>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              {group.items.map((descriptor) => (
+                <ProviderCard
+                  key={descriptor.id}
+                  descriptor={descriptor}
+                  state={cardState(descriptor, connections)}
+                  waiting={connectingProvider === descriptor.id}
+                  disabled={connectingProvider !== null}
+                  onConnect={() => void connect(descriptor)}
+                  onUpgrade={() => router.push(`/orgs/${orgSlug}/settings/billing`)}
+                />
+              ))}
+            </div>
+          </React.Fragment>
+        ))
+      )}
+
+      {/* BYO agent providers (saas-agents AG12 §10.5). Section chrome is
+          registry-ordered (ai-provider · compute close the category walk);
+          the embedded panel is the pre-IR5 state — IR5 re-homes these
+          connections into `integrations.connections` and this becomes
+          registry cards like everything above. */}
+      <Kicker className="mb-2.5 mt-8">AI &amp; compute providers</Kicker>
+      <ProviderConnections orgId={orgId} />
+
+      {/* Roadmap providers — honest "Soon" slots from `status: "roadmap"`
+          manifests; the same source of truth as live cards, so ghost drift
+          cannot recur. */}
+      {roadmap.length > 0 ? (
+        <>
+          <Kicker className="mb-2.5 mt-8">On the roadmap</Kicker>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            {roadmap.map((descriptor) => {
+              const Icon = ICONS[providerIconName(descriptor)] ?? Plug;
               return (
-                <div key={provider.id} className="rounded-xl border bg-card px-5 py-[18px]">
+                <div
+                  key={descriptor.id}
+                  className="rounded-xl border border-dashed bg-muted px-5 py-[18px]"
+                >
                   <div className="flex items-center gap-2.5">
-                    <Icon
-                      className="h-[18px] w-[18px] shrink-0 text-secondary-foreground"
-                      strokeWidth={1.8}
-                      aria-hidden
-                    />
-                    <span className="text-[13.5px] font-semibold">{provider.name}</span>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="ml-auto shrink-0"
-                      disabled={connectingProvider !== null}
-                      onClick={() => void connect(provider.id)}
-                    >
-                      {waiting ? `Waiting for ${provider.name}…` : "Connect"}
-                    </Button>
+                    <Icon className="h-[18px] w-[18px] shrink-0 text-muted-foreground" strokeWidth={1.8} aria-hidden />
+                    <span className="text-[13.5px] font-semibold text-secondary-foreground">
+                      {descriptor.displayName}
+                    </span>
+                    <span className="ml-auto shrink-0 rounded-[10px] border border-border px-2 py-0.5 text-[10.5px] font-semibold uppercase tracking-[.07em] text-muted-foreground">
+                      Soon
+                    </span>
                   </div>
                   <p className="mt-2.5 text-[12.5px] leading-relaxed text-muted-foreground">
-                    {provider.description}
+                    {descriptor.tagline}
                   </p>
                 </div>
               );
             })}
           </div>
-        </React.Fragment>
-      ))}
-
-      {/* BYO agent providers (saas-agents AG12 §10.5): Daytona compute +
-          Anthropic model keys, the same connections the Agents tab manages. */}
-      <Kicker className="mb-2.5 mt-8">AI &amp; compute providers</Kicker>
-      <ProviderConnections orgId={orgId} />
-
-      {/* Roadmap providers — honest "Soon" slots so the hub reads as a hub. */}
-      <Kicker className="mb-2.5 mt-8">On the roadmap</Kicker>
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-        {roadmapProviders().map((provider) => {
-          const Icon = PROVIDER_ICONS[provider.icon] ?? Plug;
-          return (
-            <div key={provider.id} className="rounded-xl border border-dashed bg-muted px-5 py-[18px]">
-              <div className="flex items-center gap-2.5">
-                <Icon className="h-[18px] w-[18px] shrink-0 text-muted-foreground" strokeWidth={1.8} aria-hidden />
-                <span className="text-[13.5px] font-semibold text-secondary-foreground">{provider.name}</span>
-                <span className="ml-auto shrink-0 rounded-[10px] border border-border px-2 py-0.5 text-[10.5px] font-semibold uppercase tracking-[.07em] text-muted-foreground">
-                  Soon
-                </span>
-              </div>
-              <p className="mt-2.5 text-[12.5px] leading-relaxed text-muted-foreground">{provider.description}</p>
-            </div>
-          );
-        })}
-      </div>
+        </>
+      ) : null}
 
       <ConfirmDialog
         open={revokeTarget !== null}
@@ -402,22 +404,65 @@ export function IntegrationsHub({ orgId, orgSlug }: { orgId: string; orgSlug: st
           if (revokeTarget) await revoke(revokeTarget);
         }}
       />
-
-      {/* Token-kind connect (IH5/IH8): paste modal with the scope recipe
-          inline; the worker verifies before saving and the connection comes
-          back active, so success is just a reload. Entitlement 412s ride the
-          same PreconditionInsight path as the popup kinds. */}
-      <CloudflareConnectModal
-        orgId={orgId}
-        open={cloudflareOpen}
-        onOpenChange={setCloudflareOpen}
-        onConnected={() => list.reload()}
-        onGateError={(error) => setGateError(error)}
-        {...(providerById("cloudflare")?.connectKind === "oauth"
-          ? { onOauth: () => void startCloudflareOauth() }
-          : {})}
-      />
     </Screen>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Unconnected provider card — a pure function of descriptor + card state.
+// ---------------------------------------------------------------------------
+
+function ProviderCard({
+  descriptor,
+  state,
+  waiting,
+  disabled,
+  onConnect,
+  onUpgrade,
+}: {
+  descriptor: IntegrationDescriptor;
+  state: ReturnType<typeof cardState>;
+  waiting: boolean;
+  disabled: boolean;
+  onConnect: () => void;
+  onUpgrade: () => void;
+}) {
+  const Icon = ICONS[providerIconName(descriptor)] ?? Plug;
+  return (
+    <div className="rounded-xl border bg-card px-5 py-[18px]">
+      <div className="flex items-center gap-2.5">
+        <Icon
+          className="h-[18px] w-[18px] shrink-0 text-secondary-foreground"
+          strokeWidth={1.8}
+          aria-hidden
+        />
+        <span className="text-[13.5px] font-semibold">{descriptor.displayName}</span>
+        {state === "locked" ? (
+          <Button variant="outline" size="sm" className="ml-auto shrink-0" onClick={onUpgrade}>
+            Upgrade
+          </Button>
+        ) : state === "configure" ? (
+          <span className="ml-auto shrink-0 rounded-[10px] border border-border px-2 py-0.5 text-[10.5px] font-semibold uppercase tracking-[.07em] text-muted-foreground">
+            Not configured
+          </span>
+        ) : (
+          <Button
+            variant="outline"
+            size="sm"
+            className="ml-auto shrink-0"
+            disabled={disabled}
+            onClick={onConnect}
+          >
+            {waiting ? `Waiting for ${descriptor.displayName}…` : "Connect"}
+          </Button>
+        )}
+      </div>
+      <p className="mt-2.5 text-[12.5px] leading-relaxed text-muted-foreground">
+        {state === "configure"
+          ? `${descriptor.tagline} This environment has no ${descriptor.displayName} credentials registered yet — an operator sets them per environment.`
+          : descriptor.tagline}
+      </p>
+    </div>
   );
 }
 
