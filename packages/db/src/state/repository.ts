@@ -690,6 +690,49 @@ export function createStateRepository(executor: SqlExecutor): StateRepository {
       }
     },
 
+    async getRunJobCountsBatch(
+      orgId: Uuid,
+      runs: Array<{ projectId: Uuid; runId: Uuid }>,
+    ): Promise<StateResult<Map<string, RunJobCounts>>> {
+      if (runs.length === 0) return { ok: true, value: new Map() };
+      try {
+        // One grouped statement for the whole page (IC1). The (project, run)
+        // pairs travel as ONE jsonb param (::text::jsonb for the same driver
+        // reason as createRunJobsBulk) and unpack via jsonb_to_recordset, so
+        // each pair is matched exactly — identical semantics to calling
+        // getRunJobCounts once per run, minus the 50 extra round-trips.
+        const result = await executor.execute<Record<string, unknown>>(
+          `SELECT j.run_id,
+                  COUNT(*) FILTER (WHERE j.status = 'queued')                 AS queued,
+                  COUNT(*) FILTER (WHERE j.status IN ('claimed', 'running'))  AS running,
+                  COUNT(*) FILTER (WHERE j.status = 'succeeded')              AS succeeded,
+                  COUNT(*) FILTER (WHERE j.status IN ('failed', 'timed_out')) AS failed
+             FROM state.run_jobs j
+             JOIN jsonb_to_recordset($2::text::jsonb)
+                    AS r(project_id UUID, run_id UUID)
+               ON r.project_id = j.project_id AND r.run_id = j.run_id
+            WHERE j.org_id = $1
+            GROUP BY j.run_id`,
+          [
+            orgId,
+            JSON.stringify(runs.map((r) => ({ project_id: r.projectId, run_id: r.runId }))),
+          ],
+        );
+        const counts = new Map<string, RunJobCounts>();
+        for (const row of result.rows) {
+          counts.set(String(row.run_id), {
+            queued: Number(row.queued ?? 0),
+            running: Number(row.running ?? 0),
+            succeeded: Number(row.succeeded ?? 0),
+            failed: Number(row.failed ?? 0),
+          });
+        }
+        return { ok: true, value: counts };
+      } catch {
+        return safeError("Failed to count run jobs");
+      }
+    },
+
     // ── Objects (CAS index) ──────────────────────────────────
 
     async upsertObject(input: UpsertObjectInput): Promise<StateResult<UpsertObjectOutcome>> {

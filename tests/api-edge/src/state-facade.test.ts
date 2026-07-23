@@ -142,6 +142,27 @@ describe("state facade — forwarding", () => {
     expect(calls[0]!.url).toContain("status=running");
   });
 
+  it("appends edge timing phases to Server-Timing (IC1 — /state/* was the observability hole)", async () => {
+    const { fetcher } = createDownstream(
+      Response.json({ data: { runs: [], nextCursor: null }, meta: { requestId: "req_inner", cursor: null } }),
+    );
+    const env = { IDENTITY_WORKER: sessionFetcher(), STATE_WORKER: fetcher, ENVIRONMENT: "test" };
+    const res = await handleStateRoute(
+      new Request(`https://edge.test${RUNS_PATH}`, {
+        method: "GET",
+        headers: { authorization: "Bearer tok_123" },
+      }),
+      env as never,
+      "req_1",
+      RUNS_PATH,
+    );
+    expect(res.status).toBe(200);
+    const timing = res.headers.get("Server-Timing") ?? "";
+    expect(timing).toContain("edge_total");
+    expect(timing).toContain("edge_auth");
+    expect(timing).toContain("edge_downstream");
+  });
+
   it("allows PUT and forwards the Orun-Object-Kind header + body (object plane)", async () => {
     const { fetcher, calls } = createDownstream(
       Response.json({ data: { object: {}, created: true }, meta: { requestId: "req_inner", cursor: null } }, { status: 201 }),

@@ -1,7 +1,8 @@
 import type { Env } from "./env.js";
-import { errorResponse } from "./http.js";
+import { errorResponse, withEdgeTimings } from "./http.js";
 import { replayOrExecute } from "./idempotency.js";
 import { resolveActor } from "./resolve-actor.js";
+import { createTimings } from "@saas/contracts/timing";
 
 // Authenticated state-worker routes proxied through the edge (OP4 — workspace
 // links + tenancy resolution; OP2+ run/object planes land behind the same
@@ -113,7 +114,12 @@ export async function handleStateRoute(
       return errorResponse("internal_error", "State service unavailable", 503, requestId);
     }
 
-    const sessionResult = await resolveActor(request, env, requestId);
+    // IC1 — /state/* was the one facade without edge timing phases, which is
+    // how a 4.5s downstream stall stayed invisible in Server-Timing. Same
+    // phase names as the org facade (PERF14b).
+    const timings = createTimings();
+    const endTotal = timings.start("edge_total");
+    const sessionResult = await timings.measure("edge_auth", () => resolveActor(request, env, requestId));
     if ("error" in sessionResult) {
       return sessionResult.error;
     }
@@ -144,11 +150,15 @@ export async function handleStateRoute(
         // Streaming a request body through fetch requires duplex: 'half'.
         (fetchInit as RequestInit & { duplex?: string }).duplex = "half";
       }
-      const downstream = await env.STATE_WORKER.fetch(target.toString(), fetchInit);
-      return new Response(downstream.body, {
+      const downstream = await timings.measure("edge_downstream", () =>
+        env.STATE_WORKER!.fetch(target.toString(), fetchInit),
+      );
+      const res = new Response(downstream.body, {
         status: downstream.status,
         headers: downstream.headers,
       });
+      endTotal();
+      return withEdgeTimings(res, requestId, "edge.state", timings);
     } catch {
       return errorResponse("internal_error", "State service unavailable", 503, requestId);
     }

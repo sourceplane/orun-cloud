@@ -605,11 +605,16 @@ export async function handleListRuns(
     );
     if (!result.ok) return errorResponse("internal_error", "Service unavailable", 503, requestId);
 
-    const runs: PublicRun[] = [];
-    for (const run of result.value.items) {
-      const counts = await repo.getRunJobCounts(orgId, projectId, asUuid(run.id));
-      runs.push(toPublicRun(run, counts.ok ? counts.value : zeroCounts()));
-    }
+    // One grouped round-trip for the whole page's job counts (IC1) — the
+    // per-run await loop this replaces was ~51 sequential Postgres trips.
+    const countsResult = await repo.getRunJobCountsBatch(
+      orgId,
+      result.value.items.map((run) => ({ projectId, runId: asUuid(run.id) })),
+    );
+    const countsByRun = countsResult.ok ? countsResult.value : new Map();
+    const runs: PublicRun[] = result.value.items.map((run) =>
+      toPublicRun(run, countsByRun.get(run.id) ?? zeroCounts()),
+    );
     const nextCursor = result.value.nextCursor
       ? { createdAt: result.value.nextCursor.createdAt, id: result.value.nextCursor.id }
       : null;
@@ -691,13 +696,18 @@ export async function handleListOrgRuns(
     const result = await repo.listOrgRuns(orgId, { limit: DEFAULT_PAGE_LIMIT, cursor }, query);
     if (!result.ok) return errorResponse("internal_error", "Service unavailable", 503, requestId);
 
-    const runs: PublicRun[] = [];
-    for (const run of result.value.items) {
-      // Job counts are scoped per (org, project) — use the run's own project,
-      // since this feed spans every repo in the org.
-      const counts = await repo.getRunJobCounts(orgId, asUuid(run.projectId), asUuid(run.id));
-      runs.push(toPublicRun(run, counts.ok ? counts.value : zeroCounts()));
-    }
+    // One grouped round-trip for the whole page's job counts (IC1 — this loop
+    // was the 4.5s Activities stall: ~51 sequential Postgres trips). Counts
+    // are scoped per (org, project, run) — each pair uses the run's OWN
+    // project, since this feed spans every repo in the org.
+    const countsResult = await repo.getRunJobCountsBatch(
+      orgId,
+      result.value.items.map((run) => ({ projectId: asUuid(run.projectId), runId: asUuid(run.id) })),
+    );
+    const countsByRun = countsResult.ok ? countsResult.value : new Map();
+    const runs: PublicRun[] = result.value.items.map((run) =>
+      toPublicRun(run, countsByRun.get(run.id) ?? zeroCounts()),
+    );
     const nextCursor = result.value.nextCursor
       ? { createdAt: result.value.nextCursor.createdAt, id: result.value.nextCursor.id }
       : null;

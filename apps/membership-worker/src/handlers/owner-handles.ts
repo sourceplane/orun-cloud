@@ -228,10 +228,14 @@ export async function handleResolveOwners(
     const keys = [...new Set(ownerStrings.map(ownerHandleKey).filter((k) => k.length > 0))];
 
     // Two batched queries: the account's teams (handle + id → identity) and the
-    // alias rows for these keys. No N+1.
-    const teamsResult = await repo.listTeams(authz.accountUuid);
+    // alias rows for these keys. No N+1 — and independent of each other, so
+    // they go out concurrently (IC1: the sequential await pair was the larger
+    // half of the 1.3s resolve-owners the 2026-07-23 audit measured).
+    const [teamsResult, aliasResult] = await Promise.all([
+      repo.listTeams(authz.accountUuid),
+      repo.resolveTeamOwnerHandles(authz.accountUuid, keys),
+    ]);
     if (!teamsResult.ok) return errorResponse("internal_error", "An unexpected error occurred", 500, requestId);
-    const aliasResult = await repo.resolveTeamOwnerHandles(authz.accountUuid, keys);
     if (!aliasResult.ok) return errorResponse("internal_error", "An unexpected error occurred", 500, requestId);
 
     const byHandle = new Map<string, (typeof teamsResult.value)[number]>();
