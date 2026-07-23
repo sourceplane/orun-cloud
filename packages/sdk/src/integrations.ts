@@ -165,6 +165,32 @@ export class IntegrationsClient {
   }
 
   /**
+   * POST /v1/organizations/:orgId/integrations/:providerId/connect
+   *
+   * Provider-generic connect (saas-integration-registry IR1): starts the
+   * connect flow for any registry provider whose primary live method is
+   * install/oauth-kind — returns a pending connection plus the provider URL
+   * carrying the signed single-use state (popup + poll, same as the named
+   * per-provider methods this generalizes). Token/apikey-kind postures take
+   * provider-specific bodies and keep their named methods.
+   */
+  connect(
+    orgId: string,
+    providerId: string,
+    body: ConnectIntegrationRequest = {},
+    opts: RequestOptions = {},
+  ): Promise<ConnectIntegrationResponse> {
+    return this.transport.request<ConnectIntegrationResponse>(
+      {
+        method: "POST",
+        path: `/v1/organizations/${encodeURIComponent(orgId)}/integrations/${encodeURIComponent(providerId)}/connect`,
+        body,
+      },
+      opts,
+    );
+  }
+
+  /**
    * POST /v1/organizations/:orgId/integrations/github/connect
    *
    * Returns a pending connection plus the provider install URL carrying the

@@ -7,8 +7,8 @@ rails; implementation started same day.
 
 | ID | Status |
 |----|--------|
-| IR0 | 🔄 In progress — manifest + registry read |
-| IR1 | 🗓️ Planned |
+| IR0 | ✅ Shipped (#596) — manifest + registry read |
+| IR1 | 🔄 In progress — unified hub from the registry |
 | IR2 | 🗓️ Planned |
 | IR3 | 🗓️ Planned |
 | IR4 | 🗓️ Planned |
@@ -19,6 +19,35 @@ rails; implementation started same day.
 | IR9 | 🗓️ Planned |
 
 ## Notes
+
+- 2026-07-23: IR1 as built:
+  - **Console registry lib** (`components/integrations/registry.ts`): pure
+    helpers over the served descriptors — `CATEGORY_ORDER/LABELS`,
+    `groupByCategory`, `cardState` (connected / available / locked /
+    configure / roadmap — a pure function of descriptor + connections),
+    `connectDispatch` (popup for a single live install/oauth method; the
+    provider's SPACE for token/multi-method postures — posture-driven,
+    never provider-named), `primaryLiveConnect`, `providerDisplayName`
+    (fail-soft to the id), icon resolution with category fallback.
+  - **Hub rewrite** (`integrations-hub.tsx`): renders every section from
+    `qk.integrationRegistry(orgId)`; the `providers.ts` catalog and the
+    `id === "cloudflare"` special case are DELETED; connect uses the new
+    provider-generic SDK `connect(orgId, providerId)`; locked cards get the
+    U7 upgrade CTA; "configure" renders the honest env gate; roadmap strip
+    from `status: "roadmap"`; SP-A5 loading/error states (never a fallback
+    catalog). The AI & compute section keeps the embedded agents panel
+    under registry-ordered chrome until IR5.
+  - **Provider space** (`provider-space.tsx`): reads identity from the
+    registry (name/tagline); owns connect for space-dispatch providers via
+    `?connect=1` — the shipped Cloudflare modal mounts as the one-milestone
+    shim IR3 replaces with the descriptor-driven connect panel; OAuth
+    primary action runs the generic connect popup.
+  - **Fallout**: `archetype.ts` shrank to `archetypeForProvider` for
+    connection-detail (dies in IR2); `secrets-panel.tsx` derives provider
+    display names from the registry read.
+  - Verified: console 86/86 suites (840 tests, incl. the new
+    `integration-registry-helpers` suite replacing the deleted catalog
+    test), integrations-worker 457/457, typecheck + lint clean.
 
 - 2026-07-23: IR0 as built:
   - **Contracts** (`packages/contracts/src/integrations.ts`, additive):

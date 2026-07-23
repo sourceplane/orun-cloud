@@ -57,7 +57,7 @@ import {
 } from "./bind-secret-flow";
 // SP3: integration-bound creation lives with the owner (SP2's provider
 // spaces); this surface routes there and creates static secrets natively.
-import { providerById } from "@/components/integrations/providers";
+import { providerDisplayName } from "@/components/integrations/registry";
 import {
   integrationCreateMenu,
   legacyBindRedirect,
@@ -127,10 +127,19 @@ export function SecretsPanel({ scope, scopeKey }: { scope: ConfigScope; scopeKey
     () => wrap(async () => (await client.integrations.listSecretsCapabilities(orgId)).capabilities),
     { staleTime: 10 * 60_000 },
   );
+  // IR1: display names come from the served registry (fail-soft to the id) —
+  // the console's provider catalog is gone.
+  const registryQuery = useApiQuery(
+    qk.integrationRegistry(orgId),
+    () => wrap(async () => (await client.integrations.getRegistry(orgId)).registry),
+    { staleTime: 10 * 60_000 },
+  );
   const createMenu = React.useMemo(
     () =>
-      integrationCreateMenu(capabilitiesQuery.data ?? [], orgSlug, (id) => providerById(id)?.name ?? id),
-    [capabilitiesQuery.data, orgSlug],
+      integrationCreateMenu(capabilitiesQuery.data ?? [], orgSlug, (id) =>
+        providerDisplayName(registryQuery.data, id),
+      ),
+    [capabilitiesQuery.data, registryQuery.data, orgSlug],
   );
 
   // SP3 (SP-A4): the legacy `?bind=1[&connection=int_…]` deep link now
@@ -526,7 +535,7 @@ export function SecretsPanel({ scope, scopeKey }: { scope: ConfigScope; scopeKey
                               <DropdownMenuItem asChild>
                                 <a href={providerSpaceHref(orgSlug, managedByProvider(s)!)}>
                                   <Plug className="mr-2 h-4 w-4" /> Managed by{" "}
-                                  {providerById(managedByProvider(s)!)?.name ?? managedByProvider(s)}
+                                  {providerDisplayName(registryQuery.data, managedByProvider(s)!)}
                                 </a>
                               </DropdownMenuItem>
                             </>

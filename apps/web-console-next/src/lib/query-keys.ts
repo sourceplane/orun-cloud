@@ -38,6 +38,10 @@ export const qk = {
   notificationChannels: (orgId: string) => ["notificationChannels", orgId] as const,
   deadLetters: (orgId: string, status: string) => ["deadLetters", orgId, status] as const,
   integrations: (orgId: string) => ["integrations", orgId] as const,
+  /** The bulk Integration Registry read (saas-integration-registry IR0/IR1) —
+   * every provider's manifest descriptor; static per deploy, cached long; the
+   * hub, the spaces, and Cmd-K share this one entry. */
+  integrationRegistry: (orgId: string) => ["integrationRegistry", orgId] as const,
   /** Bulk secret-source capability read (saas-secrets-platform SP0c, SP-A1) —
    * static per deploy, cached long; the create surfaces and the Secrets lens
    * share this one entry. */

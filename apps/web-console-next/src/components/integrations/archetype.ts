@@ -1,46 +1,25 @@
 /**
- * Pure archetype grouping (saas-integration-hub design §6).
+ * Provider archetype mapping for the per-connection detail surface.
  *
- * Dependency-free (no React, no `next/*`) so the marketplace grouping is
- * unit-testable. Consumed by the hub (grouped "Connect a provider" section)
- * AND the connection-detail surface (`archetypeForProvider`) — keep the
- * exported names/shapes stable.
- *
- * The scope-template display catalog that used to live here was deleted by
- * saas-secrets-platform SP0c: the console now derives templates from the bulk
- * capability read (`client.integrations.listSecretsCapabilities`, SP-A1) —
- * see `config/bind-secret-flow.ts` `templatesForProvider`.
+ * IR1 note: the hub no longer uses archetypes — it renders category sections
+ * straight from the served Integration Registry (`registry.ts`). This static
+ * map exists ONLY for `connection-detail.tsx`'s body branching (messaging vs
+ * infrastructure vs source control), which IR2 absorbs into the provider
+ * space — this file is deleted with it.
  */
-
-import { providerById } from "./providers";
 
 export type Archetype = "source-control" | "messaging" | "infrastructure";
 
-/** Stable marketplace ordering (design §6). */
-export const ARCHETYPE_ORDER: Archetype[] = ["source-control", "messaging", "infrastructure"];
-
-export const ARCHETYPE_LABELS: Record<Archetype, string> = {
-  "source-control": "Source control",
-  messaging: "Messaging",
-  infrastructure: "Infrastructure",
+const PROVIDER_ARCHETYPES: Record<string, Archetype> = {
+  github: "source-control",
+  slack: "messaging",
+  discord: "messaging",
+  cloudflare: "infrastructure",
+  supabase: "infrastructure",
+  aws: "infrastructure",
 };
 
-/** Archetype for a provider id; null for ids the catalog does not know. */
+/** Archetype for a provider id; null for ids the map does not know. */
 export function archetypeForProvider(id: string): Archetype | null {
-  return providerById(id)?.archetype ?? null;
-}
-
-/**
- * Group items carrying an `archetype` into labeled buckets in
- * `ARCHETYPE_ORDER`, dropping empty archetypes and preserving input order
- * within each bucket.
- */
-export function groupByArchetype<T extends { archetype: Archetype }>(
-  items: T[],
-): Array<{ archetype: Archetype; label: string; items: T[] }> {
-  return ARCHETYPE_ORDER.map((archetype) => ({
-    archetype,
-    label: ARCHETYPE_LABELS[archetype],
-    items: items.filter((item) => item.archetype === archetype),
-  })).filter((group) => group.items.length > 0);
+  return PROVIDER_ARCHETYPES[id] ?? null;
 }

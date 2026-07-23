@@ -39,8 +39,9 @@ import { useToast } from "@/components/ui/toast";
 import { useSession } from "@/lib/session";
 import { useApiQuery, qk } from "@/lib/query";
 import { wrap } from "@/lib/api";
-import { providerById } from "./providers";
+import { descriptorById } from "./registry";
 import { connectionDisplayName, connectionStatusMeta } from "./connections";
+import { CloudflareConnectModal } from "./cloudflare-connect-modal";
 import { authoringSurfaceFor } from "@/components/config/authoring-registry";
 import { deriveBrokerRow, deriveRotationRow } from "@/components/config/bind-secret-flow";
 import {
@@ -91,12 +92,19 @@ export function ProviderSpace({
   const pathname = usePathname();
   const searchParams = useSearchParams();
 
-  const provider = providerById(providerId);
   const Icon = PROVIDER_ICONS[providerId] ?? Plug;
 
   const integrations = useApiQuery(qk.integrations(orgId), () =>
     wrap(async () => (await client.integrations.list(orgId)).connections),
   );
+  // IR1: identity/posture comes from the served registry, not a console
+  // catalog. Fail-soft: while unavailable, the header degrades to the id.
+  const registryQuery = useApiQuery(
+    qk.integrationRegistry(orgId),
+    () => wrap(async () => (await client.integrations.getRegistry(orgId)).registry),
+    { staleTime: 10 * 60_000 },
+  );
+  const descriptor = descriptorById(registryQuery.data, providerId);
   const capabilitiesQuery = useApiQuery(
     qk.secretsCapabilities(orgId),
     () => wrap(async () => (await client.integrations.listSecretsCapabilities(orgId)).capabilities),
@@ -150,23 +158,52 @@ export function ProviderSpace({
   const [mode, setMode] = React.useState<"binding" | "rotated">("binding");
   const [initialConnectionId, setInitialConnectionId] = React.useState<string | undefined>(undefined);
 
+  // ── Connect (IR1) ──
+  // The space owns connect for any provider whose posture the hub's popup
+  // flow can't express (a token method / multiple methods — today:
+  // Cloudflare). IR3 replaces this modal mount with the space's real connect
+  // panel rendered from `descriptor.connect`; until then the shipped modal
+  // IS the token-method surface (one-milestone shim).
+  const [connectOpen, setConnectOpen] = React.useState(false);
+  const spaceOwnsConnect = providerId === "cloudflare";
+  const oauthLive = descriptor?.connect.some((m) => m.kind === "oauth" && m.live) ?? false;
+
+  const startOauthConnect = React.useCallback(async () => {
+    setConnectOpen(false);
+    const r = await wrap(() => client.integrations.connect(orgId, providerId));
+    if (!r.ok) {
+      toast({ kind: "error", title: "Could not start the connection", description: r.error.message });
+      return;
+    }
+    const { installUrl } = r.data;
+    const popup = window.open(installUrl, `${providerId}-connect`, "width=1020,height=780");
+    if (!popup && installUrl) window.location.assign(installUrl);
+  }, [client, orgId, providerId, toast]);
+
   // SP-A4 deep link: `?create=1[&connection=int_…]` opens the dialog once,
-  // then strips the params so a refresh doesn't reopen it.
+  // then strips the params so a refresh doesn't reopen it. `?connect=1`
+  // (IR1, from the hub's space-dispatch) opens the connect flow the same way.
   const deepLinkSeeded = React.useRef(false);
   React.useEffect(() => {
     if (deepLinkSeeded.current) return;
-    if (searchParams?.get("create") === "1") {
+    const wantsCreate = searchParams?.get("create") === "1";
+    const wantsConnect = searchParams?.get("connect") === "1";
+    if (wantsCreate || wantsConnect) {
       deepLinkSeeded.current = true;
-      const conn = searchParams.get("connection");
-      if (conn) setInitialConnectionId(conn);
-      setCreateOpen(true);
-      const next = new URLSearchParams(searchParams.toString());
+      if (wantsCreate) {
+        const conn = searchParams!.get("connection");
+        if (conn) setInitialConnectionId(conn);
+        setCreateOpen(true);
+      }
+      if (wantsConnect && spaceOwnsConnect) setConnectOpen(true);
+      const next = new URLSearchParams(searchParams!.toString());
       next.delete("create");
       next.delete("connection");
+      next.delete("connect");
       const qs = next.toString();
       router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
     }
-  }, [searchParams, pathname, router]);
+  }, [searchParams, pathname, router, spaceOwnsConnect]);
 
   React.useEffect(() => {
     // Default the toggle to the first declared mode once the capability loads.
@@ -176,14 +213,14 @@ export function ProviderSpace({
   }, [modeToggle, mode]);
 
   const Surface = authoringSurfaceFor(providerId);
-  const name = provider?.name ?? providerId;
+  const name = descriptor?.displayName ?? providerId;
 
   return (
     <Screen>
       <PageHeader
         title={name}
         description={
-          provider?.description ??
+          descriptor?.tagline ??
           "This provider's space — its connections, its secrets, its scope templates."
         }
         actions={
@@ -202,9 +239,15 @@ export function ProviderSpace({
         ) : (
           <>
             <Pill tone="neutral">not connected</Pill>
-            <Button asChild variant="outline" size="sm">
-              <a href={`/orgs/${orgSlug}/integrations?connect=${providerId}`}>Connect {name}</a>
-            </Button>
+            {spaceOwnsConnect ? (
+              <Button variant="outline" size="sm" onClick={() => setConnectOpen(true)}>
+                Connect {name}
+              </Button>
+            ) : (
+              <Button asChild variant="outline" size="sm">
+                <a href={`/orgs/${orgSlug}/integrations?connect=${providerId}`}>Connect {name}</a>
+              </Button>
+            )}
           </>
         )}
         {capability ? (
@@ -398,6 +441,22 @@ export function ProviderSpace({
           />
         </DialogContent>
       </Dialog>
+
+      {/* IR1 shim (see spaceOwnsConnect above): the shipped Cloudflare modal
+          serves as the space's connect surface until IR3's descriptor-driven
+          connect panel replaces it. */}
+      {spaceOwnsConnect ? (
+        <CloudflareConnectModal
+          orgId={orgId}
+          open={connectOpen}
+          onOpenChange={setConnectOpen}
+          onConnected={() => integrations.reload()}
+          onGateError={(error) =>
+            toast({ kind: "error", title: "Connection gated", description: error.message })
+          }
+          {...(oauthLive ? { onOauth: () => void startOauthConnect() } : {})}
+        />
+      ) : null}
     </Screen>
   );
 }
