@@ -168,6 +168,12 @@ export class ConfigClient {
    *
    * The `value` field is write-only — the api-edge worker encrypts it before
    * persistence and the response carries metadata only.
+   *
+   * **Frozen authoring contract** (saas-secrets-platform SP1): this call —
+   * with `createBrokeredSecret` and `createRotatedSecret` — is the Secret
+   * Authoring Interface a producer (an integration space, the CLI, a plugin)
+   * consumes. The shapes are stable; producers never touch ciphertext or the
+   * scope/policy checks — the substrate performs the governed write.
    */
   createSecretMetadata(
     scope: ConfigScope,
@@ -188,6 +194,9 @@ export class ConfigClient {
    * resolve. Requires both `secret.write` and the broker's
    * `organization.integration.credential.issue`. Mutually exclusive with
    * `value` and `personal`.
+   *
+   * **Frozen authoring contract** (saas-secrets-platform SP1) — see
+   * `createSecretMetadata`.
    */
   createBrokeredSecret(
     scope: ConfigScope,
@@ -208,6 +217,9 @@ export class ConfigClient {
    * cadence. Same endpoint as brokered create; the server dispatches on the
    * `rotation` field. Requires `secret.write` + the broker's
    * `organization.integration.credential.issue`.
+   *
+   * **Frozen authoring contract** (saas-secrets-platform SP1) — see
+   * `createSecretMetadata`.
    */
   createRotatedSecret(
     scope: ConfigScope,
