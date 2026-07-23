@@ -1,8 +1,9 @@
 // saas-secrets-platform SP1: the Secret Authoring Interface.
 //
-// Asserts (1) the authoring-surface registry resolves the default surface for
-// every provider and honors a custom graft (the SP2 seam), and (2) the frozen
-// SDK authoring contract — the three create calls — exists with stable names
+// Asserts (1) the authoring-surface registry resolves the default surface —
+// since IR4 the outcome-first SecretWizardSurface — for every provider and
+// honors a custom graft (the SP2 seam), and (2) the frozen SDK authoring
+// contract — the three create calls — exists with stable names
 // (capability-contract §5). Pure-logic tests: components are compared by
 // identity, never rendered (no jsdom in this suite).
 
@@ -12,13 +13,13 @@ import {
   registerCustomAuthoring,
   type AuthoringSurface,
 } from "@web-console-next/components/config/authoring-registry";
-import { DefaultAuthoringSurface } from "@web-console-next/components/config/authoring-surface";
+import { SecretWizardSurface } from "@web-console-next/components/config/secret-wizard";
 import { ConfigClient } from "@saas/sdk";
 
 describe("authoringSurfaceFor (SP1 registry)", () => {
-  it("resolves the default surface for every provider with no custom graft", () => {
+  it("resolves the default wizard surface for every provider with no custom graft", () => {
     for (const provider of ["cloudflare", "supabase", "github", "aws", "unknown-provider"]) {
-      expect(authoringSurfaceFor(provider)).toBe(DefaultAuthoringSurface);
+      expect(authoringSurfaceFor(provider)).toBe(SecretWizardSurface);
       expect(hasCustomAuthoring(provider)).toBe(false);
     }
   });
@@ -30,11 +31,11 @@ describe("authoringSurfaceFor (SP1 registry)", () => {
       expect(authoringSurfaceFor("cloudflare")).toBe(Custom);
       expect(hasCustomAuthoring("cloudflare")).toBe(true);
       // Other providers are untouched by the graft.
-      expect(authoringSurfaceFor("supabase")).toBe(DefaultAuthoringSurface);
+      expect(authoringSurfaceFor("supabase")).toBe(SecretWizardSurface);
     } finally {
       unregister();
     }
-    expect(authoringSurfaceFor("cloudflare")).toBe(DefaultAuthoringSurface);
+    expect(authoringSurfaceFor("cloudflare")).toBe(SecretWizardSurface);
     expect(hasCustomAuthoring("cloudflare")).toBe(false);
   });
 
@@ -51,7 +52,7 @@ describe("authoringSurfaceFor (SP1 registry)", () => {
     } finally {
       unregisterSecond();
     }
-    expect(authoringSurfaceFor("supabase")).toBe(DefaultAuthoringSurface);
+    expect(authoringSurfaceFor("supabase")).toBe(SecretWizardSurface);
   });
 });
 

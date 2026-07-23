@@ -11,9 +11,9 @@
  * performs the governed write (`create-secret.ts` gates brokered/rotated
  * creation behind `secret.write` + `credential.issue`).
  *
- * The default authoring surface (`authoring-surface.tsx`) is itself built
- * from exactly these primitives — a custom surface (SP2) gets nothing the
- * default doesn't have.
+ * The default authoring surface — since IR4 the outcome-first wizard
+ * (`secret-wizard.tsx`) — is itself built from exactly these primitives; a
+ * custom surface (SP2) gets nothing the default doesn't have.
  */
 
 import * as React from "react";

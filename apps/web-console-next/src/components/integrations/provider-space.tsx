@@ -16,9 +16,10 @@
  *   - **Connections** — this provider's connections, linking to the existing
  *     per-connection detail pages (custody/revoke stay there).
  *
- * `?create=1[&connection=int_…]` opens the create dialog (SP-A4: the
- * successor of the Secrets page's `?bind=1` deep link), pre-selecting and
- * locking the named connection.
+ * `?create=1[&connection=int_…][&template=…]` opens the create dialog
+ * (SP-A4: the successor of the Secrets page's `?bind=1` deep link),
+ * pre-selecting and locking the named connection and pre-seeding the
+ * wizard's Step 1 use-case (IR4).
  */
 
 import * as React from "react";
@@ -167,10 +168,12 @@ export function ProviderSpace({
     [secrets.data, providerId],
   );
 
-  // ── Create dialog ──
+  // ── Create dialog (IR4: the outcome-first wizard owns the lifecycle
+  // choice internally, so the space only passes the INITIAL mode — the
+  // first declared one) ──
   const [createOpen, setCreateOpen] = React.useState(false);
-  const [mode, setMode] = React.useState<"binding" | "rotated">("binding");
   const [initialConnectionId, setInitialConnectionId] = React.useState<string | undefined>(undefined);
+  const [initialTemplateId, setInitialTemplateId] = React.useState<string | undefined>(undefined);
 
   // ── Connect (IR3) ──
   // The space owns connect for any provider whose posture the hub's popup
@@ -194,9 +197,10 @@ export function ProviderSpace({
     if (!popup && installUrl) window.location.assign(installUrl);
   }, [client, orgId, providerId, toast]);
 
-  // SP-A4 deep link: `?create=1[&connection=int_…]` opens the dialog once,
-  // then strips the params so a refresh doesn't reopen it. `?connect=1`
-  // (IR1, from the hub's space-dispatch) opens the connect flow the same way.
+  // SP-A4 deep link: `?create=1[&connection=int_…][&template=…]` opens the
+  // dialog once, then strips the params so a refresh doesn't reopen it.
+  // `?connect=1` (IR1, from the hub's space-dispatch) opens the connect flow
+  // the same way.
   const deepLinkSeeded = React.useRef(false);
   React.useEffect(() => {
     if (deepLinkSeeded.current) return;
@@ -207,24 +211,24 @@ export function ProviderSpace({
       if (wantsCreate) {
         const conn = searchParams!.get("connection");
         if (conn) setInitialConnectionId(conn);
+        const template = searchParams!.get("template");
+        if (template) setInitialTemplateId(template);
         setCreateOpen(true);
       }
       if (wantsConnect && spaceOwnsConnect) setConnectOpen(true);
       const next = new URLSearchParams(searchParams!.toString());
       next.delete("create");
       next.delete("connection");
+      next.delete("template");
       next.delete("connect");
       const qs = next.toString();
       router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
     }
   }, [searchParams, pathname, router, spaceOwnsConnect]);
 
-  React.useEffect(() => {
-    // Default the toggle to the first declared mode once the capability loads.
-    if (modeToggle.length > 0 && !modeToggle.some((m) => m.mode === mode)) {
-      setMode(modeToggle[0]!.mode);
-    }
-  }, [modeToggle, mode]);
+  // IR4: the wizard owns the lifecycle choice (its "How should it live?"
+  // step); the space seeds it with the first declared mode.
+  const initialMode = modeToggle[0]?.mode ?? "binding";
 
   const Surface = authoringSurfaceFor(providerId);
   const name = descriptor?.displayName ?? providerId;
@@ -505,56 +509,46 @@ export function ProviderSpace({
         <ScopeTemplatesSection orgId={orgId} providerId={providerId} name={name} />
       ) : null}
 
-      {/* ── Create dialog: the provider's registered authoring surface ── */}
+      {/* ── Create dialog: the provider's registered authoring surface (IR4:
+          the outcome-first wizard by default — it owns mode/scope/summary
+          internally, so the dialog is pure chrome) ── */}
       <Dialog
         open={createOpen}
         onOpenChange={(o) => {
           setCreateOpen(o);
-          if (!o) setInitialConnectionId(undefined);
+          if (!o) {
+            setInitialConnectionId(undefined);
+            setInitialTemplateId(undefined);
+          }
         }}
       >
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Create {name} secret</DialogTitle>
             <DialogDescription>
-              {mode === "binding"
-                ? "No value is stored — the credential is minted from the connection just-in-time at resolve."
-                : "The value is minted once from the connection, stored encrypted, and re-minted on the rotation schedule."}
+              Pick what you need; Orun mints it from the connection — the substrate performs the
+              governed write.
             </DialogDescription>
           </DialogHeader>
-
-          {modeToggle.length > 1 ? (
-            <div className="inline-flex self-start overflow-hidden rounded-md border">
-              {modeToggle.map((entry, i) => (
-                <button
-                  key={entry.mode}
-                  type="button"
-                  onClick={() => setMode(entry.mode)}
-                  className={`${i > 0 ? "border-l " : ""}px-2.5 py-1 text-xs ${mode === entry.mode ? "bg-card font-medium" : "text-muted-foreground"}`}
-                >
-                  {entry.label}
-                </button>
-              ))}
-            </div>
-          ) : null}
 
           <Surface
             scope={scope}
             orgId={orgId}
             enabled={createOpen}
-            mode={mode}
+            mode={initialMode}
             providerId={providerId}
             initialConnectionId={initialConnectionId}
+            initialTemplateId={initialTemplateId}
             onCancel={() => setCreateOpen(false)}
             onCreated={() => {
-              const wasRotated = mode === "rotated";
               setCreateOpen(false);
               setInitialConnectionId(undefined);
-              toast(
-                wasRotated
-                  ? { kind: "success", title: "Rotated secret created", description: "Minted from the connection and stored; it re-mints on the schedule." }
-                  : { kind: "success", title: "Scoped credential created", description: "Minted at resolve — nothing is stored." },
-              );
+              setInitialTemplateId(undefined);
+              toast({
+                kind: "success",
+                title: "Secret created",
+                description: "It appears on the Secrets page like every other secret.",
+              });
               secrets.reload();
             }}
           />

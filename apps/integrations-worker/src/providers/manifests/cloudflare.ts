@@ -26,7 +26,7 @@ const manifest: IntegrationManifest = {
   space: {
     tabs: ["overview", "connections", "secrets", "templates", "activity", "settings"],
     modules: ["accounts"],
-    authoring: "custom",
+    authoring: "declarative",
   },
   entitlement: INTEGRATION_ENTITLEMENTS.CLOUDFLARE,
   version: 1,
