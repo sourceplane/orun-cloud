@@ -18,6 +18,7 @@ import type {
   GetIntegrationResponse,
   ListIntegrationsResponse,
   ProviderSecretsCapabilitiesResponse,
+  IntegrationRegistryResponse,
   CreateScopeTemplateRequest,
   UpdateScopeTemplateRequest,
   ListScopeTemplatesResponse,
@@ -50,6 +51,25 @@ export class IntegrationsClient {
       {
         method: "GET",
         path: `/v1/organizations/${encodeURIComponent(orgId)}/integrations`,
+      },
+      opts,
+    );
+  }
+
+  /**
+   * GET /v1/organizations/:orgId/integrations/registry
+   *
+   * The bulk Integration Registry read (saas-integration-registry IR0): every
+   * provider's manifest projected per environment (connect-method liveness)
+   * and org (entitlement, fail-soft). Every surface derives from this — the
+   * hub, the integration spaces, Cmd-K, and the orun CLI's verb trees. Pure
+   * metadata, ETag'd, static per deploy; safe to cache long.
+   */
+  getRegistry(orgId: string, opts: RequestOptions = {}): Promise<IntegrationRegistryResponse> {
+    return this.transport.request<IntegrationRegistryResponse>(
+      {
+        method: "GET",
+        path: `/v1/organizations/${encodeURIComponent(orgId)}/integrations/registry`,
       },
       opts,
     );
