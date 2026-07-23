@@ -17,7 +17,11 @@ import {
   providerSpaceHref,
   surfaceModeFor,
 } from "@web-console-next/components/integrations/provider-space-lib";
-import { managedByProvider } from "@web-console-next/components/config/bind-secret-flow";
+import {
+  brokerConnections,
+  managedByProvider,
+  templatesForProvider,
+} from "@web-console-next/components/config/bind-secret-flow";
 import {
   authoringSurfaceFor,
   hasCustomAuthoring,
@@ -173,5 +177,44 @@ describe("Cloudflare custom-surface registration (SP2)", () => {
     expect(authoringSurfaceFor("cloudflare")).toBe(CloudflareAuthoringSurface);
     expect(hasCustomAuthoring("supabase")).toBe(false);
     expect(authoringSurfaceFor("supabase")).toBe(DefaultAuthoringSurface);
+  });
+});
+
+describe("SP6 pluggability proof — a new provider lights up by declaration alone", () => {
+  // The dormant AWS declaration (brokered STS sessions, declarative
+  // authoring). Every console derivation below runs the SAME generic code
+  // paths that serve cloudflare/supabase — no console file names 'aws'.
+  const AWS = capability({
+    provider: "aws" as ProviderSecretsCapability["provider"],
+    supportedModes: ["brokered"],
+    scopeTemplates: [
+      {
+        id: "deploy-session",
+        provider: "aws" as ProviderSecretsCapability["provider"],
+        version: 1,
+        displayName: "Deploy session",
+        description: "STS session assuming the deploy role.",
+        params: ["roleSessionName", "sessionPolicyArn"],
+        maxTtlSeconds: 3600,
+      },
+    ],
+  });
+
+  it("inherits the default authoring surface (declarative, zero UI code)", () => {
+    expect(hasCustomAuthoring("aws")).toBe(false);
+    expect(authoringSurfaceFor("aws")).toBe(DefaultAuthoringSurface);
+  });
+
+  it("derives eligibility, templates, menu items, and the mode toggle generically", () => {
+    const caps = [...CAPS, AWS];
+    expect(capabilityForProvider(caps, "aws")?.supportedModes).toEqual(["brokered"]);
+    expect(templatesForProvider(caps, "aws").map((t) => t.id)).toEqual(["deploy-session"]);
+    expect(modeToggleFor(AWS)).toEqual([{ mode: "binding", label: "Scoped credential" }]);
+    const menu = integrationCreateMenu(caps, "acme");
+    expect(menu.some((m) => m.providerId === "aws")).toBe(true);
+    const conns = [{ id: "1", provider: "aws", status: "active" }];
+    expect(brokerConnections(conns, caps, "brokered")).toHaveLength(1);
+    // Rotated narrows it out — the declaration, not a hardcode, decides.
+    expect(brokerConnections(conns, caps, "rotated")).toHaveLength(0);
   });
 });

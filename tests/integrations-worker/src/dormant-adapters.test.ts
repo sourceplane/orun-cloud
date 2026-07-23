@@ -62,8 +62,11 @@ describe("AWS dormant broker (IH10)", () => {
 
   it("declares the broker capability with connectKind token", () => {
     expect(provider.connectKind).toBe("token");
-    expect(provider.capabilities).toEqual(["connect", "credential-broker"]);
+    // SP6: `secrets` joined the declaration — the dormant pluggability proof
+    // (the secrets plane lights up from this file alone).
+    expect(provider.capabilities).toEqual(["connect", "credential-broker", "secrets"]);
     expect(getCapability(provider, "broker")).not.toBeNull();
+    expect(provider.secrets).toBeDefined();
     // It does NOT claim messaging.
     expect(getCapability(provider, "messaging")).toBeNull();
   });
