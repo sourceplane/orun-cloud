@@ -993,13 +993,15 @@ export function createCloudflareProvider(
   // Secret-source DESCRIBE (saas-secrets-platform SP0). Reproduces today's
   // hardcoded truth exactly: Cloudflare backs both brokered and rotated secrets
   // and can deliver a rotated value into a Worker binding (the RS
-  // cloudflare-worker materialize adapter). authoring stays "declarative" until
-  // SP2 lands the custom Cloudflare create space.
+  // cloudflare-worker materialize adapter). authoring is "custom" (SP2): the
+  // console registers Cloudflare's own create surface (account pick, template
+  // detail, posture copy) in its provider space — Supabase stays declarative
+  // as the pluggability contrast.
   const secrets: SecretsCapability = {
     scopeTemplates: () => CLOUDFLARE_SCOPE_TEMPLATES,
     supportedModes: ["brokered", "rotated"],
     deliveryTargets: () => ["cloudflare-worker"],
-    authoring: "declarative",
+    authoring: "custom",
   };
 
   return {

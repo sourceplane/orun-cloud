@@ -59,6 +59,7 @@ import {
 } from "@/components/ui/dialog";
 import { archetypeForProvider } from "@/components/integrations/archetype";
 import { templatesForProvider } from "@/components/config/bind-secret-flow";
+import { providerSpaceCreateHref } from "@/components/integrations/provider-space-lib";
 import { ConnectionAdmission } from "@/components/integrations/connection-admission";
 
 /** Badge tone (connections.ts) → Northwind pill tone (mirrors the hub). */
@@ -309,7 +310,8 @@ export function ConnectionDetail({
             <Kicker className="mb-0">Scoped credentials</Kicker>
             {isActive ? (
               <Button asChild size="sm" className="shrink-0">
-                <a href={`/orgs/${orgSlug}/secrets?bind=1&connection=${connection.id}`}>
+                {/* SP2 (SP-A4): creation lives in the provider's own space now. */}
+                <a href={providerSpaceCreateHref(orgSlug, connection.provider, connection.id)}>
                   Create scoped credential
                 </a>
               </Button>
