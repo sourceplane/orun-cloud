@@ -1,9 +1,13 @@
 import type { Env } from "../env.js";
 import type { FetchLike } from "../github-app.js";
+import { createAnthropicProvider } from "./anthropic.js";
 import { createAwsProvider } from "./aws.js";
 import { createCloudflareProvider } from "./cloudflare.js";
+import { createDaytonaProvider } from "./daytona.js";
 import { createDiscordProvider } from "./discord.js";
 import { createGithubProvider } from "./github.js";
+import { createOpenaiProvider } from "./openai.js";
+import { createOpenrouterProvider } from "./openrouter.js";
 import { createSlackProvider } from "./slack.js";
 import { createSupabaseProvider } from "./supabase.js";
 import type { IntegrationProvider } from "./types.js";
@@ -75,6 +79,17 @@ export function getConfiguredProvider(
       if (!clientId || !clientSecret) return null;
       return { provider: createSupabaseProvider({ clientId, clientSecret }, fetchImpl) };
     }
+    // Apikey-kind providers (saas-integration-registry IR5): gated on NOTHING
+    // — the customer's paste IS the credential, so there is no per-environment
+    // platform secret to wait for. Always configured.
+    case "anthropic":
+      return { provider: createAnthropicProvider(fetchImpl) };
+    case "openai":
+      return { provider: createOpenaiProvider(fetchImpl) };
+    case "openrouter":
+      return { provider: createOpenrouterProvider(fetchImpl) };
+    case "daytona":
+      return { provider: createDaytonaProvider() };
     default:
       return null;
   }
@@ -82,7 +97,19 @@ export function getConfiguredProvider(
 
 /** Provider ids with a LIVE (or gated-live) path — marketplace cards,
  *  validation, the connect surface. Dormant ids are deliberately excluded. */
-export const KNOWN_PROVIDER_IDS = ["github", "slack", "cloudflare", "supabase"] as const;
+export const KNOWN_PROVIDER_IDS = [
+  "github",
+  "slack",
+  "cloudflare",
+  "supabase",
+  // Re-homed AI/compute identities (saas-integration-registry IR5): apikey
+  // connect, always-configured (no env credential gate). Their connect FLOW
+  // stays on agents-worker's provider routes; the registry serves identity.
+  "anthropic",
+  "openai",
+  "openrouter",
+  "daytona",
+] as const;
 
 /**
  * Reserved, DORMANT provider ids (IH10, design §8): registered against the

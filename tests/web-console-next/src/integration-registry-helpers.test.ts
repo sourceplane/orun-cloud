@@ -120,6 +120,29 @@ describe("connectDispatch — posture-driven, never provider-named", () => {
       connectDispatch(descriptor({ connect: [{ kind: "oauth", live: false }] })),
     ).toEqual({ kind: "none" });
   });
+
+  it("space for an apikey method (IR5 — the re-homed AI/compute providers)", () => {
+    // The space's connect dialog owns the paste form; the hub never popups an
+    // apikey provider. Always live: the paste is the credential (no env gate).
+    expect(
+      connectDispatch(
+        descriptor({
+          id: "anthropic" as never,
+          category: "ai-provider",
+          connect: [{ kind: "apikey", live: true }],
+        }),
+      ),
+    ).toEqual({ kind: "space" });
+    expect(
+      connectDispatch(
+        descriptor({
+          id: "daytona" as never,
+          category: "compute",
+          connect: [{ kind: "apikey", live: true }],
+        }),
+      ),
+    ).toEqual({ kind: "space" });
+  });
 });
 
 describe("grouping + lookups", () => {

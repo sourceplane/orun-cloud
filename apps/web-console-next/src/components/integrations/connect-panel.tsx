@@ -11,9 +11,17 @@
 // IS the proof; verify-before-save is server-side; the value never survives
 // a close and never leaves this component except inside the one connect
 // call. Entitlement 412s are passed up so plan-limit UX stays uniform.
+//
+// Apikey methods (saas-integration-registry IR5 — the re-homed AI/compute
+// providers): the same paste discipline, submitted through the AGENTS plane
+// (`client.agents.connectProvider`) — the space is chrome; custody and
+// verification stay where the keys are consumed. The dual-write on that route
+// creates the `integrations.connections` row this space then lists.
 
 import * as React from "react";
 import { ExternalLink, Plug } from "lucide-react";
+import type { AgentProvider } from "@saas/contracts/agents";
+import { AGENT_PROVIDERS } from "@saas/contracts/agents";
 import type {
   IntegrationConnectMethod,
   IntegrationDescriptor,
@@ -62,6 +70,7 @@ export function IntegrationConnectDialog({
   const methods = descriptor.connect;
   const primary = methods.find((m) => m.live);
   const tokenMethod = methods.find((m) => m.kind === "token");
+  const apikeyMethod = methods.find((m) => m.kind === "apikey");
   const popupMethod = methods.find((m) => (m.kind === "oauth" || m.kind === "install") && m.live);
 
   return (
@@ -109,6 +118,15 @@ export function IntegrationConnectDialog({
             onOpenChange={onOpenChange}
             onConnected={onConnected}
             onGateError={onGateError}
+          />
+        ) : null}
+
+        {apikeyMethod?.live ? (
+          <ApiKeyConnectForm
+            orgId={orgId}
+            descriptor={descriptor}
+            onOpenChange={onOpenChange}
+            onConnected={onConnected}
           />
         ) : null}
 
@@ -255,6 +273,135 @@ function TokenConnectForm({
         </div>
       </form>
     </>
+  );
+}
+
+/**
+ * Apikey-kind connect (IR5): name + key paste, submitted through the agents
+ * SDK — the plane that custodies and verifies provider keys. Write-only: the
+ * key never survives a close and never leaves this component except inside
+ * the one connect call. Verification runs server-side on save; a key that
+ * fails the ping still connects (as `invalid`, with a redacted reason).
+ */
+function ApiKeyConnectForm({
+  orgId,
+  descriptor,
+  onOpenChange,
+  onConnected,
+}: {
+  orgId: string;
+  descriptor: IntegrationDescriptor;
+  onOpenChange: (open: boolean) => void;
+  onConnected: () => void;
+}) {
+  const { client } = useSession();
+  const { toast } = useToast();
+  const [apiKey, setApiKey] = React.useState("");
+  const [name, setName] = React.useState("");
+  const [busy, setBusy] = React.useState(false);
+  const [error, setError] = React.useState<string | null>(null);
+
+  React.useEffect(() => () => setApiKey(""), []);
+
+  // The agents plane owns this provider vocabulary; a descriptor outside it
+  // cannot be submitted (closed set — never a free-text provider id).
+  const agentProvider = (AGENT_PROVIDERS as readonly string[]).includes(descriptor.id)
+    ? (descriptor.id as AgentProvider)
+    : null;
+
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (busy || !agentProvider) return;
+    const key = apiKey.trim();
+    if (!key) return;
+    setBusy(true);
+    setError(null);
+    const r = await wrap(() =>
+      client.agents.connectProvider(orgId, {
+        provider: agentProvider,
+        apiKey: key,
+        name: name.trim() || "default",
+      }),
+    );
+    setBusy(false);
+    if (!r.ok) {
+      setError(r.error.message);
+      return;
+    }
+    setApiKey("");
+    toast(
+      r.data.status === "verified"
+        ? {
+            kind: "success",
+            title: `${descriptor.displayName} connected`,
+            description: "The key was verified and stored write-only — it is never shown again.",
+          }
+        : {
+            kind: "warning",
+            title: `${descriptor.displayName} connected, but the key failed verification`,
+            description: r.data.statusReason,
+          },
+    );
+    onOpenChange(false);
+    onConnected();
+  };
+
+  if (!agentProvider) return null;
+
+  return (
+    <form onSubmit={(e) => void submit(e)} className="space-y-3">
+      <div className="space-y-1.5">
+        <Label htmlFor="integration-apikey-name">Key name</Label>
+        <Input
+          id="integration-apikey-name"
+          autoComplete="off"
+          spellCheck={false}
+          placeholder="default"
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          disabled={busy}
+        />
+        <p className="text-xs text-muted-foreground">
+          Names this key — “default” is the one auto-selection picks when several exist.
+        </p>
+      </div>
+      <div className="space-y-1.5">
+        <Label htmlFor="integration-apikey">API key</Label>
+        <Input
+          id="integration-apikey"
+          type="password"
+          autoComplete="off"
+          spellCheck={false}
+          placeholder="Paste the API key"
+          value={apiKey}
+          onChange={(e) => setApiKey(e.target.value)}
+          disabled={busy}
+          aria-invalid={error !== null}
+        />
+        <p className="text-xs text-muted-foreground">
+          Write-only: verified with {descriptor.displayName} on save, stored in the workspace
+          secret manager, never echoed back.
+        </p>
+      </div>
+
+      {error ? (
+        <div
+          role="alert"
+          className="rounded-[10px] border border-destructive/40 bg-destructive/5 px-3.5 py-2.5 text-[12.5px] font-medium text-destructive"
+        >
+          {error}
+        </div>
+      ) : null}
+
+      <div className="flex items-center justify-end gap-2">
+        <Button type="button" variant="outline" disabled={busy} onClick={() => onOpenChange(false)}>
+          Cancel
+        </Button>
+        <Button type="submit" disabled={busy || apiKey.trim().length === 0}>
+          {busy ? `Verifying with ${descriptor.displayName}…` : "Verify & connect"}
+        </Button>
+      </div>
+    </form>
   );
 }
 

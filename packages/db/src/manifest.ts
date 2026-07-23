@@ -822,5 +822,14 @@ export const manifest: MigrationManifest = {
       description:
         "Org-curated scope templates (saas-secrets-platform SP4): integrations.scope_templates — named derivations of a code-declared BASE template, curated in the provider's own space and served to every create surface through the SP0 capability read. The base supplies mint semantics (permission grammar, custody kind, params, TTL ceiling); the org supplies identity and display, so a custom template can never exceed what its base grants. Versioned (display edits bump); status active|retired with soft-retire only — no hard delete exists, so a template can never be deleted out from under a live secret. Additive + idempotent.",
     },
+    {
+      id: "910_integration_registry_rehome",
+      context: "agents",
+      path: "910_integration_registry_rehome/up.sql",
+      checksum:
+        "440afd85ce608dad777734b2bd0b2c4a387135d5c9316560cd4a7984940337e7",
+      description:
+        "AI/compute connections join the registry (saas-integration-registry IR5, design §8): agents.provider_connections gains connection_id UUID (the facts-table turn — the cloudflare_accounts pattern) and a backfill inserts one integrations.connections identity row per existing facts row (status mapped verified→active / unverified→pending / invalid→suspended; connected_at carries last_verified_at for verified keys; scope='workspace' + share_mode='auto' per IR-D4's private-by-default decision), stamping the pointer in the same CTE statement pair. Custody does not move — secret_ref keeps pointing at the reserved agents/providers/* namespace. NULL connection_id is tolerated by the worker for one release (risks R3 dual-read); additive + idempotent (backfill keys off connection_id IS NULL).",
+    },
   ],
 };

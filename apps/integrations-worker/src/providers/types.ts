@@ -293,10 +293,31 @@ export interface IntegrationProvider {
   /** Best-effort provider-side token revocation on platform revoke. */
   revokeOauthToken?(accessToken: string, nowMs: number): Promise<boolean>;
 
+  // ── Connect (IR5) — apikey-kind surface ───────────────────
+  /**
+   * Verify a pasted provider API key with a cheap read-only ping (the same
+   * per-provider probes agents-worker's verifier runs). Failure reasons are
+   * REDACTED (status code only — the body may echo the key). A provider whose
+   * live verification stays on the agents plane (Daytona: verify exercises
+   * the sandbox-create path, which is provisioning behavior, not metadata)
+   * returns `{ ok: true, delegated: true }` instead of re-implementing it.
+   */
+  verifyApiKey?(apiKey: string, config: Record<string, unknown>): Promise<ApiKeyVerifyResult>;
+
   // ── Inbound (IG2) — legacy single-header alias ────────────
   /** @deprecated Delegates to `inbound.verifySignature`; kept so shipped
    *  GitHub handlers/tests pass unchanged during the IH0 re-expression. */
   verifyInboundSignature?(rawBody: ArrayBuffer, signatureHeader: string | null): Promise<boolean>;
+}
+
+/** Outcome of an apikey-kind verification ping (IR5). */
+export interface ApiKeyVerifyResult {
+  ok: boolean;
+  /** Redacted failure reason ("401 from provider"); absent on success. */
+  reason?: string;
+  /** True when live verification is DELEGATED to the owning plane (Daytona:
+   *  the agents plane's create-path probe) — `ok` asserts nothing here. */
+  delegated?: boolean;
 }
 
 /** Narrow an adapter to a capability, or null (typed 4xx at the handler). */

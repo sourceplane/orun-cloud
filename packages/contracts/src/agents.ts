@@ -695,6 +695,13 @@ export interface ProviderConnection {
   lastVerifiedAt?: string;
   /** Redacted verification failure ("401 from provider"); never key material. */
   statusReason?: string;
+  /**
+   * saas-integration-registry IR5: public id (`int_…`) of this connection's
+   * identity row in `integrations.connections` — the same row the unified
+   * Integrations hub and provider spaces list. Absent on pre-backfill rows
+   * for one release (dual-read tolerance). Additive.
+   */
+  connectionId?: string;
   createdBy: string;
   createdAt: string;
   updatedAt: string;

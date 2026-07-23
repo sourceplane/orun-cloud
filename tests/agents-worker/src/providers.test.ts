@@ -4,10 +4,11 @@
 // (no row on store failure), last4-only hint, redacted failure reasons.
 
 import { route } from "@agents-worker/router";
-import type { AgentsDeps } from "@agents-worker/deps";
+import type { AgentsDeps, AuditEmitter, IntegrationConnectionsMirror } from "@agents-worker/deps";
 import type { ProviderKeyClient } from "@agents-worker/config-client";
 import type { ProviderVerifier, VerifyResult } from "@agents-worker/verifiers";
 import { MemoryAgentsRepository } from "@saas/db/agents";
+import type { IntegrationConnection } from "@saas/db/integrations";
 import type { Env } from "@agents-worker/env";
 
 const ORG = "org_b281a9a0f43d463e9c83d6b6597ab2d2"; // public org id carried in the URL
@@ -71,11 +72,81 @@ function makeVerifier(result: VerifyResult = { ok: true }): { verifier: Provider
   };
 }
 
+/** In-memory IR5 identity mirror: the integrations.connections slice the
+ *  dual-write path drives (create → pending, activate, status flips). */
+function makeIntegrationsMirror(): {
+  mirror: IntegrationConnectionsMirror;
+  rows: Map<string, IntegrationConnection>;
+  statusCalls: Array<{ id: string; status: string }>;
+} {
+  const rows = new Map<string, IntegrationConnection>();
+  const statusCalls: Array<{ id: string; status: string }> = [];
+  const mirror: IntegrationConnectionsMirror = {
+    async createConnection(input) {
+      const now = new Date();
+      const row: IntegrationConnection = {
+        id: input.id,
+        orgId: input.orgId,
+        provider: input.provider,
+        status: "pending",
+        scope: input.scope ?? "account",
+        shareMode: input.shareMode ?? "auto",
+        displayName: input.displayName ?? null,
+        externalAccountLogin: null,
+        externalAccountId: null,
+        externalAccountType: null,
+        createdBy: input.createdBy ?? null,
+        stateExpiresAt: null,
+        connectedAt: null,
+        suspendedAt: null,
+        revokedAt: null,
+        createdAt: now,
+        updatedAt: now,
+      };
+      rows.set(input.id, row);
+      return { ok: true, value: row };
+    },
+    async activateConnection(_orgId, id) {
+      const row = rows.get(String(id));
+      // Guarded like the real repo: only a pending row activates.
+      if (!row || row.status !== "pending") return { ok: false, error: { kind: "not_found" } };
+      row.status = "active";
+      row.connectedAt = new Date();
+      return { ok: true, value: row };
+    },
+    async updateConnectionStatus(_orgId, id, status) {
+      statusCalls.push({ id: String(id), status });
+      const row = rows.get(String(id));
+      if (!row) return { ok: false, error: { kind: "not_found" } };
+      row.status = status;
+      if (status === "revoked") row.revokedAt = new Date();
+      if (status === "suspended") row.suspendedAt = new Date();
+      return { ok: true, value: row };
+    },
+  };
+  return { mirror, rows, statusCalls };
+}
+
+function makeAuditEmitter(): { emitter: AuditEmitter; events: Array<{ type: string; subjectId: string }> } {
+  const events: Array<{ type: string; subjectId: string }> = [];
+  return {
+    events,
+    emitter: {
+      async appendEventWithAudit(input) {
+        events.push({ type: input.event.type, subjectId: input.event.subjectId });
+        return { ok: false, error: { kind: "internal", message: "fake" } };
+      },
+    },
+  };
+}
+
 function makeDeps(overrides?: {
   allow?: boolean;
   repo?: MemoryAgentsRepository;
   providerKeys?: ProviderKeyClient | undefined;
   verifier?: ProviderVerifier | undefined;
+  integrations?: IntegrationConnectionsMirror | undefined;
+  events?: AuditEmitter | undefined;
 }): AgentsDeps {
   const repo = overrides?.repo ?? new MemoryAgentsRepository();
   const deps: AgentsDeps = {
@@ -91,6 +162,8 @@ function makeDeps(overrides?: {
   const verifier = overrides && "verifier" in overrides ? overrides.verifier : makeVerifier().verifier;
   if (keys) deps.providerKeys = keys;
   if (verifier) deps.verifier = verifier;
+  if (overrides?.integrations) deps.integrations = overrides.integrations;
+  if (overrides?.events) deps.events = overrides.events;
   return deps;
 }
 
@@ -300,6 +373,157 @@ describe("agents-worker provider connections (AG12)", () => {
     // The existing key was never revoked or overwritten by the rejected dup.
     expect(keys.storeCalls.map((c) => c.value)).toEqual(["sk-ant-1"]);
     expect(keys.revokeCalls).toEqual(["agents/providers/anthropic/primary/API_KEY"]);
+  });
+
+  // ── IR5 dual-write (saas-integration-registry): the identity row in
+  // integrations.connections rides every lifecycle transition. ──
+
+  it("creates the integrations identity row on connect and stamps connection_id", async () => {
+    const { mirror, rows } = makeIntegrationsMirror();
+    const audit = makeAuditEmitter();
+    const deps = makeDeps({ integrations: mirror, events: audit.emitter });
+
+    const res = await route(
+      req("POST", PROVIDERS_PATH, { provider: "anthropic", apiKey: "sk-ant-good", name: "primary" }),
+      env,
+      deps,
+    );
+    expect(res.status).toBe(201);
+    const c = (await json(res)).data as Record<string, unknown>;
+
+    // Exactly one identity row: workspace-private (IR-D4), auto share, named.
+    expect(rows.size).toBe(1);
+    const identity = [...rows.values()][0]!;
+    expect(identity.orgId).toBe(ORG_UUID);
+    expect(identity.provider).toBe("anthropic");
+    expect(identity.scope).toBe("workspace");
+    expect(identity.shareMode).toBe("auto");
+    expect(identity.displayName).toBe("primary");
+    // Verified create → activated (connected_at stamped).
+    expect(identity.status).toBe("active");
+    expect(identity.connectedAt).not.toBeNull();
+
+    // The wire shape carries the identity as its public id (additive).
+    expect(c.connectionId).toBe(`int_${identity.id.replace(/-/g, "")}`);
+
+    // Audit gain: integration.connected on the verified create.
+    expect(audit.events).toEqual([
+      { type: "integration.connected", subjectId: identity.id },
+    ]);
+  });
+
+  it("suspends the identity row when the create-time verification fails", async () => {
+    const { mirror, rows } = makeIntegrationsMirror();
+    const audit = makeAuditEmitter();
+    const deps = makeDeps({
+      integrations: mirror,
+      events: audit.emitter,
+      verifier: makeVerifier({ ok: false, reason: "401 from provider" }).verifier,
+    });
+
+    const res = await route(
+      req("POST", PROVIDERS_PATH, { provider: "openai", apiKey: "sk-bad" }),
+      env,
+      deps,
+    );
+    expect(res.status).toBe(201);
+    const identity = [...rows.values()][0]!;
+    expect(identity.status).toBe("suspended");
+    // No connected event for an invalid key.
+    expect(audit.events).toEqual([]);
+  });
+
+  it("delete revokes the identity row and emits integration.revoked", async () => {
+    const { mirror, rows, statusCalls } = makeIntegrationsMirror();
+    const audit = makeAuditEmitter();
+    const deps = makeDeps({ integrations: mirror, events: audit.emitter });
+
+    const created = await route(
+      req("POST", PROVIDERS_PATH, { provider: "daytona", apiKey: "dtn_x" }),
+      env,
+      deps,
+    );
+    const id = ((await json(created)).data as { id: string }).id;
+    const identity = [...rows.values()][0]!;
+
+    const del = await route(req("DELETE", `${PROVIDERS_PATH}/${id}`), env, deps);
+    expect(del.status).toBe(200);
+    expect(identity.status).toBe("revoked");
+    expect(identity.revokedAt).not.toBeNull();
+    expect(statusCalls).toContainEqual({ id: identity.id, status: "revoked" });
+    expect(audit.events).toContainEqual({ type: "integration.revoked", subjectId: identity.id });
+  });
+
+  it("re-verify flips the identity row active ↔ suspended", async () => {
+    const { mirror, rows } = makeIntegrationsMirror();
+    const keys = makeKeyClient({ resolveValue: "sk-live" });
+    const deps = makeDeps({
+      integrations: mirror,
+      providerKeys: keys.client,
+      verifier: makeVerifier({ ok: false, reason: "503 from provider" }).verifier,
+    });
+    const created = await route(
+      req("POST", PROVIDERS_PATH, { provider: "openrouter", apiKey: "sk-live" }),
+      env,
+      deps,
+    );
+    const id = ((await json(created)).data as { id: string }).id;
+    const identity = [...rows.values()][0]!;
+    expect(identity.status).toBe("suspended");
+
+    deps.verifier = makeVerifier({ ok: true }).verifier;
+    const verify = await route(req("POST", `${PROVIDERS_PATH}/${id}/verify`), env, deps);
+    expect(verify.status).toBe(200);
+    expect(identity.status).toBe("active");
+  });
+
+  it("tolerates a null connection_id: pre-backfill rows verify and delete without touching the mirror", async () => {
+    // Create WITHOUT the integrations seam — the pre-backfill shape (R3).
+    const keys = makeKeyClient({ resolveValue: "sk-live" });
+    const deps = makeDeps({ providerKeys: keys.client });
+    const created = await route(
+      req("POST", PROVIDERS_PATH, { provider: "anthropic", apiKey: "sk-live" }),
+      env,
+      deps,
+    );
+    const c = (await json(created)).data as Record<string, unknown>;
+    expect(c.connectionId).toBeUndefined();
+    const id = c.id as string;
+
+    // Now the seam exists (worker deployed post-migration) but the row has no
+    // pointer — verify and delete must skip the mirror silently, not throw.
+    const { mirror, rows, statusCalls } = makeIntegrationsMirror();
+    deps.integrations = mirror;
+    const verify = await route(req("POST", `${PROVIDERS_PATH}/${id}/verify`), env, deps);
+    expect(verify.status).toBe(200);
+    const del = await route(req("DELETE", `${PROVIDERS_PATH}/${id}`), env, deps);
+    expect(del.status).toBe(200);
+    expect(rows.size).toBe(0);
+    expect(statusCalls).toEqual([]);
+  });
+
+  it("still creates the agents connection when the identity write fails (best-effort)", async () => {
+    const failing: IntegrationConnectionsMirror = {
+      async createConnection() {
+        return { ok: false, error: { kind: "internal", message: "db down" } };
+      },
+      async activateConnection() {
+        return { ok: false, error: { kind: "not_found" } };
+      },
+      async updateConnectionStatus() {
+        return { ok: false, error: { kind: "not_found" } };
+      },
+    };
+    const deps = makeDeps({ integrations: failing });
+    const res = await route(
+      req("POST", PROVIDERS_PATH, { provider: "daytona", apiKey: "dtn_x" }),
+      env,
+      deps,
+    );
+    expect(res.status).toBe(201);
+    const c = (await json(res)).data as Record<string, unknown>;
+    expect(c.status).toBe("verified");
+    expect(c.connectionId).toBeUndefined();
   });
 
   it("403s every provider route when policy denies", async () => {

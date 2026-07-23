@@ -198,6 +198,9 @@ export interface CreateConnectionInput {
   config?: Record<string, unknown>;
   secretRef: string;
   keyHint?: string;
+  /** IR5 identity pointer: the integrations.connections row UUID created by
+   *  the dual-write path. Optional — pre-backfill tolerance (risks R3). */
+  connectionId?: string;
   createdBy: string;
 }
 
