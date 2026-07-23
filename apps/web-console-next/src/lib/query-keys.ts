@@ -71,6 +71,10 @@ export const qk = {
    *  cache so a revisited feed paints instantly and revalidates in background;
    *  cursor pagination beyond page 1 stays component-local. */
   orgRunsFeed: (orgId: string, filterKey: string) => ["orgRunsFeed", orgId, filterKey] as const,
+  /** Events stream first page, per filter selection (IC4 follow-up): rides
+   *  the shared cache so a revisited stream paints instantly and revalidates
+   *  in background; cursor pagination + live-poll prepends stay local. */
+  orgEventsFeed: (orgId: string, filterKey: string) => ["orgEventsFeed", orgId, filterKey] as const,
   orgWork: (orgId: string) => ["orgWork", orgId] as const,
   orgWorkRollups: (orgId: string, initiative: string) => ["orgWorkRollups", orgId, initiative] as const,
   orgWorkDesigns: (orgId: string, initiative: string) => ["orgWorkDesigns", orgId, initiative] as const,

@@ -1,5 +1,6 @@
 import {
   appendEventPage,
+  composeEventLog,
   buildEventFilterChips,
   buildEventsQuery,
   EMPTY_EVENT_FILTERS,
@@ -133,6 +134,41 @@ describe("prependNewEvents", () => {
   it("returns the same object when nothing is new", () => {
     const state: EventLogState = { events: [event({ id: "a" })], cursor: "c1" };
     expect(prependNewEvents(state, [event({ id: "a" })])).toBe(state);
+  });
+});
+
+// IC4 follow-up — the cache-backed Events page derives its rendered log from
+// (cached first page, local tail pages, live-poll head). Pins the fold: the
+// composition must be byte-equivalent to the old sequential setLog flow.
+describe("composeEventLog", () => {
+  it("empty until the first page exists", () => {
+    expect(composeEventLog(null, [], [])).toEqual(EMPTY_EVENT_LOG);
+    expect(composeEventLog(null, [{ events: [event({ id: "x" })], cursor: null }], [event({ id: "y" })])).toEqual(
+      EMPTY_EVENT_LOG,
+    );
+  });
+
+  it("folds first page + tail pages + head exactly like the sequential flow", () => {
+    const firstPage = { events: [event({ id: "a" }), event({ id: "b" })], cursor: "c1" };
+    const tail = [{ events: [event({ id: "b" }), event({ id: "c" })], cursor: "c2" as string | null }];
+    const head = [event({ id: "z" }), event({ id: "a" })];
+
+    const composed = composeEventLog(firstPage, tail, head);
+    // Old flow: reset with page 1, append tail (dedupe b), prepend head (dedupe a).
+    let sequential = appendEventPage(EMPTY_EVENT_LOG, firstPage, true);
+    sequential = appendEventPage(sequential, tail[0]!);
+    sequential = prependNewEvents(sequential, head);
+
+    expect(composed).toEqual(sequential);
+    expect(composed.events.map((e) => e.id)).toEqual(["z", "a", "b", "c"]);
+    // Continuation cursor comes from the LAST tail page; head never touches it.
+    expect(composed.cursor).toBe("c2");
+  });
+
+  it("keeps the first page's cursor when nothing was paged", () => {
+    const composed = composeEventLog({ events: [event({ id: "a" })], cursor: "c1" }, [], []);
+    expect(composed.cursor).toBe("c1");
+    expect(composed.events.map((e) => e.id)).toEqual(["a"]);
   });
 });
 
