@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import { useRouter } from "next/navigation";
+import { useQueryClient } from "@tanstack/react-query";
 import { z } from "zod";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
@@ -53,6 +54,7 @@ const PROVIDER_ICONS: Record<string, React.ReactNode> = {
 export default function LoginPage() {
   const router = useRouter();
   const { client, target, availableTargets, setTarget, setToken, isLocked } = useSession();
+  const queryClient = useQueryClient();
   const { toast } = useToast();
   const [stage, setStage] = React.useState<"email" | "code">("email");
   const [challengeId, setChallengeId] = React.useState<string | null>(null);
@@ -202,7 +204,7 @@ export default function LoginPage() {
                           toast({ kind: "success", title: "Signed in" });
                           router.push(
                             readSafeReturnTo() ??
-                              (await resolvePostAuthDestination(createClient(target, r.data.token))),
+                              (await resolvePostAuthDestination(createClient(target, r.data.token), queryClient)),
                           );
                         }}
                       >
@@ -235,7 +237,7 @@ export default function LoginPage() {
                     toast({ kind: "success", title: "Token set" });
                     router.push(
                       readSafeReturnTo() ??
-                        (await resolvePostAuthDestination(createClient(target, tokenInput))),
+                        (await resolvePostAuthDestination(createClient(target, tokenInput), queryClient)),
                     );
                   }}
                 >

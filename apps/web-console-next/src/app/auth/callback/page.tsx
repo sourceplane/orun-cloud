@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import { useRouter } from "next/navigation";
+import { useQueryClient } from "@tanstack/react-query";
 import { useSession } from "@/lib/session";
 import { resolvePostAuthDestination } from "@/lib/last-org";
 import { createClient } from "@/lib/api";
@@ -28,6 +29,7 @@ export default function OAuthCallbackPage() {
   const router = useRouter();
   const { setToken, target } = useSession();
   const { toast } = useToast();
+  const queryClient = useQueryClient();
   const [error, setError] = React.useState<string | null>(null);
 
   React.useEffect(() => {
@@ -47,14 +49,16 @@ export default function OAuthCallbackPage() {
     if (token) {
       setToken(token);
       toast({ kind: "success", title: "Signed in" });
-      void resolvePostAuthDestination(createClient(target, token)).then((dest) =>
+      // IC2: seed the shared query cache from the resolve reads so the
+      // post-redirect boot paints without re-fetching profile/orgs.
+      void resolvePostAuthDestination(createClient(target, token), queryClient).then((dest) =>
         router.replace(dest),
       );
       return;
     }
 
     setError(err ?? "oauth_failed");
-  }, [router, setToken, toast, target]);
+  }, [router, setToken, toast, target, queryClient]);
 
   if (error) {
     return (

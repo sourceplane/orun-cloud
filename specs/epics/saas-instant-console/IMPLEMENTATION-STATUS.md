@@ -7,7 +7,7 @@ audit (`design.md`); each milestone re-measures its own surface.
 |----|-----------|--------|--------|--------|-------|
 | IC0 | Measurement record | ✅ Landed (epic PR #583) | — | — | `design.md` |
 | IC1 | Activities stall — `/state/runs` N+1 | ✅ | DB round-trips per 50-run page | **51** (measured: harness replay of the handler; prod effect 4.3–4.5s) | **2** (list + grouped counts; simulated serial wall-clock 4,335ms → 170ms @85ms/trip) |
-| IC2 | One boot, one fetch | 🗓️ | duplicate boot fetches | profile ×2–3, org reads ×4 | — |
+| IC2 | One boot, one fetch | ✅ | boot requests per endpoint (network trace, mocked API) | post-auth boot: `GET /v1/auth/profile` ×2 + boot-window `PATCH /v1/auth/profile`; fresh-device warm boot: profile ×2 concurrently in flight | every boot endpoint exactly ×1; redundant PATCH eliminated (debounced 2s off the boot window, skipped when the server already has the slug) |
 | IC3 | Paint from cache | 🗓️ | warm route-to-content / cold FCP | 1.5–3s / 4,636ms | — |
 | IC4 | Perceived-speed pass | 🗓️ | ghost frames on cached nav | 280ms fade per nav | — |
 | IC5 | Docs by digest | 🗓️ | doc open warm | 1.0–1.3s | — |
