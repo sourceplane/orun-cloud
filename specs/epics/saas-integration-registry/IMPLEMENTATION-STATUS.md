@@ -12,13 +12,52 @@ rails; implementation started same day.
 | IR2 | ✅ Shipped (#598) — canonical space + nested detail + redirects |
 | IR3 | ✅ Shipped (#599) — Cloudflare unified |
 | IR4 | ✅ Shipped (#600) — the outcome-first secret wizard |
-| IR5 | 🔄 In progress — AI + compute re-home |
-| IR6 | 🗓️ Planned |
-| IR7 | 🗓️ Planned (pairs orun ICL0–ICL3) |
-| IR8 | 🗓️ Planned |
-| IR9 | 🗓️ Planned |
+| IR5 | ✅ Shipped (#601) — AI + compute re-home |
+| IR6 | 🔄 In progress — provider space modules |
+| IR7 | 🔄 In progress — served CLI verb trees (orun ICL0–ICL3 ✅ shipped, orun #559) |
+| IR8 | 🔄 In progress — manifest governance + docs generation |
+| IR9 | 🔄 In progress — pluggability proof + runbook |
 
 ## Notes
+
+- 2026-07-23: IR6 as built:
+  - **Module registry** (`space-modules.tsx`): the SP1 graft pattern —
+    `registerSpaceModule`/`resolveSpaceModules`, last-wins, unknown refs
+    fail open; the space's Overview renders `descriptor.space.modules` in
+    order. Read-hook-only convention documented in the file header.
+  - **Six modules, zero new endpoints**: repositories (GitHub — repo list +
+    selection mode via `listRepositories`), channels (Slack — notification
+    channels of kind `slack_app`), accounts (Cloudflare — per-connection
+    facts + custody-health pill), projects (Supabase — refs from safe
+    custody scopes; the full cached inventory honestly deferred to a facts
+    projection), models (AI trio — key hint/status/default model), sandboxes
+    (Daytona — recent agent sessions). Every module: skeleton → data /
+    honest empty / quiet unavailable.
+  - Verified: console 89 suites / 877 tests (12 new), typecheck + lint
+    clean.
+
+- 2026-07-23: IR7/IR8/IR9 as built (one PR — the closing governance slice):
+  - **IR7**: the orun side shipped first (orun #559: registry client +
+    cache, runtime renderer with capability-derived standard verbs,
+    compiled 11-op allowlist, native-extension seam; SP5 byte-identical).
+    Server side: the dormant AWS manifest serves the first explicit verb
+    tree (`credentials list` → `integrations.listMinted` — served-wins
+    proof); `cli-projection.test.ts` mirrors orun's op allowlist so a verb
+    naming an op outside it fails in CI on BOTH sides.
+  - **IR8**: `manifest-governance.test.ts` — the additive-evolution gate
+    (surface snapshot: same version ⇒ identical surface; evolution ⇒
+    version bump + conscious regeneration; manifest ids can never vanish)
+    + the generated web-docs **Integration catalog**
+    (`apps/web-docs/docs/platform/integrations/catalog.md`, rendered from
+    the manifests by `manifests/docs.ts`, byte-exact freshness test;
+    regenerate with REGENERATE_INTEGRATION_DOCS=1). Hand-written provider
+    narratives (github.md) stay hand-written — the catalog/index is the
+    generated part.
+  - **IR9**: `adding-an-integration.md` — the runbook: ≤ 6 files +
+    fixtures per new provider, every derived plane enumerated, the three
+    CI gates named. The AWS proof now spans every plane: roadmap hub card
+    (IR1), space chrome fixture (IR2), secrets declaration (SP6), served
+    CLI tree (IR7) — all from the manifest + adapter files alone.
 
 - 2026-07-23: IR5 as built:
   - **Migration `910_integration_registry_rehome`**: nullable

@@ -45,6 +45,10 @@ import { connectionDisplayName, connectionStatusMeta } from "./connections";
 import { IntegrationConnectDialog } from "./connect-panel";
 import { connectDispatch } from "./registry";
 import { SpaceActivity } from "./space-activity";
+// IR6: importing the module registry is ALSO the side-effect registration of
+// the built-in provider modules (the SP1 graft pattern) — declared refs the
+// registry doesn't know fail open to nothing.
+import { SpaceModules } from "./space-modules";
 import { authoringSurfaceFor } from "@/components/config/authoring-registry";
 import { deriveBrokerRow, deriveRotationRow } from "@/components/config/bind-secret-flow";
 import {
@@ -366,6 +370,18 @@ export function ProviderSpace({
               {providerSecrets.length} {name} secret{providerSecrets.length === 1 ? "" : "s"} at the
               selected scope — see the Secrets tab; activity per connection is on the Activity tab.
             </div>
+          ) : null}
+          {/* IR6: the provider's declared modules (design §5.3) — each a
+              compact summary read through existing worker reads; unknown ids
+              render nothing (fail-open). */}
+          {activeTab === "overview" ? (
+            <SpaceModules
+              orgId={orgId}
+              orgSlug={orgSlug}
+              providerId={providerId}
+              connections={connections}
+              moduleRefs={descriptor?.space.modules}
+            />
           ) : null}
         </>
       ) : null}

@@ -1,0 +1,258 @@
+{
+  "github": {
+    "version": 1,
+    "category": "source-control",
+    "connect": [
+      "install"
+    ],
+    "multiConnection": false,
+    "capabilities": [
+      "connect",
+      "inbound",
+      "scm"
+    ],
+    "tabs": [
+      "overview",
+      "connections",
+      "activity",
+      "settings"
+    ],
+    "modules": [
+      "repositories"
+    ],
+    "authoring": "declarative",
+    "entitlement": "feature.integrations.github",
+    "status": "live",
+    "cliPaths": []
+  },
+  "slack": {
+    "version": 1,
+    "category": "messaging",
+    "connect": [
+      "oauth"
+    ],
+    "multiConnection": false,
+    "capabilities": [
+      "connect",
+      "inbound",
+      "messaging"
+    ],
+    "tabs": [
+      "overview",
+      "connections",
+      "activity",
+      "settings"
+    ],
+    "modules": [
+      "channels"
+    ],
+    "authoring": "declarative",
+    "entitlement": "feature.integrations.slack",
+    "status": "live",
+    "cliPaths": []
+  },
+  "cloudflare": {
+    "version": 1,
+    "category": "infrastructure",
+    "connect": [
+      "oauth",
+      "token"
+    ],
+    "multiConnection": true,
+    "capabilities": [
+      "connect",
+      "credential-broker",
+      "secrets"
+    ],
+    "tabs": [
+      "overview",
+      "connections",
+      "secrets",
+      "templates",
+      "activity",
+      "settings"
+    ],
+    "modules": [
+      "accounts"
+    ],
+    "authoring": "declarative",
+    "entitlement": "feature.integrations.cloudflare",
+    "status": "live",
+    "cliPaths": []
+  },
+  "supabase": {
+    "version": 1,
+    "category": "infrastructure",
+    "connect": [
+      "oauth"
+    ],
+    "multiConnection": false,
+    "capabilities": [
+      "connect",
+      "credential-broker",
+      "secrets"
+    ],
+    "tabs": [
+      "overview",
+      "connections",
+      "secrets",
+      "templates",
+      "activity",
+      "settings"
+    ],
+    "modules": [
+      "projects"
+    ],
+    "authoring": "declarative",
+    "entitlement": "feature.integrations.supabase",
+    "status": "live",
+    "cliPaths": []
+  },
+  "anthropic": {
+    "version": 1,
+    "category": "ai-provider",
+    "connect": [
+      "apikey"
+    ],
+    "multiConnection": true,
+    "capabilities": [
+      "connect"
+    ],
+    "tabs": [
+      "overview",
+      "connections",
+      "activity",
+      "settings"
+    ],
+    "modules": [
+      "models"
+    ],
+    "authoring": "declarative",
+    "entitlement": "feature.integrations.anthropic",
+    "status": "live",
+    "cliPaths": []
+  },
+  "openai": {
+    "version": 1,
+    "category": "ai-provider",
+    "connect": [
+      "apikey"
+    ],
+    "multiConnection": true,
+    "capabilities": [
+      "connect"
+    ],
+    "tabs": [
+      "overview",
+      "connections",
+      "activity",
+      "settings"
+    ],
+    "modules": [
+      "models"
+    ],
+    "authoring": "declarative",
+    "entitlement": "feature.integrations.openai",
+    "status": "live",
+    "cliPaths": []
+  },
+  "openrouter": {
+    "version": 1,
+    "category": "ai-provider",
+    "connect": [
+      "apikey"
+    ],
+    "multiConnection": true,
+    "capabilities": [
+      "connect"
+    ],
+    "tabs": [
+      "overview",
+      "connections",
+      "activity",
+      "settings"
+    ],
+    "modules": [
+      "models"
+    ],
+    "authoring": "declarative",
+    "entitlement": "feature.integrations.openrouter",
+    "status": "live",
+    "cliPaths": []
+  },
+  "daytona": {
+    "version": 1,
+    "category": "compute",
+    "connect": [
+      "apikey"
+    ],
+    "multiConnection": true,
+    "capabilities": [
+      "connect"
+    ],
+    "tabs": [
+      "overview",
+      "connections",
+      "activity",
+      "settings"
+    ],
+    "modules": [
+      "sandboxes"
+    ],
+    "authoring": "declarative",
+    "entitlement": "feature.integrations.daytona",
+    "status": "live",
+    "cliPaths": []
+  },
+  "aws": {
+    "version": 2,
+    "category": "infrastructure",
+    "connect": [
+      "token"
+    ],
+    "multiConnection": true,
+    "capabilities": [
+      "connect",
+      "credential-broker",
+      "secrets"
+    ],
+    "tabs": [
+      "overview",
+      "connections",
+      "secrets",
+      "templates",
+      "activity",
+      "settings"
+    ],
+    "modules": [],
+    "authoring": "declarative",
+    "entitlement": "feature.integrations.aws",
+    "status": "roadmap",
+    "cliPaths": [
+      "credentials list"
+    ]
+  },
+  "discord": {
+    "version": 1,
+    "category": "messaging",
+    "connect": [
+      "oauth"
+    ],
+    "multiConnection": false,
+    "capabilities": [
+      "connect",
+      "messaging"
+    ],
+    "tabs": [
+      "overview",
+      "connections",
+      "activity",
+      "settings"
+    ],
+    "modules": [],
+    "authoring": "declarative",
+    "entitlement": "feature.integrations.discord",
+    "status": "roadmap",
+    "cliPaths": []
+  }
+}
