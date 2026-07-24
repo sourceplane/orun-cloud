@@ -41,6 +41,7 @@ export function deriveArchetype(
 export const IMPLEMENTED_ARCHETYPES: ReadonlySet<DetailArchetype> = new Set<DetailArchetype>([
   "source-control", // IX2
   "infrastructure", // IX3
+  "messaging", // IX4
 ]);
 
 /** Whether the new tabbed detail page should render for this descriptor. */
@@ -240,4 +241,52 @@ export function effectivePrefs(
   const out: Record<string, boolean> = {};
   for (const t of capabilityToggles(provider)) out[t.id] = toggleState(t, prefs);
   return out;
+}
+
+// ── Notification routing (new noun #2, IX4) ───────────────────────────────
+// The messaging archetype's Notifications tab routes event groups to channels
+// with per-route on/off. Persisted in the SAME `capability_prefs` blob as the
+// capability toggles (a generic per-connection preference map) — so IX4 needs no
+// new backend. Each route also carries the channel it targets, shown as context.
+
+export interface NotificationRoute extends CapabilityToggle {
+  /** The channel this route posts to, e.g. "#deploys" (display context). */
+  channel: string;
+}
+
+/** Slack's console-surfaced notification routes (the mockup's Notifications tab). */
+export const SLACK_NOTIFICATION_ROUTES: readonly NotificationRoute[] = [
+  {
+    id: "run_outcomes",
+    label: "Run outcomes",
+    description: "Post when a plan run succeeds or fails.",
+    channel: "#deploys",
+    defaultOn: true,
+  },
+  {
+    id: "approval_requests",
+    label: "Approval requests",
+    description: "Ask for human approval before a gated step.",
+    channel: "#eng-approvals",
+    defaultOn: true,
+  },
+  {
+    id: "incident_alerts",
+    label: "Incident alerts",
+    description: "Page the channel when a run errors repeatedly.",
+    channel: "#incidents",
+    defaultOn: false,
+  },
+  {
+    id: "daily_digest",
+    label: "Daily digest",
+    description: "A once-a-day summary of agent activity.",
+    channel: "#agent-digest",
+    defaultOn: false,
+  },
+];
+
+/** The notification-route catalog for a provider ([] when the archetype has none). */
+export function notificationRoutes(provider: string): readonly NotificationRoute[] {
+  return provider === "slack" ? SLACK_NOTIFICATION_ROUTES : [];
 }

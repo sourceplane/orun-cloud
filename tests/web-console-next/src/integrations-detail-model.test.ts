@@ -15,9 +15,11 @@ import {
   effectivePrefs,
   externalManageLink,
   hasArchetypeDetail,
+  notificationRoutes,
   sharingBadge,
   toggleState,
   GITHUB_CAPABILITY_TOGGLES,
+  SLACK_NOTIFICATION_ROUTES,
 } from "@web-console-next/components/integrations/detail-model";
 
 function descriptor(overrides: Partial<IntegrationDescriptor>): IntegrationDescriptor {
@@ -70,13 +72,14 @@ describe("deriveArchetype — capabilities first, category as backstop", () => {
     expect(deriveArchetype(descriptor({ category: "source-control", capabilities: ["messaging"] }))).toBe("messaging");
   });
 
-  it("hasArchetypeDetail is true only for implemented archetypes (source-control + infrastructure)", () => {
+  it("hasArchetypeDetail is true for the implemented archetypes (source-control, infrastructure, messaging)", () => {
     expect(hasArchetypeDetail(descriptor({ capabilities: ["scm"] }))).toBe(true);
     expect(
       hasArchetypeDetail(descriptor({ category: "infrastructure", capabilities: ["credential-broker"] })),
     ).toBe(true); // IX3
-    // messaging body lands in IX4.
-    expect(hasArchetypeDetail(descriptor({ category: "messaging", capabilities: ["messaging"] }))).toBe(false);
+    expect(hasArchetypeDetail(descriptor({ category: "messaging", capabilities: ["messaging"] }))).toBe(true); // IX4
+    // The generic fallback stays unimplemented.
+    expect(hasArchetypeDetail(descriptor({ category: "ai-provider", capabilities: ["connect"] }))).toBe(false);
   });
 });
 
@@ -169,5 +172,32 @@ describe("capability toggles", () => {
       issues: true,
     });
     expect(effectivePrefs("openai", null)).toEqual({});
+  });
+});
+
+describe("notification routing (IX4)", () => {
+  it("Slack routes are the mockup set with channels and defaults", () => {
+    expect(SLACK_NOTIFICATION_ROUTES.map((r) => r.id)).toEqual([
+      "run_outcomes",
+      "approval_requests",
+      "incident_alerts",
+      "daily_digest",
+    ]);
+    expect(SLACK_NOTIFICATION_ROUTES.map((r) => r.channel)).toEqual([
+      "#deploys",
+      "#eng-approvals",
+      "#incidents",
+      "#agent-digest",
+    ]);
+    // Run outcomes + approvals default on; incidents + digest default off.
+    expect(SLACK_NOTIFICATION_ROUTES.map((r) => r.defaultOn)).toEqual([true, true, false, false]);
+  });
+
+  it("notificationRoutes only surfaces for Slack; toggleState resolves them", () => {
+    expect(notificationRoutes("slack")).toBe(SLACK_NOTIFICATION_ROUTES);
+    expect(notificationRoutes("github")).toEqual([]);
+    const incidents = SLACK_NOTIFICATION_ROUTES[2]!; // default off
+    expect(toggleState(incidents, null)).toBe(false);
+    expect(toggleState(incidents, { incident_alerts: true })).toBe(true);
   });
 });

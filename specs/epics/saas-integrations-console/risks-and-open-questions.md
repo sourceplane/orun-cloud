@@ -32,11 +32,10 @@
   path to set the installation's selected repos from the console, or does editing
   stay a "Manage on GitHub" deep link? Default: read + filter + deep link; a write
   path is a later slice if desired.
-- **Q3 (IX4).** Should notification routing bind to a small
-  `connection_notification_routes` table (per-route channel) or a JSONB fact on
-  the connection? Decide by whether per-route channel selection is needed in v1
-  (mockup shows fixed event→channel routes with on/off — a JSONB on/off map may
-  suffice).
+- **Q3 (IX4). RESOLVED.** The mockup shows fixed event→channel routes with
+  on/off, so a per-route boolean suffices — persisted in the existing
+  `capability_prefs` blob (no new table/column/migration). Per-route channel
+  *binding* (choosing which channel a route posts to) is a later slice.
 - **Q4 (IX2/IX4).** `capability_prefs` / routing on `PublicConnection`: confirm no
   read-model consumer breaks when the field is absent (additive, optional, default
   applied server-side).
