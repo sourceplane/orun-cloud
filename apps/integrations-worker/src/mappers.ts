@@ -33,6 +33,7 @@ export function toPublicConnection(connection: IntegrationConnection): PublicCon
     suspendedAt: isoOrNull(connection.suspendedAt),
     createdAt: connection.createdAt.toISOString(),
     updatedAt: connection.updatedAt.toISOString(),
+    ...(connection.capabilityPrefs ? { capabilityPrefs: connection.capabilityPrefs } : {}),
   };
 }
 

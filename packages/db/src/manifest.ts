@@ -840,5 +840,14 @@ export const manifest: MigrationManifest = {
       description:
         "Origin taint (saas-agent-supervision SV0, design §2): agents.agent_sessions gains origin JSONB NOT NULL DEFAULT '{\"kind\":\"human\"}' — the immutable provenance {kind ∈ dispatch|work|routine|session|human, ref?, label?, backfilled?} recorded once at the AG9 door from the authenticated caller's context (never a client body). A backfill infers legacy rows most-specific-first (parent_session_id⇒session, routine_id⇒routine, work_ref⇒work, else human) and stamps every inferred row backfilled:true so inference is never mistaken for door-recorded truth. Adds the expression index (org_id, origin->>'kind', origin->>'ref') backing the SV1 roster fold. Nothing gates on origin (provenance, not authority). Additive + idempotent (backfill rewrites only bare-default rows).",
     },
+    {
+      id: "930_integrations_connection_capability_prefs",
+      context: "integrations",
+      path: "930_integrations_connection_capability_prefs/up.sql",
+      checksum:
+        "097c62215ac1924ab74f42c13cbb111bc71ce0bf5c21830c6b572b46c2ace137",
+      description:
+        "Per-connection capability preferences (saas-integrations-console IX2): integrations.connections gains capability_prefs JSONB (nullable) — a free-form {capabilityId: boolean} blob of the provider's console-surfaced capability toggles the operator enabled for this connection (e.g. GitHub pull_requests/checks/deployments/issues). NULL means all-defaults (the console applies the default-on posture), so pre-IX2 rows need no backfill. Additive + idempotent.",
+    },
   ],
 };
