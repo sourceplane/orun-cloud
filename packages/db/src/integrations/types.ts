@@ -60,6 +60,12 @@ export interface IntegrationConnection {
   connectedAt: Date | null;
   suspendedAt: Date | null;
   revokedAt: Date | null;
+  /**
+   * Per-connection capability preferences (saas-integrations-console IX2):
+   * `{ capabilityId: boolean }` of the provider's console-surfaced toggles.
+   * NULL = all-defaults.
+   */
+  capabilityPrefs: Record<string, boolean> | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -316,6 +322,12 @@ export interface IntegrationsRepository {
     orgId: Uuid,
     id: Uuid,
     shareMode: ConnectionShareMode,
+  ): Promise<IntegrationsResult<IntegrationConnection>>;
+  /** Replace the per-connection capability preferences blob (IX2); any scope. */
+  updateConnectionCapabilityPrefs(
+    orgId: Uuid,
+    id: Uuid,
+    capabilityPrefs: Record<string, boolean>,
   ): Promise<IntegrationsResult<IntegrationConnection>>;
 
   // Admission grants (IT8)

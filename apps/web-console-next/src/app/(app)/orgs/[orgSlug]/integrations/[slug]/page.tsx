@@ -13,12 +13,15 @@ import * as React from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { OrgScope } from "@/components/shell/org-scope";
 import { ProviderSpace } from "@/components/integrations/provider-space";
+import { IntegrationDetail } from "@/components/integrations/detail/integration-detail";
 import { Screen } from "@/components/ui/northwind";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useApiQuery, qk } from "@/lib/query";
 import { useSession } from "@/lib/session";
 import { wrap } from "@/lib/api";
 import { resolveIntegrationSlug } from "@/components/integrations/route-model";
+import { descriptorById } from "@/components/integrations/registry";
+import { hasArchetypeDetail } from "@/components/integrations/detail-model";
 
 export default function IntegrationSlugPage() {
   const params = useParams<{ orgSlug: string; slug: string }>();
@@ -37,8 +40,59 @@ export default function IntegrationSlugPage() {
 
   return (
     <OrgScope slug={slug}>
-      {(org) => <ProviderSpace orgId={org.id} orgSlug={slug} providerId={segment} />}
+      {(org) => <ProviderRoute orgId={org.id} orgSlug={slug} providerId={segment} />}
     </OrgScope>
+  );
+}
+
+/**
+ * Dispatch the provider segment (saas-integrations-console IX2): a connected
+ * provider whose archetype has a console detail body renders the new tabbed
+ * detail page; everything else — connect flows (`?connect=1`/`?create=1`),
+ * unconnected providers, unimplemented archetypes — stays on the generic
+ * ProviderSpace, which owns those postures. The decision is a pure function of
+ * the served descriptor + this org's connections (no per-provider branch).
+ */
+function ProviderRoute({
+  orgId,
+  orgSlug,
+  providerId,
+}: {
+  orgId: string;
+  orgSlug: string;
+  providerId: string;
+}) {
+  const { client } = useSession();
+  const searchParams = useSearchParams();
+  const flowActive = searchParams?.has("connect") || searchParams?.has("create");
+
+  const list = useApiQuery(qk.integrations(orgId), () =>
+    wrap(async () => (await client.integrations.list(orgId)).connections),
+  );
+  const registry = useApiQuery(qk.integrationRegistry(orgId), () =>
+    wrap(async () => (await client.integrations.getRegistry(orgId)).registry),
+  );
+
+  if (list.loading || registry.loading) {
+    return (
+      <Screen detail>
+        <Skeleton className="h-9 w-40 rounded" />
+        <Skeleton className="mt-6 h-[86px] w-full rounded-xl" />
+        <Skeleton className="mt-6 h-[220px] w-full rounded-xl" />
+      </Screen>
+    );
+  }
+
+  const descriptor = descriptorById(registry.data, providerId);
+  const connected = (list.data ?? []).some(
+    (c) => c.provider === providerId && c.status !== "revoked",
+  );
+  const useDetail = !flowActive && connected && descriptor != null && hasArchetypeDetail(descriptor);
+
+  return useDetail ? (
+    <IntegrationDetail orgId={orgId} orgSlug={orgSlug} providerId={providerId} />
+  ) : (
+    <ProviderSpace orgId={orgId} orgSlug={orgSlug} providerId={providerId} />
   );
 }
 

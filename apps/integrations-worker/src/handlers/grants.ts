@@ -221,8 +221,25 @@ export async function handleUpdateConnection(
   } catch {
     return errorResponse("bad_request", "Invalid JSON body", 400, requestId);
   }
-  if (body.shareMode !== "auto" && body.shareMode !== "granted") {
+
+  // The PATCH carries either an admission posture change (`shareMode`, account
+  // scope only) and/or per-connection capability preferences (IX2, any scope).
+  const hasShareMode = body.shareMode !== undefined;
+  const hasPrefs = body.capabilityPrefs !== undefined;
+  if (!hasShareMode && !hasPrefs) {
+    return validationError(requestId, { _: ["Provide shareMode or capabilityPrefs"] });
+  }
+  if (hasShareMode && body.shareMode !== "auto" && body.shareMode !== "granted") {
     return validationError(requestId, { shareMode: ["Must be 'auto' or 'granted'"] });
+  }
+  let prefs: Record<string, boolean> | null = null;
+  if (hasPrefs) {
+    prefs = parseCapabilityPrefs(body.capabilityPrefs);
+    if (!prefs) {
+      return validationError(requestId, {
+        capabilityPrefs: ["Must be an object of { toggleId: boolean } (≤64 lower_snake_case keys)"],
+      });
+    }
   }
 
   const { executor, owned } = resolveExecutor(env, deps);
@@ -230,22 +247,58 @@ export async function handleUpdateConnection(
     const repo = createIntegrationsRepository(executor);
     const connection = await repo.getConnection(orgId, connectionId);
     if (!connection.ok) return errorResponse("not_found", "Not found", 404, requestId);
-    if (connection.value.scope !== "account") {
-      return errorResponse(
-        "precondition_failed",
-        "Only account-shared connections have an admission posture",
-        412,
-        requestId,
-        { reason: "not_account_scoped" },
+    let current = connection.value;
+
+    if (hasShareMode) {
+      if (current.scope !== "account") {
+        return errorResponse(
+          "precondition_failed",
+          "Only account-shared connections have an admission posture",
+          412,
+          requestId,
+          { reason: "not_account_scoped" },
+        );
+      }
+      const updated = await repo.updateConnectionShareMode(
+        orgId,
+        connectionId,
+        body.shareMode as "auto" | "granted",
       );
+      if (!updated.ok) return errorResponse("internal_error", "Service unavailable", 503, requestId);
+      current = updated.value;
     }
 
-    const updated = await repo.updateConnectionShareMode(orgId, connectionId, body.shareMode);
-    if (!updated.ok) return errorResponse("internal_error", "Service unavailable", 503, requestId);
+    if (hasPrefs && prefs) {
+      // Merge over the stored prefs so a partial toggle set leaves the rest intact.
+      const merged = { ...(current.capabilityPrefs ?? {}), ...prefs };
+      const updated = await repo.updateConnectionCapabilityPrefs(orgId, connectionId, merged);
+      if (!updated.ok) return errorResponse("internal_error", "Service unavailable", 503, requestId);
+      current = updated.value;
+    }
 
-    const payload: UpdateConnectionResponse = { connection: toPublicConnection(updated.value) };
+    const payload: UpdateConnectionResponse = { connection: toPublicConnection(current) };
     return successResponse(payload, requestId);
   } finally {
     await disposeIfOwned(executor, owned);
   }
+}
+
+/**
+ * Validate a capability-preferences body (IX2): an object of
+ * `{ lower_snake_case toggleId: boolean }`, ≤64 keys. Returns the normalized
+ * map, or null when the shape is invalid. Provider-generic — the worker does
+ * not hardcode which toggle ids a provider surfaces (the console owns that
+ * catalog); it only enforces the safe blob shape.
+ */
+export function parseCapabilityPrefs(raw: unknown): Record<string, boolean> | null {
+  if (raw == null || typeof raw !== "object" || Array.isArray(raw)) return null;
+  const entries = Object.entries(raw as Record<string, unknown>);
+  if (entries.length > 64) return null;
+  const out: Record<string, boolean> = {};
+  for (const [key, value] of entries) {
+    if (!/^[a-z0-9_]{1,64}$/.test(key)) return null;
+    if (typeof value !== "boolean") return null;
+    out[key] = value;
+  }
+  return out;
 }

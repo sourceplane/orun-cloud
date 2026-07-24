@@ -101,6 +101,8 @@ function mapConnection(row: Record<string, unknown>): IntegrationConnection {
     connectedAt: dateOrNull(row.connected_at),
     suspendedAt: dateOrNull(row.suspended_at),
     revokedAt: dateOrNull(row.revoked_at),
+    // Pre-IX2 rows (and executor fakes without the column) read null → defaults.
+    capabilityPrefs: parseJson<Record<string, boolean>>(row.capability_prefs),
     createdAt: toDate(row.created_at),
     updatedAt: toDate(row.updated_at),
   };
@@ -433,6 +435,29 @@ export function createIntegrationsRepository(executor: SqlExecutor): Integration
         return { ok: true, value: mapConnection(result.rows[0]!) };
       } catch {
         return safeError("Failed to update connection share mode");
+      }
+    },
+
+    // ── Capability preferences (saas-integrations-console IX2) ─
+    // Replace the stored prefs blob wholesale (the handler merges over the
+    // current prefs before calling). Works on any connection scope.
+    async updateConnectionCapabilityPrefs(
+      orgId: Uuid,
+      id: Uuid,
+      capabilityPrefs: Record<string, boolean>,
+    ): Promise<IntegrationsResult<IntegrationConnection>> {
+      try {
+        const result = await executor.execute<Record<string, unknown>>(
+          `UPDATE integrations.connections
+              SET capability_prefs = $3, updated_at = now()
+            WHERE org_id = $1 AND id = $2
+            RETURNING *`,
+          [orgId, id, JSON.stringify(capabilityPrefs)],
+        );
+        if (result.rowCount === 0) return { ok: false, error: { kind: "not_found" } };
+        return { ok: true, value: mapConnection(result.rows[0]!) };
+      } catch {
+        return safeError("Failed to update connection capability preferences");
       }
     },
 

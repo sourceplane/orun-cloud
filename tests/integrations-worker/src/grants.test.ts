@@ -3,6 +3,7 @@ import {
   handleListConnectionGrants,
   handleRevokeConnectionGrant,
   handleUpdateConnection,
+  parseCapabilityPrefs,
 } from "@integrations-worker/handlers/grants";
 import type { Env } from "@integrations-worker/env";
 import { orgPublicId } from "@integrations-worker/ids";
@@ -256,5 +257,118 @@ describe("connection grant management (IT8b)", () => {
     );
     expect(res.status).toBe(404);
     expect(queries).toHaveLength(0); // denied before any DB touch
+  });
+
+  // ── Capability preferences (saas-integrations-console IX2) ─────────────
+  it("sets capability prefs on a workspace-scoped connection → 200 (any scope)", async () => {
+    const { executor, queries } = fakeExecutor((text) => {
+      if (text.includes("FROM integrations.connections WHERE org_id"))
+        return [connectionRow({ scope: "workspace" })];
+      if (text.includes("SET capability_prefs"))
+        return [connectionRow({ scope: "workspace", capability_prefs: { pull_requests: true, issues: false } })];
+      return [];
+    });
+    const res = await handleUpdateConnection(
+      new Request("https://worker.test/c", {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ capabilityPrefs: { pull_requests: true, issues: false } }),
+      }),
+      createEnv(),
+      "req_1",
+      ACTOR,
+      asUuid(ACCOUNT_UUID),
+      asUuid(CONNECTION_UUID),
+      { executor },
+    );
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { data: { connection: { capabilityPrefs: Record<string, boolean> } } };
+    expect(body.data.connection.capabilityPrefs).toEqual({ pull_requests: true, issues: false });
+    // No share_mode write — capability prefs never touch admission.
+    expect(queries.some((q) => q.text.includes("SET share_mode"))).toBe(false);
+    expect(queries.some((q) => q.text.includes("SET capability_prefs"))).toBe(true);
+  });
+
+  it("merges capability prefs over the stored blob", async () => {
+    let captured: Record<string, boolean> | undefined;
+    const { executor } = fakeExecutor((text, params) => {
+      if (text.includes("FROM integrations.connections WHERE org_id"))
+        return [connectionRow({ capability_prefs: { pull_requests: true, checks: true } })];
+      if (text.includes("SET capability_prefs")) {
+        captured = JSON.parse(params[2] as string) as Record<string, boolean>;
+        return [connectionRow({ capability_prefs: captured })];
+      }
+      return [];
+    });
+    await handleUpdateConnection(
+      new Request("https://worker.test/c", {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ capabilityPrefs: { checks: false } }),
+      }),
+      createEnv(),
+      "req_1",
+      ACTOR,
+      asUuid(ACCOUNT_UUID),
+      asUuid(CONNECTION_UUID),
+      { executor },
+    );
+    // The partial toggle merges over the stored prefs (pull_requests intact).
+    expect(captured).toEqual({ pull_requests: true, checks: false });
+  });
+
+  it("rejects a non-boolean capability pref value with 422", async () => {
+    const { executor } = fakeExecutor(() => [connectionRow()]);
+    const res = await handleUpdateConnection(
+      new Request("https://worker.test/c", {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ capabilityPrefs: { pull_requests: "yes" } }),
+      }),
+      createEnv(),
+      "req_1",
+      ACTOR,
+      asUuid(ACCOUNT_UUID),
+      asUuid(CONNECTION_UUID),
+      { executor },
+    );
+    expect(res.status).toBe(422);
+  });
+
+  it("rejects an empty PATCH (neither shareMode nor capabilityPrefs) with 422", async () => {
+    const { executor } = fakeExecutor(() => [connectionRow()]);
+    const res = await handleUpdateConnection(
+      new Request("https://worker.test/c", {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({}),
+      }),
+      createEnv(),
+      "req_1",
+      ACTOR,
+      asUuid(ACCOUNT_UUID),
+      asUuid(CONNECTION_UUID),
+      { executor },
+    );
+    expect(res.status).toBe(422);
+  });
+});
+
+describe("parseCapabilityPrefs — the safe-blob guard", () => {
+  it("accepts a lower_snake_case boolean map", () => {
+    expect(parseCapabilityPrefs({ pull_requests: true, checks_v2: false })).toEqual({
+      pull_requests: true,
+      checks_v2: false,
+    });
+  });
+  it("rejects non-objects, arrays, bad keys, non-boolean values, and oversize maps", () => {
+    expect(parseCapabilityPrefs(null)).toBeNull();
+    expect(parseCapabilityPrefs("x")).toBeNull();
+    expect(parseCapabilityPrefs([true])).toBeNull();
+    expect(parseCapabilityPrefs({ "Bad-Key": true })).toBeNull();
+    expect(parseCapabilityPrefs({ ok: 1 })).toBeNull();
+    const big: Record<string, boolean> = {};
+    for (let i = 0; i < 65; i++) big[`k${i}`] = true;
+    expect(parseCapabilityPrefs(big)).toBeNull();
   });
 });

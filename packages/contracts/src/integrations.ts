@@ -259,6 +259,14 @@ export interface PublicConnection {
   sharedByWorkspaceRef?: string | null;
   /** Owning Account's display name. Present iff `inherited`. */
   sharedByName?: string | null;
+  /**
+   * Per-connection capability preferences (saas-integrations-console IX2): which
+   * of the provider's console-surfaced capability toggles the operator has
+   * enabled for this connection, as `{ capabilityId: boolean }`. Provider-defined
+   * toggle ids (e.g. GitHub `pull_requests` / `checks` / `deployments` / `issues`).
+   * Absent means "all defaults" — the console applies the default-on posture.
+   */
+  capabilityPrefs?: Record<string, boolean>;
 }
 
 // ── Repo links ──────────────────────────────────────────────
@@ -449,6 +457,12 @@ export interface RevokeConnectionGrantResponse {
 export interface UpdateConnectionRequest {
   /** Switch the admission posture of an account-shared connection. */
   shareMode?: IntegrationConnectionShareMode;
+  /**
+   * Set per-connection capability preferences (IX2). A `{ capabilityId: boolean }`
+   * map; provider-defined toggle ids. Merged over the stored prefs. Works on any
+   * connection scope (unlike `shareMode`, which is account-only).
+   */
+  capabilityPrefs?: Record<string, boolean>;
 }
 
 export interface UpdateConnectionResponse {
