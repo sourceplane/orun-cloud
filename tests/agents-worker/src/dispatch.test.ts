@@ -28,6 +28,20 @@ function req(method: string, path: string, body?: unknown): Request {
   });
 }
 
+/** A dispatch attributed to a SERVICE PRINCIPAL — the dispatcher acting
+ * autonomously (a supervisor turn), gated by the autonomy ladder. */
+function spReq(method: string, path: string, body?: unknown): Request {
+  return new Request(`https://agents-worker${path}`, {
+    method,
+    headers: {
+      "content-type": "application/json",
+      "x-actor-subject-id": "sp_dispatcher",
+      "x-actor-subject-type": "service_principal",
+    },
+    ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
+  });
+}
+
 async function json(res: Response): Promise<{ data?: unknown; error?: { code: string; message?: string } }> {
   return (await res.json()) as { data?: unknown; error?: { code: string; message?: string } };
 }
@@ -148,11 +162,38 @@ describe("autonomy policy routes (AG9)", () => {
 });
 
 describe("dispatch (AG9)", () => {
-  it("refuses below auto-dispatch — a human spawns manually", async () => {
+  it("a human-in-the-loop dispatch works at assist (the default) — the AN5 verb contract", async () => {
+    // The chat dispatcher acts on the human's in-thread request with the owner's
+    // (user) credential; `assist` means the agent dispatches on that request.
     const f = await fixture();
     const res = await route(req("POST", DISPATCH, { taskKey: "ORN-1" }), env, f.deps);
+    expect(res.status).toBe(201);
+    expect((await json(res)).data as { dispatched: boolean }).toMatchObject({ dispatched: true });
+  });
+
+  it("refuses at manual — a human spawns from the fleet instead", async () => {
+    const f = await fixture();
+    await route(req("PUT", AUTONOMY, { level: "manual" }), env, f.deps);
+    const res = await route(req("POST", DISPATCH, { taskKey: "ORN-1" }), env, f.deps);
     expect(res.status).toBe(409);
-    expect((await json(res)).error?.message).toContain("assist");
+    expect((await json(res)).error?.message).toContain("manual");
+  });
+
+  it("an AUTONOMOUS (service-principal) dispatch still needs auto-dispatch — refused at assist", async () => {
+    // A supervisor turn dispatches with the dispatcher principal, no human in
+    // the loop; the ladder holds it to auto-dispatch/full.
+    const f = await fixture();
+    const res = await route(spReq("POST", DISPATCH, { taskKey: "ORN-1" }), env, f.deps);
+    expect(res.status).toBe(409);
+    expect((await json(res)).error?.message).toContain("autonomous dispatch needs auto-dispatch");
+  });
+
+  it("an autonomous dispatch is allowed once the workspace opts into auto-dispatch", async () => {
+    const f = await fixture();
+    await route(req("PUT", AUTONOMY, { level: "auto-dispatch" }), env, f.deps);
+    const res = await route(spReq("POST", DISPATCH, { taskKey: "ORN-1" }), env, f.deps);
+    expect(res.status).toBe(201);
+    expect((await json(res)).data as { dispatched: boolean }).toMatchObject({ dispatched: true });
   });
 
   it("dispatches at auto-dispatch: session created, provisioned, task + workRef carried", async () => {
