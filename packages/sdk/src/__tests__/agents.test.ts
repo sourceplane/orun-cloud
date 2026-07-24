@@ -102,6 +102,14 @@ describe("agents resource", () => {
     expect(calls[0]!.init.method).toBe("GET");
   });
 
+  it("reads a thread's implementer roster fold (saas-agent-supervision SV1)", async () => {
+    const { fetch: f, calls } = captureFetch({ chatId: "ch_1", active: [], running: 0, needsYou: 0, done: 0 });
+    const c = client(f);
+    await c.agents.chatImplementers("org_x", "ch_1");
+    expect(calls[0]!.url).toContain("/v1/organizations/org_x/agents/chats/ch_1/implementers");
+    expect(calls[0]!.init.method).toBe("GET");
+  });
+
   it("connects a provider with the key in the body exactly once, and disconnects with DELETE", async () => {
     const { fetch: f, calls } = captureFetch({ id: "apc_1", status: "verified" });
     const c = client(f);

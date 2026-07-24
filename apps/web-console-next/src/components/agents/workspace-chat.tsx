@@ -16,6 +16,7 @@ import { qk, useApiQuery } from "@/lib/query";
 import { useSession } from "@/lib/session";
 import { compactAge } from "@/lib/agents/attention";
 import { CopilotThread } from "@/components/copilot/copilot-thread";
+import { RosterPanel } from "@/components/agents/roster-panel";
 
 export function WorkspaceChatThread({ orgId, orgSlug, chatId }: { orgId: string; orgSlug: string; chatId: string }) {
   const { client } = useSession();
@@ -51,7 +52,13 @@ export function WorkspaceChatThread({ orgId, orgSlug, chatId }: { orgId: string;
         title={chat.data.title}
         description="The Workspace Agent reads the workspace through governed tools; execution stays in orun sessions."
       />
-      <CopilotThread orgId={orgId} orgSlug={orgSlug} chatId={chatId} />
+      {/* Two planes side by side (SV1): the conversation (left), this thread's
+          live implementer roster (right). The roster is a fold over origin,
+          not a second truth. */}
+      <div className="grid grid-cols-1 gap-x-10 gap-y-6 lg:grid-cols-[minmax(0,1fr)_280px]">
+        <CopilotThread orgId={orgId} orgSlug={orgSlug} chatId={chatId} />
+        <RosterPanel orgId={orgId} orgSlug={orgSlug} chatId={chatId} />
+      </div>
     </Screen>
   );
 }

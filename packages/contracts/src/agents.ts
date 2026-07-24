@@ -678,6 +678,44 @@ export interface AttentionSummary {
   running: number;
 }
 
+// ── The roster fold (saas-agent-supervision SV1) ────────────
+// "This thread's implementers" is a FOLD over sessions by origin + live state,
+// never a stored second truth: the implementers whose origin is
+// {kind:"dispatch", ref:<thread ch_…>}. Per-viewer, `session.read`-gated,
+// viewer-credentialed (DX lock 4). The panel renders the active ones; terminal
+// implementers live on the Implementers surface (SV4) and only fold to a count
+// here.
+
+/**
+ * One active implementer on a thread's roster: the session itself (carrying
+ * state / origin / cost), the delegation tier resolved from its profile (the
+ * DD10 "render, never average" chip), and whether it currently needs a human.
+ */
+export interface RosterImplementer {
+  session: AgentSession;
+  /** The profile's delegation interface (DX7) — the tier chip. Defaults to
+   * `orun-sandbox` when the profile can't be resolved. */
+  interface: DelegationInterface;
+  /** The needs-you fact (AF6) when this implementer is waiting on a human —
+   * the SAME fold the attention plane renders (one truth), or absent. */
+  needsYou?: AttentionItem;
+}
+
+/** GET /v1/organizations/{orgId}/agents/chats/{chatId}/implementers */
+export interface ChatImplementers {
+  /** The dispatcher thread this roster folds (`ch_…`). */
+  chatId: string;
+  /** Active (non-terminal) implementers, newest first. */
+  active: RosterImplementer[];
+  /** Active implementers currently running — the "N running" numeral. */
+  running: number;
+  /** Active implementers waiting on a human — the "M waiting on you" numeral. */
+  needsYou: number;
+  /** Terminal implementers of this thread (shown on the Implementers surface,
+   * counted here) — the "K done" numeral. */
+  done: number;
+}
+
 // ── Provider connections (AG12) ─────────────────────────────
 // BYO provider accounts: a workspace connects its own sandbox-compute account
 // (Daytona) and one or more model-provider keys (Anthropic, OpenAI,

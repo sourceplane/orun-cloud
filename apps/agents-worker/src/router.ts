@@ -32,6 +32,7 @@ import {
 } from "./handlers/runtime.js";
 import { handleGetAutonomy, handleSetAutonomy } from "./handlers/autonomy.js";
 import { handleGetAttention } from "./handlers/attention.js";
+import { handleChatImplementers } from "./handlers/roster.js";
 import { handleCancelSession } from "./handlers/tree.js";
 import {
   handleCreateRoutine,
@@ -124,6 +125,9 @@ const ROUTINE_RE = /^\/v1\/organizations\/([^/]+)\/agents\/routines\/([^/]+)$/;
 const BUDGETS_RE = /^\/v1\/organizations\/([^/]+)\/agents\/budgets$/;
 const BUDGET_RE = /^\/v1\/organizations\/([^/]+)\/agents\/budgets\/([^/]+)$/;
 const DISPATCH_RE = /^\/v1\/organizations\/([^/]+)\/agents\/dispatch$/;
+// The roster fold (saas-agent-supervision SV1): a dispatcher thread's live
+// implementers, folded by origin. A derived read, no storage.
+const CHAT_IMPLEMENTERS_RE = /^\/v1\/organizations\/([^/]+)\/agents\/chats\/([^/]+)\/implementers$/;
 const PROVIDERS_RE = /^\/v1\/organizations\/([^/]+)\/agents\/providers$/;
 const PROVIDER_RE = /^\/v1\/organizations\/([^/]+)\/agents\/providers\/([^/]+)$/;
 const PROVIDER_VERIFY_RE = /^\/v1\/organizations\/([^/]+)\/agents\/providers\/([^/]+)\/verify$/;
@@ -164,6 +168,7 @@ export async function route(request: Request, env: Env, injectedDeps?: AgentsDep
       PROVIDER_VERIFY_RE.test(url.pathname) ||
       AUTONOMY_RE.test(url.pathname) ||
       ATTENTION_RE.test(url.pathname) ||
+      CHAT_IMPLEMENTERS_RE.test(url.pathname) ||
       ROUTINES_RE.test(url.pathname) ||
       ROUTINE_RE.test(url.pathname) ||
       BUDGETS_RE.test(url.pathname) ||
@@ -249,6 +254,15 @@ async function dispatch(
     const orgId = parseOrgPublicId(m[1]!);
     if (!orgId) return notFound(requestId, url.pathname);
     if (request.method === "GET") return handleGetAttention(deps, orgId, actor, requestId);
+    return methodNotAllowed(requestId);
+  }
+
+  m = CHAT_IMPLEMENTERS_RE.exec(url.pathname);
+  if (m) {
+    const orgId = parseOrgPublicId(m[1]!);
+    if (!orgId) return notFound(requestId, url.pathname);
+    const chatId = m[2]!;
+    if (request.method === "GET") return handleChatImplementers(deps, orgId, chatId, actor, requestId);
     return methodNotAllowed(requestId);
   }
 
