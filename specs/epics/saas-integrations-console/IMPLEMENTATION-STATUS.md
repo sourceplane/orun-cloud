@@ -10,7 +10,7 @@ when its PR merges; deltas from design are recorded as dated notes.
 | IX2 — Detail framework + GitHub page | ✅ Shipped (#615) | #615 | Archetype-derived tabbed shell + GitHub (Overview + capability toggles · Repositories · Workspace access · Activity). Migration 930 `capability_prefs`; `handleUpdateConnection` accepts prefs on any scope. `Segmented` control. |
 | IX3 — Infrastructure archetype | ✅ Shipped (#617) | #617 | Supabase + Cloudflare: Overview (what Orun can broker) · Secrets (brokered/rotated) · Projects · Activity. No new backend — `secret-model.ts` filters the org secrets list by binding/rotation connectionId (Q1 resolved). |
 | IX4 — Messaging archetype (Slack) | ✅ Shipped (#619) | #619 | Overview · Channels · Notifications routing · Activity. No new backend — routing reuses the `capability_prefs` blob (Q3 resolved). |
-| IX5 — Connect picker · route unification | ✅ Shipped (#PR5) | #PR5 | Global registry-driven Connect picker; shared `ProviderRoute` unifies the provider + nested-connection routes onto the new detail (fallback to the space). |
+| IX5 — Connect picker · route unification | ✅ Shipped (#621) | #621 | Global registry-driven Connect picker; shared `ProviderRoute` unifies the provider + nested-connection routes onto the new detail (fallback to the space). |
 
 ## As-built notes
 
