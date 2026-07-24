@@ -151,6 +151,7 @@ export class WorkspaceAgent extends Agent<Env> {
 
     // The hands (AN5): session verbs beside the read-only platform tools —
     // spawn/steer/interrupt/watch, all owner-credentialed public re-entry.
+    const meta = this.thread.info();
     const tools = withSessionVerbs(
       createOwnerToolExecutor({
         baseUrl,
@@ -162,10 +163,14 @@ export class WorkspaceAgent extends Agent<Env> {
         ownerToken,
         http: { fetch: (edgeFetch ?? fetch) as (input: string, init?: RequestInit) => Promise<Response> },
         orgPublicId: orgPublic,
+        // Origin taint (SV0): spawns from this thread carry its `ch_…` ref +
+        // title, so implementers fold into this dispatcher's roster.
+        ...(meta?.chatId ? { chatRef: meta.chatId } : {}),
+        ...(meta?.title ? { chatLabel: meta.title } : {}),
       },
     );
 
-    const chatId = this.thread.info()?.chatId ?? "unknown";
+    const chatId = meta?.chatId ?? "unknown";
     const toolsWithMemory = memory
       ? withMemoryTool(tools, memory, { author: principal, source: `chat:${chatId}`, now: () => new Date() })
       : tools;

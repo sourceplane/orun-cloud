@@ -1,8 +1,74 @@
 // Pure presentation model for the Agents surface (saas-agents AG7).
 // Dependency-free so the tone/label mappings are unit-testable.
 
-import type { AgentSessionState, ProviderConnectionStatus } from "@saas/contracts/agents";
+import type { AgentOrigin, AgentSessionState, ProviderConnectionStatus } from "@saas/contracts/agents";
 import type { Tone } from "@/components/ui/northwind";
+
+/**
+ * The origin chip (saas-agent-supervision SV0, design §2.3): one vocabulary for
+ * WHO set an implementer running, rendered everywhere a session appears and,
+ * on the Implementers surface, a filter facet. Colour is deliberately neutral —
+ * the state pill owns the fleet's colour semantics; origin is provenance, not
+ * status. A backfilled (inference, not door-recorded) origin renders muted.
+ */
+export interface OriginChip {
+  /** The kicker: "Agent" | "Work" | "Routine" | "Session" | "Human". */
+  kind: string;
+  /** The full chip label, e.g. "Agent · Fix flaky CI" or "Human". */
+  label: string;
+  tone: Tone;
+  /** Deep link to the origin (thread/work/parent session), when one exists. */
+  href?: string;
+  /** Inferred by the SV0 migration rather than recorded at the door. */
+  backfilled: boolean;
+  /** Hover text — the raw ref, for chips whose label is a friendlier name. */
+  title?: string;
+}
+
+const ORIGIN_KICKERS: Record<AgentOrigin["kind"], string> = {
+  dispatch: "Agent",
+  work: "Work",
+  routine: "Routine",
+  session: "Session",
+  human: "Human",
+};
+
+/** Shorten an id for display (`as_9f3c…`) so a chip never overflows its row. */
+function shortRef(ref: string): string {
+  return ref.length > 12 ? `${ref.slice(0, 10)}…` : ref;
+}
+
+/**
+ * originChip — the pure presentation model for an origin, resolving its label
+ * and deep link against the current workspace slug. Dependency-free + unit
+ * tested; the React chip is a thin render over this.
+ */
+export function originChip(origin: AgentOrigin, orgSlug: string): OriginChip {
+  const kind = ORIGIN_KICKERS[origin.kind] ?? "Human";
+  const backfilled = origin.backfilled === true;
+  const ref = origin.ref;
+  const named = origin.label && origin.label.trim() ? origin.label.trim() : undefined;
+  const detail = named ?? (ref ? shortRef(ref) : undefined);
+  const label = detail ? `${kind} · ${detail}` : kind;
+  const chip: OriginChip = { kind, label, tone: "neutral", backfilled };
+  if (ref) chip.title = ref;
+  // Deep links (design §2.3): the chip points back at the origin.
+  if (ref) {
+    switch (origin.kind) {
+      case "dispatch":
+        chip.href = `/orgs/${orgSlug}/agents/chat/${ref}`;
+        break;
+      case "session":
+        chip.href = `/orgs/${orgSlug}/agents/${ref}`;
+        break;
+      case "work":
+        chip.href = `/orgs/${orgSlug}/work`;
+        break;
+      // routine + human have no dedicated destination today — label-only.
+    }
+  }
+  return chip;
+}
 
 /** Session states are infrastructure facts (design §4.1) — the tone reads
  * like a fleet dashboard, not a work board. */

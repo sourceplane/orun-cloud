@@ -101,6 +101,44 @@ export const AGENT_RUN_KINDS = [
 export type AgentRunKind = (typeof AGENT_RUN_KINDS)[number];
 
 /**
+ * Origin — the taint (saas-agent-supervision SV0). WHO set an implementer
+ * running, recorded ONCE at the AG9 dispatch door from the authenticated
+ * caller's context (never from a client-supplied field — a body cannot claim
+ * a provenance it does not hold). Immutable: a re-parented tree keeps each
+ * node's original origin; the AF4 tree columns carry structure, origin carries
+ * provenance. Rendered as one chip vocabulary everywhere and, on the
+ * Implementers surface, a filter facet.
+ */
+export const AGENT_ORIGIN_KINDS = [
+  /** The Workspace Agent's `session_spawn` (human-prompted OR supervisor turn); ref = the thread `ch_…`. */
+  "dispatch",
+  /** Spawn from a Work surface (task "Ship it", design-doc implement, epic implementer); ref = workRef/taskKey. */
+  "work",
+  /** An AF6 routine firing; ref = the routine's public id (`rt_…`). */
+  "routine",
+  /** A parent session's spawn door (AF4 delegation); ref = the parent `as_…`. */
+  "session",
+  /** Direct spawn from the fleet/profile UI or CLI; no ref. */
+  "human",
+] as const;
+export type AgentOriginKind = (typeof AGENT_ORIGIN_KINDS)[number];
+
+/**
+ * The immutable provenance stamped on every session row. `ref` points at the
+ * origin (thread, work item, routine, parent session); `label` is a
+ * human-friendly rendering ("Design WD-12", "Epic ORN-142") captured at the
+ * door for chips that must read without a second fetch. `backfilled` marks a
+ * row whose origin was INFERRED by the SV0 migration rather than recorded by
+ * the door, so nobody mistakes inference for door-recorded truth.
+ */
+export interface AgentOrigin {
+  kind: AgentOriginKind;
+  ref?: string;
+  label?: string;
+  backfilled?: boolean;
+}
+
+/**
  * Autonomy ladder (AG9). Per-spec (fallback per-workspace) policy — agent-plane
  * configuration, never work truth.
  */
@@ -200,6 +238,9 @@ export interface AgentSession {
   routineId?: string;
   /** Accumulated relayed spend (AF8): summed cost samples. */
   tokensUsed?: number;
+  /** Immutable provenance stamped at the door (SV0). Recorded on every row
+   * (default `{kind:"human"}`); backfilled rows carry `backfilled: true`. */
+  origin: AgentOrigin;
 }
 
 /**

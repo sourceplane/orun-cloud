@@ -7,6 +7,7 @@
 // no work-status mutator — the work fold owns lifecycle.
 
 import type {
+  AgentOrigin,
   AgentProfile,
   AgentSession,
   AutonomyLevel,
@@ -56,6 +57,10 @@ export interface CreateSessionInput {
   sandbox?: Record<string, unknown>;
   /** Routine provenance (AF6): the firing routine's public id. */
   routineId?: string;
+  /** Immutable provenance (SV0). The door derives this from the authenticated
+   * caller's context — never from a request body's `origin` field. Absent =
+   * {kind:"human"}. */
+  origin?: AgentOrigin;
 }
 
 export interface AdvanceSessionInput {

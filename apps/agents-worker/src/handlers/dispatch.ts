@@ -18,6 +18,7 @@ import { errorResponse, successResponse, validationError } from "../http.js";
 import { toPublicSession } from "../mappers.js";
 import { handleProvisionSession } from "./provision.js";
 import { checkDoor } from "../budget.js";
+import { dispatchTaskOrigin, routineOrigin } from "../origin.js";
 import { uuidToHex } from "@saas/db/ids";
 
 /** Public `org_<hex>` id for the work:// provenance ref (the scope orgId is
@@ -146,6 +147,8 @@ export async function handleDispatch(
       spawnedBy: actor.subjectId,
       taskKey,
       ...(specKey ? { workRef: `work://${orgPublicId(orgId)}/${specKey}` } : {}),
+      // Origin (SV0): a dispatcher thread's `dispatchRef` ⇒ dispatch; else work.
+      origin: dispatchTaskOrigin(b, taskKey),
     },
   );
 
@@ -246,6 +249,8 @@ export async function dispatchRoutineFiring(
     spawnedBy: actor.subjectId,
     routineId: routine.publicId,
     workRef: `work://${orgPublicId(orgId)}/routine/${routine.name}`,
+    // Origin (SV0): door-authoritative — the routine row is the authorization.
+    origin: routineOrigin(routine.publicId, routine.name),
   });
   // The firing mark moves regardless of how the session ends — misfire
   // semantics key off it (fire once on recovery, never a backlog).

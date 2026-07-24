@@ -15,6 +15,7 @@ import {
 import { errorResponse, listResponse, notFound, successResponse, validationError } from "../http.js";
 import { toPublicSession } from "../mappers.js";
 import { checkDoor } from "../budget.js";
+import { createSessionOrigin } from "../origin.js";
 
 const RUN_KINDS: readonly string[] = ["design", "implementation", "interactive", "fix"];
 
@@ -217,6 +218,10 @@ export async function handleCreateSession(
         ...(typeof b.workRef === "string" ? { workRef: b.workRef } : {}),
         ...(typeof b.taskKey === "string" ? { taskKey: b.taskKey } : {}),
         ...(spawnExtras ?? {}),
+        // Origin (SV0): an agent-session bearer is a parent's `session` spawn;
+        // everyone else a direct `human` spawn. A body `origin` field is
+        // ignored — provenance comes from the authenticated actor, not the body.
+        origin: createSessionOrigin(spawnExtras?.parentSessionId),
       },
     );
     return successResponse(toPublicSession(session), requestId, 201);

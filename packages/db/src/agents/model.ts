@@ -71,6 +71,45 @@ export function isDelegationInterface(v: string): v is DelegationInterface {
   return (DELEGATION_INTERFACES as readonly string[]).includes(v);
 }
 
+/** Origin — the taint (saas-agent-supervision SV0). WHO set an implementer
+ * running, recorded ONCE at the AG9 door from the authenticated caller's
+ * context and immutable thereafter (no mutator writes it). The row-level
+ * mirror of the contracts `AgentOrigin`; kept independent here like the other
+ * db vocabularies. */
+export const ORIGIN_KINDS = ["dispatch", "work", "routine", "session", "human"] as const;
+export type OriginKind = (typeof ORIGIN_KINDS)[number];
+
+export function isOriginKind(v: string): v is OriginKind {
+  return (ORIGIN_KINDS as readonly string[]).includes(v);
+}
+
+export interface AgentOrigin {
+  kind: OriginKind;
+  ref?: string;
+  label?: string;
+  /** True when the SV0 migration INFERRED this origin rather than the door
+   * recording it — never mistake inference for door-recorded truth. */
+  backfilled?: boolean;
+}
+
+/** The origin every un-tainted row falls back to (belt for pre-SV0 rows the
+ * migration default already covers). */
+export const HUMAN_ORIGIN: AgentOrigin = { kind: "human" };
+
+/** Coerce an unknown JSONB value into a well-formed AgentOrigin, defaulting to
+ * {kind:"human"} — the door always writes a valid origin, this guards reads of
+ * legacy/partial rows. */
+export function coerceOrigin(v: unknown): AgentOrigin {
+  if (!v || typeof v !== "object") return { ...HUMAN_ORIGIN };
+  const o = v as Record<string, unknown>;
+  const kind = typeof o.kind === "string" && isOriginKind(o.kind) ? o.kind : "human";
+  const out: AgentOrigin = { kind };
+  if (typeof o.ref === "string" && o.ref) out.ref = o.ref;
+  if (typeof o.label === "string" && o.label) out.label = o.label;
+  if (o.backfilled === true) out.backfilled = true;
+  return out;
+}
+
 /** The closed session-event vocabulary — no status/lifecycle kind exists.
  * The child_* kinds (saas-agents-fleet AF4) are the parent's sealed story of
  * its delegation tree, emitted by the runtime and relayed like everything
@@ -152,6 +191,9 @@ export interface AgentSession {
   routineId?: string;
   /** Accumulated relayed spend (AF8) — summed cost samples, row arithmetic. */
   tokensUsed: number;
+  /** Immutable provenance stamped at the door (SV0). Always present on a
+   * mapped row (default {kind:"human"}). */
+  origin: AgentOrigin;
 }
 
 export interface SessionEvent {

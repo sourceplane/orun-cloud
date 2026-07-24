@@ -39,6 +39,8 @@ export function toPublicSession(s: DbSession): AgentSession {
     state: s.state,
     spawnedBy: s.spawnedBy,
     createdAt: s.createdAt,
+    // Immutable provenance (SV0) — recorded at the door, rendered as a chip.
+    origin: s.origin,
   };
   if (s.workRef !== undefined) out.workRef = s.workRef;
   if (s.taskKey !== undefined) out.taskKey = s.taskKey;

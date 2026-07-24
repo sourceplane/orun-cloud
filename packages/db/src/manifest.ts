@@ -831,5 +831,14 @@ export const manifest: MigrationManifest = {
       description:
         "AI/compute connections join the registry (saas-integration-registry IR5, design §8): agents.provider_connections gains connection_id UUID (the facts-table turn — the cloudflare_accounts pattern) and a backfill inserts one integrations.connections identity row per existing facts row (status mapped verified→active / unverified→pending / invalid→suspended; connected_at carries last_verified_at for verified keys; scope='workspace' + share_mode='auto' per IR-D4's private-by-default decision), stamping the pointer in the same CTE statement pair. Custody does not move — secret_ref keeps pointing at the reserved agents/providers/* namespace. NULL connection_id is tolerated by the worker for one release (risks R3 dual-read); additive + idempotent (backfill keys off connection_id IS NULL).",
     },
+    {
+      id: "920_agents_origin",
+      context: "agents",
+      path: "920_agents_origin/up.sql",
+      checksum:
+        "755f025c231a90d583e9174b3b8448879ece5a629a6d03a97464ebc4a60f9e93",
+      description:
+        "Origin taint (saas-agent-supervision SV0, design §2): agents.agent_sessions gains origin JSONB NOT NULL DEFAULT '{\"kind\":\"human\"}' — the immutable provenance {kind ∈ dispatch|work|routine|session|human, ref?, label?, backfilled?} recorded once at the AG9 door from the authenticated caller's context (never a client body). A backfill infers legacy rows most-specific-first (parent_session_id⇒session, routine_id⇒routine, work_ref⇒work, else human) and stamps every inferred row backfilled:true so inference is never mistaken for door-recorded truth. Adds the expression index (org_id, origin->>'kind', origin->>'ref') backing the SV1 roster fold. Nothing gates on origin (provenance, not authority). Additive + idempotent (backfill rewrites only bare-default rows).",
+    },
   ],
 };
