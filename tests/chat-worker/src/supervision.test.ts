@@ -150,3 +150,39 @@ describe("toDigestEntry — synthetic budget/stuck pass through", () => {
     expect(toDigestEntry(ev({ sessionId: "as_1", eventKind: "tool_call", seq: 3 }))).toBeNull();
   });
 });
+
+describe("executor-agnostic supervision (SV6, design §6)", () => {
+  // A Managed run's translated events target the SAME closed vocabulary as a
+  // sealed run (state_changed / message_agent / tool_call / child_* / error) —
+  // there is NO approval_requested case (no mid-run approval channel exists).
+  const managedStream: WakeInput[] = [
+    ev({ sessionId: "as_managed", eventKind: "child_completed", seq: 1 }),
+    ev({ sessionId: "as_managed", eventKind: "tool_call", seq: 2 }), // not wake-worthy
+    ev({ sessionId: "as_managed", eventKind: "state_changed", seq: 3, payload: { state: "completed" } }),
+  ];
+
+  it("a Managed event stream drives the SAME digest fold as a sealed one", () => {
+    const d = buildDigest("ch_1", managedStream);
+    // Identical folding: the two wake-worthy events (child + terminal) coalesce;
+    // the tool_call drops. The engine never looks at the interface.
+    expect(d.entries.map((e) => e.wake)).toEqual(["child", "terminal"]);
+    expect(d.coalesced).toBe(2);
+  });
+
+  it("the approval-escalation path is provably ABSENT for a Managed run", () => {
+    const d = buildDigest("ch_1", managedStream);
+    // No approval wake can exist — no producer emits approval_requested on the
+    // Managed interface — so no escalation card can be built.
+    expect(d.entries.some((e) => e.wake === "approval")).toBe(false);
+    expect(escalationsFrom(d)).toEqual([]);
+  });
+
+  it("a sealed run CAN produce an approval escalation — the divergence is honest", () => {
+    // The contrast: a sealed run's relay CAN emit approval_requested, so the
+    // same fold yields an escalation. Managed's absence is structural, not a bug.
+    const sealed = buildDigest("ch_1", [
+      ev({ sessionId: "as_sealed", eventKind: "approval_requested", seq: 1, payload: { tool: "deploy" } }),
+    ]);
+    expect(escalationsFrom(sealed)).toHaveLength(1);
+  });
+});
