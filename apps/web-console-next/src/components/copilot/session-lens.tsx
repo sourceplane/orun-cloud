@@ -19,7 +19,6 @@ import * as React from "react";
 import type { AguiEvent } from "@saas/contracts/agui";
 import type { AgentSessionEventKind } from "@saas/contracts/agents";
 import { Pill, StatusDot, type Tone } from "@/components/ui/northwind";
-import { sessionTone, sessionLabel } from "@/lib/agents/model";
 import { sanitizeHarnessError } from "@/lib/agents/harness-error";
 import type { ConversationEvent } from "@/lib/agents/conversation";
 import { StreamingBubble, TranscriptRow, type TranscriptItem } from "./transcript.js";
@@ -304,9 +303,34 @@ export function sessionEventsToItems(events: ConversationEvent[]): TranscriptIte
   return items;
 }
 
+/** pendingApprovals — the still-open approval requests folded from the durable
+ * event stream (an `approval_requested` with no later `approval_resolved` for
+ * the same requestId). These render as sticky, actionable cards; a resolved
+ * request drops out here and appears as a settled note in the transcript. */
+export function pendingApprovals(events: ConversationEvent[]): LensApproval[] {
+  const open = new Map<string, LensApproval>();
+  for (const e of events) {
+    const p = e.payload;
+    const rid = typeof p?.requestId === "string" ? p.requestId : undefined;
+    if (!rid) continue;
+    if (e.kind === "approval_requested") {
+      open.set(rid, {
+        requestId: rid,
+        ...(typeof p?.tool === "string" ? { tool: p.tool } : {}),
+        ...(typeof p?.reason === "string" ? { reason: p.reason } : {}),
+      });
+    } else if (e.kind === "approval_resolved") {
+      open.delete(rid);
+    }
+  }
+  return [...open.values()];
+}
+
 /** The lens's transport: the session AG-UI watch door over EventSource
  * (query bearer — the attach carve-out; native retry does the reconnect,
- * resuming from the folded cursor). */
+ * resuming from the folded cursor). Retained for the watch-door fold tests;
+ * the live session head now renders from the durable + attach-socket event
+ * stream (the proven AL2 transport) so a running session's log always shows. */
 export function useSessionLens(target: string, token: string | null, orgId: string, sessionId: string, live: boolean): LensState {
   const [state, setState] = React.useState<LensState>(initialLensState);
   const cursorRef = React.useRef(-1);
@@ -378,12 +402,10 @@ function ApprovalCard({ a, onApprove, onDeny, busy }: { a: LensApproval; onAppro
 }
 
 export function SessionLens({
-  target,
-  token,
-  orgId,
-  sessionId,
   live,
   events,
+  streaming,
+  tokens,
   tierLabel,
   tierTone,
   onApprove,
@@ -391,14 +413,15 @@ export function SessionLens({
   interacting,
   emptyHint,
 }: {
-  target: string;
-  token: string | null;
-  orgId: string;
-  sessionId: string;
   live: boolean;
-  /** The durable session log — rendered when the live watch stream is gone
-   * (an ended session), so the transcript survives past the last frame. */
+  /** The session log — the durable read merged with the live attach socket
+   * (the proven AL2 transport). This IS the transcript, live or ended, so a
+   * running session's relayed log always renders. */
   events: ConversationEvent[];
+  /** The in-progress turn's streamed delta (attach socket), live only. */
+  streaming?: string;
+  /** Cost so far (the session record's tokensUsed). */
+  tokens?: number;
   /** The trust tier — rendered permanently (DX lock 8, inherited). */
   tierLabel: string;
   tierTone: Tone;
@@ -408,30 +431,21 @@ export function SessionLens({
   /** Empty-state line — the caller varies it by state. */
   emptyHint?: string;
 }) {
-  const lens = useSessionLens(target, token, orgId, sessionId, live);
-
-  // While live, the watch door replays the whole session (from=-1) then goes
-  // live, so the lens fold IS the complete transcript. Once the stream is
-  // gone, the durable log is the record — folded into the same vocabulary.
-  const items = live ? lens.items : sessionEventsToItems(events);
+  const items = sessionEventsToItems(events);
+  const approvals = pendingApprovals(events);
+  const showStreaming = live && !!streaming;
 
   return (
     <div className="min-w-0">
-      {/* The state timeline + the permanent tier pill. */}
+      {/* The permanent tier pill + running cost. */}
       <div className="mb-3 flex flex-wrap items-center gap-2">
         <Pill tone={tierTone}>{tierLabel}</Pill>
-        {lens.timeline.map((t, i) => (
-          <React.Fragment key={`${t.state}${t.seq ?? i}`}>
-            {i > 0 || lens.timeline.length > 0 ? <span className="text-[11px] text-muted-foreground/50">→</span> : null}
-            <Pill tone={sessionTone(t.state as never)} dot live={t.state === "running"}>
-              {sessionLabel(t.state as never)}
-            </Pill>
-          </React.Fragment>
-        ))}
-        {lens.tokens > 0 ? <span className="ml-auto text-[12px] text-muted-foreground">{lens.tokens.toLocaleString()} tokens</span> : null}
+        {tokens && tokens > 0 ? (
+          <span className="ml-auto text-[12px] text-muted-foreground">{tokens.toLocaleString()} tokens</span>
+        ) : null}
       </div>
 
-      {lens.approvals.map((a) => (
+      {approvals.map((a) => (
         <ApprovalCard key={a.requestId} a={a} onApprove={onApprove} onDeny={onDeny} busy={interacting} />
       ))}
 
@@ -440,9 +454,9 @@ export function SessionLens({
         <TranscriptRow key={it.id} it={it} />
       ))}
 
-      {live && lens.streaming ? <StreamingBubble text={lens.streaming} /> : null}
+      {showStreaming ? <StreamingBubble text={streaming!} /> : null}
 
-      {items.length === 0 && !lens.streaming ? (
+      {items.length === 0 && !showStreaming ? (
         <p className="text-[12.5px] text-muted-foreground">
           {live
             ? emptyHint ?? "The runtime relays its session log here once the sandbox dials home."

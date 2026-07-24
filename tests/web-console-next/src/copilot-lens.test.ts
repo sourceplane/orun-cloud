@@ -6,7 +6,12 @@
 // merely look approval-ish never produce one; resolution collapses by
 // requestId. sessionEventsToItems folds the durable log into the SAME items.
 
-import { foldLensEvent, initialLensState, sessionEventsToItems } from "@web-console-next/components/copilot/session-lens";
+import {
+  foldLensEvent,
+  initialLensState,
+  sessionEventsToItems,
+  pendingApprovals,
+} from "@web-console-next/components/copilot/session-lens";
 import type { ConversationEvent } from "@web-console-next/lib/agents/conversation";
 import type { AguiEvent } from "@saas/contracts/agui";
 
@@ -149,5 +154,21 @@ describe("sessionEventsToItems: the durable log → the shared transcript", () =
     ];
     const items = sessionEventsToItems(events);
     expect(items).toEqual([{ kind: "error", id: "h2", text: "Bash denied by tool policy" }]);
+  });
+});
+
+describe("pendingApprovals: sticky cards from the durable log", () => {
+  it("surfaces an open approval and drops it once resolved", () => {
+    const open = pendingApprovals([
+      { seq: 1, kind: "approval_requested", payload: { requestId: "apr_1", tool: "bash", reason: "wants to deploy" } },
+      { seq: 2, kind: "message_agent", payload: { text: "thinking" } },
+    ]);
+    expect(open).toEqual([{ requestId: "apr_1", tool: "bash", reason: "wants to deploy" }]);
+
+    const resolved = pendingApprovals([
+      { seq: 1, kind: "approval_requested", payload: { requestId: "apr_1", tool: "bash" } },
+      { seq: 2, kind: "approval_resolved", payload: { requestId: "apr_1", approved: true } },
+    ]);
+    expect(resolved).toEqual([]);
   });
 });

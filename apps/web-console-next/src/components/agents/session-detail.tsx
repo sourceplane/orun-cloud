@@ -97,7 +97,7 @@ function shortPrincipal(id: string): string {
  * booted but the runtime never dialed home) instead of leaving a mystery until
  * the sweep. Re-renders on the session poll, so the clock advances on its own.
  */
-function ProvisioningNotice({ state, since }: { state: string; since: string }) {
+function ProvisioningNotice({ state, since, orgSlug }: { state: string; since: string; orgSlug: string }) {
   const startedMs = new Date(since).getTime();
   const elapsedMs = Number.isFinite(startedMs) ? Math.max(0, Date.now() - startedMs) : 0;
   const elapsedMin = Math.floor(elapsedMs / 60_000);
@@ -108,12 +108,18 @@ function ProvisioningNotice({ state, since }: { state: string; since: string }) 
   const message = stalled
     ? `Still ${state} after ${elapsedLabel}. ${
         state === "requested"
-          ? "No sandbox was ever created — the spawn likely found no usable compute provider."
+          ? "No sandbox was ever created — the spawn found no usable compute provider."
           : "The sandbox was created but the runtime has not dialed home — it may be failing to start."
       } A stalled session is reclaimed automatically ~30 m after spawn; you can also kill it now.`
     : state === "requested"
       ? "Waiting to provision the sandbox on your connected compute — the run starts once the box dials home."
       : `Provisioning the sandbox and starting the runtime · ${elapsedLabel} — the run starts once it dials home.`;
+
+  // A run only boots (and only then becomes chattable) once the workspace has
+  // a verified compute + model provider. When `requested` sticks — the boot was
+  // gated on a missing/unverified connection — point at the lever directly
+  // instead of leaving the "waiting…" line to imply the box is on its way.
+  const showConnectionHint = state === "requested";
 
   return (
     <div
@@ -124,6 +130,15 @@ function ProvisioningNotice({ state, since }: { state: string; since: string }) 
       }
     >
       {message}
+      {showConnectionHint ? (
+        <div className="mt-1.5">
+          A run only boots once a compute provider (Daytona) and a model provider are connected and
+          verified.{" "}
+          <Link href={`/orgs/${orgSlug}/integrations`} className="underline underline-offset-2">
+            Check provider connections →
+          </Link>
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -361,7 +376,7 @@ export function SessionDetail({
           {live ? <ContinueInTerminal sessionId={s.id} /> : null}
 
           {s.state === "requested" || s.state === "provisioning" ? (
-            <ProvisioningNotice state={s.state} since={s.createdAt} />
+            <ProvisioningNotice state={s.state} since={s.createdAt} orgSlug={orgSlug} />
           ) : null}
 
           {/* The children strip (AF4 §2.2): the delegation tree at a glance. */}
@@ -403,12 +418,10 @@ export function SessionDetail({
             <Skeleton className="h-48 w-full rounded-xl" />
           ) : (
             <SessionLens
-              target={target.url}
-              token={token}
-              orgId={orgId}
-              sessionId={s.id}
               live={live}
               events={mergedEvents}
+              streaming={tail.streaming}
+              tokens={s.tokensUsed ?? 0}
               tierLabel={interfaceTier(profile?.interface).label}
               tierTone={interfaceTier(profile?.interface).tone}
               onApprove={onApproveId}
