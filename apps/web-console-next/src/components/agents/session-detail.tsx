@@ -48,6 +48,9 @@ function steerFailureMessage(reason?: string): string {
       return "This session has ended, so steering is no longer possible. Your message was kept.";
     case "not_pending":
       return "That request is no longer waiting on you. Your message was kept.";
+    case "control_held":
+      // SV5: a human holds control, so the dispatcher's steer was refused.
+      return "A human holds control of this implementer — the dispatcher observes only until control is returned.";
     default:
       return "Couldn't deliver your message to the agent. It was kept — try again.";
   }
@@ -347,6 +350,26 @@ export function SessionDetail({
     }
   }, [client, orgId, sessionId, reloadSession, reloadEvents, reloadChildren]);
 
+  // Takeover (SV5): Take control → the dispatcher observes only until Return.
+  // `held` is optimistic-then-confirmed by the server's control state.
+  const [held, setHeld] = React.useState(false);
+  const [controlBusy, setControlBusy] = React.useState(false);
+  const onToggleControl = React.useCallback(async () => {
+    setControlBusy(true);
+    setInputError(null);
+    try {
+      const res = held
+        ? await client.agents.returnControl(orgId, sessionId)
+        : await client.agents.takeControl(orgId, sessionId);
+      setHeld(!!res.control);
+      reloadEvents();
+    } catch (err) {
+      setInputError(err instanceof Error ? err.message : "Failed to change control");
+    } finally {
+      setControlBusy(false);
+    }
+  }, [client, orgId, sessionId, held, reloadEvents]);
+
   if (session.loading && !session.data) {
     return (
       <Screen>
@@ -408,18 +431,30 @@ export function SessionDetail({
         description={`${s.id} · spawned by ${shortPrincipal(s.spawnedBy)} · started ${createdLabel}${s.parentSessionId ? ` · child of ${s.parentSessionId}` : ""}`}
         actions={
           live ? (
-            <button
-              type="button"
-              onClick={() => void onKill()}
-              disabled={killing}
-              className="rounded-lg border border-destructive/50 px-3 py-1.5 text-[13px] text-destructive hover:bg-destructive/10 disabled:opacity-50"
-            >
-              {killing
-                ? "Stopping…"
-                : (children.data?.length ?? 0) > 0
-                  ? "Kill tree"
-                  : "Kill session"}
-            </button>
+            <div className="flex items-center gap-2">
+              {/* Takeover (SV5): the seat is identical either way — this only
+                  changes who the dispatcher defers to. */}
+              <button
+                type="button"
+                onClick={() => void onToggleControl()}
+                disabled={controlBusy}
+                className="rounded-lg border border-border px-3 py-1.5 text-[13px] hover:bg-muted disabled:opacity-50"
+              >
+                {controlBusy ? "…" : held ? "Return control" : "Take control"}
+              </button>
+              <button
+                type="button"
+                onClick={() => void onKill()}
+                disabled={killing}
+                className="rounded-lg border border-destructive/50 px-3 py-1.5 text-[13px] text-destructive hover:bg-destructive/10 disabled:opacity-50"
+              >
+                {killing
+                  ? "Stopping…"
+                  : (children.data?.length ?? 0) > 0
+                    ? "Kill tree"
+                    : "Kill session"}
+              </button>
+            </div>
           ) : undefined
         }
       />

@@ -849,5 +849,14 @@ export const manifest: MigrationManifest = {
       description:
         "Per-connection capability preferences (saas-integrations-console IX2): integrations.connections gains capability_prefs JSONB (nullable) — a free-form {capabilityId: boolean} blob of the provider's console-surfaced capability toggles the operator enabled for this connection (e.g. GitHub pull_requests/checks/deployments/issues). NULL means all-defaults (the console applies the default-on posture), so pre-IX2 rows need no backfill. Additive + idempotent.",
     },
+    {
+      id: "940_agents_control_events",
+      context: "agents",
+      path: "940_agents_control_events/up.sql",
+      checksum:
+        "e7333c7b7f1eea402d5147563030b6ba12c10ecbd7b235f090bee64776622c47",
+      description:
+        "Takeover control vocabulary (saas-agent-supervision SV5, design §5): the agents.session_events kind CHECK widens to accept 'control_taken' and 'control_returned' — the two RELAY-authored, presence-adjacent sealed kinds recording who holds an implementer's wheel (control_taken {principal, mode: explicit|implicit} / control_returned {principal, reason}). Guarded drop-by-canonical-name + re-add (the 750/720 idiom); additive + idempotent.",
+    },
   ],
 };

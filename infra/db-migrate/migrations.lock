@@ -99,3 +99,5 @@
 900_integrations_scope_templates
 910_integration_registry_rehome
 920_agents_origin
+930_integrations_connection_capability_prefs
+940_agents_control_events

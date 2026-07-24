@@ -8,16 +8,13 @@
 import type { AgentSession, SessionEvent } from "@saas/db/agents";
 import type { AgentProfileRecord, AgentRunKind } from "@saas/contracts/agents";
 import { isTerminal } from "@saas/db/agents";
+// Service principals (sp_) and the runtime's own session identity never count
+// as trust; the record measures HUMAN verdicts only (§6.1).
+import { isHumanPrincipal } from "./principal.js";
 
 /** Events are sampled from the most recent N sessions per profile — the
  * fold stays a bounded read at fleet scale. */
 export const RECORD_EVENT_SAMPLE = 25;
-
-function isHumanPrincipal(principal: string): boolean {
-  // Service principals (sp_) and the runtime's own session identity never
-  // count as trust; the record measures HUMAN verdicts only (§6.1).
-  return !!principal && !principal.startsWith("sp_") && !principal.startsWith("as_");
-}
 
 /**
  * computeRecord folds a profile's sessions (+ sampled events) into its

@@ -79,6 +79,8 @@ function RosterCard({ entry, orgSlug }: { entry: RosterImplementer; orgSlug: str
           </Pill>
           <Pill tone={tier.tone}>{tier.label}</Pill>
           {entry.needsYou ? <Pill tone="warning" dot>Needs you</Pill> : null}
+          {/* Takeover (SV5): while a human holds control the dispatcher observes. */}
+          {entry.control ? <Pill tone="info" dot>Human at the wheel</Pill> : null}
         </div>
         <div className="mt-0.5 truncate text-[12px] text-muted-foreground">
           {goal} · {compactTokens(s.tokensUsed ?? 0)} tok ·{" "}

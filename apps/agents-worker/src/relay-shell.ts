@@ -385,6 +385,14 @@ export class RelayShell {
     return withAckTimeout(this.enqueue(frame, principal), frame.ref || "");
   }
 
+  /** control (SV5): explicit take/return the wheel; returns the resulting hold
+   * state (or null when unheld). */
+  async control(action: string, principal: string): Promise<{ ok: boolean; control: unknown }> {
+    if (action === "take") await this.core.takeControl(principal);
+    else if (action === "return") await this.core.returnControl(principal);
+    return { ok: true, control: (await this.core.getControl()) ?? null };
+  }
+
   private async recordAck(ack: AttachFrame): Promise<void> {
     if (ack.ref) {
       this.acked.add(ack.ref);
