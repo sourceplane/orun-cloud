@@ -149,4 +149,32 @@ describe("foldChatImplementers — the pure fold", () => {
     expect(roster.done).toBe(1);
     expect(roster.active.every((e) => e.interface === "orun-sandbox")).toBe(true);
   });
+
+  it("folds a MIXED roster — sealed + managed tiers side by side (SV6)", async () => {
+    const repo = new MemoryAgentsRepository();
+    const sealed = await seedProfile(repo, "impl-sealed");
+    const managed = await repo.createProfile(SCOPE, {
+      name: "impl-managed",
+      principalId: "sp_agent2",
+      owner: "team/platform",
+      agentType: "implementer",
+      harness: "claude-code",
+      model: "claude-opus-4-8",
+      interface: "anthropic-managed",
+    });
+    const s1 = await seed(repo, sealed.publicId, { kind: "dispatch", ref: "ch_1" }, "running");
+    const s2 = await seed(repo, managed.publicId, { kind: "dispatch", ref: "ch_1" }, "running");
+    const sessions = await repo.listSessions(SCOPE);
+    const ifaces = new Map<string, "orun-sandbox" | "anthropic-managed">([
+      [sealed.id, "orun-sandbox"],
+      [managed.id, "anthropic-managed"],
+    ]);
+    const roster = foldChatImplementers("ch_1", sessions, ifaces, new Map());
+    const byId = new Map(roster.active.map((e) => [e.session.id, e.interface]));
+    expect(byId.get(s1.publicId)).toBe("orun-sandbox");
+    expect(byId.get(s2.publicId)).toBe("anthropic-managed");
+    // Both tiers fold identically — the roster is executor-agnostic.
+    expect(roster.active).toHaveLength(2);
+    expect(roster.running).toBe(2);
+  });
 });

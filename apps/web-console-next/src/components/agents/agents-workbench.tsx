@@ -36,6 +36,7 @@ import {
   presentOriginKinds,
   facetsActive,
   originChip,
+  interfaceTier,
   DEFAULT_FLEET_FACETS,
   type FleetFacets,
   type FacetContext,
@@ -315,6 +316,16 @@ function SessionRow({
             {sessionLabel(session.state)}
           </Pill>
           <Pill tone="neutral">{session.runKind}</Pill>
+          {/* Delegation tier (SV6/DD10): always rendered — a Sealed run and a
+              Managed run must never look interchangeable. */}
+          {(() => {
+            const tier = interfaceTier(profile?.interface);
+            return (
+              <span title={tier.blurb}>
+                <Pill tone={tier.tone}>{tier.label}</Pill>
+              </span>
+            );
+          })()}
           {/* Origin taint (SV0): the row already links to the session, so the
               chip is non-linked here to avoid nesting anchors. */}
           <OriginChipView origin={session.origin} orgSlug={orgSlug} />

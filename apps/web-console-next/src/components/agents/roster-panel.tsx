@@ -86,6 +86,13 @@ function RosterCard({ entry, orgSlug }: { entry: RosterImplementer; orgSlug: str
           {goal} · {compactTokens(s.tokensUsed ?? 0)} tok ·{" "}
           {compactAge(s.startedAt ?? s.createdAt, new Date())}
         </div>
+        {/* Executor honesty (SV6/DD10): a Managed run has no mid-run approval
+            channel — state it on the card, never paper over the divergence. */}
+        {entry.interface === "anthropic-managed" ? (
+          <div className="mt-0.5 truncate text-[11.5px] text-muted-foreground/80">
+            Managed run — no mid-run approvals
+          </div>
+        ) : null}
       </div>
     </ListRow>
   );
