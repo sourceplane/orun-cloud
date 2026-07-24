@@ -23,6 +23,7 @@ import { wrap } from "@/lib/api";
 import { qk, useApiQuery } from "@/lib/query";
 import { useSession } from "@/lib/session";
 import { AGENT_MODELS, interfaceTier, sessionLabel, sessionTone } from "@/lib/agents/model";
+import { OriginChipView } from "@/components/agents/origin-chip";
 import { compactTokens } from "@/lib/agents/attention";
 import { humanizeDurationMs } from "@/lib/dispatch/model";
 import type { ConversationEvent } from "@/lib/agents/conversation";
@@ -399,6 +400,9 @@ export function SessionDetail({
             <Pill tone={sessionTone(s.state)} dot live={s.state === "running"}>
               {sessionLabel(s.state)}
             </Pill>
+            {/* Origin taint (SV0): a deep-linking chip back to whoever set this
+                implementer running (thread / work item / parent session). */}
+            <OriginChipView origin={s.origin} orgSlug={orgSlug} linked />
           </span>
         }
         description={`${s.id} · spawned by ${shortPrincipal(s.spawnedBy)} · started ${createdLabel}${s.parentSessionId ? ` · child of ${s.parentSessionId}` : ""}`}

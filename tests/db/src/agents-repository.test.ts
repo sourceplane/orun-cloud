@@ -1,7 +1,9 @@
 import {
   MemoryAgentsRepository,
   canTransition,
+  coerceOrigin,
   isProvider,
+  isOriginKind,
   isSessionEventKind,
   isTerminal,
   providerSecretRef,
@@ -80,6 +82,9 @@ describe("MemoryAgentsRepository", () => {
     await expect(
       r.advanceSession(scope, { publicId: s.publicId, to: "requested" }),
     ).rejects.toThrow(/not allowed/);
+
+    // Origin defaults to human when the door supplies none (SV0).
+    expect(s.origin).toEqual({ kind: "human" });
 
     await r.advanceSession(scope, { publicId: s.publicId, to: "completing" });
     const done = await r.advanceSession(scope, {
@@ -187,6 +192,63 @@ describe("MemoryAgentsRepository", () => {
     // Re-set updates in place.
     await r.setAutonomy(scope, { specKey: "orun-agents", level: "auto-dispatch" });
     expect((await r.getAutonomy(scope, "orun-agents"))?.level).toBe("auto-dispatch");
+  });
+});
+
+describe("origin taint (saas-agent-supervision SV0)", () => {
+  it("closed kind union — dispatch|work|routine|session|human", () => {
+    for (const k of ["dispatch", "work", "routine", "session", "human"]) {
+      expect(isOriginKind(k)).toBe(true);
+    }
+    expect(isOriginKind("approve")).toBe(false);
+    expect(isOriginKind("")).toBe(false);
+  });
+
+  it("coerceOrigin defaults malformed/absent input to human, keeps valid fields", () => {
+    expect(coerceOrigin(undefined)).toEqual({ kind: "human" });
+    expect(coerceOrigin(null)).toEqual({ kind: "human" });
+    expect(coerceOrigin({ kind: "nope" })).toEqual({ kind: "human" });
+    expect(coerceOrigin({ kind: "dispatch", ref: "ch_1", label: "Fix CI", backfilled: true })).toEqual({
+      kind: "dispatch",
+      ref: "ch_1",
+      label: "Fix CI",
+      backfilled: true,
+    });
+    // Empty strings drop out; backfilled only survives when literally true.
+    expect(coerceOrigin({ kind: "work", ref: "", backfilled: "yes" })).toEqual({ kind: "work" });
+  });
+
+  it("createSession records the door-supplied origin and reads it back", async () => {
+    const r = repo();
+    const p = await seedProfile(r);
+    const s = await r.createSession(scope, {
+      profileId: p.publicId,
+      runKind: "implementation",
+      spawnedBy: "usr_rahul",
+      origin: { kind: "dispatch", ref: "ch_thread", label: "Ship ORN-1" },
+    });
+    expect(s.origin).toEqual({ kind: "dispatch", ref: "ch_thread", label: "Ship ORN-1" });
+    const read = await r.getSession(scope, s.publicId);
+    expect(read?.origin).toEqual({ kind: "dispatch", ref: "ch_thread", label: "Ship ORN-1" });
+  });
+
+  it("origin is immutable — no mutator rewrites it, advancing state leaves it intact", async () => {
+    const r = repo();
+    const p = await seedProfile(r);
+    const s = await r.createSession(scope, {
+      profileId: p.publicId,
+      runKind: "implementation",
+      spawnedBy: "u",
+      origin: { kind: "work", ref: "ORN-9", label: "ORN-9" },
+    });
+    await r.advanceSession(scope, { publicId: s.publicId, to: "provisioning" });
+    await r.advanceSession(scope, { publicId: s.publicId, to: "running" });
+    await r.advanceSession(scope, { publicId: s.publicId, to: "canceled" });
+    const read = await r.getSession(scope, s.publicId);
+    expect(read?.origin).toEqual({ kind: "work", ref: "ORN-9", label: "ORN-9" });
+    // Structurally: there is no origin setter on the repository surface.
+    expect((r as unknown as Record<string, unknown>).updateSessionOrigin).toBeUndefined();
+    expect((r as unknown as Record<string, unknown>).setOrigin).toBeUndefined();
   });
 });
 

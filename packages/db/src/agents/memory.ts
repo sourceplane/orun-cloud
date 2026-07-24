@@ -5,6 +5,7 @@
 import {
   AgentsError,
   canTransition,
+  coerceOrigin,
   isTerminal,
   validateBudgetInput,
   validateConnectionInput,
@@ -138,6 +139,8 @@ export class MemoryAgentsRepository implements AgentsRepository {
       rootSessionId: parent ? parent.rootSessionId : publicId,
       depth: parent ? parent.depth + 1 : 0,
       tokensUsed: 0,
+      // Immutable provenance (SV0): the door supplies it; absent = human.
+      origin: coerceOrigin(input.origin),
       ...(parent ? { parentSessionId: parent.publicId } : {}),
       ...(input.workRef !== undefined ? { workRef: input.workRef } : {}),
       ...(input.taskKey !== undefined ? { taskKey: input.taskKey } : {}),

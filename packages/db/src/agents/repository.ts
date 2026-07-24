@@ -8,6 +8,7 @@ import type { TransactionalSqlExecutor } from "../hyperdrive/executor.js";
 import {
   AgentsError,
   canTransition,
+  coerceOrigin,
   isTerminal,
   validateBudgetInput,
   validateConnectionInput,
@@ -114,6 +115,9 @@ function mapSession(row: Row): AgentSession {
     rootSessionId: optStr(row.root_session_id) ?? publicId,
     depth: typeof row.depth === "number" ? row.depth : Number(row.depth ?? 0),
     tokensUsed: Number(row.tokens_used ?? 0),
+    // Immutable provenance (SV0). Post-migration every row has origin JSONB;
+    // coerceOrigin defaults pre-migration/partial rows to {kind:"human"}.
+    origin: coerceOrigin(parseJson<unknown>(row.origin, undefined)),
   };
   const parentSessionId = optStr(row.parent_session_id);
   if (parentSessionId !== undefined) s.parentSessionId = parentSessionId;
@@ -280,8 +284,8 @@ export function createAgentsRepository(sql: TransactionalSqlExecutor): AgentsRep
         const res = await tx.execute(
           `INSERT INTO agents.agent_sessions
              (public_id, org_id, profile_id, run_kind, state, spawned_by, work_ref, task_key,
-              sandbox, parent_session_id, root_session_id, depth, routine_id)
-           VALUES ($1,$2,$3,$4,'requested',$5,$6,$7,$8::jsonb,$9,$10,$11,$12)
+              sandbox, parent_session_id, root_session_id, depth, routine_id, origin)
+           VALUES ($1,$2,$3,$4,'requested',$5,$6,$7,$8::jsonb,$9,$10,$11,$12,$13::jsonb)
            RETURNING *`,
           [
             publicId,
@@ -296,6 +300,9 @@ export function createAgentsRepository(sql: TransactionalSqlExecutor): AgentsRep
             parent ? parent.rootSessionId : publicId,
             parent ? parent.depth + 1 : 0,
             input.routineId ?? null,
+            // Origin (SV0): the door supplies it; absent = human. Immutable —
+            // no UPDATE path writes this column.
+            JSON.stringify(coerceOrigin(input.origin)),
           ],
         );
         return mapSession(res.rows[0] as Row);

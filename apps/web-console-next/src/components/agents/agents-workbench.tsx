@@ -27,6 +27,7 @@ import { wrap } from "@/lib/api";
 import { qk, useApiQuery } from "@/lib/query";
 import { useSession } from "@/lib/session";
 import { orderFleetRows, sessionLabel, sessionTone } from "@/lib/agents/model";
+import { OriginChipView } from "@/components/agents/origin-chip";
 import { compactAge, compactTokens } from "@/lib/agents/attention";
 import { AttentionQueue } from "@/components/agents/attention-queue";
 import { QuickSpawnCard } from "@/components/agents/quick-spawn-card";
@@ -243,6 +244,9 @@ function SessionRow({
             {sessionLabel(session.state)}
           </Pill>
           <Pill tone="neutral">{session.runKind}</Pill>
+          {/* Origin taint (SV0): the row already links to the session, so the
+              chip is non-linked here to avoid nesting anchors. */}
+          <OriginChipView origin={session.origin} orgSlug={orgSlug} />
         </div>
         <div className="mt-0.5 truncate text-[12px] text-muted-foreground">
           {profile ? `${profile.name} · ` : ""}

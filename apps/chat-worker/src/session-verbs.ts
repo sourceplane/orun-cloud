@@ -24,6 +24,12 @@ export interface SessionVerbDeps {
   ownerToken: string;
   http: VerbHttp;
   orgPublicId: string;
+  /** This dispatcher thread's public id (`ch_…`). Stamped on spawns so the
+   * door records a `dispatch` origin pointing back here (SV0) — the taint that
+   * makes "this thread's implementers" a fold. Absent in older callers. */
+  chatRef?: string;
+  /** Human-friendly thread label for the origin chip (thread title). */
+  chatLabel?: string;
   /** Correlation-ref source for input frames (injectable for tests). */
   newRef?: () => string;
 }
@@ -130,6 +136,10 @@ export async function executeSessionVerb(
           body: JSON.stringify({
             taskKey: input.taskKey,
             ...(typeof input.specKey === "string" && input.specKey ? { specKey: input.specKey } : {}),
+            // Origin taint (SV0): tell the door this spawn belongs to THIS
+            // dispatcher thread, so the implementer folds into this roster.
+            ...(deps.chatRef ? { dispatchRef: deps.chatRef } : {}),
+            ...(deps.chatRef && deps.chatLabel ? { dispatchLabel: deps.chatLabel } : {}),
           }),
         });
         if (!res.ok) {
