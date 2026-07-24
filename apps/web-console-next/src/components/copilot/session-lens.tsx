@@ -21,7 +21,7 @@ import type { AgentSessionEventKind } from "@saas/contracts/agents";
 import { Pill, StatusDot, type Tone } from "@/components/ui/northwind";
 import { sanitizeHarnessError } from "@/lib/agents/harness-error";
 import type { ConversationEvent } from "@/lib/agents/conversation";
-import { StreamingBubble, TranscriptRow, type TranscriptItem } from "./transcript.js";
+import { StreamingBubble, TranscriptRow, WorkingLine, type TranscriptItem } from "./transcript.js";
 
 export interface LensApproval {
   requestId: string;
@@ -326,6 +326,25 @@ export function pendingApprovals(events: ConversationEvent[]): LensApproval[] {
   return [...open.values()];
 }
 
+/** reconcilePendingSteers — drop optimistic steers the durable log has caught
+ * up on. An optimistic bubble is confirmed (and removed) once a durable
+ * `message_user` with the same text lands at a seq past the high-water mark
+ * captured when it was sent, so the same message never renders twice. Returns
+ * the same array identity when nothing changed (a stable no-op for React). */
+export function reconcilePendingSteers<T extends { text: string; sinceSeq: number }>(
+  pending: T[],
+  events: ConversationEvent[],
+): T[] {
+  if (pending.length === 0) return pending;
+  const next = pending.filter(
+    (p) =>
+      !events.some(
+        (e) => e.kind === "message_user" && (e.payload?.text as string | undefined) === p.text && e.seq > p.sinceSeq,
+      ),
+  );
+  return next.length === pending.length ? pending : next;
+}
+
 /** The lens's transport: the session AG-UI watch door over EventSource
  * (query bearer — the attach carve-out; native retry does the reconnect,
  * resuming from the folded cursor). Retained for the watch-door fold tests;
@@ -404,6 +423,8 @@ function ApprovalCard({ a, onApprove, onDeny, busy }: { a: LensApproval; onAppro
 export function SessionLens({
   live,
   events,
+  pending,
+  working,
   streaming,
   tokens,
   tierLabel,
@@ -418,6 +439,13 @@ export function SessionLens({
    * (the proven AL2 transport). This IS the transcript, live or ended, so a
    * running session's relayed log always renders. */
   events: ConversationEvent[];
+  /** Optimistic steers the viewer just sent, not yet echoed by the relay —
+   * rendered instantly so the chat feels responsive, reconciled away by the
+   * caller when the durable `message_user` lands. */
+  pending?: Array<{ id: string; text: string }>;
+  /** The agent is composing a reply (a steer is in flight or the last turn is
+   * unanswered) — shows a "working" line until the stream or reply arrives. */
+  working?: boolean;
   /** The in-progress turn's streamed delta (attach socket), live only. */
   streaming?: string;
   /** Cost so far (the session record's tokensUsed). */
@@ -433,7 +461,9 @@ export function SessionLens({
 }) {
   const items = sessionEventsToItems(events);
   const approvals = pendingApprovals(events);
+  const pendingItems = pending ?? [];
   const showStreaming = live && !!streaming;
+  const showWorking = !!working && !showStreaming;
 
   return (
     <div className="min-w-0">
@@ -454,9 +484,16 @@ export function SessionLens({
         <TranscriptRow key={it.id} it={it} />
       ))}
 
-      {showStreaming ? <StreamingBubble text={streaming!} /> : null}
+      {/* Optimistic steers — the viewer's message shows the instant they send,
+          before the relay echoes it back (modern chat responsiveness). */}
+      {pendingItems.map((p) => (
+        <TranscriptRow key={p.id} it={{ kind: "user", id: p.id, text: p.text }} />
+      ))}
 
-      {items.length === 0 && !showStreaming ? (
+      {showStreaming ? <StreamingBubble text={streaming!} /> : null}
+      {showWorking ? <WorkingLine label="The agent is working…" /> : null}
+
+      {items.length === 0 && pendingItems.length === 0 && !showStreaming && !showWorking ? (
         <p className="text-[12.5px] text-muted-foreground">
           {live
             ? emptyHint ?? "The runtime relays its session log here once the sandbox dials home."

@@ -11,6 +11,7 @@ import {
   initialLensState,
   sessionEventsToItems,
   pendingApprovals,
+  reconcilePendingSteers,
 } from "@web-console-next/components/copilot/session-lens";
 import type { ConversationEvent } from "@web-console-next/lib/agents/conversation";
 import type { AguiEvent } from "@saas/contracts/agui";
@@ -154,6 +155,30 @@ describe("sessionEventsToItems: the durable log → the shared transcript", () =
     ];
     const items = sessionEventsToItems(events);
     expect(items).toEqual([{ kind: "error", id: "h2", text: "Bash denied by tool policy" }]);
+  });
+});
+
+describe("reconcilePendingSteers: optimistic echo dedup", () => {
+  it("keeps an optimistic steer until its durable echo lands past the send watermark", () => {
+    const pending = [{ id: "opt-1", text: "list the components", sinceSeq: 4 }];
+
+    // Nothing new yet → the optimistic bubble stays (same identity, a no-op).
+    const before: ConversationEvent[] = [{ seq: 4, kind: "message_agent", payload: { text: "hi" } }];
+    expect(reconcilePendingSteers(pending, before)).toBe(pending);
+
+    // The relayed message_user lands at seq > watermark → the bubble is dropped.
+    const after: ConversationEvent[] = [
+      ...before,
+      { seq: 5, kind: "message_user", payload: { text: "list the components", principal: "usr_1" } },
+    ];
+    expect(reconcilePendingSteers(pending, after)).toEqual([]);
+  });
+
+  it("does not confirm against an OLD identical message (same text, seq at/under the watermark)", () => {
+    const pending = [{ id: "opt-2", text: "Hi", sinceSeq: 6 }];
+    // A prior "Hi" at seq 3 must not clear a freshly-sent "Hi" (watermark 6).
+    const events: ConversationEvent[] = [{ seq: 3, kind: "message_user", payload: { text: "Hi" } }];
+    expect(reconcilePendingSteers(pending, events)).toBe(pending);
   });
 });
 
