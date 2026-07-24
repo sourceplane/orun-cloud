@@ -414,3 +414,16 @@ export function facetsActive(facets: FleetFacets): boolean {
     facets.needsYou
   );
 }
+
+/**
+ * The roster panel's push-or-poll freshness bound (saas-agent-supervision SV7,
+ * responsiveness budget): a spawn/state change on this thread appears within
+ * this window even when the push transport is down. Snapshot-first paint plus
+ * this poll is the liveness discipline the panel shares with the session page.
+ * Kept ≤ the budget below so a regression that slows it is a test failure.
+ */
+export const ROSTER_REFRESH_MS = 4000;
+
+/** The responsiveness budget (SV7): the roster must refresh at least this
+ * often. `ROSTER_REFRESH_MS` must stay ≤ this. */
+export const ROSTER_FRESHNESS_BUDGET_MS = 5000;

@@ -878,6 +878,32 @@ export interface EscalationCard {
   at: string;
 }
 
+/**
+ * The foreman brief / roll-up card (design §7.3, SV7): "N running · M waiting
+ * on you · K done". EVERY numeral is the same SV1 fold the roster panel
+ * renders — one truth, never a second count. Rendered on demand ("status?")
+ * and as a proactive brief section.
+ */
+export interface RollupCard {
+  kind: "rollup";
+  chatId: string;
+  running: number;
+  needsYou: number;
+  done: number;
+  /** The one-line summary ("3 running · 1 waiting on you · 2 done"). */
+  summary: string;
+}
+
+/**
+ * Supervision metering (design §10, SV7): a supervisor turn meters as
+ * `chat.supervision.turn` (count) with token usage on the workspace's own key,
+ * distinct from a human turn's `agents.chat_tokens` — so the AF9 envelope view
+ * can split human-prompted from supervision spend before a workspace scales
+ * autonomy. BYO pays for every interface (DX6 inherited).
+ */
+export const SUPERVISION_TURN_METRIC = "chat.supervision.turn" as const;
+export const SUPERVISION_TOKENS_METRIC = "chat.supervision.tokens" as const;
+
 // ── Provider connections (AG12) ─────────────────────────────
 // BYO provider accounts: a workspace connects its own sandbox-compute account
 // (Daytona) and one or more model-provider keys (Anthropic, OpenAI,

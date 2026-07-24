@@ -22,6 +22,8 @@ import {
   presentOriginKinds,
   facetsActive,
   DEFAULT_FLEET_FACETS,
+  ROSTER_REFRESH_MS,
+  ROSTER_FRESHNESS_BUDGET_MS,
   type FleetFacets,
   type FacetContext,
 } from "@web-console-next/lib/agents/model";
@@ -261,5 +263,14 @@ describe("Implementers facets (SV4)", () => {
       sess({ id: "c", origin: { kind: "dispatch", ref: "ch_2" } }),
     ];
     expect(presentOriginKinds(sessions)).toEqual(["dispatch", "human"]);
+  });
+});
+
+describe("roster responsiveness budget (SV7)", () => {
+  it("the roster refresh interval stays within the freshness budget", () => {
+    // A regression that slows the roster's push-or-poll freshness bound past
+    // the budget fails here (the panel's actual refetchInterval reads this).
+    expect(ROSTER_REFRESH_MS).toBeLessThanOrEqual(ROSTER_FRESHNESS_BUDGET_MS);
+    expect(ROSTER_REFRESH_MS).toBeGreaterThan(0);
   });
 });

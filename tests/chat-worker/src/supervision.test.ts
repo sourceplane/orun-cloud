@@ -7,14 +7,22 @@
 import {
   WakeAccumulator,
   buildDigest,
+  buildRollup,
   escalationsFrom,
   isReflexive,
+  supervisionMeterRows,
   supervisionRunsModel,
   toDigestEntry,
   wakeKindForEvent,
   type WakeInput,
 } from "@chat-worker/supervision";
-import { DIGEST_ENTRY_CAP, type AgentOrigin } from "@saas/contracts/agents";
+import {
+  DIGEST_ENTRY_CAP,
+  SUPERVISION_TURN_METRIC,
+  SUPERVISION_TOKENS_METRIC,
+  type AgentOrigin,
+  type ChatImplementers,
+} from "@saas/contracts/agents";
 
 const ORIGIN: AgentOrigin = { kind: "dispatch", ref: "ch_1" };
 
@@ -184,5 +192,60 @@ describe("executor-agnostic supervision (SV6, design §6)", () => {
       ev({ sessionId: "as_sealed", eventKind: "approval_requested", seq: 1, payload: { tool: "deploy" } }),
     ]);
     expect(escalationsFrom(sealed)).toHaveLength(1);
+  });
+});
+
+// ── SV7: the foreman brief + metering + storm synthetic ─────────────────────
+describe("buildRollup — the foreman brief (SV7, design §7.3)", () => {
+  function roster(over: Partial<ChatImplementers>): ChatImplementers {
+    return { chatId: "ch_1", active: [], running: 0, needsYou: 0, done: 0, ...over };
+  }
+
+  it("every numeral IS the SV1 fold's — one truth, never a re-count", () => {
+    const impl = roster({ running: 3, needsYou: 1, done: 2 });
+    const card = buildRollup(impl);
+    expect(card).toMatchObject({ kind: "rollup", chatId: "ch_1", running: 3, needsYou: 1, done: 2 });
+    expect(card.summary).toBe("3 running · 1 waiting on you · 2 done");
+    // Property: the card's numerals equal the fold's, always.
+    expect([card.running, card.needsYou, card.done]).toEqual([impl.running, impl.needsYou, impl.done]);
+  });
+
+  it("drops the waiting-on-you clause when nothing needs a human", () => {
+    expect(buildRollup(roster({ running: 2, done: 5 })).summary).toBe("2 running · 5 done");
+  });
+});
+
+describe("supervisionMeterRows — the chat.supervision.turn meter (SV7, design §10)", () => {
+  it("counts one turn + its tokens, distinct from a human turn's meter", () => {
+    expect(supervisionMeterRows({ tokens: 1200 })).toEqual([
+      { metric: SUPERVISION_TURN_METRIC, quantity: 1 },
+      { metric: SUPERVISION_TOKENS_METRIC, quantity: 1200 },
+    ]);
+    expect(SUPERVISION_TURN_METRIC).toBe("chat.supervision.turn");
+  });
+
+  it("an observe-mode turn (zero tokens) still counts as one turn, no token row", () => {
+    expect(supervisionMeterRows({ tokens: 0 })).toEqual([{ metric: SUPERVISION_TURN_METRIC, quantity: 1 }]);
+    expect(supervisionMeterRows({})).toEqual([{ metric: SUPERVISION_TURN_METRIC, quantity: 1 }]);
+  });
+});
+
+describe("the storm synthetic (SV7, design §9.3)", () => {
+  it("100 wake events in a minute → ONE coalesced digest, bounded", () => {
+    const acc = new WakeAccumulator(5000);
+    const t0 = 1_000_000;
+    for (let i = 0; i < 100; i++) {
+      acc.add(
+        { sessionId: `as_${i % 4}`, origin: { kind: "dispatch", ref: "ch_1" }, eventKind: "child_completed", seq: i, at: "2026-07-24T00:00:00Z" },
+        t0 + i * 600, // 100 events spread across a minute
+      );
+    }
+    const digest = acc.drain("ch_1");
+    expect(digest.coalesced).toBe(100);
+    expect(digest.entries.length).toBe(DIGEST_ENTRY_CAP); // bounded, never a firehose
+    expect(digest.overflow).toBe(100 - DIGEST_ENTRY_CAP);
+    // The rate ceiling that bounds turns-per-window is proven in chat-thread.test
+    // (runSupervisorTurn shares the human 20/5min ceiling); together they are
+    // the storm synthetic: a burst yields ≤ ceiling turns, one digest each.
   });
 });
