@@ -21,10 +21,13 @@
 
 ## Open questions
 
-- **Q1 (IX3).** Does the org secrets list already surface `binding.connectionId`
-  so a connection's brokered secrets can be filtered client-side, or is the new
-  `GET /integrations/{connectionId}/secrets` read required? Resolve at IX3 build
-  time; record in STATUS.
+- **Q1 (IX3). RESOLVED.** `PublicSecretMetadata` carries `binding.connectionId`
+  (brokered) and `rotation.connectionId` (rotated), so a connection's produced
+  secrets are filtered client-side from the org secrets list (`secret-model.ts`
+  `connectionSecrets`). No new endpoint was needed. Limitation: the org-scope
+  list only catches org-scoped secrets; project/env-scoped brokered secrets are
+  not surfaced on the connection's Secrets tab (a later slice could add a chain
+  read).
 - **Q2 (IX2).** Repository All/Selected: is there (or should there be) a write
   path to set the installation's selected repos from the console, or does editing
   stay a "Manage on GitHub" deep link? Default: read + filter + deep link; a write
