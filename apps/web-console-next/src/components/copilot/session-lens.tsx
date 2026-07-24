@@ -177,10 +177,20 @@ export function foldLensEvent(s: LensState, e: AguiEvent): LensState {
           const text = typeof v.payload?.text === "string" ? v.payload.text : "";
           if (!text) return { ...s, cursor };
           const principal = typeof v.payload?.principal === "string" ? v.payload.principal : undefined;
+          const via = typeof v.payload?.via === "string" ? v.payload.via : undefined;
           return {
             ...s,
             cursor,
-            items: [...s.items, { kind: "user", id: `u_${e.seq ?? s.items.length}`, text, ...(principal ? { principal } : {}) }],
+            items: [
+              ...s.items,
+              {
+                kind: "user",
+                id: `u_${e.seq ?? s.items.length}`,
+                text,
+                ...(principal ? { principal } : {}),
+                ...(via ? { via } : {}),
+              },
+            ],
           };
         }
         if (kind === "message_agent") {
@@ -233,7 +243,14 @@ export function sessionEventsToItems(events: ConversationEvent[]): TranscriptIte
         break;
       case "message_user": {
         const principal = str(p, "principal");
-        items.push({ kind: "user", id, text: str(p, "text"), ...(principal ? { principal } : {}) });
+        const via = str(p, "via");
+        items.push({
+          kind: "user",
+          id,
+          text: str(p, "text"),
+          ...(principal ? { principal } : {}),
+          ...(via ? { via } : {}),
+        });
         break;
       }
       case "tool_call": {

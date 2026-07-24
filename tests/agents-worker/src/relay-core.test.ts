@@ -127,6 +127,36 @@ describe("RelayCore: the input return-queue", () => {
     expect(ack.ok).toBe(true);
   });
 
+  it("stamps a dispatcher steer with its principal, coexisting with the workspace-agent disclosure (SV2)", () => {
+    const core = new RelayCore(memStorage(), { sessionId: "as_super" });
+    // A supervisor turn's steer: the Workspace Agent's hand (via disclosure in
+    // the frame payload), authenticated as the dispatcher principal. The relay
+    // is the trust boundary — it stamps the AUTHENTICATED actor, so the sealed
+    // steer is attributed to the dispatcher sp_, never to a sleeping human.
+    const frame: AttachFrame = {
+      v: 1,
+      t: "steer",
+      ref: "in-super",
+      text: "you drifted — refocus on ORN-142",
+      payload: { via: "workspace-agent" },
+    };
+    void core.enqueueInput(frame, "sp_dispatcher");
+    const { items } = core.pollInputs(0);
+    expect(items).toHaveLength(1);
+    expect(items[0]!.payload?.principal).toBe("sp_dispatcher"); // edge-stamped actor
+    expect(items[0]!.payload?.via).toBe("workspace-agent"); // disclosure preserved
+  });
+
+  it("keeps a human-prompted steer owner-attributed (SV2 — the two contexts differ)", () => {
+    const core = new RelayCore(memStorage(), { sessionId: "as_human" });
+    // Same via disclosure (the agent's hand), but a human-prompted turn
+    // authenticates as the owner — attribution stays honest.
+    const frame: AttachFrame = { v: 1, t: "steer", ref: "in-h", text: "try again", payload: { via: "workspace-agent" } };
+    void core.enqueueInput(frame, "usr_owner");
+    const { items } = core.pollInputs(0);
+    expect(items[0]!.payload?.principal).toBe("usr_owner");
+  });
+
   it("maps a not-pending verdict ack back to the head", async () => {
     const core = new RelayCore(memStorage(), { sessionId: "as_verdict" });
     const pending = core.enqueueInput(verdictFrame("in-2", "req-1", true, "lgtm"), "usr_bob");

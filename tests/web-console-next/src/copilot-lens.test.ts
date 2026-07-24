@@ -148,6 +148,33 @@ describe("sessionEventsToItems: the durable log → the shared transcript", () =
     expect(items[3]).toMatchObject({ kind: "note", text: "State: completed" });
   });
 
+  it("carries the workspace-agent `via` disclosure so a dispatcher steer reads distinctly (SV2)", () => {
+    // A supervisor-turn steer: authored by the dispatcher principal, disclosed
+    // via workspace-agent. Both folds must surface `via` for the transcript to
+    // render "Workspace Agent · steer".
+    const durable = sessionEventsToItems([
+      { seq: 1, kind: "message_user", payload: { text: "nudge", principal: "sp_dispatcher", via: "workspace-agent" } },
+    ] as ConversationEvent[]);
+    expect(durable[0]).toMatchObject({ kind: "user", text: "nudge", principal: "sp_dispatcher", via: "workspace-agent" });
+
+    const live = fold([
+      {
+        v: 1,
+        type: "CUSTOM",
+        name: "activity",
+        seq: 1,
+        value: { kind: "message_user", payload: { text: "nudge", principal: "sp_dispatcher", via: "workspace-agent" } },
+      },
+    ]);
+    expect(live.items[0]).toMatchObject({ kind: "user", via: "workspace-agent", principal: "sp_dispatcher" });
+
+    // A plain human steer carries no `via` — it renders as a normal bubble.
+    const human = sessionEventsToItems([
+      { seq: 1, kind: "message_user", payload: { text: "hi", principal: "usr_1" } },
+    ] as ConversationEvent[]);
+    expect((human[0] as { via?: string }).via).toBeUndefined();
+  });
+
   it("sanitizes durable error events and skips approval-request rows (the sticky card owns them)", () => {
     const events: ConversationEvent[] = [
       { seq: 1, kind: "approval_requested", payload: { requestId: "apr_1", tool: "bash" } },

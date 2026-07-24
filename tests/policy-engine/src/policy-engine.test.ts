@@ -1450,3 +1450,58 @@ describe("saas-agents actions (the deny-by-default grant)", () => {
     expect(authorize(req("organization.agent.session.create", "viewer"))).toMatchObject({ allow: false });
   });
 });
+
+describe("agent_dispatcher role — the narrow supervision grant (saas-agent-supervision SV2)", () => {
+  const spSubject: PolicySubject = { type: "service_principal", id: "sp_dispatcher" };
+  const req = (action: string): AuthorizationRequest => ({
+    subject: spSubject,
+    action,
+    resource: { kind: "organization", orgId: "org_1" },
+    context: { memberships: [orgFact("agent_dispatcher", "org_1")] },
+  });
+
+  it("grants exactly the session family: read, create/spawn, interact", () => {
+    for (const action of [
+      "organization.agent.session.read",
+      "organization.agent.session.create",
+      "organization.agent.session.spawn",
+      "organization.agent.session.interact",
+    ]) {
+      expect(authorize(req(action))).toMatchObject({ allow: true });
+    }
+  });
+
+  it("cannot read settings/secrets, mutate work, or touch config — the ceiling holds", () => {
+    for (const action of [
+      "secret.read",
+      "secret.value.use",
+      "work.write",
+      "work.read",
+      "organization.config.read",
+      "organization.settings.update",
+      "organization.agent.provider.read",
+      "organization.agent.provider.write",
+      "organization.agent.autonomy.write",
+      "organization.agent.budget.write",
+      // No verdict action exists at all — approvals stay human (AN lock 5).
+      "organization.agent.session.verdict",
+    ]) {
+      const denied = authorize(req(action));
+      expect(denied.allow).toBe(false);
+    }
+  });
+
+  it("is a valid SP binding role but NOT a human-assignable role", () => {
+    // Bindable onto a service principal at org scope…
+    expect(
+      validateRoleAssignment({
+        role: "agent_dispatcher" as TenancyRole,
+        scope: { kind: "organization" as RoleScopeKind, orgId: "org_1" },
+      }),
+    ).toMatchObject({ valid: true });
+    // …but absent from the human-assignable ORGANIZATION_ROLES (asserted in the
+    // membership + web-console role-catalog suites); here we pin that the grant
+    // is scoped to session actions only, never the org-management surface.
+    expect(authorize(req("organization.member.update_role"))).toMatchObject({ allow: false });
+  });
+});

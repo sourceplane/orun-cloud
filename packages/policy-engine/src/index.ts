@@ -276,6 +276,19 @@ const ORG_ROLE_PERMISSIONS: Record<OrganizationRole, readonly string[]> = {
     "billing.read",
     "billing.manage",
   ],
+  // The dispatcher (saas-agent-supervision SV2): the narrowest grant that makes
+  // supervision possible — read rosters/logs, steer/interrupt, and spawn
+  // through the door (the ladder + AF4 gates still apply). Deliberately NO
+  // secret/config/settings/work-mutation and no verdict (none exists): a
+  // supervisor turn surfaces an approval, never resolves it (AN lock 5). A
+  // compromised supervisor turn holds only this — read + nudge, never the
+  // owner's credential.
+  agent_dispatcher: [
+    "organization.agent.session.read",
+    "organization.agent.session.create",
+    "organization.agent.session.spawn",
+    "organization.agent.session.interact",
+  ],
 };
 
 // Account-scoped role permissions (saas-workspace-id WID6 — design §8.2).
@@ -345,6 +358,10 @@ const VALID_ORG_ROLES: ReadonlySet<string> = new Set([
   "builder",
   "viewer",
   "billing_admin",
+  // SP-only (SV2): valid to BIND onto a service principal, but excluded from
+  // the human-assignable `ORGANIZATION_ROLES` (invitations, member-role
+  // updates, team grants all gate on that array), so no human can be given it.
+  "agent_dispatcher",
 ]);
 
 const VALID_PROJECT_ROLES: ReadonlySet<string> = new Set([

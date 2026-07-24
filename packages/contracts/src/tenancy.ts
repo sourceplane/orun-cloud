@@ -21,7 +21,13 @@ export type OrganizationRole =
   | "admin"
   | "builder"
   | "viewer"
-  | "billing_admin";
+  | "billing_admin"
+  // A SERVICE-PRINCIPAL-ONLY role (saas-agent-supervision SV2): the workspace's
+  // dispatcher (Workspace Agent) supervises implementers under this narrow
+  // grant — session read/interact/spawn and nothing else. Deliberately absent
+  // from `ORGANIZATION_ROLES` (the human-assignable set): it is minted onto the
+  // dispatcher's own service principal, never invited or picked in the UI.
+  | "agent_dispatcher";
 
 export type ProjectRole =
   | "project_admin"
