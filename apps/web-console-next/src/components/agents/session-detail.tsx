@@ -27,7 +27,7 @@ import { compactTokens } from "@/lib/agents/attention";
 import { humanizeDurationMs } from "@/lib/dispatch/model";
 import type { ConversationEvent } from "@/lib/agents/conversation";
 import { useAttachSocket } from "@/lib/agents/attach-socket";
-import { SessionLens } from "@/components/copilot/session-lens";
+import { SessionLens, reconcilePendingSteers } from "@/components/copilot/session-lens";
 import { Composer } from "@/components/copilot/transcript";
 
 function modelLabel(model: string): string {
@@ -212,6 +212,15 @@ export function SessionDetail({
   const reloadEvents = events.reload;
   const tail = useAttachSocket({ target: target.url, token, orgId, sessionId, live });
 
+  // The conversation = the durable DB read + everything the socket folded past
+  // it, deduped by seq. Memoized so the optimistic-steer reconcile below (and
+  // the transcript render) key off a stable identity.
+  const mergedEvents = React.useMemo<ConversationEvent[]>(() => {
+    const dbEvents = (events.data ?? []) as ConversationEvent[];
+    const maxDbSeq = dbEvents.reduce((m, e) => Math.max(m, (e as { seq?: number }).seq ?? -1), -1);
+    return [...dbEvents, ...tail.events.filter((e) => e.seq > maxDbSeq)] as ConversationEvent[];
+  }, [events.data, tail.events]);
+
   // A relayed state change (or the terminal bye) refreshes the session row —
   // the pill, the artifacts rail, and `live` itself follow the DB truth.
   const tailState = tail.sessionState;
@@ -227,6 +236,19 @@ export function SessionDetail({
   const [interacting, setInteracting] = React.useState(false);
   const [inputError, setInputError] = React.useState<string | null>(null);
   const refSeq = React.useRef(0);
+
+  // Optimistic steers (modern-chat responsiveness): the viewer's message shows
+  // the instant they hit Send, before the relay echoes the durable
+  // `message_user` back. Each carries the seq high-water mark at send time;
+  // once a matching durable event lands past it, the optimistic bubble is
+  // dropped so it never double-renders.
+  const [pendingSteers, setPendingSteers] = React.useState<Array<{ id: string; text: string; sinceSeq: number }>>([]);
+  const optSeq = React.useRef(0);
+  const maxSeqRef = React.useRef(-1);
+  React.useEffect(() => {
+    maxSeqRef.current = mergedEvents.reduce((m, e) => Math.max(m, (e as { seq?: number }).seq ?? -1), -1);
+    setPendingSteers((prev) => reconcilePendingSteers(prev, mergedEvents));
+  }, [mergedEvents]);
 
   const sendFrame = React.useCallback(
     async (frame: Record<string, unknown>): Promise<boolean> => {
@@ -256,12 +278,22 @@ export function SessionDetail({
 
   const onSteer = React.useCallback(async () => {
     const text = composer.trim();
-    if (!text) return;
-    // Clear the box ONLY on confirmed delivery. A correction that can't reach
-    // the agent must not silently vanish — that's the worst failure for a
-    // steer box (the AL7 silent-eat bug).
-    if (await sendFrame({ t: "steer", text })) setComposer("");
-  }, [composer, sendFrame]);
+    if (!text || interacting) return;
+    // Optimistic echo: the bubble and the cleared box show immediately, so the
+    // send feels instant instead of waiting on the relay round-trip.
+    optSeq.current += 1;
+    const id = `opt-${optSeq.current}`;
+    setPendingSteers((p) => [...p, { id, text, sinceSeq: maxSeqRef.current }]);
+    setComposer("");
+    const ok = await sendFrame({ t: "steer", text });
+    if (!ok) {
+      // The relay refused it — roll the bubble back and restore the text so a
+      // correction that can't reach the agent never silently vanishes (the AL7
+      // silent-eat bug); the error line already says what happened.
+      setPendingSteers((p) => p.filter((e) => e.id !== id));
+      setComposer(text);
+    }
+  }, [composer, interacting, sendFrame]);
 
   const onApproveId = React.useCallback(
     (requestId: string) => void sendFrame({ t: "verdict", requestId, approved: true }),
@@ -309,12 +341,16 @@ export function SessionDetail({
   // The conversation = the durable DB read (initial load) + everything the
   // socket folded past it, deduped by seq. A reconnect replays from the
   // cursor, so the union is gapless without ever re-fetching the log.
-  const dbEvents = (events.data ?? []) as ConversationEvent[];
-  const maxDbSeq = dbEvents.reduce((m, e) => Math.max(m, (e as { seq?: number }).seq ?? -1), -1);
-  const mergedEvents = [
-    ...dbEvents,
-    ...tail.events.filter((e) => e.seq > maxDbSeq),
-  ] as ConversationEvent[];
+  // Is the agent mid-turn? A steer in flight, an optimistic bubble not yet
+  // echoed, or a relayed user turn with no agent reply after it — any of these
+  // means "working" (until the reply streams). Drives the thinking indicator.
+  let lastUserSeq = -1;
+  let lastAgentSeq = -1;
+  for (const e of mergedEvents) {
+    if (e.kind === "message_user") lastUserSeq = Math.max(lastUserSeq, e.seq);
+    else if (e.kind === "message_agent") lastAgentSeq = Math.max(lastAgentSeq, e.seq);
+  }
+  const working = live && (interacting || pendingSteers.length > 0 || lastUserSeq > lastAgentSeq);
   const profile = (profiles.data ?? []).find((p) => p.id === s.profileId);
   const startedLabel = s.startedAt
     ? new Date(s.startedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
@@ -420,6 +456,8 @@ export function SessionDetail({
             <SessionLens
               live={live}
               events={mergedEvents}
+              pending={pendingSteers}
+              working={working}
               streaming={tail.streaming}
               tokens={s.tokensUsed ?? 0}
               tierLabel={interfaceTier(profile?.interface).label}
