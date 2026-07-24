@@ -19,7 +19,15 @@ import { Switch } from "@/components/ui/switch";
 import { Skeleton } from "@/components/ui/skeleton";
 import { EmptyState } from "@/components/ui/empty-state";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { useToast } from "@/components/ui/toast";
+import { authoringSurfaceFor } from "@/components/config/authoring-registry";
 import { wrap } from "@/lib/api";
 import { cn } from "@/lib/cn";
 import { useSession } from "@/lib/session";
@@ -701,12 +709,17 @@ function SecretsTab({
   const { toast } = useToast();
   const router = useRouter();
   const [rotating, setRotating] = React.useState<string | null>(null);
+  const [createOpen, setCreateOpen] = React.useState(false);
 
   const secrets = useApiQuery(qk.configSecrets(`org:${orgId}:all`), () =>
     wrap(async () => (await client.config.listSecretMetadata({ kind: "organization", orgId })).secrets),
   );
   const produced = connectionSecrets(secrets.data, connection.id);
   const providerName = connectionProviderName(connection);
+  // The provider's registered authoring surface (SP1) — the outcome-first
+  // wizard by default. Rendered IN PLACE so the create flow never navigates
+  // away (IH8: this connection is pre-selected + locked).
+  const AuthoringSurface = authoringSurfaceFor(connection.provider);
 
   const rotate = async (item: ConnectionSecret) => {
     setRotating(item.secret.id);
@@ -731,7 +744,7 @@ function SecretsTab({
             Orun mints these from the connection — most never touch disk.
           </p>
         </div>
-        <Button onClick={() => router.push(`/orgs/${orgSlug}/integrations/${connection.provider}?create=1`)}>
+        <Button onClick={() => setCreateOpen(true)}>
           <Plus className="h-4 w-4" aria-hidden />
           New secret
         </Button>
@@ -777,6 +790,38 @@ function SecretsTab({
           })}
         </div>
       )}
+
+      {/* Create secret — the provider's authoring surface, rendered in place so
+          the flow never navigates away (fixes the ?create=1 flicker). */}
+      <Dialog open={createOpen} onOpenChange={setCreateOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Create {providerName} secret</DialogTitle>
+            <DialogDescription>
+              Pick what you need; Orun mints it from this connection — the substrate performs the
+              governed write.
+            </DialogDescription>
+          </DialogHeader>
+          <AuthoringSurface
+            scope={{ kind: "organization", orgId }}
+            orgId={orgId}
+            enabled={createOpen}
+            mode="binding"
+            providerId={connection.provider}
+            initialConnectionId={connection.id}
+            onCancel={() => setCreateOpen(false)}
+            onCreated={() => {
+              setCreateOpen(false);
+              toast({
+                kind: "success",
+                title: "Secret created",
+                description: "It appears here and on the Secrets page like every other secret.",
+              });
+              secrets.reload();
+            }}
+          />
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
