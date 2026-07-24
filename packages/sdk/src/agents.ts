@@ -17,6 +17,7 @@ import type {
   AgentRecordsEntry,
   AgentRoutine,
   AttentionSummary,
+  ChatImplementers,
   CreateAgentProfileRequest,
   CreateAgentRoutineRequest,
   CreateAgentSessionRequest,
@@ -424,6 +425,16 @@ export class AgentsClient {
   deleteChat(orgId: string, chatId: string, opts: RequestOptions = {}): Promise<{ deleted: boolean }> {
     return this.transport.request<{ deleted: boolean }>(
       { method: "DELETE", path: `${agentsBase(orgId)}/chats/${encodeURIComponent(chatId)}` },
+      opts,
+    );
+  }
+
+  /** GET /agents/chats/:id/implementers — the roster fold (SV1): this
+   * thread's live implementers (folded by origin), each with its tier and
+   * needs-you fact, plus running/needs-you/done counts. */
+  chatImplementers(orgId: string, chatId: string, opts: RequestOptions = {}): Promise<ChatImplementers> {
+    return this.transport.request<ChatImplementers>(
+      { method: "GET", path: `${agentsBase(orgId)}/chats/${encodeURIComponent(chatId)}/implementers` },
       opts,
     );
   }

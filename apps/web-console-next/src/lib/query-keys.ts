@@ -105,6 +105,10 @@ export const qk = {
   orgAgentChats: (orgId: string) => ["orgAgentChats", orgId] as const,
   orgAgentMemory: (orgId: string) => ["orgAgentMemory", orgId] as const,
   orgAgentChat: (orgId: string, chatId: string) => ["orgAgentChat", orgId, chatId] as const,
+  /** The roster fold (saas-agent-supervision SV1): a thread's live
+   * implementers, folded by origin. */
+  orgAgentChatImplementers: (orgId: string, chatId: string) =>
+    ["orgAgentChatImplementers", orgId, chatId] as const,
   orgAgentSession: (orgId: string, sessionId: string) => ["orgAgentSession", orgId, sessionId] as const,
   orgAgentSessionEvents: (orgId: string, sessionId: string) =>
     ["orgAgentSessionEvents", orgId, sessionId] as const,
