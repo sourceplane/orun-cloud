@@ -10,7 +10,7 @@
 import * as React from "react";
 import type { RosterImplementer } from "@saas/contracts/agents";
 import { Kicker, ListCard, ListRow, Pill } from "@/components/ui/northwind";
-import { interfaceTier, sessionLabel, sessionTone } from "@/lib/agents/model";
+import { interfaceTier, sessionLabel, sessionTone, ROSTER_REFRESH_MS } from "@/lib/agents/model";
 import { compactAge, compactTokens } from "@/lib/agents/attention";
 import { qk, useApiQuery } from "@/lib/query";
 import { wrap } from "@/lib/api";
@@ -30,8 +30,9 @@ export function RosterPanel({
     qk.orgAgentChatImplementers(orgId, chatId),
     () => wrap(async () => client.agents.chatImplementers(orgId, chatId)),
     // Poll while there's anything live to watch; react-query pauses it when the
-    // tab is hidden. A spawn from this thread appears within the interval.
-    { refetchInterval: 4000 },
+    // tab is hidden. A spawn from this thread appears within the SV7
+    // responsiveness budget (ROSTER_REFRESH_MS).
+    { refetchInterval: ROSTER_REFRESH_MS },
   );
 
   const data = roster.data;

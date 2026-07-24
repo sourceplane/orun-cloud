@@ -12,11 +12,15 @@ import {
   ALWAYS_WAKE_KINDS,
   DIGEST_ENTRY_CAP,
   isTerminalSessionState,
+  SUPERVISION_TOKENS_METRIC,
+  SUPERVISION_TURN_METRIC,
   type AgentOrigin,
   type AgentSessionEventKind,
   type AgentSessionState,
+  type ChatImplementers,
   type DigestEntry,
   type EscalationCard,
+  type RollupCard,
   type SupervisionDigest,
   type SupervisionMode,
   type WakeKind,
@@ -155,6 +159,47 @@ export function buildDigest(
  * model spend); `off` is doorbell-only. */
 export function supervisionRunsModel(mode: SupervisionMode): boolean {
   return mode === "on";
+}
+
+/**
+ * buildRollup — the foreman brief (design §7.3, SV7): a pure fold of the SV1
+ * roster into the roll-up card. Every numeral IS the fold's — one truth,
+ * never a re-count. The summary line renders identically on demand ("status?")
+ * and in the proactive brief.
+ */
+export function buildRollup(impl: ChatImplementers): RollupCard {
+  const parts = [`${impl.running} running`];
+  if (impl.needsYou > 0) parts.push(`${impl.needsYou} waiting on you`);
+  parts.push(`${impl.done} done`);
+  return {
+    kind: "rollup",
+    chatId: impl.chatId,
+    running: impl.running,
+    needsYou: impl.needsYou,
+    done: impl.done,
+    summary: parts.join(" · "),
+  };
+}
+
+/** One metering row (the SDK's recordUsage shape) — kept structural so the
+ * meter is a pure fold of a supervisor turn's result, testable without I/O. */
+export interface MeterRow {
+  metric: string;
+  quantity: number;
+}
+
+/**
+ * supervisionMeterRows — a supervisor turn meters as `chat.supervision.turn`
+ * (count 1) plus its tokens on `chat.supervision.tokens` (design §10, SV7),
+ * distinct from a human turn's `agents.chat_tokens` so the AF9 envelope view
+ * can split human-prompted from supervision spend. An `observe`-mode turn (no
+ * model call) still counts as a turn but burns zero tokens.
+ */
+export function supervisionMeterRows(result: { tokens?: number }): MeterRow[] {
+  const rows: MeterRow[] = [{ metric: SUPERVISION_TURN_METRIC, quantity: 1 }];
+  const tokens = result.tokens ?? 0;
+  if (tokens > 0) rows.push({ metric: SUPERVISION_TOKENS_METRIC, quantity: tokens });
+  return rows;
 }
 
 /** The escalation cards a digest implies (§4.4) — one per approval entry. The
