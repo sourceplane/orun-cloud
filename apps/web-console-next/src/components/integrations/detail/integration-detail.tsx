@@ -35,7 +35,7 @@ import {
 import { ProviderTile } from "@/components/integrations/provider-tile";
 import { Segmented } from "@/components/integrations/segmented";
 import { ConnectionAdmission } from "@/components/integrations/connection-admission";
-import { SpaceActivity } from "@/components/integrations/space-activity";
+import { ConnectionActivity } from "@/components/integrations/detail/connection-activity";
 import {
   connectionProviderName,
   parseRevokeBlockers,
@@ -270,7 +270,7 @@ function DetailTabs({
         ) : active === "workspace-access" ? (
           <ConnectionAdmission orgId={orgId} connection={connection} onChanged={onChanged} />
         ) : active === "activity" ? (
-          <SpaceActivity orgId={orgId} connections={[connection]} showMints showDeliveries />
+          <ConnectionActivity orgId={orgId} connection={connection} />
         ) : null}
       </div>
     </div>

@@ -14,14 +14,12 @@ when its PR merges; deltas from design are recorded as dated notes.
 
 ## As-built notes
 
-- **2026-07-24 (IX5, epic complete)** — All three archetype detail bodies and the
-  hub match the mockup. The **one remaining pixel gap** is the live **Activity**
-  tab: it reuses the functional `SpaceActivity` (connection selector + mint/
-  delivery sections) rather than the mockup's single merged colored-dot timeline
-  (which the `/demo/integrations/*` pages show as the target). A merged
-  `ConnectionActivity` timeline over the existing mint + delivery reads is the
-  natural follow-up — no new backend, purely a restyle. Everything else in the
-  design is shipped.
+- **2026-07-24 (IX5 polish, #PRA)** — Closed the last pixel gap: the live
+  **Activity** tab now renders a merged, newest-first colored-dot timeline
+  (`ConnectionActivity` + pure `activity-model.ts`) over the existing mint ledger
+  + delivery reads, matching the mockup. `SpaceActivity` stays on the legacy
+  ProviderSpace. **The full design — hub + all three archetypes, every tab — is
+  now shipped and pixel-matched.**
 - **2026-07-24 (IX5)** — The generic `ProviderSpace` is superseded for connected
   providers of an implemented archetype via the shared `ProviderRoute`, but kept
   as the fallback for connect flows, unconnected providers, and unimplemented
