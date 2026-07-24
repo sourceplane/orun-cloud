@@ -14,7 +14,7 @@ when its PR merges; deltas from design are recorded as dated notes.
 
 ## As-built notes
 
-- **2026-07-24 (IX5 polish, #PRA)** — Closed the last pixel gap: the live
+- **2026-07-24 (IX5 polish, #622)** — Closed the last pixel gap: the live
   **Activity** tab now renders a merged, newest-first colored-dot timeline
   (`ConnectionActivity` + pure `activity-model.ts`) over the existing mint ledger
   + delivery reads, matching the mockup. `SpaceActivity` stays on the legacy
