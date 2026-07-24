@@ -11,7 +11,7 @@
 
 import * as React from "react";
 import { useRouter } from "next/navigation";
-import { Database, ExternalLink, Filter, GitBranch, Plus } from "lucide-react";
+import { Database, ExternalLink, Filter, GitBranch, Hash, Plus } from "lucide-react";
 import type { PublicConnection, PublicConnectionCustody } from "@saas/contracts/integrations";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -51,9 +51,11 @@ import {
   detailTabs,
   deriveArchetype,
   externalManageLink,
+  notificationRoutes,
   sharingBadge,
   toggleState,
   type CapabilityToggle,
+  type NotificationRoute,
 } from "@/components/integrations/detail-model";
 import {
   connectionSecrets,
@@ -250,6 +252,8 @@ function DetailTabs({
         {active === "overview" ? (
           archetype === "infrastructure" ? (
             <InfraOverviewTab orgId={orgId} connection={connection} custody={custody} onChanged={onChanged} onRevoked={onRevoked} />
+          ) : archetype === "messaging" ? (
+            <MessagingOverviewTab orgId={orgId} connection={connection} onRevoked={onRevoked} />
           ) : (
             <OverviewTab orgId={orgId} orgSlug={orgSlug} connection={connection} onChanged={onChanged} onRevoked={onRevoked} />
           )
@@ -259,6 +263,10 @@ function DetailTabs({
           <SecretsTab orgId={orgId} orgSlug={orgSlug} connection={connection} />
         ) : active === "projects" ? (
           <ProjectsTab custody={custody} />
+        ) : active === "channels" ? (
+          <ChannelsTab orgId={orgId} orgSlug={orgSlug} connection={connection} />
+        ) : active === "notifications" ? (
+          <NotificationsTab orgId={orgId} connection={connection} onChanged={onChanged} />
         ) : active === "workspace-access" ? (
           <ConnectionAdmission orgId={orgId} connection={connection} onChanged={onChanged} />
         ) : active === "activity" ? (
@@ -791,6 +799,200 @@ function ProjectsTab({ custody }: { custody: readonly PublicConnectionCustody[] 
           <Pill tone="success" dot className="ml-auto">
             Active
           </Pill>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Messaging archetype (Slack) — Overview · Channels · Notifications
+// ---------------------------------------------------------------------------
+
+function MessagingOverviewTab({
+  orgId,
+  connection,
+  onRevoked,
+}: {
+  orgId: string;
+  connection: PublicConnection;
+  onRevoked: () => void;
+}) {
+  const { client } = useSession();
+  const channels = useApiQuery(qk.notificationChannels(orgId), () =>
+    wrap(async () => (await client.notificationChannels.list(orgId)).notificationChannels),
+  );
+  const connected = (channels.data ?? []).filter((c) => c.kind === "slack_app");
+  const days =
+    connection.connectedAt != null
+      ? Math.max(0, Math.floor((Date.now() - new Date(connection.connectedAt).getTime()) / DAY_MS))
+      : null;
+
+  return (
+    <div className="space-y-8">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+        <StatCard
+          label="Channels"
+          value={connected.length}
+          unit="connected"
+          footer={<span className="text-muted-foreground">Receiving plan notifications.</span>}
+        />
+        <StatCard
+          label="Sharing"
+          value={connection.scope === "account" ? "Account" : "Workspace"}
+          unit="scope"
+          footer={
+            <span className="text-muted-foreground">
+              {connection.scope === "account" ? "Shared across the account." : "Private to this workspace."}
+            </span>
+          }
+        />
+        {days != null ? (
+          <StatCard
+            label="Connected"
+            value={days === 0 ? "Today" : `${days}d`}
+            unit={days === 0 ? undefined : "ago"}
+            footer={<span className="text-muted-foreground">since {authorizedDate(connection.connectedAt)}</span>}
+          />
+        ) : null}
+      </div>
+
+      {!connection.inherited ? (
+        <DangerZone orgId={orgId} orgSlug="" connection={connection} onRevoked={onRevoked} />
+      ) : null}
+    </div>
+  );
+}
+
+function ChannelsTab({
+  orgId,
+  orgSlug,
+  connection,
+}: {
+  orgId: string;
+  orgSlug: string;
+  connection: PublicConnection;
+}) {
+  const { client } = useSession();
+  const router = useRouter();
+  const channels = useApiQuery(qk.notificationChannels(orgId), () =>
+    wrap(async () => (await client.notificationChannels.list(orgId)).notificationChannels),
+  );
+  const connected = (channels.data ?? []).filter((c) => c.kind === "slack_app");
+
+  return (
+    <div>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <div className="text-[15px] font-semibold">Connected channels</div>
+          <p className="mt-1 text-[13px] text-muted-foreground">Orun can post to these channels.</p>
+        </div>
+        <Button variant="outline" onClick={() => router.push(`/orgs/${orgSlug}/settings/notifications/channels`)}>
+          Add channel
+        </Button>
+      </div>
+
+      {channels.loading ? (
+        <Skeleton className="mt-5 h-[160px] w-full rounded-xl" />
+      ) : connected.length === 0 ? (
+        <div className="mt-5 rounded-xl border border-dashed px-6 py-8 text-center text-[13px] text-muted-foreground">
+          No channels post through this workspace yet — add one to start receiving notifications.
+          <span className="hidden" aria-hidden>
+            {connection.id}
+          </span>
+        </div>
+      ) : (
+        <div className="mt-5 overflow-hidden rounded-xl border bg-card">
+          {connected.map((c, i) => (
+            <div key={c.id} className={cn("flex items-center gap-2.5 px-5 py-3.5", i > 0 && "border-t border-border/50")}>
+              <Hash className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
+              <span className="truncate text-[13.5px] font-medium">{c.name.replace(/^#/, "")}</span>
+              {i === 0 ? <span className="ml-auto shrink-0 text-[11.5px] text-muted-foreground">default</span> : null}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function NotificationsTab({
+  orgId,
+  connection,
+  onChanged,
+}: {
+  orgId: string;
+  connection: PublicConnection;
+  onChanged: () => void;
+}) {
+  const routes = notificationRoutes(connection.provider);
+  return (
+    <div>
+      <div className="text-[15px] font-semibold">Notification routing</div>
+      <p className="mt-1 text-[13px] text-muted-foreground">Choose which events post to Slack, and where.</p>
+      <div className="mt-5">
+        <RouteToggles orgId={orgId} connection={connection} routes={routes} onChanged={onChanged} />
+      </div>
+    </div>
+  );
+}
+
+function RouteToggles({
+  orgId,
+  connection,
+  routes,
+  onChanged,
+}: {
+  orgId: string;
+  connection: PublicConnection;
+  routes: readonly NotificationRoute[];
+  onChanged: () => void;
+}) {
+  const { client } = useSession();
+  const { toast } = useToast();
+  const [prefs, setPrefs] = React.useState<Record<string, boolean>>(() => {
+    const seed: Record<string, boolean> = {};
+    for (const r of routes) seed[r.id] = toggleState(r, connection.capabilityPrefs);
+    return seed;
+  });
+  React.useEffect(() => {
+    const next: Record<string, boolean> = {};
+    for (const r of routes) next[r.id] = toggleState(r, connection.capabilityPrefs);
+    setPrefs(next);
+  }, [connection.capabilityPrefs, routes]);
+  const [busy, setBusy] = React.useState<string | null>(null);
+
+  const set = async (route: NotificationRoute, next: boolean) => {
+    setBusy(route.id);
+    setPrefs((p) => ({ ...p, [route.id]: next }));
+    const r = await wrap(() =>
+      client.integrations.update(orgId, connection.id, { capabilityPrefs: { [route.id]: next } }),
+    );
+    setBusy(null);
+    if (!r.ok) {
+      setPrefs((p) => ({ ...p, [route.id]: !next }));
+      toast({ kind: "error", title: "Could not update routing", description: r.error.message });
+      return;
+    }
+    onChanged();
+  };
+
+  return (
+    <div className="overflow-hidden rounded-xl border bg-card">
+      {routes.map((route, i) => (
+        <div key={route.id} className={cn("flex items-center gap-4 px-5 py-4", i > 0 && "border-t border-border/60")}>
+          <div className="min-w-0 flex-1">
+            <div className="text-[14px] font-medium">{route.label}</div>
+            <div className="mt-0.5 text-[12.5px] text-muted-foreground">
+              {route.description} <span className="font-mono text-[11.5px]">· {route.channel}</span>
+            </div>
+          </div>
+          <Switch
+            checked={prefs[route.id] ?? route.defaultOn}
+            onCheckedChange={(v) => void set(route, v)}
+            disabled={busy === route.id}
+            aria-label={route.label}
+          />
         </div>
       ))}
     </div>
