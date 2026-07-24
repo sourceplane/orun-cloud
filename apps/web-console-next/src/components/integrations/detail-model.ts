@@ -10,6 +10,7 @@
 import type {
   IntegrationDescriptor,
   PublicConnection,
+  PublicConnectionCustody,
 } from "@saas/contracts/integrations";
 
 /** The detail archetypes; "generic" is the honest fallback for anything else. */
@@ -39,6 +40,7 @@ export function deriveArchetype(
 /** Archetypes whose detail body the console has implemented (grows per milestone). */
 export const IMPLEMENTED_ARCHETYPES: ReadonlySet<DetailArchetype> = new Set<DetailArchetype>([
   "source-control", // IX2
+  "infrastructure", // IX3
 ]);
 
 /** Whether the new tabbed detail page should render for this descriptor. */
@@ -193,6 +195,33 @@ export const GITHUB_CAPABILITY_TOGGLES: readonly CapabilityToggle[] = [
 /** The toggle catalog for a provider ([] when the archetype has none). */
 export function capabilityToggles(provider: string): readonly CapabilityToggle[] {
   return provider === "github" ? GITHUB_CAPABILITY_TOGGLES : [];
+}
+
+// ── Infrastructure archetype helpers (IX3) ────────────────────────────────
+
+/** A project/resource ref surfaced by a connection's custody (metadata only). */
+export interface CustodyProjectRef {
+  ref: string;
+  /** Custody kind the ref came from, e.g. "supabase_project_secret". */
+  kind: string;
+}
+
+/**
+ * Extract the string scope refs from a connection's custody rows — the linked
+ * projects/resources the Projects tab lists. Metadata only; never keys. Absent
+ * or non-string scopes are skipped (no fabrication).
+ */
+export function custodyProjectRefs(
+  custody: readonly PublicConnectionCustody[] | null | undefined,
+): CustodyProjectRef[] {
+  const out: CustodyProjectRef[] = [];
+  for (const row of custody ?? []) {
+    if (!Array.isArray(row.scopes)) continue;
+    for (const s of row.scopes) {
+      if (typeof s === "string" && s.length > 0) out.push({ ref: s, kind: row.kind });
+    }
+  }
+  return out;
 }
 
 /** Resolve a toggle's effective state: stored pref, else the toggle default. */

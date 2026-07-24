@@ -11,8 +11,8 @@
 
 import * as React from "react";
 import { useRouter } from "next/navigation";
-import { ExternalLink, Filter, GitBranch } from "lucide-react";
-import type { PublicConnection } from "@saas/contracts/integrations";
+import { Database, ExternalLink, Filter, GitBranch, Plus } from "lucide-react";
+import type { PublicConnection, PublicConnectionCustody } from "@saas/contracts/integrations";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
@@ -46,6 +46,7 @@ import { descriptorById } from "@/components/integrations/registry";
 import {
   authorizedDate,
   capabilityToggles,
+  custodyProjectRefs,
   detailSubtitle,
   detailTabs,
   deriveArchetype,
@@ -54,6 +55,13 @@ import {
   toggleState,
   type CapabilityToggle,
 } from "@/components/integrations/detail-model";
+import {
+  connectionSecrets,
+  producerCounts,
+  secretBadge,
+  secretMetaLine,
+  type ConnectionSecret,
+} from "@/components/integrations/secret-model";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const STATUS_TONE: Record<string, Tone> = {
@@ -93,13 +101,14 @@ export function IntegrationDetail({
     return live[0] ?? connections.find((c) => c.provider === providerId) ?? null;
   }, [connections, focusConnectionId, providerId]);
 
-  // The full connection (repositorySelection + capabilityPrefs + custody).
+  // The full connection (repositorySelection + capabilityPrefs) + custody.
   const detail = useApiQuery(
     qk.integration(orgId, target?.id ?? ""),
-    () => wrap(async () => (await client.integrations.get(orgId, target!.id)).connection),
+    () => wrap(async () => await client.integrations.get(orgId, target!.id)),
     { enabled: Boolean(target) },
   );
-  const connection = detail.data ?? target;
+  const connection = detail.data?.connection ?? target;
+  const custody = detail.data?.custody ?? [];
   const descriptor = descriptorById(registry.data, providerId);
 
   if (list.loading || (target && detail.loading && !detail.data)) {
@@ -177,6 +186,7 @@ export function IntegrationDetail({
         orgSlug={orgSlug}
         archetype={archetype}
         connection={connection}
+        custody={custody}
         onChanged={() => {
           detail.reload();
           list.reload();
@@ -196,6 +206,7 @@ function DetailTabs({
   orgSlug,
   archetype,
   connection,
+  custody,
   onChanged,
   onRevoked,
 }: {
@@ -203,6 +214,7 @@ function DetailTabs({
   orgSlug: string;
   archetype: ReturnType<typeof deriveArchetype>;
   connection: PublicConnection;
+  custody: readonly PublicConnectionCustody[];
   onChanged: () => void;
   onRevoked: () => void;
 }) {
@@ -236,9 +248,17 @@ function DetailTabs({
 
       <div className="mt-7">
         {active === "overview" ? (
-          <OverviewTab orgId={orgId} orgSlug={orgSlug} connection={connection} onChanged={onChanged} onRevoked={onRevoked} />
+          archetype === "infrastructure" ? (
+            <InfraOverviewTab orgId={orgId} connection={connection} custody={custody} onChanged={onChanged} onRevoked={onRevoked} />
+          ) : (
+            <OverviewTab orgId={orgId} orgSlug={orgSlug} connection={connection} onChanged={onChanged} onRevoked={onRevoked} />
+          )
         ) : active === "repositories" ? (
           <RepositoriesTab orgId={orgId} connection={connection} />
+        ) : active === "secrets" ? (
+          <SecretsTab orgId={orgId} orgSlug={orgSlug} connection={connection} />
+        ) : active === "projects" ? (
+          <ProjectsTab custody={custody} />
         ) : active === "workspace-access" ? (
           <ConnectionAdmission orgId={orgId} connection={connection} onChanged={onChanged} />
         ) : active === "activity" ? (
@@ -567,6 +587,212 @@ function RepositoriesTab({ orgId, connection }: { orgId: string; connection: Pub
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Infrastructure archetype (Supabase / Cloudflare) — Overview · Secrets · Projects
+// ---------------------------------------------------------------------------
+
+function InfraOverviewTab({
+  orgId,
+  connection,
+  custody,
+  onChanged,
+  onRevoked,
+}: {
+  orgId: string;
+  connection: PublicConnection;
+  custody: readonly PublicConnectionCustody[];
+  onChanged: () => void;
+  onRevoked: () => void;
+}) {
+  const { client } = useSession();
+  const secrets = useApiQuery(qk.configSecrets(`org:${orgId}:all`), () =>
+    wrap(async () => (await client.config.listSecretMetadata({ kind: "organization", orgId })).secrets),
+  );
+  const caps = useApiQuery(qk.secretsCapabilities(orgId), () =>
+    wrap(async () => (await client.integrations.listSecretsCapabilities(orgId)).capabilities),
+  );
+
+  const produced = connectionSecrets(secrets.data, connection.id);
+  const counts = producerCounts(produced);
+  const projects = custodyProjectRefs(custody);
+  const capability = (caps.data ?? []).find((c) => c.provider === connection.provider);
+  const templates = capability?.scopeTemplates ?? [];
+  const days =
+    connection.connectedAt != null
+      ? Math.max(0, Math.floor((Date.now() - new Date(connection.connectedAt).getTime()) / DAY_MS))
+      : null;
+
+  return (
+    <div className="space-y-8">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+        <StatCard
+          label="Projects"
+          value={projects.length}
+          unit="linked"
+          footer={<span className="text-muted-foreground">Resources this connection custodies.</span>}
+        />
+        <StatCard
+          label="Managed secrets"
+          value={counts.total}
+          unit={counts.total === 1 ? "secret" : "secrets"}
+          footer={
+            <span className="text-muted-foreground">
+              Minted from this connection{counts.rotated > 0 ? ` · ${counts.brokered} brokered · ${counts.rotated} rotated` : ""}.
+            </span>
+          }
+        />
+        {days != null ? (
+          <StatCard
+            label="Connected"
+            value={days === 0 ? "Today" : `${days}d`}
+            unit={days === 0 ? undefined : "ago"}
+            footer={<span className="text-muted-foreground">since {authorizedDate(connection.connectedAt)}</span>}
+          />
+        ) : null}
+      </div>
+
+      {templates.length > 0 ? (
+        <section>
+          <Kicker className="mb-3">What Orun can broker</Kicker>
+          <div className="overflow-hidden rounded-xl border bg-card">
+            {templates.map((t, i) => (
+              <div key={t.id} className={cn("px-5 py-4", i > 0 && "border-t border-border/60")}>
+                <div className="text-[14px] font-medium">{t.displayName}</div>
+                <div className="mt-0.5 text-[12.5px] leading-relaxed text-muted-foreground">{t.description}</div>
+              </div>
+            ))}
+          </div>
+        </section>
+      ) : caps.loading ? (
+        <Skeleton className="h-[140px] w-full rounded-xl" />
+      ) : null}
+
+      {!connection.inherited ? (
+        <DangerZone orgId={orgId} orgSlug="" connection={connection} onRevoked={onRevoked} />
+      ) : null}
+      {/* onChanged reserved for future in-place edits on this tab. */}
+      <span className="hidden" aria-hidden data-changed={String(Boolean(onChanged))} />
+    </div>
+  );
+}
+
+function SecretsTab({
+  orgId,
+  orgSlug,
+  connection,
+}: {
+  orgId: string;
+  orgSlug: string;
+  connection: PublicConnection;
+}) {
+  const { client } = useSession();
+  const { toast } = useToast();
+  const router = useRouter();
+  const [rotating, setRotating] = React.useState<string | null>(null);
+
+  const secrets = useApiQuery(qk.configSecrets(`org:${orgId}:all`), () =>
+    wrap(async () => (await client.config.listSecretMetadata({ kind: "organization", orgId })).secrets),
+  );
+  const produced = connectionSecrets(secrets.data, connection.id);
+  const providerName = connectionProviderName(connection);
+
+  const rotate = async (item: ConnectionSecret) => {
+    setRotating(item.secret.id);
+    const r = await wrap(() =>
+      client.config.rotateScopedCredential({ kind: "organization", orgId }, item.secret.id, {}),
+    );
+    setRotating(null);
+    if (!r.ok) {
+      toast({ kind: "error", title: "Rotate failed", description: r.error.message });
+      return;
+    }
+    toast({ kind: "success", title: `${item.secret.secretKey} rotated` });
+    secrets.reload();
+  };
+
+  return (
+    <div>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <div className="text-[15px] font-semibold">Secrets brokered from {providerName}</div>
+          <p className="mt-1 text-[13px] text-muted-foreground">
+            Orun mints these from the connection — most never touch disk.
+          </p>
+        </div>
+        <Button onClick={() => router.push(`/orgs/${orgSlug}/integrations/${connection.provider}?create=1`)}>
+          <Plus className="h-4 w-4" aria-hidden />
+          New secret
+        </Button>
+      </div>
+
+      {secrets.loading ? (
+        <Skeleton className="mt-5 h-[160px] w-full rounded-xl" />
+      ) : produced.length === 0 ? (
+        <div className="mt-5 rounded-xl border border-dashed px-6 py-8 text-center">
+          <div className="text-[13.5px] font-medium">No secrets brokered yet</div>
+          <p className="mx-auto mt-1 max-w-md text-[12.5px] leading-relaxed text-muted-foreground">
+            Create a secret and Orun will mint it from this connection per run — no long-lived credential is stored.
+          </p>
+        </div>
+      ) : (
+        <div className="mt-5 overflow-hidden rounded-xl border bg-card">
+          {produced.map((item, i) => {
+            const badge = secretBadge(item);
+            return (
+              <div key={item.secret.id} className={cn("flex flex-wrap items-center gap-3 px-5 py-4", i > 0 && "border-t border-border/60")}>
+                <div className="min-w-0 flex-1">
+                  <div className="font-mono text-[13px] font-semibold">{item.secret.secretKey}</div>
+                  <div className="mt-1 text-[12px] text-muted-foreground">
+                    {secretMetaLine(item)}
+                    {item.secret.scopeKind ? <> · {item.secret.scopeKind}</> : null}
+                    {item.mode === "rotated" ? <> · stored encrypted</> : <> · ≤ 1h</>}
+                  </div>
+                </div>
+                <Pill tone={badge.tone} dot>
+                  {badge.label}
+                </Pill>
+                {item.mode === "rotated" ? (
+                  <Button variant="outline" size="sm" disabled={rotating === item.secret.id} onClick={() => void rotate(item)}>
+                    {rotating === item.secret.id ? "Rotating…" : "Rotate now"}
+                  </Button>
+                ) : (
+                  <Button variant="outline" size="sm" onClick={() => router.push(`/orgs/${orgSlug}/settings/secrets`)}>
+                    Manage
+                  </Button>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ProjectsTab({ custody }: { custody: readonly PublicConnectionCustody[] }) {
+  const projects = custodyProjectRefs(custody);
+  if (projects.length === 0) {
+    return (
+      <div className="rounded-xl border border-dashed px-6 py-8 text-center text-[13px] text-muted-foreground">
+        No linked projects on record for this connection yet.
+      </div>
+    );
+  }
+  return (
+    <div className="overflow-hidden rounded-xl border bg-card">
+      {projects.map((p, i) => (
+        <div key={`${p.ref}-${i}`} className={cn("flex items-center gap-3 px-5 py-3.5", i > 0 && "border-t border-border/50")}>
+          <Database className="h-4 w-4 shrink-0 text-muted-foreground" strokeWidth={1.8} aria-hidden />
+          <span className="truncate font-mono text-[12.5px]">{p.ref}</span>
+          <Pill tone="success" dot className="ml-auto">
+            Active
+          </Pill>
+        </div>
+      ))}
     </div>
   );
 }

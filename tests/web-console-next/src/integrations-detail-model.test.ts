@@ -70,12 +70,13 @@ describe("deriveArchetype — capabilities first, category as backstop", () => {
     expect(deriveArchetype(descriptor({ category: "source-control", capabilities: ["messaging"] }))).toBe("messaging");
   });
 
-  it("hasArchetypeDetail is true only for implemented archetypes (source-control in IX2)", () => {
+  it("hasArchetypeDetail is true only for implemented archetypes (source-control + infrastructure)", () => {
     expect(hasArchetypeDetail(descriptor({ capabilities: ["scm"] }))).toBe(true);
-    expect(hasArchetypeDetail(descriptor({ category: "messaging", capabilities: ["messaging"] }))).toBe(false);
     expect(
       hasArchetypeDetail(descriptor({ category: "infrastructure", capabilities: ["credential-broker"] })),
-    ).toBe(false);
+    ).toBe(true); // IX3
+    // messaging body lands in IX4.
+    expect(hasArchetypeDetail(descriptor({ category: "messaging", capabilities: ["messaging"] }))).toBe(false);
   });
 });
 
