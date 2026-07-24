@@ -63,6 +63,10 @@ export function AgentsWorkbench({ orgId, orgSlug }: { orgId: string; orgSlug: st
         records: recordRows,
       };
     }),
+    // Keep the fleet live: a newly-spawned session and its state transitions
+    // (requested → provisioning → running → terminal) appear without a manual
+    // refresh. Paused automatically while the tab is backgrounded.
+    { refetchInterval: 5000 },
   );
 
   const [profileOpen, setProfileOpen] = React.useState(false);

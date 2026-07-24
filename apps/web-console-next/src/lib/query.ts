@@ -35,7 +35,7 @@ export interface AsyncState<T> {
 export function useApiQuery<T>(
   key: QueryKey,
   fn: () => Promise<ApiResult<T>>,
-  opts?: { enabled?: boolean; staleTime?: number },
+  opts?: { enabled?: boolean; staleTime?: number; refetchInterval?: number | false },
 ): AsyncState<T> {
   const qc = useQueryClient();
   const enabled = opts?.enabled ?? true;
@@ -50,6 +50,10 @@ export function useApiQuery<T>(
     // Content-addressed reads (doc bodies by digest) are immutable — callers
     // pass Infinity so a rendered doc never refetches (CD4).
     ...(opts?.staleTime !== undefined ? { staleTime: opts.staleTime } : {}),
+    // Background poll for live surfaces (the fleet list, a running session) so
+    // status changes land without a manual refresh; react-query pauses it when
+    // the tab is backgrounded (refetchIntervalInBackground defaults false).
+    ...(opts?.refetchInterval !== undefined ? { refetchInterval: opts.refetchInterval } : {}),
   });
 
   return {

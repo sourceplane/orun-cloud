@@ -229,6 +229,29 @@ export function SessionDetail({
     if (tailState || tailEnded) reloadSession();
   }, [tailState, tailEnded, reloadSession]);
 
+  // Liveness safety net (AN2 hardening). The attach socket pushes instant
+  // updates when it can establish — but control-plane transitions
+  // (requested → provisioning → running) ride the DB, NOT the runtime stream,
+  // and some networks eat the WS/SSE upgrade entirely, so nothing lands until a
+  // manual refresh. While the session is live, poll the session row and the
+  // event log every few seconds so the state pill, the cost, and the
+  // conversation stay current with no refresh; the socket still delivers
+  // instant token streaming when it's available. Refs keep the interval stable
+  // across renders; a hidden tab pauses to spare the API.
+  const reloadSessionRef = React.useRef(reloadSession);
+  reloadSessionRef.current = reloadSession;
+  const reloadEventsRef = React.useRef(reloadEvents);
+  reloadEventsRef.current = reloadEvents;
+  React.useEffect(() => {
+    if (!live) return;
+    const id = setInterval(() => {
+      if (typeof document !== "undefined" && document.visibilityState === "hidden") return;
+      reloadSessionRef.current();
+      reloadEventsRef.current();
+    }, 2500);
+    return () => clearInterval(id);
+  }, [live]);
+
   // ── Interactivity (AL7): steer + answer approvals over the relay input
   // route. A fresh ref per send correlates the ack; on success we reload the
   // event feed so the attributed message_user / approval_resolved appears.
