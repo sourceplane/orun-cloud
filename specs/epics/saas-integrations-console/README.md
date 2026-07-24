@@ -4,7 +4,7 @@
 
 | Field | Value |
 |-------|-------|
-| Status | Draft (IX1 in progress) |
+| Status | ✅ Shipped (IX1–IX5) |
 | Cluster | **IX** (Integrations eXperience — console layer over **IR** + **IH** + **IT** + **SP**) |
 | Owner(s) | web-console-next, packages/{contracts,sdk}, integrations-worker |
 | Target branch | `main` |

@@ -23,7 +23,7 @@ import {
 } from "@/components/ui/northwind";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { ConnectedRow, ProviderCard } from "@/components/integrations/integrations-hub";
+import { ConnectedRow, ConnectPicker, ProviderCard } from "@/components/integrations/integrations-hub";
 
 function mockDescriptor(overrides: Partial<IntegrationDescriptor>): IntegrationDescriptor {
   return {
@@ -76,6 +76,7 @@ const AVAILABLE: Array<{ descriptor: IntegrationDescriptor; state: "available" |
 export default function DemoIntegrationsPage() {
   const [status, setStatus] = React.useState<"all" | "connected" | "available">("all");
   const [category, setCategory] = React.useState<string | null>(null);
+  const [pickerOpen, setPickerOpen] = React.useState(false);
   const noop = () => {};
   return (
     <div className="min-h-screen bg-background">
@@ -92,7 +93,7 @@ export default function DemoIntegrationsPage() {
                 />
                 <Input placeholder="Search integrations" aria-label="Search integrations" className="h-9 w-[230px] pl-9" />
               </div>
-              <Button>
+              <Button onClick={() => setPickerOpen(true)}>
                 <Plus className="h-4 w-4" aria-hidden />
                 Connect
               </Button>
@@ -186,6 +187,17 @@ export default function DemoIntegrationsPage() {
             </p>
           </div>
         </section>
+
+        <ConnectPicker
+          open={pickerOpen}
+          onOpenChange={setPickerOpen}
+          descriptors={AVAILABLE.map((a) => a.descriptor)}
+          connections={[]}
+          loading={false}
+          connectingProvider={null}
+          onConnect={() => setPickerOpen(false)}
+          onUpgrade={() => setPickerOpen(false)}
+        />
       </Screen>
     </div>
   );

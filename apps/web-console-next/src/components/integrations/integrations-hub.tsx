@@ -39,11 +39,19 @@ import {
 import type {
   IntegrationCategory,
   IntegrationDescriptor,
+  PublicConnection,
 } from "@saas/contracts/integrations";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Skeleton } from "@/components/ui/skeleton";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { PreconditionInsight } from "@/components/precondition/insight";
 import { useToast } from "@/components/ui/toast";
 import { wrap, type ApiErrorBody } from "@/lib/api";
@@ -73,6 +81,7 @@ import {
   cardState,
   connectDispatch,
   descriptorById,
+  groupByCategory,
   providerIconName,
 } from "@/components/integrations/registry";
 import {
@@ -138,6 +147,7 @@ export function IntegrationsHub({ orgId, orgSlug }: { orgId: string; orgSlug: st
   const [statusFilter, setStatusFilter] = React.useState<HubStatusFilter>("all");
   const [categoryFilter, setCategoryFilter] = React.useState<IntegrationCategory | null>(null);
   const [query, setQuery] = React.useState("");
+  const [pickerOpen, setPickerOpen] = React.useState(false);
   const [connectingProvider, setConnectingProvider] = React.useState<string | null>(null);
   const [gateError, setGateError] = React.useState<ApiErrorBody | null>(null);
   const pollUntil = React.useRef<number>(0);
@@ -285,13 +295,7 @@ export function IntegrationsHub({ orgId, orgSlug }: { orgId: string; orgSlug: st
                 className="h-9 w-[230px] pl-9"
               />
             </div>
-            <Button
-              onClick={() => {
-                setStatusFilter("available");
-                setCategoryFilter(null);
-              }}
-              disabled={registryQuery.loading}
-            >
+            <Button onClick={() => setPickerOpen(true)} disabled={registryQuery.loading}>
               <Plus className="h-4 w-4" aria-hidden />
               Connect
             </Button>
@@ -442,6 +446,23 @@ export function IntegrationsHub({ orgId, orgSlug }: { orgId: string; orgSlug: st
           </div>
         </section>
       ) : null}
+
+      <ConnectPicker
+        open={pickerOpen}
+        onOpenChange={setPickerOpen}
+        descriptors={registry}
+        connections={connections}
+        loading={registryQuery.loading}
+        connectingProvider={connectingProvider}
+        onConnect={(d) => {
+          setPickerOpen(false);
+          void connect(d);
+        }}
+        onUpgrade={() => {
+          setPickerOpen(false);
+          router.push(`/orgs/${orgSlug}/settings/billing`);
+        }}
+      />
     </Screen>
   );
 }
@@ -545,5 +566,112 @@ export function ProviderCard({
           : descriptor.tagline}
       </p>
     </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Connect picker (IX5) — the global "+ Connect" dialog. A registry-driven
+// provider picker: lists every connectable provider (available/locked/
+// configure) grouped by category, with a search. Clicking dispatches the same
+// connect() the cards use (popup+poll or the provider space's flow).
+// ---------------------------------------------------------------------------
+
+export function ConnectPicker({
+  open,
+  onOpenChange,
+  descriptors,
+  connections,
+  loading,
+  connectingProvider,
+  onConnect,
+  onUpgrade,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  descriptors: readonly IntegrationDescriptor[];
+  connections: readonly PublicConnection[];
+  loading: boolean;
+  connectingProvider: string | null;
+  onConnect: (descriptor: IntegrationDescriptor) => void;
+  onUpgrade: () => void;
+}) {
+  const [q, setQ] = React.useState("");
+  React.useEffect(() => {
+    if (!open) setQ("");
+  }, [open]);
+
+  const connectable = descriptors.filter((d) => {
+    const state = cardState(d, connections);
+    if (!(state === "available" || state === "locked" || state === "configure")) return false;
+    return matchesSearch(d, q, CATEGORY_LABELS[d.category]);
+  });
+  const groups = groupByCategory(connectable);
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-lg">
+        <DialogHeader>
+          <DialogTitle>Connect an integration</DialogTitle>
+          <DialogDescription>
+            Pick a provider — Orun acts on it without storing your credentials.
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="relative">
+          <Search aria-hidden className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search providers" aria-label="Search providers" className="h-9 pl-9" autoFocus />
+        </div>
+
+        <div className="mt-1 max-h-[52vh] space-y-4 overflow-y-auto">
+          {loading ? (
+            <Skeleton className="h-24 w-full rounded-xl" />
+          ) : groups.length === 0 ? (
+            <div className="px-1 py-6 text-center text-[13px] text-muted-foreground">
+              {q ? "No providers match." : "Everything available is already connected."}
+            </div>
+          ) : (
+            groups.map((group) => (
+              <div key={group.category}>
+                <Kicker className="mb-2">{group.label}</Kicker>
+                <div className="space-y-1.5">
+                  {group.items.map((d) => {
+                    const state = cardState(d, connections);
+                    const Icon = ICONS[providerIconName(d)] ?? Plug;
+                    return (
+                      <div key={d.id} className="flex items-center gap-3 rounded-lg border bg-card px-3.5 py-2.5">
+                        <Icon className="h-[18px] w-[18px] shrink-0 text-secondary-foreground" strokeWidth={1.8} aria-hidden />
+                        <div className="min-w-0 flex-1">
+                          <div className="text-[13.5px] font-semibold">{d.displayName}</div>
+                          <div className="truncate text-[12px] text-muted-foreground">{d.tagline}</div>
+                        </div>
+                        {state === "locked" ? (
+                          <Button variant="outline" size="sm" className="shrink-0" onClick={onUpgrade}>
+                            Upgrade
+                          </Button>
+                        ) : state === "configure" ? (
+                          <span className="shrink-0 rounded-[10px] border border-border px-2 py-0.5 text-[10.5px] font-semibold uppercase tracking-[.07em] text-muted-foreground">
+                            Not configured
+                          </span>
+                        ) : (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="shrink-0"
+                            disabled={connectingProvider !== null}
+                            onClick={() => onConnect(d)}
+                          >
+                            {connectingProvider === d.id ? "Waiting…" : "Connect"}
+                          </Button>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+      </DialogContent>
+    </Dialog>
   );
 }
