@@ -18,6 +18,7 @@ import type {
   AgentRoutine,
   AttentionSummary,
   ChatImplementers,
+  ControlState,
   CreateAgentProfileRequest,
   CreateAgentRoutineRequest,
   CreateAgentSessionRequest,
@@ -203,6 +204,38 @@ export class AgentsClient {
       { method: "POST", path: `${agentsBase(orgId)}/sessions/${encodeURIComponent(sessionId)}/input`, body: frame },
       opts,
     );
+  }
+
+  /**
+   * POST /agents/sessions/:id/control — take or return the wheel (SV5). Take
+   * control means the dispatcher observes only until you Return; the holding
+   * principal is stamped from the caller's bearer at the edge. Returns the
+   * resulting control state (or null when unheld).
+   */
+  setControl(
+    orgId: string,
+    sessionId: string,
+    action: "take" | "return",
+    opts: RequestOptions = {},
+  ): Promise<{ ok: boolean; control: ControlState | null }> {
+    return this.transport.request(
+      {
+        method: "POST",
+        path: `${agentsBase(orgId)}/sessions/${encodeURIComponent(sessionId)}/control`,
+        body: { action },
+      },
+      opts,
+    );
+  }
+
+  /** Take control of a live session (SV5) — the dispatcher observes only. */
+  takeControl(orgId: string, sessionId: string, opts: RequestOptions = {}) {
+    return this.setControl(orgId, sessionId, "take", opts);
+  }
+
+  /** Return control of a live session (SV5) — supervision resumes. */
+  returnControl(orgId: string, sessionId: string, opts: RequestOptions = {}) {
+    return this.setControl(orgId, sessionId, "return", opts);
   }
 
   // ── The attention plane (saas-agents-fleet AF5) ─────────────

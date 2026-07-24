@@ -95,6 +95,9 @@ function makeIntegrationsMirror(): {
         externalAccountLogin: null,
         externalAccountId: null,
         externalAccountType: null,
+        // IR/IX: capability preferences (added by migration 930); a fresh row
+        // carries none until the connection's space sets them.
+        capabilityPrefs: null,
         createdBy: input.createdBy ?? null,
         stateExpiresAt: null,
         connectedAt: null,

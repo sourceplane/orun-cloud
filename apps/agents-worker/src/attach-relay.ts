@@ -123,6 +123,13 @@ export class AttachRelay extends Agent<Env> {
     return this.shell.headInput(frame, principal);
   }
 
+  /** control (SV5): take or return the wheel on behalf of the resolved
+   * principal. Returns the resulting control state. */
+  async control(action: string, principal: string): Promise<unknown> {
+    await this.ensureLoaded();
+    return this.shell.control(action, principal);
+  }
+
   // ── Lifecycle in the object (AN3): timers, not authority ─────────────────
 
   /** armLease (re)arms the lease-lapse timer — called on every heartbeat, so

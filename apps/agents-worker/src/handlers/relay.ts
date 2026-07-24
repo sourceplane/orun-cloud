@@ -127,6 +127,31 @@ export async function handleHeadInput(
   return Response.json(await peer.rpc.headInput(frame, principal));
 }
 
+/** POST …/control — take or return the wheel (SV5). Requires interact; the
+ * holding principal is the resolved actor, never the body. */
+export async function handleControl(
+  request: Request,
+  env: Env,
+  deps: AgentsDeps,
+  orgId: string,
+  sessionId: string,
+  actor: ActorContext,
+  requestId: string,
+): Promise<Response> {
+  if (!(await deps.authorize("organization.agent.session.interact", orgId, actor, requestId))) {
+    return errorResponse("forbidden", "Not authorized", 403, requestId);
+  }
+  const session = await deps.repo.getSession({ orgId }, sessionId);
+  if (!session) return errorResponse("not_found", "Session not found", 404, requestId);
+  const body = (await request.json().catch(() => ({}))) as { action?: string };
+  const action = body.action === "take" || body.action === "return" ? body.action : undefined;
+  if (!action) return errorResponse("validation_failed", "action must be take|return", 422, requestId);
+  const peer = relayPeerFor(env, sessionId);
+  if (!peer) return errorResponse("unavailable", "Relay not configured", 503, requestId);
+  const principal = actor.subjectId || "unknown";
+  return Response.json(await peer.rpc.control(action, principal));
+}
+
 // ── Body-facing (the in-sandbox runtime) ────────────────────
 // Same three-way session gate as heartbeat/events (runtime.ts): the caller must
 // BE this session's service principal, presenting a token minted for THIS

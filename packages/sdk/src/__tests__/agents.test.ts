@@ -102,6 +102,17 @@ describe("agents resource", () => {
     expect(calls[0]!.init.method).toBe("GET");
   });
 
+  it("takes and returns control of a session (saas-agent-supervision SV5)", async () => {
+    const { fetch: f, calls } = captureFetch({ ok: true, control: null });
+    const c = client(f);
+    await c.agents.takeControl("org_x", "as_1");
+    await c.agents.returnControl("org_x", "as_1");
+    expect(calls[0]!.url).toContain("/v1/organizations/org_x/agents/sessions/as_1/control");
+    expect(calls[0]!.init.method).toBe("POST");
+    expect(JSON.parse(String(calls[0]!.init.body))).toEqual({ action: "take" });
+    expect(JSON.parse(String(calls[1]!.init.body))).toEqual({ action: "return" });
+  });
+
   it("reads a thread's implementer roster fold (saas-agent-supervision SV1)", async () => {
     const { fetch: f, calls } = captureFetch({ chatId: "ch_1", active: [], running: 0, needsYou: 0, done: 0 });
     const c = client(f);

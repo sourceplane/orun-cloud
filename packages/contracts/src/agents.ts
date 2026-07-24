@@ -265,6 +265,13 @@ export const AGENT_SESSION_EVENT_KINDS = [
   "child_spawned",
   "child_completed",
   "child_failed",
+  // Takeover (saas-agent-supervision SV5): control is a presence-adjacent fact,
+  // sealed like everything else — the takeover story is part of the run's
+  // record. RELAY-authored (the relay decides implicit windows), unlike the
+  // runtime-emitted kinds above. `control_taken {principal, mode}` /
+  // `control_returned {principal, reason}`.
+  "control_taken",
+  "control_returned",
 ] as const;
 export type AgentSessionEventKind =
   (typeof AGENT_SESSION_EVENT_KINDS)[number];
@@ -699,6 +706,41 @@ export interface RosterImplementer {
   /** The needs-you fact (AF6) when this implementer is waiting on a human —
    * the SAME fold the attention plane renders (one truth), or absent. */
   needsYou?: AttentionItem;
+  /** Takeover (SV5): present while a HUMAN holds control — the roster card
+   * shows "human at the wheel" and the dispatcher observes only. */
+  control?: ControlState;
+}
+
+// ── Takeover / the control protocol (saas-agent-supervision SV5) ────
+// Control is a per-implementer, presence-adjacent fact: unheld, or held by a
+// principal. While a human holds it the dispatcher OBSERVES ONLY — steer /
+// interrupt from the dispatcher principal are refused AT THE RELAY (server-
+// enforced, not model-politeness). Enforcement + the sliding window live in
+// the relay input route; these are the shapes the wire + console read.
+
+export const CONTROL_MODES = ["explicit", "implicit"] as const;
+export type ControlMode = (typeof CONTROL_MODES)[number];
+
+/**
+ * Who holds an implementer's wheel. `explicit` = a human pressed Take control
+ * (no expiry — held until Return, terminal, or a new explicit take). `implicit`
+ * = a human steer implied it, for a sliding window (`expiresAt`, refreshed by
+ * further human input).
+ */
+export interface ControlState {
+  principal: string;
+  mode: ControlMode;
+  /** ISO instant the implicit window lapses; absent for explicit holds. */
+  expiresAt?: string;
+}
+
+/** The implicit-control sliding window (design §5): a human steer implies
+ * control for this long, refreshed by further human input. */
+export const IMPLICIT_CONTROL_WINDOW_MS = 10 * 60 * 1000;
+
+/** POST …/sessions/:id/control — take or return the wheel (a human act). */
+export interface ControlActionRequest {
+  action: "take" | "return";
 }
 
 /** GET /v1/organizations/{orgId}/agents/chats/{chatId}/implementers */

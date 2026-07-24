@@ -28,6 +28,8 @@ export interface AttachRelayRpc {
   pollInputs(cursor: number): Promise<{ items: unknown[]; cursor: number }>;
   ackInput(ack: unknown): Promise<void>;
   headInput(frame: unknown, principal: string): Promise<unknown>;
+  /** Takeover (SV5): take/return the wheel on behalf of the resolved principal. */
+  control(action: string, principal: string): Promise<unknown>;
   armLease(orgId: string, leaseExpiresAt: string): Promise<void>;
 }
 

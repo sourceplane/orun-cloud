@@ -19,6 +19,7 @@ import {
   handleAttach,
   handleAguiWatch,
   handleBodyWire,
+  handleControl,
   handleHeadInput,
   handleRelayAck,
   handleRelayPollInputs,
@@ -106,6 +107,8 @@ const SESSION_TOKEN_RE = /^\/v1\/organizations\/([^/]+)\/agents\/sessions\/([^/]
 const SESSION_ATTACH_RE = /^\/v1\/organizations\/([^/]+)\/agents\/sessions\/([^/]+)\/attach$/;
 const SESSION_AGUI_WATCH_RE = /^\/v1\/organizations\/([^/]+)\/agents\/sessions\/([^/]+)\/agui\/watch$/;
 const SESSION_INPUT_RE = /^\/v1\/organizations\/([^/]+)\/agents\/sessions\/([^/]+)\/input$/;
+// Takeover (saas-agent-supervision SV5): take/return the wheel.
+const SESSION_CONTROL_RE = /^\/v1\/organizations\/([^/]+)\/agents\/sessions\/([^/]+)\/control$/;
 // Body-facing relay routes (#466): the in-sandbox runtime's live wire — a
 // wire-only delta fan-out and the head→body steer return-queue (long-poll +
 // ack). Session-actor gated like heartbeat/events.
@@ -159,6 +162,7 @@ export async function route(request: Request, env: Env, injectedDeps?: AgentsDep
       SESSION_ATTACH_RE.test(url.pathname) ||
       SESSION_AGUI_WATCH_RE.test(url.pathname) ||
       SESSION_INPUT_RE.test(url.pathname) ||
+      SESSION_CONTROL_RE.test(url.pathname) ||
       SESSION_STREAM_RE.test(url.pathname) ||
       SESSION_WIRE_RE.test(url.pathname) ||
       SESSION_INPUTS_RE.test(url.pathname) ||
@@ -410,6 +414,15 @@ async function dispatch(
     if (!orgId) return notFound(requestId, url.pathname);
     const sessionId = m[2]!;
     if (request.method === "POST") return handleHeadInput(request, env, deps, orgId, sessionId, actor, requestId);
+    return methodNotAllowed(requestId);
+  }
+
+  m = SESSION_CONTROL_RE.exec(url.pathname);
+  if (m) {
+    const orgId = parseOrgPublicId(m[1]!);
+    if (!orgId) return notFound(requestId, url.pathname);
+    const sessionId = m[2]!;
+    if (request.method === "POST") return handleControl(request, env, deps, orgId, sessionId, actor, requestId);
     return methodNotAllowed(requestId);
   }
 

@@ -51,6 +51,11 @@ export const ATTACH_ACK_REASONS = {
   // (a genuinely sealed session) so the head can tell "agent not listening yet"
   // apart from "session is over".
   noConsumer: "no_consumer",
+  // Takeover (saas-agent-supervision SV5): a dispatcher-principal steer/
+  // interrupt was refused because a HUMAN holds control. The dispatcher
+  // observes only while a human is at the wheel; the refusal is server-
+  // enforced at the relay, and the supervisor turn sees the honest ack.
+  controlHeld: "control_held",
 } as const;
 
 /** Protocol error codes. */

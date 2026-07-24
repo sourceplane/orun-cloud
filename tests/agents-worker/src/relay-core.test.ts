@@ -3,12 +3,14 @@ import {
   eventFrame,
   deltaFrame,
   steerFrame,
+  interruptFrame,
   verdictFrame,
   ackFrame,
   byeFrame,
   ATTACH_ACK_REASONS,
   type AttachFrame,
 } from "@saas/contracts/agents-attach";
+import { IMPLICIT_CONTROL_WINDOW_MS } from "@saas/contracts/agents";
 
 // memStorage is the in-memory DurableObjectStorage double (the jest seam).
 function memStorage(): RelayStorage {
@@ -216,5 +218,110 @@ describe("RelayCore: durability and terminal", () => {
     core.attach(h, -1);
     expect(h.frames.some((f) => f.t === "bye")).toBe(true);
     expect(h.closed).toBe(true);
+  });
+});
+
+// ── SV5: takeover / the control protocol ────────────────────────────────────
+describe("RelayCore: takeover (SV5)", () => {
+  const HUMAN = "usr_alice";
+  const DISPATCHER = "sp_dispatcher";
+
+  function withClock() {
+    let t = 1_000_000;
+    return { now: () => t, advance: (ms: number) => { t += ms; } };
+  }
+
+  /** Enqueue a steer that SUCCEEDS (would await a body ack) — pre-seed the ack
+   * so it resolves deterministically and the control mutation is observable. */
+  async function steer(core: RelayCore, ref: string, text: string, principal: string) {
+    core.resolveAck(ackFrame(ref, true, ""));
+    return core.enqueueInput(steerFrame(ref, text), principal);
+  }
+
+  it("refuses a dispatcher steer while a human holds control (implicit), sealing no input", async () => {
+    const clock = withClock();
+    const core = new RelayCore(memStorage(), { sessionId: "as_c1" }, clock.now);
+    await steer(core, "h1", "do X", HUMAN); // human steer implies control
+    // The dispatcher steer is refused at the door (returns immediately).
+    const refused = await core.enqueueInput(steerFrame("d1", "no, do Y"), DISPATCHER);
+    expect(refused.ok).toBe(false);
+    expect(refused.reason).toBe(ATTACH_ACK_REASONS.controlHeld);
+    // No dispatcher input was sealed — only the human steer sits in the queue.
+    const { items } = core.pollInputs(0);
+    expect(items).toHaveLength(1);
+    expect(items[0]!.payload?.principal).toBe(HUMAN);
+    expect(await core.getControl()).toMatchObject({ principal: HUMAN, mode: "implicit" });
+  });
+
+  it("interrupt is gated the same as steer", async () => {
+    const clock = withClock();
+    const core = new RelayCore(memStorage(), { sessionId: "as_c1b" }, clock.now);
+    await steer(core, "h1", "hold", HUMAN);
+    const refused = await core.enqueueInput(interruptFrame("d1"), DISPATCHER);
+    expect(refused.reason).toBe(ATTACH_ACK_REASONS.controlHeld);
+  });
+
+  it("the human holding control can still steer; the window refreshes on their input", async () => {
+    const clock = withClock();
+    const core = new RelayCore(memStorage(), { sessionId: "as_c2" }, clock.now);
+    await steer(core, "h1", "one", HUMAN);
+    const first = await core.getControl();
+    clock.advance(IMPLICIT_CONTROL_WINDOW_MS - 1000); // still inside the window
+    await steer(core, "h2", "two", HUMAN);
+    const refreshed = await core.getControl();
+    expect(Date.parse(refreshed!.expiresAt!)).toBeGreaterThan(Date.parse(first!.expiresAt!));
+  });
+
+  it("the implicit window expires on silence — a later dispatcher steer proceeds + seals", async () => {
+    const clock = withClock();
+    const core = new RelayCore(memStorage(), { sessionId: "as_c3" }, clock.now);
+    await steer(core, "h1", "hold", HUMAN);
+    clock.advance(IMPLICIT_CONTROL_WINDOW_MS + 1); // silence past the window
+    await steer(core, "d1", "now mine", DISPATCHER); // proceeds (not refused)
+    expect(await core.getControl()).toBeUndefined(); // released on expiry
+    const { items } = core.pollInputs(0);
+    expect(items.some((f) => f.payload?.principal === DISPATCHER)).toBe(true);
+  });
+
+  it("explicit take/return: Take control refuses the dispatcher; Return releases it", async () => {
+    const clock = withClock();
+    const core = new RelayCore(memStorage(), { sessionId: "as_c4" }, clock.now);
+    const head = collectSink("h", HUMAN);
+    core.attach(head, -1);
+
+    await core.takeControl(HUMAN);
+    expect(await core.getControl()).toMatchObject({ principal: HUMAN, mode: "explicit" });
+    clock.advance(IMPLICIT_CONTROL_WINDOW_MS * 5); // explicit never expires
+    const refused = await core.enqueueInput(steerFrame("d1", "let me"), DISPATCHER);
+    expect(refused.reason).toBe(ATTACH_ACK_REASONS.controlHeld);
+
+    await core.returnControl(HUMAN);
+    expect(await core.getControl()).toBeUndefined();
+    await steer(core, "d2", "ok now", DISPATCHER); // proceeds
+
+    const kinds = head.frames.filter((f) => f.t === "event").map((f) => f.kind);
+    expect(kinds).toContain("control_taken");
+    expect(kinds).toContain("control_returned");
+  });
+
+  it("a joining head learns who holds the wheel (re-sync on attach)", async () => {
+    const clock = withClock();
+    const core = new RelayCore(memStorage(), { sessionId: "as_c5" }, clock.now);
+    await core.takeControl(HUMAN);
+    const late = collectSink("late", HUMAN);
+    core.attach(late, -1);
+    const control = late.frames.find((f) => f.t === "event" && f.kind === "control_taken");
+    expect(control?.payload).toMatchObject({ principal: HUMAN, mode: "explicit" });
+  });
+
+  it("a terminal state releases control with a sealed resume marker", async () => {
+    const clock = withClock();
+    const core = new RelayCore(memStorage(), { sessionId: "as_c6" }, clock.now);
+    const head = collectSink("h", HUMAN);
+    core.attach(head, -1);
+    await core.takeControl(HUMAN);
+    await core.close(ATTACH_ACK_REASONS.terminal);
+    const returned = head.frames.find((f) => f.t === "event" && f.kind === "control_returned");
+    expect(returned?.payload).toMatchObject({ principal: HUMAN, reason: "terminal" });
   });
 });
