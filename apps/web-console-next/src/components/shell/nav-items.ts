@@ -60,10 +60,11 @@ export function buildNavSections(scope: NavScope): NavSection[] {
       id: "org",
       label: orgSlug ? `Workspace · ${orgSlug}` : "Workspace",
       links: [
-        // Dispatch is the Workspace landing (saas-dispatch DX3): the org root
-        // renders the command surface — speak an intent, see what's pending —
-        // so the home row is the root itself (exact-match highlighting).
-        { href: orgBase, label: "Dispatch", icon: "Send" },
+        // Agents (saas-agent-supervision SV4, was "Dispatch"): the org root is
+        // the dispatcher thread-first landing — speak an intent, watch the
+        // implementers the thread spawned. The home row is the root itself
+        // (exact-match highlighting).
+        { href: orgBase, label: "Agents", icon: "Send" },
         // Overview demoted from the landing to a first-class metrics view
         // (content unchanged, saas-workspace-overview); it can reclaim the
         // landing via the preference toggle on its own page.
@@ -77,9 +78,10 @@ export function buildNavSections(scope: NavScope): NavSection[] {
         // faceted stream + correlation stories, a Datadog-style events surface.
         { href: `${orgBase}/events`, label: "Events", icon: "Radio" },
         { href: `${orgBase}/work`, label: "Work", icon: "ListChecks" },
-        // Agents — hosted orun agent sessions (saas-agents AG7): spawn from
-        // Work, watch the run, connect the BYO compute/model providers.
-        { href: `${orgBase}/agents`, label: "Agents", icon: "Bot" },
+        // Implementers (saas-agent-supervision SV4, was "Agents"): the full
+        // tainted fleet — every implementer regardless of origin or state,
+        // faceted by origin/state/tier/needs-you. Terminal runs live here.
+        { href: `${orgBase}/agents`, label: "Implementers", icon: "Bot" },
         // Teams — the human-scale organizing primitive, promoted out of Settings
         // to a first-class product surface (à la Datadog Teams).
         { href: `${orgBase}/teams`, label: "Teams", icon: "UsersRound" },

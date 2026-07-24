@@ -18,8 +18,15 @@ import {
   AGENT_TYPES,
   AGENT_MODELS,
   PROVIDER_META,
+  sessionMatchesFacets,
+  presentOriginKinds,
+  facetsActive,
+  DEFAULT_FLEET_FACETS,
+  type FleetFacets,
+  type FacetContext,
 } from "@web-console-next/lib/agents/model";
 import { AGENT_SESSION_STATES, AGENT_PROVIDERS, PROVIDER_CONNECTION_STATUSES } from "@saas/contracts/agents";
+import type { AgentSession } from "@saas/contracts/agents";
 
 describe("agents presentation model", () => {
   it("maps every session state in the closed vocabulary to a tone", () => {
@@ -177,5 +184,82 @@ describe("interfaceTier (saas-dispatch DX7 — the rendered trust tier)", () => 
     expect(managed.blurb).toContain("no mid-run approvals");
     expect(managed.blurb).toContain("ZDR");
     expect(managed.tone).toBe("warning");
+  });
+});
+
+describe("Implementers facets (SV4)", () => {
+  function sess(over: Partial<AgentSession> & { id: string }): AgentSession {
+    return {
+      profileId: "agp_1",
+      runKind: "implementation",
+      state: "running",
+      spawnedBy: "usr_1",
+      createdAt: "2026-07-24T00:00:00Z",
+      origin: { kind: "human" },
+      rootSessionId: over.id,
+      depth: 0,
+      tokensUsed: 0,
+      ...over,
+    };
+  }
+  const ctx: FacetContext = {
+    interfaceOf: (pid) => (pid === "agp_managed" ? "anthropic-managed" : "orun-sandbox"),
+    needsYou: (id) => id === "as_wait",
+  };
+
+  it("passes everything through under the default (all) facets", () => {
+    const s = sess({ id: "as_1" });
+    expect(sessionMatchesFacets(s, DEFAULT_FLEET_FACETS, ctx)).toBe(true);
+    expect(facetsActive(DEFAULT_FLEET_FACETS)).toBe(false);
+  });
+
+  it("filters by origin kind", () => {
+    const dispatch = sess({ id: "as_d", origin: { kind: "dispatch", ref: "ch_1" } });
+    const work = sess({ id: "as_w", origin: { kind: "work", ref: "ORN-1" } });
+    const f: FleetFacets = { ...DEFAULT_FLEET_FACETS, origin: "dispatch" };
+    expect(sessionMatchesFacets(dispatch, f, ctx)).toBe(true);
+    expect(sessionMatchesFacets(work, f, ctx)).toBe(false);
+    expect(facetsActive(f)).toBe(true);
+  });
+
+  it("filters by infra state (active vs terminal)", () => {
+    const running = sess({ id: "as_r", state: "running" });
+    const done = sess({ id: "as_c", state: "completed" });
+    expect(sessionMatchesFacets(running, { ...DEFAULT_FLEET_FACETS, state: "active" }, ctx)).toBe(true);
+    expect(sessionMatchesFacets(done, { ...DEFAULT_FLEET_FACETS, state: "active" }, ctx)).toBe(false);
+    expect(sessionMatchesFacets(done, { ...DEFAULT_FLEET_FACETS, state: "terminal" }, ctx)).toBe(true);
+  });
+
+  it("filters by interface tier (resolved from the profile; default sealed)", () => {
+    const sealed = sess({ id: "as_s", profileId: "agp_1" });
+    const managed = sess({ id: "as_m", profileId: "agp_managed" });
+    const f: FleetFacets = { ...DEFAULT_FLEET_FACETS, tier: "anthropic-managed" };
+    expect(sessionMatchesFacets(managed, f, ctx)).toBe(true);
+    expect(sessionMatchesFacets(sealed, f, ctx)).toBe(false);
+  });
+
+  it("filters by needs-you (the attention fold)", () => {
+    const waiting = sess({ id: "as_wait", state: "awaiting_approval" });
+    const busy = sess({ id: "as_busy" });
+    const f: FleetFacets = { ...DEFAULT_FLEET_FACETS, needsYou: true };
+    expect(sessionMatchesFacets(waiting, f, ctx)).toBe(true);
+    expect(sessionMatchesFacets(busy, f, ctx)).toBe(false);
+  });
+
+  it("AND-combines facets", () => {
+    const s = sess({ id: "as_wait", state: "awaiting_approval", origin: { kind: "dispatch", ref: "ch_1" }, profileId: "agp_managed" });
+    const f: FleetFacets = { origin: "dispatch", state: "active", tier: "anthropic-managed", needsYou: true };
+    expect(sessionMatchesFacets(s, f, ctx)).toBe(true);
+    // Flip any one facet and it drops out.
+    expect(sessionMatchesFacets(s, { ...f, origin: "work" }, ctx)).toBe(false);
+  });
+
+  it("presentOriginKinds returns only the kinds present, in the chip order", () => {
+    const sessions = [
+      sess({ id: "a", origin: { kind: "human" } }),
+      sess({ id: "b", origin: { kind: "dispatch", ref: "ch_1" } }),
+      sess({ id: "c", origin: { kind: "dispatch", ref: "ch_2" } }),
+    ];
+    expect(presentOriginKinds(sessions)).toEqual(["dispatch", "human"]);
   });
 });

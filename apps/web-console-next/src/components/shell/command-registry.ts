@@ -123,6 +123,16 @@ export function buildBaseCommands(ctx: CommandContext): CommandDescriptor[] {
         "history",
         "feed",
       ]),
+      // Agents / Implementers (saas-agent-supervision SV4). Synonyms carry the
+      // old muscle memory (dispatch, fleet, sessions) to the renamed surfaces.
+      navItem("nav.agents", "Agents", orgBase, "Send", ["dispatch", "agent", "supervisor", "chat", "thread"]),
+      navItem("nav.implementers", "Implementers", `${orgBase}/agents`, "Bot", [
+        "implementer",
+        "fleet",
+        "sessions",
+        "agents",
+        "runs",
+      ]),
       navItem("nav.teams", "Teams", `${orgBase}/teams`, "UsersRound", ["team", "people", "group", "ownership", "members"]),
       navItem("nav.projects", "Git Repos", `${orgBase}/projects`, "FolderKanban", ["repo", "project", "git"]),
       // The work lens (orun-work-v3 PM4): jump + layout verbs. Layouts ride
