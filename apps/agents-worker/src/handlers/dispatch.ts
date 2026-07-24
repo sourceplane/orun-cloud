@@ -85,18 +85,33 @@ export async function handleDispatch(
 
   if (!taskKey) return validationError(requestId, { taskKey: ["required"] });
 
-  // Gate 1 — the autonomy ladder: the spec override wins over the workspace
-  // default; anything below auto-dispatch refuses (a human spawns manually).
+  // Gate 1 — the autonomy ladder gates AUTONOMOUS dispatch, not a human's
+  // in-the-loop request (the spec override wins over the workspace default).
+  //   manual        — no agent-mediated dispatch; a human spawns from the fleet.
+  //   assist        — the agent dispatches on a HUMAN's request (human-in-the-
+  //                   loop); unattended dispatch is still off.
+  //   auto-dispatch — the agent dispatches autonomously (no fresh human prompt).
+  //   full          — full autonomy.
+  // A dispatch attributed to a human (`subjectType === "user"` — the Workspace
+  // Agent acting on the owner's in-thread request, or a human hitting the door)
+  // is human-in-the-loop: allowed from `assist` up. A dispatch attributed to a
+  // service principal (the dispatcher on a supervisor turn) is autonomous and
+  // still needs auto-dispatch/full. This is what the AN5 `session_spawn` verb
+  // contract promises ("at autonomy 'assist', confirm then dispatch").
   const policy = (specKey ? await deps.repo.getAutonomy({ orgId }, specKey) : null) ??
     (await deps.repo.getAutonomy({ orgId }));
   const level = policy?.level ?? "assist";
-  if (level !== "auto-dispatch" && level !== "full") {
-    return errorResponse(
-      "conflict",
-      `Autonomy level is ${level}; dispatch needs auto-dispatch or full`,
-      409,
-      requestId,
-    );
+  const humanInLoop = actor.subjectType === "user";
+  const dispatchAllowed =
+    level === "full" ||
+    level === "auto-dispatch" ||
+    (level === "assist" && humanInLoop);
+  if (!dispatchAllowed) {
+    const reason =
+      level === "manual"
+        ? "Autonomy is manual — spawn a session from the fleet, or raise autonomy to assist to dispatch from here."
+        : `Autonomy level is ${level}; autonomous dispatch needs auto-dispatch or full.`;
+    return errorResponse("conflict", reason, 409, requestId);
   }
 
   const sessions = await deps.repo.listSessions({ orgId });
