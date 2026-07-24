@@ -30,10 +30,10 @@ describe("buildNavSections", () => {
     expect(ids).not.toContain("project");
   });
 
-  it("puts Dispatch first in the org section as the landing (saas-dispatch DX3), Overview demoted beside it", () => {
+  it("puts Agents first in the org section as the landing (SV4 rename of Dispatch), Overview demoted beside it", () => {
     const org = buildNavSections({ orgSlug: "acme" }).find((s) => s.id === "org")!;
     const first = org.links[0]!;
-    expect(first.label).toBe("Dispatch");
+    expect(first.label).toBe("Agents");
     expect(first.href).toBe("/orgs/acme");
     expect(first.subPanel ?? false).toBe(false);
     const second = org.links[1]!;
@@ -49,8 +49,10 @@ describe("buildNavSections", () => {
     expect(hrefs).toContain("/orgs/acme/catalog");
     expect(hrefs).toContain("/orgs/acme/activities");
     expect(hrefs).toContain("/orgs/acme/work");
-    // Agents — hosted orun sessions (saas-agents AG7), beside Work.
+    // Implementers (SV4 rename of Agents) — the full tainted fleet, at /agents.
     expect(hrefs).toContain("/orgs/acme/agents");
+    const implementers = org.links.find((l) => l.href === "/orgs/acme/agents")!;
+    expect(implementers.label).toBe("Implementers");
     // Integrations is a first-class connections hub in the product nav.
     expect(hrefs).toContain("/orgs/acme/integrations");
     // Secrets & Config is a dedicated top-level product surface.

@@ -12,6 +12,8 @@ import type { AgentProfile, AgentRecordsEntry, AgentSession } from "@saas/contra
 import { isTerminalSessionState } from "@saas/contracts/agents";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
+  Chip,
+  ChipRow,
   HeaderStat,
   Kicker,
   ListCard,
@@ -26,7 +28,18 @@ import { Button } from "@/components/ui/button";
 import { wrap } from "@/lib/api";
 import { qk, useApiQuery } from "@/lib/query";
 import { useSession } from "@/lib/session";
-import { orderFleetRows, sessionLabel, sessionTone } from "@/lib/agents/model";
+import {
+  orderFleetRows,
+  sessionLabel,
+  sessionTone,
+  sessionMatchesFacets,
+  presentOriginKinds,
+  facetsActive,
+  originChip,
+  DEFAULT_FLEET_FACETS,
+  type FleetFacets,
+  type FacetContext,
+} from "@/lib/agents/model";
 import { OriginChipView } from "@/components/agents/origin-chip";
 import { compactAge, compactTokens } from "@/lib/agents/attention";
 import { AttentionQueue } from "@/components/agents/attention-queue";
@@ -84,11 +97,31 @@ export function AgentsWorkbench({ orgId, orgSlug }: { orgId: string; orgSlug: st
   const provisioning = active.filter((s) => s.state === "requested" || s.state === "provisioning").length;
   const recent = data?.sessions.filter((s) => isTerminalSessionState(s.state)) ?? [];
 
+  // Implementers facets (SV4): the full tainted list, filtered by origin /
+  // state / tier / needs-you. The predicate is pure (lib/agents/model); the
+  // context resolves the tier from the profile and needs-you from attention.
+  const [facets, setFacets] = React.useState<FleetFacets>(DEFAULT_FLEET_FACETS);
+  const needsYouIds = React.useMemo(
+    () => new Set((data?.attention.items ?? []).map((i) => i.sessionId).filter((x): x is string => !!x)),
+    [data?.attention.items],
+  );
+  const facetCtx: FacetContext = React.useMemo(
+    () => ({
+      interfaceOf: (pid) => data?.profiles.find((p) => p.id === pid)?.interface,
+      needsYou: (id) => needsYouIds.has(id),
+    }),
+    [data?.profiles, needsYouIds],
+  );
+  const originKinds = presentOriginKinds(data?.sessions ?? []);
+  const matches = (s: (typeof active)[number]) => sessionMatchesFacets(s, facets, facetCtx);
+  const activeShown = active.filter(matches);
+  const recentShown = recent.filter(matches);
+
   return (
     <Screen>
       <PageHeader
-        title="Agents"
-        description="Hosted orun sessions on your connected compute. A session is infrastructure — what the run achieves lives on Work; a session links to its task, never restates it."
+        title="Implementers"
+        description="The full tainted fleet — every implementer, whatever set it running and whatever state it's in. A session is infrastructure; what the run achieves lives on Work. Filter by origin, state, tier, or what needs you."
         actions={
           <div className="flex items-center gap-4">
             <HeaderStat value={String(running)} caption="running" />
@@ -124,15 +157,53 @@ export function AgentsWorkbench({ orgId, orgSlug }: { orgId: string; orgSlug: st
             onActed={fleet.reload}
           />
 
-          <Kicker className="mb-2.5">Active sessions</Kicker>
-          {active.length === 0 ? (
+          {/* Facets (SV4): origin · state · tier · needs-you. */}
+          <ChipRow className="mb-4">
+            {originKinds.map((k) => (
+              <Chip
+                key={`origin-${k}`}
+                active={facets.origin === k}
+                onClick={() => setFacets((f) => ({ ...f, origin: f.origin === k ? "all" : k }))}
+              >
+                {originChip({ kind: k }, orgSlug).kind}
+              </Chip>
+            ))}
+            {originKinds.length > 0 ? <span className="mx-1 h-[18px] w-px shrink-0 bg-border" aria-hidden /> : null}
+            <Chip active={facets.state === "active"} onClick={() => setFacets((f) => ({ ...f, state: f.state === "active" ? "all" : "active" }))}>
+              Active
+            </Chip>
+            <Chip active={facets.state === "terminal"} onClick={() => setFacets((f) => ({ ...f, state: f.state === "terminal" ? "all" : "terminal" }))}>
+              Terminal
+            </Chip>
+            <span className="mx-1 h-[18px] w-px shrink-0 bg-border" aria-hidden />
+            <Chip active={facets.tier === "orun-sandbox"} onClick={() => setFacets((f) => ({ ...f, tier: f.tier === "orun-sandbox" ? "all" : "orun-sandbox" }))}>
+              Sealed
+            </Chip>
+            <Chip active={facets.tier === "anthropic-managed"} onClick={() => setFacets((f) => ({ ...f, tier: f.tier === "anthropic-managed" ? "all" : "anthropic-managed" }))}>
+              Managed
+            </Chip>
+            <span className="mx-1 h-[18px] w-px shrink-0 bg-border" aria-hidden />
+            <Chip active={facets.needsYou} onClick={() => setFacets((f) => ({ ...f, needsYou: !f.needsYou }))}>
+              Needs you
+            </Chip>
+            {facetsActive(facets) ? (
+              <Chip onClick={() => setFacets(DEFAULT_FLEET_FACETS)}>Clear</Chip>
+            ) : null}
+          </ChipRow>
+
+          <Kicker className="mb-2.5">Active implementers</Kicker>
+          {activeShown.length === 0 ? (
             <EmptyState
-              title="No live sessions"
-              description="Sessions appear when an agent is spawned — from a Work item, the CLI (orun agent run), or the API."
+              title={active.length === 0 ? "No live implementers" : "No matches"}
+              description={
+                active.length === 0
+                  ? "Implementers appear when one is spawned — from a dispatcher thread, a Work item, the CLI, or the API."
+                  : "No active implementers match these filters."
+              }
             />
           ) : (
             <ListCard>
-              {orderFleetRows(active).map((row) => (
+              {orderFleetRows(activeShown).map((row) => (
                 <SessionRow
                   key={row.session.id}
                   session={row.session}
@@ -144,11 +215,11 @@ export function AgentsWorkbench({ orgId, orgSlug }: { orgId: string; orgSlug: st
             </ListCard>
           )}
 
-          {recent.length > 0 ? (
+          {recentShown.length > 0 ? (
             <>
-              <Kicker className="mb-2.5 mt-8">Recent</Kicker>
+              <Kicker className="mb-2.5 mt-8">Terminal</Kicker>
               <ListCard>
-                {orderFleetRows(recent).map((row) => (
+                {orderFleetRows(recentShown).map((row) => (
                   <SessionRow
                     key={row.session.id}
                     session={row.session}

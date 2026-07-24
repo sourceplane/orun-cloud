@@ -429,6 +429,25 @@ export function SessionDetail({
       <div className="grid grid-cols-1 gap-x-10 gap-y-6 lg:grid-cols-[minmax(0,1fr)_250px]">
         {/* ── Main column: the head ─────────────────────────────── */}
         <div className="min-w-0">
+          {/* Supervised-by banner (SV4): a dispatch-origin implementer is
+              supervised by the thread that spawned it — deep-link back. */}
+          {s.origin.kind === "dispatch" && s.origin.ref ? (
+            <div className="mb-4 flex items-center gap-2 rounded-lg border border-border/60 bg-muted/40 px-3 py-2 text-[12.5px]">
+              <span className="text-muted-foreground">
+                Supervised by{" "}
+                <span className="font-medium text-foreground">
+                  {s.origin.label ?? "the dispatcher thread"}
+                </span>
+              </span>
+              <Link
+                href={`/orgs/${orgSlug}/agents/chat/${s.origin.ref}`}
+                className="ml-auto shrink-0 font-medium underline underline-offset-2 hover:opacity-80"
+              >
+                Open thread →
+              </Link>
+            </div>
+          ) : null}
+
           {s.failureReason ? (
             <StatusText tone="error" className="mb-4">
               Failure reason: {s.failureReason}

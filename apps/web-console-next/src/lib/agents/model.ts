@@ -1,7 +1,15 @@
 // Pure presentation model for the Agents surface (saas-agents AG7).
 // Dependency-free so the tone/label mappings are unit-testable.
 
-import type { AgentOrigin, AgentSessionState, ProviderConnectionStatus } from "@saas/contracts/agents";
+import type {
+  AgentOrigin,
+  AgentOriginKind,
+  AgentSession,
+  AgentSessionState,
+  DelegationInterface,
+  ProviderConnectionStatus,
+} from "@saas/contracts/agents";
+import { isTerminalSessionState } from "@saas/contracts/agents";
 import type { Tone } from "@/components/ui/northwind";
 
 /**
@@ -336,4 +344,73 @@ export function modelOptions(
     out.push({ value: model, label: `${model} · ${meta?.name ?? c.provider}` });
   }
   return out;
+}
+
+// ── Implementers facets (saas-agent-supervision SV4) ────────
+// The Implementers surface (evolution of the fleet) is the full tainted list —
+// every implementer regardless of origin or state — faceted by origin kind,
+// infra state, interface tier, and needs-you. Pure predicates so the filter
+// bar is a thin render and the matching is unit-tested (the hub-model idiom).
+
+export type StateFacet = "all" | "active" | "terminal";
+
+export interface FleetFacets {
+  origin: AgentOriginKind | "all";
+  state: StateFacet;
+  tier: DelegationInterface | "all";
+  /** When true, only implementers currently needing a human. */
+  needsYou: boolean;
+}
+
+export const DEFAULT_FLEET_FACETS: FleetFacets = {
+  origin: "all",
+  state: "all",
+  tier: "all",
+  needsYou: false,
+};
+
+/** Context a facet match needs beyond the session row: the tier (from the
+ * profile) and whether this session is on the needs-you fold (from attention). */
+export interface FacetContext {
+  interfaceOf: (profileId: string) => DelegationInterface | undefined;
+  needsYou: (sessionId: string) => boolean;
+}
+
+/** sessionMatchesFacets — the pure predicate the Implementers list filters by.
+ * Every facet is AND-combined; `all` / `false` are pass-through. */
+export function sessionMatchesFacets(
+  session: AgentSession,
+  facets: FleetFacets,
+  ctx: FacetContext,
+): boolean {
+  if (facets.origin !== "all" && session.origin.kind !== facets.origin) return false;
+  if (facets.state !== "all") {
+    const terminal = isTerminalSessionState(session.state);
+    if (facets.state === "active" && terminal) return false;
+    if (facets.state === "terminal" && !terminal) return false;
+  }
+  if (facets.tier !== "all") {
+    const tier = ctx.interfaceOf(session.profileId) ?? "orun-sandbox";
+    if (tier !== facets.tier) return false;
+  }
+  if (facets.needsYou && !ctx.needsYou(session.id)) return false;
+  return true;
+}
+
+/** The origin kinds actually present in a fleet — render only the facets that
+ * can match something (the presentCategories idiom). Ordered by ORIGIN_KICKERS. */
+export function presentOriginKinds(sessions: AgentSession[]): AgentOriginKind[] {
+  const present = new Set<AgentOriginKind>();
+  for (const s of sessions) present.add(s.origin.kind);
+  return (Object.keys(ORIGIN_KICKERS) as AgentOriginKind[]).filter((k) => present.has(k));
+}
+
+/** Are any non-default facets active? (drives the "clear filters" affordance). */
+export function facetsActive(facets: FleetFacets): boolean {
+  return (
+    facets.origin !== "all" ||
+    facets.state !== "all" ||
+    facets.tier !== "all" ||
+    facets.needsYou
+  );
 }
