@@ -316,3 +316,98 @@ describe("DD3 (saas-dispatch-delight): thread naming", () => {
     expect(titleFrames).toEqual([{ v: 1, t: "title", chatId: "ch_t3", title: "Named now" }]);
   });
 });
+
+// ── SV3: the supervisor turn (a turn with no human prompt) ──────────────────
+describe("SV3: runSupervisorTurn", () => {
+  const DIGEST = JSON.stringify({ untrusted_supervision_data: { entries: [{ sessionId: "as_1", wake: "terminal" }] } });
+
+  it("on mode: runs ONE model turn, seals supervisor-marked messages, no user turn", async () => {
+    const thread = await freshThread();
+    const model = scriptedModel([
+      { blocks: [{ type: "text", text: "as_1 finished — PR looks aligned with the ask." }], stopReason: "end_turn" },
+    ]);
+    const r = await thread.runSupervisorTurn(DIGEST, "Supervisor · woke on 1 event", {
+      resolveModel: async () => model,
+      tools: noTools(),
+      system: "sys",
+      now: () => new Date("2026-07-24T00:00:00Z"),
+    });
+    expect(r.ok).toBe(true);
+    expect(model.calls).toHaveLength(1); // exactly one turn
+
+    const history = thread.history();
+    // No user turn — the marker + the model's summary, both supervisor-sealed.
+    expect(history.every((m) => m.role !== "user")).toBe(true);
+    expect(history.every((m) => m.supervisor === true)).toBe(true);
+    expect(history.map((m) => m.text)).toEqual([
+      "Supervisor · woke on 1 event",
+      "as_1 finished — PR looks aligned with the ask.",
+    ]);
+  });
+
+  it("observe mode: ZERO model calls, only the sealed wake marker (the cost dial)", async () => {
+    const thread = await freshThread();
+    const model = scriptedModel([{ blocks: [{ type: "text", text: "should never run" }], stopReason: "end_turn" }]);
+    const r = await thread.runSupervisorTurn(DIGEST, "Supervisor · woke on 3 events", {
+      resolveModel: async () => model,
+      tools: noTools(),
+      system: "sys",
+      observe: true,
+    });
+    expect(r.ok).toBe(true);
+    expect(r.reason).toBe("observe");
+    expect(model.calls).toHaveLength(0); // no model spend in observe
+    const history = thread.history();
+    expect(history).toHaveLength(1);
+    expect(history[0]).toMatchObject({ supervisor: true, text: "Supervisor · woke on 3 events" });
+  });
+
+  it("shares the human turn-rate ceiling — supervision can never starve a human", async () => {
+    const thread = await freshThread();
+    const model = scriptedModel([{ blocks: [{ type: "text", text: "ok" }], stopReason: "end_turn" }]);
+    // A ceiling of 1: the first (human) turn consumes it; the supervisor turn is refused.
+    await thread.runTurn("hi", "usr_a", {
+      resolveModel: async () => model,
+      tools: noTools(),
+      system: "s",
+      rateLimit: { maxTurns: 1, windowMs: 60_000 },
+    });
+    const r = await thread.runSupervisorTurn(DIGEST, "woke", {
+      resolveModel: async () => model,
+      tools: noTools(),
+      system: "s",
+      rateLimit: { maxTurns: 1, windowMs: 60_000 },
+    });
+    expect(r.ok).toBe(false);
+    expect(r.reason).toBe("rate_limited");
+  });
+
+  it("drives supervision verbs in a tool round (steer), and the roster has no verdict", async () => {
+    const thread = await freshThread();
+    const executed: string[] = [];
+    const tools: ToolExecutor = {
+      // The supervisor roster: read/steer/interrupt/spawn — NO verdict verb exists.
+      specs: () => [
+        { name: "session_steer", description: "steer", inputSchema: { type: "object" } },
+        { name: "session_watch", description: "watch", inputSchema: { type: "object" } },
+      ],
+      execute: async (name) => {
+        executed.push(name);
+        return { summary: `${name} ok`, data: {} };
+      },
+    };
+    const model = scriptedModel([
+      { blocks: [{ type: "tool_use", id: "t1", name: "session_steer", input: { sessionId: "as_1", text: "refocus" } }], stopReason: "tool_use" },
+      { blocks: [{ type: "text", text: "nudged as_1 back on track." }], stopReason: "end_turn" },
+    ]);
+    const r = await thread.runSupervisorTurn(DIGEST, "woke on drift", {
+      resolveModel: async () => model,
+      tools,
+      system: "s",
+    });
+    expect(r.ok).toBe(true);
+    expect(executed).toEqual(["session_steer"]);
+    // Structural: no verdict verb was offered or callable.
+    expect(tools.specs().some((s) => /verdict/i.test(s.name))).toBe(false);
+  });
+});
