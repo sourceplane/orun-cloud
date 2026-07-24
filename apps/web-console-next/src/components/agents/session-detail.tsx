@@ -418,12 +418,10 @@ export function SessionDetail({
             <Skeleton className="h-48 w-full rounded-xl" />
           ) : (
             <SessionLens
-              target={target.url}
-              token={token}
-              orgId={orgId}
-              sessionId={s.id}
               live={live}
               events={mergedEvents}
+              streaming={tail.streaming}
+              tokens={s.tokensUsed ?? 0}
               tierLabel={interfaceTier(profile?.interface).label}
               tierTone={interfaceTier(profile?.interface).tone}
               onApprove={onApproveId}
