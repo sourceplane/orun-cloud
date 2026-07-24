@@ -27,9 +27,11 @@ export interface ToolCallView {
 
 /** One transcript entry, in arrival order (DD2) — the single chronological
  * item list both copilot surfaces render. A user steer may carry the
- * attributed principal (session heads relay who steered). */
+ * attributed principal (session heads relay who steered) and, when the
+ * Workspace Agent's hand moved (SV2), a `via` disclosure so a dispatcher steer
+ * reads distinctly from a human one. */
 export type TranscriptItem =
-  | { kind: "user"; id: string; text: string; principal?: string }
+  | { kind: "user"; id: string; text: string; principal?: string; via?: string }
   | { kind: "assistant"; id: string; text: string; error?: boolean }
   | { kind: "tool"; id: string; tool: ToolCallView }
   | { kind: "error"; id: string; text: string }
@@ -82,10 +84,18 @@ export function ToolCard({ t }: { t: ToolCallView }) {
 
 export function TranscriptRow({ it, onRetry }: { it: TranscriptItem; onRetry?: () => void }) {
   switch (it.kind) {
-    case "user":
+    case "user": {
+      // SV2: a steer the Workspace Agent's hand sent (via=workspace-agent)
+      // reads distinctly from a human steer — "Workspace Agent · steer", the
+      // principal (owner on a human-prompted turn, the dispatcher sp_ on a
+      // supervisor turn) shown as the smaller attribution beneath.
+      const byAgent = it.via === "workspace-agent";
       return (
         <div className="my-2 flex justify-end">
           <div className="max-w-[80%] rounded-2xl bg-foreground px-3.5 py-2 text-[13.5px] text-background">
+            {byAgent ? (
+              <div className="mb-0.5 text-[10.5px] font-medium opacity-80">Workspace Agent · steer</div>
+            ) : null}
             {it.principal ? (
               <div className="mb-0.5 font-mono text-[10.5px] opacity-60">{it.principal}</div>
             ) : null}
@@ -93,6 +103,7 @@ export function TranscriptRow({ it, onRetry }: { it: TranscriptItem; onRetry?: (
           </div>
         </div>
       );
+    }
     case "assistant":
       return (
         <div className="my-2 flex justify-start">

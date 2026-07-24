@@ -7,7 +7,10 @@ import { isServicePrincipalSubjectId } from "@saas/contracts/service-principal";
 import { errorResponse, successResponse, validationError } from "../http.js";
 
 const VALID_SCOPE_KINDS = new Set(["organization", "project"]);
-const VALID_ORG_ROLES = new Set(["owner", "admin", "builder", "viewer", "billing_admin"]);
+// Includes the SP-only `agent_dispatcher` (SV2) — bindable onto a service
+// principal here, but never onto a human (the human role paths gate on the
+// contracts ORGANIZATION_ROLES array, which omits it).
+const VALID_ORG_ROLES = new Set(["owner", "admin", "builder", "viewer", "billing_admin", "agent_dispatcher"]);
 const VALID_PROJECT_ROLES = new Set(["project_admin", "project_builder", "project_viewer"]);
 
 export interface ServicePrincipalBindingDeps {
