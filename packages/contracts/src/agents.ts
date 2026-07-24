@@ -716,6 +716,126 @@ export interface ChatImplementers {
   done: number;
 }
 
+// ── The supervision loop (saas-agent-supervision SV3) ───────
+// The dispatcher wakes on its implementers' events, not on a poll. The wake
+// set is a CLOSED subset of the session-event vocabulary (plus one computed
+// `stuck` marker); rings within a coalescing window collapse into one bounded,
+// typed digest built from SEALED events (never raw log text — §9.2); the
+// thread runs a rate-limited, budgeted, injection-hardened supervisor turn.
+
+/**
+ * Wake kinds — the ONLY events that cause a supervisor turn (design §4.1).
+ * Everything else (tool ticks, deltas, cost samples below a mark) is read
+ * *during* a turn if the dispatcher chooses; it never causes one. `stuck` is
+ * computed by the index (no stored status), not a relayed kind.
+ */
+export const WAKE_KINDS = [
+  /** state_changed → a terminal state (completed|failed|canceled|expired). */
+  "terminal",
+  /** approval_requested — escalation (never resolved; §4.4). */
+  "approval",
+  /** AF9 budget mark crossed / budget_exhausted interrupt. */
+  "budget",
+  /** child_spawned / child_completed / child_failed on a roster root. */
+  "child",
+  /** No event past the per-profile silence threshold while running. */
+  "stuck",
+] as const;
+export type WakeKind = (typeof WAKE_KINDS)[number];
+
+/** Wake kinds that ALWAYS ring, regardless of cause chain — a terminal state
+ * or an approval is never suppressed by the reflexivity filter (§4.5). */
+export const ALWAYS_WAKE_KINDS: readonly WakeKind[] = ["terminal", "approval"];
+
+/**
+ * One entry in a supervisor turn's digest: a typed, bounded summary of a
+ * sealed wake event — never raw log text. `headline` is a short, safe rendering
+ * ("as_9f… completed", "wants to run wrangler deploy"); the model treats the
+ * digest as untrusted structured data (§9.2).
+ */
+export interface DigestEntry {
+  sessionId: string;
+  origin: AgentOrigin;
+  wake: WakeKind;
+  /** The relayed event kind that produced it (for the record). */
+  eventKind: AgentSessionEventKind;
+  /** Sealed event seq — the dedupe + ordering key. */
+  seq: number;
+  headline: string;
+  at: string;
+}
+
+/** Max entries a digest carries before it collapses to "+K more" (§ open-q 4).
+ * Terminal + approval entries are always kept; progress is what falls off. */
+export const DIGEST_ENTRY_CAP = 12;
+
+/**
+ * The coalesced wake digest a supervisor turn runs on (design §4.2). Built
+ * from sealed events within one coalescing window; bounded by DIGEST_ENTRY_CAP.
+ */
+export interface SupervisionDigest {
+  chatId: string;
+  entries: DigestEntry[];
+  /** Entries dropped past the cap (progress only — terminal/approval kept). */
+  overflow: number;
+  /** How many raw wake events coalesced into this digest. */
+  coalesced: number;
+}
+
+/** Default coalescing window (design §4.2): rings within this collapse to one
+ * digest, per thread. */
+export const SUPERVISION_COALESCE_MS = 5_000;
+
+/**
+ * Per-thread supervision mode (design §4.5). `on` runs supervisor turns;
+ * `observe` folds digests + posts cards but calls no model (the cost dial);
+ * `off` is doorbell-only (zero). New threads default `on` (flipped from
+ * `observe` per-workspace after SV5 enforcement — open question 1).
+ */
+export const SUPERVISION_MODES = ["on", "observe", "off"] as const;
+export type SupervisionMode = (typeof SUPERVISION_MODES)[number];
+
+export function isSupervisionMode(v: string): v is SupervisionMode {
+  return (SUPERVISION_MODES as readonly string[]).includes(v);
+}
+
+/**
+ * The SV3 thread-card registry (design §7.3): closed CUSTOM payloads a
+ * supervisor turn posts. Versioned like the other AG-UI CUSTOM cards.
+ */
+export const SUPERVISION_CARD_KINDS = [
+  /** Terminal state + the dispatcher's verification against the ask. */
+  "completion",
+  /** A meaningful transition a supervisor turn surfaced (never a firehose). */
+  "progress",
+  /** An implementer wants a human verdict — deep-links, NEVER resolves (§4.4). */
+  "escalation",
+  /** The foreman roll-up ("N running · M waiting on you · K done") — SV7. */
+  "rollup",
+] as const;
+export type SupervisionCardKind = (typeof SUPERVISION_CARD_KINDS)[number];
+
+/**
+ * The escalation card (design §4.4). The supervisor turn's ONLY power on an
+ * approval is to make the human's decision easy: the tool, the policy reason,
+ * the implementer's own justification quoted AS DATA, and a deep link to the
+ * cockpit where the human answers through the credentialed verdict path. It
+ * points at the attention plane; it never drains it. There is deliberately no
+ * verdict field — approvals are human (AN lock 5).
+ */
+export interface EscalationCard {
+  kind: "escalation";
+  sessionId: string;
+  origin: AgentOrigin;
+  /** The tool the implementer wants to run (the ask). */
+  tool: string;
+  /** The pending request id — answered on the cockpit, never here. */
+  requestId: string;
+  /** The implementer's justification, quoted as untrusted data. */
+  justification?: string;
+  at: string;
+}
+
 // ── Provider connections (AG12) ─────────────────────────────
 // BYO provider accounts: a workspace connects its own sandbox-compute account
 // (Daytona) and one or more model-provider keys (Anthropic, OpenAI,

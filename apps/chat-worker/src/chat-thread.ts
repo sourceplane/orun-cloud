@@ -53,6 +53,10 @@ export interface ChatMessage {
   /** Turn cost, on the closing assistant message (AN7: thread-level cost
    * visible to the user). */
   usage?: { inputTokens: number; outputTokens: number };
+  /** SV3: sealed marker on a supervisor turn's messages (a turn with no human
+   * prompt, woken by implementer events). Rendered with a distinct kicker;
+   * durable + metered like any turn. */
+  supervisor?: boolean;
 }
 
 // ── The model seam (recorded-fixture testable) ──────────────────────────────
@@ -292,85 +296,182 @@ export class ChatThread {
         return { ok: false, reason: "custody_failed" };
       }
 
-      const toolSpecs = deps.tools.specs();
       const history = this.modelHistory();
-      let tokensIn = 0;
-      let tokensOut = 0;
-      let toolCalls = 0;
+      return await this.modelLoop(model, deps.system, history, deps.tools, now, false);
+    } finally {
+      this.turnActive = false;
+    }
+  }
 
-      for (let round = 0; round <= MAX_TOOL_ROUNDS; round++) {
-        let result: ModelTurnResult;
-        try {
-          // Snapshot per call: the loop mutates `history` between rounds and
-          // the model client must never see (or alias) later mutations.
-          result = await model.stream({ system: deps.system, messages: [...history], tools: toolSpecs }, (delta) => {
-            this.fanOut({ t: "delta", text: delta });
-          });
-        } catch (err) {
-          await this.append({
-            role: "assistant",
-            text: `The model call failed (${(err as Error).message}). Nothing was lost — send your message again to retry.`,
-            at: now().toISOString(),
-            error: true,
-          });
-          this.fanOut({ t: "turn", phase: "done" });
-          return { ok: false, reason: "model_failed" };
-        }
+  /**
+   * modelLoop — the shared tool-round loop both a human turn (runTurn) and a
+   * supervisor turn (runSupervisorTurn) drive. `supervisor` marks every message
+   * it seals so the transcript renders the distinct kicker and the record folds
+   * know a turn ran with no human prompt.
+   */
+  private async modelLoop(
+    model: ModelClient,
+    system: string,
+    history: ModelRequestMessage[],
+    tools: ToolExecutor,
+    now: () => Date,
+    supervisor: boolean,
+  ): Promise<{ ok: boolean; reason?: string; tokens?: number; toolCalls?: number }> {
+    const mark = supervisor ? { supervisor: true as const } : {};
+    const toolSpecs = tools.specs();
+    let tokensIn = 0;
+    let tokensOut = 0;
+    let toolCalls = 0;
 
-        tokensIn += result.usage?.inputTokens ?? 0;
-        tokensOut += result.usage?.outputTokens ?? 0;
-        const textOut = result.blocks
-          .filter((b): b is Extract<ModelBlock, { type: "text" }> => b.type === "text")
-          .map((b) => b.text)
-          .join("");
-        const toolUses = result.blocks.filter(
-          (b): b is Extract<ModelBlock, { type: "tool_use" }> => b.type === "tool_use",
-        );
-
-        if (result.stopReason !== "tool_use" || toolUses.length === 0 || round === MAX_TOOL_ROUNDS) {
-          const usage = { inputTokens: tokensIn, outputTokens: tokensOut };
-          await this.append({
-            role: "assistant",
-            text: textOut || (result.stopReason === "refusal" ? "I can't help with that request." : ""),
-            at: now().toISOString(),
-            blocks: result.blocks,
-            usage,
-          });
-          this.fanOut({ t: "turn", phase: "done" });
-          return { ok: true, tokens: tokensIn + tokensOut, toolCalls };
-        }
-
-        // Tool round: visible cards for every call, then results back to the
-        // model in one user message (the parallel-tool-use contract).
-        history.push({ role: "assistant", content: result.blocks });
-        const toolResults: unknown[] = [];
-        toolCalls += toolUses.length;
-        for (const call of toolUses) {
-          await this.append({
-            role: "tool",
-            text: textOut,
-            at: now().toISOString(),
-            tool: { name: call.name, phase: "call", summary: JSON.stringify(call.input) },
-            toolId: call.id,
-          });
-          const out = await deps.tools.execute(call.name, call.input, call.id);
-          await this.append({
-            role: "tool",
-            text: "",
-            at: now().toISOString(),
-            tool: { name: call.name, phase: "result", summary: out.summary, ...(out.isError ? { isError: true } : {}) },
-            toolId: call.id,
-          });
-          toolResults.push({
-            type: "tool_result",
-            tool_use_id: call.id,
-            content: JSON.stringify(out.data),
-            ...(out.isError ? { is_error: true } : {}),
-          });
-        }
-        history.push({ role: "user", content: toolResults });
+    for (let round = 0; round <= MAX_TOOL_ROUNDS; round++) {
+      let result: ModelTurnResult;
+      try {
+        // Snapshot per call: the loop mutates `history` between rounds and
+        // the model client must never see (or alias) later mutations.
+        result = await model.stream({ system, messages: [...history], tools: toolSpecs }, (delta) => {
+          this.fanOut({ t: "delta", text: delta });
+        });
+      } catch (err) {
+        await this.append({
+          role: "assistant",
+          text: `The model call failed (${(err as Error).message}). Nothing was lost — send your message again to retry.`,
+          at: now().toISOString(),
+          error: true,
+          ...mark,
+        });
+        this.fanOut({ t: "turn", phase: "done" });
+        return { ok: false, reason: "model_failed" };
       }
-      return { ok: true };
+
+      tokensIn += result.usage?.inputTokens ?? 0;
+      tokensOut += result.usage?.outputTokens ?? 0;
+      const textOut = result.blocks
+        .filter((b): b is Extract<ModelBlock, { type: "text" }> => b.type === "text")
+        .map((b) => b.text)
+        .join("");
+      const toolUses = result.blocks.filter(
+        (b): b is Extract<ModelBlock, { type: "tool_use" }> => b.type === "tool_use",
+      );
+
+      if (result.stopReason !== "tool_use" || toolUses.length === 0 || round === MAX_TOOL_ROUNDS) {
+        const usage = { inputTokens: tokensIn, outputTokens: tokensOut };
+        await this.append({
+          role: "assistant",
+          text: textOut || (result.stopReason === "refusal" ? "I can't help with that request." : ""),
+          at: now().toISOString(),
+          blocks: result.blocks,
+          usage,
+          ...mark,
+        });
+        this.fanOut({ t: "turn", phase: "done" });
+        return { ok: true, tokens: tokensIn + tokensOut, toolCalls };
+      }
+
+      // Tool round: visible cards for every call, then results back to the
+      // model in one user message (the parallel-tool-use contract).
+      history.push({ role: "assistant", content: result.blocks });
+      const toolResults: unknown[] = [];
+      toolCalls += toolUses.length;
+      for (const call of toolUses) {
+        await this.append({
+          role: "tool",
+          text: textOut,
+          at: now().toISOString(),
+          tool: { name: call.name, phase: "call", summary: JSON.stringify(call.input) },
+          toolId: call.id,
+          ...mark,
+        });
+        const out = await tools.execute(call.name, call.input, call.id);
+        await this.append({
+          role: "tool",
+          text: "",
+          at: now().toISOString(),
+          tool: { name: call.name, phase: "result", summary: out.summary, ...(out.isError ? { isError: true } : {}) },
+          toolId: call.id,
+          ...mark,
+        });
+        toolResults.push({
+          type: "tool_result",
+          tool_use_id: call.id,
+          content: JSON.stringify(out.data),
+          ...(out.isError ? { is_error: true } : {}),
+        });
+      }
+      history.push({ role: "user", content: toolResults });
+    }
+    return { ok: true };
+  }
+
+  /**
+   * runSupervisorTurn (SV3, design §4.3): a turn with NO human prompt, woken by
+   * implementer events. The caller (WorkspaceAgent) builds `supervisorInput` —
+   * the digest + roster framed as UNTRUSTED structured data (§9.2) — and a
+   * short `wokeSummary` for the sealed marker; chat-thread stays contracts-free.
+   *
+   * - `observe` mode seals the marker and returns WITHOUT a model call (the
+   *   cost dial: digests, zero model spend).
+   * - `on` mode runs the shared model loop with the supervisor tool roster the
+   *   caller passes (the human roster minus `ui_` client tools; there is no
+   *   verdict verb to withhold — approvals stay human).
+   * Shares the turn-rate ceiling with human turns (supervision never starves a
+   * human).
+   */
+  async runSupervisorTurn(
+    supervisorInput: string,
+    wokeSummary: string,
+    deps: {
+      resolveModel: () => Promise<ModelClient | null>;
+      tools: ToolExecutor;
+      system: string;
+      observe?: boolean;
+      now?: () => Date;
+      rateLimit?: { maxTurns: number; windowMs: number };
+    },
+  ): Promise<{ ok: boolean; reason?: string; tokens?: number; toolCalls?: number }> {
+    if (this.turnActive) return { ok: false, reason: "turn_in_progress" };
+    const now = deps.now ?? (() => new Date());
+
+    // observe: seal the wake marker, post nothing to the model.
+    if (deps.observe) {
+      await this.append({ role: "assistant", text: wokeSummary, at: now().toISOString(), supervisor: true });
+      return { ok: true, reason: "observe" };
+    }
+
+    // Shared turn-rate ceiling (§4.5) — supervision can never starve a human.
+    const limit = deps.rateLimit ?? { maxTurns: 20, windowMs: 5 * 60 * 1000 };
+    if (limit.maxTurns > 0) {
+      const t = now().getTime();
+      this.turnStamps = this.turnStamps.filter((x) => t - x < limit.windowMs);
+      if (this.turnStamps.length >= limit.maxTurns) return { ok: false, reason: "rate_limited" };
+      this.turnStamps.push(t);
+    }
+
+    this.turnActive = true;
+    try {
+      // The sealed wake marker (durable, metered, visible) — a turn ran with no
+      // human prompt.
+      await this.append({ role: "assistant", text: wokeSummary, at: now().toISOString(), supervisor: true });
+      this.fanOut({ t: "turn", phase: "start", supervisor: true });
+
+      const model = await deps.resolveModel();
+      if (!model) {
+        await this.append({
+          role: "assistant",
+          text: "Supervision paused — no verified model provider is set for this workspace.",
+          at: now().toISOString(),
+          error: true,
+          supervisor: true,
+        });
+        this.fanOut({ t: "turn", phase: "done" });
+        return { ok: false, reason: "custody_failed" };
+      }
+
+      // The digest + roster enter as a synthetic user message, framed as
+      // untrusted supervision data — never as a human prompt, never as trusted
+      // instructions (§9.2). History carries prior turns for continuity.
+      const history = this.modelHistory();
+      history.push({ role: "user", content: supervisorInput });
+      return await this.modelLoop(model, deps.system, history, deps.tools, now, true);
     } finally {
       this.turnActive = false;
     }
